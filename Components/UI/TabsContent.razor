@@ -1,0 +1,17 @@
+@namespace GrainOriginatorPortal.Components.UI
+
+@if (IsActive)
+{
+    <div class="@ComputedClass" role="tabpanel">
+        @ChildContent
+    </div>
+}
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public bool IsActive { get; set; }
+
+    private string ComputedClass => $"mt-2 {Class}".Trim();
+}

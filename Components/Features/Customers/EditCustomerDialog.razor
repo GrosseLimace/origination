@@ -1,0 +1,219 @@
+@namespace GrainOriginatorPortal.Components.Features.Customers
+
+<Dialog IsOpen="@IsOpen" IsOpenChanged="HandleClose">
+    <DialogHeader>
+        <DialogTitle>Edit Customer</DialogTitle>
+        <DialogDescription>Update contact information for @Customer?.Name</DialogDescription>
+    </DialogHeader>
+
+    @if (Customer != null)
+    {
+        <div class="space-y-6">
+            <!-- Contact Information Section -->
+            <div class="space-y-4">
+                <h4 class="font-medium text-gray-900 dark:text-white">Contact Information</h4>
+
+                <div class="space-y-2">
+                    <Label>Location</Label>
+                    <Input Type="text"
+                           Value="@editLocation"
+                           ValueChanged="v => editLocation = v"
+                           Placeholder="e.g., Iowa County, IA" />
+                </div>
+
+                <div class="space-y-2">
+                    <Label>Phone</Label>
+                    <Input Type="tel"
+                           Value="@editPhone"
+                           ValueChanged="v => editPhone = v"
+                           Placeholder="e.g., (319) 555-0123" />
+                </div>
+
+                <div class="space-y-2">
+                    <Label>Email</Label>
+                    <Input Type="email"
+                           Value="@editEmail"
+                           ValueChanged="v => editEmail = v"
+                           Placeholder="e.g., john@example.com" />
+                </div>
+            </div>
+
+            <Separator />
+
+            <!-- Farm Associations Section -->
+            <div class="space-y-4">
+                <h4 class="font-medium text-gray-900 dark:text-white">Farm Associations</h4>
+
+                <!-- Current Farms -->
+                <div class="space-y-2">
+                    @foreach (var farmId in editFarmIds.ToList())
+                    {
+                        var farm = AllFarms.FirstOrDefault(f => f.Id == farmId);
+                        if (farm != null)
+                        {
+                            <div class="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                                <div>
+                                    <span class="font-medium text-gray-900 dark:text-white">@farm.Name</span>
+                                    <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">(@farm.Acres acres)</span>
+                                </div>
+                                @if (editFarmIds.Count > 1)
+                                {
+                                    <Button Variant="ghost" Size="icon" OnClick="() => RemoveFarm(farmId)" Class="h-8 w-8 text-red-500">
+                                        <Icon Name="x" Size="16" />
+                                    </Button>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+
+                <!-- Add Existing Farm -->
+                @{
+                    var availableFarms = AllFarms.Where(f => !editFarmIds.Contains(f.Id)).ToList();
+                }
+                @if (availableFarms.Any())
+                {
+                    <div class="space-y-2">
+                        <Label>Add Existing Farm</Label>
+                        <Select Value="" ValueChanged="AddExistingFarm" Placeholder="Select a farm to add">
+                            @foreach (var farm in availableFarms)
+                            {
+                                <SelectOption Value="@farm.Id">@farm.Name (@farm.Acres acres)</SelectOption>
+                            }
+                        </Select>
+                    </div>
+                }
+
+                <!-- Create New Farm -->
+                <div class="border-t pt-4">
+                    <Button Variant="outline" OnClick="() => showNewFarmForm = !showNewFarmForm" Class="w-full">
+                        <Icon Name="plus" Size="16" Class="mr-2" />
+                        Create New Farm
+                    </Button>
+
+                    @if (showNewFarmForm)
+                    {
+                        <div class="mt-4 p-4 border rounded-lg space-y-4">
+                            <div class="space-y-2">
+                                <Label>Farm Name</Label>
+                                <Input Type="text"
+                                       Value="@newFarmName"
+                                       ValueChanged="v => newFarmName = v"
+                                       Placeholder="e.g., North Field Farm" />
+                            </div>
+                            <div class="space-y-2">
+                                <Label>Location</Label>
+                                <Input Type="text"
+                                       Value="@newFarmLocation"
+                                       ValueChanged="v => newFarmLocation = v"
+                                       Placeholder="e.g., Johnson County, IA" />
+                            </div>
+                            <div class="space-y-2">
+                                <Label>Acres</Label>
+                                <Input Type="number"
+                                       Value="@newFarmAcres"
+                                       ValueChanged="v => newFarmAcres = v"
+                                       Placeholder="e.g., 500" />
+                            </div>
+                            <Button OnClick="CreateAndAddFarm"
+                                    Disabled="@(string.IsNullOrWhiteSpace(newFarmName) || string.IsNullOrWhiteSpace(newFarmAcres))">
+                                Add Farm
+                            </Button>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <DialogFooter>
+                <Button Variant="outline" OnClick="() => HandleClose(false)">Cancel</Button>
+                <Button OnClick="HandleSave">Save Changes</Button>
+            </DialogFooter>
+        </div>
+    }
+</Dialog>
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public Customer? Customer { get; set; }
+    [Parameter] public List<Farm> AllFarms { get; set; } = new();
+    [Parameter] public EventCallback<(string CustomerId, string Location, string Phone, string Email, List<string> FarmIds)> OnSave { get; set; }
+    [Parameter] public EventCallback<(string Name, string Location, int Acres)> OnCreateFarm { get; set; }
+
+    private string editLocation = "";
+    private string editPhone = "";
+    private string editEmail = "";
+    private List<string> editFarmIds = new();
+
+    private bool showNewFarmForm = false;
+    private string newFarmName = "";
+    private string newFarmLocation = "";
+    private string newFarmAcres = "";
+
+    protected override void OnParametersSet()
+    {
+        if (Customer != null && IsOpen)
+        {
+            editLocation = Customer.Location;
+            editPhone = Customer.Phone;
+            editEmail = Customer.Email;
+            editFarmIds = Customer.FarmIds.ToList();
+        }
+    }
+
+    private async Task HandleClose(bool isOpen)
+    {
+        showNewFarmForm = false;
+        newFarmName = "";
+        newFarmLocation = "";
+        newFarmAcres = "";
+        await IsOpenChanged.InvokeAsync(isOpen);
+    }
+
+    private async Task HandleSave()
+    {
+        if (Customer != null)
+        {
+            await OnSave.InvokeAsync((Customer.Id, editLocation, editPhone, editEmail, editFarmIds));
+            await HandleClose(false);
+        }
+    }
+
+    private void AddExistingFarm(string farmId)
+    {
+        if (!string.IsNullOrEmpty(farmId) && !editFarmIds.Contains(farmId))
+        {
+            editFarmIds.Add(farmId);
+        }
+    }
+
+    private void RemoveFarm(string farmId)
+    {
+        if (editFarmIds.Count > 1)
+        {
+            editFarmIds.Remove(farmId);
+        }
+    }
+
+    private async Task CreateAndAddFarm()
+    {
+        if (!string.IsNullOrWhiteSpace(newFarmName) && int.TryParse(newFarmAcres, out var acres))
+        {
+            await OnCreateFarm.InvokeAsync((newFarmName, newFarmLocation, acres));
+
+            // The new farm should be added to AllFarms by the parent
+            // Find it and add to editFarmIds
+            var newFarm = AllFarms.LastOrDefault();
+            if (newFarm != null && !editFarmIds.Contains(newFarm.Id))
+            {
+                editFarmIds.Add(newFarm.Id);
+            }
+
+            // Reset form
+            showNewFarmForm = false;
+            newFarmName = "";
+            newFarmLocation = "";
+            newFarmAcres = "";
+        }
+    }
+}

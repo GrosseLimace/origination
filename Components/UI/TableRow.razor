@@ -1,0 +1,14 @@
+@namespace GrainOriginatorPortal.Components.UI
+
+<tr class="@ComputedClass" @onclick="OnClick">
+    @ChildContent
+</tr>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public bool IsSelected { get; set; }
+    [Parameter] public EventCallback<MouseEventArgs> OnClick { get; set; }
+
+    private string ComputedClass => $"border-b transition-colors hover:bg-muted/50 {(IsSelected ? "bg-muted" : "")} {Class}".Trim();
+}

@@ -1,0 +1,12 @@
+@namespace GrainOriginatorPortal.Components.UI
+
+<div class="@ComputedClass" role="tablist">
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string ComputedClass => $"inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground {Class}".Trim();
+}

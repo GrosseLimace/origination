@@ -1,0 +1,194 @@
+@namespace GrainOriginatorPortal.Components.Features.Customers
+@inject IDataService DataService
+
+<Card Class="h-fit">
+    <CardHeader>
+        <CardTitle>Customers</CardTitle>
+        <CardDescription>@customers.Count producers in your territory</CardDescription>
+    </CardHeader>
+    <CardContent Class="p-0">
+        <!-- Search -->
+        <div class="p-4 border-b">
+            <div class="relative">
+                <Icon Name="search" Size="16" Class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <Input Type="text"
+                       Placeholder="Search customers..."
+                       Value="@searchQuery"
+                       ValueChanged="HandleSearch"
+                       Class="pl-10" />
+            </div>
+        </div>
+
+        <!-- Saved Lists Filter -->
+        @if (SavedLists.Any())
+        {
+            <div class="p-4 border-b">
+                <Select Value="@selectedListId"
+                        ValueChanged="HandleListFilter"
+                        Placeholder="Filter by saved list">
+                    <SelectOption Value="">All Customers</SelectOption>
+                    @foreach (var list in SavedLists)
+                    {
+                        <SelectOption Value="@list.Id">@list.Name (@list.CustomerIds.Count)</SelectOption>
+                    }
+                </Select>
+            </div>
+        }
+
+        <!-- Customer List -->
+        <div class="divide-y divide-gray-200 dark:divide-gray-700 max-h-[calc(100vh-300px)] overflow-y-auto">
+            @if (!filteredCustomers.Any())
+            {
+                <div class="p-8 text-center text-gray-500">
+                    <Icon Name="users" Size="48" Class="mx-auto mb-4 opacity-50" />
+                    <p>No customers found</p>
+                </div>
+            }
+            else
+            {
+                @foreach (var customer in filteredCustomers)
+                {
+                    <div class="@GetCustomerItemClass(customer)" @onclick="() => HandleSelectCustomer(customer)">
+                        <div class="flex items-start justify-between">
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-center gap-2">
+                                    <h3 class="font-medium text-gray-900 dark:text-white truncate">
+                                        @customer.Name
+                                    </h3>
+                                </div>
+                                <p class="text-sm text-gray-500 dark:text-gray-400 truncate">
+                                    @customer.Farm
+                                </p>
+                                <div class="flex items-center gap-2 mt-1">
+                                    <Badge Variant="secondary">@customer.TotalAcres.ToString("N0") acres</Badge>
+                                    <span class="text-xs text-gray-400">@customer.Location</span>
+                                </div>
+                            </div>
+                            <div class="flex flex-col items-end gap-1 ml-2">
+                                @if (!string.IsNullOrEmpty(customer.Phone))
+                                {
+                                    <div class="flex items-center gap-1 text-xs text-gray-400">
+                                        <Icon Name="phone" Size="12" />
+                                        <span class="hidden xl:inline">@customer.Phone</span>
+                                    </div>
+                                }
+                                @{ var lastContact = GetLastContactInfo(customer.Id); }
+                                <span class="@GetLastContactClass(lastContact.DaysAgo) text-xs">
+                                    @lastContact.Text
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </CardContent>
+</Card>
+
+@code {
+    [Parameter] public Customer? SelectedCustomer { get; set; }
+    [Parameter] public EventCallback<Customer> OnSelectCustomer { get; set; }
+    [Parameter] public List<SavedList> SavedLists { get; set; } = new();
+
+    private List<Customer> customers = new();
+    private List<Customer> filteredCustomers = new();
+    private List<Note> allNotes = new();
+    private string searchQuery = "";
+    private string selectedListId = "";
+
+    protected override void OnInitialized()
+    {
+        customers = DataService.GetCustomers();
+        allNotes = DataService.GetNotes();
+        ApplyFilters();
+    }
+
+    private void HandleSearch(string query)
+    {
+        searchQuery = query;
+        ApplyFilters();
+    }
+
+    private void HandleListFilter(string listId)
+    {
+        selectedListId = listId;
+        ApplyFilters();
+    }
+
+    private void ApplyFilters()
+    {
+        var result = customers.AsEnumerable();
+
+        // Apply search filter
+        if (!string.IsNullOrWhiteSpace(searchQuery))
+        {
+            var query = searchQuery.ToLower();
+            result = result.Where(c =>
+                c.Name.ToLower().Contains(query) ||
+                c.Farm.ToLower().Contains(query) ||
+                c.Location.ToLower().Contains(query) ||
+                c.Email.ToLower().Contains(query));
+        }
+
+        // Apply saved list filter
+        if (!string.IsNullOrEmpty(selectedListId))
+        {
+            var savedList = SavedLists.FirstOrDefault(l => l.Id == selectedListId);
+            if (savedList != null)
+            {
+                result = result.Where(c => savedList.CustomerIds.Contains(c.Id));
+            }
+        }
+
+        filteredCustomers = result.ToList();
+    }
+
+    private async Task HandleSelectCustomer(Customer customer)
+    {
+        await OnSelectCustomer.InvokeAsync(customer);
+    }
+
+    private string GetCustomerItemClass(Customer customer)
+    {
+        var isSelected = SelectedCustomer?.Id == customer.Id;
+        var baseClass = "p-4 cursor-pointer transition-colors";
+        var stateClass = isSelected
+            ? "bg-green-50 dark:bg-green-900/20 border-l-4 border-green-500"
+            : "hover:bg-gray-50 dark:hover:bg-gray-700/50";
+        return $"{baseClass} {stateClass}";
+    }
+
+    private (string Text, int DaysAgo) GetLastContactInfo(string customerId)
+    {
+        var customerNotes = allNotes.Where(n => n.CustomerId == customerId).OrderByDescending(n => n.Timestamp);
+        var lastNote = customerNotes.FirstOrDefault();
+
+        if (lastNote == null)
+        {
+            return ("No contact", -1);
+        }
+
+        var daysAgo = (int)(DateTime.Now - lastNote.Timestamp).TotalDays;
+
+        if (daysAgo == 0)
+            return ("Today", 0);
+        if (daysAgo == 1)
+            return ("Yesterday", 1);
+        if (daysAgo < 7)
+            return ($"{daysAgo} days ago", daysAgo);
+        if (daysAgo < 30)
+            return ($"{daysAgo / 7} weeks ago", daysAgo);
+        if (daysAgo < 365)
+            return ($"{daysAgo / 30} months ago", daysAgo);
+
+        return ($"{daysAgo / 365} years ago", daysAgo);
+    }
+
+    private string GetLastContactClass(int daysAgo)
+    {
+        if (daysAgo < 0) return "text-red-500";
+        if (daysAgo <= 7) return "text-green-500";
+        if (daysAgo <= 30) return "text-yellow-500";
+        return "text-red-500";
+    }
+}

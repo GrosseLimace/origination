@@ -1,0 +1,28 @@
+@namespace GrainOriginatorPortal.Components.UI
+
+<div class="@ContainerClass" role="progressbar" aria-valuenow="@Value" aria-valuemin="0" aria-valuemax="@Max">
+    <div class="@IndicatorClass" style="width: @(Percentage)%"></div>
+</div>
+
+@code {
+    [Parameter] public double Value { get; set; }
+    [Parameter] public double Max { get; set; } = 100;
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public string Color { get; set; } = "default";
+
+    private double Percentage => Max > 0 ? Math.Min((Value / Max) * 100, 100) : 0;
+
+    private string ContainerClass => $"relative h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700 {Class}".Trim();
+
+    private string IndicatorClass => $"h-full transition-all {ColorClass}".Trim();
+
+    private string ColorClass => Color switch
+    {
+        "default" => "bg-green-500",
+        "success" => "bg-green-500",
+        "warning" => "bg-yellow-500",
+        "danger" => "bg-red-500",
+        "info" => "bg-blue-500",
+        _ => "bg-green-500"
+    };
+}

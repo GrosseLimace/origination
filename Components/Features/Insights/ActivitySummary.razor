@@ -1,0 +1,102 @@
+@namespace GrainOriginatorPortal.Components.Features.Insights
+
+<div class="bg-gradient-to-br from-green-500 to-green-600 dark:from-green-600 dark:to-green-700 rounded-lg p-6 text-white">
+    <div class="flex items-start gap-3 mb-4">
+        <div class="p-2 bg-white/20 rounded-lg">
+            <Icon Name="sparkles" Size="24" />
+        </div>
+        <div>
+            <h3 class="font-semibold text-lg">Activity Summary</h3>
+            <p class="text-green-100 text-sm">AI-generated insights for @Customer.Name</p>
+        </div>
+    </div>
+
+    <div class="space-y-3 text-sm">
+        @foreach (var insight in GenerateInsights())
+        {
+            <p class="text-green-50">@insight</p>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Customer Customer { get; set; } = default!;
+    [Parameter] public List<Contract> Contracts { get; set; } = new();
+    [Parameter] public List<Ticket> Tickets { get; set; } = new();
+    [Parameter] public List<PlantingIntention> PlantingIntentions { get; set; } = new();
+    [Parameter] public List<Note> Notes { get; set; } = new();
+    [Parameter] public List<StoredGrain> StoredGrain { get; set; } = new();
+
+    private IEnumerable<string> GenerateInsights()
+    {
+        var insights = new List<string>();
+
+        // Market share insight
+        var totalProjected = PlantingIntentions.Sum(p => p.Acres * p.EstimatedYield);
+        var totalContracted = Contracts
+            .Where(c => c.Status == ContractStatus.Active || c.Status == ContractStatus.Pending)
+            .Sum(c => c.Quantity);
+
+        if (totalProjected > 0)
+        {
+            var marketShare = (double)totalContracted / totalProjected * 100;
+            insights.Add($"📊 You're currently capturing {marketShare:F0}% of {Customer.Name}'s projected {totalProjected:N0} bushel yield.");
+        }
+
+        // Planting overview
+        if (PlantingIntentions.Any())
+        {
+            var crops = PlantingIntentions.GroupBy(p => p.Crop)
+                .Select(g => $"{g.Sum(p => p.Acres):N0} acres of {g.Key}")
+                .ToList();
+            insights.Add($"🌱 Planning to plant {string.Join(", ", crops)} this season.");
+        }
+
+        // Storage situation
+        if (StoredGrain.Any())
+        {
+            var totalStored = StoredGrain.Sum(s => s.Quantity);
+            var avgDays = StoredGrain.Average(s => (DateTime.Now - s.StorageStartDate).Days);
+            insights.Add($"🏭 Currently storing {totalStored:N0} bushels (avg {avgDays:F0} days in storage).");
+        }
+
+        // Recent contact
+        var lastNote = Notes.OrderByDescending(n => n.Timestamp).FirstOrDefault();
+        if (lastNote != null)
+        {
+            var daysSince = (DateTime.Now - lastNote.Timestamp).Days;
+            if (daysSince == 0)
+                insights.Add($"📞 Last contacted today by {lastNote.OriginatorName}.");
+            else if (daysSince == 1)
+                insights.Add($"📞 Last contacted yesterday by {lastNote.OriginatorName}.");
+            else
+                insights.Add($"📞 Last contacted {daysSince} days ago by {lastNote.OriginatorName}.");
+        }
+        else
+        {
+            insights.Add("📞 No contact history recorded yet.");
+        }
+
+        // Delivery activity
+        var recentTickets = Tickets.Where(t => t.Date >= DateTime.Now.AddDays(-30)).ToList();
+        if (recentTickets.Any())
+        {
+            var totalDelivered = recentTickets.Sum(t => t.NetWeight);
+            insights.Add($"🚚 Delivered {totalDelivered:N0} lbs in the last 30 days across {recentTickets.Count} tickets.");
+        }
+
+        // Upcoming actions
+        var upcomingDeliveries = Contracts
+            .Where(c => c.Status == ContractStatus.Active && c.DeliveryEnd >= DateTime.Now)
+            .OrderBy(c => c.DeliveryEnd)
+            .FirstOrDefault();
+
+        if (upcomingDeliveries != null)
+        {
+            var daysRemaining = (upcomingDeliveries.DeliveryEnd - DateTime.Now).Days;
+            insights.Add($"⏰ Next delivery deadline: {upcomingDeliveries.Crop} contract ends in {daysRemaining} days.");
+        }
+
+        return insights;
+    }
+}

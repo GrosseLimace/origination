@@ -1,0 +1,127 @@
+@namespace GrainOriginatorPortal.Components.Features.Customers
+
+<div class="space-y-4">
+    <!-- Add Note Form -->
+    <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800">
+        <div class="space-y-3">
+            <Textarea Placeholder="Add a note about this customer..."
+                      Value="@newNoteContent"
+                      ValueChanged="value => newNoteContent = value"
+                      Rows="3" />
+            <div class="flex justify-end">
+                <Button OnClick="HandleAddNote" Disabled="@string.IsNullOrWhiteSpace(newNoteContent)">
+                    <Icon Name="plus" Size="16" Class="mr-2" />
+                    Add Note
+                </Button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notes List -->
+    @if (!Notes.Any())
+    {
+        <div class="text-center py-8 text-gray-500 dark:text-gray-400">
+            <Icon Name="message-square" Size="48" Class="mx-auto mb-4 opacity-50" />
+            <p>No notes yet for this customer</p>
+        </div>
+    }
+    else
+    {
+        <div class="space-y-3">
+            @foreach (var note in sortedNotes)
+            {
+                var isPinned = note.Pinned;
+                var noteClass = isPinned
+                    ? "border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20"
+                    : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800";
+
+                <div class="border rounded-lg p-4 @noteClass">
+                    <div class="flex items-start justify-between mb-2">
+                        <div class="flex items-center gap-3">
+                            <Avatar Fallback="@GetInitials(note.OriginatorName)" Size="sm" />
+                            <div>
+                                <div class="font-medium text-gray-900 dark:text-white">
+                                    @note.OriginatorName
+                                </div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400">
+                                    @FormatTimestamp(note.Timestamp)
+                                </div>
+                            </div>
+                        </div>
+                        <Button Variant="ghost"
+                                Size="icon"
+                                OnClick="() => HandleTogglePin(note.Id)"
+                                Class="@(isPinned ? "text-amber-500 hover:text-amber-600" : "text-gray-400 hover:text-amber-500")">
+                            @if (isPinned)
+                            {
+                                <Icon Name="pin" Size="16" />
+                            }
+                            else
+                            {
+                                <Icon Name="pin-off" Size="16" />
+                            }
+                        </Button>
+                    </div>
+                    <p class="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                        @note.Content
+                    </p>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public List<Note> Notes { get; set; } = new();
+    [Parameter] public string CustomerId { get; set; } = "";
+    [Parameter] public string? FarmId { get; set; }
+    [Parameter] public EventCallback<(string CustomerId, string? FarmId, string Content)> OnAddNote { get; set; }
+    [Parameter] public EventCallback<string> OnTogglePin { get; set; }
+
+    private string newNoteContent = "";
+
+    private IEnumerable<Note> sortedNotes =>
+        Notes.OrderByDescending(n => n.Pinned)
+             .ThenByDescending(n => n.Timestamp);
+
+    private async Task HandleAddNote()
+    {
+        if (!string.IsNullOrWhiteSpace(newNoteContent))
+        {
+            await OnAddNote.InvokeAsync((CustomerId, FarmId, newNoteContent));
+            newNoteContent = "";
+        }
+    }
+
+    private async Task HandleTogglePin(string noteId)
+    {
+        await OnTogglePin.InvokeAsync(noteId);
+    }
+
+    private string GetInitials(string name)
+    {
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2)
+            return $"{parts[0][0]}{parts[1][0]}".ToUpper();
+        if (parts.Length == 1 && parts[0].Length >= 2)
+            return parts[0].Substring(0, 2).ToUpper();
+        return "??";
+    }
+
+    private string FormatTimestamp(DateTime timestamp)
+    {
+        var now = DateTime.Now;
+        var diff = now - timestamp;
+
+        if (diff.TotalDays < 1 && now.Day == timestamp.Day)
+            return $"Today at {timestamp:h:mm tt}";
+
+        if (diff.TotalDays < 2 && now.Day - timestamp.Day == 1)
+            return $"Yesterday at {timestamp:h:mm tt}";
+
+        if (diff.TotalDays < 7)
+            return $"{(int)diff.TotalDays} days ago";
+
+        return timestamp.ToString("MMM d, yyyy");
+    }
+}

@@ -1,0 +1,410 @@
+@namespace GrainOriginatorPortal.Components.Features.Insights
+
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h2 class="text-2xl font-semibold text-gray-900 dark:text-white">Actionable Insights</h2>
+            <p class="text-gray-500 dark:text-gray-400">Prioritized recommendations for your territory</p>
+        </div>
+        <Badge Variant="secondary" Class="text-lg px-4 py-2">
+            @allInsights.Count() total actions
+        </Badge>
+    </div>
+
+    <!-- Summary Stats -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card Class="p-4">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
+                    <Icon Name="alert-circle" Size="24" Class="text-red-600 dark:text-red-400" />
+                </div>
+                <div>
+                    <div class="text-2xl font-bold text-red-600 dark:text-red-400">@urgentCount</div>
+                    <div class="text-sm text-gray-500 dark:text-gray-400">Urgent</div>
+                </div>
+            </div>
+        </Card>
+        <Card Class="p-4">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
+                    <Icon Name="alert-triangle" Size="24" Class="text-yellow-600 dark:text-yellow-400" />
+                </div>
+                <div>
+                    <div class="text-2xl font-bold text-yellow-600 dark:text-yellow-400">@warningCount</div>
+                    <div class="text-sm text-gray-500 dark:text-gray-400">Warnings</div>
+                </div>
+            </div>
+        </Card>
+        <Card Class="p-4">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                    <Icon Name="info" Size="24" Class="text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                    <div class="text-2xl font-bold text-blue-600 dark:text-blue-400">@infoCount</div>
+                    <div class="text-sm text-gray-500 dark:text-gray-400">Opportunities</div>
+                </div>
+            </div>
+        </Card>
+        <Card Class="p-4">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                    <Icon Name="users" Size="24" Class="text-green-600 dark:text-green-400" />
+                </div>
+                <div>
+                    <div class="text-2xl font-bold text-green-600 dark:text-green-400">@customersAffected</div>
+                    <div class="text-sm text-gray-500 dark:text-gray-400">Customers</div>
+                </div>
+            </div>
+        </Card>
+    </div>
+
+    <!-- Insights by Category -->
+    @foreach (var category in groupedInsights)
+    {
+        var isExpanded = expandedCategories.Contains(category.Key);
+        var categoryInfo = GetCategoryInfo(category.Key);
+
+        <Card>
+            <div class="@categoryInfo.HeaderClass p-4 cursor-pointer" @onclick="() => ToggleCategory(category.Key)">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <Icon Name="@categoryInfo.Icon" Size="24" Class="@categoryInfo.IconClass" />
+                        <div>
+                            <h3 class="font-semibold @categoryInfo.TitleClass">@categoryInfo.Title</h3>
+                            <p class="text-sm @categoryInfo.SubtitleClass">@category.Count() items</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <Badge Class="@categoryInfo.BadgeClass">@category.Count()</Badge>
+                        @if (isExpanded)
+                        {
+                            <Icon Name="chevron-up" Size="20" Class="@categoryInfo.IconClass" />
+                        }
+                        else
+                        {
+                            <Icon Name="chevron-down" Size="20" Class="@categoryInfo.IconClass" />
+                        }
+                    </div>
+                </div>
+            </div>
+
+            @if (isExpanded)
+            {
+                <CardContent Class="p-0">
+                    <div class="divide-y divide-gray-200 dark:divide-gray-700">
+                        @foreach (var insight in category)
+                        {
+                            <div class="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors"
+                                 @onclick="() => HandleSelectCustomer(insight.Customer)">
+                                <div class="flex items-start justify-between">
+                                    <div class="flex items-start gap-3">
+                                        <div class="@GetPriorityBadgeClass(insight.Priority) p-1 rounded">
+                                            @if (insight.Priority == InsightPriority.Urgent)
+                                            {
+                                                <Icon Name="alert-circle" Size="16" />
+                                            }
+                                            else if (insight.Priority == InsightPriority.Warning)
+                                            {
+                                                <Icon Name="alert-triangle" Size="16" />
+                                            }
+                                            else
+                                            {
+                                                <Icon Name="info" Size="16" />
+                                            }
+                                        </div>
+                                        <div>
+                                            <div class="font-medium text-gray-900 dark:text-white">
+                                                @insight.Customer.Name
+                                            </div>
+                                            <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                                                @insight.Message
+                                            </p>
+                                            <div class="flex items-center gap-2 mt-2">
+                                                <Badge Variant="secondary">@insight.Customer.Farm</Badge>
+                                                <span class="text-xs text-gray-400">@insight.Customer.Location</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <Icon Name="chevron-right" Size="20" Class="text-gray-400 flex-shrink-0" />
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </CardContent>
+            }
+        </Card>
+    }
+
+    @if (!allInsights.Any())
+    {
+        <Card Class="p-12 text-center">
+            <Icon Name="check-circle" Size="48" Class="mx-auto mb-4 text-green-500" />
+            <h3 class="text-gray-900 dark:text-white mb-2">All Caught Up!</h3>
+            <p class="text-gray-500 dark:text-gray-400">No actionable insights at this time.</p>
+        </Card>
+    }
+</div>
+
+@code {
+    [Parameter] public List<Customer> Customers { get; set; } = new();
+    [Parameter] public List<Contract> Contracts { get; set; } = new();
+    [Parameter] public List<Ticket> Tickets { get; set; } = new();
+    [Parameter] public List<Note> Notes { get; set; } = new();
+    [Parameter] public List<PlantingIntention> PlantingIntentions { get; set; } = new();
+    [Parameter] public EventCallback<Customer> OnSelectCustomer { get; set; }
+
+    private HashSet<InsightCategory> expandedCategories = new()
+    {
+        InsightCategory.CustomerContact,
+        InsightCategory.ContractDelivery
+    };
+
+    private enum InsightCategory
+    {
+        CustomerContact,
+        ContractDelivery,
+        QualityIssue,
+        PlantingSeason,
+        BusinessOpportunity,
+        Compliance
+    }
+
+    private enum InsightPriority
+    {
+        Urgent,
+        Warning,
+        Info
+    }
+
+    private record Insight(
+        Customer Customer,
+        InsightCategory Category,
+        InsightPriority Priority,
+        string Message
+    );
+
+    private IEnumerable<Insight> allInsights => GenerateInsights();
+    private IEnumerable<IGrouping<InsightCategory, Insight>> groupedInsights =>
+        allInsights.GroupBy(i => i.Category).OrderBy(g => g.Key);
+
+    private int urgentCount => allInsights.Count(i => i.Priority == InsightPriority.Urgent);
+    private int warningCount => allInsights.Count(i => i.Priority == InsightPriority.Warning);
+    private int infoCount => allInsights.Count(i => i.Priority == InsightPriority.Info);
+    private int customersAffected => allInsights.Select(i => i.Customer.Id).Distinct().Count();
+
+    private IEnumerable<Insight> GenerateInsights()
+    {
+        var insights = new List<Insight>();
+
+        foreach (var customer in Customers)
+        {
+            var customerContracts = Contracts.Where(c => c.CustomerId == customer.Id).ToList();
+            var customerNotes = Notes.Where(n => n.CustomerId == customer.Id).ToList();
+            var customerTickets = Tickets.Where(t => t.CustomerId == customer.Id).ToList();
+            var customerPlanting = PlantingIntentions.Where(p => p.CustomerId == customer.Id).ToList();
+
+            // Customer Contact - No contact in 60+ days
+            var lastNote = customerNotes.OrderByDescending(n => n.Timestamp).FirstOrDefault();
+            if (lastNote == null)
+            {
+                insights.Add(new Insight(
+                    customer,
+                    InsightCategory.CustomerContact,
+                    InsightPriority.Urgent,
+                    "No contact history recorded. Schedule initial outreach."
+                ));
+            }
+            else
+            {
+                var daysSinceContact = (DateTime.Now - lastNote.Timestamp).Days;
+                if (daysSinceContact >= 60)
+                {
+                    insights.Add(new Insight(
+                        customer,
+                        InsightCategory.CustomerContact,
+                        InsightPriority.Warning,
+                        $"Last contact was {daysSinceContact} days ago. Consider reaching out."
+                    ));
+                }
+            }
+
+            // Contract Delivery - Approaching delivery window
+            foreach (var contract in customerContracts.Where(c => c.Status == ContractStatus.Active))
+            {
+                var daysUntilEnd = (contract.DeliveryEnd - DateTime.Now).Days;
+                var daysUntilStart = (contract.DeliveryStart - DateTime.Now).Days;
+
+                if (daysUntilEnd <= 14 && daysUntilEnd > 0)
+                {
+                    insights.Add(new Insight(
+                        customer,
+                        InsightCategory.ContractDelivery,
+                        InsightPriority.Urgent,
+                        $"Contract {contract.ContractNumber} delivery window ends in {daysUntilEnd} days."
+                    ));
+                }
+                else if (daysUntilStart <= 7 && daysUntilStart > 0)
+                {
+                    insights.Add(new Insight(
+                        customer,
+                        InsightCategory.ContractDelivery,
+                        InsightPriority.Info,
+                        $"Contract {contract.ContractNumber} delivery window opens in {daysUntilStart} days."
+                    ));
+                }
+            }
+
+            // Quality Issues - High moisture or low test weight
+            foreach (var ticket in customerTickets)
+            {
+                if (ticket.Moisture > 16)
+                {
+                    insights.Add(new Insight(
+                        customer,
+                        InsightCategory.QualityIssue,
+                        InsightPriority.Warning,
+                        $"Ticket {ticket.Id}: High moisture at {ticket.Moisture:F1}% (>{16}% threshold)."
+                    ));
+                }
+                if (ticket.TestWeight < 54)
+                {
+                    insights.Add(new Insight(
+                        customer,
+                        InsightCategory.QualityIssue,
+                        InsightPriority.Warning,
+                        $"Ticket {ticket.Id}: Low test weight at {ticket.TestWeight:F1} lbs/bu (<54 threshold)."
+                    ));
+                }
+            }
+
+            // Planting Season - Within 30 days
+            foreach (var planting in customerPlanting)
+            {
+                var daysUntilPlanting = (planting.PlantingDate - DateTime.Now).Days;
+                if (daysUntilPlanting <= 30 && daysUntilPlanting > 0)
+                {
+                    insights.Add(new Insight(
+                        customer,
+                        InsightCategory.PlantingSeason,
+                        InsightPriority.Info,
+                        $"{planting.Crop} planting scheduled in {daysUntilPlanting} days ({planting.Acres:N0} acres)."
+                    ));
+                }
+            }
+
+            // Business Opportunity - No active contracts
+            var activeContracts = customerContracts.Where(c => c.Status == ContractStatus.Active || c.Status == ContractStatus.Pending);
+            if (!activeContracts.Any() && customerPlanting.Any())
+            {
+                var totalProjected = customerPlanting.Sum(p => p.Acres * p.EstimatedYield);
+                insights.Add(new Insight(
+                    customer,
+                    InsightCategory.BusinessOpportunity,
+                    InsightPriority.Info,
+                    $"No active contracts. Projected yield: {totalProjected:N0} bushels available."
+                ));
+            }
+
+            // Compliance - Unsigned contracts
+            foreach (var contract in customerContracts.Where(c => !c.Signed && c.Status != ContractStatus.Fulfilled))
+            {
+                insights.Add(new Insight(
+                    customer,
+                    InsightCategory.Compliance,
+                    InsightPriority.Urgent,
+                    $"Contract {contract.ContractNumber} awaiting signature."
+                ));
+            }
+        }
+
+        return insights.OrderBy(i => i.Priority).ThenBy(i => i.Category);
+    }
+
+    private void ToggleCategory(InsightCategory category)
+    {
+        if (!expandedCategories.Remove(category))
+            expandedCategories.Add(category);
+    }
+
+    private async Task HandleSelectCustomer(Customer customer)
+    {
+        await OnSelectCustomer.InvokeAsync(customer);
+    }
+
+    private string GetPriorityBadgeClass(InsightPriority priority) => priority switch
+    {
+        InsightPriority.Urgent => "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400",
+        InsightPriority.Warning => "bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400",
+        InsightPriority.Info => "bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400",
+        _ => "bg-gray-100 text-gray-600 dark:bg-gray-900/30 dark:text-gray-400"
+    };
+
+    private (string HeaderClass, string Icon, string IconClass, string Title, string TitleClass, string SubtitleClass, string BadgeClass) GetCategoryInfo(InsightCategory category) => category switch
+    {
+        InsightCategory.CustomerContact => (
+            "bg-purple-50 dark:bg-purple-900/20 border-b border-purple-100 dark:border-purple-800",
+            "users",
+            "text-purple-600 dark:text-purple-400",
+            "Customer Contact",
+            "text-purple-900 dark:text-purple-100",
+            "text-purple-600 dark:text-purple-400",
+            "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300"
+        ),
+        InsightCategory.ContractDelivery => (
+            "bg-orange-50 dark:bg-orange-900/20 border-b border-orange-100 dark:border-orange-800",
+            "truck",
+            "text-orange-600 dark:text-orange-400",
+            "Contract Delivery",
+            "text-orange-900 dark:text-orange-100",
+            "text-orange-600 dark:text-orange-400",
+            "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300"
+        ),
+        InsightCategory.QualityIssue => (
+            "bg-red-50 dark:bg-red-900/20 border-b border-red-100 dark:border-red-800",
+            "alert-triangle",
+            "text-red-600 dark:text-red-400",
+            "Quality Issues",
+            "text-red-900 dark:text-red-100",
+            "text-red-600 dark:text-red-400",
+            "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300"
+        ),
+        InsightCategory.PlantingSeason => (
+            "bg-green-50 dark:bg-green-900/20 border-b border-green-100 dark:border-green-800",
+            "calendar",
+            "text-green-600 dark:text-green-400",
+            "Planting Season",
+            "text-green-900 dark:text-green-100",
+            "text-green-600 dark:text-green-400",
+            "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300"
+        ),
+        InsightCategory.BusinessOpportunity => (
+            "bg-blue-50 dark:bg-blue-900/20 border-b border-blue-100 dark:border-blue-800",
+            "trending-up",
+            "text-blue-600 dark:text-blue-400",
+            "Business Opportunities",
+            "text-blue-900 dark:text-blue-100",
+            "text-blue-600 dark:text-blue-400",
+            "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
+        ),
+        InsightCategory.Compliance => (
+            "bg-amber-50 dark:bg-amber-900/20 border-b border-amber-100 dark:border-amber-800",
+            "file-text",
+            "text-amber-600 dark:text-amber-400",
+            "Compliance",
+            "text-amber-900 dark:text-amber-100",
+            "text-amber-600 dark:text-amber-400",
+            "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+        ),
+        _ => (
+            "bg-gray-50 dark:bg-gray-900/20 border-b border-gray-100 dark:border-gray-800",
+            "info",
+            "text-gray-600 dark:text-gray-400",
+            "Other",
+            "text-gray-900 dark:text-gray-100",
+            "text-gray-600 dark:text-gray-400",
+            "bg-gray-100 text-gray-800 dark:bg-gray-900/40 dark:text-gray-300"
+        )
+    };
+}

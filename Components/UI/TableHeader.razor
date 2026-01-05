@@ -1,0 +1,12 @@
+@namespace GrainOriginatorPortal.Components.UI
+
+<thead class="@ComputedClass">
+    @ChildContent
+</thead>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string ComputedClass => $"border-b {Class}".Trim();
+}

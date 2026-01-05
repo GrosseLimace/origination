@@ -1,0 +1,306 @@
+@namespace GrainOriginatorPortal.Components.Features.Customers
+@using GrainOriginatorPortal.Components.Features.Contracts
+@using GrainOriginatorPortal.Components.Features.Tickets
+@using GrainOriginatorPortal.Components.Features.Planting
+@using GrainOriginatorPortal.Components.Features.Storage
+@using GrainOriginatorPortal.Components.Features.Insights
+
+<div class="space-y-6">
+    <!-- Header Card -->
+    <Card>
+        <CardHeader>
+            <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                <div class="flex items-start gap-4">
+                    <Avatar Fallback="@GetInitials(Customer.Name)" Size="lg" />
+                    <div>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <CardTitle>@Customer.Name</CardTitle>
+                            @if (Customer.ESignEnabled)
+                            {
+                                <Badge Class="bg-green-500 text-white">
+                                    <Icon Name="check-circle" Size="12" Class="mr-1" />
+                                    eSign
+                                </Badge>
+                            }
+                        </div>
+                        <CardDescription>@Customer.Farm</CardDescription>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <Button Variant="outline" Size="sm" OnClick="() => showEditDialog = true">
+                        <Icon Name="pencil" Size="16" Class="mr-2" />
+                        Edit
+                    </Button>
+                    <Button Variant="outline" Size="sm" OnClick="HandlePrint">
+                        <Icon Name="printer" Size="16" Class="mr-2" />
+                        Print
+                    </Button>
+                </div>
+            </div>
+        </CardHeader>
+        <CardContent>
+            <!-- Farm Selector (if multiple farms) -->
+            @if (Farms.Count > 1)
+            {
+                <div class="mb-4">
+                    <Label>Select Farm</Label>
+                    <Select Value="@SelectedFarmId" ValueChanged="HandleFarmChange" Class="mt-1">
+                        @foreach (var farm in Farms)
+                        {
+                            <SelectOption Value="@farm.Id">@farm.Name (@farm.Acres acres)</SelectOption>
+                        }
+                    </Select>
+                </div>
+            }
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <!-- Contact Info -->
+                <div class="space-y-2">
+                    <h4 class="font-medium text-gray-900 dark:text-white text-sm">Contact</h4>
+                    <div class="space-y-1 text-sm">
+                        <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                            <Icon Name="map-pin" Size="14" />
+                            <span>@Customer.Location</span>
+                        </div>
+                        <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                            <Icon Name="phone" Size="14" />
+                            <span>@Customer.Phone</span>
+                        </div>
+                        <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                            <Icon Name="mail" Size="14" />
+                            <span class="truncate">@Customer.Email</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Farm Stats -->
+                <div class="space-y-2">
+                    <h4 class="font-medium text-gray-900 dark:text-white text-sm">Farm Details</h4>
+                    <div class="space-y-1">
+                        <Badge Variant="secondary">@Customer.TotalAcres.ToString("N0") total acres</Badge>
+                        @if (selectedFarm?.BinStorageCapacity > 0)
+                        {
+                            <div class="text-sm text-gray-600 dark:text-gray-400">
+                                @selectedFarm.BinStorageCapacity?.ToString("N0") bu storage
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <!-- Quick Stats -->
+                <div class="space-y-2">
+                    <h4 class="font-medium text-gray-900 dark:text-white text-sm">Activity</h4>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-2 text-center">
+                            <div class="text-xl font-bold text-green-600">@Contracts.Count</div>
+                            <div class="text-xs text-gray-500">Contracts</div>
+                        </div>
+                        <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-2 text-center">
+                            <div class="text-xl font-bold text-blue-600">@Tickets.Count</div>
+                            <div class="text-xs text-gray-500">Tickets</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Market Share -->
+                <div class="space-y-2">
+                    <h4 class="font-medium text-gray-900 dark:text-white text-sm">Market Share</h4>
+                    <div class="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
+                        <div class="text-2xl font-bold text-green-600 dark:text-green-400">
+                            @marketSharePercentage.ToString("F0")%
+                        </div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400">
+                            @totalContracted.ToString("N0") / @totalProjectedYield.ToString("N0") bu
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </CardContent>
+    </Card>
+
+    <!-- Activity Summary -->
+    <ActivitySummary Customer="@Customer"
+                     Contracts="@Contracts"
+                     Tickets="@Tickets"
+                     PlantingIntentions="@PlantingIntentions"
+                     Notes="@Notes"
+                     StoredGrain="@StoredGrain" />
+
+    <!-- Tabs Section -->
+    <Card>
+        <CardContent Class="p-0">
+            <div class="border-b border-gray-200 dark:border-gray-700">
+                <div class="flex overflow-x-auto">
+                    @foreach (var tab in tabs)
+                    {
+                        var isActive = activeTab == tab.Id;
+                        var tabClass = isActive
+                            ? "border-b-2 border-green-500 text-green-600 dark:text-green-400"
+                            : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300";
+
+                        <button type="button"
+                                class="px-4 py-3 text-sm font-medium whitespace-nowrap @tabClass"
+                                @onclick="() => activeTab = tab.Id">
+                            <Icon Name="@tab.Icon" Size="16" Class="inline-block mr-2" />
+                            @tab.Label
+                            @if (tab.Count > 0)
+                            {
+                                <Badge Variant="secondary" Class="ml-2">@tab.Count</Badge>
+                            }
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <div class="p-4">
+                @switch (activeTab)
+                {
+                    case "contracts":
+                        <ContractsTable Contracts="@filteredContracts" Tickets="@filteredTickets" />
+                        break;
+                    case "tickets":
+                        <TicketsTable Tickets="@filteredTickets" />
+                        break;
+                    case "planting":
+                        <PlantingIntentionsTable PlantingIntentions="@filteredPlantingIntentions"
+                                                  CustomerName="@Customer.Name"
+                                                  CustomerId="@Customer.Id"
+                                                  FarmId="@SelectedFarmId"
+                                                  OnAddIntention="HandleAddPlantingIntention"
+                                                  OnEditIntention="HandleEditPlantingIntention" />
+                        break;
+                    case "storage":
+                        <StoredGrainTable StoredGrain="@filteredStoredGrain" />
+                        break;
+                    case "notes":
+                        <CustomerNotes Notes="@Notes"
+                                       CustomerId="@Customer.Id"
+                                       FarmId="@SelectedFarmId"
+                                       OnAddNote="HandleAddNote"
+                                       OnTogglePin="HandleTogglePin" />
+                        break;
+                }
+            </div>
+        </CardContent>
+    </Card>
+
+    <!-- Edit Customer Dialog -->
+    <EditCustomerDialog IsOpen="@showEditDialog"
+                        IsOpenChanged="v => showEditDialog = v"
+                        Customer="@Customer"
+                        AllFarms="@AllFarms"
+                        OnSave="HandleSaveCustomer"
+                        OnCreateFarm="HandleCreateFarm" />
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Customer Customer { get; set; } = default!;
+    [Parameter] public List<Contract> Contracts { get; set; } = new();
+    [Parameter] public List<Ticket> Tickets { get; set; } = new();
+    [Parameter] public List<PlantingIntention> PlantingIntentions { get; set; } = new();
+    [Parameter] public List<Note> Notes { get; set; } = new();
+    [Parameter] public List<StoredGrain> StoredGrain { get; set; } = new();
+    [Parameter] public List<Farm> Farms { get; set; } = new();
+    [Parameter] public List<Farm> AllFarms { get; set; } = new();
+    [Parameter] public string? SelectedFarmId { get; set; }
+    [Parameter] public EventCallback<string> OnFarmChange { get; set; }
+    [Parameter] public EventCallback<(string CustomerId, string? FarmId, string Content)> OnAddNote { get; set; }
+    [Parameter] public EventCallback<string> OnTogglePin { get; set; }
+    [Parameter] public EventCallback<(string CustomerId, string Location, string Phone, string Email, List<string> FarmIds)> OnSaveCustomer { get; set; }
+    [Parameter] public EventCallback<(string Name, string Location, int Acres)> OnCreateFarm { get; set; }
+    [Parameter] public EventCallback<(string CustomerId, string? FarmId, string Crop, int Acres, string Variety, DateTime PlantingDate, int EstimatedYield)> OnAddPlantingIntention { get; set; }
+    [Parameter] public EventCallback<(string IntentionId, string Crop, int Acres, string Variety, DateTime PlantingDate, int EstimatedYield)> OnEditPlantingIntention { get; set; }
+
+    private string activeTab = "contracts";
+    private bool showEditDialog = false;
+    private Farm? selectedFarm => Farms.FirstOrDefault(f => f.Id == SelectedFarmId);
+
+    private record TabInfo(string Id, string Label, string Icon, int Count);
+
+    private List<TabInfo> tabs => new()
+    {
+        new("contracts", "Contracts", "file-text", filteredContracts.Count),
+        new("tickets", "Tickets", "truck", filteredTickets.Count),
+        new("planting", "Planting", "calendar", filteredPlantingIntentions.Count),
+        new("storage", "Storage", "warehouse", filteredStoredGrain.Count),
+        new("notes", "Notes", "message-square", Notes.Count)
+    };
+
+    // Filtered data based on selected farm
+    private List<Contract> filteredContracts => string.IsNullOrEmpty(SelectedFarmId)
+        ? Contracts
+        : Contracts.Where(c => c.FarmId == SelectedFarmId).ToList();
+
+    private List<Ticket> filteredTickets => string.IsNullOrEmpty(SelectedFarmId)
+        ? Tickets
+        : Tickets.Where(t => t.FarmId == SelectedFarmId).ToList();
+
+    private List<PlantingIntention> filteredPlantingIntentions => string.IsNullOrEmpty(SelectedFarmId)
+        ? PlantingIntentions
+        : PlantingIntentions.Where(p => p.FarmId == SelectedFarmId).ToList();
+
+    private List<StoredGrain> filteredStoredGrain => string.IsNullOrEmpty(SelectedFarmId)
+        ? StoredGrain
+        : StoredGrain.Where(s => s.FarmId == SelectedFarmId).ToList();
+
+    // Calculations
+    private int totalProjectedYield => PlantingIntentions.Sum(p => p.Acres * p.EstimatedYield);
+
+    private int totalContracted => Contracts
+        .Where(c => c.Status == ContractStatus.Active || c.Status == ContractStatus.Pending)
+        .Sum(c => c.Quantity);
+
+    private double marketSharePercentage => totalProjectedYield > 0
+        ? (double)totalContracted / totalProjectedYield * 100
+        : 0;
+
+    private string GetInitials(string name)
+    {
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2)
+            return $"{parts[0][0]}{parts[1][0]}".ToUpper();
+        if (parts.Length == 1 && parts[0].Length >= 2)
+            return parts[0].Substring(0, 2).ToUpper();
+        return "??";
+    }
+
+    private async Task HandleFarmChange(string farmId)
+    {
+        await OnFarmChange.InvokeAsync(farmId);
+    }
+
+    private async Task HandleAddNote((string CustomerId, string? FarmId, string Content) noteData)
+    {
+        await OnAddNote.InvokeAsync(noteData);
+    }
+
+    private async Task HandleTogglePin(string noteId)
+    {
+        await OnTogglePin.InvokeAsync(noteId);
+    }
+
+    private async Task HandleSaveCustomer((string CustomerId, string Location, string Phone, string Email, List<string> FarmIds) data)
+    {
+        await OnSaveCustomer.InvokeAsync(data);
+    }
+
+    private async Task HandleCreateFarm((string Name, string Location, int Acres) data)
+    {
+        await OnCreateFarm.InvokeAsync(data);
+    }
+
+    private async Task HandleAddPlantingIntention((string Crop, int Acres, string Variety, DateTime PlantingDate, int EstimatedYield) data)
+    {
+        await OnAddPlantingIntention.InvokeAsync((Customer.Id, SelectedFarmId, data.Crop, data.Acres, data.Variety, data.PlantingDate, data.EstimatedYield));
+    }
+
+    private async Task HandleEditPlantingIntention((string IntentionId, string Crop, int Acres, string Variety, DateTime PlantingDate, int EstimatedYield) data)
+    {
+        await OnEditPlantingIntention.InvokeAsync(data);
+    }
+
+    private void HandlePrint()
+    {
+        // TODO: Implement print functionality via JS interop
+    }
+}

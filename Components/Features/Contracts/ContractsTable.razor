@@ -1,0 +1,337 @@
+@namespace GrainOriginatorPortal.Components.Features.Contracts
+
+<div class="space-y-4">
+    @if (!Contracts.Any())
+    {
+        <div class="text-center py-8 text-gray-500 dark:text-gray-400">
+            <Icon Name="file-text" Size="48" Class="mx-auto mb-4 opacity-50" />
+            <p>No contracts found for this customer</p>
+        </div>
+    }
+    else
+    {
+        <!-- Mobile Card View -->
+        <div class="md:hidden space-y-3">
+            @foreach (var contract in sortedContracts)
+            {
+                var isExpanded = expandedRows.Contains(contract.Id);
+                var statusColor = GetStatusColor(contract.Status);
+                var deliveryProgress = CalculateDeliveryProgress(contract);
+
+                <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                    <div class="p-4 bg-white dark:bg-gray-800">
+                        <div class="flex items-start justify-between mb-3">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-medium text-gray-900 dark:text-white">@contract.Crop</span>
+                                    @if (!contract.Signed)
+                                    {
+                                        <Badge Variant="destructive" Class="text-xs">Unsigned</Badge>
+                                    }
+                                </div>
+                                <div class="text-sm text-gray-500 dark:text-gray-400">
+                                    Contract @contract.ContractNumber
+                                </div>
+                            </div>
+                            <Badge Class="@statusColor">@contract.Status</Badge>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3 mb-3">
+                            <div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400">Quantity</div>
+                                <div class="text-sm text-gray-900 dark:text-white">
+                                    @contract.Quantity.ToString("N0") @contract.Unit
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400">Price</div>
+                                <div class="text-sm text-gray-900 dark:text-white">
+                                    $@contract.Price.ToString("F2")/@contract.Unit.TrimEnd('s')
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400">Total Value</div>
+                                <div class="text-sm font-medium text-green-600 dark:text-green-400">
+                                    $@((contract.Quantity * contract.Price).ToString("N2"))
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400">Delivery Window</div>
+                                <div class="text-sm text-gray-900 dark:text-white">
+                                    @contract.DeliveryStart.ToString("MMM d") - @contract.DeliveryEnd.ToString("MMM d")
+                                </div>
+                            </div>
+                        </div>
+
+                        @if (contract.Status == ContractStatus.Active)
+                        {
+                            <div class="mb-3">
+                                <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+                                    <span>Delivery Progress</span>
+                                    <span>@deliveryProgress.Percentage.ToString("F0")%</span>
+                                </div>
+                                <Progress Value="@deliveryProgress.Percentage" Max="100" />
+                            </div>
+                        }
+
+                        <Button Variant="ghost" Size="sm" OnClick="() => ToggleRow(contract.Id)" Class="w-full">
+                            @if (isExpanded)
+                            {
+                                <Icon Name="chevron-up" Size="16" Class="mr-2" />
+                                <span>Hide Details</span>
+                            }
+                            else
+                            {
+                                <Icon Name="chevron-down" Size="16" Class="mr-2" />
+                                <span>Show Details</span>
+                            }
+                        </Button>
+                    </div>
+
+                    @if (isExpanded)
+                    {
+                        <div class="border-t border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-900/50">
+                            <div class="space-y-3">
+                                <div>
+                                    <div class="text-xs text-gray-500 dark:text-gray-400">Delivery Period</div>
+                                    <div class="text-sm text-gray-900 dark:text-white">
+                                        @contract.DeliveryStart.ToString("MMMM d, yyyy") - @contract.DeliveryEnd.ToString("MMMM d, yyyy")
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="text-xs text-gray-500 dark:text-gray-400">Days Remaining</div>
+                                    <div class="text-sm text-gray-900 dark:text-white">
+                                        @deliveryProgress.DaysRemaining days
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <!-- Desktop Table View -->
+        <div class="hidden md:block">
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead Class="w-12"></TableHead>
+                        <TableHead Sortable="true" OnClick="() => HandleSort(SortColumn.ContractNumber)">
+                            Contract
+                            @SortIconFragment(SortColumn.ContractNumber)
+                        </TableHead>
+                        <TableHead Sortable="true" OnClick="() => HandleSort(SortColumn.Crop)">
+                            Crop
+                            @SortIconFragment(SortColumn.Crop)
+                        </TableHead>
+                        <TableHead Sortable="true" OnClick="() => HandleSort(SortColumn.Quantity)">
+                            Quantity
+                            @SortIconFragment(SortColumn.Quantity)
+                        </TableHead>
+                        <TableHead Sortable="true" OnClick="() => HandleSort(SortColumn.Price)">
+                            Price
+                            @SortIconFragment(SortColumn.Price)
+                        </TableHead>
+                        <TableHead Sortable="true" OnClick="() => HandleSort(SortColumn.DeliveryStart)">
+                            Delivery Window
+                            @SortIconFragment(SortColumn.DeliveryStart)
+                        </TableHead>
+                        <TableHead Sortable="true" OnClick="() => HandleSort(SortColumn.Status)">
+                            Status
+                            @SortIconFragment(SortColumn.Status)
+                        </TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    @foreach (var contract in sortedContracts)
+                    {
+                        var isExpanded = expandedRows.Contains(contract.Id);
+                        var statusColor = GetStatusColor(contract.Status);
+                        var deliveryProgress = CalculateDeliveryProgress(contract);
+
+                        <TableRow Class="@((!contract.Signed) ? "bg-red-50 dark:bg-red-900/10" : "")">
+                            <TableCell>
+                                <Button Variant="ghost" Size="icon" OnClick="() => ToggleRow(contract.Id)" Class="h-8 w-8">
+                                    @if (isExpanded)
+                                    {
+                                        <Icon Name="chevron-up" Size="16" />
+                                    }
+                                    else
+                                    {
+                                        <Icon Name="chevron-down" Size="16" />
+                                    }
+                                </Button>
+                            </TableCell>
+                            <TableCell>
+                                <div class="flex items-center gap-2">
+                                    <span>@contract.ContractNumber</span>
+                                    @if (!contract.Signed)
+                                    {
+                                        <Badge Variant="destructive" Class="text-xs">Unsigned</Badge>
+                                    }
+                                </div>
+                            </TableCell>
+                            <TableCell>@contract.Crop</TableCell>
+                            <TableCell>@contract.Quantity.ToString("N0") @contract.Unit</TableCell>
+                            <TableCell>$@contract.Price.ToString("F2")</TableCell>
+                            <TableCell>
+                                @contract.DeliveryStart.ToString("MMM d") - @contract.DeliveryEnd.ToString("MMM d, yyyy")
+                            </TableCell>
+                            <TableCell>
+                                <Badge Class="@statusColor">@contract.Status</Badge>
+                            </TableCell>
+                        </TableRow>
+
+                        @if (isExpanded)
+                        {
+                            <TableRow>
+                                <TableCell ColSpan="7" Class="bg-gray-50 dark:bg-gray-900/50">
+                                    <div class="py-4 px-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                        <div>
+                                            <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Value</p>
+                                            <p class="text-lg font-semibold text-green-600 dark:text-green-400">
+                                                $@((contract.Quantity * contract.Price).ToString("N2"))
+                                            </p>
+                                        </div>
+                                        <div>
+                                            <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Delivery Progress</p>
+                                            <div class="flex items-center gap-2">
+                                                <Progress Value="@deliveryProgress.Percentage" Max="100" Class="flex-1" />
+                                                <span class="text-sm">@deliveryProgress.Percentage.ToString("F0")%</span>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Days Remaining</p>
+                                            <p class="text-gray-900 dark:text-white">@deliveryProgress.DaysRemaining days</p>
+                                        </div>
+                                        <div>
+                                            <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Signed Status</p>
+                                            <p class="text-gray-900 dark:text-white">
+                                                @if (contract.Signed)
+                                                {
+                                                    <span class="text-green-600 dark:text-green-400">✓ Signed</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-red-600 dark:text-red-400">✗ Awaiting Signature</span>
+                                                }
+                                            </p>
+                                        </div>
+                                    </div>
+                                </TableCell>
+                            </TableRow>
+                        }
+                    }
+                </TableBody>
+            </Table>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public List<Contract> Contracts { get; set; } = new();
+    [Parameter] public List<Ticket> Tickets { get; set; } = new();
+
+    private HashSet<string> expandedRows = new();
+    private SortColumn? currentSortColumn;
+    private SortDirection currentSortDirection = SortDirection.None;
+
+    private enum SortColumn { ContractNumber, Crop, Quantity, Price, DeliveryStart, Status }
+    private enum SortDirection { None, Ascending, Descending }
+
+    private IEnumerable<Contract> sortedContracts
+    {
+        get
+        {
+            if (currentSortColumn == null || currentSortDirection == SortDirection.None)
+                return Contracts;
+
+            var sorted = currentSortColumn switch
+            {
+                SortColumn.ContractNumber => Contracts.OrderBy(c => c.ContractNumber),
+                SortColumn.Crop => Contracts.OrderBy(c => c.Crop),
+                SortColumn.Quantity => Contracts.OrderBy(c => c.Quantity),
+                SortColumn.Price => Contracts.OrderBy(c => c.Price),
+                SortColumn.DeliveryStart => Contracts.OrderBy(c => c.DeliveryStart),
+                SortColumn.Status => Contracts.OrderBy(c => c.Status),
+                _ => Contracts.AsEnumerable()
+            };
+
+            return currentSortDirection == SortDirection.Descending ? sorted.Reverse() : sorted;
+        }
+    }
+
+    private void HandleSort(SortColumn column)
+    {
+        if (currentSortColumn == column)
+        {
+            currentSortDirection = currentSortDirection switch
+            {
+                SortDirection.None => SortDirection.Ascending,
+                SortDirection.Ascending => SortDirection.Descending,
+                SortDirection.Descending => SortDirection.None
+            };
+
+            if (currentSortDirection == SortDirection.None)
+                currentSortColumn = null;
+        }
+        else
+        {
+            currentSortColumn = column;
+            currentSortDirection = SortDirection.Ascending;
+        }
+    }
+
+    private void ToggleRow(string id)
+    {
+        if (!expandedRows.Remove(id))
+            expandedRows.Add(id);
+    }
+
+    private string GetStatusColor(ContractStatus status) => status switch
+    {
+        ContractStatus.Active => "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+        ContractStatus.Fulfilled => "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+        ContractStatus.Pending => "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
+        _ => "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400"
+    };
+
+    private (double Percentage, int DaysRemaining) CalculateDeliveryProgress(Contract contract)
+    {
+        var now = DateTime.Now;
+        var totalDays = (contract.DeliveryEnd - contract.DeliveryStart).TotalDays;
+        var elapsedDays = (now - contract.DeliveryStart).TotalDays;
+        var daysRemaining = Math.Max(0, (int)(contract.DeliveryEnd - now).TotalDays);
+
+        if (now < contract.DeliveryStart)
+            return (0, daysRemaining);
+
+        if (now > contract.DeliveryEnd)
+            return (100, 0);
+
+        var percentage = Math.Min(100, Math.Max(0, (elapsedDays / totalDays) * 100));
+        return (percentage, daysRemaining);
+    }
+
+    private RenderFragment SortIconFragment(SortColumn column)
+    {
+        return builder =>
+        {
+            var iconName = "arrow-up-down";
+            var iconClass = "size-3 ml-1 inline-block opacity-40";
+
+            if (currentSortColumn == column)
+            {
+                iconClass = "size-3 ml-1 inline-block";
+                iconName = currentSortDirection == SortDirection.Ascending ? "arrow-up" : "arrow-down";
+            }
+
+            builder.OpenComponent<Icon>(0);
+            builder.AddAttribute(1, "Name", iconName);
+            builder.AddAttribute(2, "Size", 12);
+            builder.AddAttribute(3, "Class", iconClass);
+            builder.CloseComponent();
+        };
+    }
+}

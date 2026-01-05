@@ -1,0 +1,12 @@
+@namespace GrainOriginatorPortal.Components.UI
+
+<div class="@ComputedClass">
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string ComputedClass => $"flex items-center p-6 pt-0 {Class}".Trim();
+}

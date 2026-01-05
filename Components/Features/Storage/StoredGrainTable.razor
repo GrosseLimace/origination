@@ -1,0 +1,211 @@
+@namespace GrainOriginatorPortal.Components.Features.Storage
+
+<div class="space-y-4">
+    @if (!StoredGrain.Any())
+    {
+        <div class="text-center py-8 text-gray-500 dark:text-gray-400">
+            <Icon Name="warehouse" Size="48" Class="mx-auto mb-4 opacity-50" />
+            <p>No grain currently in storage for this customer</p>
+        </div>
+    }
+    else
+    {
+        <!-- Total Storage Cost Banner -->
+        <Alert Variant="info">
+            <div class="flex items-center justify-between">
+                <div>
+                    <AlertTitle>Total Accumulated Storage Costs</AlertTitle>
+                    <AlertDescription>
+                        Across @StoredGrain.Count storage positions
+                    </AlertDescription>
+                </div>
+                <div class="text-2xl font-bold">
+                    $@totalStorageCost.ToString("N2")
+                </div>
+            </div>
+        </Alert>
+
+        <!-- Mobile Card View -->
+        <div class="md:hidden space-y-3">
+            @foreach (var grain in sortedGrain)
+            {
+                var costs = CalculateStorageCost(grain);
+
+                <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800">
+                    <div class="flex items-start justify-between mb-3">
+                        <div class="flex-1">
+                            <div class="font-medium text-gray-900 dark:text-white">@grain.Crop</div>
+                            <div class="text-sm text-gray-500 dark:text-gray-400">@grain.Bin</div>
+                        </div>
+                        <div class="text-sm font-medium text-red-600 dark:text-red-400">
+                            $@costs.TotalCost.ToString("N2")
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <div class="text-xs text-gray-500 dark:text-gray-400">Quantity</div>
+                            <div class="text-sm text-gray-900 dark:text-white">
+                                @grain.Quantity.ToString("N0") bu
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500 dark:text-gray-400">Storage Rate</div>
+                            <div class="text-sm text-gray-900 dark:text-white">
+                                $@grain.StorageRate.ToString("F3")/bu/mo
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500 dark:text-gray-400">Start Date</div>
+                            <div class="text-sm text-gray-900 dark:text-white">
+                                @grain.StorageStartDate.ToString("MMM d, yyyy")
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500 dark:text-gray-400">Time in Storage</div>
+                            <div class="text-sm text-gray-900 dark:text-white">
+                                @costs.MonthsStored.ToString("F1") mo
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- Desktop Table View -->
+        <div class="hidden md:block">
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead Sortable="true" OnClick="() => HandleSort(SortColumn.Crop)">
+                            Crop
+                            @SortIconFragment(SortColumn.Crop)
+                        </TableHead>
+                        <TableHead Sortable="true" OnClick="() => HandleSort(SortColumn.Quantity)">
+                            Quantity (bu)
+                            @SortIconFragment(SortColumn.Quantity)
+                        </TableHead>
+                        <TableHead Sortable="true" OnClick="() => HandleSort(SortColumn.Bin)">
+                            Bin
+                            @SortIconFragment(SortColumn.Bin)
+                        </TableHead>
+                        <TableHead Sortable="true" OnClick="() => HandleSort(SortColumn.StorageRate)">
+                            Storage Rate
+                            @SortIconFragment(SortColumn.StorageRate)
+                        </TableHead>
+                        <TableHead Sortable="true" OnClick="() => HandleSort(SortColumn.StartDate)">
+                            Start Date
+                            @SortIconFragment(SortColumn.StartDate)
+                        </TableHead>
+                        <TableHead Sortable="true" OnClick="() => HandleSort(SortColumn.AccumulatedCost)">
+                            Accumulated Cost
+                            @SortIconFragment(SortColumn.AccumulatedCost)
+                        </TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    @foreach (var grain in sortedGrain)
+                    {
+                        var costs = CalculateStorageCost(grain);
+
+                        <TableRow>
+                            <TableCell>@grain.Crop</TableCell>
+                            <TableCell>@grain.Quantity.ToString("N0")</TableCell>
+                            <TableCell>@grain.Bin</TableCell>
+                            <TableCell>$@grain.StorageRate.ToString("F3")/bu/mo</TableCell>
+                            <TableCell>@grain.StorageStartDate.ToString("MMM d, yyyy")</TableCell>
+                            <TableCell Class="text-red-600 dark:text-red-400 font-medium">
+                                $@costs.TotalCost.ToString("N2")
+                            </TableCell>
+                        </TableRow>
+                    }
+                </TableBody>
+            </Table>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public List<StoredGrain> StoredGrain { get; set; } = new();
+
+    private SortColumn? currentSortColumn;
+    private SortDirection currentSortDirection = SortDirection.None;
+
+    private enum SortColumn { Crop, Quantity, Bin, StorageRate, StartDate, AccumulatedCost }
+    private enum SortDirection { None, Ascending, Descending }
+
+    private decimal totalStorageCost => StoredGrain.Sum(g => CalculateStorageCost(g).TotalCost);
+
+    private IEnumerable<StoredGrain> sortedGrain
+    {
+        get
+        {
+            if (currentSortColumn == null || currentSortDirection == SortDirection.None)
+                return StoredGrain;
+
+            var sorted = currentSortColumn switch
+            {
+                SortColumn.Crop => StoredGrain.OrderBy(g => g.Crop),
+                SortColumn.Quantity => StoredGrain.OrderBy(g => g.Quantity),
+                SortColumn.Bin => StoredGrain.OrderBy(g => g.Bin),
+                SortColumn.StorageRate => StoredGrain.OrderBy(g => g.StorageRate),
+                SortColumn.StartDate => StoredGrain.OrderBy(g => g.StorageStartDate),
+                SortColumn.AccumulatedCost => StoredGrain.OrderBy(g => CalculateStorageCost(g).TotalCost),
+                _ => StoredGrain.AsEnumerable()
+            };
+
+            return currentSortDirection == SortDirection.Descending ? sorted.Reverse() : sorted;
+        }
+    }
+
+    private void HandleSort(SortColumn column)
+    {
+        if (currentSortColumn == column)
+        {
+            currentSortDirection = currentSortDirection switch
+            {
+                SortDirection.None => SortDirection.Ascending,
+                SortDirection.Ascending => SortDirection.Descending,
+                SortDirection.Descending => SortDirection.None
+            };
+
+            if (currentSortDirection == SortDirection.None)
+                currentSortColumn = null;
+        }
+        else
+        {
+            currentSortColumn = column;
+            currentSortDirection = SortDirection.Ascending;
+        }
+    }
+
+    private (decimal TotalCost, double MonthsStored) CalculateStorageCost(StoredGrain grain)
+    {
+        var monthsStored = (DateTime.Now.Year - grain.StorageStartDate.Year) * 12
+                         + (DateTime.Now.Month - grain.StorageStartDate.Month)
+                         + (DateTime.Now.Day / 30.0);
+        var totalCost = (decimal)monthsStored * grain.StorageRate * grain.Quantity;
+        return (totalCost, monthsStored);
+    }
+
+    private RenderFragment SortIconFragment(SortColumn column)
+    {
+        return builder =>
+        {
+            var iconName = "arrow-up-down";
+            var iconClass = "size-3 ml-1 inline-block opacity-40";
+
+            if (currentSortColumn == column)
+            {
+                iconClass = "size-3 ml-1 inline-block";
+                iconName = currentSortDirection == SortDirection.Ascending ? "arrow-up" : "arrow-down";
+            }
+
+            builder.OpenComponent<Icon>(0);
+            builder.AddAttribute(1, "Name", iconName);
+            builder.AddAttribute(2, "Size", 12);
+            builder.AddAttribute(3, "Class", iconClass);
+            builder.CloseComponent();
+        };
+    }
+}

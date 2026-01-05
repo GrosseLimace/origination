@@ -1,0 +1,23 @@
+@namespace GrainOriginatorPortal.Components.UI
+
+<div class="@ComputedClass" role="alert">
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public string Variant { get; set; } = "default";
+    [Parameter] public string? Class { get; set; }
+
+    private string ComputedClass => $"relative w-full rounded-lg border p-4 {VariantClass} {Class}".Trim();
+
+    private string VariantClass => Variant switch
+    {
+        "default" => "bg-background text-foreground",
+        "info" => "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300",
+        "success" => "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-300",
+        "warning" => "bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-300",
+        "destructive" => "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-800 dark:text-red-300",
+        _ => "bg-background text-foreground"
+    };
+}

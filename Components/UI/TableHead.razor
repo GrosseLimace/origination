@@ -1,0 +1,14 @@
+@namespace GrainOriginatorPortal.Components.UI
+
+<th class="@ComputedClass" @onclick="OnClick">
+    @ChildContent
+</th>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public bool Sortable { get; set; }
+    [Parameter] public EventCallback<MouseEventArgs> OnClick { get; set; }
+
+    private string ComputedClass => $"h-10 px-2 text-left align-middle font-medium text-muted-foreground whitespace-nowrap {(Sortable ? "cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800" : "")} {Class}".Trim();
+}

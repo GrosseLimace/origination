@@ -1,0 +1,126 @@
+@namespace GrainOriginatorPortal.Components.Features.Planting
+
+<Dialog IsOpen="@IsOpen" IsOpenChanged="HandleClose">
+    <DialogHeader>
+        <DialogTitle>Add Planting Intention</DialogTitle>
+        <DialogDescription>Record a new planting intention for @CustomerName</DialogDescription>
+    </DialogHeader>
+
+    <div class="space-y-4">
+        <div class="space-y-2">
+            <Label>Crop</Label>
+            <Select Value="@crop" ValueChanged="v => crop = v" Placeholder="Select a crop">
+                <SelectOption Value="Corn">Corn</SelectOption>
+                <SelectOption Value="Soybeans">Soybeans</SelectOption>
+                <SelectOption Value="Wheat">Wheat</SelectOption>
+                <SelectOption Value="Oats">Oats</SelectOption>
+            </Select>
+        </div>
+
+        <div class="space-y-2">
+            <Label>Acres</Label>
+            <Input Type="number"
+                   Value="@acres"
+                   ValueChanged="v => acres = v"
+                   Placeholder="Enter acres" />
+        </div>
+
+        <div class="space-y-2">
+            <Label>Variety</Label>
+            <Input Type="text"
+                   Value="@variety"
+                   ValueChanged="v => variety = v"
+                   Placeholder="e.g., Pioneer P1197" />
+        </div>
+
+        <div class="space-y-2">
+            <Label>Planting Date</Label>
+            <Input Type="date"
+                   Value="@plantingDate"
+                   ValueChanged="v => plantingDate = v" />
+        </div>
+
+        <div class="space-y-2">
+            <Label>Estimated Yield (bu/acre)</Label>
+            <Input Type="number"
+                   Value="@estimatedYield"
+                   ValueChanged="v => estimatedYield = v"
+                   Placeholder="Enter estimated yield per acre" />
+        </div>
+
+        <DialogFooter>
+            <Button Variant="outline" OnClick="() => HandleClose(false)">Cancel</Button>
+            <Button OnClick="HandleSubmit" Disabled="@(!IsValid)">
+                Add Intention
+            </Button>
+        </DialogFooter>
+    </div>
+</Dialog>
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public string CustomerName { get; set; } = "";
+    [Parameter] public string CustomerId { get; set; } = "";
+    [Parameter] public string? FarmId { get; set; }
+    [Parameter] public EventCallback<(string Crop, int Acres, string Variety, DateTime PlantingDate, int EstimatedYield)> OnAdd { get; set; }
+
+    private string crop = "";
+    private string acres = "";
+    private string variety = "";
+    private string plantingDate = "";
+    private string estimatedYield = "";
+
+    private bool IsValid => !string.IsNullOrEmpty(crop)
+                         && int.TryParse(acres, out _)
+                         && !string.IsNullOrEmpty(variety)
+                         && DateTime.TryParse(plantingDate, out _)
+                         && int.TryParse(estimatedYield, out _);
+
+    protected override void OnParametersSet()
+    {
+        if (IsOpen)
+        {
+            // Set default planting date to next spring
+            var now = DateTime.Now;
+            var defaultDate = now.Month >= 6
+                ? new DateTime(now.Year + 1, 4, 15)
+                : new DateTime(now.Year, 4, 15);
+            plantingDate = defaultDate.ToString("yyyy-MM-dd");
+        }
+    }
+
+    private async Task HandleClose(bool isOpen)
+    {
+        if (!isOpen)
+        {
+            ResetForm();
+        }
+        await IsOpenChanged.InvokeAsync(isOpen);
+    }
+
+    private async Task HandleSubmit()
+    {
+        if (IsValid)
+        {
+            await OnAdd.InvokeAsync((
+                crop,
+                int.Parse(acres),
+                variety,
+                DateTime.Parse(plantingDate),
+                int.Parse(estimatedYield)
+            ));
+            ResetForm();
+            await HandleClose(false);
+        }
+    }
+
+    private void ResetForm()
+    {
+        crop = "";
+        acres = "";
+        variety = "";
+        plantingDate = "";
+        estimatedYield = "";
+    }
+}

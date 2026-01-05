@@ -1,0 +1,27 @@
+@namespace GrainOriginatorPortal.Components.UI
+
+<button type="button"
+        role="tab"
+        class="@ComputedClass"
+        aria-selected="@IsActive"
+        @onclick="HandleClick">
+    @ChildContent
+</button>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public bool IsActive { get; set; }
+    [Parameter] public EventCallback<string> OnSelect { get; set; }
+
+    private string ComputedClass => $"inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all focus:outline-none disabled:pointer-events-none disabled:opacity-50 {(IsActive ? "bg-background text-foreground shadow-sm" : "")} {Class}".Trim();
+
+    private async Task HandleClick()
+    {
+        if (Value != null)
+        {
+            await OnSelect.InvokeAsync(Value);
+        }
+    }
+}

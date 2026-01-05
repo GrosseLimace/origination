@@ -1,0 +1,12 @@
+@namespace GrainOriginatorPortal.Components.UI
+
+<h5 class="@ComputedClass">
+    @ChildContent
+</h5>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string ComputedClass => $"mb-1 font-medium leading-none tracking-tight {Class}".Trim();
+}

@@ -1,0 +1,53 @@
+@namespace GrainOriginatorPortal.Components.UI
+
+@if (IsOpen)
+{
+    <div class="fixed inset-0 z-50 flex items-center justify-center">
+        <!-- Backdrop -->
+        <div class="fixed inset-0 bg-black/50" @onclick="HandleBackdropClick"></div>
+
+        <!-- Dialog Content -->
+        <div class="@ContentClass" role="dialog" aria-modal="true">
+            @ChildContent
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public string Size { get; set; } = "default";
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public bool CloseOnBackdropClick { get; set; } = true;
+
+    private string ContentClass => $"relative z-50 w-full max-h-[90vh] overflow-y-auto rounded-lg border bg-background p-6 shadow-lg {SizeClass} {Class}".Trim();
+
+    private string SizeClass => Size switch
+    {
+        "sm" => "max-w-sm",
+        "default" => "max-w-lg",
+        "lg" => "max-w-2xl",
+        "xl" => "max-w-4xl",
+        "full" => "max-w-[95vw]",
+        _ => "max-w-lg"
+    };
+
+    private async Task HandleBackdropClick()
+    {
+        if (CloseOnBackdropClick)
+        {
+            await Close();
+        }
+    }
+
+    public async Task Close()
+    {
+        await IsOpenChanged.InvokeAsync(false);
+    }
+
+    public async Task Open()
+    {
+        await IsOpenChanged.InvokeAsync(true);
+    }
+}
