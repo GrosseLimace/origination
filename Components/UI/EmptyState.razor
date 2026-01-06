@@ -1,0 +1,29 @@
+@namespace GrainOriginatorPortal.Components.UI
+
+<div class="@ContainerClass">
+    <div class="@IconContainerClass">
+        <Icon Name="@IconName" Size="48" Class="text-gray-300 dark:text-gray-600" />
+    </div>
+    <h3 class="mt-4 text-lg font-medium text-gray-900 dark:text-white">@Title</h3>
+    @if (!string.IsNullOrEmpty(Description))
+    {
+        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400 max-w-sm">@Description</p>
+    }
+    @if (ActionContent != null)
+    {
+        <div class="mt-6">
+            @ActionContent
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string IconName { get; set; } = "inbox";
+    [Parameter] public string Title { get; set; } = "No data";
+    [Parameter] public string? Description { get; set; }
+    [Parameter] public RenderFragment? ActionContent { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string ContainerClass => $"flex flex-col items-center justify-center text-center py-12 px-4 {Class}".Trim();
+    private string IconContainerClass => "p-4 bg-gray-100 dark:bg-gray-800 rounded-full";
+}

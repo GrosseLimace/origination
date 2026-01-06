@@ -130,8 +130,8 @@
                                     @foreach (var crop in availableCrops)
                                     {
                                         var isSelected = filterState.Crops.Contains(crop);
-                                        <Badge Class="@(isSelected ? "bg-green-500 text-white cursor-pointer" : "bg-gray-200 dark:bg-gray-700 cursor-pointer")"
-                                               @onclick="() => ToggleCrop(crop)">
+                                        <Badge Class="@(isSelected ? "bg-green-500 text-white" : "bg-gray-200 dark:bg-gray-700")"
+                                               OnClick="() => ToggleCrop(crop)">
                                             @crop
                                         </Badge>
                                     }
@@ -145,8 +145,8 @@
                                     @foreach (var state in availableStates)
                                     {
                                         var isSelected = filterState.Locations.Contains(state);
-                                        <Badge Class="@(isSelected ? "bg-blue-500 text-white cursor-pointer" : "bg-gray-200 dark:bg-gray-700 cursor-pointer")"
-                                               @onclick="() => ToggleState(state)">
+                                        <Badge Class="@(isSelected ? "bg-blue-500 text-white" : "bg-gray-200 dark:bg-gray-700")"
+                                               OnClick="() => ToggleState(state)">
                                             @state
                                         </Badge>
                                     }

@@ -9,7 +9,16 @@
       "Bash(dotnet run:*)",
       "Bash(taskkill //F //PID 27084)",
       "Bash(git init:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(dotnet add package:*)",
+      "Bash(taskkill //F //PID 6660)",
+      "Bash(timeout:*)",
+      "Bash(taskkill:*)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)",
+      "Bash(cmd /c \"taskkill /F /IM GrainOriginatorPortal.exe\")",
+      "Bash(powershell -Command \"Get-Process GrainOriginatorPortal -ErrorAction SilentlyContinue | Stop-Process -Force\")",
+      "Bash(powershell:*)"
     ]
   }
 }

@@ -1,0 +1,11 @@
+@namespace GrainOriginatorPortal.Components.UI
+
+<div class="hidden md:flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">
+    <kbd class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-gray-500 dark:text-gray-400 font-mono">@Key</kbd>
+    <span>@Description</span>
+</div>
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    [Parameter] public string Description { get; set; } = "";
+}

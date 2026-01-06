@@ -226,6 +226,10 @@ p {
 .px-6 { padding-left: 1.5rem; padding-right: 1.5rem; }
 .px-8 { padding-left: 2rem; padding-right: 2rem; }
 
+.pl-10 { padding-left: 2.5rem; }
+.pl-11 { padding-left: 2.75rem; }
+.pr-10 { padding-right: 2.5rem; }
+
 .py-1 { padding-top: 0.25rem; padding-bottom: 0.25rem; }
 .py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
 .py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
@@ -448,6 +452,8 @@ p {
 .bottom-0 { bottom: 0; }
 .left-0 { left: 0; }
 .left-3 { left: 0.75rem; }
+.left-3\.5 { left: 0.875rem; }
+.right-3 { right: 0.75rem; }
 .top-1\/2 { top: 50%; }
 .-translate-y-1\/2 { transform: translateY(-50%); }
 
@@ -734,3 +740,236 @@ html.dark {
 body {
     transition: background-color 0.2s ease, color 0.2s ease;
 }
+
+/* ============================================
+   TOAST ANIMATIONS
+   ============================================ */
+@keyframes slide-up {
+    from {
+        transform: translateY(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.animate-slide-up {
+    animation: slide-up 0.3s ease-out;
+}
+
+@keyframes slide-down {
+    from {
+        transform: translateY(-100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.animate-slide-down {
+    animation: slide-down 0.3s ease-out;
+}
+
+@keyframes slide-right {
+    from {
+        transform: translateX(-100%);
+    }
+    to {
+        transform: translateX(0);
+    }
+}
+
+.animate-slide-right {
+    animation: slide-right 0.3s ease-out;
+}
+
+/* Additional positioning utilities for toasts/modals */
+.bottom-4 { bottom: 1rem; }
+.right-4 { right: 1rem; }
+.left-0 { left: 0; }
+.inset-y-0 { top: 0; bottom: 0; }
+.w-64 { width: 16rem; }
+.max-w-sm { max-width: 24rem; }
+.pointer-events-auto { pointer-events: auto; }
+.z-40 { z-index: 40; }
+.shadow-xl { box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1); }
+
+/* Dark mode additions for new colors */
+.dark .dark\:bg-green-900\/30 { background-color: rgb(20 83 45 / 0.3); }
+.dark .dark\:bg-blue-900\/30 { background-color: rgb(30 58 138 / 0.3); }
+.dark .dark\:bg-purple-900\/30 { background-color: rgb(88 28 135 / 0.3); }
+.dark .dark\:hover\:text-gray-200:hover { color: #e5e7eb; }
+.dark .dark\:hover\:bg-gray-700:hover { background-color: #374151; }
+
+/* Purple color utilities */
+.bg-purple-100 { background-color: #f3e8ff; }
+.text-purple-600 { color: #9333ea; }
+.dark .dark\:text-purple-400 { color: #c084fc; }
+
+/* Red color utilities */
+.bg-red-100 { background-color: #fee2e2; }
+.dark .dark\:bg-red-900\/30 { background-color: rgb(127 29 29 / 0.3); }
+
+/* ============================================
+   FOCUS & ACCESSIBILITY IMPROVEMENTS
+   ============================================ */
+
+/* Better focus visibility */
+:focus-visible {
+    outline: 2px solid var(--green-500);
+    outline-offset: 2px;
+}
+
+/* Remove default focus for mouse users */
+:focus:not(:focus-visible) {
+    outline: none;
+}
+
+/* Keyboard shortcut styling */
+kbd {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.75rem;
+}
+
+/* Better scrolling behavior */
+html {
+    scroll-behavior: smooth;
+}
+
+/* Selection color */
+::selection {
+    background-color: var(--green-200);
+    color: var(--green-900);
+}
+
+.dark ::selection {
+    background-color: var(--green-800);
+    color: var(--green-100);
+}
+
+/* Print improvements */
+@media print {
+    .no-print,
+    header,
+    footer,
+    nav {
+        display: none !important;
+    }
+
+    main {
+        padding: 0 !important;
+        margin: 0 !important;
+        max-width: none !important;
+    }
+
+    .print-break {
+        page-break-before: always;
+    }
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* Additional utility classes for new components */
+.h-4 { height: 1rem; }
+.w-4 { width: 1rem; }
+.h-12 { height: 3rem; }
+.w-12 { width: 3rem; }
+.h-16 { height: 4rem; }
+.w-16 { width: 4rem; }
+
+/* Spacing utilities for kbd elements */
+.px-1\.5 { padding-left: 0.375rem; padding-right: 0.375rem; }
+.py-0\.5 { padding-top: 0.125rem; padding-bottom: 0.125rem; }
+
+/* Font mono for kbd */
+.font-mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace; }
+
+/* ============================================
+   BADGE & STATUS FIXES
+   ============================================ */
+
+/* Ensure badges have proper line-height */
+.inline-flex.items-center.rounded-full {
+    line-height: 1;
+}
+
+/* Fix for search input placeholder */
+input::placeholder {
+    opacity: 0.6;
+}
+
+/* Better contrast for dark mode inputs */
+.dark input::placeholder {
+    color: #9ca3af;
+}
+
+/* Ensure proper spacing in cards */
+.space-y-6 > * + * {
+    margin-top: 1.5rem;
+}
+
+.space-y-8 > * + * {
+    margin-top: 2rem;
+}
+
+/* Additional padding utilities */
+.p-2\.5 { padding: 0.625rem; }
+.mr-1\.5 { margin-right: 0.375rem; }
+.py-1\.5 { padding-top: 0.375rem; padding-bottom: 0.375rem; }
+
+/* Dark mode for red-950 */
+.dark .dark\:bg-red-950\/30 { background-color: rgb(69 10 10 / 0.3); }
+.dark .dark\:bg-red-950\/20 { background-color: rgb(69 10 10 / 0.2); }
+.dark .dark\:bg-gray-800\/50 { background-color: rgb(31 41 55 / 0.5); }
+
+/* Leading relaxed */
+.leading-relaxed { line-height: 1.625; }
+
+/* Additional positioning utilities */
+.left-2\.5 { left: 0.625rem; }
+.right-2\.5 { right: 0.625rem; }
+
+/* Additional padding utilities */
+.pl-9 { padding-left: 2.25rem; }
+.pr-9 { padding-right: 2.25rem; }
+
+/* Gap utilities */
+.gap-1\.5 { gap: 0.375rem; }
+.gap-3 { gap: 0.75rem; }
+
+/* Duration utilities */
+.duration-200 { transition-duration: 200ms; }
+
+/* Focus ring for green */
+.focus\:ring-green-500:focus {
+    box-shadow: 0 0 0 2px rgb(34 197 94 / 0.5);
+}
+
+/* Focus border transparent */
+.focus\:border-transparent:focus {
+    border-color: transparent;
+}
+
+/* Placeholder colors */
+.placeholder\:text-gray-400::placeholder { color: #9ca3af; }
+.dark .dark\:placeholder\:text-gray-500::placeholder { color: #6b7280; }
+
+/* Dark mode red colors */
+.dark .dark\:bg-red-900 { background-color: #7f1d1d; }
+.dark .dark\:text-red-200 { color: #fecaca; }
+
+/* Hover states for table rows */
+.dark .dark\:hover\:bg-gray-800\/50:hover { background-color: rgb(31 41 55 / 0.5); }

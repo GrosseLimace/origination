@@ -1,9 +1,9 @@
 @namespace GrainOriginatorPortal.Components.Features.Customers
 
-<Dialog IsOpen="@IsOpen" IsOpenChanged="HandleClose">
+<Dialog IsOpen="@IsOpen" IsOpenChanged="HandleClose" Size="md">
     <DialogHeader>
-        <DialogTitle>Edit Customer</DialogTitle>
-        <DialogDescription>Update contact information for @Customer?.Name</DialogDescription>
+        <DialogTitle>Edit Customer Information</DialogTitle>
+        <DialogDescription>Update contact details and manage farm associations for @Customer?.Name</DialogDescription>
     </DialogHeader>
 
     @if (Customer != null)
@@ -41,26 +41,72 @@
             <Separator />
 
             <!-- Farm Associations Section -->
-            <div class="space-y-4">
-                <h4 class="font-medium text-gray-900 dark:text-white">Farm Associations</h4>
+            <div class="space-y-6">
+                <div class="flex items-center justify-between">
+                    <h4 class="font-medium text-gray-900 dark:text-white">Farm Associations</h4>
+                    <Button Variant="outline" Size="sm" OnClick="() => showNewFarmForm = !showNewFarmForm">
+                        <Icon Name="plus" Size="14" Class="mr-1" />
+                        New Farm
+                    </Button>
+                </div>
+
+                <!-- New Farm Form (collapsible) -->
+                @if (showNewFarmForm)
+                {
+                    <div class="p-4 border rounded-lg space-y-4 bg-gray-50 dark:bg-gray-800">
+                        <div class="space-y-2">
+                            <Label>Farm Name</Label>
+                            <Input Type="text"
+                                   Value="@newFarmName"
+                                   ValueChanged="v => newFarmName = v"
+                                   Placeholder="e.g., North Field Farm" />
+                        </div>
+                        <div class="space-y-2">
+                            <Label>Location</Label>
+                            <Input Type="text"
+                                   Value="@newFarmLocation"
+                                   ValueChanged="v => newFarmLocation = v"
+                                   Placeholder="e.g., Johnson County, IA" />
+                        </div>
+                        <div class="space-y-2">
+                            <Label>Acres</Label>
+                            <Input Type="number"
+                                   Value="@newFarmAcres"
+                                   ValueChanged="v => newFarmAcres = v"
+                                   Placeholder="e.g., 500" />
+                        </div>
+                        <div class="flex gap-2 mt-4">
+                            <Button OnClick="CreateAndAddFarm"
+                                    Disabled="@(string.IsNullOrWhiteSpace(newFarmName) || string.IsNullOrWhiteSpace(newFarmAcres))">
+                                Add Farm
+                            </Button>
+                            <Button Variant="outline" OnClick="() => showNewFarmForm = false">
+                                Cancel
+                            </Button>
+                        </div>
+                    </div>
+                }
 
                 <!-- Current Farms -->
-                <div class="space-y-2">
+                <div class="space-y-6">
                     @foreach (var farmId in editFarmIds.ToList())
                     {
                         var farm = AllFarms.FirstOrDefault(f => f.Id == farmId);
                         if (farm != null)
                         {
-                            <div class="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                                <div>
-                                    <span class="font-medium text-gray-900 dark:text-white">@farm.Name</span>
-                                    <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">(@farm.Acres acres)</span>
+                            <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                                <div class="space-y-1">
+                                    <div class="font-medium text-gray-900 dark:text-white">@farm.Name</div>
+                                    <div class="text-sm text-gray-500 dark:text-gray-400">@farm.Location</div>
+                                    <div class="text-sm text-gray-500 dark:text-gray-400">@farm.Acres acres</div>
                                 </div>
                                 @if (editFarmIds.Count > 1)
                                 {
-                                    <Button Variant="ghost" Size="icon" OnClick="() => RemoveFarm(farmId)" Class="h-8 w-8 text-red-500">
-                                        <Icon Name="x" Size="16" />
-                                    </Button>
+                                    <button type="button" @onclick="() => RemoveFarm(farmId)" class="text-red-500 hover:text-red-600 bg-transparent border-0 p-0">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
+                                        </svg>
+                                    </button>
                                 }
                             </div>
                         }
@@ -83,45 +129,6 @@
                         </Select>
                     </div>
                 }
-
-                <!-- Create New Farm -->
-                <div class="border-t pt-4">
-                    <Button Variant="outline" OnClick="() => showNewFarmForm = !showNewFarmForm" Class="w-full">
-                        <Icon Name="plus" Size="16" Class="mr-2" />
-                        Create New Farm
-                    </Button>
-
-                    @if (showNewFarmForm)
-                    {
-                        <div class="mt-4 p-4 border rounded-lg space-y-4">
-                            <div class="space-y-2">
-                                <Label>Farm Name</Label>
-                                <Input Type="text"
-                                       Value="@newFarmName"
-                                       ValueChanged="v => newFarmName = v"
-                                       Placeholder="e.g., North Field Farm" />
-                            </div>
-                            <div class="space-y-2">
-                                <Label>Location</Label>
-                                <Input Type="text"
-                                       Value="@newFarmLocation"
-                                       ValueChanged="v => newFarmLocation = v"
-                                       Placeholder="e.g., Johnson County, IA" />
-                            </div>
-                            <div class="space-y-2">
-                                <Label>Acres</Label>
-                                <Input Type="number"
-                                       Value="@newFarmAcres"
-                                       ValueChanged="v => newFarmAcres = v"
-                                       Placeholder="e.g., 500" />
-                            </div>
-                            <Button OnClick="CreateAndAddFarm"
-                                    Disabled="@(string.IsNullOrWhiteSpace(newFarmName) || string.IsNullOrWhiteSpace(newFarmAcres))">
-                                Add Farm
-                            </Button>
-                        </div>
-                    }
-                </div>
             </div>
 
             <DialogFooter>

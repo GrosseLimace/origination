@@ -1,24 +1,46 @@
 @namespace GrainOriginatorPortal.Components.UI
 
-<span class="@ComputedClass">
-    @ChildContent
-</span>
+@if (OnClick.HasDelegate)
+{
+    <button type="button" class="@ComputedClass" @onclick="OnClick">
+        @ChildContent
+    </button>
+}
+else
+{
+    <span class="@ComputedClass">
+        @ChildContent
+    </span>
+}
 
 @code {
     [Parameter] public RenderFragment? ChildContent { get; set; }
     [Parameter] public string Variant { get; set; } = "default";
+    [Parameter] public string Size { get; set; } = "default";
     [Parameter] public string? Class { get; set; }
+    [Parameter] public EventCallback<MouseEventArgs> OnClick { get; set; }
 
-    private string ComputedClass => $"{BaseClass} {VariantClass} {Class}".Trim();
+    private string ComputedClass => $"{BaseClass} {SizeClass} {VariantClass} {(OnClick.HasDelegate ? "cursor-pointer" : "")} {Class}".Trim();
 
-    private string BaseClass => "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors";
+    private string BaseClass => "inline-flex items-center justify-center rounded-full font-medium transition-colors whitespace-nowrap";
+
+    private string SizeClass => Size switch
+    {
+        "sm" => "px-2 py-0.5 text-xs",
+        "default" => "px-3 py-1 text-xs",
+        "lg" => "px-4 py-1.5 text-sm",
+        _ => "px-3 py-1 text-xs"
+    };
 
     private string VariantClass => Variant switch
     {
         "default" => "bg-primary text-primary-foreground",
-        "secondary" => "bg-secondary text-secondary-foreground",
-        "destructive" => "bg-destructive text-destructive-foreground",
-        "outline" => "border text-foreground",
+        "secondary" => "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200",
+        "destructive" => "bg-red-600 text-white dark:bg-red-700 dark:text-white",
+        "outline" => "border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 bg-transparent",
+        "success" => "bg-green-600 text-white dark:bg-green-700 dark:text-white",
+        "warning" => "bg-yellow-500 text-white dark:bg-yellow-600 dark:text-white",
+        "info" => "bg-blue-600 text-white dark:bg-blue-700 dark:text-white",
         _ => "bg-primary text-primary-foreground"
     };
 }

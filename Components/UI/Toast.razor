@@ -1,0 +1,61 @@
+@namespace GrainOriginatorPortal.Components.UI
+
+@if (IsVisible)
+{
+    <div class="@ContainerClass" role="alert">
+        <div class="flex items-start gap-3">
+            <div class="@IconContainerClass">
+                @switch (Variant)
+                {
+                    case "success":
+                        <Icon Name="check-circle" Size="20" />
+                        break;
+                    case "error":
+                        <Icon Name="x-circle" Size="20" />
+                        break;
+                    case "warning":
+                        <Icon Name="alert-triangle" Size="20" />
+                        break;
+                    default:
+                        <Icon Name="info" Size="20" />
+                        break;
+                }
+            </div>
+            <div class="flex-1 min-w-0">
+                @if (!string.IsNullOrEmpty(Title))
+                {
+                    <p class="font-medium text-gray-900 dark:text-white">@Title</p>
+                }
+                <p class="text-sm text-gray-600 dark:text-gray-300">@Message</p>
+            </div>
+            <button type="button"
+                    class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                    @onclick="Close">
+                <Icon Name="x" Size="16" />
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback<bool> IsVisibleChanged { get; set; }
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string Message { get; set; } = "";
+    [Parameter] public string Variant { get; set; } = "info";
+
+    private string ContainerClass => $"fixed bottom-4 right-4 z-50 w-full max-w-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-4 animate-slide-up";
+
+    private string IconContainerClass => Variant switch
+    {
+        "success" => "text-green-500",
+        "error" => "text-red-500",
+        "warning" => "text-amber-500",
+        _ => "text-blue-500"
+    };
+
+    private async Task Close()
+    {
+        await IsVisibleChanged.InvokeAsync(false);
+    }
+}

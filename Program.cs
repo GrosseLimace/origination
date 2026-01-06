@@ -1,5 +1,6 @@
 using GrainOriginatorPortal.Services;
 using GrainOriginatorPortal.Components;
+using ApexCharts;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,6 +12,8 @@ builder.Services.AddRazorComponents()
 builder.Services.AddScoped<ThemeService>();
 builder.Services.AddScoped<AppState>();
 builder.Services.AddScoped<IDataService, MockDataService>();
+builder.Services.AddScoped<ToastService>();
+builder.Services.AddApexCharts();
 
 var app = builder.Build();
 

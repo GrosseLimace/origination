@@ -9,14 +9,10 @@
     <CardContent Class="p-0">
         <!-- Search -->
         <div class="p-4 border-b">
-            <div class="relative">
-                <Icon Name="search" Size="16" Class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <Input Type="text"
-                       Placeholder="Search customers..."
-                       Value="@searchQuery"
-                       ValueChanged="HandleSearch"
-                       Class="pl-10" />
-            </div>
+            <SearchInput Value="@searchQuery"
+                         ValueChanged="HandleSearch"
+                         Placeholder="Search customers..."
+                         DebounceMs="300" />
         </div>
 
         <!-- Saved Lists Filter -->
@@ -48,34 +44,43 @@
             {
                 @foreach (var customer in filteredCustomers)
                 {
+                    var lastContact = GetLastContactInfo(customer.Id);
+
                     <div class="@GetCustomerItemClass(customer)" @onclick="() => HandleSelectCustomer(customer)">
-                        <div class="flex items-start justify-between">
-                            <div class="min-w-0 flex-1">
-                                <div class="flex items-center gap-2">
-                                    <h3 class="font-medium text-gray-900 dark:text-white truncate">
-                                        @customer.Name
-                                    </h3>
-                                </div>
-                                <p class="text-sm text-gray-500 dark:text-gray-400 truncate">
-                                    @customer.Farm
-                                </p>
-                                <div class="flex items-center gap-2 mt-1">
-                                    <Badge Variant="secondary">@customer.TotalAcres.ToString("N0") acres</Badge>
-                                    <span class="text-xs text-gray-400">@customer.Location</span>
-                                </div>
+                        <!-- Row 1: Name and Acres -->
+                        <div class="flex items-center justify-between">
+                            <h3 class="font-medium text-gray-900 dark:text-white truncate">
+                                @customer.Name
+                            </h3>
+                            <Badge Variant="secondary">@customer.TotalAcres.ToString("N0") acres</Badge>
+                        </div>
+
+                        <!-- Rows 2-5 with larger spacing -->
+                        <div class="space-y-40 mt-2">
+                            <!-- Row 2: Farm -->
+                            <p class="text-sm text-gray-600 dark:text-gray-400 truncate">
+                                @customer.Farm
+                            </p>
+
+                            <!-- Row 3: Location -->
+                            <div class="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400">
+                                <Icon Name="map-pin" Size="14" />
+                                <span class="truncate">@customer.Location</span>
                             </div>
-                            <div class="flex flex-col items-end gap-1 ml-2">
-                                @if (!string.IsNullOrEmpty(customer.Phone))
-                                {
-                                    <div class="flex items-center gap-1 text-xs text-gray-400">
-                                        <Icon Name="phone" Size="12" />
-                                        <span class="hidden xl:inline">@customer.Phone</span>
-                                    </div>
-                                }
-                                @{ var lastContact = GetLastContactInfo(customer.Id); }
-                                <span class="@GetLastContactClass(lastContact.DaysAgo) text-xs">
-                                    @lastContact.Text
-                                </span>
+
+                            <!-- Row 4: Phone -->
+                            @if (!string.IsNullOrEmpty(customer.Phone))
+                            {
+                                <div class="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400">
+                                    <Icon Name="phone" Size="14" />
+                                    <span>@customer.Phone</span>
+                                </div>
+                            }
+
+                            <!-- Row 5: Last Contact -->
+                            <div class="flex items-center gap-1.5 text-sm @GetLastContactClass(lastContact.DaysAgo)">
+                                <Icon Name="calendar" Size="14" />
+                                <span>@lastContact.Text</span>
                             </div>
                         </div>
                     </div>

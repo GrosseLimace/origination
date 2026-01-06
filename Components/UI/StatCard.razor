@@ -1,0 +1,73 @@
+@namespace GrainOriginatorPortal.Components.UI
+
+<Card Class="@ContainerClass">
+    <div class="flex items-center gap-4">
+        <div class="@IconContainerClass">
+            <Icon Name="@IconName" Size="24" Class="@IconClass" />
+        </div>
+        <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">@Label</p>
+            <p class="text-2xl font-bold @ValueClass">@Value</p>
+            @if (!string.IsNullOrEmpty(Subtext))
+            {
+                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">@Subtext</p>
+            }
+        </div>
+        @if (TrendValue.HasValue)
+        {
+            <div class="@TrendClass">
+                @if (TrendValue > 0)
+                {
+                    <Icon Name="trending-up" Size="16" Class="mr-1" />
+                    <span>+@TrendValue%</span>
+                }
+                else if (TrendValue < 0)
+                {
+                    <Icon Name="trending-down" Size="16" Class="mr-1" />
+                    <span>@TrendValue%</span>
+                }
+            </div>
+        }
+    </div>
+</Card>
+
+@code {
+    [Parameter] public string IconName { get; set; } = "activity";
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public string Value { get; set; } = "";
+    [Parameter] public string? Subtext { get; set; }
+    [Parameter] public string Color { get; set; } = "green";
+    [Parameter] public double? TrendValue { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string ContainerClass => $"p-4 {Class}".Trim();
+
+    private string IconContainerClass => Color switch
+    {
+        "green" => "p-3 bg-green-100 dark:bg-green-900/30 rounded-lg",
+        "blue" => "p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg",
+        "amber" => "p-3 bg-amber-100 dark:bg-amber-900/30 rounded-lg",
+        "purple" => "p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg",
+        "red" => "p-3 bg-red-100 dark:bg-red-900/30 rounded-lg",
+        _ => "p-3 bg-gray-100 dark:bg-gray-900/30 rounded-lg"
+    };
+
+    private string IconClass => Color switch
+    {
+        "green" => "text-green-600 dark:text-green-400",
+        "blue" => "text-blue-600 dark:text-blue-400",
+        "amber" => "text-amber-600 dark:text-amber-400",
+        "purple" => "text-purple-600 dark:text-purple-400",
+        "red" => "text-red-600 dark:text-red-400",
+        _ => "text-gray-600 dark:text-gray-400"
+    };
+
+    private string ValueClass => "text-gray-900 dark:text-white";
+
+    private string TrendClass => TrendValue switch
+    {
+        > 0 => "flex items-center text-sm text-green-600 dark:text-green-400",
+        < 0 => "flex items-center text-sm text-red-600 dark:text-red-400",
+        _ => "flex items-center text-sm text-gray-500"
+    };
+}

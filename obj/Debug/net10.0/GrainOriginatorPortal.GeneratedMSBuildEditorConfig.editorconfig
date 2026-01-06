@@ -34,6 +34,10 @@ build_metadata.AdditionalFiles.CssScope =
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xDb250cmFjdHNcX1BsYWNlaG9sZGVyLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
+[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Customers/CustomerCharts.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xDdXN0b21lcnNcQ3VzdG9tZXJDaGFydHMucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
 [C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Customers/CustomerList.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xDdXN0b21lcnNcQ3VzdG9tZXJMaXN0LnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
@@ -56,6 +60,10 @@ build_metadata.AdditionalFiles.CssScope =
 
 [C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Insights/ActivitySummary.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xJbnNpZ2h0c1xBY3Rpdml0eVN1bW1hcnkucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Insights/TerritoryDashboard.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xJbnNpZ2h0c1xUZXJyaXRvcnlEYXNoYm9hcmQucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
 [C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Insights/_Placeholder.razor]
@@ -100,6 +108,14 @@ build_metadata.AdditionalFiles.CssScope =
 
 [C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Tickets/_Placeholder.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xUaWNrZXRzXF9QbGFjZWhvbGRlci5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Layout/Footer.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xMYXlvdXRcRm9vdGVyLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Layout/MobileNav.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xMYXlvdXRcTW9iaWxlTmF2LnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
 [C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Layout/NavHeader.razor]
@@ -170,6 +186,10 @@ build_metadata.AdditionalFiles.CssScope =
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxDYXJkVGl0bGUucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
+[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/ConfirmDialog.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxDb25maXJtRGlhbG9nLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
 [C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Dialog.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxEaWFsb2cucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
@@ -190,6 +210,10 @@ build_metadata.AdditionalFiles.CssScope =
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxEaWFsb2dUaXRsZS5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
+[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/EmptyState.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxFbXB0eVN0YXRlLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
 [C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Icon.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxJY29uLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
@@ -198,12 +222,28 @@ build_metadata.AdditionalFiles.CssScope =
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxJbnB1dC5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
+[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/KeyboardHint.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxLZXlib2FyZEhpbnQucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
 [C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Label.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxMYWJlbC5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
+[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/LoadingSpinner.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxMb2FkaW5nU3Bpbm5lci5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/PageLoading.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxQYWdlTG9hZGluZy5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
 [C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Progress.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxQcm9ncmVzcy5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/SearchInput.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxTZWFyY2hJbnB1dC5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
 [C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Select.razor]
@@ -220,6 +260,10 @@ build_metadata.AdditionalFiles.CssScope =
 
 [C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Skeleton.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxTa2VsZXRvbi5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/StatCard.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxTdGF0Q2FyZC5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
 [C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Table.razor]
@@ -264,6 +308,14 @@ build_metadata.AdditionalFiles.CssScope =
 
 [C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Textarea.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxUZXh0YXJlYS5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Toast.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxUb2FzdC5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/ToastContainer.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxUb2FzdENvbnRhaW5lci5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
 [C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/_Imports.razor]

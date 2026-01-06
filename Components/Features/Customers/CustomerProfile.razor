@@ -5,35 +5,32 @@
 @using GrainOriginatorPortal.Components.Features.Storage
 @using GrainOriginatorPortal.Components.Features.Insights
 
-<div class="space-y-6">
+<div class="space-y-8">
     <!-- Header Card -->
     <Card>
         <CardHeader>
             <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-                <div class="flex items-start gap-4">
-                    <Avatar Fallback="@GetInitials(Customer.Name)" Size="lg" />
-                    <div>
-                        <div class="flex items-center gap-2 flex-wrap">
-                            <CardTitle>@Customer.Name</CardTitle>
-                            @if (Customer.ESignEnabled)
-                            {
-                                <Badge Class="bg-green-500 text-white">
-                                    <Icon Name="check-circle" Size="12" Class="mr-1" />
-                                    eSign
-                                </Badge>
-                            }
-                        </div>
-                        <CardDescription>@Customer.Farm</CardDescription>
+                <div>
+                    <div class="flex items-center gap-3 flex-wrap">
+                        <CardTitle>@Customer.Name</CardTitle>
+                        @if (Customer.ESignEnabled)
+                        {
+                            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-green-600 text-white">
+                                <Icon Name="check-circle" Size="14" />
+                                eSign Enabled
+                            </span>
+                        }
                     </div>
+                    <CardDescription>@Customer.Farm</CardDescription>
                 </div>
                 <div class="flex items-center gap-2">
+                    <Button Variant="@(showProducerInsights ? "default" : "outline")" Size="sm" OnClick="() => showProducerInsights = !showProducerInsights">
+                        <Icon Name="bar-chart-2" Size="16" Class="mr-2" />
+                        Producer Insights
+                    </Button>
                     <Button Variant="outline" Size="sm" OnClick="() => showEditDialog = true">
                         <Icon Name="pencil" Size="16" Class="mr-2" />
                         Edit
-                    </Button>
-                    <Button Variant="outline" Size="sm" OnClick="HandlePrint">
-                        <Icon Name="printer" Size="16" Class="mr-2" />
-                        Print
                     </Button>
                 </div>
             </div>
@@ -43,11 +40,11 @@
             @if (Farms.Count > 1)
             {
                 <div class="mb-4">
-                    <Label>Select Farm</Label>
+                    <Label Class="font-bold">Select Farm</Label>
                     <Select Value="@SelectedFarmId" ValueChanged="HandleFarmChange" Class="mt-1">
                         @foreach (var farm in Farms)
                         {
-                            <SelectOption Value="@farm.Id">@farm.Name (@farm.Acres acres)</SelectOption>
+                            <SelectOption Value="@farm.Id">@farm.Name</SelectOption>
                         }
                     </Select>
                 </div>
@@ -76,12 +73,16 @@
                 <!-- Farm Stats -->
                 <div class="space-y-2">
                     <h4 class="font-medium text-gray-900 dark:text-white text-sm">Farm Details</h4>
-                    <div class="space-y-1">
-                        <Badge Variant="secondary">@Customer.TotalAcres.ToString("N0") total acres</Badge>
+                    <div class="space-y-2">
+                        <div class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                            <Icon Name="tractor" Size="16" />
+                            <span>@((selectedFarm?.Acres ?? Customer.TotalAcres).ToString("N0")) acres</span>
+                        </div>
                         @if (selectedFarm?.BinStorageCapacity > 0)
                         {
-                            <div class="text-sm text-gray-600 dark:text-gray-400">
-                                @selectedFarm.BinStorageCapacity?.ToString("N0") bu storage
+                            <div class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                                <Icon Name="warehouse" Size="16" />
+                                <span>@selectedFarm.BinStorageCapacity?.ToString("N0") bu storage</span>
                             </div>
                         }
                     </div>
@@ -105,18 +106,74 @@
                 <!-- Market Share -->
                 <div class="space-y-2">
                     <h4 class="font-medium text-gray-900 dark:text-white text-sm">Market Share</h4>
-                    <div class="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
-                        <div class="text-2xl font-bold text-green-600 dark:text-green-400">
+                    <div class="bg-green-50 dark:bg-green-900/20 rounded-lg p-2 text-center">
+                        <div class="text-xl font-bold text-green-600 dark:text-green-400">
                             @marketSharePercentage.ToString("F0")%
                         </div>
                         <div class="text-xs text-gray-500 dark:text-gray-400">
-                            @totalContracted.ToString("N0") / @totalProjectedYield.ToString("N0") bu
+                            @bushelsAvailable.ToString("N0") bu available
                         </div>
                     </div>
                 </div>
             </div>
         </CardContent>
     </Card>
+
+    <!-- Producer Insights Panel -->
+    @if (showProducerInsights)
+    {
+        <Card Class="overflow-hidden border-green-600 dark:border-green-600">
+            <div class="bg-green-600 dark:bg-green-700 p-6">
+                <div class="flex items-center gap-2 mb-3">
+                    <Icon Name="sparkles" Size="28" Class="text-white" />
+                    <h3 class="font-bold text-3xl text-white">Producer Insights</h3>
+                </div>
+                <p class="text-base text-green-100 mb-6">@Customer.Name - Performance Analytics & Growth Metrics</p>
+
+                <div class="grid grid-cols-4 gap-4">
+                    <!-- Total Volume -->
+                    <div class="bg-green-500/50 dark:bg-green-600/50 rounded-lg p-4 border border-green-400/50 dark:border-green-500/50">
+                        <div class="flex items-center gap-2 text-sm text-green-50 mb-2">
+                            <Icon Name="box" Size="16" Class="text-green-50" />
+                            <span>Total Volume</span>
+                        </div>
+                        <div class="text-2xl font-bold text-white">@totalVolumeContracted.ToString("N0")</div>
+                        <div class="text-xs text-green-50">bushels contracted</div>
+                    </div>
+
+                    <!-- Total Revenue -->
+                    <div class="bg-green-500/50 dark:bg-green-600/50 rounded-lg p-4 border border-green-400/50 dark:border-green-500/50">
+                        <div class="flex items-center gap-2 text-sm text-green-50 mb-2">
+                            <Icon Name="dollar-sign" Size="16" Class="text-green-50" />
+                            <span>Total Revenue</span>
+                        </div>
+                        <div class="text-2xl font-bold text-white">@totalRevenue.ToString("C0")</div>
+                        <div class="text-xs text-green-50">@Contracts.Count contracts</div>
+                    </div>
+
+                    <!-- YOY Growth -->
+                    <div class="bg-green-500/50 dark:bg-green-600/50 rounded-lg p-4 border border-green-400/50 dark:border-green-500/50">
+                        <div class="flex items-center gap-2 text-sm text-green-50 mb-2">
+                            <Icon Name="trending-up" Size="16" Class="text-green-50" />
+                            <span>YOY Growth</span>
+                        </div>
+                        <div class="text-2xl font-bold text-white">+@yoyGrowth.ToString("F0")%</div>
+                        <div class="text-xs text-green-50">vs. previous year</div>
+                    </div>
+
+                    <!-- Engagement -->
+                    <div class="bg-green-500/50 dark:bg-green-600/50 rounded-lg p-4 border border-green-400/50 dark:border-green-500/50">
+                        <div class="flex items-center gap-2 text-sm text-green-50 mb-2">
+                            <Icon Name="activity" Size="16" Class="text-green-50" />
+                            <span>Engagement</span>
+                        </div>
+                        <div class="text-2xl font-bold text-white">@totalInteractions</div>
+                        <div class="text-xs text-green-50">total interactions</div>
+                    </div>
+                </div>
+            </div>
+        </Card>
+    }
 
     <!-- Activity Summary -->
     <ActivitySummary Customer="@Customer"
@@ -126,61 +183,86 @@
                      Notes="@Notes"
                      StoredGrain="@StoredGrain" />
 
-    <!-- Tabs Section -->
-    <Card>
-        <CardContent Class="p-0">
-            <div class="border-b border-gray-200 dark:border-gray-700">
-                <div class="flex overflow-x-auto">
-                    @foreach (var tab in tabs)
-                    {
-                        var isActive = activeTab == tab.Id;
-                        var tabClass = isActive
-                            ? "border-b-2 border-green-500 text-green-600 dark:text-green-400"
-                            : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300";
-
-                        <button type="button"
-                                class="px-4 py-3 text-sm font-medium whitespace-nowrap @tabClass"
-                                @onclick="() => activeTab = tab.Id">
-                            <Icon Name="@tab.Icon" Size="16" Class="inline-block mr-2" />
-                            @tab.Label
-                            @if (tab.Count > 0)
-                            {
-                                <Badge Variant="secondary" Class="ml-2">@tab.Count</Badge>
-                            }
-                        </button>
-                    }
-                </div>
-            </div>
-
-            <div class="p-4">
-                @switch (activeTab)
+    <!-- Tabs Section - Below Summary -->
+    <div>
+        <!-- Pill-style tab navigation -->
+        <div class="w-full bg-gray-100 dark:bg-gray-800 rounded-full p-1 mb-6">
+            <div class="flex">
+                @foreach (var tab in tabs)
                 {
-                    case "contracts":
+                    var isActive = activeTab == tab.Id;
+                    <button type="button"
+                            class="@GetTabClass(isActive) flex-1 text-center"
+                            @onclick="() => activeTab = tab.Id">
+                        @tab.Label (@tab.Count)
+                    </button>
+                }
+            </div>
+        </div>
+
+        <!-- Tab Content -->
+        <div>
+            @switch (activeTab)
+            {
+                case "contracts":
+                    <div class="space-y-4">
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Contracts</h3>
                         <ContractsTable Contracts="@filteredContracts" Tickets="@filteredTickets" />
-                        break;
-                    case "tickets":
+                    </div>
+                    break;
+                case "tickets":
+                    <div class="space-y-4">
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Tickets</h3>
                         <TicketsTable Tickets="@filteredTickets" />
-                        break;
-                    case "planting":
+                    </div>
+                    break;
+                case "planting":
+                    <div class="space-y-4">
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Planting Intentions</h3>
                         <PlantingIntentionsTable PlantingIntentions="@filteredPlantingIntentions"
                                                   CustomerName="@Customer.Name"
                                                   CustomerId="@Customer.Id"
                                                   FarmId="@SelectedFarmId"
                                                   OnAddIntention="HandleAddPlantingIntention"
                                                   OnEditIntention="HandleEditPlantingIntention" />
-                        break;
-                    case "storage":
+                    </div>
+                    break;
+                case "storage":
+                    <div class="space-y-4">
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Stored Grain</h3>
                         <StoredGrainTable StoredGrain="@filteredStoredGrain" />
-                        break;
-                    case "notes":
-                        <CustomerNotes Notes="@Notes"
-                                       CustomerId="@Customer.Id"
-                                       FarmId="@SelectedFarmId"
-                                       OnAddNote="HandleAddNote"
-                                       OnTogglePin="HandleTogglePin" />
-                        break;
-                }
+                    </div>
+                    break;
+                case "charts":
+                    <div class="space-y-4">
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Charts</h3>
+                        <CustomerCharts Contracts="@filteredContracts"
+                                        Tickets="@filteredTickets"
+                                        PlantingIntentions="@filteredPlantingIntentions"
+                                        IsDarkMode="@IsDarkMode" />
+                    </div>
+                    break;
+            }
+        </div>
+    </div>
+
+    <!-- Notes Section - Always visible at bottom -->
+    <Card>
+        <CardHeader>
+            <div class="flex items-center justify-between">
+                <CardTitle>Notes</CardTitle>
+                <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                    <Icon Name="calendar" Size="16" />
+                    <span>Last contacted: @GetLastContactedDate()</span>
+                </div>
             </div>
+        </CardHeader>
+        <CardContent>
+            <CustomerNotes Notes="@Notes"
+                           CustomerId="@Customer.Id"
+                           FarmId="@SelectedFarmId"
+                           OnAddNote="HandleAddNote"
+                           OnTogglePin="HandleTogglePin" />
         </CardContent>
     </Card>
 
@@ -203,6 +285,7 @@
     [Parameter] public List<Farm> Farms { get; set; } = new();
     [Parameter] public List<Farm> AllFarms { get; set; } = new();
     [Parameter] public string? SelectedFarmId { get; set; }
+    [Parameter] public bool IsDarkMode { get; set; }
     [Parameter] public EventCallback<string> OnFarmChange { get; set; }
     [Parameter] public EventCallback<(string CustomerId, string? FarmId, string Content)> OnAddNote { get; set; }
     [Parameter] public EventCallback<string> OnTogglePin { get; set; }
@@ -213,18 +296,35 @@
 
     private string activeTab = "contracts";
     private bool showEditDialog = false;
+    private bool showProducerInsights = false;
     private Farm? selectedFarm => Farms.FirstOrDefault(f => f.Id == SelectedFarmId);
 
-    private record TabInfo(string Id, string Label, string Icon, int Count);
+    // Producer Insights calculations
+    private int totalVolumeContracted => Contracts.Sum(c => c.Quantity);
+    private decimal totalRevenue => Contracts.Sum(c => c.Quantity * c.Price);
+    private double yoyGrowth => 12.5; // Demo value - would calculate from historical data
+    private int totalInteractions => Contracts.Count + Tickets.Count + Notes.Count;
+
+    private record TabInfo(string Id, string Label, int Count);
 
     private List<TabInfo> tabs => new()
     {
-        new("contracts", "Contracts", "file-text", filteredContracts.Count),
-        new("tickets", "Tickets", "truck", filteredTickets.Count),
-        new("planting", "Planting", "calendar", filteredPlantingIntentions.Count),
-        new("storage", "Storage", "warehouse", filteredStoredGrain.Count),
-        new("notes", "Notes", "message-square", Notes.Count)
+        new("contracts", "Contracts", filteredContracts.Count),
+        new("tickets", "Tickets", filteredTickets.Count),
+        new("planting", "Planting", filteredPlantingIntentions.Count),
+        new("storage", "Storage", filteredStoredGrain.Count),
+        new("charts", "Charts", 0)
     };
+
+    private string GetTabClass(bool isActive)
+    {
+        var baseClass = "px-4 py-2 text-sm font-medium rounded-full transition-all duration-200 border-0 outline-none";
+        if (isActive)
+        {
+            return $"{baseClass} bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm";
+        }
+        return $"{baseClass} bg-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white";
+    }
 
     // Filtered data based on selected farm
     private List<Contract> filteredContracts => string.IsNullOrEmpty(SelectedFarmId)
@@ -254,15 +354,7 @@
         ? (double)totalContracted / totalProjectedYield * 100
         : 0;
 
-    private string GetInitials(string name)
-    {
-        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length >= 2)
-            return $"{parts[0][0]}{parts[1][0]}".ToUpper();
-        if (parts.Length == 1 && parts[0].Length >= 2)
-            return parts[0].Substring(0, 2).ToUpper();
-        return "??";
-    }
+    private int bushelsAvailable => Math.Max(0, totalProjectedYield - totalContracted);
 
     private async Task HandleFarmChange(string farmId)
     {
@@ -299,8 +391,20 @@
         await OnEditPlantingIntention.InvokeAsync(data);
     }
 
-    private void HandlePrint()
+    private string GetLastContactedDate()
     {
-        // TODO: Implement print functionality via JS interop
+        var lastNote = Notes.OrderByDescending(n => n.Timestamp).FirstOrDefault();
+        if (lastNote == null)
+            return "Never";
+
+        var diff = DateTime.Now - lastNote.Timestamp;
+        if (diff.TotalDays < 1 && DateTime.Now.Day == lastNote.Timestamp.Day)
+            return "Today";
+        if (diff.TotalDays < 2 && DateTime.Now.Day - lastNote.Timestamp.Day == 1)
+            return "Yesterday";
+        if (diff.TotalDays < 7)
+            return $"{(int)diff.TotalDays} days ago";
+
+        return lastNote.Timestamp.ToString("MMM d, yyyy");
     }
 }

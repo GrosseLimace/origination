@@ -2,6 +2,8 @@
 @namespace GrainOriginatorPortal.Components.Pages
 @inject AppState AppState
 @inject IDataService DataService
+@inject ThemeService ThemeService
+@inject ToastService ToastService
 @using GrainOriginatorPortal.Components.Features.Insights
 @using GrainOriginatorPortal.Components.Features.ListBuilder
 @rendermode InteractiveServer
@@ -40,6 +42,7 @@
                                  Farms="@customerFarms"
                                  AllFarms="@allFarms"
                                  SelectedFarmId="@AppState.SelectedFarmId"
+                                 IsDarkMode="@isDarkMode"
                                  OnFarmChange="HandleFarmChange"
                                  OnAddNote="HandleAddNote"
                                  OnTogglePin="HandleTogglePin"
@@ -79,6 +82,13 @@ else if (AppState.CurrentView == "buildlist")
                OnSaveList="HandleSaveList"
                OnDeleteList="HandleDeleteList" />
 }
+else if (AppState.CurrentView == "dashboard")
+{
+    <TerritoryDashboard Customers="@allCustomers"
+                        Contracts="@allContracts"
+                        PlantingIntentions="@allPlantingIntentions"
+                        IsDarkMode="@isDarkMode" />
+}
 
 @code {
     // All data for insights
@@ -88,6 +98,8 @@ else if (AppState.CurrentView == "buildlist")
     private List<Note> allNotes = new();
     private List<PlantingIntention> allPlantingIntentions = new();
     private List<Farm> allFarms = new();
+
+    private bool isDarkMode => ThemeService.IsDarkMode;
 
     // Customer-specific data
     private List<SavedList> savedLists = new();
@@ -155,12 +167,14 @@ else if (AppState.CurrentView == "buildlist")
     private void HandleAddNote((string CustomerId, string? FarmId, string Content) noteData)
     {
         DataService.AddNote(noteData.CustomerId, noteData.FarmId, "Current User", noteData.Content);
+        ToastService.Success("Note added successfully");
         RefreshData();
     }
 
     private void HandleTogglePin(string noteId)
     {
         DataService.ToggleNotePin(noteId);
+        ToastService.Info("Note pin status updated");
         RefreshData();
     }
 
@@ -171,6 +185,7 @@ else if (AppState.CurrentView == "buildlist")
         // Refresh the selected customer
         allCustomers = DataService.GetCustomers();
         AppState.SelectedCustomer = allCustomers.FirstOrDefault(c => c.Id == data.CustomerId);
+        ToastService.Success("Customer updated successfully");
         RefreshData();
     }
 
@@ -178,18 +193,21 @@ else if (AppState.CurrentView == "buildlist")
     {
         DataService.CreateFarm(data.Name, data.Location, data.Acres);
         allFarms = DataService.GetFarms();
+        ToastService.Success($"Farm '{data.Name}' created successfully");
         StateHasChanged();
     }
 
     private void HandleAddPlantingIntention((string CustomerId, string? FarmId, string Crop, int Acres, string Variety, DateTime PlantingDate, int EstimatedYield) data)
     {
         DataService.AddPlantingIntention(data.CustomerId, data.FarmId ?? "", data.Crop, data.Acres, data.Variety, data.PlantingDate, data.EstimatedYield);
+        ToastService.Success($"Planting intention for {data.Crop} added");
         RefreshData();
     }
 
     private void HandleEditPlantingIntention((string IntentionId, string Crop, int Acres, string Variety, DateTime PlantingDate, int EstimatedYield) data)
     {
         DataService.UpdatePlantingIntention(data.IntentionId, data.Crop, data.Acres, data.Variety, data.PlantingDate, data.EstimatedYield);
+        ToastService.Success("Planting intention updated");
         RefreshData();
     }
 
@@ -197,6 +215,7 @@ else if (AppState.CurrentView == "buildlist")
     {
         DataService.SaveList(listData.Name, listData.Query, listData.CustomerIds);
         savedLists = DataService.GetSavedLists();
+        ToastService.Success($"List '{listData.Name}' saved with {listData.CustomerIds.Count} customers");
         StateHasChanged();
     }
 
@@ -204,6 +223,7 @@ else if (AppState.CurrentView == "buildlist")
     {
         DataService.DeleteList(listId);
         savedLists = DataService.GetSavedLists();
+        ToastService.Info("List deleted");
         StateHasChanged();
     }
 

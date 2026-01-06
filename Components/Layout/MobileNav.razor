@@ -1,0 +1,111 @@
+@namespace GrainOriginatorPortal.Components.Layout
+
+@if (IsOpen)
+{
+    <!-- Backdrop -->
+    <div class="fixed inset-0 bg-black/50 z-40 lg:hidden" @onclick="Close"></div>
+
+    <!-- Slide-out menu -->
+    <div class="fixed inset-y-0 left-0 w-64 bg-white dark:bg-gray-800 z-50 lg:hidden animate-slide-right shadow-xl">
+        <div class="flex flex-col h-full">
+            <!-- Header -->
+            <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+                <div class="flex items-center gap-2">
+                    <Icon Name="wheat" Size="24" Class="text-green-600" />
+                    <span class="font-semibold text-gray-900 dark:text-white">Menu</span>
+                </div>
+                <Button Variant="ghost" Size="icon" OnClick="Close">
+                    <Icon Name="x" Size="20" />
+                </Button>
+            </div>
+
+            <!-- Navigation Links -->
+            <nav class="flex-1 p-4 space-y-2">
+                <button type="button"
+                        class="@GetNavItemClass("customers")"
+                        @onclick="NavigateToCustomers">
+                    <Icon Name="users" Size="20" />
+                    <span>Customers</span>
+                </button>
+
+                <button type="button"
+                        class="@GetNavItemClass("dashboard")"
+                        @onclick="NavigateToDashboard">
+                    <Icon Name="bar-chart-2" Size="20" />
+                    <span>Dashboard</span>
+                </button>
+
+                <button type="button"
+                        class="@GetNavItemClass("insights")"
+                        @onclick="NavigateToInsights">
+                    <Icon Name="sparkles" Size="20" />
+                    <span>Actionable Insights</span>
+                </button>
+
+                <button type="button"
+                        class="@GetNavItemClass("buildlist")"
+                        @onclick="NavigateToBuildList">
+                    <Icon Name="list-filter" Size="20" />
+                    <span>Build a List</span>
+                </button>
+            </nav>
+
+            <!-- Footer -->
+            <div class="p-4 border-t border-gray-200 dark:border-gray-700">
+                <button type="button"
+                        class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        @onclick="ToggleTheme">
+                    @if (IsDarkMode)
+                    {
+                        <Icon Name="sun" Size="20" />
+                        <span>Light Mode</span>
+                    }
+                    else
+                    {
+                        <Icon Name="moon" Size="20" />
+                        <span>Dark Mode</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public string CurrentView { get; set; } = "customers";
+    [Parameter] public bool IsDarkMode { get; set; }
+    [Parameter] public EventCallback<string> OnNavigate { get; set; }
+    [Parameter] public EventCallback OnToggleTheme { get; set; }
+
+    private async Task Close()
+    {
+        await IsOpenChanged.InvokeAsync(false);
+    }
+
+    private async Task Navigate(string view)
+    {
+        await OnNavigate.InvokeAsync(view);
+        await Close();
+    }
+
+    private Task NavigateToCustomers() => Navigate("customers");
+    private Task NavigateToDashboard() => Navigate("dashboard");
+    private Task NavigateToInsights() => Navigate("insights");
+    private Task NavigateToBuildList() => Navigate("buildlist");
+
+    private async Task ToggleTheme()
+    {
+        await OnToggleTheme.InvokeAsync();
+    }
+
+    private string GetNavItemClass(string view)
+    {
+        var baseClass = "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors";
+        var activeClass = CurrentView == view
+            ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400"
+            : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700";
+        return $"{baseClass} {activeClass}";
+    }
+}
