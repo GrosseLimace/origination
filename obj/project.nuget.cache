@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "i/K6f9ENq6I=",
+  "dgSpecHash": "6yxHZZRrdts=",
   "success": true,
-  "projectFilePath": "C:\\Users\\CEgr\\Projects\\GrainOriginatorPortal\\GrainOriginatorPortal.csproj",
+  "projectFilePath": "c:\\Users\\CEgr\\Projects\\GrainOriginatorPortal\\GrainOriginatorPortal.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\CEgr\\.nuget\\packages\\blazor-apexcharts\\6.0.2\\blazor-apexcharts.6.0.2.nupkg.sha512",
     "C:\\Users\\CEgr\\.nuget\\packages\\microsoft.aspnetcore.app.internal.assets\\10.0.1\\microsoft.aspnetcore.app.internal.assets.10.0.1.nupkg.sha512"

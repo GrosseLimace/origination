@@ -2,6 +2,17 @@ using GrainOriginatorPortal.Models;
 
 namespace GrainOriginatorPortal.Services;
 
+/// <summary>
+/// Manages global application state for the Grain Originator Portal.
+/// </summary>
+/// <remarks>
+/// This service provides centralized state management for:
+/// - Currently selected customer
+/// - Currently selected farm (for multi-farm customers)
+/// - Current view/navigation state
+///
+/// Components can subscribe to OnChange to react to state changes.
+/// </remarks>
 public class AppState
 {
     private Customer? _selectedCustomer;

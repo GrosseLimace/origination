@@ -9,7 +9,8 @@
      stroke-width="@StrokeWidth"
      stroke-linecap="round"
      stroke-linejoin="round"
-     class="@Class">
+     class="@Class"
+     style="@Style">
     @((MarkupString)GetIconPath())
 </svg>
 
@@ -19,6 +20,7 @@
     [Parameter] public string Fill { get; set; } = "none";
     [Parameter] public string StrokeWidth { get; set; } = "2";
     [Parameter] public string? Class { get; set; }
+    [Parameter] public string? Style { get; set; }
 
     private string GetIconPath() => Name.ToLower() switch
     {
@@ -95,6 +97,8 @@
         "truck" => "<path d='M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2'/><path d='M15 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 13.52 8H14'/><circle cx='17' cy='18' r='2'/><circle cx='7' cy='18' r='2'/>",
         "warehouse" => "<path d='M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z'/><path d='M6 18h12'/><path d='M6 14h12'/><rect width='12' height='12' x='6' y='10'/>",
         "scale" => "<path d='m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z'/><path d='m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z'/><path d='M7 21h10'/><path d='M12 3v18'/><path d='M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2'/>",
+        "box" => "<path d='M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z'/><path d='m3.3 7 8.7 5 8.7-5'/><path d='M12 22V12'/>",
+        "shopping-basket" => "<path d='m15 11-1 9'/><path d='m19 11-4-7'/><path d='M2 11h20'/><path d='m3.5 11 1.6 7.4a2 2 0 0 0 2 1.6h9.8a2 2 0 0 0 2-1.6l1.7-7.4'/><path d='M4.5 15.5h15'/><path d='m5 11 4-7'/><path d='m9 11 1 9'/>",
 
         // Charts & Analytics
         "bar-chart" => "<line x1='12' x2='12' y1='20' y2='10'/><line x1='18' x2='18' y1='20' y2='4'/><line x1='6' x2='6' y1='20' y2='16'/>",

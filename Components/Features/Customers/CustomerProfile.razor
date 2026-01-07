@@ -59,14 +59,14 @@
                             <Icon Name="map-pin" Size="14" />
                             <span>@Customer.Location</span>
                         </div>
-                        <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                        <a href="tel:@Customer.Phone" class="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
                             <Icon Name="phone" Size="14" />
                             <span>@Customer.Phone</span>
-                        </div>
-                        <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                        </a>
+                        <a href="mailto:@Customer.Email" class="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
                             <Icon Name="mail" Size="14" />
                             <span class="truncate">@Customer.Email</span>
-                        </div>
+                        </a>
                     </div>
                 </div>
 
@@ -92,13 +92,13 @@
                 <div class="space-y-2">
                     <h4 class="font-medium text-gray-900 dark:text-white text-sm">Activity</h4>
                     <div class="grid grid-cols-2 gap-2">
-                        <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-2 text-center">
+                        <div class="bg-gray-100 dark:bg-gray-700 rounded-lg p-2 text-center">
                             <div class="text-xl font-bold text-green-600">@Contracts.Count</div>
-                            <div class="text-xs text-gray-500">Contracts</div>
+                            <div class="text-xs text-gray-500 dark:text-gray-400">Contracts</div>
                         </div>
-                        <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-2 text-center">
+                        <div class="bg-gray-100 dark:bg-gray-700 rounded-lg p-2 text-center">
                             <div class="text-xl font-bold text-blue-600">@Tickets.Count</div>
-                            <div class="text-xs text-gray-500">Tickets</div>
+                            <div class="text-xs text-gray-500 dark:text-gray-400">Tickets</div>
                         </div>
                     </div>
                 </div>
@@ -106,7 +106,7 @@
                 <!-- Market Share -->
                 <div class="space-y-2">
                     <h4 class="font-medium text-gray-900 dark:text-white text-sm">Market Share</h4>
-                    <div class="bg-green-50 dark:bg-green-900/20 rounded-lg p-2 text-center">
+                    <div class="bg-green-50 dark:bg-green-900/30 rounded-lg p-2 text-center">
                         <div class="text-xl font-bold text-green-600 dark:text-green-400">
                             @marketSharePercentage.ToString("F0")%
                         </div>
@@ -122,57 +122,20 @@
     <!-- Producer Insights Panel -->
     @if (showProducerInsights)
     {
-        <Card Class="overflow-hidden border-green-600 dark:border-green-600">
-            <div class="bg-green-600 dark:bg-green-700 p-6">
-                <div class="flex items-center gap-2 mb-3">
-                    <Icon Name="sparkles" Size="28" Class="text-white" />
-                    <h3 class="font-bold text-3xl text-white">Producer Insights</h3>
-                </div>
-                <p class="text-base text-green-100 mb-6">@Customer.Name - Performance Analytics & Growth Metrics</p>
+        <ProducerInsights Customer="@Customer"
+                          Contracts="@Contracts"
+                          Tickets="@Tickets"
+                          PlantingIntentions="@PlantingIntentions"
+                          Notes="@Notes"
+                          StoredGrain="@StoredGrain"
+                          IsDarkMode="@IsDarkMode" />
 
-                <div class="grid grid-cols-4 gap-4">
-                    <!-- Total Volume -->
-                    <div class="bg-green-500/50 dark:bg-green-600/50 rounded-lg p-4 border border-green-400/50 dark:border-green-500/50">
-                        <div class="flex items-center gap-2 text-sm text-green-50 mb-2">
-                            <Icon Name="box" Size="16" Class="text-green-50" />
-                            <span>Total Volume</span>
-                        </div>
-                        <div class="text-2xl font-bold text-white">@totalVolumeContracted.ToString("N0")</div>
-                        <div class="text-xs text-green-50">bushels contracted</div>
-                    </div>
-
-                    <!-- Total Revenue -->
-                    <div class="bg-green-500/50 dark:bg-green-600/50 rounded-lg p-4 border border-green-400/50 dark:border-green-500/50">
-                        <div class="flex items-center gap-2 text-sm text-green-50 mb-2">
-                            <Icon Name="dollar-sign" Size="16" Class="text-green-50" />
-                            <span>Total Revenue</span>
-                        </div>
-                        <div class="text-2xl font-bold text-white">@totalRevenue.ToString("C0")</div>
-                        <div class="text-xs text-green-50">@Contracts.Count contracts</div>
-                    </div>
-
-                    <!-- YOY Growth -->
-                    <div class="bg-green-500/50 dark:bg-green-600/50 rounded-lg p-4 border border-green-400/50 dark:border-green-500/50">
-                        <div class="flex items-center gap-2 text-sm text-green-50 mb-2">
-                            <Icon Name="trending-up" Size="16" Class="text-green-50" />
-                            <span>YOY Growth</span>
-                        </div>
-                        <div class="text-2xl font-bold text-white">+@yoyGrowth.ToString("F0")%</div>
-                        <div class="text-xs text-green-50">vs. previous year</div>
-                    </div>
-
-                    <!-- Engagement -->
-                    <div class="bg-green-500/50 dark:bg-green-600/50 rounded-lg p-4 border border-green-400/50 dark:border-green-500/50">
-                        <div class="flex items-center gap-2 text-sm text-green-50 mb-2">
-                            <Icon Name="activity" Size="16" Class="text-green-50" />
-                            <span>Engagement</span>
-                        </div>
-                        <div class="text-2xl font-bold text-white">@totalInteractions</div>
-                        <div class="text-xs text-green-50">total interactions</div>
-                    </div>
-                </div>
-            </div>
-        </Card>
+        <!-- AI Growth Forecast -->
+        <AIGrowthForecast Customer="@Customer"
+                          Contracts="@Contracts"
+                          PlantingIntentions="@PlantingIntentions"
+                          Notes="@Notes"
+                          IsDarkMode="@IsDarkMode" />
     }
 
     <!-- Activity Summary -->
@@ -233,15 +196,6 @@
                         <StoredGrainTable StoredGrain="@filteredStoredGrain" />
                     </div>
                     break;
-                case "charts":
-                    <div class="space-y-4">
-                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Charts</h3>
-                        <CustomerCharts Contracts="@filteredContracts"
-                                        Tickets="@filteredTickets"
-                                        PlantingIntentions="@filteredPlantingIntentions"
-                                        IsDarkMode="@IsDarkMode" />
-                    </div>
-                    break;
             }
         </div>
     </div>
@@ -299,12 +253,6 @@
     private bool showProducerInsights = false;
     private Farm? selectedFarm => Farms.FirstOrDefault(f => f.Id == SelectedFarmId);
 
-    // Producer Insights calculations
-    private int totalVolumeContracted => Contracts.Sum(c => c.Quantity);
-    private decimal totalRevenue => Contracts.Sum(c => c.Quantity * c.Price);
-    private double yoyGrowth => 12.5; // Demo value - would calculate from historical data
-    private int totalInteractions => Contracts.Count + Tickets.Count + Notes.Count;
-
     private record TabInfo(string Id, string Label, int Count);
 
     private List<TabInfo> tabs => new()
@@ -312,8 +260,7 @@
         new("contracts", "Contracts", filteredContracts.Count),
         new("tickets", "Tickets", filteredTickets.Count),
         new("planting", "Planting", filteredPlantingIntentions.Count),
-        new("storage", "Storage", filteredStoredGrain.Count),
-        new("charts", "Charts", 0)
+        new("storage", "Storage", filteredStoredGrain.Count)
     };
 
     private string GetTabClass(bool isActive)

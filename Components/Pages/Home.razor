@@ -22,15 +22,15 @@
     }
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- Customer List - hidden on mobile when customer is selected -->
-        <div class="@GetCustomerListClass()">
+        <!-- Customer List -->
+        <div class="lg:col-span-1 @(AppState.SelectedCustomer != null ? "hidden lg:block" : "")">
             <CustomerList SelectedCustomer="@AppState.SelectedCustomer"
                           OnSelectCustomer="HandleSelectCustomer"
                           SavedLists="@savedLists" />
         </div>
 
-        <!-- Customer Profile - hidden on mobile when no customer is selected -->
-        <div class="@GetProfileClass()">
+        <!-- Customer Profile -->
+        <div class="lg:col-span-2 @(AppState.SelectedCustomer == null ? "hidden lg:block" : "")">
             @if (AppState.SelectedCustomer != null)
             {
                 <CustomerProfile Customer="@AppState.SelectedCustomer"
@@ -77,6 +77,7 @@ else if (AppState.CurrentView == "buildlist")
                Contracts="@allContracts"
                PlantingIntentions="@allPlantingIntentions"
                Notes="@allNotes"
+               StoredGrain="@allStoredGrain"
                SavedLists="@savedLists"
                OnSelectCustomer="HandleSelectCustomerFromInsights"
                OnSaveList="HandleSaveList"
@@ -98,6 +99,7 @@ else if (AppState.CurrentView == "dashboard")
     private List<Note> allNotes = new();
     private List<PlantingIntention> allPlantingIntentions = new();
     private List<Farm> allFarms = new();
+    private List<StoredGrain> allStoredGrain = new();
 
     private bool isDarkMode => ThemeService.IsDarkMode;
 
@@ -110,11 +112,18 @@ else if (AppState.CurrentView == "dashboard")
     private List<StoredGrain> customerStoredGrain = new();
     private List<Farm> customerFarms = new();
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         AppState.OnChange += HandleStateChange;
+        ThemeService.OnThemeChanged += HandleThemeChange;
+        await ThemeService.InitializeAsync();
         LoadAllData();
         LoadCustomerData();
+    }
+
+    private void HandleThemeChange()
+    {
+        InvokeAsync(StateHasChanged);
     }
 
     private void LoadAllData()
@@ -125,6 +134,7 @@ else if (AppState.CurrentView == "dashboard")
         allNotes = DataService.GetNotes();
         allPlantingIntentions = DataService.GetPlantingIntentions();
         allFarms = DataService.GetFarms();
+        allStoredGrain = DataService.GetStoredGrain();
         savedLists = DataService.GetSavedLists();
     }
 
@@ -242,22 +252,9 @@ else if (AppState.CurrentView == "dashboard")
         AppState.ClearSelection();
     }
 
-    private string GetCustomerListClass()
-    {
-        var baseClass = "lg:col-span-1";
-        var visibilityClass = AppState.SelectedCustomer != null ? "hidden lg:block" : "";
-        return $"{baseClass} {visibilityClass}";
-    }
-
-    private string GetProfileClass()
-    {
-        var baseClass = "lg:col-span-2";
-        var visibilityClass = AppState.SelectedCustomer == null ? "hidden lg:block" : "";
-        return $"{baseClass} {visibilityClass}";
-    }
-
     public void Dispose()
     {
         AppState.OnChange -= HandleStateChange;
+        ThemeService.OnThemeChanged -= HandleThemeChange;
     }
 }

@@ -1,0 +1,243 @@
+@namespace GrainOriginatorPortal.Components.Features.Map
+@inject IJSRuntime JSRuntime
+@implements IAsyncDisposable
+
+<div class="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800 relative" style="z-index: 0;">
+    <!-- Header -->
+    <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+            <Icon Name="map" Size="20" Class="text-green-600" />
+            <h3 class="font-semibold text-gray-900 dark:text-white">Customer Locations</h3>
+            <Badge Variant="secondary">@Customers.Count locations</Badge>
+        </div>
+        <Button Variant="ghost" Size="icon" OnClick="CloseMap">
+            <Icon Name="x" Size="20" />
+        </Button>
+    </div>
+
+    <!-- Map Container -->
+    <div id="customer-map" style="height: 400px; width: 100%;"></div>
+
+    <!-- Legend -->
+    <div class="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+        <div class="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
+            <div class="flex items-center gap-2">
+                <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                <span>Customer Location</span>
+            </div>
+            @if (!string.IsNullOrEmpty(FocusedState))
+            {
+                <span class="text-gray-300 dark:text-gray-600">|</span>
+                <span class="text-green-600 dark:text-green-400">Focused on: @GetDisplayName(FocusedState)</span>
+            }
+            <span class="text-gray-300 dark:text-gray-600">|</span>
+            <span>Click a marker to see customer details</span>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public List<Customer> Customers { get; set; } = new();
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<Customer> OnSelectCustomer { get; set; }
+    [Parameter] public string? FocusedState { get; set; }
+    [Parameter] public double? CenterLat { get; set; }
+    [Parameter] public double? CenterLng { get; set; }
+    [Parameter] public int? ZoomLevel { get; set; }
+
+    private bool isMapInitialized = false;
+    private DotNetObjectReference<CustomerMap>? dotNetRef;
+
+    private Dictionary<string, (double Lat, double Lng, int Zoom, string DisplayName)> stateInfo = new()
+    {
+        { "ia", (41.8780, -93.0977, 7, "Iowa") },
+        { "iowa", (41.8780, -93.0977, 7, "Iowa") },
+        { "il", (40.6331, -89.3985, 7, "Illinois") },
+        { "illinois", (40.6331, -89.3985, 7, "Illinois") },
+        { "ne", (41.4925, -99.9018, 7, "Nebraska") },
+        { "nebraska", (41.4925, -99.9018, 7, "Nebraska") },
+        { "mn", (46.7296, -94.6859, 6, "Minnesota") },
+        { "minnesota", (46.7296, -94.6859, 6, "Minnesota") },
+        { "wi", (43.7844, -88.7879, 7, "Wisconsin") },
+        { "wisconsin", (43.7844, -88.7879, 7, "Wisconsin") },
+        { "mo", (37.9643, -91.8318, 7, "Missouri") },
+        { "missouri", (37.9643, -91.8318, 7, "Missouri") },
+        { "ks", (39.0119, -98.4842, 7, "Kansas") },
+        { "kansas", (39.0119, -98.4842, 7, "Kansas") },
+        { "sd", (43.9695, -99.9018, 7, "South Dakota") },
+        { "south dakota", (43.9695, -99.9018, 7, "South Dakota") },
+        { "nd", (47.5515, -101.0020, 7, "North Dakota") },
+        { "north dakota", (47.5515, -101.0020, 7, "North Dakota") },
+        { "in", (40.2672, -86.1349, 7, "Indiana") },
+        { "indiana", (40.2672, -86.1349, 7, "Indiana") },
+        { "oh", (40.4173, -82.9071, 7, "Ohio") },
+        { "ohio", (40.4173, -82.9071, 7, "Ohio") },
+        { "mi", (44.3148, -85.6024, 7, "Michigan") },
+        { "michigan", (44.3148, -85.6024, 7, "Michigan") },
+        { "tx", (31.9686, -99.9018, 6, "Texas") },
+        { "texas", (31.9686, -99.9018, 6, "Texas") },
+        { "ok", (35.0078, -97.0929, 7, "Oklahoma") },
+        { "oklahoma", (35.0078, -97.0929, 7, "Oklahoma") },
+        { "co", (39.5501, -105.7821, 7, "Colorado") },
+        { "colorado", (39.5501, -105.7821, 7, "Colorado") }
+    };
+
+    private string GetDisplayName(string state)
+    {
+        if (stateInfo.TryGetValue(state.ToLower(), out var info))
+            return info.DisplayName;
+        return char.ToUpper(state[0]) + state.Substring(1);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await InitializeMap();
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (isMapInitialized)
+        {
+            await RefreshMap();
+        }
+    }
+
+    private async Task InitializeMap()
+    {
+        if (isMapInitialized) return;
+
+        try
+        {
+            double centerLat = CenterLat ?? 41.8780;
+            double centerLng = CenterLng ?? -93.0977;
+            int zoom = ZoomLevel ?? 5;
+
+            if (!string.IsNullOrEmpty(FocusedState))
+            {
+                var stateLower = FocusedState.ToLower();
+                if (stateInfo.TryGetValue(stateLower, out var info))
+                {
+                    centerLat = info.Lat;
+                    centerLng = info.Lng;
+                    zoom = info.Zoom;
+                }
+            }
+
+            await JSRuntime.InvokeVoidAsync("leafletMap.initialize", "customer-map", centerLat, centerLng, zoom);
+
+            // Set up the DotNet reference for callbacks from JavaScript
+            dotNetRef = DotNetObjectReference.Create(this);
+            await JSRuntime.InvokeVoidAsync("leafletMap.setDotNetRef", dotNetRef);
+
+            isMapInitialized = true;
+
+            await AddMarkers();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error initializing map: {ex.Message}");
+        }
+    }
+
+    private async Task RefreshMap()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("leafletMap.clearMarkers");
+            await AddMarkers();
+
+            if (!string.IsNullOrEmpty(FocusedState))
+            {
+                var stateLower = FocusedState.ToLower();
+                if (stateInfo.TryGetValue(stateLower, out var info))
+                {
+                    await JSRuntime.InvokeVoidAsync("leafletMap.setView", info.Lat, info.Lng, info.Zoom);
+                }
+            }
+            else if (Customers.Count > 1)
+            {
+                await JSRuntime.InvokeVoidAsync("leafletMap.fitBounds");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error refreshing map: {ex.Message}");
+        }
+    }
+
+    private async Task AddMarkers()
+    {
+        foreach (var customer in Customers)
+        {
+            var coords = GetCoordinatesForCustomer(customer);
+            var popupContent = $"<div style='min-width: 150px;'>" +
+                               $"<strong>{customer.Name}</strong><br/>" +
+                               $"<span style='color: #666;'>{customer.Farm}</span><br/>" +
+                               $"<span style='font-size: 12px;'>{customer.Location}</span><br/>" +
+                               $"<span style='font-size: 12px; color: #22c55e;'>{customer.TotalAcres:N0} acres</span>" +
+                               $"</div>";
+
+            await JSRuntime.InvokeVoidAsync("leafletMap.addMarker", coords.Lat, coords.Lng, popupContent, customer.Id);
+        }
+
+        if (Customers.Count > 1 && string.IsNullOrEmpty(FocusedState))
+        {
+            await JSRuntime.InvokeVoidAsync("leafletMap.fitBounds");
+        }
+    }
+
+    private (double Lat, double Lng) GetCoordinatesForCustomer(Customer customer)
+    {
+        var location = customer.Location.ToLower();
+
+        foreach (var kvp in stateInfo)
+        {
+            if (location.Contains(kvp.Key))
+            {
+                var random = new Random(customer.Id.GetHashCode());
+                var latOffset = (random.NextDouble() - 0.5) * 1.5;
+                var lngOffset = (random.NextDouble() - 0.5) * 1.5;
+
+                return (kvp.Value.Lat + latOffset, kvp.Value.Lng + lngOffset);
+            }
+        }
+
+        var defaultRandom = new Random(customer.Id.GetHashCode());
+        return (41.8780 + (defaultRandom.NextDouble() - 0.5) * 3, -93.0977 + (defaultRandom.NextDouble() - 0.5) * 3);
+    }
+
+    private async Task CloseMap()
+    {
+        await OnClose.InvokeAsync();
+    }
+
+    [JSInvokable]
+    public async Task OnMarkerClick(string customerId)
+    {
+        var customer = Customers.FirstOrDefault(c => c.Id == customerId);
+        if (customer != null)
+        {
+            await OnSelectCustomer.InvokeAsync(customer);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (isMapInitialized)
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("leafletMap.destroy");
+            }
+            catch
+            {
+                // Ignore errors during disposal
+            }
+        }
+
+        dotNetRef?.Dispose();
+    }
+}

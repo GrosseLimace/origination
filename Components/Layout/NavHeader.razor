@@ -2,15 +2,10 @@
 @inject AppState AppState
 @rendermode InteractiveServer
 
-<header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+<header class="sticky top-0 z-50 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
-                <!-- Mobile menu button -->
-                <Button Variant="ghost" Size="icon" OnClick="OpenMobileMenu" Class="lg:hidden">
-                    <Icon Name="menu" Size="24" />
-                </Button>
-
                 <Icon Name="wheat" Size="32" Class="text-green-600 dark:text-green-500" />
                 <div>
                     <h1 class="text-gray-900 dark:text-white">Grain Originator Portal</h1>
@@ -22,22 +17,22 @@
                 <Button Variant="@(AppState.CurrentView == "dashboard" ? "default" : "outline")"
                         OnClick="@(() => HandleViewChange("dashboard"))"
                         Class="gap-2 hidden lg:inline-flex">
-                    <Icon Name="bar-chart-2" Size="16" />
-                    <span>@(AppState.CurrentView == "dashboard" ? "Customers" : "Dashboard")</span>
+                    <Icon Name="@(AppState.CurrentView == "dashboard" ? "arrow-left" : "bar-chart-2")" Size="16" />
+                    <span>@(AppState.CurrentView == "dashboard" ? "Back to Customers" : "Dashboard")</span>
                 </Button>
 
                 <Button Variant="@(AppState.CurrentView == "buildlist" ? "default" : "outline")"
                         OnClick="@(() => HandleViewChange("buildlist"))"
                         Class="gap-2 hidden lg:inline-flex">
-                    <Icon Name="list-filter" Size="16" />
-                    <span>@(AppState.CurrentView == "buildlist" ? "Customers" : "Build a List")</span>
+                    <Icon Name="@(AppState.CurrentView == "buildlist" ? "arrow-left" : "list-filter")" Size="16" />
+                    <span>@(AppState.CurrentView == "buildlist" ? "Back to Customers" : "Build a List")</span>
                 </Button>
 
                 <Button Variant="@(AppState.CurrentView == "insights" ? "default" : "outline")"
                         OnClick="@(() => HandleViewChange("insights"))"
                         Class="gap-2 hidden lg:inline-flex">
-                    <Icon Name="sparkles" Size="16" />
-                    <span>@(AppState.CurrentView == "insights" ? "Customers" : "Insights")</span>
+                    <Icon Name="@(AppState.CurrentView == "insights" ? "arrow-left" : "sparkles")" Size="16" />
+                    <span>@(AppState.CurrentView == "insights" ? "Back to Customers" : "Actionable Insights")</span>
                 </Button>
 
                 <!-- Theme toggle - visible on all sizes -->
@@ -56,16 +51,7 @@
     </div>
 </header>
 
-<!-- Mobile Navigation -->
-<MobileNav IsOpen="@isMobileMenuOpen"
-           IsOpenChanged="v => isMobileMenuOpen = v"
-           CurrentView="@AppState.CurrentView"
-           IsDarkMode="@ThemeService.IsDarkMode"
-           OnNavigate="HandleViewChange"
-           OnToggleTheme="ToggleTheme" />
-
 @code {
-    private bool isMobileMenuOpen = false;
 
     protected override void OnInitialized()
     {
@@ -86,11 +72,6 @@
     private void HandleThemeChanged()
     {
         InvokeAsync(StateHasChanged);
-    }
-
-    private void OpenMobileMenu()
-    {
-        isMobileMenuOpen = true;
     }
 
     private async Task ToggleTheme()

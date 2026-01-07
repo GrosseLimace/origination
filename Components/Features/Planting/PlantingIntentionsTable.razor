@@ -19,7 +19,7 @@
     else
     {
         <!-- Add Button -->
-        <div class="flex justify-end">
+        <div class="flex justify-end mb-4">
             <Button OnClick="() => showAddDialog = true">
                 <Icon Name="plus" Size="16" Class="mr-2" />
                 Add Planting Intention
@@ -127,20 +127,97 @@
                     @foreach (var intention in sortedIntentions)
                     {
                         var totalProduction = intention.Acres * intention.EstimatedYield;
+                        var isExpanded = expandedRows.Contains(intention.Id);
+                        var daysUntilPlanting = (intention.PlantingDate - DateTime.Now).Days;
 
                         <TableRow>
-                            <TableCell>@intention.Crop</TableCell>
+                            <TableCell>
+                                <div class="flex items-center gap-2">
+                                    <button type="button"
+                                            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 border-0 bg-transparent p-0"
+                                            @onclick="() => ToggleRow(intention.Id)">
+                                        @if (isExpanded)
+                                        {
+                                            <Icon Name="chevron-up" Size="16" />
+                                        }
+                                        else
+                                        {
+                                            <Icon Name="chevron-down" Size="16" />
+                                        }
+                                    </button>
+                                    <span class="font-medium">@intention.Crop</span>
+                                </div>
+                            </TableCell>
                             <TableCell>@intention.Acres.ToString("N0")</TableCell>
                             <TableCell>@intention.Variety</TableCell>
                             <TableCell>@intention.PlantingDate.ToString("MMM d, yyyy")</TableCell>
                             <TableCell>@intention.EstimatedYield</TableCell>
                             <TableCell>@totalProduction.ToString("N0") bu</TableCell>
                             <TableCell>
-                                <Button Variant="ghost" Size="icon" OnClick="() => OpenEditDialog(intention)" Class="h-8 w-8">
+                                <button type="button"
+                                        class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 border-0 bg-transparent p-0"
+                                        @onclick="() => OpenEditDialog(intention)">
                                     <Icon Name="pencil" Size="16" />
-                                </Button>
+                                </button>
                             </TableCell>
                         </TableRow>
+
+                        @if (isExpanded)
+                        {
+                            <TableRow Class="bg-gray-50 dark:bg-gray-800/50">
+                                <TableCell colspan="7">
+                                    <div class="py-4">
+                                        <!-- Two column layout -->
+                                        <div class="grid grid-cols-2 gap-8">
+                                            <!-- Left column -->
+                                            <div class="space-y-6">
+                                                <div>
+                                                    <p class="text-sm text-gray-500 dark:text-gray-400">Total Production</p>
+                                                    <p>@totalProduction.ToString("N0") bushels</p>
+                                                </div>
+                                                <div>
+                                                    <p class="text-sm text-gray-500 dark:text-gray-400">Yield per Acre</p>
+                                                    <p>@intention.EstimatedYield bu/acre</p>
+                                                </div>
+                                                <div>
+                                                    <p class="text-sm text-gray-500 dark:text-gray-400">Full Planting Date</p>
+                                                    <p>@intention.PlantingDate.ToString("MMMM d, yyyy")</p>
+                                                </div>
+                                            </div>
+
+                                            <!-- Right column -->
+                                            <div class="space-y-6">
+                                                <div>
+                                                    <p class="text-sm text-gray-500 dark:text-gray-400">Planting Timeline</p>
+                                                    <p>
+                                                        @if (daysUntilPlanting > 0)
+                                                        {
+                                                            <span>Planting in @daysUntilPlanting days</span>
+                                                        }
+                                                        else if (daysUntilPlanting == 0)
+                                                        {
+                                                            <span>Planting today</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span>Planted @Math.Abs(daysUntilPlanting) days ago</span>
+                                                        }
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    <p class="text-sm text-gray-500 dark:text-gray-400">Variety Details</p>
+                                                    <p>@intention.Variety</p>
+                                                </div>
+                                                <div>
+                                                    <p class="text-sm text-gray-500 dark:text-gray-400">Total Acreage</p>
+                                                    <p>@intention.Acres.ToString("N0") acres</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </TableCell>
+                            </TableRow>
+                        }
                     }
                 </TableBody>
             </Table>
@@ -174,6 +251,7 @@
     private bool showEditDialog = false;
     private PlantingIntention? selectedIntention;
 
+    private HashSet<string> expandedRows = new();
     private SortColumn? currentSortColumn;
     private SortDirection currentSortDirection = SortDirection.None;
 
@@ -221,6 +299,12 @@
             currentSortColumn = column;
             currentSortDirection = SortDirection.Ascending;
         }
+    }
+
+    private void ToggleRow(string id)
+    {
+        if (!expandedRows.Remove(id))
+            expandedRows.Add(id);
     }
 
     private void OpenEditDialog(PlantingIntention intention)

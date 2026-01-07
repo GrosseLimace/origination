@@ -9,5 +9,5 @@
     [Parameter] public string? Class { get; set; }
     [Parameter] public EventCallback<MouseEventArgs> OnClick { get; set; }
 
-    private string ComputedClass => $"rounded-lg border bg-card text-card-foreground shadow-sm {Class}".Trim();
+    private string ComputedClass => $"rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-card-foreground shadow-sm overflow-hidden {Class}".Trim();
 }

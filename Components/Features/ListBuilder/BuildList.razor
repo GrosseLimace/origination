@@ -1,289 +1,206 @@
 @namespace GrainOriginatorPortal.Components.Features.ListBuilder
+@using GrainOriginatorPortal.Components.Features.Map
 
 <div class="space-y-6">
     <!-- Header -->
-    <div class="flex items-center justify-between">
+    <div class="flex items-start justify-between">
         <div>
             <h2 class="text-2xl font-semibold text-gray-900 dark:text-white">Build a List</h2>
-            <p class="text-gray-500 dark:text-gray-400">Create targeted customer lists using natural language or filters</p>
+            <p class="text-gray-500 dark:text-gray-400">Use natural language to create a custom customer list based on your criteria</p>
         </div>
+        <Button Variant="@(showMap ? "default" : "outline")" OnClick="ToggleMap">
+            <Icon Name="map" Size="16" Class="mr-2" />
+            Map
+        </Button>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- Query Builder Panel -->
-        <div class="lg:col-span-1 space-y-4">
-            <Card>
-                <CardHeader>
-                    <CardTitle>
-                        <Icon Name="search" Size="20" Class="inline-block mr-2" />
-                        Query Builder
-                    </CardTitle>
-                    <CardDescription>
-                        Type a natural language query or use the filters below
-                    </CardDescription>
-                </CardHeader>
-                <CardContent Class="space-y-4">
-                    <!-- Natural Language Input -->
-                    <div class="space-y-2">
-                        <Label>Natural Language Query</Label>
-                        <Textarea Placeholder="e.g., Show me large corn producers in Iowa who haven't been contacted recently"
-                                  Value="@queryText"
-                                  ValueChanged="HandleQueryChange"
-                                  Rows="3" />
-                        <Button OnClick="ProcessQuery" Class="w-full" Disabled="@isProcessing">
-                            @if (isProcessing)
-                            {
-                                <Icon Name="loader-2" Size="16" Class="mr-2 animate-spin" />
-                                <span>Processing...</span>
-                            }
-                            else
-                            {
-                                <Icon Name="sparkles" Size="16" Class="mr-2" />
-                                <span>Process Query</span>
-                            }
-                        </Button>
-                    </div>
+    <!-- Map View (toggleable) -->
+    @if (showMap && (hasGenerated ? filteredCustomers.Any() : Customers.Any()))
+    {
+        <CustomerMap Customers="@(hasGenerated ? filteredCustomers : Customers)"
+                     OnClose="ToggleMap"
+                     OnSelectCustomer="HandleSelectCustomer"
+                     FocusedState="@detectedState" />
+    }
 
-                    <Separator />
+    <!-- Natural Language Query Card -->
+    <Card>
+        <CardContent Class="p-6">
+            <!-- Card Header -->
+            <div class="flex items-center gap-2 mb-4">
+                <Icon Name="sparkles" Size="20" Style="color: #22c55e;" />
+                <h3 class="font-semibold text-gray-900 dark:text-white">Natural Language Query</h3>
+            </div>
 
-                    <!-- Advanced Filters Toggle -->
-                    <Button Variant="ghost" OnClick="() => showAdvancedFilters = !showAdvancedFilters" Class="w-full justify-between">
-                        <span>Advanced Filters</span>
-                        @if (showAdvancedFilters)
-                        {
-                            <Icon Name="chevron-up" Size="16" />
-                        }
-                        else
-                        {
-                            <Icon Name="chevron-down" Size="16" />
-                        }
-                    </Button>
+            <!-- Query Input -->
+            <div class="mb-4">
+                <Textarea Placeholder="Describe the type of customers you want to find... e.g., 'Show me farms in Nebraska' or 'Customers growing corn in Iowa'"
+                          Value="@queryText"
+                          ValueChanged="HandleQueryChange"
+                          Rows="3"
+                          Class="w-full" />
+            </div>
 
-                    @if (showAdvancedFilters)
+            <!-- Generate Button -->
+            <div class="mb-6">
+                <Button OnClick="ProcessQuery" Disabled="@(isProcessing || string.IsNullOrWhiteSpace(queryText))" Class="bg-green-600 hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-500 text-white">
+                    @if (isProcessing)
                     {
-                        <div class="space-y-4 pt-2">
-                            <!-- No Active Contracts -->
-                            <div class="flex items-center justify-between">
-                                <Label>No Active Contracts</Label>
-                                <input type="checkbox"
-                                       checked="@filterState.NoActiveContracts"
-                                       @onchange="e => { filterState.NoActiveContracts = (bool)(e.Value ?? false); ApplyFilters(); }"
-                                       class="h-4 w-4 rounded border-gray-300" />
-                            </div>
+                        <Icon Name="loader-2" Size="16" Class="mr-2 animate-spin" />
+                        <span>Generating...</span>
+                    }
+                    else
+                    {
+                        <Icon Name="sparkles" Size="16" Class="mr-2" />
+                        <span>Generate List</span>
+                    }
+                </Button>
+            </div>
 
-                            <!-- Has Grain Available -->
-                            <div class="flex items-center justify-between">
-                                <Label>Has Grain Available</Label>
-                                <input type="checkbox"
-                                       checked="@filterState.HasGrainAvailable"
-                                       @onchange="e => { filterState.HasGrainAvailable = (bool)(e.Value ?? false); ApplyFilters(); }"
-                                       class="h-4 w-4 rounded border-gray-300" />
-                            </div>
+            <!-- Example Queries -->
+            <div>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">Example queries:</p>
+                <div class="flex flex-wrap gap-2">
+                    @foreach (var example in exampleQueries)
+                    {
+                        <button type="button"
+                                class="px-3 py-1.5 text-sm rounded-full border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-0"
+                                @onclick="() => UseExampleQuery(example)">
+                            @example
+                        </button>
+                    }
+                </div>
+            </div>
+        </CardContent>
+    </Card>
 
-                            <!-- Not Contacted Recently -->
-                            <div class="space-y-2">
-                                <div class="flex items-center justify-between">
-                                    <Label>Not Contacted Recently</Label>
-                                    <input type="checkbox"
-                                           checked="@filterState.NotContactedRecently"
-                                           @onchange="e => { filterState.NotContactedRecently = (bool)(e.Value ?? false); ApplyFilters(); }"
-                                           class="h-4 w-4 rounded border-gray-300" />
-                                </div>
-                                @if (filterState.NotContactedRecently)
-                                {
-                                    <div class="flex items-center gap-2">
-                                        <Input Type="number"
-                                               Value="@filterState.NotContactedDays.ToString()"
-                                               ValueChanged="v => { filterState.NotContactedDays = int.TryParse(v, out var d) ? d : 60; ApplyFilters(); }"
-                                               Class="w-20" />
-                                        <span class="text-sm text-gray-500">days</span>
-                                    </div>
-                                }
-                            </div>
-
-                            <!-- Large Operations -->
-                            <div class="space-y-2">
-                                <div class="flex items-center justify-between">
-                                    <Label>Large Operations Only</Label>
-                                    <input type="checkbox"
-                                           checked="@filterState.LargeOperations"
-                                           @onchange="e => { filterState.LargeOperations = (bool)(e.Value ?? false); ApplyFilters(); }"
-                                           class="h-4 w-4 rounded border-gray-300" />
-                                </div>
-                                @if (filterState.LargeOperations)
-                                {
-                                    <div class="flex items-center gap-2">
-                                        <span class="text-sm text-gray-500">Top</span>
-                                        <Input Type="number"
-                                               Value="@filterState.TopN.ToString()"
-                                               ValueChanged="v => { filterState.TopN = int.TryParse(v, out var n) ? n : 10; ApplyFilters(); }"
-                                               Class="w-20" />
-                                        <span class="text-sm text-gray-500">by acres</span>
-                                    </div>
-                                }
-                            </div>
-
-                            <!-- Crop Filter -->
-                            <div class="space-y-2">
-                                <Label>Filter by Crop</Label>
-                                <div class="flex flex-wrap gap-2">
-                                    @foreach (var crop in availableCrops)
-                                    {
-                                        var isSelected = filterState.Crops.Contains(crop);
-                                        <Badge Class="@(isSelected ? "bg-green-500 text-white" : "bg-gray-200 dark:bg-gray-700")"
-                                               OnClick="() => ToggleCrop(crop)">
-                                            @crop
-                                        </Badge>
-                                    }
-                                </div>
-                            </div>
-
-                            <!-- Location Filter -->
-                            <div class="space-y-2">
-                                <Label>Filter by State</Label>
-                                <div class="flex flex-wrap gap-2">
-                                    @foreach (var state in availableStates)
-                                    {
-                                        var isSelected = filterState.Locations.Contains(state);
-                                        <Badge Class="@(isSelected ? "bg-blue-500 text-white" : "bg-gray-200 dark:bg-gray-700")"
-                                               OnClick="() => ToggleState(state)">
-                                            @state
-                                        </Badge>
-                                    }
-                                </div>
-                            </div>
-
-                            <Button Variant="outline" OnClick="ClearFilters" Class="w-full">
-                                <Icon Name="x" Size="16" Class="mr-2" />
-                                Clear All Filters
+    <!-- Results Section (only shown after generating and when query has text) -->
+    @if (hasGenerated && !string.IsNullOrWhiteSpace(queryText))
+    {
+        <Card>
+            <CardHeader>
+                <div class="flex items-center justify-between">
+                    <div>
+                        <CardTitle>Results</CardTitle>
+                        <CardDescription>
+                            Found @filteredCustomers.Count customer(s) matching your criteria
+                            @if (!string.IsNullOrEmpty(detectedState))
+                            {
+                                <span> in @GetStateDisplayName(detectedState)</span>
+                            }
+                        </CardDescription>
+                    </div>
+                    @if (filteredCustomers.Any())
+                    {
+                        <div class="flex gap-2">
+                            @if (!showMap)
+                            {
+                                <Button Variant="outline" OnClick="ToggleMap">
+                                    <Icon Name="map" Size="16" Class="mr-2" />
+                                    Show on Map
+                                </Button>
+                            }
+                            <Button Variant="outline" OnClick="() => showSaveDialog = true">
+                                <Icon Name="bookmark" Size="16" Class="mr-2" />
+                                Save List
                             </Button>
                         </div>
                     }
-                </CardContent>
-            </Card>
-
-            <!-- Saved Lists -->
-            <Card>
-                <CardHeader>
-                    <CardTitle>
-                        <Icon Name="bookmark" Size="20" Class="inline-block mr-2" />
-                        Saved Lists
-                    </CardTitle>
-                </CardHeader>
-                <CardContent>
-                    @if (!SavedLists.Any())
-                    {
-                        <p class="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
-                            No saved lists yet
-                        </p>
-                    }
-                    else
-                    {
-                        <div class="space-y-2">
-                            @foreach (var list in SavedLists)
-                            {
-                                <div class="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                    <button type="button"
-                                            class="flex-1 text-left"
-                                            @onclick="() => LoadSavedList(list)">
-                                        <div class="font-medium text-gray-900 dark:text-white">@list.Name</div>
-                                        <div class="text-xs text-gray-500">@list.CustomerIds.Count customers</div>
-                                    </button>
-                                    <Button Variant="ghost" Size="icon" OnClick="() => HandleDeleteList(list.Id)" Class="h-8 w-8 text-red-500 hover:text-red-700">
-                                        <Icon Name="trash-2" Size="16" />
-                                    </Button>
-                                </div>
-                            }
-                        </div>
-                    }
-                </CardContent>
-            </Card>
-        </div>
-
-        <!-- Results Panel -->
-        <div class="lg:col-span-2">
-            <Card>
-                <CardHeader>
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <CardTitle>
-                                Results
-                                <Badge Variant="secondary" Class="ml-2">@filteredCustomers.Count</Badge>
-                            </CardTitle>
-                            <CardDescription>
-                                @if (!string.IsNullOrEmpty(queryText))
-                                {
-                                    <span>Query: "@queryText"</span>
-                                }
-                                else
-                                {
-                                    <span>Showing all customers matching your filters</span>
-                                }
-                            </CardDescription>
-                        </div>
-                        @if (filteredCustomers.Any())
+                </div>
+            </CardHeader>
+            <CardContent>
+                @if (!filteredCustomers.Any())
+                {
+                    <div class="text-center py-8">
+                        <Icon Name="users" Size="48" Class="mx-auto mb-4 text-gray-300 dark:text-gray-600" />
+                        <h3 class="text-gray-500 dark:text-gray-400 mb-2">No Customers Found</h3>
+                        <p class="text-sm text-gray-400 dark:text-gray-500">Try adjusting your query</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="divide-y divide-gray-200 dark:divide-gray-700">
+                        @foreach (var customer in filteredCustomers)
                         {
-                            <div class="flex gap-2">
-                                <Button Variant="outline" OnClick="() => showSaveDialog = true">
-                                    <Icon Name="star" Size="16" Class="mr-2" />
-                                    Save List
-                                </Button>
+                            var lastContact = GetLastContactInfo(customer.Id);
+
+                            <div class="py-4 flex items-start justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 -mx-6 px-6 cursor-pointer transition-colors"
+                                 @onclick="() => HandleSelectCustomer(customer)">
+                                <div class="flex items-start gap-3">
+                                    <Avatar Fallback="@GetInitials(customer.Name)" Size="sm" />
+                                    <div>
+                                        <div class="font-medium text-gray-900 dark:text-white">
+                                            @customer.Name
+                                        </div>
+                                        <div class="text-sm text-gray-500 dark:text-gray-400">
+                                            @customer.Farm
+                                        </div>
+                                        <div class="flex items-center gap-2 mt-1">
+                                            <Icon Name="map-pin" Size="12" Class="text-gray-400" />
+                                            <span class="text-xs text-gray-400">@customer.Location</span>
+                                            <span class="text-gray-300 dark:text-gray-600">•</span>
+                                            <span class="text-sm text-gray-500 dark:text-gray-400">@customer.TotalAcres.ToString("N0") acres</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <span class="@lastContact.ColorClass text-sm">
+                                        @lastContact.Text
+                                    </span>
+                                    <div class="flex gap-1 mt-2 justify-end">
+                                        @foreach (var crop in GetCustomerCrops(customer.Id))
+                                        {
+                                            <Badge Variant="outline" Class="text-xs">@crop</Badge>
+                                        }
+                                    </div>
+                                </div>
                             </div>
                         }
                     </div>
-                </CardHeader>
-                <CardContent>
-                    @if (!filteredCustomers.Any())
-                    {
-                        <div class="text-center py-12">
-                            <Icon Name="users" Size="48" Class="mx-auto mb-4 text-gray-300 dark:text-gray-600" />
-                            <h3 class="text-gray-500 dark:text-gray-400 mb-2">No Customers Found</h3>
-                            <p class="text-sm text-gray-400 dark:text-gray-500">Try adjusting your filters or query</p>
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="divide-y divide-gray-200 dark:divide-gray-700">
-                            @foreach (var customer in filteredCustomers)
-                            {
-                                var lastContact = GetLastContactInfo(customer.Id);
+                }
+            </CardContent>
+        </Card>
+    }
 
-                                <div class="py-4 flex items-start justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 -mx-4 px-4 cursor-pointer transition-colors"
-                                     @onclick="() => HandleSelectCustomer(customer)">
-                                    <div class="flex items-start gap-3">
-                                        <Avatar Fallback="@GetInitials(customer.Name)" Size="sm" />
-                                        <div>
-                                            <div class="font-medium text-gray-900 dark:text-white">
-                                                @customer.Name
-                                            </div>
-                                            <div class="text-sm text-gray-500 dark:text-gray-400">
-                                                @customer.Farm
-                                            </div>
-                                            <div class="flex items-center gap-2 mt-1">
-                                                <Badge Variant="secondary">@customer.TotalAcres.ToString("N0") acres</Badge>
-                                                <span class="text-xs text-gray-400">@customer.Location</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="text-right">
-                                        <span class="@GetLastContactClass(lastContact.DaysAgo) text-sm">
-                                            @lastContact.Text
-                                        </span>
-                                        <div class="flex gap-1 mt-2">
-                                            @foreach (var crop in GetCustomerCrops(customer.Id))
-                                            {
-                                                <Badge Variant="outline" Class="text-xs">@crop</Badge>
-                                            }
-                                        </div>
-                                    </div>
-                                </div>
-                            }
+    <!-- Saved Lists Section - Always visible -->
+    <Card>
+        <CardHeader>
+            <CardTitle>
+                <Icon Name="bookmark" Size="20" Class="inline-block mr-2" />
+                Saved Lists
+            </CardTitle>
+            <CardDescription>Your saved customer lists for quick access</CardDescription>
+        </CardHeader>
+        <CardContent>
+            @if (!SavedLists.Any())
+            {
+                <div class="text-center py-8">
+                    <Icon Name="bookmark" Size="48" Class="mx-auto mb-4 text-gray-300 dark:text-gray-600" />
+                    <h3 class="text-gray-500 dark:text-gray-400 mb-2">No Saved Lists</h3>
+                    <p class="text-sm text-gray-400 dark:text-gray-500">Generate a list above and save it for quick access later</p>
+                </div>
+            }
+            else
+            {
+                <div class="space-y-2">
+                    @foreach (var list in SavedLists)
+                    {
+                        <div class="flex items-center justify-between gap-4 p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                            <button type="button"
+                                    class="flex-1 text-left min-w-0"
+                                    @onclick="() => LoadSavedList(list)">
+                                <div class="font-medium text-gray-900 dark:text-white truncate">@list.Name</div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400 truncate">@list.CustomerIds.Count customers • Created from: "@list.Query"</div>
+                            </button>
+                            <button type="button" @onclick="() => HandleDeleteList(list.Id)" class="text-red-500 hover:text-red-600 bg-transparent border-0 p-0 flex-shrink-0">
+                                <Icon Name="trash-2" Size="16" />
+                            </button>
                         </div>
                     }
-                </CardContent>
-            </Card>
-        </div>
-    </div>
+                </div>
+            }
+        </CardContent>
+    </Card>
 
     <!-- Save List Dialog -->
     <Dialog IsOpen="@showSaveDialog" IsOpenChanged="v => showSaveDialog = v">
@@ -314,6 +231,7 @@
     [Parameter] public List<Contract> Contracts { get; set; } = new();
     [Parameter] public List<PlantingIntention> PlantingIntentions { get; set; } = new();
     [Parameter] public List<Note> Notes { get; set; } = new();
+    [Parameter] public List<StoredGrain> StoredGrain { get; set; } = new();
     [Parameter] public List<SavedList> SavedLists { get; set; } = new();
     [Parameter] public EventCallback<Customer> OnSelectCustomer { get; set; }
     [Parameter] public EventCallback<(string Name, string Query, List<string> CustomerIds)> OnSaveList { get; set; }
@@ -321,135 +239,440 @@
 
     private string queryText = "";
     private bool isProcessing = false;
-    private bool showAdvancedFilters = false;
+    private bool hasGenerated = false;
     private bool showSaveDialog = false;
+    private bool showMap = false;
     private string newListName = "";
+    private string? detectedState = null;
     private List<Customer> filteredCustomers = new();
 
-    private FilterState filterState = new();
-
-    private class FilterState
+    private List<string> exampleQueries = new()
     {
-        public bool NoActiveContracts { get; set; }
-        public bool HasGrainAvailable { get; set; }
-        public bool NotContactedRecently { get; set; }
-        public int NotContactedDays { get; set; } = 60;
-        public bool LargeOperations { get; set; }
-        public int TopN { get; set; } = 10;
-        public List<string> Crops { get; set; } = new();
-        public List<string> Locations { get; set; } = new();
-    }
+        "Show me farms in Nebraska",
+        "Customers with more than 1000 acres",
+        "Farmers I have not contacted in over 60 days",
+        "Customers contacted in the last 7 days",
+        "Farms with grain in storage",
+        "Customers planting corn this season",
+        "Large operations over 2000 acres in Iowa",
+        "Producers with soybeans in storage",
+        "Top 10 largest operations"
+    };
 
-    private List<string> availableCrops => PlantingIntentions
-        .Select(p => p.Crop)
-        .Distinct()
-        .OrderBy(c => c)
-        .ToList();
-
-    private List<string> availableStates => Customers
-        .Select(c => ExtractState(c.Location))
-        .Where(s => !string.IsNullOrEmpty(s))
-        .Distinct()
-        .OrderBy(s => s)
-        .ToList();
-
-    protected override void OnInitialized()
+    private Dictionary<string, string> stateNames = new()
     {
-        filteredCustomers = Customers.ToList();
+        { "iowa", "Iowa" },
+        { "nebraska", "Nebraska" },
+        { "illinois", "Illinois" },
+        { "minnesota", "Minnesota" },
+        { "wisconsin", "Wisconsin" },
+        { "missouri", "Missouri" },
+        { "kansas", "Kansas" },
+        { "south dakota", "South Dakota" },
+        { "north dakota", "North Dakota" },
+        { "indiana", "Indiana" },
+        { "ohio", "Ohio" },
+        { "michigan", "Michigan" },
+        { "texas", "Texas" },
+        { "oklahoma", "Oklahoma" },
+        { "colorado", "Colorado" }
+    };
+
+    private void ToggleMap()
+    {
+        showMap = !showMap;
     }
 
     private void HandleQueryChange(string query)
     {
         queryText = query;
+
+        // If query is cleared, reset the results
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            hasGenerated = false;
+            filteredCustomers = new();
+            detectedState = null;
+        }
+    }
+
+    private async Task UseExampleQuery(string example)
+    {
+        // Reset state before setting new query
+        detectedState = null;
+        hasGenerated = false;
+        filteredCustomers = new();
+
+        queryText = example;
+        StateHasChanged();
+        await ProcessQuery();
     }
 
     private async Task ProcessQuery()
     {
+        if (string.IsNullOrWhiteSpace(queryText))
+            return;
+
         isProcessing = true;
         StateHasChanged();
 
         // Simulate processing delay
         await Task.Delay(800);
 
-        // Parse natural language query
-        ParseNaturalLanguageQuery(queryText);
-        ApplyFilters();
+        // Detect if this is a location-based query
+        detectedState = DetectStateInQuery(queryText);
+
+        // Parse natural language query and filter
+        filteredCustomers = ParseAndFilter(queryText);
+        hasGenerated = true;
 
         isProcessing = false;
         StateHasChanged();
     }
 
-    private void ParseNaturalLanguageQuery(string query)
+    private string? DetectStateInQuery(string query)
     {
         var lowerQuery = query.ToLower();
 
-        // Reset filters first
-        filterState = new FilterState();
-
-        // Check for "no active contract" patterns
-        if (lowerQuery.Contains("no active contract") || lowerQuery.Contains("no contract") || lowerQuery.Contains("without contract"))
+        // Check for full state names first
+        foreach (var state in stateNames.Keys)
         {
-            filterState.NoActiveContracts = true;
-        }
-
-        // Check for "grain available" patterns
-        if (lowerQuery.Contains("grain available") || lowerQuery.Contains("has grain") || lowerQuery.Contains("stored grain"))
-        {
-            filterState.HasGrainAvailable = true;
-        }
-
-        // Check for "not contacted" patterns
-        if (lowerQuery.Contains("not contacted") || lowerQuery.Contains("haven't contacted") || lowerQuery.Contains("no contact"))
-        {
-            filterState.NotContactedRecently = true;
-
-            // Try to extract days
-            var match = System.Text.RegularExpressions.Regex.Match(lowerQuery, @"(\d+)\s*days?");
-            if (match.Success && int.TryParse(match.Groups[1].Value, out var days))
+            if (lowerQuery.Contains(state))
             {
-                filterState.NotContactedDays = days;
+                return state;
             }
         }
 
-        // Check for "large" or "biggest" patterns
-        if (lowerQuery.Contains("large") || lowerQuery.Contains("biggest") || lowerQuery.Contains("top"))
+        // Also check for state abbreviations
+        var stateAbbreviations = new Dictionary<string, string>
         {
-            filterState.LargeOperations = true;
+            { " ia ", "iowa" }, { " ia,", "iowa" }, { " ia.", "iowa" },
+            { " ne ", "nebraska" }, { " ne,", "nebraska" }, { " ne.", "nebraska" },
+            { " il ", "illinois" }, { " il,", "illinois" }, { " il.", "illinois" },
+            { " mn ", "minnesota" }, { " mn,", "minnesota" }, { " mn.", "minnesota" },
+            { " wi ", "wisconsin" }, { " wi,", "wisconsin" }, { " wi.", "wisconsin" },
+            { " mo ", "missouri" }, { " mo,", "missouri" }, { " mo.", "missouri" },
+            { " ks ", "kansas" }, { " ks,", "kansas" }, { " ks.", "kansas" },
+            { " sd ", "south dakota" }, { " sd,", "south dakota" }, { " sd.", "south dakota" },
+            { " nd ", "north dakota" }, { " nd,", "north dakota" }, { " nd.", "north dakota" },
+            { ",in ", "indiana" }, { " in,", "indiana" }, { " in.", "indiana" },
+            { " oh ", "ohio" }, { " oh,", "ohio" }, { " oh.", "ohio" },
+            { " mi ", "michigan" }, { " mi,", "michigan" }, { " mi.", "michigan" },
+            { " tx ", "texas" }, { " tx,", "texas" }, { " tx.", "texas" },
+            { " ok ", "oklahoma" }, { " ok,", "oklahoma" }, { " ok.", "oklahoma" },
+            { " co ", "colorado" }, { " co,", "colorado" }, { " co.", "colorado" }
+        };
 
-            var match = System.Text.RegularExpressions.Regex.Match(lowerQuery, @"top\s*(\d+)");
-            if (match.Success && int.TryParse(match.Groups[1].Value, out var n))
+        foreach (var abbrev in stateAbbreviations)
+        {
+            if (lowerQuery.Contains(abbrev.Key))
             {
-                filterState.TopN = n;
+                return abbrev.Value;
             }
         }
 
-        // Check for crop names
-        foreach (var crop in availableCrops)
-        {
-            if (lowerQuery.Contains(crop.ToLower()))
-            {
-                filterState.Crops.Add(crop);
-            }
-        }
-
-        // Check for state names
-        foreach (var state in availableStates)
-        {
-            if (lowerQuery.Contains(state.ToLower()))
-            {
-                filterState.Locations.Add(state);
-            }
-        }
-
-        showAdvancedFilters = true;
+        return null;
     }
 
-    private void ApplyFilters()
+    private string GetStateDisplayName(string state)
     {
+        if (stateNames.TryGetValue(state.ToLower(), out var displayName))
+            return displayName;
+        return char.ToUpper(state[0]) + state.Substring(1);
+    }
+
+    private List<Customer> ParseAndFilter(string query)
+    {
+        var lowerQuery = query.ToLower();
         var result = Customers.AsEnumerable();
 
-        // No active contracts filter
-        if (filterState.NoActiveContracts)
+        // ==========================================
+        // LOCATION/STATE FILTER
+        // ==========================================
+        if (!string.IsNullOrEmpty(detectedState))
+        {
+            var stateAbbrev = GetStateAbbreviation(detectedState);
+            result = result.Where(c =>
+                c.Location.ToLower().Contains(detectedState) ||
+                c.Location.ToLower().Contains(stateAbbrev));
+        }
+
+        // ==========================================
+        // ACRES FILTER
+        // ==========================================
+        // "more than X acres", "over X acres", "at least X acres", "greater than X acres"
+        var moreAcresMatch = System.Text.RegularExpressions.Regex.Match(lowerQuery,
+            @"(?:more than|over|at least|greater than|above|exceeding)\s*(\d+(?:,\d+)?)\s*acres?");
+        if (moreAcresMatch.Success)
+        {
+            var acresStr = moreAcresMatch.Groups[1].Value.Replace(",", "");
+            if (int.TryParse(acresStr, out var minAcres))
+            {
+                result = result.Where(c => c.TotalAcres >= minAcres);
+            }
+        }
+
+        // "less than X acres", "under X acres", "fewer than X acres"
+        var lessAcresMatch = System.Text.RegularExpressions.Regex.Match(lowerQuery,
+            @"(?:less than|under|fewer than|below)\s*(\d+(?:,\d+)?)\s*acres?");
+        if (lessAcresMatch.Success)
+        {
+            var acresStr = lessAcresMatch.Groups[1].Value.Replace(",", "");
+            if (int.TryParse(acresStr, out var maxAcres))
+            {
+                result = result.Where(c => c.TotalAcres < maxAcres);
+            }
+        }
+
+        // "between X and Y acres"
+        var betweenAcresMatch = System.Text.RegularExpressions.Regex.Match(lowerQuery,
+            @"between\s*(\d+(?:,\d+)?)\s*(?:and|to|-)\s*(\d+(?:,\d+)?)\s*acres?");
+        if (betweenAcresMatch.Success)
+        {
+            var minStr = betweenAcresMatch.Groups[1].Value.Replace(",", "");
+            var maxStr = betweenAcresMatch.Groups[2].Value.Replace(",", "");
+            if (int.TryParse(minStr, out var minAcres) && int.TryParse(maxStr, out var maxAcres))
+            {
+                result = result.Where(c => c.TotalAcres >= minAcres && c.TotalAcres <= maxAcres);
+            }
+        }
+
+        // "large operations" or "big farms" (default to 1500+ acres)
+        // But NOT if it's a "top X largest" query - that should just sort and take top X
+        var isTopQuery = System.Text.RegularExpressions.Regex.IsMatch(lowerQuery, @"top\s*\d+");
+        if ((lowerQuery.Contains("large") || lowerQuery.Contains("big")) &&
+            (lowerQuery.Contains("operation") || lowerQuery.Contains("farm")) &&
+            !isTopQuery)
+        {
+            if (!moreAcresMatch.Success) // Only if no specific acre filter
+            {
+                result = result.Where(c => c.TotalAcres >= 1500);
+            }
+        }
+
+        // "small farms" (default to under 500 acres)
+        if (lowerQuery.Contains("small") && (lowerQuery.Contains("operation") || lowerQuery.Contains("farm")))
+        {
+            if (!lessAcresMatch.Success)
+            {
+                result = result.Where(c => c.TotalAcres < 500);
+            }
+        }
+
+        // ==========================================
+        // LAST CONTACTED FILTER
+        // ==========================================
+        // Check for "not contacted" patterns - find days number near "contacted" and "not/over/more"
+        System.Text.RegularExpressions.Match notContactedMatch = System.Text.RegularExpressions.Regex.Match("", "x"); // Initialize as non-match
+
+        // Check if query contains indicators of "not contacted" patterns
+        bool isNotContactedQuery = lowerQuery.Contains("have not contacted") ||
+                                   lowerQuery.Contains("haven't contacted") ||
+                                   lowerQuery.Contains("not contacted") ||
+                                   lowerQuery.Contains("never contacted") ||
+                                   (lowerQuery.Contains("contacted") && lowerQuery.Contains("over") && lowerQuery.Contains("days"));
+
+        if (isNotContactedQuery)
+        {
+            // Extract the number of days from the query
+            notContactedMatch = System.Text.RegularExpressions.Regex.Match(lowerQuery, @"(\d+)\s*days?");
+        }
+        if (notContactedMatch.Success && int.TryParse(notContactedMatch.Groups[1].Value, out var notContactedDays))
+        {
+            var cutoffDate = DateTime.Now.AddDays(-notContactedDays);
+            result = result.Where(c =>
+            {
+                var lastNote = Notes.Where(n => n.CustomerId == c.Id).OrderByDescending(n => n.Timestamp).FirstOrDefault();
+                return lastNote == null || lastNote.Timestamp < cutoffDate;
+            });
+        }
+        else if (lowerQuery.Contains("never contacted") || lowerQuery.Contains("no contact history"))
+        {
+            result = result.Where(c => !Notes.Any(n => n.CustomerId == c.Id));
+        }
+
+        // "contacted in the last X days" or "contacted within X days" or "recently contacted"
+        // Only apply this if NOT a "not contacted" query
+        if (!isNotContactedQuery)
+        {
+            var recentlyContactedMatch = System.Text.RegularExpressions.Regex.Match(lowerQuery,
+                @"contacted\s*(?:in|within)?\s*(?:the)?\s*(?:last|past)?\s*(\d+)\s*days?");
+            if (recentlyContactedMatch.Success && int.TryParse(recentlyContactedMatch.Groups[1].Value, out var recentDays))
+            {
+                var cutoffDate = DateTime.Now.AddDays(-recentDays);
+                result = result.Where(c =>
+                {
+                    var lastNote = Notes.Where(n => n.CustomerId == c.Id).OrderByDescending(n => n.Timestamp).FirstOrDefault();
+                    return lastNote != null && lastNote.Timestamp >= cutoffDate;
+                });
+            }
+            else if (lowerQuery.Contains("recently contacted") || lowerQuery.Contains("contacted recently"))
+            {
+                var cutoffDate = DateTime.Now.AddDays(-14); // Default to 14 days
+                result = result.Where(c =>
+                {
+                    var lastNote = Notes.Where(n => n.CustomerId == c.Id).OrderByDescending(n => n.Timestamp).FirstOrDefault();
+                    return lastNote != null && lastNote.Timestamp >= cutoffDate;
+                });
+            }
+
+            // "contacted last week"
+            if (lowerQuery.Contains("contacted last week") || lowerQuery.Contains("contacted this week"))
+            {
+                var cutoffDate = DateTime.Now.AddDays(-7);
+                result = result.Where(c =>
+                {
+                    var lastNote = Notes.Where(n => n.CustomerId == c.Id).OrderByDescending(n => n.Timestamp).FirstOrDefault();
+                    return lastNote != null && lastNote.Timestamp >= cutoffDate;
+                });
+            }
+
+            // "contacted last month" or "contacted this month"
+            if (lowerQuery.Contains("contacted last month") || lowerQuery.Contains("contacted this month"))
+            {
+                var cutoffDate = DateTime.Now.AddDays(-30);
+                result = result.Where(c =>
+                {
+                    var lastNote = Notes.Where(n => n.CustomerId == c.Id).OrderByDescending(n => n.Timestamp).FirstOrDefault();
+                    return lastNote != null && lastNote.Timestamp >= cutoffDate;
+                });
+            }
+        }
+
+        // ==========================================
+        // STORAGE FILTER
+        // ==========================================
+        // "with grain in storage", "have stored grain", "storing grain"
+        if (lowerQuery.Contains("in storage") || lowerQuery.Contains("stored grain") ||
+            lowerQuery.Contains("storing grain") || lowerQuery.Contains("have storage") ||
+            lowerQuery.Contains("with storage") || lowerQuery.Contains("grain stored"))
+        {
+            var customersWithStorage = StoredGrain
+                .Select(s => s.CustomerId)
+                .Distinct()
+                .ToHashSet();
+
+            result = result.Where(c => customersWithStorage.Contains(c.Id));
+        }
+
+        // "with corn in storage", "storing soybeans", etc.
+        var storageGrains = new[] { "corn", "soybeans", "wheat", "oats", "barley", "sorghum" };
+        foreach (var grain in storageGrains)
+        {
+            if ((lowerQuery.Contains($"{grain} in storage") || lowerQuery.Contains($"storing {grain}") ||
+                 lowerQuery.Contains($"stored {grain}") || lowerQuery.Contains($"{grain} stored")))
+            {
+                var customersWithGrainStorage = StoredGrain
+                    .Where(s => s.Crop.ToLower().Contains(grain))
+                    .Select(s => s.CustomerId)
+                    .Distinct()
+                    .ToHashSet();
+
+                result = result.Where(c => customersWithGrainStorage.Contains(c.Id));
+                break;
+            }
+        }
+
+        // "storage over X bushels" or "more than X bushels in storage"
+        var storageQuantityMatch = System.Text.RegularExpressions.Regex.Match(lowerQuery,
+            @"(?:storage|stored|storing)\s*(?:over|more than|above|exceeding)?\s*(\d+(?:,\d+)?)\s*(?:bushels?|bu)");
+        if (storageQuantityMatch.Success)
+        {
+            var quantityStr = storageQuantityMatch.Groups[1].Value.Replace(",", "");
+            if (int.TryParse(quantityStr, out var minQuantity))
+            {
+                var customersWithMinStorage = StoredGrain
+                    .GroupBy(s => s.CustomerId)
+                    .Where(g => g.Sum(s => s.Quantity) >= minQuantity)
+                    .Select(g => g.Key)
+                    .ToHashSet();
+
+                result = result.Where(c => customersWithMinStorage.Contains(c.Id));
+            }
+        }
+
+        // "no storage" or "without storage"
+        if (lowerQuery.Contains("no storage") || lowerQuery.Contains("without storage") ||
+            lowerQuery.Contains("not storing"))
+        {
+            var customersWithStorage = StoredGrain
+                .Select(s => s.CustomerId)
+                .Distinct()
+                .ToHashSet();
+
+            result = result.Where(c => !customersWithStorage.Contains(c.Id));
+        }
+
+        // ==========================================
+        // PLANTING INTENTIONS FILTER
+        // ==========================================
+        // "planting corn", "growing soybeans", "plans to plant wheat"
+        var plantingCrops = new[] { "corn", "soybeans", "wheat", "oats", "barley", "sorghum" };
+        foreach (var crop in plantingCrops)
+        {
+            if (lowerQuery.Contains($"planting {crop}") || lowerQuery.Contains($"growing {crop}") ||
+                lowerQuery.Contains($"plant {crop}") || lowerQuery.Contains($"plans to plant {crop}") ||
+                lowerQuery.Contains($"{crop} planting") || lowerQuery.Contains($"{crop} this season"))
+            {
+                var customersWithCrop = PlantingIntentions
+                    .Where(p => p.Crop.ToLower().Contains(crop))
+                    .Select(p => p.CustomerId)
+                    .Distinct()
+                    .ToHashSet();
+
+                result = result.Where(c => customersWithCrop.Contains(c.Id));
+                break;
+            }
+        }
+
+        // "with planting intentions" or "have planting plans"
+        if (lowerQuery.Contains("planting intention") || lowerQuery.Contains("planting plan") ||
+            lowerQuery.Contains("planning to plant") || lowerQuery.Contains("plans to grow"))
+        {
+            var customersWithPlanting = PlantingIntentions
+                .Select(p => p.CustomerId)
+                .Distinct()
+                .ToHashSet();
+
+            result = result.Where(c => customersWithPlanting.Contains(c.Id));
+        }
+
+        // "planting over X acres" or "planting more than X acres"
+        var plantingAcresMatch = System.Text.RegularExpressions.Regex.Match(lowerQuery,
+            @"planting\s*(?:over|more than|above)?\s*(\d+(?:,\d+)?)\s*acres?");
+        if (plantingAcresMatch.Success)
+        {
+            var acresStr = plantingAcresMatch.Groups[1].Value.Replace(",", "");
+            if (int.TryParse(acresStr, out var minPlantingAcres))
+            {
+                var customersWithMinPlanting = PlantingIntentions
+                    .GroupBy(p => p.CustomerId)
+                    .Where(g => g.Sum(p => p.Acres) >= minPlantingAcres)
+                    .Select(g => g.Key)
+                    .ToHashSet();
+
+                result = result.Where(c => customersWithMinPlanting.Contains(c.Id));
+            }
+        }
+
+        // "no planting intentions" or "without planting plans"
+        if (lowerQuery.Contains("no planting") || lowerQuery.Contains("without planting") ||
+            lowerQuery.Contains("no plans to plant"))
+        {
+            var customersWithPlanting = PlantingIntentions
+                .Select(p => p.CustomerId)
+                .Distinct()
+                .ToHashSet();
+
+            result = result.Where(c => !customersWithPlanting.Contains(c.Id));
+        }
+
+        // ==========================================
+        // CONTRACT FILTER
+        // ==========================================
+        // "no active contracts"
+        if (lowerQuery.Contains("no active contract") || lowerQuery.Contains("no contract") ||
+            lowerQuery.Contains("without contract") || lowerQuery.Contains("no contracts"))
         {
             var customersWithActiveContracts = Contracts
                 .Where(c => c.Status == ContractStatus.Active || c.Status == ContractStatus.Pending)
@@ -460,87 +683,84 @@
             result = result.Where(c => !customersWithActiveContracts.Contains(c.Id));
         }
 
-        // Has grain available filter
-        if (filterState.HasGrainAvailable)
+        // "with active contracts"
+        if (lowerQuery.Contains("with active contract") || lowerQuery.Contains("have contract") ||
+            lowerQuery.Contains("active contracts"))
         {
-            var customersWithPlanting = PlantingIntentions
-                .Select(p => p.CustomerId)
+            var customersWithActiveContracts = Contracts
+                .Where(c => c.Status == ContractStatus.Active || c.Status == ContractStatus.Pending)
+                .Select(c => c.CustomerId)
                 .Distinct()
                 .ToHashSet();
 
-            result = result.Where(c => customersWithPlanting.Contains(c.Id));
+            result = result.Where(c => customersWithActiveContracts.Contains(c.Id));
         }
 
-        // Not contacted recently filter
-        if (filterState.NotContactedRecently)
+        // "unsigned contracts"
+        if (lowerQuery.Contains("unsigned contract") || lowerQuery.Contains("not signed"))
         {
-            var cutoffDate = DateTime.Now.AddDays(-filterState.NotContactedDays);
-
-            result = result.Where(c =>
-            {
-                var lastNote = Notes
-                    .Where(n => n.CustomerId == c.Id)
-                    .OrderByDescending(n => n.Timestamp)
-                    .FirstOrDefault();
-
-                return lastNote == null || lastNote.Timestamp < cutoffDate;
-            });
-        }
-
-        // Crop filter
-        if (filterState.Crops.Any())
-        {
-            var customersWithCrops = PlantingIntentions
-                .Where(p => filterState.Crops.Contains(p.Crop))
-                .Select(p => p.CustomerId)
+            var customersWithUnsigned = Contracts
+                .Where(c => !c.Signed)
+                .Select(c => c.CustomerId)
                 .Distinct()
                 .ToHashSet();
 
-            result = result.Where(c => customersWithCrops.Contains(c.Id));
+            result = result.Where(c => customersWithUnsigned.Contains(c.Id));
         }
 
-        // Location filter
-        if (filterState.Locations.Any())
+        // ==========================================
+        // TOP/LARGEST FILTER
+        // ==========================================
+        var topMatch = System.Text.RegularExpressions.Regex.Match(lowerQuery, @"top\s*(\d+)\s*(?:largest|biggest|customers?|farms?|operations?)?");
+        if (topMatch.Success && int.TryParse(topMatch.Groups[1].Value, out var topN))
         {
-            result = result.Where(c =>
-                filterState.Locations.Any(state =>
-                    c.Location.Contains(state, StringComparison.OrdinalIgnoreCase)));
+            result = result.OrderByDescending(c => c.TotalAcres).Take(topN);
         }
-
-        // Large operations filter (apply last as it limits results)
-        if (filterState.LargeOperations)
+        else if (lowerQuery.Contains("largest") || lowerQuery.Contains("biggest"))
         {
-            result = result.OrderByDescending(c => c.TotalAcres).Take(filterState.TopN);
+            result = result.OrderByDescending(c => c.TotalAcres).Take(10);
         }
 
-        filteredCustomers = result.ToList();
+        // "bottom X" or "smallest"
+        var bottomMatch = System.Text.RegularExpressions.Regex.Match(lowerQuery, @"(?:bottom|smallest)\s*(\d+)");
+        if (bottomMatch.Success && int.TryParse(bottomMatch.Groups[1].Value, out var bottomN))
+        {
+            result = result.OrderBy(c => c.TotalAcres).Take(bottomN);
+        }
+        else if (lowerQuery.Contains("smallest"))
+        {
+            result = result.OrderBy(c => c.TotalAcres).Take(10);
+        }
+
+        return result.ToList();
     }
 
-    private void ToggleCrop(string crop)
+    private string GetStateAbbreviation(string state) => state.ToLower() switch
     {
-        if (!filterState.Crops.Remove(crop))
-            filterState.Crops.Add(crop);
-        ApplyFilters();
-    }
-
-    private void ToggleState(string state)
-    {
-        if (!filterState.Locations.Remove(state))
-            filterState.Locations.Add(state);
-        ApplyFilters();
-    }
-
-    private void ClearFilters()
-    {
-        filterState = new FilterState();
-        queryText = "";
-        filteredCustomers = Customers.ToList();
-    }
+        "iowa" => "ia",
+        "illinois" => "il",
+        "nebraska" => "ne",
+        "minnesota" => "mn",
+        "wisconsin" => "wi",
+        "missouri" => "mo",
+        "kansas" => "ks",
+        "south dakota" => "sd",
+        "north dakota" => "nd",
+        "indiana" => "in",
+        "ohio" => "oh",
+        "michigan" => "mi",
+        "texas" => "tx",
+        "oklahoma" => "ok",
+        "colorado" => "co",
+        _ => ""
+    };
 
     private void LoadSavedList(SavedList list)
     {
         queryText = list.Query;
+        detectedState = DetectStateInQuery(list.Query);
         filteredCustomers = Customers.Where(c => list.CustomerIds.Contains(c.Id)).ToList();
+        hasGenerated = true;
     }
 
     private async Task HandleSaveList()
@@ -551,6 +771,10 @@
             await OnSaveList.InvokeAsync((newListName, queryText, customerIds));
             newListName = "";
             showSaveDialog = false;
+            queryText = "";
+            hasGenerated = false;
+            filteredCustomers = new();
+            detectedState = null;
         }
     }
 
@@ -564,17 +788,6 @@
         await OnSelectCustomer.InvokeAsync(customer);
     }
 
-    private string ExtractState(string location)
-    {
-        // Extract state abbreviation from location like "Iowa County, IA"
-        var parts = location.Split(',');
-        if (parts.Length > 1)
-        {
-            return parts.Last().Trim();
-        }
-        return "";
-    }
-
     private string GetInitials(string name)
     {
         var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -585,7 +798,7 @@
         return "??";
     }
 
-    private (string Text, int DaysAgo) GetLastContactInfo(string customerId)
+    private (string Text, string ColorClass) GetLastContactInfo(string customerId)
     {
         var lastNote = Notes
             .Where(n => n.CustomerId == customerId)
@@ -593,23 +806,15 @@
             .FirstOrDefault();
 
         if (lastNote == null)
-            return ("No contact", -1);
+            return ("Never contacted", "text-red-500");
 
         var daysAgo = (int)(DateTime.Now - lastNote.Timestamp).TotalDays;
 
-        if (daysAgo == 0) return ("Today", 0);
-        if (daysAgo == 1) return ("Yesterday", 1);
-        if (daysAgo < 7) return ($"{daysAgo} days ago", daysAgo);
-        if (daysAgo < 30) return ($"{daysAgo / 7} weeks ago", daysAgo);
-        return ($"{daysAgo / 30} months ago", daysAgo);
-    }
-
-    private string GetLastContactClass(int daysAgo)
-    {
-        if (daysAgo < 0) return "text-red-500";
-        if (daysAgo <= 7) return "text-green-500";
-        if (daysAgo <= 30) return "text-yellow-500";
-        return "text-red-500";
+        if (daysAgo == 0) return ("Contacted today", "text-green-500");
+        if (daysAgo == 1) return ("Contacted yesterday", "text-green-500");
+        if (daysAgo < 7) return ($"Contacted {daysAgo} days ago", "text-green-500");
+        if (daysAgo < 30) return ($"Contacted {daysAgo} days ago", "text-yellow-500");
+        return ($"Contacted {daysAgo} days ago", "text-red-500");
     }
 
     private IEnumerable<string> GetCustomerCrops(string customerId)

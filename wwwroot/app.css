@@ -321,6 +321,8 @@ p {
 .border-blue-800 { border-color: #1e40af; }
 .border-amber-200 { border-color: #fde68a; }
 .border-amber-800 { border-color: #92400e; }
+.border-purple-100 { border-color: #f3e8ff; }
+.border-purple-800 { border-color: #6b21a8; }
 .border-transparent { border-color: transparent; }
 
 /* Background Colors */
@@ -365,6 +367,7 @@ p {
 .bg-blue-500 { background-color: #3b82f6; }
 
 .bg-amber-50 { background-color: #fffbeb; }
+.bg-purple-50 { background-color: #faf5ff; }
 .bg-amber-100 { background-color: #fef3c7; }
 
 /* Text Colors */
@@ -586,7 +589,14 @@ p {
     .lg\:col-span-1 { grid-column: span 1 / span 1; }
     .lg\:col-span-2 { grid-column: span 2 / span 2; }
     .lg\:px-8 { padding-left: 2rem; padding-right: 2rem; }
+    .lg\:sticky { position: sticky; }
+    .lg\:top-20 { top: 5rem; }
+    .lg\:top-24 { top: 6rem; }
+    .lg\:self-start { align-self: start; }
 }
+
+/* Grid alignment */
+.items-start { align-items: start; }
 
 /* ============================================
    DARK MODE UTILITIES
@@ -601,6 +611,8 @@ p {
 .dark .dark\:bg-blue-900\/20 { background-color: rgb(30 58 138 / 0.2); }
 .dark .dark\:bg-amber-900\/20 { background-color: rgb(120 53 15 / 0.2); }
 .dark .dark\:bg-amber-900\/30 { background-color: rgb(120 53 15 / 0.3); }
+.dark .dark\:bg-purple-900\/20 { background-color: rgb(88 28 135 / 0.2); }
+.dark .dark\:bg-purple-900\/40 { background-color: rgb(88 28 135 / 0.4); }
 
 .dark .dark\:text-white { color: #ffffff; }
 .dark .dark\:text-gray-100 { color: #f3f4f6; }
@@ -626,6 +638,7 @@ p {
 .dark .dark\:border-yellow-800 { border-color: #854d0e; }
 .dark .dark\:border-blue-800 { border-color: #1e40af; }
 .dark .dark\:border-amber-800 { border-color: #92400e; }
+.dark .dark\:border-purple-800 { border-color: #6b21a8; }
 
 .dark .dark\:hover\:bg-gray-600:hover { background-color: #4b5563; }
 .dark .dark\:hover\:bg-gray-700:hover { background-color: #374151; }
@@ -808,6 +821,10 @@ body {
 /* Purple color utilities */
 .bg-purple-100 { background-color: #f3e8ff; }
 .text-purple-600 { color: #9333ea; }
+.text-purple-800 { color: #6b21a8; }
+.text-purple-900 { color: #581c87; }
+.dark .dark\:text-purple-100 { color: #f3e8ff; }
+.dark .dark\:text-purple-300 { color: #d8b4fe; }
 .dark .dark\:text-purple-400 { color: #c084fc; }
 
 /* Red color utilities */

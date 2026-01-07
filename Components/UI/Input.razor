@@ -19,7 +19,7 @@
     [Parameter] public EventCallback<string> ValueChanged { get; set; }
     [Parameter] public EventCallback<ChangeEventArgs> OnChange { get; set; }
 
-    private string ComputedClass => $"flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm transition-colors placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 {Class}".Trim();
+    private string ComputedClass => $"flex h-10 w-full rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white px-3 py-2 text-sm transition-colors placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 {Class}".Trim();
 
     private async Task HandleInput(ChangeEventArgs e)
     {

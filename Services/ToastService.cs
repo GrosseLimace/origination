@@ -1,22 +1,44 @@
 namespace GrainOriginatorPortal.Services;
 
+/// <summary>
+/// Toast notification display variants.
+/// </summary>
 public enum ToastVariant
 {
+    /// <summary>Informational notification (blue).</summary>
     Info,
+    /// <summary>Success notification (green).</summary>
     Success,
+    /// <summary>Warning notification (yellow/orange).</summary>
     Warning,
+    /// <summary>Error notification (red).</summary>
     Error
 }
 
+/// <summary>
+/// Represents a toast notification item.
+/// </summary>
 public class ToastItem
 {
+    /// <summary>Unique identifier for the toast.</summary>
     public string Id { get; set; } = Guid.NewGuid().ToString();
+    /// <summary>Optional title displayed in bold.</summary>
     public string? Title { get; set; }
+    /// <summary>Main message content.</summary>
     public string Message { get; set; } = "";
+    /// <summary>Visual variant/style of the toast.</summary>
     public ToastVariant Variant { get; set; } = ToastVariant.Info;
+    /// <summary>When the toast was created.</summary>
     public DateTime CreatedAt { get; set; } = DateTime.Now;
 }
 
+/// <summary>
+/// Service for displaying toast notifications throughout the application.
+/// </summary>
+/// <remarks>
+/// Toasts are automatically dismissed after a configurable duration.
+/// Components should subscribe to OnChange to render updated toast list.
+/// </remarks>
 public class ToastService : IDisposable
 {
     private readonly List<ToastItem> _toasts = new();

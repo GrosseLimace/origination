@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\CEgr\\Projects\\GrainOriginatorPortal\\GrainOriginatorPortal.csproj": {}
+    "c:\\Users\\CEgr\\Projects\\GrainOriginatorPortal\\GrainOriginatorPortal.csproj": {}
   },
   "projects": {
-    "C:\\Users\\CEgr\\Projects\\GrainOriginatorPortal\\GrainOriginatorPortal.csproj": {
+    "c:\\Users\\CEgr\\Projects\\GrainOriginatorPortal\\GrainOriginatorPortal.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\CEgr\\Projects\\GrainOriginatorPortal\\GrainOriginatorPortal.csproj",
+        "projectUniqueName": "c:\\Users\\CEgr\\Projects\\GrainOriginatorPortal\\GrainOriginatorPortal.csproj",
         "projectName": "GrainOriginatorPortal",
-        "projectPath": "C:\\Users\\CEgr\\Projects\\GrainOriginatorPortal\\GrainOriginatorPortal.csproj",
+        "projectPath": "c:\\Users\\CEgr\\Projects\\GrainOriginatorPortal\\GrainOriginatorPortal.csproj",
         "packagesPath": "C:\\Users\\CEgr\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\CEgr\\Projects\\GrainOriginatorPortal\\obj\\",
+        "outputPath": "c:\\Users\\CEgr\\Projects\\GrainOriginatorPortal\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"

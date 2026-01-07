@@ -11,321 +11,337 @@ build_property.EnforceExtendedAnalyzerRules =
 build_property._SupportedPlatformList = Linux,macOS,Windows
 build_property.RootNamespace = GrainOriginatorPortal
 build_property.RootNamespace = GrainOriginatorPortal
-build_property.ProjectDir = C:\Users\CEgr\Projects\GrainOriginatorPortal\
+build_property.ProjectDir = c:\Users\CEgr\Projects\GrainOriginatorPortal\
 build_property.EnableComHosting = 
 build_property.EnableGeneratedComInterfaceComImportInterop = 
 build_property.RazorLangVersion = 9.0
 build_property.SupportLocalizedComponentNames = 
 build_property.GenerateRazorMetadataSourceChecksumAttributes = 
-build_property.MSBuildProjectDirectory = C:\Users\CEgr\Projects\GrainOriginatorPortal
+build_property.MSBuildProjectDirectory = c:\Users\CEgr\Projects\GrainOriginatorPortal
 build_property._RazorSourceGeneratorDebug = 
 build_property.EffectiveAnalysisLevelStyle = 10.0
 build_property.EnableCodeStyleSeverity = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/App.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/App.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xBcHAucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Contracts/ContractsTable.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Contracts/ContractsTable.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xDb250cmFjdHNcQ29udHJhY3RzVGFibGUucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Contracts/_Placeholder.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Contracts/_Placeholder.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xDb250cmFjdHNcX1BsYWNlaG9sZGVyLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Customers/CustomerCharts.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Customers/CustomerCharts.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xDdXN0b21lcnNcQ3VzdG9tZXJDaGFydHMucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Customers/CustomerList.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Customers/CustomerList.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xDdXN0b21lcnNcQ3VzdG9tZXJMaXN0LnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Customers/CustomerNotes.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Customers/CustomerNotes.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xDdXN0b21lcnNcQ3VzdG9tZXJOb3Rlcy5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Customers/CustomerProfile.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Customers/CustomerProfile.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xDdXN0b21lcnNcQ3VzdG9tZXJQcm9maWxlLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Customers/EditCustomerDialog.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Customers/EditCustomerDialog.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xDdXN0b21lcnNcRWRpdEN1c3RvbWVyRGlhbG9nLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Insights/ActionableInsights.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Insights/ActionableInsights.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xJbnNpZ2h0c1xBY3Rpb25hYmxlSW5zaWdodHMucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Insights/ActivitySummary.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Insights/ActivitySummary.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xJbnNpZ2h0c1xBY3Rpdml0eVN1bW1hcnkucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Insights/TerritoryDashboard.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Insights/AIGrowthForecast.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xJbnNpZ2h0c1xBSUdyb3d0aEZvcmVjYXN0LnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Insights/ProducerInsights.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xJbnNpZ2h0c1xQcm9kdWNlckluc2lnaHRzLnJhem9y
+build_metadata.AdditionalFiles.CssScope = 
+
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Insights/TerritoryDashboard.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xJbnNpZ2h0c1xUZXJyaXRvcnlEYXNoYm9hcmQucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Insights/_Placeholder.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Insights/YearOverYearChart.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xJbnNpZ2h0c1xZZWFyT3ZlclllYXJDaGFydC5yYXpvcg==
+build_metadata.AdditionalFiles.CssScope = 
+
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Insights/_Placeholder.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xJbnNpZ2h0c1xfUGxhY2Vob2xkZXIucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/ListBuilder/BuildList.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/ListBuilder/BuildList.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xMaXN0QnVpbGRlclxCdWlsZExpc3QucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/ListBuilder/_Placeholder.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/ListBuilder/_Placeholder.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xMaXN0QnVpbGRlclxfUGxhY2Vob2xkZXIucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Planting/AddPlantingIntentionDialog.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Map/CustomerMap.razor]
+build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xNYXBcQ3VzdG9tZXJNYXAucmF6b3I=
+build_metadata.AdditionalFiles.CssScope = 
+
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Planting/AddPlantingIntentionDialog.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xQbGFudGluZ1xBZGRQbGFudGluZ0ludGVudGlvbkRpYWxvZy5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Planting/EditPlantingIntentionDialog.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Planting/EditPlantingIntentionDialog.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xQbGFudGluZ1xFZGl0UGxhbnRpbmdJbnRlbnRpb25EaWFsb2cucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Planting/PlantingIntentionsTable.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Planting/PlantingIntentionsTable.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xQbGFudGluZ1xQbGFudGluZ0ludGVudGlvbnNUYWJsZS5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Planting/_Placeholder.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Planting/_Placeholder.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xQbGFudGluZ1xfUGxhY2Vob2xkZXIucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Storage/StoredGrainTable.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Storage/StoredGrainTable.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xTdG9yYWdlXFN0b3JlZEdyYWluVGFibGUucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Storage/_Placeholder.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Storage/_Placeholder.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xTdG9yYWdlXF9QbGFjZWhvbGRlci5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Tickets/TicketsTable.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Tickets/TicketsTable.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xUaWNrZXRzXFRpY2tldHNUYWJsZS5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Tickets/_Placeholder.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Features/Tickets/_Placeholder.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xGZWF0dXJlc1xUaWNrZXRzXF9QbGFjZWhvbGRlci5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Layout/Footer.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Layout/Footer.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xMYXlvdXRcRm9vdGVyLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Layout/MobileNav.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Layout/MobileNav.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xMYXlvdXRcTW9iaWxlTmF2LnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Layout/NavHeader.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Layout/NavHeader.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xMYXlvdXRcTmF2SGVhZGVyLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Pages/Error.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Pages/Error.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xFcnJvci5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Pages/Home.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Pages/Home.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xIb21lLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Pages/NotFound.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Pages/NotFound.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xQYWdlc1xOb3RGb3VuZC5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Routes.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Routes.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xSb3V0ZXMucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Alert.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Alert.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxBbGVydC5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/AlertDescription.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/AlertDescription.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxBbGVydERlc2NyaXB0aW9uLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/AlertTitle.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/AlertTitle.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxBbGVydFRpdGxlLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Avatar.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Avatar.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxBdmF0YXIucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Badge.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Badge.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxCYWRnZS5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Button.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Button.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxCdXR0b24ucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Card.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Card.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxDYXJkLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/CardContent.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/CardContent.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxDYXJkQ29udGVudC5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/CardDescription.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/CardDescription.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxDYXJkRGVzY3JpcHRpb24ucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/CardFooter.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/CardFooter.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxDYXJkRm9vdGVyLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/CardHeader.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/CardHeader.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxDYXJkSGVhZGVyLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/CardTitle.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/CardTitle.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxDYXJkVGl0bGUucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/ConfirmDialog.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/ConfirmDialog.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxDb25maXJtRGlhbG9nLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Dialog.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Dialog.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxEaWFsb2cucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/DialogDescription.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/DialogDescription.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxEaWFsb2dEZXNjcmlwdGlvbi5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/DialogFooter.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/DialogFooter.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxEaWFsb2dGb290ZXIucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/DialogHeader.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/DialogHeader.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxEaWFsb2dIZWFkZXIucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/DialogTitle.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/DialogTitle.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxEaWFsb2dUaXRsZS5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/EmptyState.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/EmptyState.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxFbXB0eVN0YXRlLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Icon.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Icon.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxJY29uLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Input.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Input.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxJbnB1dC5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/KeyboardHint.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/KeyboardHint.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxLZXlib2FyZEhpbnQucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Label.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Label.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxMYWJlbC5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/LoadingSpinner.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/LoadingSpinner.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxMb2FkaW5nU3Bpbm5lci5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/PageLoading.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/PageLoading.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxQYWdlTG9hZGluZy5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Progress.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Progress.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxQcm9ncmVzcy5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/SearchInput.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/SearchInput.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxTZWFyY2hJbnB1dC5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Select.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Select.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxTZWxlY3QucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/SelectOption.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/SelectOption.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxTZWxlY3RPcHRpb24ucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Separator.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Separator.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxTZXBhcmF0b3IucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Skeleton.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Skeleton.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxTa2VsZXRvbi5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/StatCard.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/StatCard.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxTdGF0Q2FyZC5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Table.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Table.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxUYWJsZS5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/TableBody.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/TableBody.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxUYWJsZUJvZHkucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/TableCell.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/TableCell.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxUYWJsZUNlbGwucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/TableHead.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/TableHead.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxUYWJsZUhlYWQucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/TableHeader.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/TableHeader.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxUYWJsZUhlYWRlci5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/TableRow.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/TableRow.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxUYWJsZVJvdy5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Tabs.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Tabs.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxUYWJzLnJhem9y
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/TabsContent.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/TabsContent.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxUYWJzQ29udGVudC5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/TabsList.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/TabsList.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxUYWJzTGlzdC5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/TabsTrigger.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/TabsTrigger.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxUYWJzVHJpZ2dlci5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Textarea.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Textarea.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxUZXh0YXJlYS5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Toast.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/Toast.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxUb2FzdC5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/ToastContainer.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/UI/ToastContainer.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xVSVxUb2FzdENvbnRhaW5lci5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/_Imports.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/_Imports.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xfSW1wb3J0cy5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = 
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Layout/MainLayout.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Layout/MainLayout.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xMYXlvdXRcTWFpbkxheW91dC5yYXpvcg==
 build_metadata.AdditionalFiles.CssScope = b-citfgj39lq
 
-[C:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Layout/ReconnectModal.razor]
+[c:/Users/CEgr/Projects/GrainOriginatorPortal/Components/Layout/ReconnectModal.razor]
 build_metadata.AdditionalFiles.TargetPath = Q29tcG9uZW50c1xMYXlvdXRcUmVjb25uZWN0TW9kYWwucmF6b3I=
 build_metadata.AdditionalFiles.CssScope = b-jfkcb199v1

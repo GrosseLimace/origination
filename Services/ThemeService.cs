@@ -2,6 +2,13 @@ using Microsoft.JSInterop;
 
 namespace GrainOriginatorPortal.Services;
 
+/// <summary>
+/// Manages dark/light theme preferences for the application.
+/// </summary>
+/// <remarks>
+/// This service persists theme preferences to localStorage via JavaScript interop
+/// and broadcasts theme changes to subscribed components.
+/// </remarks>
 public class ThemeService : IAsyncDisposable
 {
     private readonly IJSRuntime _jsRuntime;

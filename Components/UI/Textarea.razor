@@ -17,7 +17,7 @@
     [Parameter] public string? Class { get; set; }
     [Parameter] public EventCallback<string> ValueChanged { get; set; }
 
-    private string ComputedClass => $"flex min-h-[80px] w-full rounded-md border bg-background px-3 py-2 text-sm transition-colors placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-none {Class}".Trim();
+    private string ComputedClass => $"flex min-h-[80px] w-full rounded-md border border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm transition-colors placeholder:text-gray-400 dark:placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 dark:focus:ring-green-400 disabled:cursor-not-allowed disabled:opacity-50 resize-none {Class}".Trim();
 
     private async Task HandleInput(ChangeEventArgs e)
     {

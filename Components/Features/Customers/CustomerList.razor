@@ -1,7 +1,7 @@
 @namespace GrainOriginatorPortal.Components.Features.Customers
 @inject IDataService DataService
 
-<Card Class="h-fit">
+<Card>
     <CardHeader>
         <CardTitle>Customers</CardTitle>
         <CardDescription>@customers.Count producers in your territory</CardDescription>
@@ -18,7 +18,7 @@
         <!-- Saved Lists Filter -->
         @if (SavedLists.Any())
         {
-            <div class="p-4 border-b">
+            <div class="p-4 border-b flex-shrink-0">
                 <Select Value="@selectedListId"
                         ValueChanged="HandleListFilter"
                         Placeholder="Filter by saved list">
@@ -32,7 +32,7 @@
         }
 
         <!-- Customer List -->
-        <div class="divide-y divide-gray-200 dark:divide-gray-700 max-h-[calc(100vh-300px)] overflow-y-auto">
+        <div class="divide-y divide-gray-200 dark:divide-gray-700">
             @if (!filteredCustomers.Any())
             {
                 <div class="p-8 text-center text-gray-500">
@@ -158,8 +158,8 @@
         var isSelected = SelectedCustomer?.Id == customer.Id;
         var baseClass = "p-4 cursor-pointer transition-colors";
         var stateClass = isSelected
-            ? "bg-green-50 dark:bg-green-900/20 border-l-4 border-green-500"
-            : "hover:bg-gray-50 dark:hover:bg-gray-700/50";
+            ? "bg-green-50 dark:bg-green-900/30 border-l-4 border-green-500"
+            : "bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700";
         return $"{baseClass} {stateClass}";
     }
 

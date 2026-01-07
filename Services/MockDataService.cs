@@ -2,6 +2,54 @@ using GrainOriginatorPortal.Models;
 
 namespace GrainOriginatorPortal.Services;
 
+/// <summary>
+/// Mock implementation of IDataService for development and demonstration purposes.
+/// </summary>
+/// <remarks>
+/// IMPORTANT: This service contains static mock data for UI development.
+///
+/// TODO: Replace with real implementation when connecting to production data:
+///
+/// Option 1 - Entity Framework Core:
+/// <code>
+/// public class EFDataService : IDataService
+/// {
+///     private readonly ApplicationDbContext _context;
+///
+///     public EFDataService(ApplicationDbContext context)
+///     {
+///         _context = context;
+///     }
+///
+///     public List&lt;Customer&gt; GetCustomers()
+///     {
+///         return _context.Customers.Include(c => c.Farms).ToList();
+///     }
+/// }
+/// </code>
+///
+/// Option 2 - REST API:
+/// <code>
+/// public class ApiDataService : IDataService
+/// {
+///     private readonly HttpClient _httpClient;
+///
+///     public ApiDataService(HttpClient httpClient)
+///     {
+///         _httpClient = httpClient;
+///     }
+///
+///     public async Task&lt;List&lt;Customer&gt;&gt; GetCustomersAsync()
+///     {
+///         return await _httpClient.GetFromJsonAsync&lt;List&lt;Customer&gt;&gt;("/api/customers");
+///     }
+/// }
+/// </code>
+///
+/// Registration in Program.cs:
+/// - Development: builder.Services.AddScoped&lt;IDataService, MockDataService&gt;();
+/// - Production: builder.Services.AddScoped&lt;IDataService, EFDataService&gt;();
+/// </remarks>
 public class MockDataService : IDataService
 {
     private List<Customer> _customers = new();
