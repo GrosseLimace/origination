@@ -2,8 +2,8 @@ export interface Note {
   id: string;
   customerId: string;
   farmId?: string;
-  originatorName: string;
-  timestamp: Date;
+  createdBy: string;
+  createdAt: Date;
   content: string;
-  pinned: boolean;
+  isPinned: boolean;
 }

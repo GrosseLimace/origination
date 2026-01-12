@@ -37,8 +37,8 @@ public interface IDataService
     // Note Operations
     List<Note> GetNotes();
     List<Note> GetNotesByCustomer(string customerId);
-    void AddNote(string customerId, string? farmId, string originatorName, string content);
-    void ToggleNotePin(string noteId);
+    Note AddNote(string customerId, string content);
+    Note? ToggleNotePin(string noteId);
 
     // Storage Operations
     List<StoredGrain> GetStoredGrain();

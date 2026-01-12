@@ -30,20 +30,21 @@ public class CustomersController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    public ActionResult Update(string id, [FromBody] UpdateCustomerRequest request)
+    public ActionResult<Customer> Update(string id, [FromBody] Customer request)
     {
         var customer = _dataService.GetCustomerById(id);
         if (customer == null) return NotFound();
 
-        _dataService.UpdateCustomer(id, request.Location, request.Phone, request.Email, request.FarmIds);
-        return NoContent();
-    }
-}
+        // Update the customer properties
+        customer.Name = request.Name;
+        customer.Farm = request.Farm;
+        customer.Location = request.Location;
+        customer.Phone = request.Phone;
+        customer.Email = request.Email;
+        customer.TotalAcres = request.TotalAcres;
+        customer.FarmIds = request.FarmIds;
+        customer.ESignEnabled = request.ESignEnabled;
 
-public class UpdateCustomerRequest
-{
-    public string Location { get; set; } = string.Empty;
-    public string Phone { get; set; } = string.Empty;
-    public string Email { get; set; } = string.Empty;
-    public List<string> FarmIds { get; set; } = new();
+        return Ok(customer);
+    }
 }

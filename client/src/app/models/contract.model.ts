@@ -5,10 +5,10 @@ export interface Contract {
   customerId: string;
   farmId: string;
   contractNumber: string;
-  crop: string;
-  quantity: number;
-  unit: string;
-  price: number;
+  crop: string;           // Grain type (Corn, Soybeans, Wheat)
+  quantity: number;       // Bushels
+  unit: string;           // Usually "bushels"
+  price: number;          // Price per bushel
   deliveryStart: Date;
   deliveryEnd: Date;
   status: ContractStatus;

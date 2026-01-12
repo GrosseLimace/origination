@@ -55,13 +55,19 @@ public class MockDataService : IDataService
             new() { Id = "C006", CustomerId = "3", FarmId = "F004", ContractNumber = "C006", Crop = "Corn", Quantity = 35000, Unit = "bushels", Price = 4.80m, DeliveryStart = new DateTime(2024, 11, 1), DeliveryEnd = new DateTime(2024, 12, 31), Status = ContractStatus.Pending, Signed = false }
         };
 
-        // Initialize Tickets
+        // Initialize Tickets with realistic weights for 30-80% delivery progress
         _tickets = new List<Ticket>
         {
-            new() { Id = "T001", CustomerId = "1", FarmId = "F001", Date = new DateTime(2024, 10, 15), Crop = "Corn", GrossWeight = 52000, TareWeight = 32000, NetWeight = 20000, Moisture = 15.5m, TestWeight = 56.2m },
-            new() { Id = "T002", CustomerId = "1", FarmId = "F001", Date = new DateTime(2024, 10, 18), Crop = "Corn", GrossWeight = 51800, TareWeight = 32000, NetWeight = 19800, Moisture = 16.2m, TestWeight = 55.8m },
-            new() { Id = "T003", CustomerId = "1", FarmId = "F001", Date = new DateTime(2024, 9, 22), Crop = "Soybeans", GrossWeight = 48000, TareWeight = 32000, NetWeight = 16000, Moisture = 13.1m, TestWeight = 58.4m },
-            new() { Id = "T004", CustomerId = "2", FarmId = "F003", Date = new DateTime(2024, 10, 20), Crop = "Corn", GrossWeight = 53200, TareWeight = 33000, NetWeight = 20200, Moisture = 14.8m, TestWeight = 57.1m }
+            // Customer 1 - Corn contract C001 (50,000 bu target, ~45% delivered)
+            new() { Id = "T001", CustomerId = "1", FarmId = "F001", TicketNumber = "TKT-2024-001", Date = new DateTime(2024, 10, 15), Crop = "Corn", GrossWeight = 82000, TareWeight = 32000, NetWeight = 560000, Moisture = 15.5m, TestWeight = 56.2m },
+            new() { Id = "T002", CustomerId = "1", FarmId = "F001", TicketNumber = "TKT-2024-002", Date = new DateTime(2024, 10, 18), Crop = "Corn", GrossWeight = 81800, TareWeight = 32000, NetWeight = 504000, Moisture = 16.2m, TestWeight = 55.8m },
+            new() { Id = "T005", CustomerId = "1", FarmId = "F001", TicketNumber = "TKT-2024-005", Date = new DateTime(2024, 10, 25), Crop = "Corn", GrossWeight = 79000, TareWeight = 32000, NetWeight = 196000, Moisture = 15.1m, TestWeight = 56.5m },
+            // Customer 1 - Soybeans contract C002 (30,000 bu target, ~35% delivered)
+            new() { Id = "T003", CustomerId = "1", FarmId = "F001", TicketNumber = "TKT-2024-003", Date = new DateTime(2024, 9, 22), Crop = "Soybeans", GrossWeight = 68000, TareWeight = 32000, NetWeight = 378000, Moisture = 13.1m, TestWeight = 58.4m },
+            new() { Id = "T006", CustomerId = "1", FarmId = "F001", TicketNumber = "TKT-2024-006", Date = new DateTime(2024, 10, 5), Crop = "Soybeans", GrossWeight = 65000, TareWeight = 32000, NetWeight = 252000, Moisture = 12.8m, TestWeight = 59.1m },
+            // Customer 2 - Corn contract C003 (80,000 bu target, ~60% delivered)
+            new() { Id = "T004", CustomerId = "2", FarmId = "F003", TicketNumber = "TKT-2024-004", Date = new DateTime(2024, 10, 20), Crop = "Corn", GrossWeight = 93200, TareWeight = 33000, NetWeight = 1344000, Moisture = 14.8m, TestWeight = 57.1m },
+            new() { Id = "T007", CustomerId = "2", FarmId = "F003", TicketNumber = "TKT-2024-007", Date = new DateTime(2024, 10, 28), Crop = "Corn", GrossWeight = 91500, TareWeight = 33000, NetWeight = 1344000, Moisture = 14.5m, TestWeight = 57.3m }
         };
 
         // Initialize Planting Intentions
@@ -77,12 +83,12 @@ public class MockDataService : IDataService
         // Initialize Notes
         _notes = new List<Note>
         {
-            new() { Id = "N001", CustomerId = "1", FarmId = "F001", OriginatorName = "David Thompson", Timestamp = new DateTime(2024, 11, 1, 9, 15, 0), Content = "Discussed potential early delivery options for corn contract. Customer prefers December delivery window.", Pinned = false },
-            new() { Id = "N002", CustomerId = "1", FarmId = "F001", OriginatorName = "Lisa Martinez", Timestamp = new DateTime(2024, 10, 22, 14, 30, 0), Content = "Customer mentioned they are expanding operations next year. May need additional storage contracts.", Pinned = false },
-            new() { Id = "N003", CustomerId = "1", FarmId = "F001", OriginatorName = "David Thompson", Timestamp = new DateTime(2024, 9, 15, 11, 0, 0), Content = "Initial meeting went well. Customer is satisfied with current pricing and wants to continue working with us.", Pinned = false },
-            new() { Id = "N004", CustomerId = "2", FarmId = "F003", OriginatorName = "Lisa Martinez", Timestamp = new DateTime(2024, 11, 5, 16, 45, 0), Content = "Customer inquired about basis contracts for next season. Scheduled follow-up for November 20th.", Pinned = false },
-            new() { Id = "N005", CustomerId = "2", FarmId = "F003", OriginatorName = "Michael Zhang", Timestamp = new DateTime(2024, 10, 18, 10, 20, 0), Content = "Reviewed wheat delivery schedule. Everything on track. Customer is very satisfied with our service.", Pinned = false },
-            new() { Id = "N006", CustomerId = "2", FarmId = "F003", OriginatorName = "David Thompson", Timestamp = new DateTime(2024, 9, 28, 13, 15, 0), Content = "Discussed harvest timeline. Customer expects to start corn harvest around October 15th.", Pinned = false }
+            new() { Id = "N001", CustomerId = "1", FarmId = "F001", CreatedBy = "David Thompson", CreatedAt = new DateTime(2024, 11, 1, 9, 15, 0), Content = "Discussed potential early delivery options for corn contract. Customer prefers December delivery window.", IsPinned = false },
+            new() { Id = "N002", CustomerId = "1", FarmId = "F001", CreatedBy = "Lisa Martinez", CreatedAt = new DateTime(2024, 10, 22, 14, 30, 0), Content = "Customer mentioned they are expanding operations next year. May need additional storage contracts.", IsPinned = false },
+            new() { Id = "N003", CustomerId = "1", FarmId = "F001", CreatedBy = "David Thompson", CreatedAt = new DateTime(2024, 9, 15, 11, 0, 0), Content = "Initial meeting went well. Customer is satisfied with current pricing and wants to continue working with us.", IsPinned = false },
+            new() { Id = "N004", CustomerId = "2", FarmId = "F003", CreatedBy = "Lisa Martinez", CreatedAt = new DateTime(2024, 11, 5, 16, 45, 0), Content = "Customer inquired about basis contracts for next season. Scheduled follow-up for November 20th.", IsPinned = false },
+            new() { Id = "N005", CustomerId = "2", FarmId = "F003", CreatedBy = "Michael Zhang", CreatedAt = new DateTime(2024, 10, 18, 10, 20, 0), Content = "Reviewed wheat delivery schedule. Everything on track. Customer is very satisfied with our service.", IsPinned = false },
+            new() { Id = "N006", CustomerId = "2", FarmId = "F003", CreatedBy = "David Thompson", CreatedAt = new DateTime(2024, 9, 28, 13, 15, 0), Content = "Discussed harvest timeline. Customer expects to start corn harvest around October 15th.", IsPinned = false }
         };
 
         // Initialize Stored Grain
@@ -181,28 +187,31 @@ public class MockDataService : IDataService
     public List<Note> GetNotes() => _notes;
     public List<Note> GetNotesByCustomer(string customerId) => _notes.Where(n => n.CustomerId == customerId).ToList();
 
-    public void AddNote(string customerId, string? farmId, string originatorName, string content)
+    public Note AddNote(string customerId, string content)
     {
         var newId = $"N{(_notes.Count + 1).ToString().PadLeft(3, '0')}";
-        _notes.Add(new Note
+        var note = new Note
         {
             Id = newId,
             CustomerId = customerId,
-            FarmId = farmId,
-            OriginatorName = originatorName,
-            Timestamp = DateTime.Now,
+            FarmId = null,
+            CreatedBy = "Current User",
+            CreatedAt = DateTime.Now,
             Content = content,
-            Pinned = false
-        });
+            IsPinned = false
+        };
+        _notes.Add(note);
+        return note;
     }
 
-    public void ToggleNotePin(string noteId)
+    public Note? ToggleNotePin(string noteId)
     {
         var note = _notes.FirstOrDefault(n => n.Id == noteId);
         if (note != null)
         {
-            note.Pinned = !note.Pinned;
+            note.IsPinned = !note.IsPinned;
         }
+        return note;
     }
 
     // Stored Grain methods

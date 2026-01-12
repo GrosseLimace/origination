@@ -28,24 +28,26 @@ public class NotesController : ControllerBase
     }
 
     [HttpPost]
-    public ActionResult Create([FromBody] CreateNoteRequest request)
+    public ActionResult<Note> Create([FromBody] CreateNoteRequest request)
     {
-        _dataService.AddNote(request.CustomerId, request.FarmId, request.OriginatorName, request.Content);
-        return Created();
+        var note = _dataService.AddNote(request.CustomerId, request.Content);
+        return Created($"/api/notes/{note.Id}", note);
     }
 
     [HttpPut("{id}/toggle-pin")]
-    public ActionResult TogglePin(string id)
+    public ActionResult<Note> TogglePin(string id)
     {
-        _dataService.ToggleNotePin(id);
-        return NoContent();
+        var note = _dataService.ToggleNotePin(id);
+        if (note == null)
+        {
+            return NotFound();
+        }
+        return Ok(note);
     }
 }
 
 public class CreateNoteRequest
 {
     public string CustomerId { get; set; } = string.Empty;
-    public string? FarmId { get; set; }
-    public string OriginatorName { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
 }

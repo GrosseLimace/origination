@@ -13,8 +13,10 @@ import { BadgeComponent } from '../../ui/badge/badge.component';
     <app-card>
       <app-card-content class="p-0">
         <!-- Title and Search -->
-        <div class="px-4 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h3 class="text-lg font-semibold mb-4 text-gray-900 dark:text-white">Customers</h3>
+        <div class="px-4 pt-3 pb-2">
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Customers</h3>
+        </div>
+        <div class="px-4 py-2 border-b border-gray-200 dark:border-gray-700">
           <div class="relative">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
               <circle cx="11" cy="11" r="8"/>
@@ -32,7 +34,7 @@ import { BadgeComponent } from '../../ui/badge/badge.component';
 
         <!-- Saved Lists Filter -->
         @if (savedLists.length > 0) {
-          <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+          <div class="px-4 py-2 border-b border-gray-200 dark:border-gray-700">
             <select
               [(ngModel)]="selectedListId"
               (ngModelChange)="applyFilters()"
@@ -158,14 +160,14 @@ export class CustomerListComponent implements OnInit {
   getLastContactInfo(customerId: string): { text: string; daysAgo: number } {
     const customerNotes = this.notes
       .filter(n => n.customerId === customerId)
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     const lastNote = customerNotes[0];
     if (!lastNote) {
       return { text: 'No contact', daysAgo: -1 };
     }
 
-    const daysAgo = Math.floor((Date.now() - new Date(lastNote.timestamp).getTime()) / (1000 * 60 * 60 * 24));
+    const daysAgo = Math.floor((Date.now() - new Date(lastNote.createdAt).getTime()) / (1000 * 60 * 60 * 24));
 
     if (daysAgo === 0) return { text: 'Today', daysAgo: 0 };
     if (daysAgo === 1) return { text: 'Yesterday', daysAgo: 1 };

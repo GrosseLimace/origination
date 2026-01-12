@@ -1,6 +1,2 @@
-export enum ContractStatus {
-  Active = 'Active',
-  Fulfilled = 'Fulfilled',
-  Pending = 'Pending',
-  Cancelled = 'Cancelled'
-}
+// Contract status enum matching API
+export type ContractStatus = 'Active' | 'Fulfilled' | 'Pending' | 'Cancelled';

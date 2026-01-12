@@ -29,8 +29,8 @@ export class ApiService {
     return this.http.get<Customer>(`${this.baseUrl}/customers/${id}`);
   }
 
-  updateCustomer(id: string, data: { location: string; phone: string; email: string; farmIds: string[] }): Observable<void> {
-    return this.http.put<void>(`${this.baseUrl}/customers/${id}`, data);
+  updateCustomer(customer: Customer): Observable<Customer> {
+    return this.http.put<Customer>(`${this.baseUrl}/customers/${customer.id}`, customer);
   }
 
   // Farms
@@ -116,17 +116,12 @@ export class ApiService {
     return this.http.get<Note[]>(`${this.baseUrl}/notes/customer/${customerId}`);
   }
 
-  createNote(data: {
-    customerId: string;
-    farmId?: string;
-    originatorName: string;
-    content: string;
-  }): Observable<void> {
-    return this.http.post<void>(`${this.baseUrl}/notes`, data);
+  createNote(customerId: string, content: string): Observable<Note> {
+    return this.http.post<Note>(`${this.baseUrl}/notes`, { customerId, content });
   }
 
-  toggleNotePin(id: string): Observable<void> {
-    return this.http.put<void>(`${this.baseUrl}/notes/${id}/toggle-pin`, {});
+  toggleNotePin(id: string): Observable<Note> {
+    return this.http.put<Note>(`${this.baseUrl}/notes/${id}/toggle-pin`, {});
   }
 
   // Stored Grain
