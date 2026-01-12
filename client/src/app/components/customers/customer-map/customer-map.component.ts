@@ -1,17 +1,25 @@
-import { Component, Input, Output, EventEmitter, AfterViewInit, OnDestroy, signal } from '@angular/core';
+import { Component, Input, Output, EventEmitter, AfterViewInit, OnDestroy, OnChanges, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Customer } from '../../../models';
 
+// Declare Leaflet as external global (loaded dynamically from CDN)
 declare var L: any;
 
+/**
+ * CustomerMapComponent displays an interactive map with customer locations.
+ * Uses Leaflet.js for map rendering with OpenStreetMap tiles.
+ * Supports marker selection and click events for customer navigation.
+ */
 @Component({
   selector: 'app-customer-map',
   standalone: true,
   imports: [CommonModule],
   template: `
     <div class="relative w-full h-full min-h-[400px] rounded-lg overflow-hidden">
+      <!-- Map container - Leaflet will render here -->
       <div id="customer-map" class="w-full h-full"></div>
 
+      <!-- Loading spinner shown while Leaflet initializes -->
       @if (loading()) {
         <div class="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-800">
           <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
@@ -20,7 +28,7 @@ declare var L: any;
     </div>
   `
 })
-export class CustomerMapComponent implements AfterViewInit, OnDestroy {
+export class CustomerMapComponent implements AfterViewInit, OnDestroy, OnChanges {
   @Input() customers: Customer[] = [];
   @Input() selectedCustomer: Customer | null = null;
   @Input() height = '400px';
@@ -35,29 +43,54 @@ export class CustomerMapComponent implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    // Clean up map instance to prevent memory leaks
     if (this.map) {
       this.map.remove();
     }
   }
 
+  /**
+   * Responds to input changes to update markers and map view.
+   */
+  ngOnChanges() {
+    if (this.map) {
+      this.addMarkers();
+
+      // Center on selected customer if one is selected
+      if (this.selectedCustomer?.coordinates) {
+        this.map.setView(
+          [this.selectedCustomer.coordinates.lat, this.selectedCustomer.coordinates.lng],
+          10
+        );
+      }
+    }
+  }
+
+  /**
+   * Initializes the Leaflet map after loading the library.
+   */
   private async initMap() {
-    // Load Leaflet dynamically
+    // Load Leaflet dynamically from CDN if not already present
     if (typeof L === 'undefined') {
       await this.loadLeaflet();
     }
 
-    // Initialize map centered on Kansas (grain belt)
-    this.map = L.map('customer-map').setView([38.5, -98.0], 6);
+    // Initialize map centered on the US grain belt (Kansas)
+    this.map = L.map('customer-map').setView([41.5, -93.0], 5);
 
-    // Add tile layer
+    // Add OpenStreetMap tile layer
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors'
+      attribution: '&copy; OpenStreetMap contributors'
     }).addTo(this.map);
 
     this.loading.set(false);
     this.addMarkers();
   }
 
+  /**
+   * Dynamically loads Leaflet CSS and JavaScript from CDN.
+   * Returns a promise that resolves when loading is complete.
+   */
   private async loadLeaflet(): Promise<void> {
     return new Promise((resolve) => {
       // Check if already loaded
@@ -66,13 +99,13 @@ export class CustomerMapComponent implements AfterViewInit, OnDestroy {
         return;
       }
 
-      // Load CSS
+      // Load Leaflet CSS
       const link = document.createElement('link');
       link.rel = 'stylesheet';
       link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
       document.head.appendChild(link);
 
-      // Load JS
+      // Load Leaflet JavaScript
       const script = document.createElement('script');
       script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
       script.onload = () => resolve();
@@ -80,8 +113,12 @@ export class CustomerMapComponent implements AfterViewInit, OnDestroy {
     });
   }
 
+  /**
+   * Creates map markers for all customers with coordinates.
+   * Highlights the selected customer with a different style.
+   */
   private addMarkers() {
-    // Clear existing markers
+    // Clear existing markers before adding new ones
     this.markers.forEach(m => m.remove());
     this.markers = [];
 
@@ -90,6 +127,7 @@ export class CustomerMapComponent implements AfterViewInit, OnDestroy {
       if (customer.coordinates) {
         const isSelected = this.selectedCustomer?.id === customer.id;
 
+        // Create custom div icon with customer initial
         const icon = L.divIcon({
           className: 'custom-marker',
           html: `
@@ -101,12 +139,13 @@ export class CustomerMapComponent implements AfterViewInit, OnDestroy {
           iconAnchor: [16, 16]
         });
 
+        // Create marker at customer coordinates
         const marker = L.marker(
-          [customer.coordinates.latitude, customer.coordinates.longitude],
+          [customer.coordinates.lat, customer.coordinates.lng],
           { icon }
         ).addTo(this.map);
 
-        // Add popup
+        // Add popup with customer details
         marker.bindPopup(`
           <div class="p-2">
             <h3 class="font-bold">${customer.name}</h3>
@@ -116,6 +155,7 @@ export class CustomerMapComponent implements AfterViewInit, OnDestroy {
           </div>
         `);
 
+        // Emit click event when marker is clicked
         marker.on('click', () => {
           this.customerClick.emit(customer);
         });
@@ -124,25 +164,10 @@ export class CustomerMapComponent implements AfterViewInit, OnDestroy {
       }
     });
 
-    // Fit bounds if we have markers
+    // Fit map bounds to show all markers with padding
     if (this.markers.length > 0) {
       const group = L.featureGroup(this.markers);
       this.map.fitBounds(group.getBounds().pad(0.1));
-    }
-  }
-
-  // Call this when customers or selectedCustomer changes
-  ngOnChanges() {
-    if (this.map) {
-      this.addMarkers();
-
-      // Center on selected customer
-      if (this.selectedCustomer?.coordinates) {
-        this.map.setView(
-          [this.selectedCustomer.coordinates.latitude, this.selectedCustomer.coordinates.longitude],
-          10
-        );
-      }
     }
   }
 }

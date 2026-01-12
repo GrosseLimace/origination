@@ -1,6 +1,10 @@
-import { Component, Input, Output, EventEmitter, signal } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
+/**
+ * TabsComponent provides a tabbed interface for organizing content.
+ * Uses Angular signals for reactive tab state management.
+ */
 @Component({
   selector: 'app-tabs',
   standalone: true,
@@ -26,7 +30,7 @@ import { CommonModule } from '@angular/common';
     </div>
   `
 })
-export class TabsComponent {
+export class TabsComponent implements OnInit {
   @Input() tabs: { id: string; label: string }[] = [];
   @Input() defaultTab = '';
   @Output() tabChange = new EventEmitter<string>();
