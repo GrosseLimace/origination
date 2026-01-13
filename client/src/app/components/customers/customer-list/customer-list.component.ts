@@ -1,14 +1,14 @@
-import { Component, Input, Output, EventEmitter, OnInit, inject } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, OnChanges, SimpleChanges, ChangeDetectorRef, inject } from '@angular/core';
+import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Customer, SavedList, Note } from '../../../models';
-import { ApiService } from '../../../services/api.service';
 import { CardComponent, CardContentComponent } from '../../ui/card/card.component';
 import { BadgeComponent } from '../../ui/badge/badge.component';
 
 @Component({
   selector: 'app-customer-list',
   standalone: true,
-  imports: [FormsModule, CardComponent, CardContentComponent, BadgeComponent],
+  imports: [CommonModule, FormsModule, CardComponent, CardContentComponent, BadgeComponent],
   template: `
     <app-card>
       <app-card-content class="p-0">
@@ -108,12 +108,14 @@ import { BadgeComponent } from '../../ui/badge/badge.component';
     </app-card>
   `
 })
-export class CustomerListComponent implements OnInit {
+export class CustomerListComponent implements OnInit, OnChanges {
   @Input() customers: Customer[] = [];
   @Input() selectedCustomer: Customer | null = null;
   @Input() savedLists: SavedList[] = [];
   @Input() notes: Note[] = [];
   @Output() selectCustomer = new EventEmitter<Customer>();
+
+  private cdr = inject(ChangeDetectorRef);
 
   searchQuery = '';
   selectedListId = '';
@@ -121,6 +123,16 @@ export class CustomerListComponent implements OnInit {
 
   ngOnInit(): void {
     this.applyFilters();
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['customers'] || changes['savedLists']) {
+      this.applyFilters();
+    }
+    // Force UI update when selected customer changes
+    if (changes['selectedCustomer']) {
+      this.cdr.detectChanges();
+    }
   }
 
   applyFilters(): void {

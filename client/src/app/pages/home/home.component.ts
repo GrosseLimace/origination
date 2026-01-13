@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ApiService } from '../../services/api.service';
 import { AppStateService } from '../../services/app-state.service';
@@ -6,9 +6,7 @@ import { ToastService } from '../../services/toast.service';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, Farm, SavedList } from '../../models';
 import { CustomerListComponent } from '../../components/customers/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customers/customer-profile/customer-profile.component';
-import { CustomerMapComponent } from '../../components/customers/customer-map/customer-map.component';
-import { EditCustomerDialogComponent } from '../../components/customers/edit-customer-dialog/edit-customer-dialog.component';
-import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent } from '../../components/ui/card/card.component';
+import { CardComponent, CardContentComponent } from '../../components/ui/card/card.component';
 
 @Component({
   selector: 'app-home',
@@ -17,17 +15,13 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
     CommonModule,
     CustomerListComponent,
     CustomerProfileComponent,
-    CustomerMapComponent,
-    EditCustomerDialogComponent,
     CardComponent,
-    CardContentComponent,
-    CardHeaderComponent,
-    CardTitleComponent
+    CardContentComponent
   ],
   template: `
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Customer List -->
-      <div class="lg:col-span-1" [class.hidden]="selectedCustomer && isMobile" [class.lg:block]="true">
+      <!-- Customer List - Sticky on desktop (top accounts for header height ~73px + padding) -->
+      <div class="lg:col-span-1 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)]" [class.hidden]="selectedCustomer && isMobile" [class.lg:block]="true">
         <app-customer-list
           [customers]="customers"
           [selectedCustomer]="selectedCustomer"
@@ -51,42 +45,28 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
             Back to list
           </button>
 
-          <!-- Map -->
-          <app-card>
-            <app-card-header>
-              <app-card-title>Location</app-card-title>
-            </app-card-header>
-            <app-card-content class="p-0">
-              <div class="h-64">
-                <app-customer-map
-                  [customers]="customers"
-                  [selectedCustomer]="selectedCustomer"
-                  (customerClick)="handleSelectCustomer($event)">
-                </app-customer-map>
-              </div>
-            </app-card-content>
-          </app-card>
-
-          <!-- Profile with tabs -->
+          <!-- Profile -->
           <app-customer-profile
             [customer]="selectedCustomer"
             [farms]="customerFarms"
+            [allFarms]="farms"
             [contracts]="customerContracts"
             [tickets]="customerTickets"
             [plantingIntentions]="customerPlantingIntentions"
             [storedGrain]="customerStoredGrain"
             [notes]="customerNotes"
-            (onEdit)="openEditDialog()"
             (onAddPlanting)="addPlantingIntention()"
             (onEditPlanting)="editPlantingIntention($event)"
             (onAddNote)="addNote($event)"
-            (onTogglePin)="toggleNotePin($event)">
+            (onTogglePin)="toggleNotePin($event)"
+            (onSaveCustomer)="handleSaveCustomer($event)"
+            (onCreateFarm)="handleCreateFarm($event)">
           </app-customer-profile>
         } @else {
-          <!-- No customer selected -->
-          <app-card>
-            <app-card-content class="p-12">
-              <div class="text-center text-gray-500 dark:text-gray-400">
+          <!-- No customer selected - matches Blazor: just the prompt card, no map -->
+          <app-card class="p-12 text-center">
+            <app-card-content>
+              <div class="text-gray-500 dark:text-gray-400">
                 <svg class="mx-auto h-16 w-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
                 </svg>
@@ -99,38 +79,16 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
               </div>
             </app-card-content>
           </app-card>
-
-          <!-- Territory Map -->
-          <app-card>
-            <app-card-header>
-              <app-card-title>Territory Overview</app-card-title>
-            </app-card-header>
-            <app-card-content class="p-0">
-              <div class="h-96">
-                <app-customer-map
-                  [customers]="customers"
-                  (customerClick)="handleSelectCustomer($event)">
-                </app-customer-map>
-              </div>
-            </app-card-content>
-          </app-card>
         }
       </div>
     </div>
-
-    <!-- Edit Customer Dialog -->
-    <app-edit-customer-dialog
-      [isOpen]="editDialogOpen"
-      [customer]="selectedCustomer"
-      (close)="closeEditDialog()"
-      (save)="saveCustomer($event)">
-    </app-edit-customer-dialog>
   `
 })
 export class HomeComponent implements OnInit {
   private apiService = inject(ApiService);
   private appState = inject(AppStateService);
   private toastService = inject(ToastService);
+  private cdr = inject(ChangeDetectorRef);
 
   customers: Customer[] = [];
   contracts: Contract[] = [];
@@ -149,7 +107,6 @@ export class HomeComponent implements OnInit {
   customerPlantingIntentions: PlantingIntention[] = [];
   customerStoredGrain: StoredGrain[] = [];
 
-  editDialogOpen = false;
   isMobile = false;
 
   ngOnInit(): void {
@@ -177,28 +134,35 @@ export class HomeComponent implements OnInit {
     this.selectedCustomer = customer;
     this.appState.selectCustomer(customer);
     this.loadCustomerData(customer.id);
+    // Force change detection to ensure UI updates immediately
+    this.cdr.detectChanges();
   }
 
   private loadCustomerData(customerId: string): void {
-    this.customerContracts = this.contracts.filter(c => c.customerId === customerId);
-    this.customerTickets = this.tickets.filter(t => t.customerId === customerId);
-    this.customerNotes = this.notes.filter(n => n.customerId === customerId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    this.customerFarms = this.farms.filter(f => this.selectedCustomer?.farmIds.includes(f.id));
-    this.customerPlantingIntentions = this.plantingIntentions.filter(p => p.customerId === customerId);
-    this.customerStoredGrain = this.storedGrain.filter(s => s.customerId === customerId);
+    // Create new array references to trigger change detection
+    this.customerContracts = [...this.contracts.filter(c => c.customerId === customerId)];
+    this.customerTickets = [...this.tickets.filter(t => t.customerId === customerId)];
+    this.customerNotes = [...this.notes.filter(n => n.customerId === customerId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())];
+    this.customerFarms = [...this.farms.filter(f => this.selectedCustomer?.farmIds.includes(f.id))];
+    this.customerPlantingIntentions = [...this.plantingIntentions.filter(p => p.customerId === customerId)];
+    this.customerStoredGrain = [...this.storedGrain.filter(s => s.customerId === customerId)];
   }
 
-  openEditDialog(): void {
-    this.editDialogOpen = true;
-  }
+  handleSaveCustomer(data: { customerId: string; location: string; phone: string; email: string; farmIds: string[]; eSignEnabled: boolean }): void {
+    const customer = this.customers.find(c => c.id === data.customerId);
+    if (!customer) return;
 
-  closeEditDialog(): void {
-    this.editDialogOpen = false;
-  }
+    const updatedCustomer: Customer = {
+      ...customer,
+      location: data.location,
+      phone: data.phone,
+      email: data.email,
+      farmIds: data.farmIds,
+      eSignEnabled: data.eSignEnabled
+    };
 
-  saveCustomer(customer: Customer): void {
-    this.apiService.updateCustomer(customer).subscribe({
+    this.apiService.updateCustomer(updatedCustomer).subscribe({
       next: (updated) => {
         const index = this.customers.findIndex(c => c.id === updated.id);
         if (index >= 0) {
@@ -206,10 +170,30 @@ export class HomeComponent implements OnInit {
           this.customers = [...this.customers];
         }
         this.selectedCustomer = updated;
+        this.loadCustomerData(updated.id);
         this.toastService.success('Customer updated successfully');
+        this.cdr.detectChanges();
       },
       error: () => {
         this.toastService.error('Failed to update customer');
+      }
+    });
+  }
+
+  handleCreateFarm(data: { name: string; location: string; acres: number }): void {
+    this.apiService.createFarm(data).subscribe({
+      next: (newFarmId) => {
+        const newFarm: Farm = {
+          id: newFarmId,
+          name: data.name,
+          location: data.location,
+          acres: data.acres
+        };
+        this.farms = [...this.farms, newFarm];
+        this.toastService.success('Farm created successfully');
+      },
+      error: () => {
+        this.toastService.error('Failed to create farm');
       }
     });
   }

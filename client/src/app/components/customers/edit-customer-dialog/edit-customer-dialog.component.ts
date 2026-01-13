@@ -1,10 +1,8 @@
-import { Component, Input, Output, EventEmitter, signal } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnChanges, SimpleChanges, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogContentComponent, DialogFooterComponent } from '../../ui/dialog/dialog.component';
-import { ButtonComponent } from '../../ui/button/button.component';
-import { InputComponent } from '../../ui/input/input.component';
-import { Customer } from '../../../models';
+import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '../../ui/dialog/dialog.component';
+import { Customer, Farm } from '../../../models';
 
 @Component({
   selector: 'app-edit-customer-dialog',
@@ -15,145 +13,318 @@ import { Customer } from '../../../models';
     DialogComponent,
     DialogHeaderComponent,
     DialogTitleComponent,
+    DialogDescriptionComponent,
     DialogContentComponent,
-    DialogFooterComponent,
-    ButtonComponent,
-    InputComponent
+    DialogFooterComponent
   ],
   template: `
-    <app-dialog [isOpen]="isOpen" (close)="onCancel()">
-      <app-dialog-header>
-        <app-dialog-title>Edit Customer</app-dialog-title>
-        <button
-          class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-          (click)="onCancel()"
-        >
-          <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-          </svg>
-        </button>
-      </app-dialog-header>
+    @if (isOpen && customer) {
+      <app-dialog [isOpen]="true" (close)="onCancel()">
+        <app-dialog-header>
+          <app-dialog-title>Edit Customer Information</app-dialog-title>
+          <app-dialog-description>Update contact details and manage farm associations for {{ customer.name }}</app-dialog-description>
+        </app-dialog-header>
 
-      <app-dialog-content>
-        <div class="space-y-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Name
-            </label>
-            <input
-              type="text"
-              [(ngModel)]="editedCustomer.name"
-              class="flex h-10 w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-green-500"
-            />
-          </div>
+        <app-dialog-content>
+          <div class="space-y-6">
+            <!-- Contact Information Section -->
+            <div class="space-y-4">
+              <h4 class="font-medium text-gray-900 dark:text-white">Contact Information</h4>
 
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Farm Name
-            </label>
-            <input
-              type="text"
-              [(ngModel)]="editedCustomer.farm"
-              class="flex h-10 w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-green-500"
-            />
-          </div>
+              <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Location</label>
+                <input
+                  type="text"
+                  [(ngModel)]="editLocation"
+                  placeholder="e.g., Iowa County, IA"
+                  class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+              </div>
 
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Location
-            </label>
-            <input
-              type="text"
-              [(ngModel)]="editedCustomer.location"
-              class="flex h-10 w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-green-500"
-            />
-          </div>
+              <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Phone</label>
+                <input
+                  type="tel"
+                  [(ngModel)]="editPhone"
+                  placeholder="e.g., (319) 555-0123"
+                  class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+              </div>
 
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Phone
-              </label>
-              <input
-                type="tel"
-                [(ngModel)]="editedCustomer.phone"
-                class="flex h-10 w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-green-500"
-              />
+              <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+                <input
+                  type="email"
+                  [(ngModel)]="editEmail"
+                  placeholder="e.g., john@example.com"
+                  class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+              </div>
+
+              <!-- eSign Toggle -->
+              <div class="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  role="switch"
+                  [attr.aria-checked]="editESignEnabled"
+                  class="peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
+                  [class]="editESignEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-gray-700'"
+                  (click)="editESignEnabled = !editESignEnabled"
+                >
+                  <span
+                    class="pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform"
+                    [class]="editESignEnabled ? 'translate-x-5' : 'translate-x-0'"
+                  ></span>
+                </button>
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer" (click)="editESignEnabled = !editESignEnabled">
+                  eSign Enabled
+                </label>
+              </div>
             </div>
 
-            <div>
-              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Email
-              </label>
-              <input
-                type="email"
-                [(ngModel)]="editedCustomer.email"
-                class="flex h-10 w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-green-500"
-              />
+            <!-- Separator -->
+            <div class="border-t border-gray-200 dark:border-gray-700"></div>
+
+            <!-- Farm Associations Section -->
+            <div class="space-y-4">
+              <div class="flex items-center justify-between">
+                <h4 class="font-medium text-gray-900 dark:text-white">Farm Associations</h4>
+                <button
+                  type="button"
+                  class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-gray-300 dark:border-gray-600 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100 h-9 px-3"
+                  (click)="showNewFarmForm = !showNewFarmForm"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/>
+                  </svg>
+                  New Farm
+                </button>
+              </div>
+
+              <!-- New Farm Form (collapsible) -->
+              @if (showNewFarmForm) {
+                <div class="p-4 border border-gray-200 dark:border-gray-700 rounded-lg space-y-4 bg-gray-100 dark:bg-gray-800/50">
+                  <div class="space-y-2">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Farm Name</label>
+                    <input
+                      type="text"
+                      [(ngModel)]="newFarmName"
+                      placeholder="e.g., North Field Farm"
+                      class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    />
+                  </div>
+                  <div class="space-y-2">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Location</label>
+                    <input
+                      type="text"
+                      [(ngModel)]="newFarmLocation"
+                      placeholder="e.g., Johnson County, IA"
+                      class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    />
+                  </div>
+                  <div class="space-y-2">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Acres</label>
+                    <input
+                      type="number"
+                      [(ngModel)]="newFarmAcres"
+                      placeholder="e.g., 500"
+                      class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    />
+                  </div>
+                  <div class="flex gap-2 pt-2">
+                    <button
+                      type="button"
+                      class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-green-600 text-white hover:bg-green-700 h-10 px-4 py-2"
+                      [disabled]="!newFarmName || !newFarmAcres"
+                      (click)="createAndAddFarm()"
+                    >
+                      Add Farm
+                    </button>
+                    <button
+                      type="button"
+                      class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-gray-300 dark:border-gray-600 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100 h-10 px-4 py-2"
+                      (click)="showNewFarmForm = false"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              }
+
+              <!-- Current Farms -->
+              <div class="space-y-3">
+                @for (farmId of editFarmIds; track farmId) {
+                  @if (getFarmById(farmId); as farm) {
+                    <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
+                      <div class="space-y-1">
+                        <div class="font-medium text-gray-900 dark:text-white">{{ farm.name }}</div>
+                        <div class="text-sm text-gray-500 dark:text-gray-400">{{ farm.location }}</div>
+                        <div class="text-sm text-gray-500 dark:text-gray-400">{{ farm.acres | number }} acres</div>
+                      </div>
+                      @if (editFarmIds.length > 1) {
+                        <button
+                          type="button"
+                          class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 h-8 w-8"
+                          (click)="removeFarm(farmId)"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
+                          </svg>
+                        </button>
+                      }
+                    </div>
+                  }
+                }
+              </div>
+
+              <!-- Add Existing Farm -->
+              @if (getAvailableFarms().length > 0) {
+                <div class="space-y-2">
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Add Existing Farm</label>
+                  <select
+                    class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                    (change)="addExistingFarm($event)"
+                  >
+                    <option value="">Select a farm to add</option>
+                    @for (farm of getAvailableFarms(); track farm.id) {
+                      <option [value]="farm.id">{{ farm.name }} ({{ farm.acres | number }} acres)</option>
+                    }
+                  </select>
+                </div>
+              }
             </div>
           </div>
+        </app-dialog-content>
 
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Total Acres
-            </label>
-            <input
-              type="number"
-              [(ngModel)]="editedCustomer.totalAcres"
-              class="flex h-10 w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-green-500"
-            />
-          </div>
-
-          <div class="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="eSignEnabled"
-              [(ngModel)]="editedCustomer.eSignEnabled"
-              class="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
-            />
-            <label for="eSignEnabled" class="text-sm text-gray-700 dark:text-gray-300">
-              Enable e-Sign for contracts
-            </label>
-          </div>
-        </div>
-      </app-dialog-content>
-
-      <app-dialog-footer>
-        <app-button variant="outline" (click)="onCancel()">Cancel</app-button>
-        <app-button variant="primary" (click)="onSave()">Save Changes</app-button>
-      </app-dialog-footer>
-    </app-dialog>
+        <app-dialog-footer>
+          <button
+            type="button"
+            class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-gray-300 dark:border-gray-600 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100 h-10 px-4 py-2"
+            (click)="onCancel()"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-green-600 text-white hover:bg-green-700 h-10 px-4 py-2"
+            (click)="onSave()"
+          >
+            Save Changes
+          </button>
+        </app-dialog-footer>
+      </app-dialog>
+    }
   `
 })
-export class EditCustomerDialogComponent {
+export class EditCustomerDialogComponent implements OnChanges {
+  private cdr = inject(ChangeDetectorRef);
+
   @Input() isOpen = false;
-  @Input() set customer(value: Customer | null) {
-    if (value) {
-      this.editedCustomer = { ...value };
+  @Input() customer: Customer | null = null;
+  @Input() allFarms: Farm[] = [];
+
+  @Output() close = new EventEmitter<void>();
+  @Output() save = new EventEmitter<{
+    customerId: string;
+    location: string;
+    phone: string;
+    email: string;
+    farmIds: string[];
+    eSignEnabled: boolean;
+  }>();
+  @Output() createFarm = new EventEmitter<{ name: string; location: string; acres: number }>();
+
+  editLocation = '';
+  editPhone = '';
+  editEmail = '';
+  editFarmIds: string[] = [];
+  editESignEnabled = false;
+
+  showNewFarmForm = false;
+  newFarmName = '';
+  newFarmLocation = '';
+  newFarmAcres: number | null = null;
+
+  private initialized = false;
+
+  ngOnChanges(changes: SimpleChanges): void {
+    // When isOpen becomes true, initialize the form from the customer
+    if (this.isOpen && this.customer && !this.initialized) {
+      this.editLocation = this.customer.location;
+      this.editPhone = this.customer.phone;
+      this.editEmail = this.customer.email;
+      this.editFarmIds = [...this.customer.farmIds];
+      this.editESignEnabled = this.customer.eSignEnabled;
+      this.initialized = true;
+    }
+
+    // Reset initialized flag when dialog closes
+    if (!this.isOpen) {
+      this.initialized = false;
+    }
+
+    // Force change detection
+    this.cdr.markForCheck();
+  }
+
+  getFarmById(farmId: string): Farm | undefined {
+    return this.allFarms.find(f => f.id === farmId);
+  }
+
+  getAvailableFarms(): Farm[] {
+    return this.allFarms.filter(f => !this.editFarmIds.includes(f.id));
+  }
+
+  addExistingFarm(event: Event): void {
+    const select = event.target as HTMLSelectElement;
+    const farmId = select.value;
+    if (farmId && !this.editFarmIds.includes(farmId)) {
+      this.editFarmIds = [...this.editFarmIds, farmId];
+      select.value = '';
     }
   }
 
-  @Output() close = new EventEmitter<void>();
-  @Output() save = new EventEmitter<Customer>();
+  removeFarm(farmId: string): void {
+    if (this.editFarmIds.length > 1) {
+      this.editFarmIds = this.editFarmIds.filter(id => id !== farmId);
+    }
+  }
 
-  editedCustomer: Customer = {
-    id: '',
-    name: '',
-    farm: '',
-    location: '',
-    phone: '',
-    email: '',
-    totalAcres: 0,
-    farmIds: [],
-    eSignEnabled: false
-  };
+  createAndAddFarm(): void {
+    if (this.newFarmName && this.newFarmAcres) {
+      this.createFarm.emit({
+        name: this.newFarmName,
+        location: this.newFarmLocation,
+        acres: this.newFarmAcres
+      });
+      this.showNewFarmForm = false;
+      this.newFarmName = '';
+      this.newFarmLocation = '';
+      this.newFarmAcres = null;
+    }
+  }
 
-  onCancel() {
+  onCancel(): void {
+    this.showNewFarmForm = false;
+    this.newFarmName = '';
+    this.newFarmLocation = '';
+    this.newFarmAcres = null;
+    this.initialized = false;
     this.close.emit();
   }
 
-  onSave() {
-    this.save.emit(this.editedCustomer);
-    this.close.emit();
+  onSave(): void {
+    if (this.customer) {
+      this.save.emit({
+        customerId: this.customer.id,
+        location: this.editLocation,
+        phone: this.editPhone,
+        email: this.editEmail,
+        farmIds: this.editFarmIds,
+        eSignEnabled: this.editESignEnabled
+      });
+      this.initialized = false;
+      this.close.emit();
+    }
   }
 }

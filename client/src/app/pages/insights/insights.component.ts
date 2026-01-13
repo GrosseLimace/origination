@@ -1,4 +1,5 @@
 import { Component, OnInit, inject } from '@angular/core';
+import { CommonModule } from '@angular/common';
 import { ApiService } from '../../services/api.service';
 import { Customer, Contract, Ticket, PlantingIntention, Note } from '../../models';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '../../components/ui/card/card.component';
@@ -7,7 +8,7 @@ import { BadgeComponent } from '../../components/ui/badge/badge.component';
 @Component({
   selector: 'app-insights',
   standalone: true,
-  imports: [CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent, BadgeComponent],
+  imports: [CommonModule, CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent, BadgeComponent],
   template: `
     <div class="space-y-6">
       <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Actionable Insights</h1>
@@ -231,9 +232,9 @@ export class InsightsComponent implements OnInit {
       const customerNotes = this.notes.filter(n => n.customerId === customer.id);
       if (customerNotes.length === 0) return true;
       const lastNote = customerNotes.sort((a, b) =>
-        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       )[0];
-      return new Date(lastNote.timestamp).getTime() < thirtyDaysAgo;
+      return new Date(lastNote.createdAt).getTime() < thirtyDaysAgo;
     });
   }
 
@@ -241,8 +242,8 @@ export class InsightsComponent implements OnInit {
     const customerNotes = this.notes.filter(n => n.customerId === customerId);
     if (customerNotes.length === 0) return 999;
     const lastNote = customerNotes.sort((a, b) =>
-      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     )[0];
-    return Math.floor((Date.now() - new Date(lastNote.timestamp).getTime()) / (1000 * 60 * 60 * 24));
+    return Math.floor((Date.now() - new Date(lastNote.createdAt).getTime()) / (1000 * 60 * 60 * 24));
   }
 }

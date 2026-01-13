@@ -1,4 +1,5 @@
 import { Component, OnInit, inject } from '@angular/core';
+import { CommonModule } from '@angular/common';
 import { ApiService } from '../../services/api.service';
 import { Customer, Contract, PlantingIntention } from '../../models';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent } from '../../components/ui/card/card.component';
@@ -7,7 +8,7 @@ import { BadgeComponent } from '../../components/ui/badge/badge.component';
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, BadgeComponent],
+  imports: [CommonModule, CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, BadgeComponent],
   template: `
     <div class="space-y-6">
       <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Territory Dashboard</h1>

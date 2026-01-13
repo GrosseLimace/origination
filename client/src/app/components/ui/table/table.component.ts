@@ -7,7 +7,7 @@ import { CommonModule } from '@angular/common';
   imports: [CommonModule],
   template: `
     <div class="w-full overflow-auto">
-      <table class="w-full caption-bottom text-sm">
+      <table class="w-full caption-bottom text-sm border-collapse">
         <ng-content></ng-content>
       </table>
     </div>
@@ -19,8 +19,9 @@ export class TableComponent {}
   selector: 'app-table-header',
   standalone: true,
   imports: [CommonModule],
+  host: { style: 'display: contents' },
   template: `
-    <thead class="[&_tr]:border-b border-gray-200 dark:border-gray-700">
+    <thead class="border-b border-gray-200 dark:border-gray-700">
       <ng-content></ng-content>
     </thead>
   `
@@ -31,8 +32,9 @@ export class TableHeaderComponent {}
   selector: 'app-table-body',
   standalone: true,
   imports: [CommonModule],
+  host: { style: 'display: contents' },
   template: `
-    <tbody class="[&_tr:last-child]:border-0">
+    <tbody>
       <ng-content></ng-content>
     </tbody>
   `
@@ -43,12 +45,10 @@ export class TableBodyComponent {}
   selector: 'app-table-row',
   standalone: true,
   imports: [CommonModule],
+  host: { style: 'display: contents' },
   template: `
     <tr
-      class="border-b border-gray-200 dark:border-gray-700 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50"
-      [class.cursor-pointer]="clickable"
-      [class.bg-red-50]="highlighted"
-      [class.dark:bg-red-950/20]="highlighted"
+      [class]="getRowClasses()"
       (click)="rowClick.emit()"
     >
       <ng-content></ng-content>
@@ -58,29 +58,59 @@ export class TableBodyComponent {}
 export class TableRowComponent {
   @Input() clickable = false;
   @Input() highlighted = false;
+  @Input() class = '';
   @Output() rowClick = new EventEmitter<void>();
+
+  getRowClasses(): string {
+    let classes = 'border-b border-gray-200 dark:border-gray-700 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50';
+    if (this.clickable) {
+      classes += ' cursor-pointer';
+    }
+    if (this.highlighted) {
+      classes += ' bg-red-50 dark:bg-red-950/20';
+    }
+    if (this.class) {
+      classes += ' ' + this.class;
+    }
+    return classes;
+  }
 }
 
 @Component({
   selector: 'app-table-head',
   standalone: true,
   imports: [CommonModule],
+  host: { style: 'display: contents' },
   template: `
-    <th class="h-12 px-4 text-left align-middle font-medium text-gray-500 dark:text-gray-400 [&:has([role=checkbox])]:pr-0">
+    <th
+      class="h-12 px-4 text-left align-middle font-medium text-gray-500 dark:text-gray-400"
+      [class.cursor-pointer]="sortable"
+      [class.select-none]="sortable"
+      [class.hover:bg-gray-50]="sortable"
+      [class.dark:hover:bg-gray-800]="sortable"
+    >
       <ng-content></ng-content>
     </th>
   `
 })
-export class TableHeadComponent {}
+export class TableHeadComponent {
+  @Input() sortable = false;
+}
 
 @Component({
   selector: 'app-table-cell',
   standalone: true,
   imports: [CommonModule],
+  host: { style: 'display: contents' },
   template: `
-    <td class="p-4 align-middle text-gray-900 dark:text-gray-100 [&:has([role=checkbox])]:pr-0">
+    <td
+      class="p-4 align-middle text-gray-900 dark:text-gray-100"
+      [attr.colspan]="colspan"
+    >
       <ng-content></ng-content>
     </td>
   `
 })
-export class TableCellComponent {}
+export class TableCellComponent {
+  @Input() colspan?: number;
+}

@@ -1,18 +1,20 @@
 import { Component } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { HeaderComponent } from './components/layout/header/header.component';
+import { FooterComponent } from './components/layout/footer/footer.component';
 import { ToastContainerComponent } from './components/ui/toast-container/toast-container.component';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, HeaderComponent, ToastContainerComponent],
+  imports: [RouterOutlet, HeaderComponent, FooterComponent, ToastContainerComponent],
   template: `
-    <div class="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
+    <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors">
       <app-header />
-      <main class="container mx-auto px-4 py-6">
+      <main class="container mx-auto px-4 py-6 flex-grow">
         <router-outlet />
       </main>
+      <app-footer />
       <app-toast-container />
     </div>
   `

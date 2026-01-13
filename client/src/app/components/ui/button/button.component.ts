@@ -15,7 +15,7 @@ import { Component, Input, Output, EventEmitter } from '@angular/core';
   `
 })
 export class ButtonComponent {
-  @Input() variant: 'default' | 'secondary' | 'outline' | 'ghost' | 'destructive' = 'default';
+  @Input() variant: 'default' | 'primary' | 'secondary' | 'outline' | 'ghost' | 'destructive' = 'default';
   @Input() size: 'default' | 'sm' | 'lg' | 'icon' = 'default';
   @Input() type: 'button' | 'submit' | 'reset' = 'button';
   @Input() disabled = false;
@@ -27,6 +27,7 @@ export class ButtonComponent {
 
     const variantClasses: Record<string, string> = {
       default: 'bg-green-600 text-white hover:bg-green-700',
+      primary: 'bg-green-600 text-white hover:bg-green-700',
       secondary: 'bg-gray-100 text-gray-900 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600',
       outline: 'border border-gray-300 dark:border-gray-600 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100',
       ghost: 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100',

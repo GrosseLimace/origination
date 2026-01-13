@@ -2,3 +2,12 @@
 obj/
 .vs/
 *.user
+
+# Angular
+client/node_modules/
+client/dist/
+client/.angular/
+
+# Temp files
+tmpclaude-*-cwd
+client/tmpclaude-*-cwd

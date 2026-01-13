@@ -10,7 +10,7 @@ import { Component, Input } from '@angular/core';
   `
 })
 export class BadgeComponent {
-  @Input() variant: 'default' | 'secondary' | 'success' | 'warning' | 'destructive' | 'outline' = 'default';
+  @Input() variant: 'default' | 'secondary' | 'success' | 'warning' | 'destructive' | 'danger' | 'outline' | 'primary' = 'default';
   @Input() class = '';
 
   getClasses(): string {
@@ -22,7 +22,9 @@ export class BadgeComponent {
       success: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300',
       warning: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300',
       destructive: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300',
-      outline: 'border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'
+      danger: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300',
+      outline: 'border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300',
+      primary: 'bg-green-600 text-white dark:bg-green-500'
     };
 
     return `${baseClasses} ${variantClasses[this.variant]} ${this.class}`;

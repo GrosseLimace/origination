@@ -2,7 +2,7 @@ import { Component, Input, Output, EventEmitter, OnInit, signal } from '@angular
 import { CommonModule } from '@angular/common';
 
 /**
- * TabsComponent provides a tabbed interface for organizing content.
+ * TabsComponent provides a pill-style tabbed interface for organizing content.
  * Uses Angular signals for reactive tab state management.
  */
 @Component({
@@ -11,27 +11,32 @@ import { CommonModule } from '@angular/common';
   imports: [CommonModule],
   template: `
     <div class="w-full">
-      <div class="border-b border-gray-200 dark:border-gray-700">
-        <nav class="flex space-x-4 overflow-x-auto" aria-label="Tabs">
+      <!-- Pill-style tab navigation -->
+      <div class="w-full bg-gray-100 dark:bg-gray-800 rounded-full p-1 mb-6">
+        <div class="flex">
           @for (tab of tabs; track tab.id) {
             <button
+              type="button"
               (click)="selectTab(tab.id)"
               [class]="getTabClass(tab.id)"
               [attr.aria-current]="activeTab() === tab.id ? 'page' : null"
             >
               {{ tab.label }}
+              @if (tab.count !== undefined) {
+                <span class="ml-1">({{ tab.count }})</span>
+              }
             </button>
           }
-        </nav>
+        </div>
       </div>
-      <div class="mt-4">
+      <div>
         <ng-content></ng-content>
       </div>
     </div>
   `
 })
 export class TabsComponent implements OnInit {
-  @Input() tabs: { id: string; label: string }[] = [];
+  @Input() tabs: { id: string; label: string; count?: number }[] = [];
   @Input() defaultTab = '';
   @Output() tabChange = new EventEmitter<string>();
 
@@ -47,11 +52,11 @@ export class TabsComponent implements OnInit {
   }
 
   getTabClass(tabId: string): string {
-    const base = 'px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors';
+    const baseClass = 'px-4 py-2 text-sm font-medium rounded-full transition-all duration-200 border-0 outline-none flex-1 text-center';
     if (this.activeTab() === tabId) {
-      return `${base} border-b-2 border-green-600 text-green-600 dark:text-green-400 dark:border-green-400`;
+      return `${baseClass} bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm`;
     }
-    return `${base} text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300`;
+    return `${baseClass} bg-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white`;
   }
 }
 

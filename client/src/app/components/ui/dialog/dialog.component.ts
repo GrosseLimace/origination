@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnChanges, OnDestroy, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 @Component({
@@ -16,27 +16,56 @@ import { CommonModule } from '@angular/common';
 
         <!-- Dialog content -->
         <div
-          class="relative z-50 w-full mx-4 bg-white dark:bg-gray-800 rounded-lg shadow-xl max-h-[calc(100vh-4rem)] overflow-y-auto"
+          class="relative z-50 w-full bg-white dark:bg-gray-800 rounded-lg shadow-xl max-h-[calc(100vh-4rem)] overflow-y-auto border border-gray-200 dark:border-gray-700"
           [class]="sizeClass"
         >
+          @if (showCloseButton) {
+            <button
+              type="button"
+              class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 bg-transparent border-0 p-0 z-10"
+              (click)="close.emit()"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+              </svg>
+            </button>
+          }
           <ng-content></ng-content>
         </div>
       </div>
     }
   `
 })
-export class DialogComponent {
+export class DialogComponent implements OnChanges, OnDestroy {
   @Input() isOpen = false;
   @Input() size: 'sm' | 'md' | 'lg' | 'xl' = 'md';
   @Input() closeOnBackdrop = true;
+  @Input() showCloseButton = true;
   @Output() close = new EventEmitter<void>();
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['isOpen']) {
+      if (this.isOpen) {
+        // Lock body scroll when dialog opens
+        document.body.style.overflow = 'hidden';
+      } else {
+        // Restore body scroll when dialog closes
+        document.body.style.overflow = '';
+      }
+    }
+  }
+
+  ngOnDestroy(): void {
+    // Always restore scroll when component is destroyed
+    document.body.style.overflow = '';
+  }
 
   get sizeClass(): string {
     const sizes = {
       sm: 'max-w-sm',
-      md: 'max-w-lg',
-      lg: 'max-w-2xl',
-      xl: 'max-w-4xl'
+      md: 'max-w-3xl',
+      lg: 'max-w-4xl',
+      xl: 'max-w-5xl'
     };
     return sizes[this.size];
   }
@@ -53,7 +82,7 @@ export class DialogComponent {
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+    <div class="flex flex-col gap-1.5 text-center sm:text-left p-6 pb-0">
       <ng-content></ng-content>
     </div>
   `
@@ -89,7 +118,7 @@ export class DialogDescriptionComponent {}
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="p-4">
+    <div class="p-6">
       <ng-content></ng-content>
     </div>
   `
@@ -101,7 +130,7 @@ export class DialogContentComponent {}
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="flex items-center justify-end gap-2 p-4 border-t border-gray-200 dark:border-gray-700">
+    <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 p-6 pt-4">
       <ng-content></ng-content>
     </div>
   `
