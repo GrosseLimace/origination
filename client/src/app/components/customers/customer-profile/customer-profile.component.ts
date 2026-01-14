@@ -137,21 +137,28 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
               <h3 class="text-sm font-medium text-gray-900 dark:text-white mb-3">Farm Details</h3>
               <div class="space-y-2 text-sm">
                 <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                  <!-- Layers/acres icon -->
+                  <!-- Tractor icon -->
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polygon points="12 2 2 7 12 12 22 7 12 2"/>
-                    <polyline points="2 17 12 22 22 17"/>
-                    <polyline points="2 12 12 17 22 12"/>
+                    <path d="m10 11 11 .9a1 1 0 0 1 .8 1.1l-.665 4.158a1 1 0 0 1-.988.842H20"/>
+                    <path d="M16 18h-5"/>
+                    <path d="M18 5a1 1 0 0 0-1 1v5.573"/>
+                    <path d="M3 4h8.129a1 1 0 0 1 .99.863L13 11.246"/>
+                    <path d="M4 11V4"/>
+                    <path d="M7 15h.01"/>
+                    <path d="M8 10.1V4"/>
+                    <circle cx="18" cy="18" r="2"/>
+                    <circle cx="7" cy="15" r="5"/>
                   </svg>
                   <span>{{ getSelectedFarmAcres() | number }} acres</span>
                 </div>
                 @if (getSelectedFarmStorage() > 0) {
                   <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                    <!-- Archive/storage icon -->
+                    <!-- Warehouse icon -->
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <rect x="2" y="4" width="20" height="5" rx="2"/>
-                      <path d="M4 9v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9"/>
-                      <path d="M10 13h4"/>
+                      <path d="M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z"/>
+                      <path d="M6 18h12"/>
+                      <path d="M6 14h12"/>
+                      <rect width="12" height="12" x="6" y="10"/>
                     </svg>
                     <span>{{ getSelectedFarmStorage() | number }} bu storage</span>
                   </div>
@@ -319,8 +326,8 @@ export class CustomerProfileComponent implements OnChanges {
   @Input() notes: Note[] = [];
   @Input() selectedFarmId?: string;
 
-  @Output() onAddPlanting = new EventEmitter<void>();
-  @Output() onEditPlanting = new EventEmitter<PlantingIntention>();
+  @Output() onAddPlanting = new EventEmitter<{crop: string, acres: number, variety: string, plantingDate: Date, estimatedYield: number}>();
+  @Output() onEditPlanting = new EventEmitter<{intentionId: string, crop: string, acres: number, variety: string, plantingDate: Date, estimatedYield: number}>();
   @Output() onAddNote = new EventEmitter<string>();
   @Output() onTogglePin = new EventEmitter<Note>();
   @Output() onFarmChange = new EventEmitter<string>();

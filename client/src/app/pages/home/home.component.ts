@@ -1,5 +1,6 @@
 import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { ActivatedRoute } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { AppStateService } from '../../services/app-state.service';
 import { ToastService } from '../../services/toast.service';
@@ -42,7 +43,7 @@ import { CardComponent, CardContentComponent } from '../../components/ui/card/ca
             <svg class="h-5 w-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
             </svg>
-            Back to list
+            Back to Customers
           </button>
 
           <!-- Profile -->
@@ -55,7 +56,7 @@ import { CardComponent, CardContentComponent } from '../../components/ui/card/ca
             [plantingIntentions]="customerPlantingIntentions"
             [storedGrain]="customerStoredGrain"
             [notes]="customerNotes"
-            (onAddPlanting)="addPlantingIntention()"
+            (onAddPlanting)="addPlantingIntention($event)"
             (onEditPlanting)="editPlantingIntention($event)"
             (onAddNote)="addNote($event)"
             (onTogglePin)="toggleNotePin($event)"
@@ -89,6 +90,7 @@ export class HomeComponent implements OnInit {
   private appState = inject(AppStateService);
   private toastService = inject(ToastService);
   private cdr = inject(ChangeDetectorRef);
+  private route = inject(ActivatedRoute);
 
   customers: Customer[] = [];
   contracts: Contract[] = [];
@@ -113,10 +115,37 @@ export class HomeComponent implements OnInit {
     this.loadAllData();
     this.checkMobile();
     window.addEventListener('resize', () => this.checkMobile());
+
+    // Handle customerId query param (from Build a List view customer link)
+    this.route.queryParams.subscribe(params => {
+      const customerId = params['customerId'];
+      if (customerId) {
+        this.selectCustomerById(customerId);
+      }
+    });
   }
 
   private checkMobile(): void {
     this.isMobile = window.innerWidth < 1024;
+  }
+
+  private selectCustomerById(customerId: string): void {
+    // If customers are already loaded, select immediately
+    const customer = this.customers.find(c => c.id === customerId);
+    if (customer) {
+      this.handleSelectCustomer(customer);
+    } else {
+      // Wait for customers to load, then select
+      const checkInterval = setInterval(() => {
+        const c = this.customers.find(cust => cust.id === customerId);
+        if (c) {
+          clearInterval(checkInterval);
+          this.handleSelectCustomer(c);
+        }
+      }, 100);
+      // Clear interval after 5 seconds to avoid infinite loop
+      setTimeout(() => clearInterval(checkInterval), 5000);
+    }
   }
 
   private loadAllData(): void {
@@ -198,12 +227,12 @@ export class HomeComponent implements OnInit {
     });
   }
 
-  addPlantingIntention(): void {
-    this.toastService.info('Add planting intention - coming soon');
+  addPlantingIntention(data: {crop: string, acres: number, variety: string, plantingDate: Date, estimatedYield: number}): void {
+    this.toastService.info(`Adding ${data.crop} planting intention - coming soon`);
   }
 
-  editPlantingIntention(intention: PlantingIntention): void {
-    this.toastService.info('Edit planting intention - coming soon');
+  editPlantingIntention(data: {intentionId: string, crop: string, acres: number, variety: string, plantingDate: Date, estimatedYield: number}): void {
+    this.toastService.info(`Editing ${data.crop} intention - coming soon`);
   }
 
   addNote(content: string): void {

@@ -74,11 +74,11 @@ type SortDirection = 'none' | 'asc' | 'desc';
                 </div>
                 <button
                   type="button"
-                  class="h-8 w-8 inline-flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-transparent border-0 p-0"
+                  class="h-10 w-10 inline-flex items-center justify-center text-gray-400 hover:text-green-600 dark:hover:text-green-400 bg-transparent border-0 p-0"
                   (click)="openEditDialog(intention)"
                 >
-                  <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                  <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
                   </svg>
                 </button>
               </div>
@@ -188,11 +188,11 @@ type SortDirection = 'none' | 'asc' | 'desc';
                   <app-table-cell>
                     <button
                       type="button"
-                      class="h-8 w-8 inline-flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-transparent border-0 p-0"
+                      class="h-10 w-10 inline-flex items-center justify-center text-gray-400 hover:text-green-600 dark:hover:text-green-400 bg-transparent border-0 p-0"
                       (click)="openEditDialog(intention); $event.stopPropagation()"
                     >
-                      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                      <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
                       </svg>
                     </button>
                   </app-table-cell>
@@ -257,7 +257,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
       <app-dialog [isOpen]="showAddDialog" (close)="closeAddDialog()" size="sm">
         <app-dialog-header>
           <app-dialog-title>Add Planting Intention</app-dialog-title>
-          <app-dialog-description>Record a new planting intention for {{ customer?.name }}</app-dialog-description>
+          <app-dialog-description>Record a new planting intention for {{ customer.name }}</app-dialog-description>
         </app-dialog-header>
         <app-dialog-content>
           <div class="space-y-4">
@@ -302,7 +302,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
       <app-dialog [isOpen]="showEditDialog" (close)="closeEditDialog()" size="sm">
         <app-dialog-header>
           <app-dialog-title>Edit Planting Intention</app-dialog-title>
-          <app-dialog-description>Update planting intention for {{ customer?.name }}</app-dialog-description>
+          <app-dialog-description>Update planting intention for {{ customer.name }}</app-dialog-description>
         </app-dialog-header>
         <app-dialog-content>
           <div class="space-y-4">
@@ -368,6 +368,14 @@ export class PlantingIntentionsTableComponent {
   };
 
   editForm = {
+    crop: '',
+    acres: '',
+    variety: '',
+    plantingDate: '',
+    estimatedYield: ''
+  };
+
+  originalEditForm = {
     crop: '',
     acres: '',
     variety: '',
@@ -501,19 +509,29 @@ export class PlantingIntentionsTableComponent {
 
   openEditDialog(intention: PlantingIntention): void {
     this.selectedIntention = intention;
-    this.editForm = {
+    const formData = {
       crop: intention.crop,
       acres: intention.acres.toString(),
       variety: intention.variety || '',
       plantingDate: new Date(intention.plantingDate).toISOString().split('T')[0],
       estimatedYield: intention.estimatedYield.toString()
     };
+    this.editForm = { ...formData };
+    this.originalEditForm = { ...formData };
     this.showEditDialog = true;
   }
 
   closeEditDialog(): void {
     this.showEditDialog = false;
     this.selectedIntention = null;
+  }
+
+  hasEditFormChanged(): boolean {
+    return this.editForm.crop !== this.originalEditForm.crop
+      || this.editForm.acres !== this.originalEditForm.acres
+      || this.editForm.variety !== this.originalEditForm.variety
+      || this.editForm.plantingDate !== this.originalEditForm.plantingDate
+      || this.editForm.estimatedYield !== this.originalEditForm.estimatedYield;
   }
 
   isEditFormValid(): boolean {
@@ -523,7 +541,8 @@ export class PlantingIntentionsTableComponent {
       && this.editForm.variety !== ''
       && this.editForm.plantingDate !== ''
       && this.editForm.estimatedYield !== ''
-      && !isNaN(parseInt(this.editForm.estimatedYield));
+      && !isNaN(parseInt(this.editForm.estimatedYield))
+      && this.hasEditFormChanged();
   }
 
   submitEdit(): void {

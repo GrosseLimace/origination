@@ -8,7 +8,7 @@ import { CommonModule } from '@angular/common';
   template: `
     <footer class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 mt-auto">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="flex flex-col items-center gap-2">
           <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
             <!-- Wheat icon -->
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600">
@@ -22,10 +22,10 @@ import { CommonModule } from '@angular/common';
               <path d="M19.47 9.47 21 11l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L13 11l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
             </svg>
             <span>Grain Originator Portal</span>
-            <span class="hidden sm:inline">•</span>
-            <span class="hidden sm:inline">Built by Scoular</span>
+            <span>•</span>
+            <span>Built by Scoular</span>
           </div>
-          <div class="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+          <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
             <span>{{ currentYear }}</span>
             <span>•</span>
             <span>v1.0.0</span>

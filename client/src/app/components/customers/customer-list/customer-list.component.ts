@@ -9,6 +9,7 @@ import { BadgeComponent } from '../../ui/badge/badge.component';
   selector: 'app-customer-list',
   standalone: true,
   imports: [CommonModule, FormsModule, CardComponent, CardContentComponent, BadgeComponent],
+  host: { class: 'block w-full' },
   template: `
     <app-card>
       <app-card-content class="p-0">
@@ -49,7 +50,7 @@ import { BadgeComponent } from '../../ui/badge/badge.component';
         }
 
         <!-- Customer List -->
-        <div class="divide-y divide-gray-200 dark:divide-gray-700 max-h-[calc(100vh-300px)] overflow-y-auto">
+        <div class="divide-y divide-gray-200 dark:divide-gray-700 max-h-[calc(100vh-12rem)] lg:max-h-[calc(100vh-16rem)] overflow-y-auto">
           @if (filteredCustomers.length === 0) {
             <div class="p-8 text-center text-gray-500">
               <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 opacity-50">
@@ -72,26 +73,26 @@ import { BadgeComponent } from '../../ui/badge/badge.component';
                   <app-badge variant="secondary">{{ customer.totalAcres | number }} acres</app-badge>
                 </div>
 
-                <!-- Details -->
-                <div class="space-y-1 mt-2">
+                <!-- Details - fixed height container -->
+                <div class="space-y-1 mt-2 min-h-[88px]">
                   <p class="text-sm text-gray-600 dark:text-gray-400 truncate">{{ customer.farm }}</p>
-                  <div class="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
                       <circle cx="12" cy="10" r="3"/>
                     </svg>
                     <span class="truncate">{{ customer.location }}</span>
                   </div>
-                  @if (customer.phone) {
-                    <div class="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 h-5">
+                    @if (customer.phone) {
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
                       </svg>
                       <span>{{ customer.phone }}</span>
-                    </div>
-                  }
-                  <div class="flex items-center gap-1.5 text-sm" [class]="getLastContactClass(getLastContactInfo(customer.id).daysAgo)">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    }
+                  </div>
+                  <div class="flex items-center gap-2 text-sm" [class]="getLastContactClass(getLastContactInfo(customer.id).daysAgo)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/>
                       <line x1="16" x2="16" y1="2" y2="6"/>
                       <line x1="8" x2="8" y1="2" y2="6"/>
@@ -164,7 +165,7 @@ export class CustomerListComponent implements OnInit, OnChanges {
     const isSelected = this.selectedCustomer?.id === customer.id;
     const baseClass = 'p-4 cursor-pointer transition-colors';
     const stateClass = isSelected
-      ? 'bg-green-50 dark:bg-green-900/30 border-l-4 border-green-500'
+      ? 'bg-green-50 dark:bg-green-900/30'
       : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700';
     return `${baseClass} ${stateClass}`;
   }

@@ -8,13 +8,34 @@ import { Customer, Contract, PlantingIntention, Note, StoredGrain, SavedList } f
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '../../components/ui/card/card.component';
 import { ButtonComponent } from '../../components/ui/button/button.component';
 import { BadgeComponent } from '../../components/ui/badge/badge.component';
+import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '../../components/ui/dialog/dialog.component';
+import { InputComponent } from '../../components/ui/input/input.component';
+import { CustomerMapComponent } from '../../components/map/customer-map.component';
 
 @Component({
   selector: 'app-build-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent, ButtonComponent, BadgeComponent],
+  imports: [
+    CommonModule,
+    FormsModule,
+    CardComponent,
+    CardContentComponent,
+    CardHeaderComponent,
+    CardTitleComponent,
+    CardDescriptionComponent,
+    ButtonComponent,
+    BadgeComponent,
+    DialogComponent,
+    DialogHeaderComponent,
+    DialogTitleComponent,
+    DialogDescriptionComponent,
+    DialogContentComponent,
+    DialogFooterComponent,
+    InputComponent,
+    CustomerMapComponent
+  ],
   template: `
-    <div class="space-y-6">
+    <div class="space-y-8">
       <!-- Header -->
       <div class="flex items-start justify-between">
         <div>
@@ -31,9 +52,19 @@ import { BadgeComponent } from '../../components/ui/badge/badge.component';
         </app-button>
       </div>
 
+      <!-- Map View (toggleable) - always shows all customers -->
+      @if (showMap && customers.length > 0) {
+        <app-customer-map
+          [customers]="customers"
+          [focusedState]="detectedState"
+          (close)="toggleMap()"
+          (selectCustomer)="selectCustomer($event)"
+        />
+      }
+
       <!-- Natural Language Query Card -->
       <app-card>
-        <app-card-content class="p-6">
+        <app-card-content class="!p-6">
           <!-- Card Header -->
           <div class="flex items-center gap-2 mb-4">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #22c55e;">
@@ -47,6 +78,7 @@ import { BadgeComponent } from '../../components/ui/badge/badge.component';
           <div class="mb-4">
             <textarea
               [(ngModel)]="queryText"
+              (ngModelChange)="onQueryChange($event)"
               placeholder="Describe the type of customers you want to find... e.g., 'Show me farms in Nebraska' or 'Customers growing corn in Iowa'"
               rows="3"
               class="w-full p-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
@@ -55,7 +87,7 @@ import { BadgeComponent } from '../../components/ui/badge/badge.component';
 
           <!-- Generate Button -->
           <div class="mb-6">
-            <app-button (onClick)="executeQuery()" [disabled]="!queryText.trim() || isProcessing">
+            <app-button variant="default" (onClick)="processQuery()" [disabled]="!queryText.trim() || isProcessing">
               @if (isProcessing) {
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2 animate-spin">
                   <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
@@ -79,7 +111,7 @@ import { BadgeComponent } from '../../components/ui/badge/badge.component';
                 <button
                   type="button"
                   (click)="useExampleQuery(example)"
-                  class="px-3 py-1.5 text-sm rounded-full border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none"
+                  class="px-3 py-1.5 text-sm rounded-full border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-0"
                 >
                   {{ example }}
                 </button>
@@ -89,7 +121,7 @@ import { BadgeComponent } from '../../components/ui/badge/badge.component';
         </app-card-content>
       </app-card>
 
-      <!-- Results Section (only shown after generating) -->
+      <!-- Results Section (only shown after generating and when query has text) -->
       @if (hasGenerated && queryText.trim()) {
         <app-card>
           <app-card-header>
@@ -97,12 +129,25 @@ import { BadgeComponent } from '../../components/ui/badge/badge.component';
               <div>
                 <app-card-title>Results</app-card-title>
                 <app-card-description>
-                  Found {{ results.length }} customer(s) matching your criteria
+                  Found {{ filteredCustomers.length }} customer(s) matching your criteria
+                  @if (detectedState) {
+                    <span> in {{ getStateDisplayName(detectedState) }}</span>
+                  }
                 </app-card-description>
               </div>
-              @if (results.length > 0) {
+              @if (filteredCustomers.length > 0) {
                 <div class="flex gap-2">
-                  <app-button variant="outline" size="sm" (onClick)="openSaveDialog()">
+                  @if (!showMap) {
+                    <app-button variant="outline" (onClick)="toggleMap()">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2">
+                        <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/>
+                        <line x1="9" x2="9" y1="3" y2="18"/>
+                        <line x1="15" x2="15" y1="6" y2="21"/>
+                      </svg>
+                      Show on Map
+                    </app-button>
+                  }
+                  <app-button variant="outline" (onClick)="openSaveDialog()">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2">
                       <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
                     </svg>
@@ -113,7 +158,7 @@ import { BadgeComponent } from '../../components/ui/badge/badge.component';
             </div>
           </app-card-header>
           <app-card-content>
-            @if (results.length === 0) {
+            @if (filteredCustomers.length === 0) {
               <div class="text-center py-8">
                 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 text-gray-300 dark:text-gray-600">
                   <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
@@ -126,7 +171,7 @@ import { BadgeComponent } from '../../components/ui/badge/badge.component';
               </div>
             } @else {
               <div class="divide-y divide-gray-200 dark:divide-gray-700">
-                @for (customer of results; track customer.id) {
+                @for (customer of filteredCustomers; track customer.id) {
                   <div
                     class="py-4 flex items-start justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 -mx-6 px-6 cursor-pointer transition-colors"
                     (click)="selectCustomer(customer)"
@@ -211,24 +256,27 @@ import { BadgeComponent } from '../../components/ui/badge/badge.component';
         </app-card-content>
       </app-card>
 
-      <!-- Save Dialog -->
-      @if (showSaveDialog) {
-        <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4">
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Save List</h3>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Give this list a name so you can easily access it later</p>
-            <input
-              [(ngModel)]="listName"
+      <!-- Save List Dialog -->
+      <app-dialog [isOpen]="showSaveDialog" (close)="closeSaveDialog()" size="sm">
+        <app-dialog-header>
+          <app-dialog-title>Save List</app-dialog-title>
+          <app-dialog-description>Give this list a name so you can easily access it later</app-dialog-description>
+        </app-dialog-header>
+        <app-dialog-content>
+          <div class="space-y-2">
+            <label class="text-sm font-medium text-gray-700 dark:text-gray-300">List Name</label>
+            <app-input
+              type="text"
+              [(ngModel)]="newListName"
               placeholder="e.g., High Priority Prospects"
-              class="w-full p-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 mb-4"
             />
-            <div class="flex justify-end gap-2">
-              <app-button variant="outline" (onClick)="closeSaveDialog()">Cancel</app-button>
-              <app-button (onClick)="saveList()" [disabled]="!listName.trim()">Save List</app-button>
-            </div>
           </div>
-        </div>
-      }
+        </app-dialog-content>
+        <app-dialog-footer>
+          <app-button variant="outline" (onClick)="closeSaveDialog()">Cancel</app-button>
+          <app-button (onClick)="saveList()" [disabled]="!newListName.trim()">Save List</app-button>
+        </app-dialog-footer>
+      </app-dialog>
     </div>
   `
 })
@@ -245,23 +293,43 @@ export class BuildListComponent implements OnInit {
   savedLists: SavedList[] = [];
 
   queryText = '';
-  results: Customer[] = [];
+  filteredCustomers: Customer[] = [];
   showSaveDialog = false;
-  listName = '';
+  newListName = '';
   isProcessing = false;
   hasGenerated = false;
   showMap = false;
+  detectedState: string | null = null;
 
   exampleQueries = [
     'Show me farms in Nebraska',
     'Customers with more than 1000 acres',
     'Farmers I have not contacted in over 60 days',
-    'Contacted in the last 7 days',
+    'Customers contacted in the last 7 days',
     'Farms with grain in storage',
     'Customers planting corn this season',
     'Large operations over 2000 acres in Iowa',
+    'Producers with soybeans in storage',
     'Top 10 largest operations'
   ];
+
+  private stateNames: { [key: string]: string } = {
+    'iowa': 'Iowa',
+    'nebraska': 'Nebraska',
+    'illinois': 'Illinois',
+    'minnesota': 'Minnesota',
+    'wisconsin': 'Wisconsin',
+    'missouri': 'Missouri',
+    'kansas': 'Kansas',
+    'south dakota': 'South Dakota',
+    'north dakota': 'North Dakota',
+    'indiana': 'Indiana',
+    'ohio': 'Ohio',
+    'michigan': 'Michigan',
+    'texas': 'Texas',
+    'oklahoma': 'Oklahoma',
+    'colorado': 'Colorado'
+  };
 
   ngOnInit(): void {
     this.loadData();
@@ -280,129 +348,384 @@ export class BuildListComponent implements OnInit {
     this.showMap = !this.showMap;
   }
 
-  useExampleQuery(example: string): void {
-    this.queryText = example;
-    this.executeQuery();
+  getMapCustomers(): Customer[] {
+    return this.hasGenerated ? this.filteredCustomers : this.customers;
   }
 
-  async executeQuery(): Promise<void> {
+  onQueryChange(query: string): void {
+    if (!query.trim()) {
+      this.hasGenerated = false;
+      this.filteredCustomers = [];
+      this.detectedState = null;
+    }
+  }
+
+  async useExampleQuery(example: string): Promise<void> {
+    this.detectedState = null;
+    this.hasGenerated = false;
+    this.filteredCustomers = [];
+    this.queryText = example;
+    await this.processQuery();
+  }
+
+  async processQuery(): Promise<void> {
     if (!this.queryText.trim()) return;
 
     this.isProcessing = true;
 
     // Simulate processing delay
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 800));
 
-    const query = this.queryText.toLowerCase();
-    let filtered = [...this.customers];
+    // Detect state in query
+    this.detectedState = this.detectStateInQuery(this.queryText);
 
-    // Location/state filter
-    const states: { [key: string]: string } = {
-      'iowa': 'ia', 'illinois': 'il', 'nebraska': 'ne', 'minnesota': 'mn',
-      'wisconsin': 'wi', 'missouri': 'mo', 'kansas': 'ks'
+    // Parse natural language query and filter
+    this.filteredCustomers = this.parseAndFilter(this.queryText);
+    this.hasGenerated = true;
+
+    this.isProcessing = false;
+  }
+
+  private detectStateInQuery(query: string): string | null {
+    const lowerQuery = query.toLowerCase();
+
+    // Check for full state names first
+    for (const state of Object.keys(this.stateNames)) {
+      if (lowerQuery.includes(state)) {
+        return state;
+      }
+    }
+
+    // Also check for state abbreviations
+    const stateAbbreviations: { [key: string]: string } = {
+      ' ia ': 'iowa', ' ia,': 'iowa', ' ia.': 'iowa',
+      ' ne ': 'nebraska', ' ne,': 'nebraska', ' ne.': 'nebraska',
+      ' il ': 'illinois', ' il,': 'illinois', ' il.': 'illinois',
+      ' mn ': 'minnesota', ' mn,': 'minnesota', ' mn.': 'minnesota',
+      ' wi ': 'wisconsin', ' wi,': 'wisconsin', ' wi.': 'wisconsin',
+      ' mo ': 'missouri', ' mo,': 'missouri', ' mo.': 'missouri',
+      ' ks ': 'kansas', ' ks,': 'kansas', ' ks.': 'kansas',
+      ' sd ': 'south dakota', ' sd,': 'south dakota', ' sd.': 'south dakota',
+      ' nd ': 'north dakota', ' nd,': 'north dakota', ' nd.': 'north dakota',
+      ',in ': 'indiana', ' in,': 'indiana', ' in.': 'indiana',
+      ' oh ': 'ohio', ' oh,': 'ohio', ' oh.': 'ohio',
+      ' mi ': 'michigan', ' mi,': 'michigan', ' mi.': 'michigan',
+      ' tx ': 'texas', ' tx,': 'texas', ' tx.': 'texas',
+      ' ok ': 'oklahoma', ' ok,': 'oklahoma', ' ok.': 'oklahoma',
+      ' co ': 'colorado', ' co,': 'colorado', ' co.': 'colorado'
     };
-    for (const [state, abbrev] of Object.entries(states)) {
-      if (query.includes(state)) {
-        filtered = filtered.filter(c =>
-          c.location.toLowerCase().includes(state) ||
-          c.location.toLowerCase().includes(abbrev)
+
+    for (const [abbrev, state] of Object.entries(stateAbbreviations)) {
+      if (lowerQuery.includes(abbrev)) {
+        return state;
+      }
+    }
+
+    return null;
+  }
+
+  getStateDisplayName(state: string): string {
+    return this.stateNames[state.toLowerCase()] || state.charAt(0).toUpperCase() + state.slice(1);
+  }
+
+  private getStateAbbreviation(state: string): string {
+    const abbrevs: { [key: string]: string } = {
+      'iowa': 'ia', 'illinois': 'il', 'nebraska': 'ne', 'minnesota': 'mn',
+      'wisconsin': 'wi', 'missouri': 'mo', 'kansas': 'ks', 'south dakota': 'sd',
+      'north dakota': 'nd', 'indiana': 'in', 'ohio': 'oh', 'michigan': 'mi',
+      'texas': 'tx', 'oklahoma': 'ok', 'colorado': 'co'
+    };
+    return abbrevs[state.toLowerCase()] || '';
+  }
+
+  private parseAndFilter(query: string): Customer[] {
+    const lowerQuery = query.toLowerCase();
+    let result = [...this.customers];
+
+    // ==========================================
+    // LOCATION/STATE FILTER
+    // ==========================================
+    if (this.detectedState) {
+      const stateAbbrev = this.getStateAbbreviation(this.detectedState);
+      result = result.filter(c =>
+        c.location.toLowerCase().includes(this.detectedState!) ||
+        c.location.toLowerCase().includes(stateAbbrev)
+      );
+    }
+
+    // ==========================================
+    // ACRES FILTER
+    // ==========================================
+    // "more than X acres", "over X acres", "at least X acres", "greater than X acres"
+    const moreAcresMatch = lowerQuery.match(/(?:more than|over|at least|greater than|above|exceeding)\s*(\d+(?:,\d+)?)\s*acres?/);
+    if (moreAcresMatch) {
+      const minAcres = parseInt(moreAcresMatch[1].replace(',', ''));
+      result = result.filter(c => c.totalAcres >= minAcres);
+    }
+
+    // "less than X acres", "under X acres", "fewer than X acres"
+    const lessAcresMatch = lowerQuery.match(/(?:less than|under|fewer than|below)\s*(\d+(?:,\d+)?)\s*acres?/);
+    if (lessAcresMatch) {
+      const maxAcres = parseInt(lessAcresMatch[1].replace(',', ''));
+      result = result.filter(c => c.totalAcres < maxAcres);
+    }
+
+    // "between X and Y acres"
+    const betweenAcresMatch = lowerQuery.match(/between\s*(\d+(?:,\d+)?)\s*(?:and|to|-)\s*(\d+(?:,\d+)?)\s*acres?/);
+    if (betweenAcresMatch) {
+      const minAcres = parseInt(betweenAcresMatch[1].replace(',', ''));
+      const maxAcres = parseInt(betweenAcresMatch[2].replace(',', ''));
+      result = result.filter(c => c.totalAcres >= minAcres && c.totalAcres <= maxAcres);
+    }
+
+    // "large operations" or "big farms" (default to 1500+ acres)
+    const isTopQuery = /top\s*\d+/.test(lowerQuery);
+    if ((lowerQuery.includes('large') || lowerQuery.includes('big')) &&
+        (lowerQuery.includes('operation') || lowerQuery.includes('farm')) &&
+        !isTopQuery) {
+      if (!moreAcresMatch) {
+        result = result.filter(c => c.totalAcres >= 1500);
+      }
+    }
+
+    // "small farms" (default to under 500 acres)
+    if (lowerQuery.includes('small') && (lowerQuery.includes('operation') || lowerQuery.includes('farm'))) {
+      if (!lessAcresMatch) {
+        result = result.filter(c => c.totalAcres < 500);
+      }
+    }
+
+    // ==========================================
+    // LAST CONTACTED FILTER
+    // ==========================================
+    const isNotContactedQuery = lowerQuery.includes('have not contacted') ||
+                                lowerQuery.includes("haven't contacted") ||
+                                lowerQuery.includes('not contacted') ||
+                                lowerQuery.includes('never contacted') ||
+                                (lowerQuery.includes('contacted') && lowerQuery.includes('over') && lowerQuery.includes('days'));
+
+    if (isNotContactedQuery) {
+      const notContactedMatch = lowerQuery.match(/(\d+)\s*days?/);
+      if (notContactedMatch) {
+        const notContactedDays = parseInt(notContactedMatch[1]);
+        const cutoffDate = new Date(Date.now() - notContactedDays * 24 * 60 * 60 * 1000);
+        result = result.filter(c => {
+          const lastNote = this.notes
+            .filter(n => n.customerId === c.id)
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+          return !lastNote || new Date(lastNote.createdAt) < cutoffDate;
+        });
+      } else if (lowerQuery.includes('never contacted') || lowerQuery.includes('no contact history')) {
+        result = result.filter(c => !this.notes.some(n => n.customerId === c.id));
+      }
+    }
+
+    // "contacted in the last X days" or "contacted within X days" or "recently contacted"
+    if (!isNotContactedQuery) {
+      const recentlyContactedMatch = lowerQuery.match(/contacted\s*(?:in|within)?\s*(?:the)?\s*(?:last|past)?\s*(\d+)\s*days?/);
+      if (recentlyContactedMatch) {
+        const recentDays = parseInt(recentlyContactedMatch[1]);
+        const cutoffDate = new Date(Date.now() - recentDays * 24 * 60 * 60 * 1000);
+        result = result.filter(c => {
+          const lastNote = this.notes
+            .filter(n => n.customerId === c.id)
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+          return lastNote && new Date(lastNote.createdAt) >= cutoffDate;
+        });
+      } else if (lowerQuery.includes('recently contacted') || lowerQuery.includes('contacted recently')) {
+        const cutoffDate = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+        result = result.filter(c => {
+          const lastNote = this.notes
+            .filter(n => n.customerId === c.id)
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+          return lastNote && new Date(lastNote.createdAt) >= cutoffDate;
+        });
+      }
+
+      // "contacted last week"
+      if (lowerQuery.includes('contacted last week') || lowerQuery.includes('contacted this week')) {
+        const cutoffDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        result = result.filter(c => {
+          const lastNote = this.notes
+            .filter(n => n.customerId === c.id)
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+          return lastNote && new Date(lastNote.createdAt) >= cutoffDate;
+        });
+      }
+
+      // "contacted last month" or "contacted this month"
+      if (lowerQuery.includes('contacted last month') || lowerQuery.includes('contacted this month')) {
+        const cutoffDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        result = result.filter(c => {
+          const lastNote = this.notes
+            .filter(n => n.customerId === c.id)
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+          return lastNote && new Date(lastNote.createdAt) >= cutoffDate;
+        });
+      }
+    }
+
+    // ==========================================
+    // STORAGE FILTER
+    // ==========================================
+    // "with grain in storage", "have stored grain", "storing grain"
+    if (lowerQuery.includes('in storage') || lowerQuery.includes('stored grain') ||
+        lowerQuery.includes('storing grain') || lowerQuery.includes('have storage') ||
+        lowerQuery.includes('with storage') || lowerQuery.includes('grain stored')) {
+      const customersWithStorage = new Set(this.storedGrain.map(s => s.customerId));
+      result = result.filter(c => customersWithStorage.has(c.id));
+    }
+
+    // "with corn in storage", "storing soybeans", etc.
+    const storageGrains = ['corn', 'soybeans', 'wheat', 'oats', 'barley', 'sorghum'];
+    for (const grain of storageGrains) {
+      if (lowerQuery.includes(`${grain} in storage`) || lowerQuery.includes(`storing ${grain}`) ||
+          lowerQuery.includes(`stored ${grain}`) || lowerQuery.includes(`${grain} stored`)) {
+        const customersWithGrainStorage = new Set(
+          this.storedGrain.filter(s => s.crop.toLowerCase().includes(grain)).map(s => s.customerId)
         );
+        result = result.filter(c => customersWithGrainStorage.has(c.id));
         break;
       }
     }
 
-    // Acres filter - "more than X acres", "over X acres"
-    const moreAcresMatch = query.match(/(?:more than|over|at least|greater than|above)\s*(\d+(?:,\d+)?)\s*acres?/);
-    if (moreAcresMatch) {
-      const minAcres = parseInt(moreAcresMatch[1].replace(',', ''));
-      filtered = filtered.filter(c => c.totalAcres >= minAcres);
+    // "storage over X bushels" or "more than X bushels in storage"
+    const storageQuantityMatch = lowerQuery.match(/(?:storage|stored|storing)\s*(?:over|more than|above|exceeding)?\s*(\d+(?:,\d+)?)\s*(?:bushels?|bu)/);
+    if (storageQuantityMatch) {
+      const minQuantity = parseInt(storageQuantityMatch[1].replace(',', ''));
+      const customerTotals = new Map<string, number>();
+      for (const sg of this.storedGrain) {
+        const current = customerTotals.get(sg.customerId) || 0;
+        customerTotals.set(sg.customerId, current + sg.quantity);
+      }
+      const customersWithMinStorage = new Set(
+        Array.from(customerTotals.entries())
+          .filter(([_, total]) => total >= minQuantity)
+          .map(([customerId]) => customerId)
+      );
+      result = result.filter(c => customersWithMinStorage.has(c.id));
     }
 
-    // Acres filter - "less than X acres"
-    const lessAcresMatch = query.match(/(?:less than|under|fewer than|below)\s*(\d+(?:,\d+)?)\s*acres?/);
-    if (lessAcresMatch) {
-      const maxAcres = parseInt(lessAcresMatch[1].replace(',', ''));
-      filtered = filtered.filter(c => c.totalAcres < maxAcres);
-    }
-
-    // Large operations (1500+ acres by default)
-    if ((query.includes('large') || query.includes('big')) &&
-        (query.includes('operation') || query.includes('farm')) &&
-        !moreAcresMatch) {
-      filtered = filtered.filter(c => c.totalAcres >= 1500);
-    }
-
-    // Contact time filter - "not contacted in over X days"
-    const notContactedMatch = query.match(/(?:not contacted|haven't contacted|have not contacted).*?(\d+)\s*days?/);
-    if (notContactedMatch) {
-      const days = parseInt(notContactedMatch[1]);
-      const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-      filtered = filtered.filter(c => {
-        const lastNote = this.notes
-          .filter(n => n.customerId === c.id)
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-        return !lastNote || new Date(lastNote.createdAt) < cutoffDate;
-      });
-    }
-
-    // Contact time filter - "contacted in the last X days"
-    const recentContactMatch = query.match(/contacted\s*(?:in|within)?\s*(?:the)?\s*(?:last|past)?\s*(\d+)\s*days?/);
-    if (recentContactMatch && !notContactedMatch) {
-      const days = parseInt(recentContactMatch[1]);
-      const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-      filtered = filtered.filter(c => {
-        const lastNote = this.notes
-          .filter(n => n.customerId === c.id)
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-        return lastNote && new Date(lastNote.createdAt) >= cutoffDate;
-      });
-    }
-
-    // Storage filter
-    if (query.includes('in storage') || query.includes('stored grain') || query.includes('grain in storage')) {
+    // "no storage" or "without storage"
+    if (lowerQuery.includes('no storage') || lowerQuery.includes('without storage') ||
+        lowerQuery.includes('not storing')) {
       const customersWithStorage = new Set(this.storedGrain.map(s => s.customerId));
-      filtered = filtered.filter(c => customersWithStorage.has(c.id));
+      result = result.filter(c => !customersWithStorage.has(c.id));
     }
 
-    // Planting crop filter
+    // ==========================================
+    // PLANTING INTENTIONS FILTER
+    // ==========================================
     const plantingCrops = ['corn', 'soybeans', 'wheat', 'oats', 'barley', 'sorghum'];
     for (const crop of plantingCrops) {
-      if (query.includes(`planting ${crop}`) || query.includes(`growing ${crop}`) || query.includes(`${crop} this season`)) {
+      if (lowerQuery.includes(`planting ${crop}`) || lowerQuery.includes(`growing ${crop}`) ||
+          lowerQuery.includes(`plant ${crop}`) || lowerQuery.includes(`plans to plant ${crop}`) ||
+          lowerQuery.includes(`${crop} planting`) || lowerQuery.includes(`${crop} this season`)) {
         const customersWithCrop = new Set(
           this.plantingIntentions.filter(p => p.crop.toLowerCase().includes(crop)).map(p => p.customerId)
         );
-        filtered = filtered.filter(c => customersWithCrop.has(c.id));
+        result = result.filter(c => customersWithCrop.has(c.id));
         break;
       }
     }
 
-    // Top X filter
-    const topMatch = query.match(/top\s*(\d+)/);
+    // "with planting intentions" or "have planting plans"
+    if (lowerQuery.includes('planting intention') || lowerQuery.includes('planting plan') ||
+        lowerQuery.includes('planning to plant') || lowerQuery.includes('plans to grow')) {
+      const customersWithPlanting = new Set(this.plantingIntentions.map(p => p.customerId));
+      result = result.filter(c => customersWithPlanting.has(c.id));
+    }
+
+    // "planting over X acres" or "planting more than X acres"
+    const plantingAcresMatch = lowerQuery.match(/planting\s*(?:over|more than|above)?\s*(\d+(?:,\d+)?)\s*acres?/);
+    if (plantingAcresMatch) {
+      const minPlantingAcres = parseInt(plantingAcresMatch[1].replace(',', ''));
+      const customerTotals = new Map<string, number>();
+      for (const pi of this.plantingIntentions) {
+        const current = customerTotals.get(pi.customerId) || 0;
+        customerTotals.set(pi.customerId, current + pi.acres);
+      }
+      const customersWithMinPlanting = new Set(
+        Array.from(customerTotals.entries())
+          .filter(([_, total]) => total >= minPlantingAcres)
+          .map(([customerId]) => customerId)
+      );
+      result = result.filter(c => customersWithMinPlanting.has(c.id));
+    }
+
+    // "no planting intentions" or "without planting plans"
+    if (lowerQuery.includes('no planting') || lowerQuery.includes('without planting') ||
+        lowerQuery.includes('no plans to plant')) {
+      const customersWithPlanting = new Set(this.plantingIntentions.map(p => p.customerId));
+      result = result.filter(c => !customersWithPlanting.has(c.id));
+    }
+
+    // ==========================================
+    // CONTRACT FILTER
+    // ==========================================
+    // "no active contracts"
+    if (lowerQuery.includes('no active contract') || lowerQuery.includes('no contract') ||
+        lowerQuery.includes('without contract') || lowerQuery.includes('no contracts')) {
+      const customersWithActiveContracts = new Set(
+        this.contracts
+          .filter(c => c.status === 'Active' || c.status === 'Pending')
+          .map(c => c.customerId)
+      );
+      result = result.filter(c => !customersWithActiveContracts.has(c.id));
+    }
+
+    // "with active contracts"
+    if (lowerQuery.includes('with active contract') || lowerQuery.includes('have contract') ||
+        lowerQuery.includes('active contracts')) {
+      const customersWithActiveContracts = new Set(
+        this.contracts
+          .filter(c => c.status === 'Active' || c.status === 'Pending')
+          .map(c => c.customerId)
+      );
+      result = result.filter(c => customersWithActiveContracts.has(c.id));
+    }
+
+    // "unsigned contracts"
+    if (lowerQuery.includes('unsigned contract') || lowerQuery.includes('not signed')) {
+      const customersWithUnsigned = new Set(
+        this.contracts.filter(c => !c.signed).map(c => c.customerId)
+      );
+      result = result.filter(c => customersWithUnsigned.has(c.id));
+    }
+
+    // ==========================================
+    // TOP/LARGEST FILTER
+    // ==========================================
+    const topMatch = lowerQuery.match(/top\s*(\d+)\s*(?:largest|biggest|customers?|farms?|operations?)?/);
     if (topMatch) {
       const topN = parseInt(topMatch[1]);
-      filtered = filtered.sort((a, b) => b.totalAcres - a.totalAcres).slice(0, topN);
+      result = result.sort((a, b) => b.totalAcres - a.totalAcres).slice(0, topN);
+    } else if (lowerQuery.includes('largest') || lowerQuery.includes('biggest')) {
+      result = result.sort((a, b) => b.totalAcres - a.totalAcres).slice(0, 10);
     }
 
-    // E-sign filter
-    if (query.includes('esign') || query.includes('e-sign')) {
-      filtered = filtered.filter(c => c.eSignEnabled);
+    // "bottom X" or "smallest"
+    const bottomMatch = lowerQuery.match(/(?:bottom|smallest)\s*(\d+)/);
+    if (bottomMatch) {
+      const bottomN = parseInt(bottomMatch[1]);
+      result = result.sort((a, b) => a.totalAcres - b.totalAcres).slice(0, bottomN);
+    } else if (lowerQuery.includes('smallest')) {
+      result = result.sort((a, b) => a.totalAcres - b.totalAcres).slice(0, 10);
     }
 
-    this.results = filtered;
-    this.hasGenerated = true;
-    this.isProcessing = false;
-    this.toastService.info(`Found ${filtered.length} matching customers`);
+    return result;
   }
 
-  clearResults(): void {
-    this.results = [];
-    this.queryText = '';
-    this.hasGenerated = false;
+  loadSavedList(list: SavedList): void {
+    this.queryText = list.query;
+    this.detectedState = this.detectStateInQuery(list.query);
+    this.filteredCustomers = this.customers.filter(c => list.customerIds.includes(c.id));
+    this.hasGenerated = true;
   }
 
   openSaveDialog(): void {
     this.showSaveDialog = true;
-    this.listName = '';
+    this.newListName = '';
   }
 
   closeSaveDialog(): void {
@@ -410,24 +733,22 @@ export class BuildListComponent implements OnInit {
   }
 
   saveList(): void {
-    if (!this.listName.trim() || this.results.length === 0) return;
+    if (!this.newListName.trim() || this.filteredCustomers.length === 0) return;
 
     this.apiService.createSavedList({
-      name: this.listName,
+      name: this.newListName,
       query: this.queryText,
-      customerIds: this.results.map(c => c.id)
+      customerIds: this.filteredCustomers.map(c => c.id)
     }).subscribe(() => {
-      this.toastService.success(`List "${this.listName}" saved with ${this.results.length} customers`);
-      this.closeSaveDialog();
-      this.clearResults();
+      this.toastService.success(`List "${this.newListName}" saved with ${this.filteredCustomers.length} customers`);
+      this.newListName = '';
+      this.showSaveDialog = false;
+      this.queryText = '';
+      this.hasGenerated = false;
+      this.filteredCustomers = [];
+      this.detectedState = null;
       this.apiService.getSavedLists().subscribe(data => this.savedLists = data);
     });
-  }
-
-  loadSavedList(list: SavedList): void {
-    this.queryText = list.query;
-    this.results = this.customers.filter(c => list.customerIds.includes(c.id));
-    this.hasGenerated = true;
   }
 
   deleteList(listId: string): void {
@@ -442,19 +763,21 @@ export class BuildListComponent implements OnInit {
   }
 
   getInitials(name: string): string {
-    const parts = name.split(' ');
+    const parts = name.split(' ').filter(p => p.length > 0);
     if (parts.length >= 2) {
       return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
     }
-    return parts[0].substring(0, 2).toUpperCase();
+    if (parts.length === 1 && parts[0].length >= 2) {
+      return parts[0].substring(0, 2).toUpperCase();
+    }
+    return '??';
   }
 
   getLastContactInfo(customerId: string): { text: string; colorClass: string } {
-    const customerNotes = this.notes
+    const lastNote = this.notes
       .filter(n => n.customerId === customerId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
 
-    const lastNote = customerNotes[0];
     if (!lastNote) {
       return { text: 'Never contacted', colorClass: 'text-red-500' };
     }

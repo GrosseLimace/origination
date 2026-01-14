@@ -207,6 +207,7 @@ import { Customer, Farm } from '../../../models';
           <button
             type="button"
             class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-green-600 text-white hover:bg-green-700 h-10 px-4 py-2"
+            [disabled]="!hasChanges()"
             (click)="onSave()"
           >
             Save Changes
@@ -240,6 +241,13 @@ export class EditCustomerDialogComponent implements OnChanges {
   editFarmIds: string[] = [];
   editESignEnabled = false;
 
+  // Original values to track changes
+  private originalLocation = '';
+  private originalPhone = '';
+  private originalEmail = '';
+  private originalFarmIds: string[] = [];
+  private originalESignEnabled = false;
+
   showNewFarmForm = false;
   newFarmName = '';
   newFarmLocation = '';
@@ -255,6 +263,14 @@ export class EditCustomerDialogComponent implements OnChanges {
       this.editEmail = this.customer.email;
       this.editFarmIds = [...this.customer.farmIds];
       this.editESignEnabled = this.customer.eSignEnabled;
+
+      // Store original values
+      this.originalLocation = this.customer.location;
+      this.originalPhone = this.customer.phone;
+      this.originalEmail = this.customer.email;
+      this.originalFarmIds = [...this.customer.farmIds];
+      this.originalESignEnabled = this.customer.eSignEnabled;
+
       this.initialized = true;
     }
 
@@ -265,6 +281,19 @@ export class EditCustomerDialogComponent implements OnChanges {
 
     // Force change detection
     this.cdr.markForCheck();
+  }
+
+  hasChanges(): boolean {
+    if (!this.customer) return false;
+
+    const farmIdsChanged = this.editFarmIds.length !== this.originalFarmIds.length
+      || this.editFarmIds.some(id => !this.originalFarmIds.includes(id));
+
+    return this.editLocation !== this.originalLocation
+      || this.editPhone !== this.originalPhone
+      || this.editEmail !== this.originalEmail
+      || this.editESignEnabled !== this.originalESignEnabled
+      || farmIdsChanged;
   }
 
   getFarmById(farmId: string): Farm | undefined {
