@@ -38,7 +38,13 @@ public class SavedListsController : ControllerBase
 
 public class CreateSavedListRequest
 {
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.StringLength(100)]
     public string Name { get; set; } = string.Empty;
+
+    [System.ComponentModel.DataAnnotations.StringLength(500)]
     public string Query { get; set; } = string.Empty;
+
+    [System.ComponentModel.DataAnnotations.Required]
     public List<string> CustomerIds { get; set; } = new();
 }

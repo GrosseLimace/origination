@@ -48,6 +48,11 @@ public class NotesController : ControllerBase
 
 public class CreateNoteRequest
 {
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.StringLength(100)]
     public string CustomerId { get; set; } = string.Empty;
+
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.StringLength(2000)]
     public string Content { get; set; } = string.Empty;
 }

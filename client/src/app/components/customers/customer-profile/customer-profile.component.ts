@@ -37,8 +37,21 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
   template: `
     <div class="space-y-8">
       <!-- Header Card -->
-      <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
-        <div class="p-6">
+      <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm relative">
+        <!-- Print Button - Top Right -->
+        <button
+          type="button"
+          class="absolute top-4 right-4 p-2 rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-colors"
+          (click)="printCustomerInfo()"
+          title="Print Customer Info"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 6 2 18 2 18 9"/>
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+            <rect width="12" height="8" x="6" y="14"/>
+          </svg>
+        </button>
+        <div class="p-6 pr-16">
           <!-- Row 1: Customer Name + eSign Badge (on same line) -->
           <div class="flex items-center gap-3 flex-wrap mb-1">
             <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ customer.name }}</h1>
@@ -455,5 +468,178 @@ export class CustomerProfileComponent implements OnChanges {
       day: 'numeric',
       year: 'numeric'
     });
+  }
+
+  /** Opens a print dialog with formatted customer information */
+  printCustomerInfo(): void {
+    const activeContracts = this.contracts.filter(c => c.status === 'Active' || c.status === 'Pending');
+    const contractValue = activeContracts.reduce((sum, c) => sum + (c.quantity * c.price), 0);
+
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Customer Info - ${this.customer.name}</title>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { font-family: Arial, sans-serif; padding: 40px; color: #000; }
+          h1 { font-size: 24px; margin-bottom: 8px; color: #000; }
+          h2 { font-size: 18px; margin-top: 24px; margin-bottom: 12px; border-bottom: 2px solid #000; padding-bottom: 4px; color: #000; }
+          h3 { font-size: 14px; margin-top: 16px; margin-bottom: 8px; color: #000; }
+          .header { margin-bottom: 24px; }
+          .farm-name { color: #000; font-size: 14px; margin-bottom: 4px; }
+          .print-date { color: #000; font-size: 12px; }
+          .section { margin-bottom: 20px; }
+          .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+          .info-item { margin-bottom: 8px; }
+          .label { font-weight: bold; color: #000; font-size: 12px; text-transform: uppercase; }
+          .value { font-size: 14px; margin-top: 2px; color: #000; }
+          .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 12px; }
+          .summary-box { border: 1px solid #000; border-radius: 4px; padding: 12px; text-align: center; }
+          .summary-value { font-size: 20px; font-weight: bold; color: #000; }
+          .summary-label { font-size: 12px; color: #000; margin-top: 4px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+          th { background: #fff; text-align: left; padding: 10px 8px; font-weight: 600; border-bottom: 2px solid #000; color: #000; }
+          td { padding: 10px 8px; border-bottom: 1px solid #000; color: #000; }
+          .status { font-size: 12px; font-weight: 500; color: #000; }
+          .text-right { text-align: right; }
+          @media print {
+            body { padding: 20px; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>${this.customer.name}</h1>
+          <div class="farm-name">${this.customer.farm}</div>
+          <div class="print-date">Printed: ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</div>
+        </div>
+
+        <h2>Customer Information</h2>
+        <div class="grid">
+          <div>
+            <h3>Contact</h3>
+            <div class="info-item">
+              <div class="label">Location</div>
+              <div class="value">${this.customer.location}</div>
+            </div>
+            <div class="info-item">
+              <div class="label">Phone</div>
+              <div class="value">${this.customer.phone}</div>
+            </div>
+            <div class="info-item">
+              <div class="label">Email</div>
+              <div class="value">${this.customer.email}</div>
+            </div>
+          </div>
+          <div>
+            <h3>Farm Details</h3>
+            <div class="info-item">
+              <div class="label">Total Acres</div>
+              <div class="value">${this.getSelectedFarmAcres().toLocaleString()} acres</div>
+            </div>
+            ${this.getSelectedFarmStorage() > 0 ? `
+            <div class="info-item">
+              <div class="label">Storage Capacity</div>
+              <div class="value">${this.getSelectedFarmStorage().toLocaleString()} bushels</div>
+            </div>
+            ` : ''}
+            <div class="info-item">
+              <div class="label">eSign Status</div>
+              <div class="value">${this.customer.eSignEnabled ? 'Enabled' : 'Not Enrolled'}</div>
+            </div>
+          </div>
+        </div>
+
+        <h2>Farm Overview</h2>
+        <div class="section">
+          ${this.farms.length > 0 ? `
+          <table>
+            <thead>
+              <tr>
+                <th>Farm Name</th>
+                <th class="text-right">Acres</th>
+                <th>Location</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${this.farms.map(farm => `
+              <tr>
+                <td>${farm.name}</td>
+                <td class="text-right">${farm.acres?.toLocaleString() || '-'}</td>
+                <td>${farm.location || '-'}</td>
+              </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          ` : '<p>No farms on record</p>'}
+        </div>
+
+        <h2>Contract Summary</h2>
+        <div class="summary-grid">
+          <div class="summary-box">
+            <div class="summary-value">${this.totalContracted.toLocaleString()}</div>
+            <div class="summary-label">Total Contracted Bushels</div>
+          </div>
+          <div class="summary-box">
+            <div class="summary-value">${this.bushelsAvailable.toLocaleString()}</div>
+            <div class="summary-label">Available Bushels</div>
+          </div>
+          <div class="summary-box">
+            <div class="summary-value">$${contractValue.toLocaleString()}</div>
+            <div class="summary-label">Contract Value</div>
+          </div>
+        </div>
+
+        <h2>Active Contracts</h2>
+        <div class="section">
+          ${activeContracts.length > 0 ? `
+          <table>
+            <thead>
+              <tr>
+                <th>Contract #</th>
+                <th>Crop</th>
+                <th class="text-right">Quantity</th>
+                <th class="text-right">Price</th>
+                <th>Delivery Period</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${activeContracts.map(contract => `
+              <tr>
+                <td>${contract.contractNumber}</td>
+                <td>${contract.crop}</td>
+                <td class="text-right">${contract.quantity.toLocaleString()} bu</td>
+                <td class="text-right">$${contract.price.toFixed(2)}</td>
+                <td>${this.formatDeliveryPeriod(contract.deliveryStart, contract.deliveryEnd)}</td>
+                <td><span class="status">${contract.status}</span></td>
+              </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          ` : '<p>No active contracts</p>'}
+        </div>
+      </body>
+      </html>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      printWindow.onload = () => {
+        printWindow.print();
+      };
+    }
+  }
+
+  /** Formats delivery period for print display */
+  private formatDeliveryPeriod(start: Date, end: Date): string {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const startMonth = startDate.toLocaleDateString('en-US', { month: 'short' });
+    const endMonth = endDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    return `${startMonth} - ${endMonth}`;
   }
 }

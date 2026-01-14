@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using GrainOriginatorPortal.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -7,7 +8,12 @@ var builder = WebApplication.CreateBuilder(args);
 // =============================================================================
 
 // Add MVC controllers for REST API endpoints
-builder.Services.AddControllers();
+// Configure JSON to serialize enums as strings instead of numbers
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 
 // Enable OpenAPI/Swagger for API documentation (available at /openapi/v1.json)
 builder.Services.AddOpenApi();

@@ -1,6 +1,8 @@
-import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
+import { Subject, forkJoin } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
 import { AppStateService } from '../../services/app-state.service';
 import { ToastService } from '../../services/toast.service';
@@ -85,12 +87,14 @@ import { CardComponent, CardContentComponent } from '../../components/ui/card/ca
     </div>
   `
 })
-export class HomeComponent implements OnInit {
+export class HomeComponent implements OnInit, OnDestroy {
   private apiService = inject(ApiService);
   private appState = inject(AppStateService);
   private toastService = inject(ToastService);
   private cdr = inject(ChangeDetectorRef);
   private route = inject(ActivatedRoute);
+  private destroy$ = new Subject<void>();
+  private resizeHandler = () => this.checkMobile();
 
   customers: Customer[] = [];
   contracts: Contract[] = [];
@@ -114,15 +118,21 @@ export class HomeComponent implements OnInit {
   ngOnInit(): void {
     this.loadAllData();
     this.checkMobile();
-    window.addEventListener('resize', () => this.checkMobile());
+    window.addEventListener('resize', this.resizeHandler);
 
     // Handle customerId query param (from Build a List view customer link)
-    this.route.queryParams.subscribe(params => {
+    this.route.queryParams.pipe(takeUntil(this.destroy$)).subscribe(params => {
       const customerId = params['customerId'];
       if (customerId) {
         this.selectCustomerById(customerId);
       }
     });
+  }
+
+  ngOnDestroy(): void {
+    window.removeEventListener('resize', this.resizeHandler);
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 
   private checkMobile(): void {
@@ -149,14 +159,30 @@ export class HomeComponent implements OnInit {
   }
 
   private loadAllData(): void {
-    this.apiService.getCustomers().subscribe(data => this.customers = data);
-    this.apiService.getContracts().subscribe(data => this.contracts = data);
-    this.apiService.getTickets().subscribe(data => this.tickets = data);
-    this.apiService.getPlantingIntentions().subscribe(data => this.plantingIntentions = data);
-    this.apiService.getNotes().subscribe(data => this.notes = data);
-    this.apiService.getStoredGrain().subscribe(data => this.storedGrain = data);
-    this.apiService.getFarms().subscribe(data => this.farms = data);
-    this.apiService.getSavedLists().subscribe(data => this.savedLists = data);
+    forkJoin({
+      customers: this.apiService.getCustomers(),
+      contracts: this.apiService.getContracts(),
+      tickets: this.apiService.getTickets(),
+      plantingIntentions: this.apiService.getPlantingIntentions(),
+      notes: this.apiService.getNotes(),
+      storedGrain: this.apiService.getStoredGrain(),
+      farms: this.apiService.getFarms(),
+      savedLists: this.apiService.getSavedLists()
+    }).pipe(takeUntil(this.destroy$)).subscribe({
+      next: (data) => {
+        this.customers = data.customers;
+        this.contracts = data.contracts;
+        this.tickets = data.tickets;
+        this.plantingIntentions = data.plantingIntentions;
+        this.notes = data.notes;
+        this.storedGrain = data.storedGrain;
+        this.farms = data.farms;
+        this.savedLists = data.savedLists;
+      },
+      error: () => {
+        this.toastService.error('Failed to load data');
+      }
+    });
   }
 
   handleSelectCustomer(customer: Customer): void {

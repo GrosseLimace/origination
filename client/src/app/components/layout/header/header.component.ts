@@ -98,6 +98,23 @@ import { ButtonComponent } from '../../ui/button/button.component';
               <span>{{ isActive('/insights') ? 'Back to Customers' : 'Actionable Insights' }}</span>
             </app-button>
 
+            <app-button
+              [variant]="isActive('/position-report') ? 'default' : 'outline'"
+              (onClick)="navigate('/position-report')"
+              class="gap-2 hidden lg:inline-flex"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1">
+                @if (isActive('/position-report')) {
+                  <path d="m12 19-7-7 7-7"/>
+                  <path d="M19 12H5"/>
+                } @else {
+                  <path d="M3 3v18h18"/>
+                  <path d="m19 9-5 5-4-4-3 3"/>
+                }
+              </svg>
+              <span>{{ isActive('/position-report') ? 'Back to Customers' : 'Position Report' }}</span>
+            </app-button>
+
             <!-- Theme toggle -->
             <app-button variant="outline" size="icon" (onClick)="themeService.toggleTheme()" class="hidden sm:inline-flex">
               @if (themeService.isDarkMode()) {
@@ -181,6 +198,14 @@ import { ButtonComponent } from '../../ui/button/button.component';
                 <path d="M10 18h4"/>
               </svg>
               <span>Build a List</span>
+            </button>
+
+            <button type="button" [class]="getMobileNavClass('/position-report')" (click)="mobileNavigate('/position-report')">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 3v18h18"/>
+                <path d="m19 9-5 5-4-4-3 3"/>
+              </svg>
+              <span>Position Report</span>
             </button>
           </nav>
 

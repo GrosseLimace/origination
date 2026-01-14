@@ -1,7 +1,9 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
+import { Subject, forkJoin } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
 import { ToastService } from '../../services/toast.service';
 import { Customer, Contract, PlantingIntention, Note, StoredGrain, SavedList } from '../../models';
@@ -280,10 +282,11 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
     </div>
   `
 })
-export class BuildListComponent implements OnInit {
+export class BuildListComponent implements OnInit, OnDestroy {
   private apiService = inject(ApiService);
   private toastService = inject(ToastService);
   private router = inject(Router);
+  private destroy$ = new Subject<void>();
 
   customers: Customer[] = [];
   contracts: Contract[] = [];
@@ -335,13 +338,32 @@ export class BuildListComponent implements OnInit {
     this.loadData();
   }
 
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
   private loadData(): void {
-    this.apiService.getCustomers().subscribe(data => this.customers = data);
-    this.apiService.getContracts().subscribe(data => this.contracts = data);
-    this.apiService.getPlantingIntentions().subscribe(data => this.plantingIntentions = data);
-    this.apiService.getNotes().subscribe(data => this.notes = data);
-    this.apiService.getStoredGrain().subscribe(data => this.storedGrain = data);
-    this.apiService.getSavedLists().subscribe(data => this.savedLists = data);
+    forkJoin({
+      customers: this.apiService.getCustomers(),
+      contracts: this.apiService.getContracts(),
+      plantingIntentions: this.apiService.getPlantingIntentions(),
+      notes: this.apiService.getNotes(),
+      storedGrain: this.apiService.getStoredGrain(),
+      savedLists: this.apiService.getSavedLists()
+    }).pipe(takeUntil(this.destroy$)).subscribe({
+      next: (data) => {
+        this.customers = data.customers;
+        this.contracts = data.contracts;
+        this.plantingIntentions = data.plantingIntentions;
+        this.notes = data.notes;
+        this.storedGrain = data.storedGrain;
+        this.savedLists = data.savedLists;
+      },
+      error: () => {
+        this.toastService.error('Failed to load data');
+      }
+    });
   }
 
   toggleMap(): void {
@@ -739,22 +761,39 @@ export class BuildListComponent implements OnInit {
       name: this.newListName,
       query: this.queryText,
       customerIds: this.filteredCustomers.map(c => c.id)
-    }).subscribe(() => {
-      this.toastService.success(`List "${this.newListName}" saved with ${this.filteredCustomers.length} customers`);
-      this.newListName = '';
-      this.showSaveDialog = false;
-      this.queryText = '';
-      this.hasGenerated = false;
-      this.filteredCustomers = [];
-      this.detectedState = null;
-      this.apiService.getSavedLists().subscribe(data => this.savedLists = data);
+    }).pipe(takeUntil(this.destroy$)).subscribe({
+      next: () => {
+        this.toastService.success(`List "${this.newListName}" saved with ${this.filteredCustomers.length} customers`);
+        this.newListName = '';
+        this.showSaveDialog = false;
+        this.queryText = '';
+        this.hasGenerated = false;
+        this.filteredCustomers = [];
+        this.detectedState = null;
+        this.refreshSavedLists();
+      },
+      error: () => {
+        this.toastService.error('Failed to save list');
+      }
     });
   }
 
   deleteList(listId: string): void {
-    this.apiService.deleteSavedList(listId).subscribe(() => {
-      this.toastService.info('List deleted');
-      this.apiService.getSavedLists().subscribe(data => this.savedLists = data);
+    this.apiService.deleteSavedList(listId).pipe(takeUntil(this.destroy$)).subscribe({
+      next: () => {
+        this.toastService.info('List deleted');
+        this.refreshSavedLists();
+      },
+      error: () => {
+        this.toastService.error('Failed to delete list');
+      }
+    });
+  }
+
+  private refreshSavedLists(): void {
+    this.apiService.getSavedLists().pipe(takeUntil(this.destroy$)).subscribe({
+      next: (data) => this.savedLists = data,
+      error: () => this.toastService.error('Failed to refresh lists')
     });
   }
 

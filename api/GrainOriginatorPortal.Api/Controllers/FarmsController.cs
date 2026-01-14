@@ -45,7 +45,14 @@ public class FarmsController : ControllerBase
 
 public class CreateFarmRequest
 {
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.StringLength(200)]
     public string Name { get; set; } = string.Empty;
+
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.StringLength(200)]
     public string Location { get; set; } = string.Empty;
+
+    [System.ComponentModel.DataAnnotations.Range(1, 100000)]
     public int Acres { get; set; }
 }

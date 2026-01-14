@@ -18,6 +18,10 @@ export const routes: Routes = [
     loadComponent: () => import('./pages/dashboard/dashboard.component').then(m => m.DashboardComponent)
   },
   {
+    path: 'position-report',
+    loadComponent: () => import('./pages/position-report/position-report.component').then(m => m.PositionReportComponent)
+  },
+  {
     path: '**',
     redirectTo: ''
   }

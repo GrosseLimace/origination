@@ -8,3 +8,4 @@ export * from './planting-intention.model';
 export * from './note.model';
 export * from './stored-grain.model';
 export * from './saved-list.model';
+export * from './position.model';

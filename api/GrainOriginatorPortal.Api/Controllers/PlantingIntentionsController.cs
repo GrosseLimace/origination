@@ -59,20 +59,44 @@ public class PlantingIntentionsController : ControllerBase
 
 public class CreatePlantingIntentionRequest
 {
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.StringLength(100)]
     public string CustomerId { get; set; } = string.Empty;
+
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.StringLength(100)]
     public string FarmId { get; set; } = string.Empty;
+
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.StringLength(50)]
     public string Crop { get; set; } = string.Empty;
+
+    [System.ComponentModel.DataAnnotations.Range(1, 100000)]
     public int Acres { get; set; }
+
+    [System.ComponentModel.DataAnnotations.StringLength(100)]
     public string Variety { get; set; } = string.Empty;
+
     public DateTime PlantingDate { get; set; }
+
+    [System.ComponentModel.DataAnnotations.Range(1, 500)]
     public int EstimatedYield { get; set; }
 }
 
 public class UpdatePlantingIntentionRequest
 {
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.StringLength(50)]
     public string Crop { get; set; } = string.Empty;
+
+    [System.ComponentModel.DataAnnotations.Range(1, 100000)]
     public int Acres { get; set; }
+
+    [System.ComponentModel.DataAnnotations.StringLength(100)]
     public string Variety { get; set; } = string.Empty;
+
     public DateTime PlantingDate { get; set; }
+
+    [System.ComponentModel.DataAnnotations.Range(1, 500)]
     public int EstimatedYield { get; set; }
 }
