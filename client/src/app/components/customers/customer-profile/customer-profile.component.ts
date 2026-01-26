@@ -2,12 +2,10 @@ import { Component, Input, Output, EventEmitter, inject, OnChanges, SimpleChange
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ThemeService } from '../../../services/theme.service';
-import { CardComponent, CardHeaderComponent, CardTitleComponent, CardContentComponent } from '../../ui/card/card.component';
 import { ContractsTableComponent } from '../contracts-table/contracts-table.component';
 import { TicketsTableComponent } from '../tickets-table/tickets-table.component';
 import { PlantingIntentionsTableComponent } from '../planting-intentions-table/planting-intentions-table.component';
 import { StoredGrainTableComponent } from '../stored-grain-table/stored-grain-table.component';
-import { CustomerNotesComponent } from '../customer-notes/customer-notes.component';
 import { ProducerInsightsComponent } from '../producer-insights/producer-insights.component';
 import { AIGrowthForecastComponent } from '../ai-growth-forecast/ai-growth-forecast.component';
 import { ActivitySummaryComponent } from '../activity-summary/activity-summary.component';
@@ -21,15 +19,10 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
   imports: [
     CommonModule,
     FormsModule,
-    CardComponent,
-    CardHeaderComponent,
-    CardTitleComponent,
-    CardContentComponent,
     ContractsTableComponent,
     TicketsTableComponent,
     PlantingIntentionsTableComponent,
     StoredGrainTableComponent,
-    CustomerNotesComponent,
     ProducerInsightsComponent,
     AIGrowthForecastComponent,
     ActivitySummaryComponent,
