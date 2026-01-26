@@ -246,7 +246,8 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
         [tickets]="allCustomerTickets"
         [plantingIntentions]="allCustomerPlantingIntentions"
         [notes]="notes"
-        [storedGrain]="allCustomerStoredGrain">
+        [storedGrain]="allCustomerStoredGrain"
+        [allCustomers]="allCustomers">
       </app-activity-summary>
 
       <!-- Tabs Section - Below Summary -->

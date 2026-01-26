@@ -33,6 +33,7 @@ export class ActivitySummaryComponent implements OnChanges {
   @Input() plantingIntentions: PlantingIntention[] = [];
   @Input() notes: Note[] = [];
   @Input() storedGrain: StoredGrain[] = [];
+  @Input() allCustomers: Customer[] = [];
 
   summaryText = '';
 
@@ -82,7 +83,31 @@ export class ActivitySummaryComponent implements OnChanges {
       parts.push(`across ${this.customer.farmIds.length} farm locations`);
     }
 
-    return parts.join(' ') + '.';
+    // Linked producers info
+    const linkedProducerIds = this.customer.linkedProducerIds || [];
+    const customersLinkingToMe = this.allCustomers
+      .filter(c => c.linkedProducerIds && c.linkedProducerIds.includes(this.customer.id))
+      .map(c => c.id);
+
+    const allLinkedIds = [...new Set([...linkedProducerIds, ...customersLinkingToMe])];
+
+    if (allLinkedIds.length > 0) {
+      const linkedProducers = allLinkedIds
+        .map(id => this.allCustomers.find(c => c.id === id))
+        .filter(c => c != null) as Customer[];
+
+      if (linkedProducers.length === 1) {
+        parts.push(`This producer is linked with ${linkedProducers[0].name}, and this summary includes combined activity from both operations`);
+      } else if (linkedProducers.length === 2) {
+        parts.push(`This producer is linked with ${linkedProducers[0].name} and ${linkedProducers[1].name}, and this summary includes combined activity from all three operations`);
+      } else if (linkedProducers.length > 2) {
+        const names = linkedProducers.slice(0, -1).map(p => p.name).join(', ');
+        const lastName = linkedProducers[linkedProducers.length - 1].name;
+        parts.push(`This producer is linked with ${names}, and ${lastName}, and this summary includes combined activity from all ${linkedProducers.length + 1} operations`);
+      }
+    }
+
+    return parts.join('. ') + '.';
   }
 
   private generateContractSummary(): string {
