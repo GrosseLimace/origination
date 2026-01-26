@@ -1,15 +1,22 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnChanges, SimpleChanges, ChangeDetectorRef, inject } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, OnChanges, SimpleChanges, ChangeDetectorRef, ChangeDetectionStrategy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Customer, SavedList, Note } from '../../../models';
 import { CardComponent, CardContentComponent } from '../../ui/card/card.component';
 import { BadgeComponent } from '../../ui/badge/badge.component';
 
+interface LastContactInfo {
+  text: string;
+  daysAgo: number;
+  cssClass: string;
+}
+
 @Component({
   selector: 'app-customer-list',
   standalone: true,
   imports: [CommonModule, FormsModule, CardComponent, CardContentComponent, BadgeComponent],
   host: { class: 'block w-full' },
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <app-card>
       <app-card-content class="p-0">
@@ -91,14 +98,14 @@ import { BadgeComponent } from '../../ui/badge/badge.component';
                       <span>{{ customer.phone }}</span>
                     }
                   </div>
-                  <div class="flex items-center gap-2 text-sm" [class]="getLastContactClass(getLastContactInfo(customer.id).daysAgo)">
+                  <div class="flex items-center gap-2 text-sm" [class]="lastContactCache.get(customer.id)?.cssClass || 'text-red-500'">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/>
                       <line x1="16" x2="16" y1="2" y2="6"/>
                       <line x1="8" x2="8" y1="2" y2="6"/>
                       <line x1="3" x2="21" y1="10" y2="10"/>
                     </svg>
-                    <span>{{ getLastContactInfo(customer.id).text }}</span>
+                    <span>{{ lastContactCache.get(customer.id)?.text || 'No contact' }}</span>
                   </div>
                 </div>
               </div>
@@ -122,17 +129,27 @@ export class CustomerListComponent implements OnInit, OnChanges {
   selectedListId = '';
   filteredCustomers: Customer[] = [];
 
+  // Performance optimization: Cache last contact info to avoid repeated filtering/sorting
+  lastContactCache = new Map<string, LastContactInfo>();
+
   ngOnInit(): void {
+    this.rebuildLastContactCache();
     this.applyFilters();
   }
 
   ngOnChanges(changes: SimpleChanges): void {
+    // Rebuild cache when notes change
+    if (changes['notes']) {
+      this.rebuildLastContactCache();
+    }
+
     if (changes['customers'] || changes['savedLists']) {
       this.applyFilters();
     }
+
     // Force UI update when selected customer changes
-    if (changes['selectedCustomer']) {
-      this.cdr.detectChanges();
+    if (changes['selectedCustomer'] || changes['notes']) {
+      this.cdr.markForCheck();
     }
   }
 
@@ -159,6 +176,60 @@ export class CustomerListComponent implements OnInit, OnChanges {
     }
 
     this.filteredCustomers = result;
+    this.cdr.markForCheck();
+  }
+
+  /**
+   * Performance optimization: Pre-calculate all last contact info once
+   * instead of filtering/sorting on every render for every customer.
+   *
+   * Complexity: O(m + n) where m = notes count, n = customers count
+   * Previously: O(n * m) on EVERY change detection cycle
+   */
+  private rebuildLastContactCache(): void {
+    this.lastContactCache.clear();
+
+    // Group notes by customer ID - single pass through notes O(m)
+    const notesByCustomer = new Map<string, Note[]>();
+    for (const note of this.notes) {
+      if (!notesByCustomer.has(note.customerId)) {
+        notesByCustomer.set(note.customerId, []);
+      }
+      notesByCustomer.get(note.customerId)!.push(note);
+    }
+
+    // Calculate last contact for each customer - single pass O(n)
+    for (const customer of this.customers) {
+      const customerNotes = notesByCustomer.get(customer.id) || [];
+
+      if (customerNotes.length === 0) {
+        this.lastContactCache.set(customer.id, {
+          text: 'No contact',
+          daysAgo: -1,
+          cssClass: 'text-red-500'
+        });
+        continue;
+      }
+
+      // Find most recent note
+      const lastNote = customerNotes.reduce((latest, note) => {
+        return new Date(note.createdAt).getTime() > new Date(latest.createdAt).getTime() ? note : latest;
+      }, customerNotes[0]);
+
+      const daysAgo = Math.floor((Date.now() - new Date(lastNote.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+
+      let text: string;
+      if (daysAgo === 0) text = 'Today';
+      else if (daysAgo === 1) text = 'Yesterday';
+      else if (daysAgo < 7) text = `${daysAgo} days ago`;
+      else if (daysAgo < 30) text = `${Math.floor(daysAgo / 7)} weeks ago`;
+      else if (daysAgo < 365) text = `${Math.floor(daysAgo / 30)} months ago`;
+      else text = `${Math.floor(daysAgo / 365)} years ago`;
+
+      const cssClass = this.getLastContactClass(daysAgo);
+
+      this.lastContactCache.set(customer.id, { text, daysAgo, cssClass });
+    }
   }
 
   getCustomerItemClass(customer: Customer): string {
@@ -170,27 +241,7 @@ export class CustomerListComponent implements OnInit, OnChanges {
     return `${baseClass} ${stateClass}`;
   }
 
-  getLastContactInfo(customerId: string): { text: string; daysAgo: number } {
-    const customerNotes = this.notes
-      .filter(n => n.customerId === customerId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-    const lastNote = customerNotes[0];
-    if (!lastNote) {
-      return { text: 'No contact', daysAgo: -1 };
-    }
-
-    const daysAgo = Math.floor((Date.now() - new Date(lastNote.createdAt).getTime()) / (1000 * 60 * 60 * 24));
-
-    if (daysAgo === 0) return { text: 'Today', daysAgo: 0 };
-    if (daysAgo === 1) return { text: 'Yesterday', daysAgo: 1 };
-    if (daysAgo < 7) return { text: `${daysAgo} days ago`, daysAgo };
-    if (daysAgo < 30) return { text: `${Math.floor(daysAgo / 7)} weeks ago`, daysAgo };
-    if (daysAgo < 365) return { text: `${Math.floor(daysAgo / 30)} months ago`, daysAgo };
-    return { text: `${Math.floor(daysAgo / 365)} years ago`, daysAgo };
-  }
-
-  getLastContactClass(daysAgo: number): string {
+  private getLastContactClass(daysAgo: number): string {
     if (daysAgo < 0) return 'text-red-500';
     if (daysAgo <= 7) return 'text-green-500';
     if (daysAgo <= 30) return 'text-yellow-500';

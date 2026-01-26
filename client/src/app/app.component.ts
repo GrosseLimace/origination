@@ -11,7 +11,7 @@ import { ToastContainerComponent } from './components/ui/toast-container/toast-c
   template: `
     <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors">
       <app-header />
-      <main class="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-grow">
+      <main class="max-w-[1920px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-grow">
         <router-outlet />
       </main>
       <app-footer />

@@ -9,7 +9,8 @@ import { ToastService } from '../../services/toast.service';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, Farm, SavedList } from '../../models';
 import { CustomerListComponent } from '../../components/customers/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customers/customer-profile/customer-profile.component';
-import { CardComponent, CardContentComponent } from '../../components/ui/card/card.component';
+import { CustomerNotesComponent } from '../../components/customers/customer-notes/customer-notes.component';
+import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent } from '../../components/ui/card/card.component';
 
 @Component({
   selector: 'app-home',
@@ -18,13 +19,16 @@ import { CardComponent, CardContentComponent } from '../../components/ui/card/ca
     CommonModule,
     CustomerListComponent,
     CustomerProfileComponent,
+    CustomerNotesComponent,
     CardComponent,
-    CardContentComponent
+    CardContentComponent,
+    CardHeaderComponent,
+    CardTitleComponent
   ],
   template: `
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Customer List - Sticky on desktop (top accounts for header height ~73px + padding) -->
-      <div class="lg:col-span-1 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)]" [class.hidden]="selectedCustomer && isMobile" [class.lg:block]="true">
+    <div class="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-10 gap-6">
+      <!-- Customer List - 1/3 on lg, 20% on xl -->
+      <div class="lg:col-span-1 xl:col-span-2 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)]" [class.hidden]="selectedCustomer && isMobile" [class.lg:block]="true">
         <app-customer-list
           [customers]="customers"
           [selectedCustomer]="selectedCustomer"
@@ -34,62 +38,97 @@ import { CardComponent, CardContentComponent } from '../../components/ui/card/ca
         />
       </div>
 
-      <!-- Customer Profile -->
-      <div class="lg:col-span-2 space-y-6" [class.hidden]="!selectedCustomer && isMobile" [class.lg:block]="true">
-        @if (selectedCustomer) {
-          <!-- Back button on mobile -->
-          <button
-            class="lg:hidden flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-4"
-            (click)="selectedCustomer = null"
-          >
-            <svg class="h-5 w-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-            </svg>
-            Back to Customers
-          </button>
-
-          <!-- Profile -->
-          <app-customer-profile
-            [customer]="selectedCustomer"
-            [farms]="customerFarms"
-            [allFarms]="farms"
-            [allCustomers]="customers"
-            [contracts]="customerContracts"
-            [tickets]="customerTickets"
-            [plantingIntentions]="customerPlantingIntentions"
-            [storedGrain]="customerStoredGrain"
-            [notes]="customerNotes"
-            [selectedFarmId]="selectedFarmId"
-            [allCustomerContracts]="allCustomerContracts"
-            [allCustomerTickets]="allCustomerTickets"
-            [allCustomerPlantingIntentions]="allCustomerPlantingIntentions"
-            [allCustomerStoredGrain]="allCustomerStoredGrain"
-            (onAddPlanting)="addPlantingIntention($event)"
-            (onEditPlanting)="editPlantingIntention($event)"
-            (onAddNote)="addNote($event)"
-            (onTogglePin)="toggleNotePin($event)"
-            (onFarmChange)="handleFarmChange($event)"
-            (onSaveCustomer)="handleSaveCustomer($event)"
-            (onCreateFarm)="handleCreateFarm($event)">
-          </app-customer-profile>
-        } @else {
-          <!-- No customer selected - matches Blazor: just the prompt card, no map -->
-          <app-card class="p-12 text-center">
-            <app-card-content>
-              <div class="text-gray-500 dark:text-gray-400">
-                <svg class="mx-auto h-16 w-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+      <!-- Profile and Notes Container - 2/3 on lg, then split on xl -->
+      <div class="lg:col-span-2 xl:col-span-8" [class.hidden]="!selectedCustomer && isMobile" [class.lg:block]="true">
+        <div class="xl:grid xl:grid-cols-8 xl:gap-6 space-y-6 xl:space-y-0">
+          <!-- Profile Section - Full width until xl, then 5/8 (62.5% = 50% of total) -->
+          <div class="xl:col-span-5 space-y-6">
+            @if (selectedCustomer) {
+              <!-- Back button on mobile -->
+              <button
+                class="lg:hidden flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-4"
+                (click)="selectedCustomer = null"
+              >
+                <svg class="h-5 w-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                 </svg>
-                <h3 class="mt-4 text-lg font-medium text-gray-900 dark:text-gray-100">
-                  Select a Customer
-                </h3>
-                <p class="mt-2">
-                  Choose a customer from the list to view their details, contracts, tickets, and more.
-                </p>
-              </div>
-            </app-card-content>
-          </app-card>
-        }
+                Back to Customers
+              </button>
+
+              <!-- Profile -->
+              <app-customer-profile
+                [customer]="selectedCustomer"
+                [farms]="customerFarms"
+                [allFarms]="farms"
+                [allCustomers]="customers"
+                [contracts]="customerContracts"
+                [tickets]="customerTickets"
+                [plantingIntentions]="customerPlantingIntentions"
+                [storedGrain]="customerStoredGrain"
+                [notes]="customerNotes"
+                [selectedFarmId]="selectedFarmId"
+                [allCustomerContracts]="allCustomerContracts"
+                [allCustomerTickets]="allCustomerTickets"
+                [allCustomerPlantingIntentions]="allCustomerPlantingIntentions"
+                [allCustomerStoredGrain]="allCustomerStoredGrain"
+                (onAddPlanting)="addPlantingIntention($event)"
+                (onEditPlanting)="editPlantingIntention($event)"
+                (onAddNote)="addNote($event)"
+                (onTogglePin)="toggleNotePin($event)"
+                (onFarmChange)="handleFarmChange($event)"
+                (onSaveCustomer)="handleSaveCustomer($event)"
+                (onCreateFarm)="handleCreateFarm($event)">
+              </app-customer-profile>
+            } @else {
+              <!-- No customer selected - matches Blazor: just the prompt card, no map -->
+              <app-card class="p-12 text-center">
+                <app-card-content>
+                  <div class="text-gray-500 dark:text-gray-400">
+                    <svg class="mx-auto h-16 w-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                    </svg>
+                    <h3 class="mt-4 text-lg font-medium text-gray-900 dark:text-gray-100">
+                      Select a Customer
+                    </h3>
+                    <p class="mt-2">
+                      Choose a customer from the list to view their details, contracts, tickets, and more.
+                    </p>
+                  </div>
+                </app-card-content>
+              </app-card>
+            }
+          </div>
+
+          <!-- Notes Column - Below profile until xl, then 3/8 (37.5% = 30% of total), sticky on xl+ -->
+          @if (selectedCustomer) {
+            <div class="xl:col-span-3 xl:sticky xl:top-20 xl:self-start xl:max-h-[calc(100vh-6rem)] xl:overflow-auto">
+              <app-card>
+                <app-card-header>
+                  <div class="flex items-center justify-between">
+                    <app-card-title>Notes</app-card-title>
+                    <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/>
+                        <line x1="16" x2="16" y1="2" y2="6"/>
+                        <line x1="8" x2="8" y1="2" y2="6"/>
+                        <line x1="3" x2="21" y1="10" y2="10"/>
+                      </svg>
+                      <span>Last contacted: {{ getLastContactedDate() }}</span>
+                    </div>
+                  </div>
+                </app-card-header>
+                <app-card-content>
+                  <app-customer-notes
+                    [notes]="customerNotes"
+                    [customer]="selectedCustomer"
+                    (addNote)="addNote($event)"
+                    (togglePin)="toggleNotePin($event)">
+                  </app-customer-notes>
+                </app-card-content>
+              </app-card>
+            </div>
+          }
+        </div>
       </div>
     </div>
   `
@@ -353,6 +392,27 @@ export class HomeComponent implements OnInit, OnDestroy {
       error: () => {
         this.toastService.error('Failed to create farm');
       }
+    });
+  }
+
+  getLastContactedDate(): string {
+    if (this.customerNotes.length === 0) return 'Never';
+
+    const sorted = [...this.customerNotes].sort((a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    const lastNote = sorted[0];
+    const diff = Date.now() - new Date(lastNote.createdAt).getTime();
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days < 7) return `${days} days ago`;
+
+    return new Date(lastNote.createdAt).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
     });
   }
 
