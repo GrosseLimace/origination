@@ -35,16 +35,19 @@ public class CustomersController : ControllerBase
         var customer = _dataService.GetCustomerById(id);
         if (customer == null) return NotFound();
 
-        // Update the customer properties
-        customer.Name = request.Name;
-        customer.Farm = request.Farm;
-        customer.Location = request.Location;
-        customer.Phone = request.Phone;
-        customer.Email = request.Email;
-        customer.TotalAcres = request.TotalAcres;
-        customer.FarmIds = request.FarmIds;
-        customer.ESignEnabled = request.ESignEnabled;
+        // Update using the data service method (this ensures changes persist)
+        _dataService.UpdateCustomer(
+            id,
+            request.Location,
+            request.Phone,
+            request.Email,
+            request.FarmIds,
+            request.LinkedProducerIds ?? new List<string>()
+        );
 
-        return Ok(customer);
+        // Get the updated customer to return
+        var updatedCustomer = _dataService.GetCustomerById(id);
+
+        return Ok(updatedCustomer);
     }
 }

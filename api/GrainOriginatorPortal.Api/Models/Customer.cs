@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GrainOriginatorPortal.Api.Models;
 
 /// <summary>
@@ -13,6 +15,10 @@ public class Customer
     public string Email { get; set; } = string.Empty;
     public int TotalAcres { get; set; }
     public List<string> FarmIds { get; set; } = new();
+
+    [JsonPropertyName("linkedProducerIds")]
+    public List<string> LinkedProducerIds { get; set; } = new();
+
     public bool ESignEnabled { get; set; }
     public Coordinates? Coordinates { get; set; }
 }
