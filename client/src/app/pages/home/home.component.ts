@@ -58,10 +58,12 @@ import { CardComponent, CardContentComponent } from '../../components/ui/card/ca
             [plantingIntentions]="customerPlantingIntentions"
             [storedGrain]="customerStoredGrain"
             [notes]="customerNotes"
+            [selectedFarmId]="selectedFarmId"
             (onAddPlanting)="addPlantingIntention($event)"
             (onEditPlanting)="editPlantingIntention($event)"
             (onAddNote)="addNote($event)"
             (onTogglePin)="toggleNotePin($event)"
+            (onFarmChange)="handleFarmChange($event)"
             (onSaveCustomer)="handleSaveCustomer($event)"
             (onCreateFarm)="handleCreateFarm($event)">
           </app-customer-profile>
@@ -106,6 +108,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   savedLists: SavedList[] = [];
 
   selectedCustomer: Customer | null = null;
+  selectedFarmId: string | undefined = undefined;
   customerContracts: Contract[] = [];
   customerTickets: Ticket[] = [];
   customerNotes: Note[] = [];
@@ -187,14 +190,21 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   handleSelectCustomer(customer: Customer): void {
     this.selectedCustomer = customer;
+    this.selectedFarmId = undefined; // Reset farm selection when changing customers
     this.appState.selectCustomer(customer);
     this.loadCustomerData(customer.id);
     // Force change detection to ensure UI updates immediately
     this.cdr.detectChanges();
   }
 
+  handleFarmChange(farmId: string): void {
+    this.selectedFarmId = farmId;
+    this.cdr.detectChanges();
+  }
+
   private loadCustomerData(customerId: string): void {
     // Create new array references to trigger change detection
+    // All data is at the customer level, not filtered by farm
     this.customerContracts = [...this.contracts.filter(c => c.customerId === customerId)];
     this.customerTickets = [...this.tickets.filter(t => t.customerId === customerId)];
     this.customerNotes = [...this.notes.filter(n => n.customerId === customerId)
@@ -225,7 +235,23 @@ export class HomeComponent implements OnInit, OnDestroy {
           this.customers = [...this.customers];
         }
         this.selectedCustomer = updated;
+
+        // Reload customer data to include new farms
         this.loadCustomerData(updated.id);
+
+        // If a new farm was added, select it automatically
+        const newFarmIds = updated.farmIds.filter(id => !customer.farmIds.includes(id));
+        if (newFarmIds.length > 0) {
+          this.selectedFarmId = newFarmIds[0];
+        }
+
+        // If a farm was deleted and it was the currently selected farm, revert to default (first farm)
+        const deletedFarmIds = customer.farmIds.filter(id => !updated.farmIds.includes(id));
+        if (deletedFarmIds.length > 0 && this.selectedFarmId && deletedFarmIds.includes(this.selectedFarmId)) {
+          // Reset to first available farm or undefined if no farms
+          this.selectedFarmId = updated.farmIds.length > 0 ? updated.farmIds[0] : undefined;
+        }
+
         this.toastService.success('Customer updated successfully');
         this.cdr.detectChanges();
       },
@@ -245,7 +271,14 @@ export class HomeComponent implements OnInit, OnDestroy {
           acres: data.acres
         };
         this.farms = [...this.farms, newFarm];
+
+        // Reload customer data if a customer is selected to refresh the farm list
+        if (this.selectedCustomer) {
+          this.loadCustomerData(this.selectedCustomer.id);
+        }
+
         this.toastService.success('Farm created successfully');
+        this.cdr.detectChanges();
       },
       error: () => {
         this.toastService.error('Failed to create farm');

@@ -71,7 +71,7 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
           </div>
 
           <!-- Row 2: Farm Name -->
-          <p class="text-gray-500 dark:text-gray-400 mb-3">{{ customer.farm }}</p>
+          <p class="text-gray-500 dark:text-gray-400 mb-3">{{ getSelectedFarmName() }}</p>
 
           <!-- Row 3: Producer Insights and Edit buttons (under farm name) -->
           <div class="flex items-center gap-2 flex-wrap mb-6">
@@ -127,7 +127,7 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
                     <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
                     <circle cx="12" cy="10" r="3"/>
                   </svg>
-                  <span>{{ customer.location }}</span>
+                  <span>{{ getSelectedFarmLocation() }}</span>
                 </div>
                 <a [href]="'tel:' + customer.phone" class="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors cursor-pointer">
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -427,6 +427,24 @@ export class CustomerProfileComponent implements OnChanges {
     }
     const farmWithStorage = this.farms.find(f => f.binStorageCapacity && f.binStorageCapacity > 0);
     return farmWithStorage?.binStorageCapacity || 0;
+  }
+
+  getSelectedFarmName(): string {
+    const farmId = this.getSelectedFarmIdOrFirst();
+    if (farmId) {
+      const farm = this.farms.find(f => f.id === farmId);
+      return farm?.name || this.customer.farm;
+    }
+    return this.customer.farm;
+  }
+
+  getSelectedFarmLocation(): string {
+    const farmId = this.getSelectedFarmIdOrFirst();
+    if (farmId) {
+      const farm = this.farms.find(f => f.id === farmId);
+      return farm?.location || this.customer.location;
+    }
+    return this.customer.location;
   }
 
   get totalProjectedYield(): number {
