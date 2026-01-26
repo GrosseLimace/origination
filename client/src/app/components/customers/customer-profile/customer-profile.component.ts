@@ -242,11 +242,11 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
       <!-- Activity Summary - Always visible -->
       <app-activity-summary
         [customer]="customer"
-        [contracts]="contracts"
-        [tickets]="tickets"
-        [plantingIntentions]="plantingIntentions"
+        [contracts]="allCustomerContracts"
+        [tickets]="allCustomerTickets"
+        [plantingIntentions]="allCustomerPlantingIntentions"
         [notes]="notes"
-        [storedGrain]="storedGrain">
+        [storedGrain]="allCustomerStoredGrain">
       </app-activity-summary>
 
       <!-- Tabs Section - Below Summary -->
@@ -322,6 +322,7 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
       [isOpen]="showEditDialog"
       [customer]="customer"
       [allFarms]="allFarms"
+      [allCustomers]="allCustomers"
       (close)="closeEditDialog()"
       (save)="handleSaveCustomer($event)"
       (createFarm)="onCreateFarm.emit($event)">
@@ -332,6 +333,7 @@ export class CustomerProfileComponent implements OnChanges {
   @Input() customer!: Customer;
   @Input() farms: Farm[] = [];
   @Input() allFarms: Farm[] = [];
+  @Input() allCustomers: Customer[] = [];
   @Input() contracts: Contract[] = [];
   @Input() tickets: Ticket[] = [];
   @Input() plantingIntentions: PlantingIntention[] = [];
@@ -339,12 +341,18 @@ export class CustomerProfileComponent implements OnChanges {
   @Input() notes: Note[] = [];
   @Input() selectedFarmId?: string;
 
+  // Unfiltered data for Activity Summary (all farms)
+  @Input() allCustomerContracts: Contract[] = [];
+  @Input() allCustomerTickets: Ticket[] = [];
+  @Input() allCustomerPlantingIntentions: PlantingIntention[] = [];
+  @Input() allCustomerStoredGrain: StoredGrain[] = [];
+
   @Output() onAddPlanting = new EventEmitter<{crop: string, acres: number, variety: string, plantingDate: Date, estimatedYield: number}>();
   @Output() onEditPlanting = new EventEmitter<{intentionId: string, crop: string, acres: number, variety: string, plantingDate: Date, estimatedYield: number}>();
   @Output() onAddNote = new EventEmitter<string>();
   @Output() onTogglePin = new EventEmitter<Note>();
   @Output() onFarmChange = new EventEmitter<string>();
-  @Output() onSaveCustomer = new EventEmitter<{ customerId: string; location: string; phone: string; email: string; farmIds: string[]; eSignEnabled: boolean }>();
+  @Output() onSaveCustomer = new EventEmitter<{ customerId: string; location: string; phone: string; email: string; farmIds: string[]; linkedProducerIds: string[]; eSignEnabled: boolean }>();
   @Output() onCreateFarm = new EventEmitter<{ name: string; location: string; acres: number }>();
 
   private themeService = inject(ThemeService);
@@ -356,7 +364,7 @@ export class CustomerProfileComponent implements OnChanges {
   showEditDialog = false;
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['customer'] || changes['contracts'] || changes['notes']) {
+    if (changes['customer'] || changes['contracts'] || changes['notes'] || changes['farms']) {
       this.cdr.detectChanges();
     }
   }
@@ -375,7 +383,7 @@ export class CustomerProfileComponent implements OnChanges {
     this.cdr.detectChanges();
   }
 
-  handleSaveCustomer(data: { customerId: string; location: string; phone: string; email: string; farmIds: string[]; eSignEnabled: boolean }): void {
+  handleSaveCustomer(data: { customerId: string; location: string; phone: string; email: string; farmIds: string[]; linkedProducerIds: string[]; eSignEnabled: boolean }): void {
     this.onSaveCustomer.emit(data);
     this.closeEditDialog();
   }

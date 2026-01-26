@@ -37,11 +37,11 @@ public class MockDataService : IDataService
         // Initialize Customers
         _customers = new List<Customer>
         {
-            new() { Id = "1", Name = "John Anderson", Farm = "Anderson Family Farms", Location = "Iowa County, IA", Phone = "(319) 555-0123", Email = "john@andersonfarms.com", TotalAcres = 1200, FarmIds = new List<string> { "F001", "F002" }, ESignEnabled = true, Coordinates = new Coordinates { Lat = 43.073051, Lng = -91.531031 } },
-            new() { Id = "2", Name = "Sarah Mitchell", Farm = "Mitchell Grain Co.", Location = "Champaign County, IL", Phone = "(217) 555-0456", Email = "sarah@mitchellgrain.com", TotalAcres = 2400, FarmIds = new List<string> { "F003" }, ESignEnabled = true, Coordinates = new Coordinates { Lat = 40.116421, Lng = -88.243382 } },
-            new() { Id = "3", Name = "Robert Johnson", Farm = "Johnson Acres", Location = "Lancaster County, NE", Phone = "(402) 555-0789", Email = "rob@johnsonacres.com", TotalAcres = 800, FarmIds = new List<string> { "F004" }, ESignEnabled = false, Coordinates = new Coordinates { Lat = 40.689249, Lng = -97.392773 } },
-            new() { Id = "4", Name = "Emily Chen", Farm = "Chen Agriculture LLC", Location = "Story County, IA", Phone = "(515) 555-0321", Email = "emily@chenagriculture.com", TotalAcres = 1600, FarmIds = new List<string> { "F005" }, ESignEnabled = true, Coordinates = new Coordinates { Lat = 42.032974, Lng = -93.639345 } },
-            new() { Id = "5", Name = "Michael Brown", Farm = "Brown Valley Farm", Location = "McLean County, IL", Phone = "(309) 555-0654", Email = "michael@brownvalley.com", TotalAcres = 950, FarmIds = new List<string> { "F006" }, ESignEnabled = false, Coordinates = new Coordinates { Lat = 40.116421, Lng = -88.243382 } }
+            new() { Id = "1", Name = "John Anderson", Farm = "Anderson Family Farms", Location = "Iowa County, IA", Phone = "(319) 555-0123", Email = "john@andersonfarms.com", TotalAcres = 1200, FarmIds = new List<string> { "F001", "F002" }, LinkedProducerIds = new List<string>(), ESignEnabled = true, Coordinates = new Coordinates { Lat = 43.073051, Lng = -91.531031 } },
+            new() { Id = "2", Name = "Sarah Mitchell", Farm = "Mitchell Grain Co.", Location = "Champaign County, IL", Phone = "(217) 555-0456", Email = "sarah@mitchellgrain.com", TotalAcres = 2400, FarmIds = new List<string> { "F003" }, LinkedProducerIds = new List<string>(), ESignEnabled = true, Coordinates = new Coordinates { Lat = 40.116421, Lng = -88.243382 } },
+            new() { Id = "3", Name = "Robert Johnson", Farm = "Johnson Acres", Location = "Lancaster County, NE", Phone = "(402) 555-0789", Email = "rob@johnsonacres.com", TotalAcres = 800, FarmIds = new List<string> { "F004" }, LinkedProducerIds = new List<string>(), ESignEnabled = false, Coordinates = new Coordinates { Lat = 40.689249, Lng = -97.392773 } },
+            new() { Id = "4", Name = "Emily Chen", Farm = "Chen Agriculture LLC", Location = "Story County, IA", Phone = "(515) 555-0321", Email = "emily@chenagriculture.com", TotalAcres = 1600, FarmIds = new List<string> { "F005" }, LinkedProducerIds = new List<string>(), ESignEnabled = true, Coordinates = new Coordinates { Lat = 42.032974, Lng = -93.639345 } },
+            new() { Id = "5", Name = "Michael Brown", Farm = "Brown Valley Farm", Location = "McLean County, IL", Phone = "(309) 555-0654", Email = "michael@brownvalley.com", TotalAcres = 950, FarmIds = new List<string> { "F006" }, LinkedProducerIds = new List<string>(), ESignEnabled = false, Coordinates = new Coordinates { Lat = 40.116421, Lng = -88.243382 } }
         };
 
         // Initialize Contracts
@@ -108,7 +108,7 @@ public class MockDataService : IDataService
     public List<Customer> GetCustomers() => _customers;
     public Customer? GetCustomerById(string id) => _customers.FirstOrDefault(c => c.Id == id);
 
-    public void UpdateCustomer(string customerId, string location, string phone, string email, List<string> farmIds)
+    public void UpdateCustomer(string customerId, string location, string phone, string email, List<string> farmIds, List<string> linkedProducerIds)
     {
         var customer = _customers.FirstOrDefault(c => c.Id == customerId);
         if (customer != null)
@@ -117,6 +117,7 @@ public class MockDataService : IDataService
             customer.Phone = phone;
             customer.Email = email;
             customer.FarmIds = farmIds;
+            customer.LinkedProducerIds = linkedProducerIds;
             customer.TotalAcres = _farms.Where(f => farmIds.Contains(f.Id)).Sum(f => f.Acres);
         }
     }

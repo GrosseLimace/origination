@@ -53,15 +53,22 @@ import { CardComponent, CardContentComponent } from '../../components/ui/card/ca
             [customer]="selectedCustomer"
             [farms]="customerFarms"
             [allFarms]="farms"
+            [allCustomers]="customers"
             [contracts]="customerContracts"
             [tickets]="customerTickets"
             [plantingIntentions]="customerPlantingIntentions"
             [storedGrain]="customerStoredGrain"
             [notes]="customerNotes"
+            [selectedFarmId]="selectedFarmId"
+            [allCustomerContracts]="allCustomerContracts"
+            [allCustomerTickets]="allCustomerTickets"
+            [allCustomerPlantingIntentions]="allCustomerPlantingIntentions"
+            [allCustomerStoredGrain]="allCustomerStoredGrain"
             (onAddPlanting)="addPlantingIntention($event)"
             (onEditPlanting)="editPlantingIntention($event)"
             (onAddNote)="addNote($event)"
             (onTogglePin)="toggleNotePin($event)"
+            (onFarmChange)="handleFarmChange($event)"
             (onSaveCustomer)="handleSaveCustomer($event)"
             (onCreateFarm)="handleCreateFarm($event)">
           </app-customer-profile>
@@ -106,12 +113,19 @@ export class HomeComponent implements OnInit, OnDestroy {
   savedLists: SavedList[] = [];
 
   selectedCustomer: Customer | null = null;
+  selectedFarmId: string | undefined = undefined;
   customerContracts: Contract[] = [];
   customerTickets: Ticket[] = [];
   customerNotes: Note[] = [];
   customerFarms: Farm[] = [];
   customerPlantingIntentions: PlantingIntention[] = [];
   customerStoredGrain: StoredGrain[] = [];
+
+  // Unfiltered customer data for Activity Summary (all farms)
+  allCustomerContracts: Contract[] = [];
+  allCustomerTickets: Ticket[] = [];
+  allCustomerPlantingIntentions: PlantingIntention[] = [];
+  allCustomerStoredGrain: StoredGrain[] = [];
 
   isMobile = false;
 
@@ -187,24 +201,86 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   handleSelectCustomer(customer: Customer): void {
     this.selectedCustomer = customer;
+    this.selectedFarmId = undefined; // Reset farm selection when changing customers
     this.appState.selectCustomer(customer);
     this.loadCustomerData(customer.id);
     // Force change detection to ensure UI updates immediately
     this.cdr.detectChanges();
   }
 
-  private loadCustomerData(customerId: string): void {
-    // Create new array references to trigger change detection
-    this.customerContracts = [...this.contracts.filter(c => c.customerId === customerId)];
-    this.customerTickets = [...this.tickets.filter(t => t.customerId === customerId)];
-    this.customerNotes = [...this.notes.filter(n => n.customerId === customerId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())];
-    this.customerFarms = [...this.farms.filter(f => this.selectedCustomer?.farmIds.includes(f.id))];
-    this.customerPlantingIntentions = [...this.plantingIntentions.filter(p => p.customerId === customerId)];
-    this.customerStoredGrain = [...this.storedGrain.filter(s => s.customerId === customerId)];
+  handleFarmChange(farmId: string): void {
+    this.selectedFarmId = farmId;
+    // Reload customer data to filter by the newly selected farm
+    if (this.selectedCustomer) {
+      this.loadCustomerData(this.selectedCustomer.id);
+    }
+    this.cdr.detectChanges();
   }
 
-  handleSaveCustomer(data: { customerId: string; location: string; phone: string; email: string; farmIds: string[]; eSignEnabled: boolean }): void {
+  private loadCustomerData(customerId: string, customer?: Customer): void {
+    // Create new array references to trigger change detection
+    // Use provided customer or fall back to selectedCustomer
+    const currentCustomer = customer || this.selectedCustomer;
+    if (!currentCustomer) return;
+
+    // Get linked producer IDs (customers this customer links to)
+    const linkedProducerIds = currentCustomer.linkedProducerIds || [];
+
+    // Also find customers that link TO this customer (bidirectional linking)
+    const customersLinkingToMe = this.customers
+      .filter(c => c.linkedProducerIds && c.linkedProducerIds.includes(customerId))
+      .map(c => c.id);
+
+    // Combine all linked customer IDs (both directions) - use Set to avoid duplicates
+    const allLinkedIds = [...new Set([...linkedProducerIds, ...customersLinkingToMe])];
+
+    // Get all relevant customer IDs (current customer + all linked producers)
+    const allCustomerIds = [customerId, ...allLinkedIds];
+
+    // Always load unfiltered data for Activity Summary (all farms from current customer + linked producers)
+    this.allCustomerContracts = [...this.contracts.filter(c => allCustomerIds.includes(c.customerId))];
+    this.allCustomerTickets = [...this.tickets.filter(t => allCustomerIds.includes(t.customerId))];
+    this.allCustomerPlantingIntentions = [...this.plantingIntentions.filter(p => allCustomerIds.includes(p.customerId))];
+    this.allCustomerStoredGrain = [...this.storedGrain.filter(s => allCustomerIds.includes(s.customerId))];
+
+    // Filter by farm if one is selected, otherwise show all customer data for tabs
+    if (this.selectedFarmId) {
+      // Filter data for the selected farm, regardless of which customer owns it
+      this.customerContracts = [...this.contracts.filter(c => c.farmId === this.selectedFarmId)];
+      this.customerTickets = [...this.tickets.filter(t => t.farmId === this.selectedFarmId)];
+      this.customerPlantingIntentions = [...this.plantingIntentions.filter(p => p.farmId === this.selectedFarmId)];
+      this.customerStoredGrain = [...this.storedGrain.filter(s => s.farmId === this.selectedFarmId)];
+    } else {
+      this.customerContracts = [...this.contracts.filter(c => c.customerId === customerId)];
+      this.customerTickets = [...this.tickets.filter(t => t.customerId === customerId)];
+      this.customerPlantingIntentions = [...this.plantingIntentions.filter(p => p.customerId === customerId)];
+      this.customerStoredGrain = [...this.storedGrain.filter(s => s.customerId === customerId)];
+    }
+
+    this.customerNotes = [...this.notes.filter(n => n.customerId === customerId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())];
+
+    // Load farms from current customer AND all linked producers (both directions)
+    const allFarmIds: string[] = [...(currentCustomer.farmIds || [])];
+
+    // Add farms from all linked producers
+    allLinkedIds.forEach(producerId => {
+      const linkedProducer = this.customers.find(c => c.id === producerId);
+      if (linkedProducer && linkedProducer.farmIds) {
+        allFarmIds.push(...linkedProducer.farmIds);
+      }
+    });
+
+    // Filter and set customer farms
+    this.customerFarms = [...this.farms.filter(f => allFarmIds.includes(f.id))];
+
+    // Set the selected farm to the first available farm if not already set
+    if (!this.selectedFarmId && this.customerFarms.length > 0) {
+      this.selectedFarmId = this.customerFarms[0].id;
+    }
+  }
+
+  handleSaveCustomer(data: { customerId: string; location: string; phone: string; email: string; farmIds: string[]; linkedProducerIds: string[]; eSignEnabled: boolean }): void {
     const customer = this.customers.find(c => c.id === data.customerId);
     if (!customer) return;
 
@@ -214,18 +290,38 @@ export class HomeComponent implements OnInit, OnDestroy {
       phone: data.phone,
       email: data.email,
       farmIds: data.farmIds,
+      linkedProducerIds: data.linkedProducerIds,
       eSignEnabled: data.eSignEnabled
     };
 
     this.apiService.updateCustomer(updatedCustomer).subscribe({
       next: (updated) => {
+        // Update customer in the array
         const index = this.customers.findIndex(c => c.id === updated.id);
         if (index >= 0) {
           this.customers[index] = updated;
           this.customers = [...this.customers];
         }
+
+        // Update selected customer
         this.selectedCustomer = updated;
-        this.loadCustomerData(updated.id);
+
+        // If a new farm was added, select it automatically
+        const newFarmIds = updated.farmIds.filter(id => !customer.farmIds.includes(id));
+        if (newFarmIds.length > 0) {
+          this.selectedFarmId = newFarmIds[0];
+        }
+
+        // If a farm was deleted and it was the currently selected farm, revert to default (first farm)
+        const deletedFarmIds = customer.farmIds.filter(id => !updated.farmIds.includes(id));
+        if (deletedFarmIds.length > 0 && this.selectedFarmId && deletedFarmIds.includes(this.selectedFarmId)) {
+          // Reset to first available farm or undefined if no farms
+          this.selectedFarmId = updated.farmIds.length > 0 ? updated.farmIds[0] : undefined;
+        }
+
+        // Reload customer data AFTER updating farm selection, passing the updated customer to include farms from linked producers
+        this.loadCustomerData(updated.id, updated);
+
         this.toastService.success('Customer updated successfully');
         this.cdr.detectChanges();
       },
