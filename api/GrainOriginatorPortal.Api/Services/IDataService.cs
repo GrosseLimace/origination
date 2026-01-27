@@ -10,7 +10,7 @@ public interface IDataService
     // Customer Operations
     List<Customer> GetCustomers();
     Customer? GetCustomerById(string id);
-    void UpdateCustomer(string customerId, string location, string phone, string email, List<string> farmIds);
+    void UpdateCustomer(string customerId, string location, string phone, string email, List<string> farmIds, List<string> linkedProducerIds);
 
     // Farm Operations
     List<Farm> GetFarms();

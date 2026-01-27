@@ -31,7 +31,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
         <!-- Total Storage Cost Banner -->
         <div class="mt-2 mb-4 p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
           <p class="text-sm text-blue-600 dark:text-blue-400">Total Accumulated Storage Costs</p>
-          <p class="text-2xl text-blue-700 dark:text-blue-300">\${{ totalStorageCost.toFixed(2) }}</p>
+          <p class="text-2xl text-blue-700 dark:text-blue-300">{{ totalStorageCost | currency:'USD':'symbol':'1.2-2' }}</p>
         </div>
 
         <!-- Mobile Card View -->
@@ -44,7 +44,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
                   <div class="text-sm text-gray-500 dark:text-gray-400">{{ grain.bin }}</div>
                 </div>
                 <div class="text-sm font-medium text-red-600 dark:text-red-400">
-                  \${{ calculateStorageCost(grain).totalCost.toFixed(2) }}
+                  {{ calculateStorageCost(grain).totalCost | currency:'USD':'symbol':'1.2-2' }}
                 </div>
               </div>
 
@@ -137,7 +137,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
                   <app-table-cell>\${{ grain.storageRate.toFixed(3) }}/bu/mo</app-table-cell>
                   <app-table-cell>{{ grain.storageStartDate | date:'MMM d, yyyy' }}</app-table-cell>
                   <app-table-cell class="text-red-600 dark:text-red-400 font-medium">
-                    \${{ calculateStorageCost(grain).totalCost.toFixed(2) }}
+                    {{ calculateStorageCost(grain).totalCost | currency:'USD':'symbol':'1.2-2' }}
                   </app-table-cell>
                 </app-table-row>
 
@@ -154,7 +154,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
                             </div>
                             <div>
                               <p class="text-sm text-gray-500 dark:text-gray-400">Monthly Charge</p>
-                              <p class="text-gray-900 dark:text-gray-100">\${{ (grain.storageRate * grain.quantity).toFixed(2) }}</p>
+                              <p class="text-gray-900 dark:text-gray-100">{{ (grain.storageRate * grain.quantity) | currency:'USD':'symbol':'1.2-2' }}</p>
                             </div>
                             <div>
                               <p class="text-sm text-gray-500 dark:text-gray-400">Storage Rate</p>
@@ -174,7 +174,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
                             </div>
                             <div>
                               <p class="text-sm text-gray-500 dark:text-gray-400">Total Cost to Date</p>
-                              <p class="text-red-600 dark:text-red-400 font-medium">\${{ calculateStorageCost(grain).totalCost.toFixed(2) }}</p>
+                              <p class="text-red-600 dark:text-red-400 font-medium">{{ calculateStorageCost(grain).totalCost | currency:'USD':'symbol':'1.2-2' }}</p>
                             </div>
                           </div>
                         </div>

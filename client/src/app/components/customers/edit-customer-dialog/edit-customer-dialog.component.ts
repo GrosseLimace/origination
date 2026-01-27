@@ -85,6 +85,83 @@ import { Customer, Farm } from '../../../models';
             <!-- Separator -->
             <div class="border-t border-gray-200 dark:border-gray-700"></div>
 
+            <!-- Link Producers Section -->
+            <div class="space-y-4">
+              <h4 class="font-medium text-gray-900 dark:text-white">Link Producers</h4>
+              <p class="text-sm text-gray-500 dark:text-gray-400">Link this producer with others to combine their farms and activity data</p>
+
+              <!-- Outgoing Links: Producers this customer links to -->
+              @if (editLinkedProducerIds.length > 0) {
+                <div class="space-y-2">
+                  <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Linked To:</div>
+                  @for (producerId of editLinkedProducerIds; track producerId) {
+                    @if (getProducerById(producerId); as producer) {
+                      <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
+                        <div>
+                          <div class="font-medium text-gray-900 dark:text-white">{{ producer.name }}</div>
+                          <div class="text-sm text-gray-500 dark:text-gray-400">{{ producer.location }}</div>
+                        </div>
+                        <button
+                          type="button"
+                          class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 h-8 w-8"
+                          (click)="removeLinkedProducer(producerId)"
+                          title="Unlink"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/>
+                          </svg>
+                        </button>
+                      </div>
+                    }
+                  }
+                </div>
+              }
+
+              <!-- Incoming Links: Producers that link to this customer -->
+              @if (getProducersLinkingToMe().length > 0) {
+                <div class="space-y-2">
+                  <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Linked From:</div>
+                  @for (producer of getProducersLinkingToMe(); track producer.id) {
+                    <div class="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <div>
+                        <div class="font-medium text-gray-900 dark:text-white">{{ producer.name }}</div>
+                        <div class="text-sm text-gray-500 dark:text-gray-400">{{ producer.location }}</div>
+                      </div>
+                      <button
+                        type="button"
+                        class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 h-8 w-8"
+                        (click)="removeIncomingLink(producer.id)"
+                        title="Unlink from {{ producer.name }}"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/>
+                        </svg>
+                      </button>
+                    </div>
+                  }
+                </div>
+              }
+
+              <!-- Add Linked Producer -->
+              @if (getAvailableProducers().length > 0) {
+                <div class="space-y-2">
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Add Producer to Link</label>
+                  <select
+                    class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                    (change)="addLinkedProducer($event)"
+                  >
+                    <option value="">Select a producer to link</option>
+                    @for (producer of getAvailableProducers(); track producer.id) {
+                      <option [value]="producer.id">{{ producer.name }} - {{ producer.location }}</option>
+                    }
+                  </select>
+                </div>
+              }
+            </div>
+
+            <!-- Separator -->
+            <div class="border-t border-gray-200 dark:border-gray-700"></div>
+
             <!-- Farm Associations Section -->
             <div class="space-y-4">
               <div class="flex items-center justify-between">
@@ -223,6 +300,7 @@ export class EditCustomerDialogComponent implements OnChanges {
   @Input() isOpen = false;
   @Input() customer: Customer | null = null;
   @Input() allFarms: Farm[] = [];
+  @Input() allCustomers: Customer[] = [];
 
   @Output() close = new EventEmitter<void>();
   @Output() save = new EventEmitter<{
@@ -231,6 +309,7 @@ export class EditCustomerDialogComponent implements OnChanges {
     phone: string;
     email: string;
     farmIds: string[];
+    linkedProducerIds: string[];
     eSignEnabled: boolean;
   }>();
   @Output() createFarm = new EventEmitter<{ name: string; location: string; acres: number }>();
@@ -239,6 +318,7 @@ export class EditCustomerDialogComponent implements OnChanges {
   editPhone = '';
   editEmail = '';
   editFarmIds: string[] = [];
+  editLinkedProducerIds: string[] = [];
   editESignEnabled = false;
 
   // Original values to track changes
@@ -246,6 +326,7 @@ export class EditCustomerDialogComponent implements OnChanges {
   private originalPhone = '';
   private originalEmail = '';
   private originalFarmIds: string[] = [];
+  private originalLinkedProducerIds: string[] = [];
   private originalESignEnabled = false;
 
   showNewFarmForm = false;
@@ -262,6 +343,7 @@ export class EditCustomerDialogComponent implements OnChanges {
       this.editPhone = this.customer.phone;
       this.editEmail = this.customer.email;
       this.editFarmIds = [...this.customer.farmIds];
+      this.editLinkedProducerIds = [...(this.customer.linkedProducerIds || [])];
       this.editESignEnabled = this.customer.eSignEnabled;
 
       // Store original values
@@ -269,6 +351,7 @@ export class EditCustomerDialogComponent implements OnChanges {
       this.originalPhone = this.customer.phone;
       this.originalEmail = this.customer.email;
       this.originalFarmIds = [...this.customer.farmIds];
+      this.originalLinkedProducerIds = [...(this.customer.linkedProducerIds || [])];
       this.originalESignEnabled = this.customer.eSignEnabled;
 
       this.initialized = true;
@@ -289,11 +372,15 @@ export class EditCustomerDialogComponent implements OnChanges {
     const farmIdsChanged = this.editFarmIds.length !== this.originalFarmIds.length
       || this.editFarmIds.some(id => !this.originalFarmIds.includes(id));
 
+    const linkedProducerIdsChanged = this.editLinkedProducerIds.length !== this.originalLinkedProducerIds.length
+      || this.editLinkedProducerIds.some(id => !this.originalLinkedProducerIds.includes(id));
+
     return this.editLocation !== this.originalLocation
       || this.editPhone !== this.originalPhone
       || this.editEmail !== this.originalEmail
       || this.editESignEnabled !== this.originalESignEnabled
-      || farmIdsChanged;
+      || farmIdsChanged
+      || linkedProducerIdsChanged;
   }
 
   getFarmById(farmId: string): Farm | undefined {
@@ -317,6 +404,50 @@ export class EditCustomerDialogComponent implements OnChanges {
     if (this.editFarmIds.length > 1) {
       this.editFarmIds = this.editFarmIds.filter(id => id !== farmId);
     }
+  }
+
+  getProducerById(producerId: string): Customer | undefined {
+    return this.allCustomers.find(c => c.id === producerId);
+  }
+
+  getAvailableProducers(): Customer[] {
+    // Get producers that link to this customer (so we don't show them in the available list)
+    const producersLinkingToMe = this.allCustomers
+      .filter(c => c.linkedProducerIds && c.linkedProducerIds.includes(this.customer?.id || ''))
+      .map(c => c.id);
+
+    return this.allCustomers.filter(c =>
+      c.id !== this.customer?.id &&
+      !this.editLinkedProducerIds.includes(c.id) &&
+      !producersLinkingToMe.includes(c.id)
+    );
+  }
+
+  getProducersLinkingToMe(): Customer[] {
+    if (!this.customer) return [];
+    return this.allCustomers.filter(c =>
+      c.linkedProducerIds && c.linkedProducerIds.includes(this.customer!.id)
+    );
+  }
+
+  addLinkedProducer(event: Event): void {
+    const select = event.target as HTMLSelectElement;
+    const producerId = select.value;
+    if (producerId && !this.editLinkedProducerIds.includes(producerId)) {
+      this.editLinkedProducerIds = [...this.editLinkedProducerIds, producerId];
+      select.value = '';
+    }
+  }
+
+  removeLinkedProducer(producerId: string): void {
+    this.editLinkedProducerIds = this.editLinkedProducerIds.filter(id => id !== producerId);
+  }
+
+  removeIncomingLink(producerId: string): void {
+    // This will require updating the other producer's linkedProducerIds
+    // We'll emit a special event that the parent can handle
+    // For now, we'll show a message that they need to unlink from the other producer's edit dialog
+    alert(`To unlink from ${this.getProducerById(producerId)?.name}, please edit that producer and remove this link from there.`);
   }
 
   createAndAddFarm(): void {
@@ -350,6 +481,7 @@ export class EditCustomerDialogComponent implements OnChanges {
         phone: this.editPhone,
         email: this.editEmail,
         farmIds: this.editFarmIds,
+        linkedProducerIds: this.editLinkedProducerIds,
         eSignEnabled: this.editESignEnabled
       });
       this.initialized = false;

@@ -1,13 +1,11 @@
-import { Component, Input, Output, EventEmitter, inject, OnChanges, SimpleChanges, ChangeDetectorRef } from '@angular/core';
+import { Component, Input, Output, EventEmitter, inject, OnChanges, SimpleChanges, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ThemeService } from '../../../services/theme.service';
-import { CardComponent, CardHeaderComponent, CardTitleComponent, CardContentComponent } from '../../ui/card/card.component';
 import { ContractsTableComponent } from '../contracts-table/contracts-table.component';
 import { TicketsTableComponent } from '../tickets-table/tickets-table.component';
 import { PlantingIntentionsTableComponent } from '../planting-intentions-table/planting-intentions-table.component';
 import { StoredGrainTableComponent } from '../stored-grain-table/stored-grain-table.component';
-import { CustomerNotesComponent } from '../customer-notes/customer-notes.component';
 import { ProducerInsightsComponent } from '../producer-insights/producer-insights.component';
 import { AIGrowthForecastComponent } from '../ai-growth-forecast/ai-growth-forecast.component';
 import { ActivitySummaryComponent } from '../activity-summary/activity-summary.component';
@@ -17,18 +15,14 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
 @Component({
   selector: 'app-customer-profile',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
     FormsModule,
-    CardComponent,
-    CardHeaderComponent,
-    CardTitleComponent,
-    CardContentComponent,
     ContractsTableComponent,
     TicketsTableComponent,
     PlantingIntentionsTableComponent,
     StoredGrainTableComponent,
-    CustomerNotesComponent,
     ProducerInsightsComponent,
     AIGrowthForecastComponent,
     ActivitySummaryComponent,
@@ -41,47 +35,49 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
         <!-- Print Button - Top Right -->
         <button
           type="button"
-          class="absolute top-4 right-4 p-2 rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-colors"
+          class="absolute top-3 right-3 sm:top-4 sm:right-4 p-1.5 sm:p-2 rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-colors"
           (click)="printCustomerInfo()"
           title="Print Customer Info"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" class="sm:w-[18px] sm:h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 6 2 18 2 18 9"/>
             <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
             <rect width="12" height="8" x="6" y="14"/>
           </svg>
         </button>
-        <div class="p-6 pr-16">
+        <div class="p-4 sm:p-6 pr-12 sm:pr-16">
           <!-- Row 1: Customer Name + eSign Badge (on same line) -->
-          <div class="flex items-center gap-3 flex-wrap mb-1">
-            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ customer.name }}</h1>
+          <div class="flex items-center gap-2 sm:gap-3 flex-wrap mb-1">
+            <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white">{{ customer.name }}</h1>
             @if (customer.eSignEnabled) {
-              <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-green-600 text-white">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <span class="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-xs sm:text-sm font-medium bg-green-600 text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" class="sm:w-3.5 sm:h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
                   <polyline points="22 4 12 14.01 9 11.01"/>
                 </svg>
-                eSign Enabled
+                <span class="hidden sm:inline">eSign Enabled</span>
+                <span class="sm:hidden">eSign</span>
               </span>
             } @else {
-              <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-gray-400 text-white">
-                eSign Not Enrolled
+              <span class="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-xs sm:text-sm font-medium bg-gray-400 text-white">
+                <span class="hidden sm:inline">eSign Not Enrolled</span>
+                <span class="sm:hidden">No eSign</span>
               </span>
             }
           </div>
 
           <!-- Row 2: Farm Name -->
-          <p class="text-gray-500 dark:text-gray-400 mb-3">{{ customer.farm }}</p>
+          <p class="text-sm sm:text-base text-gray-500 dark:text-gray-400 mb-3">{{ getSelectedFarmName() }}</p>
 
           <!-- Row 3: Producer Insights and Edit buttons (under farm name) -->
           <div class="flex items-center gap-2 flex-wrap mb-6">
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-sm font-medium transition-colors"
+              class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border text-xs sm:text-sm font-medium transition-colors"
               [class]="showProducerInsights ? 'bg-green-600 text-white border-green-600' : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'"
               (click)="toggleProducerInsights()"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="18" x2="18" y1="20" y2="10"/>
                 <line x1="12" x2="12" y1="20" y2="4"/>
                 <line x1="6" x2="6" y1="20" y2="14"/>
@@ -90,10 +86,10 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
             </button>
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-gray-300 dark:border-gray-600 text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
               (click)="openEditDialog()"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
               </svg>
               Edit
@@ -103,9 +99,9 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
           <!-- Row 4: Select Farm Dropdown (only show if more than one farm) -->
           @if (farms.length > 1) {
             <div class="mb-6">
-              <label class="block text-sm font-medium text-gray-900 dark:text-white mb-1">Select Farm</label>
+              <label class="block text-xs sm:text-sm font-medium text-gray-900 dark:text-white mb-1">Select Farm</label>
               <select
-                class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                class="w-full h-9 sm:h-10 px-2.5 sm:px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-xs sm:text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
                 [ngModel]="getSelectedFarmIdOrFirst()"
                 (ngModelChange)="onFarmChange.emit($event)"
               >
@@ -120,23 +116,23 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <!-- Contact Info -->
             <div>
-              <h3 class="text-sm font-medium text-gray-900 dark:text-white mb-3">Contact</h3>
-              <div class="space-y-2 text-sm">
+              <h3 class="text-xs sm:text-sm font-medium text-gray-900 dark:text-white mb-3">Contact</h3>
+              <div class="space-y-2 text-xs sm:text-sm">
                 <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
                     <circle cx="12" cy="10" r="3"/>
                   </svg>
-                  <span>{{ customer.location }}</span>
+                  <span>{{ getSelectedFarmLocation() }}</span>
                 </div>
                 <a [href]="'tel:' + customer.phone" class="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors cursor-pointer">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
                   </svg>
                   <span>{{ customer.phone }}</span>
                 </a>
                 <a [href]="'mailto:' + customer.email" class="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors cursor-pointer">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <rect width="20" height="16" x="2" y="4" rx="2"/>
                     <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
                   </svg>
@@ -147,11 +143,11 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
 
             <!-- Farm Details -->
             <div>
-              <h3 class="text-sm font-medium text-gray-900 dark:text-white mb-3">Farm Details</h3>
-              <div class="space-y-2 text-sm">
+              <h3 class="text-xs sm:text-sm font-medium text-gray-900 dark:text-white mb-3">Farm Details</h3>
+              <div class="space-y-2 text-xs sm:text-sm">
                 <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                   <!-- Tractor icon -->
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="m10 11 11 .9a1 1 0 0 1 .8 1.1l-.665 4.158a1 1 0 0 1-.988.842H20"/>
                     <path d="M16 18h-5"/>
                     <path d="M18 5a1 1 0 0 0-1 1v5.573"/>
@@ -167,7 +163,7 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
                 @if (getSelectedFarmStorage() > 0) {
                   <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                     <!-- Warehouse icon -->
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z"/>
                       <path d="M6 18h12"/>
                       <path d="M6 14h12"/>
@@ -184,33 +180,33 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <!-- Activity -->
             <div>
-              <h3 class="text-sm font-medium text-gray-900 dark:text-white mb-3">Activity</h3>
+              <h3 class="text-xs sm:text-sm font-medium text-gray-900 dark:text-white mb-3">Activity</h3>
               <div class="flex gap-4">
-                <div class="flex-1 border border-gray-200 dark:border-gray-700 rounded-lg p-3 text-center">
-                  <div class="text-2xl font-bold text-green-600">{{ contracts.length }}</div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400">Contracts</div>
+                <div class="flex-1 border border-gray-200 dark:border-gray-700 rounded-lg p-2 sm:p-3 text-center">
+                  <div class="text-xl sm:text-2xl lg:text-3xl font-bold text-green-600">{{ contracts.length }}</div>
+                  <div class="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">Contracts</div>
                 </div>
-                <div class="flex-1 border border-gray-200 dark:border-gray-700 rounded-lg p-3 text-center">
-                  <div class="text-2xl font-bold text-blue-600">{{ tickets.length }}</div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400">Tickets</div>
+                <div class="flex-1 border border-gray-200 dark:border-gray-700 rounded-lg p-2 sm:p-3 text-center">
+                  <div class="text-xl sm:text-2xl lg:text-3xl font-bold text-blue-600">{{ tickets.length }}</div>
+                  <div class="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">Tickets</div>
                 </div>
               </div>
             </div>
 
             <!-- Market Share -->
             <div>
-              <h3 class="text-sm font-medium text-gray-900 dark:text-white mb-3">Market Share</h3>
+              <h3 class="text-xs sm:text-sm font-medium text-gray-900 dark:text-white mb-3">Market Share</h3>
               <div
-                class="border rounded-lg p-3 text-center"
+                class="border rounded-lg p-2 sm:p-3 text-center"
                 [class]="marketSharePercentage > 0 ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/30' : 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30'"
               >
                 <div
-                  class="text-2xl font-bold"
+                  class="text-xl sm:text-2xl lg:text-3xl font-bold"
                   [class]="marketSharePercentage > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
                 >
                   {{ marketSharePercentage | number:'1.0-0' }}%
                 </div>
-                <div class="text-xs text-gray-500 dark:text-gray-400">
+                <div class="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
                   {{ bushelsAvailable | number }} bu available
                 </div>
               </div>
@@ -242,17 +238,18 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
       <!-- Activity Summary - Always visible -->
       <app-activity-summary
         [customer]="customer"
-        [contracts]="contracts"
-        [tickets]="tickets"
-        [plantingIntentions]="plantingIntentions"
+        [contracts]="allCustomerContracts"
+        [tickets]="allCustomerTickets"
+        [plantingIntentions]="allCustomerPlantingIntentions"
         [notes]="notes"
-        [storedGrain]="storedGrain">
+        [storedGrain]="allCustomerStoredGrain"
+        [allCustomers]="allCustomers">
       </app-activity-summary>
 
       <!-- Tabs Section - Below Summary -->
       <div>
         <!-- Pill-style tab navigation -->
-        <div class="w-full bg-gray-100 dark:bg-gray-800 rounded-full p-1 mb-6">
+        <div class="w-full bg-gray-100 dark:bg-gray-800 rounded-full p-0.5 sm:p-1 mb-6">
           <div class="flex">
             @for (tab of tabs; track tab.id) {
               <button
@@ -260,7 +257,8 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
                 [class]="getTabClass(tab.id)"
                 (click)="activeTab = tab.id"
               >
-                {{ tab.label }} ({{ tab.count }})
+                <span class="hidden sm:inline">{{ tab.label }} ({{ tab.count }})</span>
+                <span class="sm:hidden">{{ tab.label.substring(0, 4) }} ({{ tab.count }})</span>
               </button>
             }
           </div>
@@ -289,32 +287,6 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
           }
         </div>
       </div>
-
-      <!-- Notes Section - Always visible at bottom -->
-      <app-card>
-        <app-card-header>
-          <div class="flex items-center justify-between">
-            <app-card-title>Notes</app-card-title>
-            <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/>
-                <line x1="16" x2="16" y1="2" y2="6"/>
-                <line x1="8" x2="8" y1="2" y2="6"/>
-                <line x1="3" x2="21" y1="10" y2="10"/>
-              </svg>
-              <span>Last contacted: {{ getLastContactedDate() }}</span>
-            </div>
-          </div>
-        </app-card-header>
-        <app-card-content>
-          <app-customer-notes
-            [notes]="notes"
-            [customer]="customer"
-            (addNote)="onAddNote.emit($event)"
-            (togglePin)="onTogglePin.emit($event)">
-          </app-customer-notes>
-        </app-card-content>
-      </app-card>
     </div>
 
     <!-- Edit Customer Dialog - managed locally like Blazor -->
@@ -322,6 +294,7 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
       [isOpen]="showEditDialog"
       [customer]="customer"
       [allFarms]="allFarms"
+      [allCustomers]="allCustomers"
       (close)="closeEditDialog()"
       (save)="handleSaveCustomer($event)"
       (createFarm)="onCreateFarm.emit($event)">
@@ -332,6 +305,7 @@ export class CustomerProfileComponent implements OnChanges {
   @Input() customer!: Customer;
   @Input() farms: Farm[] = [];
   @Input() allFarms: Farm[] = [];
+  @Input() allCustomers: Customer[] = [];
   @Input() contracts: Contract[] = [];
   @Input() tickets: Ticket[] = [];
   @Input() plantingIntentions: PlantingIntention[] = [];
@@ -339,12 +313,18 @@ export class CustomerProfileComponent implements OnChanges {
   @Input() notes: Note[] = [];
   @Input() selectedFarmId?: string;
 
+  // Unfiltered data for Activity Summary (all farms)
+  @Input() allCustomerContracts: Contract[] = [];
+  @Input() allCustomerTickets: Ticket[] = [];
+  @Input() allCustomerPlantingIntentions: PlantingIntention[] = [];
+  @Input() allCustomerStoredGrain: StoredGrain[] = [];
+
   @Output() onAddPlanting = new EventEmitter<{crop: string, acres: number, variety: string, plantingDate: Date, estimatedYield: number}>();
   @Output() onEditPlanting = new EventEmitter<{intentionId: string, crop: string, acres: number, variety: string, plantingDate: Date, estimatedYield: number}>();
   @Output() onAddNote = new EventEmitter<string>();
   @Output() onTogglePin = new EventEmitter<Note>();
   @Output() onFarmChange = new EventEmitter<string>();
-  @Output() onSaveCustomer = new EventEmitter<{ customerId: string; location: string; phone: string; email: string; farmIds: string[]; eSignEnabled: boolean }>();
+  @Output() onSaveCustomer = new EventEmitter<{ customerId: string; location: string; phone: string; email: string; farmIds: string[]; linkedProducerIds: string[]; eSignEnabled: boolean }>();
   @Output() onCreateFarm = new EventEmitter<{ name: string; location: string; acres: number }>();
 
   private themeService = inject(ThemeService);
@@ -355,27 +335,64 @@ export class CustomerProfileComponent implements OnChanges {
   showProducerInsights = false;
   showEditDialog = false;
 
+  // Performance optimization: Cache computed values used in template
+  private _totalProjectedYield = 0;
+  private _totalContracted = 0;
+  private _marketSharePercentage = 0;
+  private _bushelsAvailable = 0;
+  private _tabs: any[] = [];
+
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['customer'] || changes['contracts'] || changes['notes']) {
-      this.cdr.detectChanges();
+    // Recalculate cached values when relevant inputs change
+    if (changes['plantingIntentions']) {
+      this._totalProjectedYield = this.plantingIntentions.reduce((sum, p) => sum + (p.acres * p.estimatedYield), 0);
+    }
+
+    if (changes['contracts']) {
+      this._totalContracted = this.contracts
+        .filter(c => c.status === 'Active' || c.status === 'Pending')
+        .reduce((sum, c) => sum + c.quantity, 0);
+    }
+
+    // Recalculate dependent values
+    if (changes['plantingIntentions'] || changes['contracts']) {
+      this._marketSharePercentage = this._totalProjectedYield > 0
+        ? (this._totalContracted / this._totalProjectedYield) * 100
+        : 0;
+      this._bushelsAvailable = Math.max(0, this._totalProjectedYield - this._totalContracted);
+    }
+
+    // Update tabs cache
+    if (changes['contracts'] || changes['tickets'] || changes['plantingIntentions'] || changes['storedGrain']) {
+      this._tabs = [
+        { id: 'contracts', label: 'Contracts', count: this.contracts.length },
+        { id: 'tickets', label: 'Tickets', count: this.tickets.length },
+        { id: 'planting', label: 'Planting', count: this.plantingIntentions.length },
+        { id: 'storage', label: 'Storage', count: this.storedGrain.length }
+      ];
+    }
+
+    if (changes['customer'] || changes['contracts'] || changes['notes'] || changes['farms']) {
+      this.cdr.markForCheck();
     }
   }
 
   toggleProducerInsights(): void {
     this.showProducerInsights = !this.showProducerInsights;
+    this.cdr.markForCheck();
   }
 
   openEditDialog(): void {
     this.showEditDialog = true;
-    this.cdr.detectChanges();
+    this.cdr.markForCheck();
   }
 
   closeEditDialog(): void {
     this.showEditDialog = false;
-    this.cdr.detectChanges();
+    this.cdr.markForCheck();
   }
 
-  handleSaveCustomer(data: { customerId: string; location: string; phone: string; email: string; farmIds: string[]; eSignEnabled: boolean }): void {
+  handleSaveCustomer(data: { customerId: string; location: string; phone: string; email: string; farmIds: string[]; linkedProducerIds: string[]; eSignEnabled: boolean }): void {
     this.onSaveCustomer.emit(data);
     this.closeEditDialog();
   }
@@ -385,17 +402,12 @@ export class CustomerProfileComponent implements OnChanges {
   }
 
   get tabs() {
-    return [
-      { id: 'contracts', label: 'Contracts', count: this.contracts.length },
-      { id: 'tickets', label: 'Tickets', count: this.tickets.length },
-      { id: 'planting', label: 'Planting', count: this.plantingIntentions.length },
-      { id: 'storage', label: 'Storage', count: this.storedGrain.length }
-    ];
+    return this._tabs;
   }
 
   getTabClass(tabId: string): string {
     const isActive = this.activeTab === tabId;
-    const baseClass = 'flex-1 text-center px-4 py-2 text-sm font-medium rounded-full transition-all duration-200 border-0 outline-none';
+    const baseClass = 'flex-1 text-center px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium rounded-full transition-all duration-200 border-0 outline-none';
 
     if (isActive) {
       return `${baseClass} bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm`;
@@ -429,24 +441,38 @@ export class CustomerProfileComponent implements OnChanges {
     return farmWithStorage?.binStorageCapacity || 0;
   }
 
+  getSelectedFarmName(): string {
+    const farmId = this.getSelectedFarmIdOrFirst();
+    if (farmId) {
+      const farm = this.farms.find(f => f.id === farmId);
+      return farm?.name || this.customer.farm;
+    }
+    return this.customer.farm;
+  }
+
+  getSelectedFarmLocation(): string {
+    const farmId = this.getSelectedFarmIdOrFirst();
+    if (farmId) {
+      const farm = this.farms.find(f => f.id === farmId);
+      return farm?.location || this.customer.location;
+    }
+    return this.customer.location;
+  }
+
   get totalProjectedYield(): number {
-    return this.plantingIntentions.reduce((sum, p) => sum + (p.acres * p.estimatedYield), 0);
+    return this._totalProjectedYield;
   }
 
   get totalContracted(): number {
-    return this.contracts
-      .filter(c => c.status === 'Active' || c.status === 'Pending')
-      .reduce((sum, c) => sum + c.quantity, 0);
+    return this._totalContracted;
   }
 
   get marketSharePercentage(): number {
-    return this.totalProjectedYield > 0
-      ? (this.totalContracted / this.totalProjectedYield) * 100
-      : 0;
+    return this._marketSharePercentage;
   }
 
   get bushelsAvailable(): number {
-    return Math.max(0, this.totalProjectedYield - this.totalContracted);
+    return this._bushelsAvailable;
   }
 
   getLastContactedDate(): string {

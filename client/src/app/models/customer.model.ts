@@ -9,6 +9,7 @@ export interface Customer {
   email: string;
   totalAcres: number;
   farmIds: string[];
+  linkedProducerIds: string[];
   eSignEnabled: boolean;
   coordinates?: Coordinates;
 }

@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnChanges, SimpleChanges, ChangeDetectionStrategy, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '../../ui/button/button.component';
@@ -8,6 +8,7 @@ import { Customer, Note } from '../../../models';
   selector: 'app-customer-notes',
   standalone: true,
   imports: [CommonModule, FormsModule, ButtonComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="space-y-6">
       <!-- Add Note Form -->
@@ -39,7 +40,7 @@ import { Customer, Note } from '../../../models';
         </div>
       } @else {
         <div class="space-y-6">
-          @for (note of sortedNotes; track note.id) {
+          @for (note of sortedNotesCache; track note.id) {
             <div class="border rounded-lg p-4 relative" [ngClass]="getNoteClass(note)">
               <!-- Pin icon in top right if pinned -->
               @if (note.isPinned) {
@@ -104,16 +105,36 @@ import { Customer, Note } from '../../../models';
     </div>
   `
 })
-export class CustomerNotesComponent {
+export class CustomerNotesComponent implements OnChanges {
   @Input() notes: Note[] = [];
   @Input() customer!: Customer;
   @Output() addNote = new EventEmitter<string>();
   @Output() togglePin = new EventEmitter<Note>();
 
+  private cdr = inject(ChangeDetectorRef);
+
   newNote = '';
 
-  get sortedNotes(): Note[] {
-    return [...this.notes].sort((a, b) => {
+  // Performance optimization: Cache sorted notes to avoid re-sorting on every change detection
+  sortedNotesCache: Note[] = [];
+
+  ngOnChanges(changes: SimpleChanges): void {
+    // Only re-sort when notes input actually changes
+    if (changes['notes']) {
+      this.updateSortedNotesCache();
+      this.cdr.markForCheck();
+    }
+  }
+
+  /**
+   * Performance optimization: Sort notes once and cache the result.
+   * Only re-sort when notes input changes.
+   *
+   * Previously: sortedNotes getter sorted on EVERY change detection cycle
+   * Now: Sort only when notes actually change
+   */
+  private updateSortedNotesCache(): void {
+    this.sortedNotesCache = [...this.notes].sort((a, b) => {
       // Pinned notes first
       if (a.isPinned && !b.isPinned) return -1;
       if (!a.isPinned && b.isPinned) return 1;
