@@ -30,30 +30,35 @@ public class PlantingIntentionsController : ControllerBase
     [HttpPost]
     public ActionResult Create([FromBody] CreatePlantingIntentionRequest request)
     {
-        _dataService.AddPlantingIntention(
+        var newIntention = _dataService.AddPlantingIntention(
             request.CustomerId,
             request.FarmId,
             request.Crop,
             request.Acres,
-            request.Variety,
             request.PlantingDate,
             request.EstimatedYield
         );
-        return Created();
+        return Ok(newIntention);
     }
 
     [HttpPut("{id}")]
     public ActionResult Update(string id, [FromBody] UpdatePlantingIntentionRequest request)
     {
-        _dataService.UpdatePlantingIntention(
+        var updatedIntention = _dataService.UpdatePlantingIntention(
             id,
             request.Crop,
             request.Acres,
-            request.Variety,
             request.PlantingDate,
             request.EstimatedYield
         );
-        return NoContent();
+        return Ok(updatedIntention);
+    }
+
+    [HttpDelete("{id}")]
+    public ActionResult Delete(string id)
+    {
+        _dataService.DeletePlantingIntention(id);
+        return Ok();
     }
 }
 
@@ -74,9 +79,6 @@ public class CreatePlantingIntentionRequest
     [System.ComponentModel.DataAnnotations.Range(1, 100000)]
     public int Acres { get; set; }
 
-    [System.ComponentModel.DataAnnotations.StringLength(100)]
-    public string Variety { get; set; } = string.Empty;
-
     public DateTime PlantingDate { get; set; }
 
     [System.ComponentModel.DataAnnotations.Range(1, 500)]
@@ -91,9 +93,6 @@ public class UpdatePlantingIntentionRequest
 
     [System.ComponentModel.DataAnnotations.Range(1, 100000)]
     public int Acres { get; set; }
-
-    [System.ComponentModel.DataAnnotations.StringLength(100)]
-    public string Variety { get; set; } = string.Empty;
 
     public DateTime PlantingDate { get; set; }
 

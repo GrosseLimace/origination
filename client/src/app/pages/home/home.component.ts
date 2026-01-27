@@ -26,24 +26,61 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
     CardTitleComponent
   ],
   template: `
-    <div class="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-10 gap-6">
-      <!-- Customer List - 1/3 on lg, 20% on xl -->
-      <div class="lg:col-span-1 xl:col-span-2 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)]" [class.hidden]="selectedCustomer && isMobile" [class.lg:block]="true">
-        <app-customer-list
-          [customers]="customers"
-          [selectedCustomer]="selectedCustomer"
-          [savedLists]="savedLists"
-          [notes]="notes"
-          (selectCustomer)="handleSelectCustomer($event)"
-        />
+    <!-- When no customer selected: centered layout -->
+    @if (!selectedCustomer) {
+      <div class="flex justify-center items-start min-h-[calc(100vh-8rem)] py-8">
+        <div class="flex flex-col lg:flex-row gap-6 max-w-6xl w-full px-4">
+          <!-- Customer List -->
+          <div class="w-full lg:w-[400px] shrink-0">
+            <app-customer-list
+              [customers]="customers"
+              [selectedCustomer]="selectedCustomer"
+              [savedLists]="savedLists"
+              [notes]="notes"
+              (selectCustomer)="handleSelectCustomer($event)"
+            />
+          </div>
+          <!-- Select Customer Prompt -->
+          <div class="w-full lg:w-[700px]">
+            <app-card class="p-12 text-center">
+              <app-card-content>
+                <div class="text-gray-500 dark:text-gray-400">
+                  <svg class="mx-auto h-16 w-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                  </svg>
+                  <h3 class="mt-4 text-lg font-medium text-gray-900 dark:text-gray-100">
+                    Select a Customer
+                  </h3>
+                  <p class="mt-2">
+                    Choose a customer from the list to view their details, contracts, tickets, and more.
+                  </p>
+                </div>
+              </app-card-content>
+            </app-card>
+          </div>
+        </div>
       </div>
+    }
 
-      <!-- Profile and Notes Container - 2/3 on lg, then split on xl -->
-      <div class="lg:col-span-2 xl:col-span-8" [class.hidden]="!selectedCustomer && isMobile" [class.lg:block]="true">
-        <div class="xl:grid xl:grid-cols-8 xl:gap-6 space-y-6 xl:space-y-0">
-          <!-- Profile Section - Full width until xl, then 5/8 (62.5% = 50% of total) -->
-          <div class="xl:col-span-5 space-y-6">
-            @if (selectedCustomer) {
+    <!-- When customer selected: 3-column grid layout -->
+    @if (selectedCustomer) {
+      <div class="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-10 gap-6">
+        <!-- Customer List - 1/3 on lg, 20% on xl -->
+        <div class="lg:col-span-1 xl:col-span-2 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)]" [class.hidden]="isMobile">
+          <app-customer-list
+            [customers]="customers"
+            [selectedCustomer]="selectedCustomer"
+            [savedLists]="savedLists"
+            [notes]="notes"
+            (selectCustomer)="handleSelectCustomer($event)"
+          />
+        </div>
+
+        <!-- Profile and Notes Container - 2/3 on lg, then split on xl -->
+        <div class="lg:col-span-2 xl:col-span-8">
+          <div class="xl:grid xl:grid-cols-8 xl:gap-6 space-y-6 xl:space-y-0">
+            <!-- Profile Section - Full width until xl, then 5/8 (62.5% = 50% of total) -->
+            <div class="xl:col-span-5 space-y-6">
               <!-- Back button on mobile -->
               <button
                 class="lg:hidden flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-4"
@@ -73,34 +110,16 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                 [allCustomerStoredGrain]="allCustomerStoredGrain"
                 (onAddPlanting)="addPlantingIntention($event)"
                 (onEditPlanting)="editPlantingIntention($event)"
+                (onDeletePlanting)="deletePlantingIntention($event)"
                 (onAddNote)="addNote($event)"
                 (onTogglePin)="toggleNotePin($event)"
                 (onFarmChange)="handleFarmChange($event)"
                 (onSaveCustomer)="handleSaveCustomer($event)"
                 (onCreateFarm)="handleCreateFarm($event)">
               </app-customer-profile>
-            } @else {
-              <!-- No customer selected - matches Blazor: just the prompt card, no map -->
-              <app-card class="p-12 text-center">
-                <app-card-content>
-                  <div class="text-gray-500 dark:text-gray-400">
-                    <svg class="mx-auto h-16 w-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
-                    </svg>
-                    <h3 class="mt-4 text-lg font-medium text-gray-900 dark:text-gray-100">
-                      Select a Customer
-                    </h3>
-                    <p class="mt-2">
-                      Choose a customer from the list to view their details, contracts, tickets, and more.
-                    </p>
-                  </div>
-                </app-card-content>
-              </app-card>
-            }
-          </div>
+            </div>
 
-          <!-- Notes Column - Below profile until xl, then 3/8 (37.5% = 30% of total), sticky on xl+ -->
-          @if (selectedCustomer) {
+            <!-- Notes Column - Below profile until xl, then 3/8 (37.5% = 30% of total), sticky on xl+ -->
             <div class="xl:col-span-3 xl:sticky xl:top-20 xl:self-start xl:max-h-[calc(100vh-6rem)] xl:overflow-auto">
               <app-card>
                 <app-card-header>
@@ -122,15 +141,17 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                     [notes]="customerNotes"
                     [customer]="selectedCustomer"
                     (addNote)="addNote($event)"
-                    (togglePin)="toggleNotePin($event)">
+                    (togglePin)="toggleNotePin($event)"
+                    (editNote)="editNote($event)"
+                    (deleteNote)="deleteNote($event)">
                   </app-customer-notes>
                 </app-card-content>
               </app-card>
             </div>
-          }
+          </div>
         </div>
       </div>
-    </div>
+    }
   `
 })
 export class HomeComponent implements OnInit, OnDestroy {
@@ -231,6 +252,20 @@ export class HomeComponent implements OnInit, OnDestroy {
         this.storedGrain = data.storedGrain;
         this.farms = data.farms;
         this.savedLists = data.savedLists;
+
+        // Restore selected customer after data loads
+        const savedCustomer = this.appState.selectedCustomer();
+        const savedFarmId = this.appState.selectedFarmId();
+        if (savedCustomer) {
+          // Find the customer in the newly loaded data
+          const customer = this.customers.find(c => c.id === savedCustomer.id);
+          if (customer) {
+            this.selectedCustomer = customer;
+            this.selectedFarmId = savedFarmId || undefined;
+            this.loadCustomerData(customer.id);
+            this.cdr.detectChanges();
+          }
+        }
       },
       error: () => {
         this.toastService.error('Failed to load data');
@@ -249,6 +284,7 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   handleFarmChange(farmId: string): void {
     this.selectedFarmId = farmId;
+    this.appState.selectFarm(farmId);
     // Reload customer data to filter by the newly selected farm
     if (this.selectedCustomer) {
       this.loadCustomerData(this.selectedCustomer.id);
@@ -312,6 +348,13 @@ export class HomeComponent implements OnInit, OnDestroy {
 
     // Filter and set customer farms
     this.customerFarms = [...this.farms.filter(f => allFarmIds.includes(f.id))];
+
+    // Validate selectedFarmId - if it's set but no longer in the available farms, reset it
+    if (this.selectedFarmId && !this.customerFarms.find(f => f.id === this.selectedFarmId)) {
+      // Currently selected farm is no longer available (e.g., after unlinking), reset to first farm or undefined
+      this.selectedFarmId = this.customerFarms.length > 0 ? this.customerFarms[0].id : undefined;
+      this.appState.selectFarm(this.selectedFarmId || null);
+    }
 
     // Set the selected farm to the first available farm if not already set
     if (!this.selectedFarmId && this.customerFarms.length > 0) {
@@ -416,12 +459,109 @@ export class HomeComponent implements OnInit, OnDestroy {
     });
   }
 
-  addPlantingIntention(data: {crop: string, acres: number, variety: string, plantingDate: Date, estimatedYield: number}): void {
-    this.toastService.info(`Adding ${data.crop} planting intention - coming soon`);
+  addPlantingIntention(data: {farmId: string, crop: string, acres: number, plantingDate: Date, estimatedYield: number}): void {
+    console.log('addPlantingIntention called with:', data);
+    console.log('selectedCustomer:', this.selectedCustomer?.id);
+    console.log('selectedFarmId:', this.selectedFarmId);
+
+    if (!this.selectedCustomer) {
+      console.log('No customer selected, returning');
+      return;
+    }
+
+    const apiData = {
+      customerId: this.selectedCustomer.id,
+      farmId: data.farmId,
+      crop: data.crop,
+      acres: data.acres,
+      plantingDate: data.plantingDate,
+      estimatedYield: data.estimatedYield
+    };
+    console.log('Calling API with:', apiData);
+
+    this.apiService.createPlantingIntention(apiData).subscribe({
+      next: (intention) => {
+        console.log('API returned intention:', intention);
+        console.log('Current customerPlantingIntentions length:', this.customerPlantingIntentions.length);
+
+        // Add to global list
+        this.plantingIntentions = [...this.plantingIntentions, intention];
+
+        // Add to customer-specific list if it matches the selected farm
+        if (!this.selectedFarmId || intention.farmId === this.selectedFarmId) {
+          this.customerPlantingIntentions = [...this.customerPlantingIntentions, intention];
+          console.log('Added to customerPlantingIntentions, new length:', this.customerPlantingIntentions.length);
+        } else {
+          console.log('NOT added to customerPlantingIntentions - farm mismatch', {
+            intentionFarmId: intention.farmId,
+            selectedFarmId: this.selectedFarmId
+          });
+        }
+
+        // Update allCustomerPlantingIntentions for Activity Summary
+        this.allCustomerPlantingIntentions = [...this.allCustomerPlantingIntentions, intention];
+
+        this.toastService.success('Planting intention added');
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('API error:', err);
+        this.toastService.error('Failed to add planting intention');
+      }
+    });
   }
 
-  editPlantingIntention(data: {intentionId: string, crop: string, acres: number, variety: string, plantingDate: Date, estimatedYield: number}): void {
-    this.toastService.info(`Editing ${data.crop} intention - coming soon`);
+  editPlantingIntention(data: {intentionId: string, farmId: string, crop: string, acres: number, plantingDate: Date, estimatedYield: number}): void {
+    this.apiService.updatePlantingIntention(data.intentionId, {
+      crop: data.crop,
+      acres: data.acres,
+      plantingDate: data.plantingDate,
+      estimatedYield: data.estimatedYield
+    }).subscribe({
+      next: (updatedIntention) => {
+        // Update in global list
+        this.plantingIntentions = this.plantingIntentions.map(p =>
+          p.id === data.intentionId ? updatedIntention : p
+        );
+
+        // Update in customer-specific list
+        this.customerPlantingIntentions = this.customerPlantingIntentions.map(p =>
+          p.id === data.intentionId ? updatedIntention : p
+        );
+
+        // Update in allCustomerPlantingIntentions for Activity Summary
+        this.allCustomerPlantingIntentions = this.allCustomerPlantingIntentions.map(p =>
+          p.id === data.intentionId ? updatedIntention : p
+        );
+
+        this.toastService.success('Planting intention updated');
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.toastService.error('Failed to update planting intention');
+      }
+    });
+  }
+
+  deletePlantingIntention(intentionId: string): void {
+    this.apiService.deletePlantingIntention(intentionId).subscribe({
+      next: () => {
+        // Remove from global list
+        this.plantingIntentions = this.plantingIntentions.filter(p => p.id !== intentionId);
+
+        // Remove from customer-specific list
+        this.customerPlantingIntentions = this.customerPlantingIntentions.filter(p => p.id !== intentionId);
+
+        // Remove from allCustomerPlantingIntentions for Activity Summary
+        this.allCustomerPlantingIntentions = this.allCustomerPlantingIntentions.filter(p => p.id !== intentionId);
+
+        this.toastService.success('Planting intention deleted');
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.toastService.error('Failed to delete planting intention');
+      }
+    });
   }
 
   addNote(content: string): void {
@@ -456,6 +596,46 @@ export class HomeComponent implements OnInit, OnDestroy {
       },
       error: () => {
         this.toastService.error('Failed to update note');
+      }
+    });
+  }
+
+  editNote(data: { noteId: string; content: string }): void {
+    this.apiService.updateNote(data.noteId, data.content).subscribe({
+      next: (updated) => {
+        // Update in global list
+        const index = this.notes.findIndex(n => n.id === updated.id);
+        if (index >= 0) {
+          this.notes[index] = updated;
+          this.notes = [...this.notes];
+        }
+        // Update in customer-specific list
+        const customerIndex = this.customerNotes.findIndex(n => n.id === updated.id);
+        if (customerIndex >= 0) {
+          this.customerNotes[customerIndex] = updated;
+          this.customerNotes = [...this.customerNotes];
+        }
+        this.toastService.success('Note updated');
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.toastService.error('Failed to update note');
+      }
+    });
+  }
+
+  deleteNote(noteId: string): void {
+    this.apiService.deleteNote(noteId).subscribe({
+      next: () => {
+        // Remove from global list
+        this.notes = this.notes.filter(n => n.id !== noteId);
+        // Remove from customer-specific list
+        this.customerNotes = this.customerNotes.filter(n => n.id !== noteId);
+        this.toastService.success('Note deleted');
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.toastService.error('Failed to delete note');
       }
     });
   }

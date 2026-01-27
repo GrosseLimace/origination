@@ -50,11 +50,12 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
+// Apply CORS policy to allow Angular frontend requests
+// MUST come before UseHttpsRedirection to handle preflight requests correctly
+app.UseCors("AllowAngular");
+
 // Redirect HTTP requests to HTTPS for security
 app.UseHttpsRedirection();
-
-// Apply CORS policy to allow Angular frontend requests
-app.UseCors("AllowAngular");
 
 // Map controller routes (e.g., /api/customers, /api/contracts, etc.)
 app.MapControllers();

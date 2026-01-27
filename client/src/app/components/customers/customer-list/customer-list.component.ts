@@ -21,10 +21,10 @@ interface LastContactInfo {
     <app-card>
       <app-card-content class="p-0">
         <!-- Title and Search -->
-        <div class="px-4 pt-3 pb-2">
-          <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Customers</h3>
+        <div class="pt-3 pb-2">
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-white px-4">Customers</h3>
         </div>
-        <div class="px-4 py-2 border-b border-gray-200 dark:border-gray-700">
+        <div class="py-2 border-b border-gray-200 dark:border-gray-700 px-4">
           <div class="relative">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
               <circle cx="11" cy="11" r="8"/>
@@ -42,7 +42,7 @@ interface LastContactInfo {
 
         <!-- Saved Lists Filter -->
         @if (savedLists.length > 0) {
-          <div class="px-4 py-2 border-b border-gray-200 dark:border-gray-700">
+          <div class="py-2 border-b border-gray-200 dark:border-gray-700 px-4">
             <select
               [(ngModel)]="selectedListId"
               (ngModelChange)="applyFilters()"

@@ -277,8 +277,11 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
               <app-planting-intentions-table
                 [plantingIntentions]="plantingIntentions"
                 [customer]="customer"
-                (add)="onAddPlanting.emit()"
-                (edit)="onEditPlanting.emit($event)">
+                [selectedFarmId]="selectedFarmId || null"
+                [farms]="farms"
+                (add)="onAddPlanting.emit($event)"
+                (edit)="onEditPlanting.emit($event)"
+                (delete)="onDeletePlanting.emit($event)">
               </app-planting-intentions-table>
             }
             @case ('storage') {
@@ -319,8 +322,9 @@ export class CustomerProfileComponent implements OnChanges {
   @Input() allCustomerPlantingIntentions: PlantingIntention[] = [];
   @Input() allCustomerStoredGrain: StoredGrain[] = [];
 
-  @Output() onAddPlanting = new EventEmitter<{crop: string, acres: number, variety: string, plantingDate: Date, estimatedYield: number}>();
-  @Output() onEditPlanting = new EventEmitter<{intentionId: string, crop: string, acres: number, variety: string, plantingDate: Date, estimatedYield: number}>();
+  @Output() onAddPlanting = new EventEmitter<{farmId: string, crop: string, acres: number, plantingDate: Date, estimatedYield: number}>();
+  @Output() onEditPlanting = new EventEmitter<{intentionId: string, farmId: string, crop: string, acres: number, plantingDate: Date, estimatedYield: number}>();
+  @Output() onDeletePlanting = new EventEmitter<string>();
   @Output() onAddNote = new EventEmitter<string>();
   @Output() onTogglePin = new EventEmitter<Note>();
   @Output() onFarmChange = new EventEmitter<string>();

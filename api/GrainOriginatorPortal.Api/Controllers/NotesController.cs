@@ -44,6 +44,24 @@ public class NotesController : ControllerBase
         }
         return Ok(note);
     }
+
+    [HttpPut("{id}")]
+    public ActionResult<Note> Update(string id, [FromBody] UpdateNoteRequest request)
+    {
+        var note = _dataService.UpdateNote(id, request.Content);
+        if (note == null)
+        {
+            return NotFound();
+        }
+        return Ok(note);
+    }
+
+    [HttpDelete("{id}")]
+    public ActionResult Delete(string id)
+    {
+        _dataService.DeleteNote(id);
+        return Ok();
+    }
 }
 
 public class CreateNoteRequest
@@ -52,6 +70,13 @@ public class CreateNoteRequest
     [System.ComponentModel.DataAnnotations.StringLength(100)]
     public string CustomerId { get; set; } = string.Empty;
 
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.StringLength(2000)]
+    public string Content { get; set; } = string.Empty;
+}
+
+public class UpdateNoteRequest
+{
     [System.ComponentModel.DataAnnotations.Required]
     [System.ComponentModel.DataAnnotations.StringLength(2000)]
     public string Content { get; set; } = string.Empty;

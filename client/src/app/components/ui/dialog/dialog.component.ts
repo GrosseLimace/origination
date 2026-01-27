@@ -7,7 +7,7 @@ import { CommonModule } from '@angular/common';
   imports: [CommonModule],
   template: `
     @if (isOpen) {
-      <div class="fixed inset-0 z-50 flex items-start justify-center py-8 px-4 overflow-y-auto">
+      <div class="fixed inset-0 z-50 flex items-center justify-center py-8 px-4 overflow-y-auto">
         <!-- Backdrop -->
         <div
           class="fixed inset-0 bg-black/55"

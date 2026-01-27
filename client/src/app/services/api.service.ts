@@ -126,22 +126,25 @@ export class ApiService {
     farmId: string;
     crop: string;
     acres: number;
-    variety: string;
     plantingDate: Date;
     estimatedYield: number;
-  }): Observable<void> {
-    return this.http.post<void>(`${this.baseUrl}/plantingintentions`, data);
+  }): Observable<PlantingIntention> {
+    return this.http.post<PlantingIntention>(`${this.baseUrl}/plantingintentions`, data);
   }
 
   /** Updates an existing planting intention */
   updatePlantingIntention(id: string, data: {
     crop: string;
     acres: number;
-    variety: string;
     plantingDate: Date;
     estimatedYield: number;
-  }): Observable<void> {
-    return this.http.put<void>(`${this.baseUrl}/plantingintentions/${id}`, data);
+  }): Observable<PlantingIntention> {
+    return this.http.put<PlantingIntention>(`${this.baseUrl}/plantingintentions/${id}`, data);
+  }
+
+  /** Deletes a planting intention */
+  deletePlantingIntention(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/plantingintentions/${id}`);
   }
 
   // ==========================================================================
@@ -166,6 +169,16 @@ export class ApiService {
   /** Toggles the pinned status of a note */
   toggleNotePin(id: string): Observable<Note> {
     return this.http.put<Note>(`${this.baseUrl}/notes/${id}/toggle-pin`, {});
+  }
+
+  /** Updates the content of a note */
+  updateNote(id: string, content: string): Observable<Note> {
+    return this.http.put<Note>(`${this.baseUrl}/notes/${id}`, { content });
+  }
+
+  /** Deletes a note */
+  deleteNote(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/notes/${id}`);
   }
 
   // ==========================================================================
