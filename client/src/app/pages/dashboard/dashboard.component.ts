@@ -141,9 +141,32 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
       <!-- Planting Intentions - Full Width -->
       <app-card>
         <app-card-header>
-          <app-card-title>2025 Planting Intentions</app-card-title>
-          <app-card-description>Planned crops and production estimates across your territory</app-card-description>
+          <div
+            (click)="togglePlantingIntentions()"
+            class="flex items-center gap-3 w-full cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 -mx-6 -my-4 px-6 py-4 rounded-lg transition-colors"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="text-gray-500 dark:text-gray-400 transition-transform duration-200 flex-shrink-0"
+              [class.rotate-180]="!plantingIntentionsExpanded"
+            >
+              <polyline points="18 15 12 9 6 15"></polyline>
+            </svg>
+            <div>
+              <app-card-title>2025 Planting Intentions</app-card-title>
+              <app-card-description>Planned crops and production estimates across your territory</app-card-description>
+            </div>
+          </div>
         </app-card-header>
+        @if (plantingIntentionsExpanded) {
         <app-card-content>
           <!-- First Row: Average Yield Estimates and Total Estimated Production -->
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
@@ -419,6 +442,7 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
             </div>
           </div>
         </app-card-content>
+        }
       </app-card>
     </div>
   `
@@ -461,8 +485,23 @@ export class DashboardComponent implements OnInit, OnDestroy {
   // Estimated harvest handle based on production and market share
   harvestHandle = { wheat: 0, corn: 0, milo: 0, soybeans: 0 };
 
+  // Planting Intentions section expanded state
+  plantingIntentionsExpanded = false;
+
   ngOnInit(): void {
+    // Load the saved state from localStorage
+    const savedState = localStorage.getItem('plantingIntentionsExpanded');
+    if (savedState !== null) {
+      this.plantingIntentionsExpanded = savedState === 'true';
+    }
+
     this.loadData();
+  }
+
+  togglePlantingIntentions(): void {
+    this.plantingIntentionsExpanded = !this.plantingIntentionsExpanded;
+    // Save the state to localStorage
+    localStorage.setItem('plantingIntentionsExpanded', this.plantingIntentionsExpanded.toString());
   }
 
   ngOnDestroy(): void {
