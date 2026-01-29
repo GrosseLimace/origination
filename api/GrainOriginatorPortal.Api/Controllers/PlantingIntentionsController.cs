@@ -35,7 +35,7 @@ public class PlantingIntentionsController : ControllerBase
             request.FarmId,
             request.Crop,
             request.Acres,
-            request.PlantingDate,
+            request.PlantingYear,
             request.EstimatedYield
         );
         return Ok(newIntention);
@@ -48,7 +48,7 @@ public class PlantingIntentionsController : ControllerBase
             id,
             request.Crop,
             request.Acres,
-            request.PlantingDate,
+            request.PlantingYear,
             request.EstimatedYield
         );
         return Ok(updatedIntention);
@@ -79,7 +79,8 @@ public class CreatePlantingIntentionRequest
     [System.ComponentModel.DataAnnotations.Range(1, 100000)]
     public int Acres { get; set; }
 
-    public DateTime PlantingDate { get; set; }
+    [System.ComponentModel.DataAnnotations.Range(2020, 2100)]
+    public int PlantingYear { get; set; }
 
     [System.ComponentModel.DataAnnotations.Range(1, 500)]
     public int EstimatedYield { get; set; }
@@ -94,7 +95,8 @@ public class UpdatePlantingIntentionRequest
     [System.ComponentModel.DataAnnotations.Range(1, 100000)]
     public int Acres { get; set; }
 
-    public DateTime PlantingDate { get; set; }
+    [System.ComponentModel.DataAnnotations.Range(2020, 2100)]
+    public int PlantingYear { get; set; }
 
     [System.ComponentModel.DataAnnotations.Range(1, 500)]
     public int EstimatedYield { get; set; }

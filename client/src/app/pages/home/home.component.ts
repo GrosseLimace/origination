@@ -1,8 +1,8 @@
 import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router, NavigationEnd } from '@angular/router';
 import { Subject, forkJoin } from 'rxjs';
-import { takeUntil } from 'rxjs/operators';
+import { takeUntil, filter } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
 import { AppStateService } from '../../services/app-state.service';
 import { ToastService } from '../../services/toast.service';
@@ -62,11 +62,11 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
       </div>
     }
 
-    <!-- When customer selected: 3-column grid layout -->
+    <!-- When customer selected: 2-column layout -->
     @if (selectedCustomer) {
-      <div class="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-10 gap-6">
-        <!-- Customer List - 1/3 on lg, 20% on xl -->
-        <div class="lg:col-span-1 xl:col-span-2 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)]" [class.hidden]="isMobile">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- Customer List - Wider on larger screens -->
+        <div class="lg:col-span-3 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)]" [class.hidden]="isMobile">
           <app-customer-list
             [customers]="customers"
             [selectedCustomer]="selectedCustomer"
@@ -76,11 +76,12 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
           />
         </div>
 
-        <!-- Profile and Notes Container - 2/3 on lg, then split on xl -->
-        <div class="lg:col-span-2 xl:col-span-8">
-          <div class="xl:grid xl:grid-cols-8 xl:gap-6 space-y-6 xl:space-y-0">
-            <!-- Profile Section - Full width until xl, then 5/8 (62.5% = 50% of total) -->
-            <div class="xl:col-span-5 space-y-6">
+        <!-- Profile and Notes Container - Takes remaining space -->
+        <div class="lg:col-span-9">
+          <!-- Laptop: Stacked layout. Large Monitor (2xl+): Side-by-side layout -->
+          <div class="2xl:grid 2xl:grid-cols-8 2xl:gap-6 space-y-6 2xl:space-y-0">
+            <!-- Profile Section - Full width on laptop, 5/8 on large monitor -->
+            <div class="2xl:col-span-5 space-y-6">
               <!-- Back button on mobile -->
               <button
                 class="lg:hidden flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-4"
@@ -119,8 +120,8 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
               </app-customer-profile>
             </div>
 
-            <!-- Notes Column - Below profile until xl, then 3/8 (37.5% = 30% of total), sticky on xl+ -->
-            <div class="xl:col-span-3 xl:sticky xl:top-20 xl:self-start xl:max-h-[calc(100vh-6rem)] xl:overflow-auto">
+            <!-- Notes Section - Below profile on laptop, beside on large monitor (2xl+) -->
+            <div class="2xl:col-span-3 2xl:sticky 2xl:top-20 2xl:self-start 2xl:max-h-[calc(100vh-6rem)] 2xl:overflow-auto">
               <app-card>
                 <app-card-header>
                   <div class="flex items-center justify-between">
@@ -132,7 +133,7 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                         <line x1="8" x2="8" y1="2" y2="6"/>
                         <line x1="3" x2="21" y1="10" y2="10"/>
                       </svg>
-                      <span>Last contacted: {{ getLastContactedDate() }}</span>
+                      <span class="hidden sm:inline">Last contacted: {{ getLastContactedDate() }}</span>
                     </div>
                   </div>
                 </app-card-header>
@@ -160,8 +161,13 @@ export class HomeComponent implements OnInit, OnDestroy {
   private toastService = inject(ToastService);
   private cdr = inject(ChangeDetectorRef);
   private route = inject(ActivatedRoute);
+  private router = inject(Router);
   private destroy$ = new Subject<void>();
   private resizeHandler = () => this.checkMobile();
+
+  // Loading state to prevent concurrent data loads
+  private isLoading = false;
+  private isFirstLoad = true;
 
   customers: Customer[] = [];
   contracts: Contract[] = [];
@@ -190,6 +196,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   isMobile = false;
 
   ngOnInit(): void {
+    console.log('[Home] ngOnInit - Starting initial data load');
     this.loadAllData();
     this.checkMobile();
     window.addEventListener('resize', this.resizeHandler);
@@ -199,6 +206,32 @@ export class HomeComponent implements OnInit, OnDestroy {
       const customerId = params['customerId'];
       if (customerId) {
         this.selectCustomerById(customerId);
+      }
+    });
+
+    // Reload data when navigating back to the home route
+    this.router.events.pipe(
+      filter(event => event instanceof NavigationEnd),
+      takeUntil(this.destroy$)
+    ).subscribe((event: NavigationEnd) => {
+      console.log('[Home] Navigation event:', event.url, event.urlAfterRedirects);
+
+      // Skip the first NavigationEnd event which happens during component initialization
+      if (this.isFirstLoad) {
+        console.log('[Home] Skipping first NavigationEnd (component initialization)');
+        this.isFirstLoad = false;
+        return;
+      }
+
+      // Only reload if we're navigating TO the home route (check for root path or with query params)
+      const isHomeRoute = event.urlAfterRedirects === '/' ||
+                          event.urlAfterRedirects.startsWith('/?') ||
+                          event.url === '/' ||
+                          event.url.startsWith('/?');
+
+      if (isHomeRoute) {
+        console.log('[Home] Reloading data after navigation to home');
+        this.loadAllData();
       }
     });
   }
@@ -233,6 +266,16 @@ export class HomeComponent implements OnInit, OnDestroy {
   }
 
   private loadAllData(): void {
+    // Prevent concurrent data loads
+    if (this.isLoading) {
+      console.log('[Home] loadAllData() called but already loading, skipping...');
+      return;
+    }
+
+    this.isLoading = true;
+    const loadTimestamp = new Date().toISOString();
+    console.log(`[Home] loadAllData() called at ${loadTimestamp}`);
+
     forkJoin({
       customers: this.apiService.getCustomers(),
       contracts: this.apiService.getContracts(),
@@ -244,6 +287,9 @@ export class HomeComponent implements OnInit, OnDestroy {
       savedLists: this.apiService.getSavedLists()
     }).pipe(takeUntil(this.destroy$)).subscribe({
       next: (data) => {
+        console.log(`[Home] Data received at ${new Date().toISOString()} (load started at ${loadTimestamp})`);
+        console.log(`[Home] Customers: ${data.customers.length}, Contracts: ${data.contracts.length}, Tickets: ${data.tickets.length}, Planting Intentions: ${data.plantingIntentions.length}`);
+
         this.customers = data.customers;
         this.contracts = data.contracts;
         this.tickets = data.tickets;
@@ -253,22 +299,43 @@ export class HomeComponent implements OnInit, OnDestroy {
         this.farms = data.farms;
         this.savedLists = data.savedLists;
 
-        // Restore selected customer after data loads
+        console.log('[Home] All data loaded, triggering final change detection');
+        this.isLoading = false;
+        this.cdr.detectChanges();
+
+        // Restore selected customer after data loads and change detection completes
+        // Use setTimeout to ensure data binding has completed before restoring selection
         const savedCustomer = this.appState.selectedCustomer();
         const savedFarmId = this.appState.selectedFarmId();
+        console.log('[Home] Attempting to restore customer:', savedCustomer?.id, 'farm:', savedFarmId);
+
         if (savedCustomer) {
-          // Find the customer in the newly loaded data
-          const customer = this.customers.find(c => c.id === savedCustomer.id);
-          if (customer) {
-            this.selectedCustomer = customer;
-            this.selectedFarmId = savedFarmId || undefined;
-            this.loadCustomerData(customer.id);
-            this.cdr.detectChanges();
-          }
+          // Use setTimeout to defer customer restoration until after current change detection cycle
+          setTimeout(() => {
+            // Find the customer in the newly loaded data
+            const customer = this.customers.find(c => c.id === savedCustomer.id);
+            if (customer) {
+              console.log('[Home] Found customer in loaded data, restoring selection via handleSelectCustomer');
+              // Use handleSelectCustomer to trigger the full selection flow
+              this.selectedCustomer = customer;
+              this.selectedFarmId = savedFarmId || undefined;
+              this.appState.selectFarm(savedFarmId || null);
+              this.loadCustomerData(customer.id, customer);
+              console.log('[Home] Customer data loaded, planting intentions:', this.customerPlantingIntentions.length);
+              this.cdr.detectChanges();
+            } else {
+              console.warn('[Home] Saved customer not found in loaded data');
+            }
+          }, 0);
+        } else {
+          console.log('[Home] No saved customer to restore');
         }
       },
-      error: () => {
+      error: (err) => {
+        console.error('[Home] Error loading data:', err);
+        this.isLoading = false;
         this.toastService.error('Failed to load data');
+        this.cdr.detectChanges();
       }
     });
   }
@@ -293,10 +360,16 @@ export class HomeComponent implements OnInit, OnDestroy {
   }
 
   private loadCustomerData(customerId: string, customer?: Customer): void {
+    console.log('[Home] loadCustomerData called for customer:', customerId);
+    console.log('[Home] Available data - Contracts:', this.contracts.length, 'Planting Intentions:', this.plantingIntentions.length);
+
     // Create new array references to trigger change detection
     // Use provided customer or fall back to selectedCustomer
     const currentCustomer = customer || this.selectedCustomer;
-    if (!currentCustomer) return;
+    if (!currentCustomer) {
+      console.warn('[Home] No customer found for loadCustomerData');
+      return;
+    }
 
     // Get linked producer IDs (customers this customer links to)
     const linkedProducerIds = currentCustomer.linkedProducerIds || [];
@@ -311,6 +384,7 @@ export class HomeComponent implements OnInit, OnDestroy {
 
     // Get all relevant customer IDs (current customer + all linked producers)
     const allCustomerIds = [customerId, ...allLinkedIds];
+    console.log('[Home] Loading data for customer IDs:', allCustomerIds);
 
     // Always load unfiltered data for Activity Summary (all farms from current customer + linked producers)
     this.allCustomerContracts = [...this.contracts.filter(c => allCustomerIds.includes(c.customerId))];
@@ -360,6 +434,14 @@ export class HomeComponent implements OnInit, OnDestroy {
     if (!this.selectedFarmId && this.customerFarms.length > 0) {
       this.selectedFarmId = this.customerFarms[0].id;
     }
+
+    console.log('[Home] Customer data loaded:', {
+      contracts: this.customerContracts.length,
+      tickets: this.customerTickets.length,
+      plantingIntentions: this.customerPlantingIntentions.length,
+      farms: this.customerFarms.length,
+      selectedFarmId: this.selectedFarmId
+    });
   }
 
   handleSaveCustomer(data: { customerId: string; location: string; phone: string; email: string; farmIds: string[]; linkedProducerIds: string[]; eSignEnabled: boolean }): void {
@@ -459,7 +541,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     });
   }
 
-  addPlantingIntention(data: {farmId: string, crop: string, acres: number, plantingDate: Date, estimatedYield: number}): void {
+  addPlantingIntention(data: {farmId: string, crop: string, acres: number, plantingYear: number, estimatedYield: number}): void {
     console.log('addPlantingIntention called with:', data);
     console.log('selectedCustomer:', this.selectedCustomer?.id);
     console.log('selectedFarmId:', this.selectedFarmId);
@@ -474,7 +556,7 @@ export class HomeComponent implements OnInit, OnDestroy {
       farmId: data.farmId,
       crop: data.crop,
       acres: data.acres,
-      plantingDate: data.plantingDate,
+      plantingYear: data.plantingYear,
       estimatedYield: data.estimatedYield
     };
     console.log('Calling API with:', apiData);
@@ -511,11 +593,11 @@ export class HomeComponent implements OnInit, OnDestroy {
     });
   }
 
-  editPlantingIntention(data: {intentionId: string, farmId: string, crop: string, acres: number, plantingDate: Date, estimatedYield: number}): void {
+  editPlantingIntention(data: {intentionId: string, farmId: string, crop: string, acres: number, plantingYear: number, estimatedYield: number}): void {
     this.apiService.updatePlantingIntention(data.intentionId, {
       crop: data.crop,
       acres: data.acres,
-      plantingDate: data.plantingDate,
+      plantingYear: data.plantingYear,
       estimatedYield: data.estimatedYield
     }).subscribe({
       next: (updatedIntention) => {

@@ -100,24 +100,24 @@ public class MockDataService : IDataService
         _plantingIntentions = new List<PlantingIntention>
         {
             // Customer 1 - John Anderson (F001 and F002)
-            new() { Id = "P001", CustomerId = "1", FarmId = "F001", Crop = "IR Corn", Acres = 400, Variety = "Pioneer P1197", PlantingDate = new DateTime(2025, 4, 25), EstimatedYield = 215 },
-            new() { Id = "P002", CustomerId = "1", FarmId = "F001", Crop = "IR Beans", Acres = 200, Variety = "Asgrow AG46X6", PlantingDate = new DateTime(2025, 5, 10), EstimatedYield = 60 },
-            new() { Id = "P003", CustomerId = "1", FarmId = "F002", Crop = "DL YC", Acres = 400, Variety = "DeKalb DKC57-39", PlantingDate = new DateTime(2025, 4, 30), EstimatedYield = 100 },
-            new() { Id = "P004", CustomerId = "1", FarmId = "F002", Crop = "DL HRWW", Acres = 200, Variety = "WB4269", PlantingDate = new DateTime(2024, 10, 10), EstimatedYield = 50 },
+            new() { Id = "P001", CustomerId = "1", FarmId = "F001", Crop = "IR Corn", Acres = 400, Variety = "Pioneer P1197", PlantingYear = 2024, EstimatedYield = 215 },
+            new() { Id = "P002", CustomerId = "1", FarmId = "F001", Crop = "IR Beans", Acres = 200, Variety = "Asgrow AG46X6", PlantingYear = 2024, EstimatedYield = 60 },
+            new() { Id = "P003", CustomerId = "1", FarmId = "F002", Crop = "DL YC", Acres = 400, Variety = "DeKalb DKC57-39", PlantingYear = 2024, EstimatedYield = 100 },
+            new() { Id = "P004", CustomerId = "1", FarmId = "F002", Crop = "DL HRWW", Acres = 200, Variety = "WB4269", PlantingYear = 2024, EstimatedYield = 50 },
             // Customer 2 - Sarah Mitchell (F003)
-            new() { Id = "P005", CustomerId = "2", FarmId = "F003", Crop = "IR Corn", Acres = 1400, Variety = "DeKalb DKC62-54", PlantingDate = new DateTime(2025, 4, 20), EstimatedYield = 215 },
-            new() { Id = "P006", CustomerId = "2", FarmId = "F003", Crop = "DL YSB", Acres = 800, Variety = "Channel 4518R2X", PlantingDate = new DateTime(2025, 5, 5), EstimatedYield = 30 },
-            new() { Id = "P007", CustomerId = "2", FarmId = "F003", Crop = "IR HRWW", Acres = 200, Variety = "Everest 143 CL", PlantingDate = new DateTime(2024, 10, 5), EstimatedYield = 75 },
+            new() { Id = "P005", CustomerId = "2", FarmId = "F003", Crop = "IR Corn", Acres = 1400, Variety = "DeKalb DKC62-54", PlantingYear = 2024, EstimatedYield = 215 },
+            new() { Id = "P006", CustomerId = "2", FarmId = "F003", Crop = "DL YSB", Acres = 800, Variety = "Channel 4518R2X", PlantingYear = 2024, EstimatedYield = 30 },
+            new() { Id = "P007", CustomerId = "2", FarmId = "F003", Crop = "IR HRWW", Acres = 200, Variety = "Everest 143 CL", PlantingYear = 2024, EstimatedYield = 75 },
             // Customer 3 - Robert Johnson (F004)
-            new() { Id = "P008", CustomerId = "3", FarmId = "F004", Crop = "DL YC", Acres = 500, Variety = "Pioneer P1870", PlantingDate = new DateTime(2025, 5, 1), EstimatedYield = 100 },
-            new() { Id = "P009", CustomerId = "3", FarmId = "F004", Crop = "DL Milo", Acres = 300, Variety = "NK 180", PlantingDate = new DateTime(2025, 5, 20), EstimatedYield = 75 },
+            new() { Id = "P008", CustomerId = "3", FarmId = "F004", Crop = "DL YC", Acres = 500, Variety = "Pioneer P1870", PlantingYear = 2024, EstimatedYield = 100 },
+            new() { Id = "P009", CustomerId = "3", FarmId = "F004", Crop = "DL Milo", Acres = 300, Variety = "NK 180", PlantingYear = 2024, EstimatedYield = 75 },
             // Customer 4 - Emily Chen (F005)
-            new() { Id = "P010", CustomerId = "4", FarmId = "F005", Crop = "IR Corn", Acres = 900, Variety = "Pioneer P2089", PlantingDate = new DateTime(2025, 4, 18), EstimatedYield = 215 },
-            new() { Id = "P011", CustomerId = "4", FarmId = "F005", Crop = "IR Beans", Acres = 500, Variety = "Asgrow AG53X9", PlantingDate = new DateTime(2025, 5, 8), EstimatedYield = 60 },
-            new() { Id = "P012", CustomerId = "4", FarmId = "F005", Crop = "IR Milo", Acres = 200, Variety = "Dekalb DKS 53-67", PlantingDate = new DateTime(2025, 5, 25), EstimatedYield = 120 },
+            new() { Id = "P010", CustomerId = "4", FarmId = "F005", Crop = "IR Corn", Acres = 900, Variety = "Pioneer P2089", PlantingYear = 2024, EstimatedYield = 215 },
+            new() { Id = "P011", CustomerId = "4", FarmId = "F005", Crop = "IR Beans", Acres = 500, Variety = "Asgrow AG53X9", PlantingYear = 2024, EstimatedYield = 60 },
+            new() { Id = "P012", CustomerId = "4", FarmId = "F005", Crop = "IR Milo", Acres = 200, Variety = "Dekalb DKS 53-67", PlantingYear = 2024, EstimatedYield = 120 },
             // Customer 5 - Michael Brown (F006)
-            new() { Id = "P013", CustomerId = "5", FarmId = "F006", Crop = "DL HRWW", Acres = 400, Variety = "Everest 250W", PlantingDate = new DateTime(2024, 10, 8), EstimatedYield = 50 },
-            new() { Id = "P014", CustomerId = "5", FarmId = "F006", Crop = "DL YC", Acres = 550, Variety = "Channel 196-53", PlantingDate = new DateTime(2025, 4, 28), EstimatedYield = 100 }
+            new() { Id = "P013", CustomerId = "5", FarmId = "F006", Crop = "DL HRWW", Acres = 400, Variety = "Everest 250W", PlantingYear = 2024, EstimatedYield = 50 },
+            new() { Id = "P014", CustomerId = "5", FarmId = "F006", Crop = "DL YC", Acres = 550, Variety = "Channel 196-53", PlantingYear = 2024, EstimatedYield = 100 }
         };
 
         // Initialize Notes (updated with actual crop names)
@@ -218,7 +218,7 @@ public class MockDataService : IDataService
     public List<PlantingIntention> GetPlantingIntentions() => _plantingIntentions;
     public List<PlantingIntention> GetPlantingIntentionsByCustomer(string customerId) => _plantingIntentions.Where(p => p.CustomerId == customerId).ToList();
 
-    public PlantingIntention AddPlantingIntention(string customerId, string farmId, string crop, int acres, DateTime plantingDate, int estimatedYield)
+    public PlantingIntention AddPlantingIntention(string customerId, string farmId, string crop, int acres, int plantingYear, int estimatedYield)
     {
         var newId = $"P{(_plantingIntentions.Count + 1).ToString().PadLeft(3, '0')}";
         var intention = new PlantingIntention
@@ -228,21 +228,21 @@ public class MockDataService : IDataService
             FarmId = farmId,
             Crop = crop,
             Acres = acres,
-            PlantingDate = plantingDate,
+            PlantingYear = plantingYear,
             EstimatedYield = estimatedYield
         };
         _plantingIntentions.Add(intention);
         return intention;
     }
 
-    public PlantingIntention? UpdatePlantingIntention(string intentionId, string crop, int acres, DateTime plantingDate, int estimatedYield)
+    public PlantingIntention? UpdatePlantingIntention(string intentionId, string crop, int acres, int plantingYear, int estimatedYield)
     {
         var intention = _plantingIntentions.FirstOrDefault(p => p.Id == intentionId);
         if (intention != null)
         {
             intention.Crop = crop;
             intention.Acres = acres;
-            intention.PlantingDate = plantingDate;
+            intention.PlantingYear = plantingYear;
             intention.EstimatedYield = estimatedYield;
         }
         return intention;

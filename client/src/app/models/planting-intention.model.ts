@@ -5,6 +5,6 @@ export interface PlantingIntention {
   crop: string;
   acres: number;
   variety: string;
-  plantingDate: Date;
+  plantingYear: number;
   estimatedYield: number;
 }

@@ -322,8 +322,8 @@ export class CustomerProfileComponent implements OnChanges {
   @Input() allCustomerPlantingIntentions: PlantingIntention[] = [];
   @Input() allCustomerStoredGrain: StoredGrain[] = [];
 
-  @Output() onAddPlanting = new EventEmitter<{farmId: string, crop: string, acres: number, plantingDate: Date, estimatedYield: number}>();
-  @Output() onEditPlanting = new EventEmitter<{intentionId: string, farmId: string, crop: string, acres: number, plantingDate: Date, estimatedYield: number}>();
+  @Output() onAddPlanting = new EventEmitter<{farmId: string, crop: string, acres: number, plantingYear: number, estimatedYield: number}>();
+  @Output() onEditPlanting = new EventEmitter<{intentionId: string, farmId: string, crop: string, acres: number, plantingYear: number, estimatedYield: number}>();
   @Output() onDeletePlanting = new EventEmitter<string>();
   @Output() onAddNote = new EventEmitter<string>();
   @Output() onTogglePin = new EventEmitter<Note>();

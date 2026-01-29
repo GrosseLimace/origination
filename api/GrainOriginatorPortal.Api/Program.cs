@@ -26,13 +26,13 @@ builder.Services.AddOpenApi();
 builder.Services.AddSingleton<IDataService, MockDataService>();
 
 // Configure CORS to allow requests from the Angular development server.
-// This is required because the Angular app runs on a different port (4200)
+// This is required because the Angular app runs on a different port (4200/4202)
 // than the API (5000), which would otherwise be blocked by browser security.
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAngular", policy =>
     {
-        policy.WithOrigins("http://localhost:4200")
+        policy.WithOrigins("http://localhost:4200", "http://localhost:4201", "http://localhost:4202")
               .AllowAnyHeader()
               .AllowAnyMethod();
     });

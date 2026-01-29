@@ -1,8 +1,9 @@
-import { Component, OnInit, OnDestroy, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router } from '@angular/router';
+import { FormsModule } from '@angular/forms';
+import { Router, NavigationEnd } from '@angular/router';
 import { Subject, forkJoin } from 'rxjs';
-import { takeUntil } from 'rxjs/operators';
+import { takeUntil, filter } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
 import { ToastService } from '../../services/toast.service';
 import { Customer, Contract, PlantingIntention, StoredGrain } from '../../models';
@@ -12,7 +13,7 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent],
+  imports: [CommonModule, FormsModule, CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent],
   template: `
     <div class="space-y-6">
       <div class="flex items-center justify-between">
@@ -173,8 +174,44 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
             <!-- Average Yield Estimates -->
             <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
               <div class="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
-                <h3 class="text-base font-semibold text-gray-900 dark:text-white">Average Yield Estimates</h3>
-                <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Expected yields per acre by crop type</p>
+                <div class="flex items-center justify-between">
+                  <div>
+                    <h3 class="text-base font-semibold text-gray-900 dark:text-white">Average Yield Estimates</h3>
+                    <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Expected yields per acre by crop type</p>
+                  </div>
+                  @if (!yieldEditMode) {
+                    <button
+                      (click)="startYieldEdit()"
+                      class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-green-300 dark:border-green-700 text-xs sm:text-sm font-medium text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+                      </svg>
+                      Edit
+                    </button>
+                  } @else {
+                    <div class="flex gap-2">
+                      <button
+                        (click)="cancelYieldEdit()"
+                        class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-gray-300 dark:border-gray-600 text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                        Cancel
+                      </button>
+                      <button
+                        (click)="saveYieldEdit()"
+                        class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-green-300 dark:border-green-700 text-xs sm:text-sm font-medium text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M20 6L9 17l-5-5"/>
+                        </svg>
+                        Save
+                      </button>
+                    </div>
+                  }
+                </div>
               </div>
               <div class="overflow-x-auto">
                 <table class="w-full">
@@ -188,49 +225,129 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                       <td class="py-2 px-4 text-sm text-gray-900 dark:text-gray-100 font-medium">IR HRWW</td>
                       <td class="py-2 px-4 text-right text-sm">
-                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">{{ yieldEstimates['IR HRWW'] }}</span>
+                        @if (yieldEditMode) {
+                          <input
+                            type="number"
+                            [(ngModel)]="tempYieldEstimates['IR HRWW']"
+                            class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        } @else {
+                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                            {{ yieldEstimates['IR HRWW'] }}
+                          </span>
+                        }
                       </td>
                     </tr>
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                       <td class="py-2 px-4 text-sm text-gray-900 dark:text-gray-100 font-medium">DL HRWW</td>
                       <td class="py-2 px-4 text-right text-sm">
-                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">{{ yieldEstimates['DL HRWW'] }}</span>
+                        @if (yieldEditMode) {
+                          <input
+                            type="number"
+                            [(ngModel)]="tempYieldEstimates['DL HRWW']"
+                            class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        } @else {
+                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                            {{ yieldEstimates['DL HRWW'] }}
+                          </span>
+                        }
                       </td>
                     </tr>
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                       <td class="py-2 px-4 text-sm text-gray-900 dark:text-gray-100 font-medium">IR Corn</td>
                       <td class="py-2 px-4 text-right text-sm">
-                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">{{ yieldEstimates['IR Corn'] }}</span>
+                        @if (yieldEditMode) {
+                          <input
+                            type="number"
+                            [(ngModel)]="tempYieldEstimates['IR Corn']"
+                            class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        } @else {
+                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+                            {{ yieldEstimates['IR Corn'] }}
+                          </span>
+                        }
                       </td>
                     </tr>
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                       <td class="py-2 px-4 text-sm text-gray-900 dark:text-gray-100 font-medium">DL YC</td>
                       <td class="py-2 px-4 text-right text-sm">
-                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">{{ yieldEstimates['DL YC'] }}</span>
+                        @if (yieldEditMode) {
+                          <input
+                            type="number"
+                            [(ngModel)]="tempYieldEstimates['DL YC']"
+                            class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        } @else {
+                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+                            {{ yieldEstimates['DL YC'] }}
+                          </span>
+                        }
                       </td>
                     </tr>
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                       <td class="py-2 px-4 text-sm text-gray-900 dark:text-gray-100 font-medium">IR Milo</td>
                       <td class="py-2 px-4 text-right text-sm">
-                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">{{ yieldEstimates['IR Milo'] }}</span>
+                        @if (yieldEditMode) {
+                          <input
+                            type="number"
+                            [(ngModel)]="tempYieldEstimates['IR Milo']"
+                            class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        } @else {
+                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">
+                            {{ yieldEstimates['IR Milo'] }}
+                          </span>
+                        }
                       </td>
                     </tr>
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                       <td class="py-2 px-4 text-sm text-gray-900 dark:text-gray-100 font-medium">DL Milo</td>
                       <td class="py-2 px-4 text-right text-sm">
-                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">{{ yieldEstimates['DL Milo'] }}</span>
+                        @if (yieldEditMode) {
+                          <input
+                            type="number"
+                            [(ngModel)]="tempYieldEstimates['DL Milo']"
+                            class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        } @else {
+                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">
+                            {{ yieldEstimates['DL Milo'] }}
+                          </span>
+                        }
                       </td>
                     </tr>
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                       <td class="py-2 px-4 text-sm text-gray-900 dark:text-gray-100 font-medium">IR Beans</td>
                       <td class="py-2 px-4 text-right text-sm">
-                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">{{ yieldEstimates['IR Beans'] }}</span>
+                        @if (yieldEditMode) {
+                          <input
+                            type="number"
+                            [(ngModel)]="tempYieldEstimates['IR Beans']"
+                            class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        } @else {
+                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                            {{ yieldEstimates['IR Beans'] }}
+                          </span>
+                        }
                       </td>
                     </tr>
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                       <td class="py-2 px-4 text-sm text-gray-900 dark:text-gray-100 font-medium">DL YSB</td>
                       <td class="py-2 px-4 text-right text-sm">
-                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">{{ yieldEstimates['DL YSB'] }}</span>
+                        @if (yieldEditMode) {
+                          <input
+                            type="number"
+                            [(ngModel)]="tempYieldEstimates['DL YSB']"
+                            class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        } @else {
+                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                            {{ yieldEstimates['DL YSB'] }}
+                          </span>
+                        }
                       </td>
                     </tr>
                   </tbody>
@@ -312,8 +429,44 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
             <!-- Estimated Market Share -->
             <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
               <div class="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
-                <h3 class="text-base font-semibold text-gray-900 dark:text-white">Estimated Market Share</h3>
-                <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Expected percentage of production we will handle</p>
+                <div class="flex items-center justify-between">
+                  <div>
+                    <h3 class="text-base font-semibold text-gray-900 dark:text-white">Estimated Market Share</h3>
+                    <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Expected percentage of production we will handle</p>
+                  </div>
+                  @if (!marketShareEditMode) {
+                    <button
+                      (click)="startMarketShareEdit()"
+                      class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-purple-300 dark:border-purple-700 text-xs sm:text-sm font-medium text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+                      </svg>
+                      Edit
+                    </button>
+                  } @else {
+                    <div class="flex gap-2">
+                      <button
+                        (click)="cancelMarketShareEdit()"
+                        class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-gray-300 dark:border-gray-600 text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                        Cancel
+                      </button>
+                      <button
+                        (click)="saveMarketShareEdit()"
+                        class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-purple-300 dark:border-purple-700 text-xs sm:text-sm font-medium text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M20 6L9 17l-5-5"/>
+                        </svg>
+                        Save
+                      </button>
+                    </div>
+                  }
+                </div>
               </div>
               <div class="overflow-x-auto">
                 <table class="w-full">
@@ -332,7 +485,21 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                         </div>
                       </td>
                       <td class="py-2.5 px-4 text-right">
-                        <span class="text-base font-bold text-gray-900 dark:text-white">{{ marketShare.wheat * 100 }}%</span>
+                        @if (marketShareEditMode) {
+                          <div class="inline-flex items-center gap-1">
+                            <input
+                              type="number"
+                              [(ngModel)]="tempMarketShare.wheat"
+                              min="0"
+                              max="100"
+                              step="1"
+                              class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                            />
+                            <span class="text-sm text-gray-500 dark:text-gray-400">%</span>
+                          </div>
+                        } @else {
+                          <span class="text-base font-bold text-gray-900 dark:text-white">{{ marketShare.wheat * 100 }}%</span>
+                        }
                       </td>
                     </tr>
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
@@ -343,7 +510,21 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                         </div>
                       </td>
                       <td class="py-2.5 px-4 text-right">
-                        <span class="text-base font-bold text-gray-900 dark:text-white">{{ marketShare.corn * 100 }}%</span>
+                        @if (marketShareEditMode) {
+                          <div class="inline-flex items-center gap-1">
+                            <input
+                              type="number"
+                              [(ngModel)]="tempMarketShare.corn"
+                              min="0"
+                              max="100"
+                              step="1"
+                              class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                            />
+                            <span class="text-sm text-gray-500 dark:text-gray-400">%</span>
+                          </div>
+                        } @else {
+                          <span class="text-base font-bold text-gray-900 dark:text-white">{{ marketShare.corn * 100 }}%</span>
+                        }
                       </td>
                     </tr>
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
@@ -354,7 +535,21 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                         </div>
                       </td>
                       <td class="py-2.5 px-4 text-right">
-                        <span class="text-base font-bold text-gray-900 dark:text-white">{{ marketShare.milo * 100 }}%</span>
+                        @if (marketShareEditMode) {
+                          <div class="inline-flex items-center gap-1">
+                            <input
+                              type="number"
+                              [(ngModel)]="tempMarketShare.milo"
+                              min="0"
+                              max="100"
+                              step="1"
+                              class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                            />
+                            <span class="text-sm text-gray-500 dark:text-gray-400">%</span>
+                          </div>
+                        } @else {
+                          <span class="text-base font-bold text-gray-900 dark:text-white">{{ marketShare.milo * 100 }}%</span>
+                        }
                       </td>
                     </tr>
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
@@ -365,7 +560,21 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                         </div>
                       </td>
                       <td class="py-2.5 px-4 text-right">
-                        <span class="text-base font-bold text-gray-900 dark:text-white">{{ marketShare.soybeans * 100 }}%</span>
+                        @if (marketShareEditMode) {
+                          <div class="inline-flex items-center gap-1">
+                            <input
+                              type="number"
+                              [(ngModel)]="tempMarketShare.soybeans"
+                              min="0"
+                              max="100"
+                              step="1"
+                              class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                            />
+                            <span class="text-sm text-gray-500 dark:text-gray-400">%</span>
+                          </div>
+                        } @else {
+                          <span class="text-base font-bold text-gray-900 dark:text-white">{{ marketShare.soybeans * 100 }}%</span>
+                        }
                       </td>
                     </tr>
                   </tbody>
@@ -444,6 +653,7 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
         </app-card-content>
         }
       </app-card>
+
     </div>
   `
 })
@@ -451,6 +661,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private apiService = inject(ApiService);
   private toastService = inject(ToastService);
   private router = inject(Router);
+  private cdr = inject(ChangeDetectorRef);
   private destroy$ = new Subject<void>();
 
   customers: Customer[] = [];
@@ -488,6 +699,18 @@ export class DashboardComponent implements OnInit, OnDestroy {
   // Planting Intentions section expanded state
   plantingIntentionsExpanded = false;
 
+  // Edit mode state
+  yieldEditMode = false;
+  marketShareEditMode = false;
+
+  // Temporary edit values
+  tempYieldEstimates: Record<string, number> = {};
+  tempMarketShare = { wheat: 0, corn: 0, milo: 0, soybeans: 0 };
+
+  // Loading state to prevent concurrent data loads
+  private isLoading = false;
+  private isFirstLoad = true;
+
   ngOnInit(): void {
     // Load the saved state from localStorage
     const savedState = localStorage.getItem('plantingIntentionsExpanded');
@@ -495,7 +718,42 @@ export class DashboardComponent implements OnInit, OnDestroy {
       this.plantingIntentionsExpanded = savedState === 'true';
     }
 
+    // Load saved yield estimates
+    const savedYields = localStorage.getItem('yieldEstimates');
+    if (savedYields) {
+      this.yieldEstimates = JSON.parse(savedYields);
+    }
+
+    // Load saved market share
+    const savedMarketShare = localStorage.getItem('marketShare');
+    if (savedMarketShare) {
+      this.marketShare = JSON.parse(savedMarketShare);
+    }
+
+    console.log('[Dashboard] ngOnInit - Starting initial data load');
+    // Initial data load
     this.loadData();
+
+    // Reload data when navigating back to the dashboard route
+    this.router.events.pipe(
+      filter(event => event instanceof NavigationEnd),
+      takeUntil(this.destroy$)
+    ).subscribe((event: NavigationEnd) => {
+      console.log('[Dashboard] Navigation event:', event.url, event.urlAfterRedirects);
+
+      // Skip the first NavigationEnd event which happens during component initialization
+      if (this.isFirstLoad) {
+        console.log('[Dashboard] Skipping first NavigationEnd (component initialization)');
+        this.isFirstLoad = false;
+        return;
+      }
+
+      // Only reload if we're navigating TO the dashboard route
+      if (event.urlAfterRedirects === '/dashboard' || event.url === '/dashboard') {
+        console.log('[Dashboard] Reloading data after navigation to dashboard');
+        this.loadData();
+      }
+    });
   }
 
   togglePlantingIntentions(): void {
@@ -510,6 +768,16 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   private loadData(): void {
+    // Prevent concurrent data loads
+    if (this.isLoading) {
+      console.log('[Dashboard] loadData() called but already loading, skipping...');
+      return;
+    }
+
+    this.isLoading = true;
+    const loadTimestamp = new Date().toISOString();
+    console.log(`[Dashboard] loadData() called at ${loadTimestamp}`);
+
     forkJoin({
       customers: this.apiService.getCustomers(),
       contracts: this.apiService.getContracts(),
@@ -517,6 +785,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
       storedGrain: this.apiService.getStoredGrain()
     }).pipe(takeUntil(this.destroy$)).subscribe({
       next: (data) => {
+        console.log(`[Dashboard] Data received at ${new Date().toISOString()} (load started at ${loadTimestamp})`);
+        console.log(`[Dashboard] Customers: ${data.customers.length}, Contracts: ${data.contracts.length}, Planting Intentions: ${data.plantingIntentions.length}, Stored Grain: ${data.storedGrain.length}`);
+
         this.customers = data.customers;
         this.contracts = data.contracts;
         this.plantingIntentions = data.plantingIntentions;
@@ -531,9 +802,18 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.calculatePlantingByCustomer();
         this.calculateTotalProduction();
         this.calculateHarvestHandle();
+
+        console.log('[Dashboard] All calculations complete, triggering change detection');
+        this.isLoading = false;
+
+        // Manually trigger change detection to ensure view updates
+        this.cdr.detectChanges();
       },
-      error: () => {
+      error: (err) => {
+        console.error('[Dashboard] Error loading data:', err);
+        this.isLoading = false;
         this.toastService.error('Failed to load dashboard data');
+        this.cdr.detectChanges();
       }
     });
   }
@@ -669,6 +949,61 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.harvestHandle.corn = this.totalProduction.corn * this.marketShare.corn;
     this.harvestHandle.milo = this.totalProduction.milo * this.marketShare.milo;
     this.harvestHandle.soybeans = this.totalProduction.soybeans * this.marketShare.soybeans;
+  }
+
+  // Yield estimates edit methods
+  startYieldEdit(): void {
+    this.yieldEditMode = true;
+    // Copy current values to temp storage
+    this.tempYieldEstimates = { ...this.yieldEstimates };
+  }
+
+  saveYieldEdit(): void {
+    // Save temp values to actual values
+    this.yieldEstimates = { ...this.tempYieldEstimates };
+    localStorage.setItem('yieldEstimates', JSON.stringify(this.yieldEstimates));
+    this.calculateTotalProduction();
+    this.calculateHarvestHandle();
+    this.yieldEditMode = false;
+    this.toastService.success('Yield estimates updated');
+  }
+
+  cancelYieldEdit(): void {
+    // Discard changes and exit edit mode
+    this.yieldEditMode = false;
+    this.tempYieldEstimates = {};
+  }
+
+  // Market share edit methods
+  startMarketShareEdit(): void {
+    this.marketShareEditMode = true;
+    // Copy current values to temp storage and convert to percentages
+    this.tempMarketShare = {
+      wheat: this.marketShare.wheat * 100,
+      corn: this.marketShare.corn * 100,
+      milo: this.marketShare.milo * 100,
+      soybeans: this.marketShare.soybeans * 100
+    };
+  }
+
+  saveMarketShareEdit(): void {
+    // Convert percentages to decimals and save
+    this.marketShare = {
+      wheat: this.tempMarketShare.wheat / 100,
+      corn: this.tempMarketShare.corn / 100,
+      milo: this.tempMarketShare.milo / 100,
+      soybeans: this.tempMarketShare.soybeans / 100
+    };
+    localStorage.setItem('marketShare', JSON.stringify(this.marketShare));
+    this.calculateHarvestHandle();
+    this.marketShareEditMode = false;
+    this.toastService.success('Market share updated');
+  }
+
+  cancelMarketShareEdit(): void {
+    // Discard changes and exit edit mode
+    this.marketShareEditMode = false;
+    this.tempMarketShare = { wheat: 0, corn: 0, milo: 0, soybeans: 0 };
   }
 
 }

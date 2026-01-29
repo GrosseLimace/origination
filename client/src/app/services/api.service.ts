@@ -126,7 +126,7 @@ export class ApiService {
     farmId: string;
     crop: string;
     acres: number;
-    plantingDate: Date;
+    plantingYear: number;
     estimatedYield: number;
   }): Observable<PlantingIntention> {
     return this.http.post<PlantingIntention>(`${this.baseUrl}/plantingintentions`, data);
@@ -136,7 +136,7 @@ export class ApiService {
   updatePlantingIntention(id: string, data: {
     crop: string;
     acres: number;
-    plantingDate: Date;
+    plantingYear: number;
     estimatedYield: number;
   }): Observable<PlantingIntention> {
     return this.http.put<PlantingIntention>(`${this.baseUrl}/plantingintentions/${id}`, data);

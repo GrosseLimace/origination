@@ -8,7 +8,7 @@ import { InputComponent } from '../../ui/input/input.component';
 import { SelectComponent } from '../../ui/select/select.component';
 import { Customer, PlantingIntention, Farm } from '../../../models';
 
-type SortColumn = 'crop' | 'acres' | 'plantingDate' | 'estimatedYield' | 'totalProduction';
+type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'estimatedYield' | 'totalProduction';
 type SortDirection = 'none' | 'asc' | 'desc';
 
 @Component({
@@ -79,7 +79,19 @@ type SortDirection = 'none' | 'asc' | 'desc';
 
         <!-- Mobile Card View -->
         <div class="md:hidden space-y-3">
-          @for (intention of sortedIntentions; track intention.id) {
+          @for (intention of sortedIntentions; track intention.id; let i = $index) {
+            <!-- Year Separator -->
+            @if (shouldShowYearSeparator(i, intention)) {
+              <div class="flex items-center gap-2 py-2">
+                <div class="h-px flex-1 bg-gray-300 dark:bg-gray-600"></div>
+                <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  {{ intention.plantingYear }} Planting Year
+                </span>
+                <div class="h-px flex-1 bg-gray-300 dark:bg-gray-600"></div>
+              </div>
+            }
+
+            <!-- Card -->
             <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800">
               <div class="flex items-start justify-between mb-3">
                 <div class="flex-1">
@@ -110,20 +122,14 @@ type SortDirection = 'none' | 'asc' | 'desc';
                   <div class="text-sm font-medium text-green-600 dark:text-green-400">{{ intention.acres * intention.estimatedYield | number }} bu</div>
                 </div>
                 <div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400">Planting Date</div>
-                  <div class="text-sm text-gray-900 dark:text-white">{{ intention.plantingDate | date:'MMM d, yyyy' }}</div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">Planting Year</div>
+                  <div class="text-sm text-gray-900 dark:text-white">{{ intention.plantingYear }}</div>
                 </div>
               </div>
 
               <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
                 <div class="text-xs text-gray-500 dark:text-gray-400">
-                  @if (getDaysUntilPlanting(intention) > 0) {
-                    <span>{{ getDaysUntilPlanting(intention) }} days until planting</span>
-                  } @else if (getDaysUntilPlanting(intention) === 0) {
-                    <span class="text-green-600">Planting today</span>
-                  } @else {
-                    <span>Planted {{ -getDaysUntilPlanting(intention) }} days ago</span>
-                  }
+                  <span>Variety: {{ intention.variety || 'Not specified' }}</span>
                 </div>
               </div>
             </div>
@@ -136,66 +142,139 @@ type SortDirection = 'none' | 'asc' | 'desc';
             <app-table-header>
               <app-table-row>
                 <app-table-head [sortable]="true" (click)="handleSort('crop')">
-                  <span class="flex items-center gap-1">
-                    Crop
-                    <span [innerHTML]="getSortIcon('crop')"></span>
-                  </span>
+                  <div class="flex items-center gap-1.5">
+                    <span>Crop</span>
+                    <span [class]="getSortIconClass('crop')">
+                      @if (currentSortColumn === 'crop' && currentSortDirection === 'asc') {
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                        </svg>
+                      } @else if (currentSortColumn === 'crop' && currentSortDirection === 'desc') {
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                      } @else {
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                        </svg>
+                      }
+                    </span>
+                  </div>
                 </app-table-head>
-                <app-table-head [sortable]="true" (click)="handleSort('acres')">
-                  <span class="flex items-center gap-1">
-                    Acres
-                    <span [innerHTML]="getSortIcon('acres')"></span>
-                  </span>
+                <app-table-head [sortable]="true" (click)="handleSort('acres')" class="text-center">
+                  <div class="flex items-center justify-center gap-1.5">
+                    <span>Acres</span>
+                    <span [class]="getSortIconClass('acres')">
+                      @if (currentSortColumn === 'acres' && currentSortDirection === 'asc') {
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                        </svg>
+                      } @else if (currentSortColumn === 'acres' && currentSortDirection === 'desc') {
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                      } @else {
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                        </svg>
+                      }
+                    </span>
+                  </div>
                 </app-table-head>
-                <app-table-head [sortable]="true" (click)="handleSort('plantingDate')">
-                  <span class="flex items-center gap-1">
-                    Planting Date
-                    <span [innerHTML]="getSortIcon('plantingDate')"></span>
-                  </span>
+                <app-table-head [sortable]="true" (click)="handleSort('plantingYear')" class="text-center">
+                  <div class="flex items-center justify-center gap-1.5">
+                    <span>Planting Year</span>
+                    <span [class]="getSortIconClass('plantingYear')">
+                      @if (currentSortColumn === 'plantingYear' && currentSortDirection === 'asc') {
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                        </svg>
+                      } @else if (currentSortColumn === 'plantingYear' && currentSortDirection === 'desc') {
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                      } @else {
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                        </svg>
+                      }
+                    </span>
+                  </div>
                 </app-table-head>
-                <app-table-head [sortable]="true" (click)="handleSort('estimatedYield')">
-                  <span class="flex items-center gap-1">
-                    Est. Yield (bu/acre)
-                    <span [innerHTML]="getSortIcon('estimatedYield')"></span>
-                  </span>
+                <app-table-head [sortable]="true" (click)="handleSort('estimatedYield')" class="text-center">
+                  <div class="flex items-center justify-center gap-1.5">
+                    <span>Est. Yield (bu/acre)</span>
+                    <span [class]="getSortIconClass('estimatedYield')">
+                      @if (currentSortColumn === 'estimatedYield' && currentSortDirection === 'asc') {
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                        </svg>
+                      } @else if (currentSortColumn === 'estimatedYield' && currentSortDirection === 'desc') {
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                      } @else {
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                        </svg>
+                      }
+                    </span>
+                  </div>
                 </app-table-head>
-                <app-table-head [sortable]="true" (click)="handleSort('totalProduction')">
-                  <span class="flex items-center gap-1">
-                    Total Est. Production
-                    <span [innerHTML]="getSortIcon('totalProduction')"></span>
-                  </span>
+                <app-table-head [sortable]="true" (click)="handleSort('totalProduction')" class="text-center">
+                  <div class="flex items-center justify-center gap-1.5">
+                    <span>Total Est. Production</span>
+                    <span [class]="getSortIconClass('totalProduction')">
+                      @if (currentSortColumn === 'totalProduction' && currentSortDirection === 'asc') {
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                        </svg>
+                      } @else if (currentSortColumn === 'totalProduction' && currentSortDirection === 'desc') {
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                      } @else {
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                        </svg>
+                      }
+                    </span>
+                  </div>
                 </app-table-head>
-                <app-table-head></app-table-head>
+                <app-table-head class="text-center"></app-table-head>
               </app-table-row>
             </app-table-header>
             <app-table-body>
-              @for (intention of sortedIntentions; track intention.id) {
-                <app-table-row [clickable]="true" (rowClick)="toggleRow(intention.id)">
+              @for (intention of sortedIntentions; track intention.id; let i = $index) {
+                <!-- Year Separator Row -->
+                @if (shouldShowYearSeparator(i, intention)) {
+                  <app-table-row>
+                    <app-table-cell [colspan]="6" class="bg-gray-50 dark:bg-gray-800/50">
+                      <div class="py-2 px-3 flex items-center gap-2">
+                        <div class="h-px flex-1 bg-gray-300 dark:bg-gray-600"></div>
+                        <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                          {{ intention.plantingYear }} Planting Year
+                        </span>
+                        <div class="h-px flex-1 bg-gray-300 dark:bg-gray-600"></div>
+                      </div>
+                    </app-table-cell>
+                  </app-table-row>
+                }
+
+                <!-- Data Row -->
+                <app-table-row>
                   <app-table-cell>
-                    <div class="flex items-center gap-2">
-                      <span class="text-gray-400">
-                        @if (isExpanded(intention.id)) {
-                          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                          </svg>
-                        } @else {
-                          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                          </svg>
-                        }
-                      </span>
-                      <span class="font-medium">{{ intention.crop }}</span>
-                    </div>
+                    <span class="font-medium">{{ intention.crop }}</span>
                   </app-table-cell>
-                  <app-table-cell>{{ intention.acres | number }}</app-table-cell>
-                  <app-table-cell>{{ intention.plantingDate | date:'MMM d, yyyy' }}</app-table-cell>
-                  <app-table-cell>{{ intention.estimatedYield }}</app-table-cell>
-                  <app-table-cell>{{ intention.acres * intention.estimatedYield | number }} bu</app-table-cell>
-                  <app-table-cell>
+                  <app-table-cell class="text-center">{{ intention.acres | number }}</app-table-cell>
+                  <app-table-cell class="text-center">{{ intention.plantingYear }}</app-table-cell>
+                  <app-table-cell class="text-center">{{ intention.estimatedYield }}</app-table-cell>
+                  <app-table-cell class="text-center">{{ intention.acres * intention.estimatedYield | number }} bu</app-table-cell>
+                  <app-table-cell class="text-center">
                     <button
                       type="button"
                       class="h-10 w-10 inline-flex items-center justify-center text-gray-400 hover:text-green-600 dark:hover:text-green-400 bg-transparent border-0 p-0"
-                      (click)="openEditDialog(intention); $event.stopPropagation()"
+                      (click)="openEditDialog(intention)"
                     >
                       <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
@@ -203,52 +282,6 @@ type SortDirection = 'none' | 'asc' | 'desc';
                     </button>
                   </app-table-cell>
                 </app-table-row>
-
-                @if (isExpanded(intention.id)) {
-                  <app-table-row class="bg-gray-50 dark:bg-gray-800/50">
-                    <app-table-cell [colspan]="6">
-                      <div class="py-4">
-                        <div class="grid grid-cols-2 gap-8">
-                          <!-- Left column -->
-                          <div class="space-y-6">
-                            <div>
-                              <p class="text-sm text-gray-500 dark:text-gray-400">Total Production</p>
-                              <p class="text-gray-900 dark:text-gray-100">{{ intention.acres * intention.estimatedYield | number }} bushels</p>
-                            </div>
-                            <div>
-                              <p class="text-sm text-gray-500 dark:text-gray-400">Yield per Acre</p>
-                              <p class="text-gray-900 dark:text-gray-100">{{ intention.estimatedYield }} bu/acre</p>
-                            </div>
-                            <div>
-                              <p class="text-sm text-gray-500 dark:text-gray-400">Full Planting Date</p>
-                              <p class="text-gray-900 dark:text-gray-100">{{ intention.plantingDate | date:'MMMM d, yyyy' }}</p>
-                            </div>
-                          </div>
-
-                          <!-- Right column -->
-                          <div class="space-y-6">
-                            <div>
-                              <p class="text-sm text-gray-500 dark:text-gray-400">Planting Timeline</p>
-                              <p class="text-gray-900 dark:text-gray-100">
-                                @if (getDaysUntilPlanting(intention) > 0) {
-                                  Planting in {{ getDaysUntilPlanting(intention) }} days
-                                } @else if (getDaysUntilPlanting(intention) === 0) {
-                                  Planting today
-                                } @else {
-                                  Planted {{ -getDaysUntilPlanting(intention) }} days ago
-                                }
-                              </p>
-                            </div>
-                            <div>
-                              <p class="text-sm text-gray-500 dark:text-gray-400">Total Acreage</p>
-                              <p class="text-gray-900 dark:text-gray-100">{{ intention.acres | number }} acres</p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </app-table-cell>
-                  </app-table-row>
-                }
               }
             </app-table-body>
           </app-table>
@@ -289,8 +322,8 @@ type SortDirection = 'none' | 'asc' | 'desc';
             </div>
 
             <div class="space-y-2">
-              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Planting Date</label>
-              <app-input type="date" [(ngModel)]="addForm.plantingDate"></app-input>
+              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Planting Year</label>
+              <app-input type="number" [(ngModel)]="addForm.plantingYear" placeholder="Enter year (e.g., 2025)" min="2020" max="2100"></app-input>
             </div>
           </div>
         </app-dialog-content>
@@ -328,8 +361,8 @@ type SortDirection = 'none' | 'asc' | 'desc';
             </div>
 
             <div class="space-y-2">
-              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Planting Date</label>
-              <app-input type="date" [(ngModel)]="editForm.plantingDate"></app-input>
+              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Planting Year</label>
+              <app-input type="number" [(ngModel)]="editForm.plantingYear" min="2020" max="2100"></app-input>
             </div>
           </div>
         </app-dialog-content>
@@ -370,8 +403,8 @@ type SortDirection = 'none' | 'asc' | 'desc';
                 <span class="text-sm font-medium text-gray-900 dark:text-gray-300">{{ selectedIntention.acres | number }}</span>
               </div>
               <div class="flex justify-between">
-                <span class="text-sm text-gray-600 dark:text-gray-400">Planting Date:</span>
-                <span class="text-sm font-medium text-gray-900 dark:text-gray-300">{{ selectedIntention.plantingDate | date:'mediumDate' }}</span>
+                <span class="text-sm text-gray-600 dark:text-gray-400">Planting Year:</span>
+                <span class="text-sm font-medium text-gray-900 dark:text-gray-300">{{ selectedIntention.plantingYear }}</span>
               </div>
             </div>
             <div class="flex justify-end gap-2">
@@ -389,8 +422,8 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
   @Input() customer!: Customer;
   @Input() selectedFarmId: string | null = null;
   @Input() farms: Farm[] = [];
-  @Output() add = new EventEmitter<{farmId: string, crop: string, acres: number, plantingDate: Date, estimatedYield: number}>();
-  @Output() edit = new EventEmitter<{intentionId: string, farmId: string, crop: string, acres: number, plantingDate: Date, estimatedYield: number}>();
+  @Output() add = new EventEmitter<{farmId: string, crop: string, acres: number, plantingYear: number, estimatedYield: number}>();
+  @Output() edit = new EventEmitter<{intentionId: string, farmId: string, crop: string, acres: number, plantingYear: number, estimatedYield: number}>();
   @Output() delete = new EventEmitter<string>();
 
   // Average Yield Estimates (bu/acre) - Used for auto-calculating estimated yield
@@ -417,49 +450,71 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
   addForm = {
     crop: '',
     acres: '',
-    plantingDate: ''
+    plantingYear: ''
   };
 
   editForm = {
     crop: '',
     acres: '',
-    plantingDate: ''
+    plantingYear: ''
   };
 
   originalEditForm = {
     crop: '',
     acres: '',
-    plantingDate: ''
+    plantingYear: ''
   };
 
   get sortedIntentions(): PlantingIntention[] {
+    // Default sort: newest year first (descending by year)
     if (!this.currentSortColumn || this.currentSortDirection === 'none') {
-      return this.plantingIntentions;
+      return [...this.plantingIntentions].sort((a, b) => b.plantingYear - a.plantingYear);
     }
 
-    const sorted = [...this.plantingIntentions].sort((a, b) => {
-      let comparison = 0;
-      switch (this.currentSortColumn) {
-        case 'crop':
-          comparison = a.crop.localeCompare(b.crop);
-          break;
-        case 'acres':
-          comparison = a.acres - b.acres;
-          break;
-        case 'plantingDate':
-          comparison = new Date(a.plantingDate).getTime() - new Date(b.plantingDate).getTime();
-          break;
-        case 'estimatedYield':
-          comparison = a.estimatedYield - b.estimatedYield;
-          break;
-        case 'totalProduction':
-          comparison = (a.acres * a.estimatedYield) - (b.acres * b.estimatedYield);
-          break;
+    // Special case: When sorting by plantingYear, sort across all data (don't group by year)
+    if (this.currentSortColumn === 'plantingYear') {
+      return [...this.plantingIntentions].sort((a, b) => {
+        const comparison = a.plantingYear - b.plantingYear;
+        return this.currentSortDirection === 'desc' ? -comparison : comparison;
+      });
+    }
+
+    // For other columns: Group by year, sort within each year group, then flatten
+    const groupedByYear = this.plantingIntentions.reduce((acc, intention) => {
+      if (!acc[intention.plantingYear]) {
+        acc[intention.plantingYear] = [];
       }
-      return this.currentSortDirection === 'desc' ? -comparison : comparison;
+      acc[intention.plantingYear].push(intention);
+      return acc;
+    }, {} as Record<number, PlantingIntention[]>);
+
+    // Sort each year group
+    const sortedGroups = Object.entries(groupedByYear).map(([year, intentions]) => {
+      const sorted = [...intentions].sort((a, b) => {
+        let comparison = 0;
+        switch (this.currentSortColumn) {
+          case 'crop':
+            comparison = a.crop.localeCompare(b.crop);
+            break;
+          case 'acres':
+            comparison = a.acres - b.acres;
+            break;
+          case 'estimatedYield':
+            comparison = a.estimatedYield - b.estimatedYield;
+            break;
+          case 'totalProduction':
+            comparison = (a.acres * a.estimatedYield) - (b.acres * b.estimatedYield);
+            break;
+        }
+        return this.currentSortDirection === 'desc' ? -comparison : comparison;
+      });
+      return { year: parseInt(year), intentions: sorted };
     });
 
-    return sorted;
+    // Sort years descending (newest first) and flatten
+    return sortedGroups
+      .sort((a, b) => b.year - a.year)
+      .flatMap(group => group.intentions);
   }
 
   handleSort(column: SortColumn): void {
@@ -478,17 +533,28 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
     }
   }
 
-  getSortIcon(column: SortColumn): string {
-    if (this.currentSortColumn !== column) {
-      return '<svg class="h-3 w-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>';
+  getSortIconClass(column: SortColumn): string {
+    if (this.currentSortColumn === column) {
+      return 'text-gray-600 dark:text-gray-300';
     }
-    if (this.currentSortDirection === 'asc') {
-      return '<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>';
+    return 'text-gray-300 dark:text-gray-600';
+  }
+
+  shouldShowYearSeparator(index: number, intention: PlantingIntention): boolean {
+    // Check if there are multiple years in the data
+    const uniqueYears = new Set(this.plantingIntentions.map(i => i.plantingYear));
+    if (uniqueYears.size <= 1) {
+      return false; // Don't show separators if there's only one year
     }
-    if (this.currentSortDirection === 'desc') {
-      return '<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>';
+
+    // Show separator for the first item
+    if (index === 0) {
+      return true;
     }
-    return '<svg class="h-3 w-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>';
+
+    // Show separator when the year changes from the previous item
+    const previousIntention = this.sortedIntentions[index - 1];
+    return previousIntention.plantingYear !== intention.plantingYear;
   }
 
   toggleRow(id: string): void {
@@ -501,13 +567,6 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
 
   isExpanded(id: string): boolean {
     return this.expandedRows.has(id);
-  }
-
-  getDaysUntilPlanting(intention: PlantingIntention): number {
-    const now = new Date();
-    const plantingDate = new Date(intention.plantingDate);
-    const diffTime = plantingDate.getTime() - now.getTime();
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   }
 
   getFarmName(farmId: string): string {
@@ -536,12 +595,12 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
   }
 
   openAddDialog(): void {
-    const now = new Date();
+    const lastYear = new Date().getFullYear() - 1;
 
     this.addForm = {
       crop: '',
       acres: '',
-      plantingDate: now.toISOString().split('T')[0]
+      plantingYear: lastYear.toString()
     };
     this.showAddDialog = true;
     // Prevent body scroll when dialog opens
@@ -558,7 +617,8 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
     return this.addForm.crop !== ''
       && this.addForm.acres !== ''
       && !isNaN(parseInt(this.addForm.acres))
-      && this.addForm.plantingDate !== '';
+      && this.addForm.plantingYear !== ''
+      && !isNaN(parseInt(this.addForm.plantingYear));
   }
 
   submitAdd(): void {
@@ -567,7 +627,7 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
         farmId: this.selectedFarmId,
         crop: this.addForm.crop,
         acres: parseInt(this.addForm.acres),
-        plantingDate: new Date(this.addForm.plantingDate),
+        plantingYear: parseInt(this.addForm.plantingYear),
         estimatedYield: this.getEstimatedYield(this.addForm.crop)
       };
       this.add.emit(data);
@@ -580,7 +640,7 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
     const formData = {
       crop: intention.crop,
       acres: intention.acres.toString(),
-      plantingDate: new Date(intention.plantingDate).toISOString().split('T')[0]
+      plantingYear: intention.plantingYear.toString()
     };
     this.editForm = { ...formData };
     this.originalEditForm = { ...formData };
@@ -599,14 +659,15 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
   hasEditFormChanged(): boolean {
     return this.editForm.crop !== this.originalEditForm.crop
       || this.editForm.acres !== this.originalEditForm.acres
-      || this.editForm.plantingDate !== this.originalEditForm.plantingDate;
+      || this.editForm.plantingYear !== this.originalEditForm.plantingYear;
   }
 
   isEditFormValid(): boolean {
     return this.editForm.crop !== ''
       && this.editForm.acres !== ''
       && !isNaN(parseInt(this.editForm.acres))
-      && this.editForm.plantingDate !== ''
+      && this.editForm.plantingYear !== ''
+      && !isNaN(parseInt(this.editForm.plantingYear))
       && this.hasEditFormChanged();
   }
 
@@ -617,7 +678,7 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
         farmId: this.selectedIntention.farmId,
         crop: this.editForm.crop,
         acres: parseInt(this.editForm.acres),
-        plantingDate: new Date(this.editForm.plantingDate),
+        plantingYear: parseInt(this.editForm.plantingYear),
         estimatedYield: this.getEstimatedYield(this.editForm.crop)
       });
       this.closeEditDialog();

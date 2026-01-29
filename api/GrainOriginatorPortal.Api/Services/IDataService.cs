@@ -31,8 +31,8 @@ public interface IDataService
     // Planting Intention Operations
     List<PlantingIntention> GetPlantingIntentions();
     List<PlantingIntention> GetPlantingIntentionsByCustomer(string customerId);
-    PlantingIntention AddPlantingIntention(string customerId, string farmId, string crop, int acres, DateTime plantingDate, int estimatedYield);
-    PlantingIntention? UpdatePlantingIntention(string intentionId, string crop, int acres, DateTime plantingDate, int estimatedYield);
+    PlantingIntention AddPlantingIntention(string customerId, string farmId, string crop, int acres, int plantingYear, int estimatedYield);
+    PlantingIntention? UpdatePlantingIntention(string intentionId, string crop, int acres, int plantingYear, int estimatedYield);
     void DeletePlantingIntention(string intentionId);
 
     // Note Operations
