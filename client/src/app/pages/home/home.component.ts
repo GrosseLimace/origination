@@ -392,23 +392,6 @@ export class HomeComponent implements OnInit, OnDestroy {
     this.allCustomerPlantingIntentions = [...this.plantingIntentions.filter(p => allCustomerIds.includes(p.customerId))];
     this.allCustomerStoredGrain = [...this.storedGrain.filter(s => allCustomerIds.includes(s.customerId))];
 
-    // Filter by farm if one is selected, otherwise show all customer data for tabs
-    if (this.selectedFarmId) {
-      // Filter data for the selected farm, regardless of which customer owns it
-      this.customerContracts = [...this.contracts.filter(c => c.farmId === this.selectedFarmId)];
-      this.customerTickets = [...this.tickets.filter(t => t.farmId === this.selectedFarmId)];
-      this.customerPlantingIntentions = [...this.plantingIntentions.filter(p => p.farmId === this.selectedFarmId)];
-      this.customerStoredGrain = [...this.storedGrain.filter(s => s.farmId === this.selectedFarmId)];
-    } else {
-      this.customerContracts = [...this.contracts.filter(c => c.customerId === customerId)];
-      this.customerTickets = [...this.tickets.filter(t => t.customerId === customerId)];
-      this.customerPlantingIntentions = [...this.plantingIntentions.filter(p => p.customerId === customerId)];
-      this.customerStoredGrain = [...this.storedGrain.filter(s => s.customerId === customerId)];
-    }
-
-    this.customerNotes = [...this.notes.filter(n => n.customerId === customerId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())];
-
     // Load farms from current customer AND all linked producers (both directions)
     const allFarmIds: string[] = [...(currentCustomer.farmIds || [])];
 
@@ -434,6 +417,24 @@ export class HomeComponent implements OnInit, OnDestroy {
     if (!this.selectedFarmId && this.customerFarms.length > 0) {
       this.selectedFarmId = this.customerFarms[0].id;
     }
+
+    // NOW filter by farm - this happens AFTER we've ensured selectedFarmId is set
+    if (this.selectedFarmId) {
+      // Filter data for the selected farm, regardless of which customer owns it
+      this.customerContracts = [...this.contracts.filter(c => c.farmId === this.selectedFarmId)];
+      this.customerTickets = [...this.tickets.filter(t => t.farmId === this.selectedFarmId)];
+      this.customerPlantingIntentions = [...this.plantingIntentions.filter(p => p.farmId === this.selectedFarmId)];
+      this.customerStoredGrain = [...this.storedGrain.filter(s => s.farmId === this.selectedFarmId)];
+    } else {
+      // If there are no farms, show all customer data
+      this.customerContracts = [...this.contracts.filter(c => c.customerId === customerId)];
+      this.customerTickets = [...this.tickets.filter(t => t.customerId === customerId)];
+      this.customerPlantingIntentions = [...this.plantingIntentions.filter(p => p.customerId === customerId)];
+      this.customerStoredGrain = [...this.storedGrain.filter(s => s.customerId === customerId)];
+    }
+
+    this.customerNotes = [...this.notes.filter(n => n.customerId === customerId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())];
 
     console.log('[Home] Customer data loaded:', {
       contracts: this.customerContracts.length,
