@@ -24,61 +24,96 @@ interface LocationCoords {
   imports: [CommonModule, FormsModule, CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent],
   template: `
     <div class="space-y-4">
-      <!-- Header with filters -->
+      <!-- Header with Key Legend -->
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-2xl font-semibold text-gray-900 dark:text-white">Bid Sheet</h2>
           <p class="text-gray-500 dark:text-gray-400">Grain bids by location and crop</p>
         </div>
-        <div class="flex items-center gap-3">
-          <!-- Crop Filter -->
+        <div class="flex items-center gap-4 text-sm">
+          <span class="font-medium text-gray-700 dark:text-gray-300">Key:</span>
           <div class="flex items-center gap-2">
-            <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Crop:</label>
-            <select [(ngModel)]="selectedCrop" (change)="filterBids()" class="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500">
-              @for (crop of crops; track crop) {
-                <option [value]="crop">{{ crop }}</option>
-              }
-            </select>
+            <div class="w-4 h-4 bg-yellow-200 dark:bg-yellow-900/40 border border-gray-300 dark:border-gray-600"></div>
+            <span class="text-gray-700 dark:text-gray-300">Matching</span>
           </div>
-          <!-- Year Filter -->
           <div class="flex items-center gap-2">
-            <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Year:</label>
-            <select [(ngModel)]="selectedYear" (change)="filterBids()" class="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500">
-              <option value="2025">2025</option>
-              <option value="2026">2026</option>
-            </select>
+            <div class="w-4 h-4 bg-red-200 dark:bg-red-900/40 border border-gray-300 dark:border-gray-600"></div>
+            <span class="text-gray-700 dark:text-gray-300">Beating</span>
           </div>
-          <!-- Search -->
-          <div class="relative w-40">
-            <input
-              type="text"
-              [(ngModel)]="searchQuery"
-              (input)="filterBids()"
-              placeholder="Search"
-              class="w-full pl-9 pr-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
-            />
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-              <circle cx="11" cy="11" r="8"/>
-              <path d="m21 21-4.3-4.3"/>
-            </svg>
+          <div class="flex items-center gap-2">
+            <div class="w-4 h-4 bg-green-200 dark:bg-green-900/40 border border-gray-300 dark:border-gray-600"></div>
+            <span class="text-gray-700 dark:text-gray-300">Changed</span>
           </div>
         </div>
       </div>
 
-      <!-- Key Legend -->
-      <div class="flex items-center gap-4 text-sm bg-gray-50 dark:bg-gray-800 p-3 rounded-lg">
-        <span class="font-medium text-gray-700 dark:text-gray-300">Key:</span>
-        <div class="flex items-center gap-2">
-          <div class="w-4 h-4 bg-yellow-200 dark:bg-yellow-900/40 border border-gray-300 dark:border-gray-600"></div>
-          <span class="text-gray-700 dark:text-gray-300">Matching</span>
+      <!-- Filters -->
+      <div class="flex items-center gap-3 bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+        <!-- Crop Filter -->
+        <div class="relative">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
+            <path d="M12 2v20M2 12h20"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+          <select [(ngModel)]="selectedCrop" (change)="filterBids()" class="pl-10 pr-10 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent appearance-none cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
+            @for (crop of crops; track crop) {
+              <option [value]="crop">{{ crop }}</option>
+            }
+          </select>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
         </div>
-        <div class="flex items-center gap-2">
-          <div class="w-4 h-4 bg-blue-200 dark:bg-blue-900/40 border border-gray-300 dark:border-gray-600"></div>
-          <span class="text-gray-700 dark:text-gray-300">Beating</span>
+
+        <!-- Year Filter -->
+        <div class="relative">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+            <line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="8" y1="2" x2="8" y2="6"/>
+            <line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          <select [(ngModel)]="selectedYear" (change)="filterBids()" class="pl-10 pr-10 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent appearance-none cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
+            <option value="2025">2025</option>
+            <option value="2026">2026</option>
+          </select>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
         </div>
-        <div class="flex items-center gap-2">
-          <div class="w-4 h-4 bg-green-200 dark:bg-green-900/40 border border-gray-300 dark:border-gray-600"></div>
-          <span class="text-gray-700 dark:text-gray-300">Changed</span>
+
+        <!-- Basis Filter -->
+        <div class="relative">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
+            <line x1="12" y1="1" x2="12" y2="23"/>
+            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+          </svg>
+          <select [(ngModel)]="selectedBasis" (change)="filterBids()" class="pl-10 pr-10 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent appearance-none cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
+            <option value="all">All Basis</option>
+            <option value="positive">Positive</option>
+            <option value="negative">Negative</option>
+          </select>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </div>
+
+        <!-- Divider -->
+        <div class="h-8 w-px bg-gray-300 dark:bg-gray-600"></div>
+
+        <!-- Search -->
+        <div class="relative flex-1 max-w-xs">
+          <input
+            type="text"
+            [(ngModel)]="searchQuery"
+            (input)="filterBids()"
+            placeholder="Search locations, crops, or bids..."
+            class="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
+          />
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+            <circle cx="11" cy="11" r="8"/>
+            <path d="m21 21-4.3-4.3"/>
+          </svg>
         </div>
       </div>
 
@@ -127,7 +162,7 @@ interface LocationCoords {
                         @if (item.status !== 'none') {
                           <span class="inline-flex px-2 py-1 text-xs font-medium rounded-full" [ngClass]="{
                             'bg-yellow-200 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-400': item.status === 'matching',
-                            'bg-blue-200 text-blue-800 dark:bg-blue-900/40 dark:text-blue-400': item.status === 'beating',
+                            'bg-red-200 text-red-800 dark:bg-red-900/40 dark:text-red-400': item.status === 'beating',
                             'bg-green-200 text-green-800 dark:bg-green-900/40 dark:text-green-400': item.status === 'changed'
                           }">
                             {{ item.status }}
@@ -168,6 +203,7 @@ export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
   selectedYear: string = '2025';
   selectedCrop: string = 'Wheat';
   searchQuery: string = '';
+  selectedBasis: string = 'all';
 
   bidData: BidData[] = [];
   filteredBidItems: any[] = [];
@@ -196,7 +232,7 @@ export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngAfterViewInit(): void {
-    setTimeout(() => this.initializeMap(), 100);
+    setTimeout(() => this.initializeMap(), 500);
   }
 
   ngOnDestroy(): void {
@@ -224,6 +260,12 @@ export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
   private initializeMap(): void {
     if (this.isMapInitialized || typeof L === 'undefined') return;
 
+    const mapElement = document.getElementById('bid-locations-map');
+    if (!mapElement) {
+      console.error('Map container not found');
+      return;
+    }
+
     try {
       // Center on Kansas
       this.map = L.map('bid-locations-map').setView([37.9, -98.8], 7);
@@ -233,6 +275,14 @@ export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
       }).addTo(this.map);
 
       this.isMapInitialized = true;
+
+      // Force map to recalculate size
+      setTimeout(() => {
+        if (this.map) {
+          this.map.invalidateSize();
+        }
+      }, 100);
+
       this.addMarkers();
     } catch (error) {
       console.error('Error initializing map:', error);
@@ -260,12 +310,12 @@ export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
       // Determine marker color based on status
       const markerColor =
         status === 'matching' ? '#fde047' :
-        status === 'beating' ? '#60a5fa' :
+        status === 'beating' ? '#fca5a5' :
         status === 'changed' ? '#34d399' : '#d1d5db';
 
       const borderColor =
         status === 'matching' ? '#f59e0b' :
-        status === 'beating' ? '#2563eb' :
+        status === 'beating' ? '#dc2626' :
         status === 'changed' ? '#059669' : '#6b7280';
 
       const textColor = status === 'none' ? '#6b7280' : '#000000';
@@ -461,15 +511,30 @@ export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     }
 
+    // Apply basis filter
+    let basisFilteredItems = allItems;
+    if (this.selectedBasis !== 'all') {
+      basisFilteredItems = allItems.filter(item => {
+        const bidValue = item.bid;
+        // Check if bid starts with + or - (or contains them for basis values)
+        if (this.selectedBasis === 'positive') {
+          return bidValue.includes('+') || (!bidValue.includes('-') && !bidValue.includes('+') && parseFloat(bidValue.replace(/[^\d.-]/g, '')) > 0);
+        } else if (this.selectedBasis === 'negative') {
+          return bidValue.includes('-') || parseFloat(bidValue.replace(/[^\d.-]/g, '')) < 0;
+        }
+        return true;
+      });
+    }
+
     // Apply search filter
     if (query) {
-      this.filteredBidItems = allItems.filter(item =>
+      this.filteredBidItems = basisFilteredItems.filter(item =>
         item.location.toLowerCase().includes(query) ||
         item.crop.toLowerCase().includes(query) ||
         item.bid.toLowerCase().includes(query)
       );
     } else {
-      this.filteredBidItems = allItems;
+      this.filteredBidItems = basisFilteredItems;
     }
 
     // Update markers to show current year's bids
