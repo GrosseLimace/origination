@@ -635,7 +635,7 @@ export class CustomerProfileComponent implements OnChanges {
               ${activeContracts.map(contract => `
               <tr>
                 <td>${contract.contractNumber}</td>
-                <td>${contract.crop}</td>
+                <td>${contract.commodityDescription || contract.commodityCode || ''}</td>
                 <td class="text-right">${contract.quantity.toLocaleString()} bu</td>
                 <td class="text-right">$${contract.price.toFixed(2)}</td>
                 <td>${this.formatDeliveryPeriod(contract.deliveryStart, contract.deliveryEnd)}</td>

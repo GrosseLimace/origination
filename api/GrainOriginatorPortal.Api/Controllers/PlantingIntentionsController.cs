@@ -21,8 +21,8 @@ public class PlantingIntentionsController : ControllerBase
         return Ok(_dataService.GetPlantingIntentions());
     }
 
-    [HttpGet("customer/{customerId}")]
-    public ActionResult<List<PlantingIntention>> GetByCustomer(string customerId)
+    [HttpGet("customer/{customerId:long}")]
+    public ActionResult<List<PlantingIntention>> GetByCustomer(long customerId)
     {
         return Ok(_dataService.GetPlantingIntentionsByCustomer(customerId));
     }
@@ -31,7 +31,7 @@ public class PlantingIntentionsController : ControllerBase
     public ActionResult Create([FromBody] CreatePlantingIntentionRequest request)
     {
         _dataService.AddPlantingIntention(
-            request.CustomerId,
+            long.Parse(request.CustomerId),
             request.FarmId,
             request.Crop,
             request.Acres,

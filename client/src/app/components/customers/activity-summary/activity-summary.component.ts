@@ -352,7 +352,8 @@ export class ActivitySummaryComponent implements OnChanges {
     if (upcomingDeliveries.length > 0) {
       const nextContract = upcomingDeliveries[0];
       const daysRemaining = this.calculateDaysBetween(now, new Date(nextContract.deliveryEnd));
-      sentences.push(`Next delivery deadline: ${nextContract.crop} contract ends in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}`);
+      const cropName = nextContract.commodityDescription || nextContract.commodityCode || nextContract.crop || 'grain';
+      sentences.push(`Next delivery deadline: ${cropName} contract ends in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}`);
     }
 
     // Overdue deliveries
