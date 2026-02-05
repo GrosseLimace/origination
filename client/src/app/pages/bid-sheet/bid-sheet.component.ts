@@ -1,4 +1,4 @@
-import { Component, OnInit, AfterViewInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, AfterViewInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent } from '../../components/ui/card/card.component';
@@ -24,96 +24,183 @@ interface LocationCoords {
   imports: [CommonModule, FormsModule, CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent],
   template: `
     <div class="space-y-4">
-      <!-- Header with Key Legend -->
-      <div class="flex items-center justify-between">
-        <div>
-          <h2 class="text-2xl font-semibold text-gray-900 dark:text-white">Bid Sheet</h2>
-          <p class="text-gray-500 dark:text-gray-400">Grain bids by location and crop</p>
-        </div>
-        <div class="flex items-center gap-4 text-sm">
-          <span class="font-medium text-gray-700 dark:text-gray-300">Key:</span>
-          <div class="flex items-center gap-2">
-            <div class="w-4 h-4 bg-yellow-200 dark:bg-yellow-900/40 border border-gray-300 dark:border-gray-600"></div>
-            <span class="text-gray-700 dark:text-gray-300">Matching</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <div class="w-4 h-4 bg-red-200 dark:bg-red-900/40 border border-gray-300 dark:border-gray-600"></div>
-            <span class="text-gray-700 dark:text-gray-300">Beating</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <div class="w-4 h-4 bg-green-200 dark:bg-green-900/40 border border-gray-300 dark:border-gray-600"></div>
-            <span class="text-gray-700 dark:text-gray-300">Changed</span>
-          </div>
-        </div>
+      <!-- Header -->
+      <div>
+        <h2 class="text-2xl font-semibold text-gray-900 dark:text-white">Bid Sheet</h2>
+        <p class="text-gray-500 dark:text-gray-400">Grain bids by location and crop</p>
       </div>
 
-      <!-- Filters -->
-      <div class="flex items-center gap-3 bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-        <!-- Crop Filter -->
-        <div class="relative">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
-            <path d="M12 2v20M2 12h20"/>
-            <circle cx="12" cy="12" r="3"/>
-          </svg>
-          <select [(ngModel)]="selectedCrop" (change)="filterBids()" class="pl-10 pr-10 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent appearance-none cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
-            @for (crop of crops; track crop) {
-              <option [value]="crop">{{ crop }}</option>
-            }
-          </select>
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
-            <polyline points="6 9 12 15 18 9"/>
-          </svg>
-        </div>
+      <!-- Top Section: Market Values and Rail Offers -->
+      <div class="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-4">
+        <!-- Market Values Table -->
+        <app-card class="min-w-0">
+          <app-card-header class="!p-0 border-b border-gray-200 dark:border-gray-700">
+            <div class="flex items-center justify-between h-[72px] px-6">
+              <div class="flex items-center gap-4">
+                <select [(ngModel)]="selectedMarketCrop" class="px-4 py-2.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-base text-gray-900 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
+                  @for (crop of crops; track crop) {
+                    <option [value]="crop">{{ crop }}</option>
+                  }
+                </select>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Market Values</h3>
+              </div>
+              <div class="flex items-center gap-2">
+                <button
+                  (click)="addDeliveryPeriod()"
+                  class="px-3 py-1.5 text-xs font-medium text-green-700 dark:text-green-400 hover:text-white hover:bg-green-700 dark:hover:bg-green-600 border border-green-700 dark:border-green-600 rounded transition-colors"
+                >
+                  Add Row
+                </button>
+                <button
+                  (click)="addLocation()"
+                  class="px-3 py-1.5 text-xs font-medium text-green-700 dark:text-green-400 hover:text-white hover:bg-green-700 dark:hover:bg-green-600 border border-green-700 dark:border-green-600 rounded transition-colors"
+                >
+                  Add Column
+                </button>
+              </div>
+            </div>
+          </app-card-header>
+          <app-card-content class="!p-0">
+            <div #marketValuesScroll class="overflow-x-auto overflow-y-auto px-6 pb-6 pt-6" style="max-height: 280px;">
+              <table class="w-full text-sm" style="margin: 0; border-spacing: 0;">
+                <thead>
+                  <tr class="border-b border-gray-200 dark:border-gray-700">
+                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-32" style="line-height: 1.5;">
+                      Period
+                    </th>
+                    @for (location of marketLocations; track $index; let idx = $index) {
+                      <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider group">
+                        <div class="flex items-center justify-center gap-1">
+                          <input
+                            type="text"
+                            [(ngModel)]="marketLocations[idx]"
+                            (blur)="updateLocationName(idx, $event)"
+                            class="text-center bg-transparent border-0 hover:bg-gray-100 dark:hover:bg-gray-700 focus:bg-gray-100 dark:focus:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-green-500 rounded px-2 py-1"
+                          />
+                          <button
+                            (click)="removeLocation(idx)"
+                            class="opacity-0 group-hover:opacity-100 transition-all duration-200 text-red-600 dark:text-red-400 hover:text-white hover:bg-red-600 dark:hover:bg-red-500 rounded p-1 hover:scale-110"
+                            title="Delete location"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="M3 6h18"/>
+                              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                              <line x1="10" x2="10" y1="11" y2="17"/>
+                              <line x1="14" x2="14" y1="11" y2="17"/>
+                            </svg>
+                          </button>
+                        </div>
+                      </th>
+                    }
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                  @for (period of deliveryPeriods; track $index; let idx = $index) {
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 group">
+                      <td class="px-3 py-3 text-sm font-medium text-gray-900 dark:text-white w-32" style="vertical-align: top;">
+                        <div class="flex items-center gap-2">
+                          <input
+                            type="text"
+                            [(ngModel)]="deliveryPeriods[idx]"
+                            (blur)="updatePeriodName(idx, $event)"
+                            class="bg-transparent border-0 hover:bg-gray-100 dark:hover:bg-gray-700 focus:bg-gray-100 dark:focus:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-green-500 rounded px-2 py-1"
+                          />
+                          <button
+                            (click)="removeDeliveryPeriod(idx)"
+                            class="opacity-0 group-hover:opacity-100 transition-all duration-200 text-red-600 dark:text-red-400 hover:text-white hover:bg-red-600 dark:hover:bg-red-500 rounded p-1 hover:scale-110"
+                            title="Delete period"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="M3 6h18"/>
+                              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                              <line x1="10" x2="10" y1="11" y2="17"/>
+                              <line x1="14" x2="14" y1="11" y2="17"/>
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
+                      @for (location of marketLocations; track location) {
+                        <td class="px-4 py-3 text-center">
+                          <input
+                            type="text"
+                            [value]="getMarketValue(period, location)"
+                            (blur)="updateMarketValue(period, location, $event)"
+                            class="w-full px-2 py-1 text-sm text-center text-gray-900 dark:text-white bg-transparent border-0 hover:bg-gray-100 dark:hover:bg-gray-700 focus:bg-gray-100 dark:focus:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-green-500 rounded"
+                          />
+                        </td>
+                      }
+                      <td class="px-4 py-3"></td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </app-card-content>
+        </app-card>
 
-        <!-- Year Filter -->
-        <div class="relative">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
-            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-            <line x1="16" y1="2" x2="16" y2="6"/>
-            <line x1="8" y1="2" x2="8" y2="6"/>
-            <line x1="3" y1="10" x2="21" y2="10"/>
-          </svg>
-          <select [(ngModel)]="selectedYear" (change)="filterBids()" class="pl-10 pr-10 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent appearance-none cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
-            <option value="2025">2025</option>
-            <option value="2026">2026</option>
-          </select>
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
-            <polyline points="6 9 12 15 18 9"/>
-          </svg>
-        </div>
+        <!-- Right Column: Rail Offers and Key -->
+        <div class="space-y-4 min-w-0">
+          <!-- Rail Offers -->
+          <app-card>
+            <app-card-header class="!p-0 border-b border-gray-200 dark:border-gray-700">
+              <div class="flex items-center justify-between h-[72px] px-6">
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Rail Offers</h3>
+                <div class="flex items-center gap-2">
+                  <button
+                    (click)="addRailOffer()"
+                    class="px-3 py-1.5 text-xs font-medium text-green-700 dark:text-green-400 hover:text-white hover:bg-green-700 dark:hover:bg-green-600 border border-green-700 dark:border-green-600 rounded transition-colors"
+                  >
+                    Add Row
+                  </button>
+                </div>
+              </div>
+            </app-card-header>
+            <app-card-content class="!p-0">
+              <div class="overflow-x-auto overflow-y-auto px-6 pb-6 pt-6" style="max-height: 280px;">
+                <table class="w-full text-sm" style="margin: 0; border-spacing: 0;">
+                <thead>
+                  <tr class="border-b border-gray-200 dark:border-gray-700">
+                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider" style="line-height: 1.5;">
+                      Offer
+                    </th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                  @for (offer of railOffers; track $index) {
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 group">
+                      <td class="px-3 py-3 text-sm" style="vertical-align: top; line-height: 1.5;">
+                        <div class="flex items-center gap-2">
+                          <input
+                            type="text"
+                            [(ngModel)]="railOffers[$index]"
+                            placeholder="Enter rail offer"
+                            class="flex-1 text-sm text-gray-900 dark:text-white bg-transparent border-0 hover:bg-gray-100 dark:hover:bg-gray-700 focus:bg-gray-100 dark:focus:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-green-500 rounded px-2 py-1"
+                          />
+                          <button
+                            (click)="removeRailOffer($index)"
+                            class="opacity-0 group-hover:opacity-100 transition-all duration-200 text-red-600 dark:text-red-400 hover:text-white hover:bg-red-600 dark:hover:bg-red-500 rounded p-1 hover:scale-110"
+                            title="Delete offer"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="M3 6h18"/>
+                              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                              <line x1="10" x2="10" y1="11" y2="17"/>
+                              <line x1="14" x2="14" y1="11" y2="17"/>
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+              </div>
+            </app-card-content>
+          </app-card>
 
-        <!-- Basis Filter -->
-        <div class="relative">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
-            <line x1="12" y1="1" x2="12" y2="23"/>
-            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-          </svg>
-          <select [(ngModel)]="selectedBasis" (change)="filterBids()" class="pl-10 pr-10 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent appearance-none cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
-            <option value="all">All Basis</option>
-            <option value="positive">Positive</option>
-            <option value="negative">Negative</option>
-          </select>
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
-            <polyline points="6 9 12 15 18 9"/>
-          </svg>
-        </div>
-
-        <!-- Divider -->
-        <div class="h-8 w-px bg-gray-300 dark:bg-gray-600"></div>
-
-        <!-- Search -->
-        <div class="relative flex-1 max-w-xs">
-          <input
-            type="text"
-            [(ngModel)]="searchQuery"
-            (input)="filterBids()"
-            placeholder="Search locations, crops, or bids..."
-            class="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
-          />
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-            <circle cx="11" cy="11" r="8"/>
-            <path d="m21 21-4.3-4.3"/>
-          </svg>
         </div>
       </div>
 
@@ -121,7 +208,46 @@ interface LocationCoords {
         <!-- Location Map -->
         <app-card>
           <app-card-content class="!p-0">
-            <div id="bid-locations-map" style="height: 700px; width: 100%;"></div>
+            <div style="position: relative; height: 700px; width: 100%;">
+              <div id="bid-locations-map" style="height: 100%; width: 100%;"></div>
+
+              <!-- Filters Overlay -->
+              <div class="absolute top-2.5 left-16 z-[1000] flex items-center gap-3 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm p-2.5 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+                <!-- Crop Filter -->
+                <select [(ngModel)]="selectedCrop" (change)="filterBids()" class="px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
+                  @for (crop of crops; track crop) {
+                    <option [value]="crop">{{ crop }}</option>
+                  }
+                </select>
+
+                <!-- Year Filter -->
+                <select [(ngModel)]="selectedYear" (change)="filterBids()" class="px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
+                  <option value="2025">2025</option>
+                  <option value="2026">2026</option>
+                </select>
+
+                <!-- Basis Filter -->
+                <select [(ngModel)]="selectedBasis" (change)="filterBids()" class="px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
+                  <option value="all">All Basis</option>
+                  <option value="positive">Positive</option>
+                  <option value="negative">Negative</option>
+                </select>
+
+                <!-- Divider -->
+                <div class="h-8 w-px bg-gray-300 dark:bg-gray-600"></div>
+
+                <!-- Search -->
+                <div class="relative w-80">
+                  <input
+                    type="text"
+                    [(ngModel)]="searchQuery"
+                    (input)="filterBids()"
+                    placeholder="Search locations, crops, or bids..."
+                    class="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
+                  />
+                </div>
+              </div>
+            </div>
           </app-card-content>
         </app-card>
 
@@ -129,14 +255,31 @@ interface LocationCoords {
         <app-card>
           <app-card-content class="!p-0">
             <div class="overflow-auto" style="height: 700px;">
+              <!-- Selected Location Header -->
+              @if (selectedLocation) {
+                <div class="sticky top-0 z-20 bg-green-50 dark:bg-green-900/20 border-b border-green-200 dark:border-green-800 px-4 py-3">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600 dark:text-green-400">
+                        <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+                        <circle cx="12" cy="10" r="3"/>
+                      </svg>
+                      <span class="text-sm font-medium text-green-900 dark:text-green-100">{{ selectedLocation }}</span>
+                    </div>
+                    <button (click)="clearLocationSelection()" class="text-xs text-green-700 dark:text-green-300 hover:text-green-900 dark:hover:text-green-100 font-medium hover:underline">
+                      Show All
+                    </button>
+                  </div>
+                </div>
+              }
               <table class="w-full border-collapse text-sm">
-                <thead class="sticky top-0 z-10">
+                <thead class="sticky z-10" [class.top-0]="!selectedLocation" [class.top-[52px]]="selectedLocation">
                   <tr class="bg-gray-50 dark:bg-gray-800">
                     <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
-                      Location
+                      @if (selectedLocation) { Crop } @else { Location }
                     </th>
                     <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
-                      Crop
+                      @if (selectedLocation) { Year } @else { Crop }
                     </th>
                     <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
                       Bid
@@ -150,10 +293,10 @@ interface LocationCoords {
                   @for (item of filteredBidItems; track item.location + item.crop + item.year) {
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors border-b border-gray-200 dark:border-gray-700">
                       <td class="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                        {{ item.location }}
+                        @if (selectedLocation) { {{ item.crop }} } @else { {{ item.location }} }
                       </td>
                       <td class="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                        {{ item.crop }}
+                        @if (selectedLocation) { {{ item.year }} } @else { {{ item.crop }} }
                       </td>
                       <td class="px-4 py-3 text-sm text-right font-mono text-gray-900 dark:text-white">
                         {{ item.bid }}
@@ -177,37 +320,54 @@ interface LocationCoords {
           </app-card-content>
         </app-card>
       </div>
-
-      <!-- Rail Offers Section -->
-      <app-card>
-        <app-card-header>
-          <app-card-title>Rail Offers</app-card-title>
-        </app-card-header>
-        <app-card-content>
-          <div class="space-y-2 text-sm">
-            <div class="flex justify-between">
-              <span class="text-gray-600 dark:text-gray-400">Aug +97U</span>
-              <span class="text-gray-900 dark:text-white font-mono">FH Sep +97U</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-gray-600 dark:text-gray-400">Oct/Nov/Dec +95Z</span>
-              <span class="text-gray-900 dark:text-white font-mono">-</span>
-            </div>
-          </div>
-        </app-card-content>
-      </app-card>
     </div>
   `
 })
 export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
+  @ViewChild('marketValuesScroll') marketValuesScroll?: ElementRef;
+
   selectedYear: string = '2025';
   selectedCrop: string = 'Wheat';
   searchQuery: string = '';
   selectedBasis: string = 'all';
+  selectedLocation: string = '';
+  selectedMarketCrop: string = 'Corn';
 
   bidData: BidData[] = [];
   filteredBidItems: any[] = [];
   crops: string[] = ['Wheat', 'Corn', 'Milo', 'Beans', 'Canola'];
+
+  marketLocations: string[] = ['Lyons', 'Great Bend', 'Russell', 'Dodge City', 'Garden City'];
+  deliveryPeriods: string[] = ['Aug/Sept', 'Oct-March'];
+
+  railOffers: string[] = [
+    'Aug +97U',
+    'FH Sep +97U',
+    'Oct/Nov/Dec +95Z'
+  ];
+
+  marketValues: { [crop: string]: { [period: string]: { [location: string]: string } } } = {
+    'Corn': {
+      'Aug/Sept': { 'Lyons': '+65U/+85U', 'Great Bend': '+70U/+90U', 'Russell': '+55U/+75U', 'Dodge City': '+105U/+125U', 'Garden City': '+115U/+130U' },
+      'Oct-March': { 'Lyons': '+45R/+60R', 'Great Bend': '+45R/+60R', 'Russell': '+35R/+50R', 'Dodge City': '+75R/+85R', 'Garden City': '+85R/+100R' }
+    },
+    'Wheat': {
+      'Aug/Sept': { 'Lyons': '', 'Great Bend': '', 'Russell': '', 'Dodge City': '', 'Garden City': '' },
+      'Oct-March': { 'Lyons': '', 'Great Bend': '', 'Russell': '', 'Dodge City': '', 'Garden City': '' }
+    },
+    'Milo': {
+      'Aug/Sept': { 'Lyons': '', 'Great Bend': '', 'Russell': '', 'Dodge City': '', 'Garden City': '' },
+      'Oct-March': { 'Lyons': '', 'Great Bend': '', 'Russell': '', 'Dodge City': '', 'Garden City': '' }
+    },
+    'Beans': {
+      'Aug/Sept': { 'Lyons': '', 'Great Bend': '', 'Russell': '', 'Dodge City': '', 'Garden City': '' },
+      'Oct-March': { 'Lyons': '', 'Great Bend': '', 'Russell': '', 'Dodge City': '', 'Garden City': '' }
+    },
+    'Canola': {
+      'Aug/Sept': { 'Lyons': '', 'Great Bend': '', 'Russell': '', 'Dodge City': '', 'Garden City': '' },
+      'Oct-March': { 'Lyons': '', 'Great Bend': '', 'Russell': '', 'Dodge City': '', 'Garden City': '' }
+    }
+  };
 
   private map: any = null;
   private markers: any[] = [];
@@ -356,6 +516,8 @@ export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
         .addTo(this.map);
 
       marker.on('click', () => {
+        this.selectedLocation = location.name;
+        this.filterBids();
         this.openEditPopup(marker, location.name, bid, status);
       });
 
@@ -442,6 +604,7 @@ export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
       if (cancelBtn) {
         cancelBtn.addEventListener('click', () => {
           this.map.closePopup();
+          this.clearLocationSelection();
         });
       }
 
@@ -450,6 +613,7 @@ export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
           const newBid = input.value;
           this.saveBid(locationName, newBid);
           this.map.closePopup();
+          this.clearLocationSelection();
         });
       }
     }, 100);
@@ -487,12 +651,173 @@ export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
     return document.documentElement.classList.contains('dark');
   }
 
+  clearLocationSelection(): void {
+    this.selectedLocation = '';
+    this.filterBids();
+  }
+
+  getMarketValue(period: string, location: string): string {
+    if (this.marketValues[this.selectedMarketCrop] &&
+        this.marketValues[this.selectedMarketCrop][period]) {
+      return this.marketValues[this.selectedMarketCrop][period][location] || '';
+    }
+    return '';
+  }
+
+  updateMarketValue(period: string, location: string, event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const value = input.value;
+
+    if (!this.marketValues[this.selectedMarketCrop]) {
+      this.marketValues[this.selectedMarketCrop] = {};
+    }
+    if (!this.marketValues[this.selectedMarketCrop][period]) {
+      this.marketValues[this.selectedMarketCrop][period] = {};
+    }
+    this.marketValues[this.selectedMarketCrop][period][location] = value;
+  }
+
+  addDeliveryPeriod(): void {
+    // Create a unique period name
+    let newPeriod = 'New Period';
+    let counter = 1;
+    while (this.deliveryPeriods.includes(newPeriod)) {
+      newPeriod = `New Period ${counter}`;
+      counter++;
+    }
+
+    this.deliveryPeriods.push(newPeriod);
+    // Initialize values for all crops and locations for this new period
+    for (const crop of this.crops) {
+      if (!this.marketValues[crop]) {
+        this.marketValues[crop] = {};
+      }
+      this.marketValues[crop][newPeriod] = {};
+      for (const location of this.marketLocations) {
+        this.marketValues[crop][newPeriod][location] = '';
+      }
+    }
+  }
+
+  removeDeliveryPeriod(index: number): void {
+    const period = this.deliveryPeriods[index];
+    if (confirm(`Remove delivery period "${period}"?`)) {
+      this.deliveryPeriods.splice(index, 1);
+      // Remove from market values for all crops
+      for (const crop of this.crops) {
+        if (this.marketValues[crop] && this.marketValues[crop][period]) {
+          delete this.marketValues[crop][period];
+        }
+      }
+    }
+  }
+
+  updatePeriodName(index: number, event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const newName = input.value.trim();
+    const oldName = this.deliveryPeriods[index];
+
+    if (newName && newName !== oldName) {
+      this.deliveryPeriods[index] = newName;
+      // Update market values for all crops
+      for (const crop of this.crops) {
+        if (this.marketValues[crop] && this.marketValues[crop][oldName]) {
+          this.marketValues[crop][newName] = this.marketValues[crop][oldName];
+          delete this.marketValues[crop][oldName];
+        }
+      }
+    }
+  }
+
+  addLocation(): void {
+    // Create a unique location name
+    let newLocation = 'New Location';
+    let counter = 1;
+    while (this.marketLocations.includes(newLocation)) {
+      newLocation = `New Location ${counter}`;
+      counter++;
+    }
+
+    this.marketLocations.push(newLocation);
+    // Initialize values for all crops and periods for this new location
+    for (const crop of this.crops) {
+      if (!this.marketValues[crop]) {
+        this.marketValues[crop] = {};
+      }
+      for (const period of this.deliveryPeriods) {
+        if (!this.marketValues[crop][period]) {
+          this.marketValues[crop][period] = {};
+        }
+        this.marketValues[crop][period][newLocation] = '';
+      }
+    }
+
+    // Scroll to show the new column
+    setTimeout(() => {
+      if (this.marketValuesScroll) {
+        const element = this.marketValuesScroll.nativeElement;
+        element.scrollTo({
+          left: element.scrollWidth,
+          behavior: 'smooth'
+        });
+      }
+    }, 100);
+  }
+
+  removeLocation(index: number): void {
+    const location = this.marketLocations[index];
+    if (confirm(`Remove location "${location}"?`)) {
+      this.marketLocations.splice(index, 1);
+      // Remove from market values for all crops and periods
+      for (const crop of this.crops) {
+        if (this.marketValues[crop]) {
+          for (const period of this.deliveryPeriods) {
+            if (this.marketValues[crop][period] && this.marketValues[crop][period][location]) {
+              delete this.marketValues[crop][period][location];
+            }
+          }
+        }
+      }
+    }
+  }
+
+  updateLocationName(index: number, event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const newName = input.value.trim();
+    const oldName = this.marketLocations[index];
+
+    if (newName && newName !== oldName) {
+      this.marketLocations[index] = newName;
+      // Update market values for all crops and periods
+      for (const crop of this.crops) {
+        if (this.marketValues[crop]) {
+          for (const period of this.deliveryPeriods) {
+            if (this.marketValues[crop][period] && this.marketValues[crop][period][oldName]) {
+              this.marketValues[crop][period][newName] = this.marketValues[crop][period][oldName];
+              delete this.marketValues[crop][period][oldName];
+            }
+          }
+        }
+      }
+    }
+  }
+
+  addRailOffer(): void {
+    this.railOffers.push('');
+  }
+
+  removeRailOffer(index: number): void {
+    this.railOffers.splice(index, 1);
+  }
+
   filterBids(): void {
     const year = parseInt(this.selectedYear);
     const query = this.searchQuery.toLowerCase();
 
-    // Filter bid data by year first
-    const yearFilteredData = this.bidData.filter(bd => bd.year === year);
+    // Filter bid data by year (or all years if location is selected)
+    const yearFilteredData = this.selectedLocation
+      ? this.bidData  // Show all years when location is selected
+      : this.bidData.filter(bd => bd.year === year);
 
     // Flatten the data into individual bid items
     const allItems: any[] = [];
@@ -511,10 +836,16 @@ export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     }
 
+    // Apply location filter if a location is selected
+    let locationFilteredItems = allItems;
+    if (this.selectedLocation) {
+      locationFilteredItems = allItems.filter(item => item.location === this.selectedLocation);
+    }
+
     // Apply basis filter
-    let basisFilteredItems = allItems;
+    let basisFilteredItems = locationFilteredItems;
     if (this.selectedBasis !== 'all') {
-      basisFilteredItems = allItems.filter(item => {
+      basisFilteredItems = locationFilteredItems.filter(item => {
         const bidValue = item.bid;
         // Check if bid starts with + or - (or contains them for basis values)
         if (this.selectedBasis === 'positive') {
