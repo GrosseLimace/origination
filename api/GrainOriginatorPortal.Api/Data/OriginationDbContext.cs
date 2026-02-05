@@ -59,6 +59,7 @@ public class OriginationDbContext : DbContext
             entity.Ignore(e => e.ESignEnabled);
             entity.Ignore(e => e.Coordinates);
             entity.Ignore(e => e.FarmIds);
+            entity.Ignore(e => e.LinkedProducerIds);
 
             // Indexes for common queries
             entity.HasIndex(e => e.Name);

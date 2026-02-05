@@ -325,7 +325,7 @@ export class ActivitySummaryComponent implements OnChanges {
       try {
         const daysRemaining = this.calculateDaysBetween(now, new Date(nextContract.deliveryEnd));
         if (daysRemaining <= 30 && daysRemaining >= 0) {
-          const crop = nextContract.crop || 'grain';
+          const crop = nextContract.commodityDescription || nextContract.commodityCode || 'grain';
           if (daysRemaining <= 7) {
             alerts.push(`Upcoming: their ${crop} contract delivery window closes in just ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}`);
           } else {
@@ -352,7 +352,7 @@ export class ActivitySummaryComponent implements OnChanges {
     if (upcomingDeliveries.length > 0) {
       const nextContract = upcomingDeliveries[0];
       const daysRemaining = this.calculateDaysBetween(now, new Date(nextContract.deliveryEnd));
-      const cropName = nextContract.commodityDescription || nextContract.commodityCode || nextContract.crop || 'grain';
+      const cropName = nextContract.commodityDescription || nextContract.commodityCode || 'grain';
       sentences.push(`Next delivery deadline: ${cropName} contract ends in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}`);
     }
 

@@ -54,7 +54,7 @@ public class SqlDataService : IDataService
         }
     }
 
-    public void UpdateCustomer(long customerId, string location, string phone, string email, List<string> farmIds)
+    public void UpdateCustomer(long customerId, string location, string phone, string email, List<string> farmIds, List<string> linkedProducerIds)
     {
         try
         {
@@ -69,6 +69,7 @@ public class SqlDataService : IDataService
             customer.Phone = phone;
             customer.Email = email;
             customer.FarmIds = farmIds;
+            customer.LinkedProducerIds = linkedProducerIds;
 
             // Recalculate TotalAcres based on associated farms
             // Note: Farms table doesn't exist in ODS - skipping TotalAcres calculation
@@ -167,58 +168,29 @@ public class SqlDataService : IDataService
     }
 
     // =========================================================================
-    // Ticket Operations
+    // Ticket Operations - DISABLED: vw_CurrentTickets doesn't exist in ODS yet
     // =========================================================================
 
     public List<Ticket> GetTickets()
     {
-        try
-        {
-            return _context.Tickets
-                .OrderByDescending(t => t.Date)
-                .ToList();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving tickets");
-            throw;
-        }
+        _logger.LogWarning("Tickets view doesn't exist in ODS yet - returning empty list");
+        return new List<Ticket>();
     }
 
     public List<Ticket> GetTicketsByCustomer(long customerId)
     {
-        try
-        {
-            return _context.Tickets
-                .Where(t => t.CustomerId == customerId)
-                .OrderByDescending(t => t.Date)
-                .ToList();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving tickets for customer {CustomerId}", customerId);
-            throw;
-        }
+        _logger.LogWarning("Tickets view doesn't exist in ODS yet - returning empty list");
+        return new List<Ticket>();
     }
 
     public List<Ticket> GetTicketsByFarm(string farmId)
     {
-        try
-        {
-            return _context.Tickets
-                .Where(t => t.FarmId == farmId)
-                .OrderByDescending(t => t.Date)
-                .ToList();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving tickets for farm {FarmId}", farmId);
-            throw;
-        }
+        _logger.LogWarning("Tickets view doesn't exist in ODS yet - returning empty list");
+        return new List<Ticket>();
     }
 
     // =========================================================================
-    // Planting Intention Operations - DISABLED: PlantingIntentions table doesn't exist in ODS
+    // Planting Intention Operations - DISABLED: Table doesn't exist in ODS
     // =========================================================================
 
     public List<PlantingIntention> GetPlantingIntentions()
@@ -229,233 +201,89 @@ public class SqlDataService : IDataService
 
     public List<PlantingIntention> GetPlantingIntentionsByCustomer(long customerId)
     {
-        _logger.LogWarning("PlantingIntentions table doesn't exist in ODS - returning empty list for customer {CustomerId}", customerId);
+        _logger.LogWarning("PlantingIntentions table doesn't exist in ODS - returning empty list");
         return new List<PlantingIntention>();
     }
 
-    public void AddPlantingIntention(long customerId, string farmId, string crop, int acres,
-        string variety, DateTime plantingDate, int estimatedYield)
+    public void AddPlantingIntention(long customerId, string farmId, string crop, int acres, string variety, DateTime plantingDate, int estimatedYield)
     {
-        _logger.LogWarning("PlantingIntentions table doesn't exist in ODS - cannot add planting intention");
-        throw new NotImplementedException("Planting intention creation is not supported - PlantingIntentions table doesn't exist in ODS");
+        _logger.LogWarning("PlantingIntentions table doesn't exist in ODS - operation skipped");
     }
 
-    public void UpdatePlantingIntention(string intentionId, string crop, int acres,
-        string variety, DateTime plantingDate, int estimatedYield)
+    public void UpdatePlantingIntention(string intentionId, string crop, int acres, string variety, DateTime plantingDate, int estimatedYield)
     {
-        _logger.LogWarning("PlantingIntentions table doesn't exist in ODS - cannot update planting intention {IntentionId}", intentionId);
-        throw new NotImplementedException("Planting intention update is not supported - PlantingIntentions table doesn't exist in ODS");
+        _logger.LogWarning("PlantingIntentions table doesn't exist in ODS - operation skipped");
     }
 
     // =========================================================================
-    // Note Operations
+    // Note Operations - DISABLED: Table doesn't exist in ODS
     // =========================================================================
 
     public List<Note> GetNotes()
     {
-        try
-        {
-            return /* Notes table disabled */ new List<Note>().AsQueryable()
-                .OrderByDescending(n => n.IsPinned)
-                .ThenByDescending(n => n.CreatedAt)
-                .ToList();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving notes");
-            throw;
-        }
+        _logger.LogWarning("Notes table doesn't exist in ODS - returning empty list");
+        return new List<Note>();
     }
 
     public List<Note> GetNotesByCustomer(long customerId)
     {
-        try
-        {
-            var customerIdString = customerId.ToString();
-            return /* Notes table disabled */ new List<Note>().AsQueryable()
-                .Where(n => n.CustomerId == customerIdString)
-                .OrderByDescending(n => n.IsPinned)
-                .ThenByDescending(n => n.CreatedAt)
-                .ToList();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving notes for customer {CustomerId}", customerId);
-            throw;
-        }
+        _logger.LogWarning("Notes table doesn't exist in ODS - returning empty list");
+        return new List<Note>();
     }
 
     public Note AddNote(long customerId, string content)
     {
-        try
+        _logger.LogWarning("Notes table doesn't exist in ODS - returning dummy note");
+        return new Note
         {
-            var maxId = /* Notes table disabled */ new List<Note>().AsQueryable()
-                .Select(n => n.Id)
-                .AsEnumerable()
-                .Select(id => int.TryParse(id.Replace("N", ""), out var num) ? num : 0)
-                .DefaultIfEmpty(0)
-                .Max();
-
-            var newId = $"N{(maxId + 1).ToString().PadLeft(3, '0')}";
-
-            var note = new Note
-            {
-                Id = newId,
-                CustomerId = customerId.ToString(),
-                CreatedBy = "Current User", // TODO: Get from authenticated user context
-                CreatedAt = DateTime.UtcNow,
-                Content = content,
-                IsPinned = false
-            };
-
-            // /* Notes table disabled */ new List<Note>().AsQueryable().Add(note);
-            // _context.SaveChanges();
-
-            _logger.LogWarning("Notes table doesn't exist in ODS - cannot add note for customer {CustomerId}", customerId);
-            throw new NotImplementedException("Note creation is not supported - Notes table doesn't exist in ODS");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error adding note for customer {CustomerId}", customerId);
-            throw;
-        }
+            Id = Guid.NewGuid().ToString(),
+            CustomerId = customerId.ToString(),
+            Content = content,
+            CreatedAt = DateTime.UtcNow,
+            CreatedBy = "System",
+            IsPinned = false
+        };
     }
 
     public Note? ToggleNotePin(string noteId)
     {
-        try
-        {
-            var note = /* Notes table disabled */ new List<Note>().AsQueryable().FirstOrDefault(n => n.Id == noteId);
-            if (note == null)
-            {
-                _logger.LogWarning("Note {NoteId} not found for pin toggle", noteId);
-                return null;
-            }
-
-            note.IsPinned = !note.IsPinned;
-            _context.SaveChanges();
-
-            _logger.LogInformation("Toggled pin for note {NoteId} to {IsPinned}", noteId, note.IsPinned);
-            return note;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error toggling pin for note {NoteId}", noteId);
-            throw;
-        }
+        _logger.LogWarning("Notes table doesn't exist in ODS - operation skipped");
+        return null;
     }
 
     // =========================================================================
-    // Stored Grain Operations
+    // Storage Operations - DISABLED: Table doesn't exist in ODS
     // =========================================================================
 
     public List<StoredGrain> GetStoredGrain()
     {
-        try
-        {
-            return /* StoredGrains table disabled */ new List<StoredGrain>().AsQueryable()
-                .OrderByDescending(s => s.StorageStartDate)
-                .ToList();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving stored grain");
-            throw;
-        }
+        _logger.LogWarning("StoredGrain table doesn't exist in ODS - returning empty list");
+        return new List<StoredGrain>();
     }
 
     public List<StoredGrain> GetStoredGrainByCustomer(long customerId)
     {
-        try
-        {
-            var customerIdString = customerId.ToString();
-            return /* StoredGrains table disabled */ new List<StoredGrain>().AsQueryable()
-                .Where(s => s.CustomerId == customerIdString)
-                .OrderByDescending(s => s.StorageStartDate)
-                .ToList();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving stored grain for customer {CustomerId}", customerId);
-            throw;
-        }
+        _logger.LogWarning("StoredGrain table doesn't exist in ODS - returning empty list");
+        return new List<StoredGrain>();
     }
 
     // =========================================================================
-    // Saved List Operations
+    // Saved List Operations - DISABLED: Table doesn't exist in ODS
     // =========================================================================
 
     public List<SavedList> GetSavedLists()
     {
-        try
-        {
-            return /* SavedLists table disabled */ new List<SavedList>().AsQueryable()
-                .OrderByDescending(l => l.CreatedAt)
-                .ToList();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving saved lists");
-            throw;
-        }
+        _logger.LogWarning("SavedLists table doesn't exist in ODS - returning empty list");
+        return new List<SavedList>();
     }
 
     public void SaveList(string name, string query, List<string> customerIds)
     {
-        try
-        {
-            var maxId = /* SavedLists table disabled */ new List<SavedList>().AsQueryable()
-                .Select(l => l.Id)
-                .AsEnumerable()
-                .Select(id => int.TryParse(id.Replace("L", ""), out var num) ? num : 0)
-                .DefaultIfEmpty(0)
-                .Max();
-
-            var newId = $"L{(maxId + 1).ToString().PadLeft(3, '0')}";
-
-            var list = new SavedList
-            {
-                Id = newId,
-                Name = name,
-                Query = query,
-                CustomerIds = customerIds,
-                CreatedAt = DateTime.UtcNow
-            };
-
-            // /* SavedLists table disabled */ new List<SavedList>().AsQueryable().Add(list);
-            // _context.SaveChanges();
-
-            _logger.LogWarning("SavedLists table doesn't exist in ODS - cannot save list {ListName}", name);
-            throw new NotImplementedException("List saving is not supported - SavedLists table doesn't exist in ODS");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error saving list {ListName}", name);
-            throw;
-        }
+        _logger.LogWarning("SavedLists table doesn't exist in ODS - operation skipped");
     }
 
     public void DeleteList(string listId)
     {
-        try
-        {
-            // var list = /* SavedLists table disabled */ new List<SavedList>().AsQueryable().FirstOrDefault(l => l.Id == listId);
-            // if (list == null)
-            // {
-            //     _logger.LogWarning("Saved list {ListId} not found for deletion", listId);
-            //     return;
-            // }
-            //
-            // /* SavedLists table disabled */ new List<SavedList>().AsQueryable().Remove(list);
-            // _context.SaveChanges();
-
-            _logger.LogWarning("SavedLists table doesn't exist in ODS - cannot delete list {ListId}", listId);
-            throw new NotImplementedException("List deletion is not supported - SavedLists table doesn't exist in ODS");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error deleting saved list {ListId}", listId);
-            throw;
-        }
+        _logger.LogWarning("SavedLists table doesn't exist in ODS - operation skipped");
     }
 }
