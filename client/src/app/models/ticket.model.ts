@@ -3,7 +3,7 @@ export interface Ticket {
   customerId: string;
   farmId: string;
   ticketNumber: string;
-  crop: string;           // Grain type (Corn, Soybeans, Wheat)
+  productCode?: string;   // Grain type (Corn, Soybeans, Wheat)
   grossWeight: number;    // Pounds
   tareWeight: number;     // Pounds
   netWeight: number;      // Pounds (Gross - Tare)

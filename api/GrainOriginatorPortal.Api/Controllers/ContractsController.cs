@@ -21,8 +21,8 @@ public class ContractsController : ControllerBase
         return Ok(_dataService.GetContracts());
     }
 
-    [HttpGet("customer/{customerId}")]
-    public ActionResult<List<Contract>> GetByCustomer(string customerId)
+    [HttpGet("customer/{customerId:long}")]
+    public ActionResult<List<Contract>> GetByCustomer(long customerId)
     {
         return Ok(_dataService.GetContractsByCustomer(customerId));
     }

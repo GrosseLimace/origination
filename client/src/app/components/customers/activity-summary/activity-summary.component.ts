@@ -122,7 +122,7 @@ export class ActivitySummaryComponent implements OnChanges {
     if (upcomingDeliveries.length > 0) {
       const nextContract = upcomingDeliveries[0];
       const daysRemaining = Math.floor((new Date(nextContract.deliveryEnd).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-      sentences.push(`Next delivery deadline: ${nextContract.crop} contract ends in ${daysRemaining} days.`);
+      sentences.push(`Next delivery deadline: ${nextContract.commodityDescription || nextContract.commodityCode} contract ends in ${daysRemaining} days.`);
     }
 
     return sentences.length > 0 ? sentences.join(' ') : 'No activity data available for this customer.';

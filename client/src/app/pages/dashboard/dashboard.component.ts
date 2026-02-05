@@ -180,7 +180,7 @@ interface UnsignedContract {
                     </div>
                     <div>
                       <div class="font-medium text-gray-900 dark:text-white">{{ item.customerName }}</div>
-                      <div class="text-sm text-gray-500 dark:text-gray-400">{{ item.contract.contractNumber }} - {{ item.contract.crop }} ({{ item.contract.quantity | number }} bu)</div>
+                      <div class="text-sm text-gray-500 dark:text-gray-400">{{ item.contract.contractNumber }} - {{ item.contract.commodityDescription || item.contract.commodityCode }} ({{ item.contract.quantity | number }} bu)</div>
                     </div>
                   </div>
                   <div class="text-right">
@@ -334,7 +334,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private calculateCropDistribution(): void {
     const cropMap = new Map<string, number>();
     for (const contract of this.contracts) {
-      cropMap.set(contract.crop, (cropMap.get(contract.crop) || 0) + contract.quantity);
+      const commodity = contract.commodityDescription || contract.commodityCode || 'Unknown';
+      cropMap.set(commodity, (cropMap.get(commodity) || 0) + (contract.quantity || 0));
     }
 
     const total = Array.from(cropMap.values()).reduce((a, b) => a + b, 0);

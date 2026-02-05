@@ -180,7 +180,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
                   </div>
                 </app-table-cell>
                 <app-table-cell>
-                  <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ contract.crop }}</span>
+                  <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ contract.commodityDescription || contract.commodityCode }}</span>
                 </app-table-cell>
                 <app-table-cell>
                   <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ contract.quantity | number }} {{ contract.unit }}</span>
@@ -299,8 +299,8 @@ type SortDirection = 'none' | 'asc' | 'desc';
                                   <p>{{ ticket.testWeight | number:'1.1-1' }} lbs/bu</p>
                                 </div>
                                 <div>
-                                  <p class="text-sm text-gray-500 dark:text-gray-400">Crop</p>
-                                  <p>{{ ticket.crop }}</p>
+                                  <p class="text-sm text-gray-500 dark:text-gray-400">Product</p>
+                                  <p>{{ ticket.productCode }}</p>
                                 </div>
                               </div>
                             </div>
@@ -347,7 +347,7 @@ export class ContractsTableComponent implements OnChanges {
           comparison = a.contractNumber.localeCompare(b.contractNumber);
           break;
         case 'crop':
-          comparison = a.crop.localeCompare(b.crop);
+          comparison = (a.commodityDescription || '').localeCompare(b.commodityDescription || '');
           break;
         case 'quantity':
           comparison = a.quantity - b.quantity;
@@ -415,28 +415,27 @@ export class ContractsTableComponent implements OnChanges {
 
   getDeliveryStats(contract: Contract): { deliveredBushels: number; remainingBushels: number; progressPercent: number } {
     const appliedTickets = this.getAppliedTickets(contract);
-    const lbsPerBushel = this.getLbsPerBushel(contract.crop);
+    const lbsPerBushel = this.getLbsPerBushel(contract.commodityDescription || contract.commodityCode || '');
 
     const deliveredLbs = appliedTickets.reduce((sum, t) => sum + t.netWeight, 0);
     const deliveredBushels = Math.floor(deliveredLbs / lbsPerBushel);
-    const remainingBushels = Math.max(0, contract.quantity - deliveredBushels);
-    const progressPercent = contract.quantity > 0 ? (deliveredBushels / contract.quantity) * 100 : 0;
+    const remainingBushels = Math.max(0, (contract.quantity || 0) - deliveredBushels);
+    const progressPercent = (contract.quantity || 0) > 0 ? (deliveredBushels / (contract.quantity || 1)) * 100 : 0;
 
     return { deliveredBushels, remainingBushels, progressPercent };
   }
 
-  private getLbsPerBushel(crop: string): number {
-    switch (crop) {
-      case 'Corn': return 56;
-      case 'Soybeans': return 60;
-      case 'Wheat': return 60;
-      default: return 56;
-    }
+  private getLbsPerBushel(commodity: string): number {
+    const commodityUpper = commodity.toUpperCase();
+    if (commodityUpper.includes('CORN')) return 56;
+    if (commodityUpper.includes('SOYBEAN') || commodityUpper.includes('SOY')) return 60;
+    if (commodityUpper.includes('WHEAT')) return 60;
+    return 56;
   }
 
   getAppliedTickets(contract: Contract): Ticket[] {
     return this.tickets.filter(t =>
-      t.crop === contract.crop &&
+      t.productCode === (contract.commodityCode || contract.commodityDescription) &&
       t.farmId === contract.farmId &&
       new Date(t.date) >= new Date(contract.deliveryStart) &&
       new Date(t.date) <= new Date(contract.deliveryEnd)

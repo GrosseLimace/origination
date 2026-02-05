@@ -21,16 +21,16 @@ public class CustomersController : ControllerBase
         return Ok(_dataService.GetCustomers());
     }
 
-    [HttpGet("{id}")]
-    public ActionResult<Customer> GetById(string id)
+    [HttpGet("{id:long}")]
+    public ActionResult<Customer> GetById(long id)
     {
         var customer = _dataService.GetCustomerById(id);
         if (customer == null) return NotFound();
         return Ok(customer);
     }
 
-    [HttpPut("{id}")]
-    public ActionResult<Customer> Update(string id, [FromBody] Customer request)
+    [HttpPut("{id:long}")]
+    public ActionResult<Customer> Update(long id, [FromBody] Customer request)
     {
         var customer = _dataService.GetCustomerById(id);
         if (customer == null) return NotFound();

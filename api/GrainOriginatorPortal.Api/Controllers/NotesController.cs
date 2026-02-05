@@ -21,8 +21,8 @@ public class NotesController : ControllerBase
         return Ok(_dataService.GetNotes());
     }
 
-    [HttpGet("customer/{customerId}")]
-    public ActionResult<List<Note>> GetByCustomer(string customerId)
+    [HttpGet("customer/{customerId:long}")]
+    public ActionResult<List<Note>> GetByCustomer(long customerId)
     {
         return Ok(_dataService.GetNotesByCustomer(customerId));
     }
@@ -30,7 +30,7 @@ public class NotesController : ControllerBase
     [HttpPost]
     public ActionResult<Note> Create([FromBody] CreateNoteRequest request)
     {
-        var note = _dataService.AddNote(request.CustomerId, request.Content);
+        var note = _dataService.AddNote(long.Parse(request.CustomerId), request.Content);
         return Created($"/api/notes/{note.Id}", note);
     }
 

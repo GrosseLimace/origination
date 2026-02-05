@@ -159,29 +159,47 @@ export class HomeComponent implements OnInit, OnDestroy {
   }
 
   private loadAllData(): void {
-    forkJoin({
-      customers: this.apiService.getCustomers(),
-      contracts: this.apiService.getContracts(),
-      tickets: this.apiService.getTickets(),
-      plantingIntentions: this.apiService.getPlantingIntentions(),
-      notes: this.apiService.getNotes(),
-      storedGrain: this.apiService.getStoredGrain(),
-      farms: this.apiService.getFarms(),
-      savedLists: this.apiService.getSavedLists()
-    }).pipe(takeUntil(this.destroy$)).subscribe({
-      next: (data) => {
-        this.customers = data.customers;
-        this.contracts = data.contracts;
-        this.tickets = data.tickets;
-        this.plantingIntentions = data.plantingIntentions;
-        this.notes = data.notes;
-        this.storedGrain = data.storedGrain;
-        this.farms = data.farms;
-        this.savedLists = data.savedLists;
-      },
-      error: () => {
-        this.toastService.error('Failed to load data');
-      }
+    // Load each data type independently with error handling
+    // This prevents one failing endpoint from blocking all data
+
+    this.apiService.getCustomers().pipe(takeUntil(this.destroy$)).subscribe({
+      next: (data) => { this.customers = data; },
+      error: (err) => { console.error('Failed to load customers:', err); }
+    });
+
+    this.apiService.getContracts().pipe(takeUntil(this.destroy$)).subscribe({
+      next: (data) => { this.contracts = data; },
+      error: (err) => { console.error('Failed to load contracts:', err); }
+    });
+
+    this.apiService.getTickets().pipe(takeUntil(this.destroy$)).subscribe({
+      next: (data) => { this.tickets = data; },
+      error: (err) => { console.error('Failed to load tickets:', err); }
+    });
+
+    this.apiService.getPlantingIntentions().pipe(takeUntil(this.destroy$)).subscribe({
+      next: (data) => { this.plantingIntentions = data; },
+      error: (err) => { console.error('Failed to load planting intentions:', err); }
+    });
+
+    this.apiService.getNotes().pipe(takeUntil(this.destroy$)).subscribe({
+      next: (data) => { this.notes = data; },
+      error: (err) => { console.error('Failed to load notes:', err); }
+    });
+
+    this.apiService.getStoredGrain().pipe(takeUntil(this.destroy$)).subscribe({
+      next: (data) => { this.storedGrain = data; },
+      error: (err) => { console.error('Failed to load stored grain:', err); }
+    });
+
+    this.apiService.getFarms().pipe(takeUntil(this.destroy$)).subscribe({
+      next: (data) => { this.farms = data; },
+      error: (err) => { console.error('Failed to load farms:', err); }
+    });
+
+    this.apiService.getSavedLists().pipe(takeUntil(this.destroy$)).subscribe({
+      next: (data) => { this.savedLists = data; },
+      error: (err) => { console.error('Failed to load saved lists:', err); }
     });
   }
 

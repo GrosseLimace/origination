@@ -21,8 +21,8 @@ public class TicketsController : ControllerBase
         return Ok(_dataService.GetTickets());
     }
 
-    [HttpGet("customer/{customerId}")]
-    public ActionResult<List<Ticket>> GetByCustomer(string customerId)
+    [HttpGet("customer/{customerId:long}")]
+    public ActionResult<List<Ticket>> GetByCustomer(long customerId)
     {
         return Ok(_dataService.GetTicketsByCustomer(customerId));
     }

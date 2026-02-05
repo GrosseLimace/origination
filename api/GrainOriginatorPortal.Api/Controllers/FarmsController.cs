@@ -29,8 +29,8 @@ public class FarmsController : ControllerBase
         return Ok(farm);
     }
 
-    [HttpGet("customer/{customerId}")]
-    public ActionResult<List<Farm>> GetByCustomer(string customerId)
+    [HttpGet("customer/{customerId:long}")]
+    public ActionResult<List<Farm>> GetByCustomer(long customerId)
     {
         return Ok(_dataService.GetFarmsByCustomer(customerId));
     }

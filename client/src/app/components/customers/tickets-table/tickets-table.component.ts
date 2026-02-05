@@ -158,7 +158,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
               <app-table-row>
                 <app-table-cell>{{ ticket.id }}</app-table-cell>
                 <app-table-cell>{{ ticket.date | date:'MMM d, yyyy' }}</app-table-cell>
-                <app-table-cell>{{ ticket.crop }}</app-table-cell>
+                <app-table-cell>{{ ticket.productCode }}</app-table-cell>
                 <app-table-cell>{{ ticket.netWeight | number }}</app-table-cell>
                 <app-table-cell>{{ ticket.moisture | number:'1.1-1' }}%</app-table-cell>
                 <app-table-cell>{{ ticket.testWeight | number:'1.1-1' }} lbs/bu</app-table-cell>
@@ -194,7 +194,7 @@ export class TicketsTableComponent {
           comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
           break;
         case 'crop':
-          comparison = a.crop.localeCompare(b.crop);
+          comparison = (a.productCode || '').localeCompare(b.productCode || '');
           break;
         case 'netWeight':
           comparison = a.netWeight - b.netWeight;

@@ -21,8 +21,8 @@ public class StoredGrainController : ControllerBase
         return Ok(_dataService.GetStoredGrain());
     }
 
-    [HttpGet("customer/{customerId}")]
-    public ActionResult<List<StoredGrain>> GetByCustomer(string customerId)
+    [HttpGet("customer/{customerId:long}")]
+    public ActionResult<List<StoredGrain>> GetByCustomer(long customerId)
     {
         return Ok(_dataService.GetStoredGrainByCustomer(customerId));
     }

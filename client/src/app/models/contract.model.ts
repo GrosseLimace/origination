@@ -5,7 +5,8 @@ export interface Contract {
   customerId: string;
   farmId: string;
   contractNumber: string;
-  crop: string;           // Grain type (Corn, Soybeans, Wheat)
+  commodityCode?: string;
+  commodityDescription?: string; // Grain type (Corn, Soybeans, Wheat)
   quantity: number;       // Bushels
   unit: string;           // Usually "bushels"
   price: number;          // Price per bushel
