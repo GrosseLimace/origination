@@ -3,6 +3,7 @@ import { ContractStatus } from './contract-status.model';
 export interface Contract {
   id: string;
   customerId: string;
+  ctrmCustomerId?: string; // Used to match with customer sourceCustomerId
   farmId: string;
   contractNumber: string;
   commodityCode?: string;

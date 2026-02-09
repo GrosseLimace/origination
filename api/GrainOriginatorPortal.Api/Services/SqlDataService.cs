@@ -27,9 +27,25 @@ public class SqlDataService : IDataService
     {
         try
         {
-            // Query vw_CurrentCustomers view through Entity Framework
-            // The view is mapped in OriginationDbContext and filters for IsCurrent = 1
+            // Get distinct CtrmCustomerId from the top 1000 most recent contracts
+            var contractCustomerIds = _context.Contracts
+                .OrderByDescending(c => c.Id)
+                .Take(1000)
+                .Select(c => c.CtrmCustomerId)
+                .Distinct();
+
+            // Get customers where SourceCustomerId matches CtrmCustomerId from contracts
+            // Exclude customers with names containing DUP or DO NOT USE
+            // Exclude customers with names starting with * or $
             return _context.Customers
+                .Join(contractCustomerIds,
+                      customer => customer.SourceCustomerId,
+                      ctrmCustomerId => ctrmCustomerId,
+                      (customer, ctrmCustomerId) => customer)
+                .Where(c => !c.Name.Contains("DUP") &&
+                           !c.Name.Contains("DO NOT USE") &&
+                           !c.Name.StartsWith("*") &&
+                           !c.Name.StartsWith("$"))
                 .OrderBy(c => c.Name)
                 .ToList();
         }
@@ -124,9 +140,22 @@ public class SqlDataService : IDataService
     {
         try
         {
-            return _context.Contracts
+            // Get top 1000 most recent contracts
+            // Limited to avoid timeout on large dataset
+            var contracts = _context.Contracts
                 .OrderByDescending(c => c.Id)
+                .Take(1000)
                 .ToList();
+
+            // Calculate status and set defaults for fields not in ODS view
+            var today = DateTime.Today;
+            foreach (var contract in contracts)
+            {
+                contract.Status = CalculateContractStatus(contract, today);
+                contract.Signed = true; // Default to signed since ODS doesn't have this field
+            }
+
+            return contracts;
         }
         catch (Exception ex)
         {
@@ -135,14 +164,55 @@ public class SqlDataService : IDataService
         }
     }
 
+    private ContractStatus CalculateContractStatus(Contract contract, DateTime today)
+    {
+        // NOTE: Fulfilled status requires ticket data to calculate delivery progress
+        // Once tickets are available, check if 100% delivered and return Fulfilled
+
+        // Check delivery period dates
+        if (contract.DeliveryStart.HasValue && contract.DeliveryEnd.HasValue)
+        {
+            // If today is before delivery period starts, it's pending
+            if (today < contract.DeliveryStart.Value)
+            {
+                return ContractStatus.Pending;
+            }
+
+            // If today is within the delivery period, it's active
+            if (today >= contract.DeliveryStart.Value && today <= contract.DeliveryEnd.Value)
+            {
+                return ContractStatus.Active;
+            }
+
+            // If delivery period has passed, it's overdue (until we can verify fulfillment via tickets)
+            if (today > contract.DeliveryEnd.Value)
+            {
+                return ContractStatus.Overdue;
+            }
+        }
+
+        // Default to pending for contracts without delivery dates
+        return ContractStatus.Pending;
+    }
+
     public List<Contract> GetContractsByCustomer(long customerId)
     {
         try
         {
-            return _context.Contracts
+            var contracts = _context.Contracts
                 .Where(c => c.CustomerId == customerId)
                 .OrderByDescending(c => c.Id)
                 .ToList();
+
+            // Calculate status and set defaults for fields not in ODS view
+            var today = DateTime.Today;
+            foreach (var contract in contracts)
+            {
+                contract.Status = CalculateContractStatus(contract, today);
+                contract.Signed = true; // Default to signed since ODS doesn't have this field
+            }
+
+            return contracts;
         }
         catch (Exception ex)
         {
@@ -168,25 +238,62 @@ public class SqlDataService : IDataService
     }
 
     // =========================================================================
-    // Ticket Operations - DISABLED: vw_CurrentTickets doesn't exist in ODS yet
+    // Ticket Operations - Loads from vw_CurrentTickets in ODS
+    // NOTE: ~2 million tickets exist, so queries are carefully limited
     // =========================================================================
 
     public List<Ticket> GetTickets()
     {
-        _logger.LogWarning("Tickets view doesn't exist in ODS yet - returning empty list");
-        return new List<Ticket>();
+        try
+        {
+            // WARNING: Limit to recent tickets only - full table scan would timeout
+            // Get top 10,000 most recent tickets
+            _logger.LogInformation("Loading top 10,000 most recent tickets from ODS");
+
+            return _context.Tickets
+                .OrderByDescending(t => t.Date)
+                .Take(10000)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving tickets");
+            return new List<Ticket>(); // Return empty on error rather than failing
+        }
     }
 
     public List<Ticket> GetTicketsByCustomer(long customerId)
     {
-        _logger.LogWarning("Tickets view doesn't exist in ODS yet - returning empty list");
-        return new List<Ticket>();
+        try
+        {
+            // Load tickets for specific customer, limited to last 2 years for performance
+            var twoYearsAgo = DateTime.Today.AddYears(-2);
+
+            return _context.Tickets
+                .Where(t => t.CustomerId == customerId && t.Date >= twoYearsAgo)
+                .OrderByDescending(t => t.Date)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving tickets for customer {CustomerId}", customerId);
+            return new List<Ticket>(); // Return empty on error
+        }
     }
 
     public List<Ticket> GetTicketsByFarm(string farmId)
     {
-        _logger.LogWarning("Tickets view doesn't exist in ODS yet - returning empty list");
-        return new List<Ticket>();
+        try
+        {
+            // Note: FarmId is not in ODS tickets view - cannot filter by farm
+            _logger.LogWarning("Ticket.FarmId is not mapped in ODS - returning empty list for farm {FarmId}", farmId);
+            return new List<Ticket>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving tickets for farm {FarmId}", farmId);
+            return new List<Ticket>();
+        }
     }
 
     // =========================================================================

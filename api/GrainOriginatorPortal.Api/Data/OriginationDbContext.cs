@@ -88,6 +88,7 @@ public class OriginationDbContext : DbContext
             // Map to ODS column names - essential fields for displaying contracts
             entity.Property(e => e.Id).HasColumnName("ContractId").IsRequired();
             entity.Property(e => e.CustomerId).HasColumnName("CustomerId"); // FK to Customer
+            entity.Property(e => e.CtrmCustomerId).HasColumnName("CtrmCustomerId").HasMaxLength(400).IsRequired(false); // Used for saved lists
             entity.Property(e => e.SourceContractId).HasColumnName("SourceContractId").HasMaxLength(64).IsRequired(false);
             entity.Property(e => e.ContractNumber).HasColumnName("ContractNumber").HasMaxLength(100).IsRequired(false);
 

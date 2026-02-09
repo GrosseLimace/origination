@@ -23,5 +23,10 @@ public enum ContractStatus
     /// <summary>
     /// Contract was cancelled before completion.
     /// </summary>
-    Cancelled
+    Cancelled,
+
+    /// <summary>
+    /// Contract delivery period has passed but not fully delivered.
+    /// </summary>
+    Overdue
 }

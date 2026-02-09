@@ -11,6 +11,7 @@ public class Contract
 
     // Foreign keys and identifiers
     public long? CustomerId { get; set; } // Maps to CustomerId (bigint) in ODS - FK to Customer table
+    public string? CtrmCustomerId { get; set; } // Maps to CtrmCustomerId - used for saved lists
     public string FarmId { get; set; } = string.Empty;
     public string? SourceContractId { get; set; }
     public string ContractNumber { get; set; } = string.Empty;

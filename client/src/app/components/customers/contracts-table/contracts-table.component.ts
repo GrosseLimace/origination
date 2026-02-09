@@ -336,6 +336,7 @@ export class ContractsTableComponent implements OnChanges {
   }
 
   get sortedContracts(): Contract[] {
+    // Contracts are already filtered by parent component (home.component.ts)
     if (!this.currentSortColumn || this.currentSortDirection === 'none') {
       return this.contracts;
     }
@@ -443,6 +444,13 @@ export class ContractsTableComponent implements OnChanges {
   }
 
   getCalculatedStatus(contract: Contract): string {
+    // Use the status from the API (calculated based on delivery dates and closed status)
+    // Fall back to ticket-based calculation if needed
+    if (contract.status) {
+      return contract.status;
+    }
+
+    // Fallback: calculate based on delivery progress from tickets
     const stats = this.getDeliveryStats(contract);
 
     if (stats.progressPercent >= 100) {
@@ -464,6 +472,10 @@ export class ContractsTableComponent implements OnChanges {
         return 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-600 text-white';
       case 'Pending':
         return 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-500 text-white';
+      case 'Overdue':
+        return 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-600 text-white';
+      case 'Cancelled':
+        return 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-500 text-white';
       default:
         return 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-500 text-white';
     }

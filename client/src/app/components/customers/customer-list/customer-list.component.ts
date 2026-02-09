@@ -160,10 +160,10 @@ export class CustomerListComponent implements OnInit, OnChanges {
     if (this.searchQuery.trim()) {
       const query = this.searchQuery.toLowerCase();
       result = result.filter(c =>
-        c.name.toLowerCase().includes(query) ||
-        c.farm.toLowerCase().includes(query) ||
-        c.location.toLowerCase().includes(query) ||
-        c.email.toLowerCase().includes(query)
+        (c.name || '').toLowerCase().includes(query) ||
+        (c.farm || '').toLowerCase().includes(query) ||
+        (c.location || '').toLowerCase().includes(query) ||
+        (c.email || '').toLowerCase().includes(query)
       );
     }
 

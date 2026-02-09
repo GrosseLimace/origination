@@ -294,8 +294,13 @@ export class HomeComponent implements OnInit, OnDestroy {
     // Get all relevant customer IDs (current customer + all linked producers)
     const allCustomerIds = [customerId, ...allLinkedIds];
 
+    // Get sourceCustomerIds for all relevant customers to match with contract.ctrmCustomerId
+    const sourceCustomerIds = allCustomerIds
+      .map(id => this.customers.find(c => c.id === id)?.sourceCustomerId)
+      .filter(id => id !== undefined) as string[];
+
     // Always load unfiltered data for Activity Summary (all farms from current customer + linked producers)
-    this.allCustomerContracts = [...this.contracts.filter(c => allCustomerIds.includes(c.customerId))];
+    this.allCustomerContracts = [...this.contracts.filter(c => c.ctrmCustomerId && sourceCustomerIds.includes(c.ctrmCustomerId))];
     this.allCustomerTickets = [...this.tickets.filter(t => allCustomerIds.includes(t.customerId))];
     this.allCustomerPlantingIntentions = [...this.plantingIntentions.filter(p => allCustomerIds.includes(p.customerId))];
     this.allCustomerStoredGrain = [...this.storedGrain.filter(s => allCustomerIds.includes(s.customerId))];
@@ -308,7 +313,8 @@ export class HomeComponent implements OnInit, OnDestroy {
       this.customerPlantingIntentions = [...this.plantingIntentions.filter(p => p.farmId === this.selectedFarmId)];
       this.customerStoredGrain = [...this.storedGrain.filter(s => s.farmId === this.selectedFarmId)];
     } else {
-      this.customerContracts = [...this.contracts.filter(c => c.customerId === customerId)];
+      // Match contracts using ctrmCustomerId = customer.sourceCustomerId
+      this.customerContracts = [...this.contracts.filter(c => c.ctrmCustomerId === currentCustomer.sourceCustomerId)];
       this.customerTickets = [...this.tickets.filter(t => t.customerId === customerId)];
       this.customerPlantingIntentions = [...this.plantingIntentions.filter(p => p.customerId === customerId)];
       this.customerStoredGrain = [...this.storedGrain.filter(s => s.customerId === customerId)];
