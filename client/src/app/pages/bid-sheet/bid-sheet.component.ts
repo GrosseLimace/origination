@@ -37,7 +37,7 @@ interface LocationCoords {
           <app-card-header class="!p-0 border-b border-gray-200 dark:border-gray-700">
             <div class="flex items-center justify-between h-[72px] px-6">
               <div class="flex items-center gap-4">
-                <select [(ngModel)]="selectedMarketCrop" class="px-4 py-2.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-base text-gray-900 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
+                <select [(ngModel)]="selectedMarketCrop" (change)="onMarketCropChange()" class="px-4 py-2.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-base text-gray-900 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
                   @for (crop of crops; track crop) {
                     <option [value]="crop">{{ crop }}</option>
                   }
@@ -214,7 +214,7 @@ interface LocationCoords {
               <!-- Filters Overlay -->
               <div class="absolute top-2.5 left-16 z-[1000] flex items-center gap-3 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm p-2.5 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
                 <!-- Crop Filter -->
-                <select [(ngModel)]="selectedCrop" (change)="filterBids()" class="px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
+                <select [(ngModel)]="selectedCrop" (change)="onMapCropChange()" class="px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
                   @for (crop of crops; track crop) {
                     <option [value]="crop">{{ crop }}</option>
                   }
@@ -291,7 +291,11 @@ interface LocationCoords {
                 </thead>
                 <tbody>
                   @for (item of filteredBidItems; track item.location + item.crop + item.year) {
-                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors border-b border-gray-200 dark:border-gray-700">
+                    <tr
+                      (click)="selectLocationFromTable(item)"
+                      class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors border-b border-gray-200 dark:border-gray-700 cursor-pointer"
+                      [ngClass]="{'bg-green-50 dark:bg-green-900/20': selectedBidItem && selectedBidItem.location === item.location && selectedBidItem.crop === item.crop && selectedBidItem.year === item.year}"
+                    >
                       <td class="px-4 py-3 text-sm text-gray-900 dark:text-white">
                         @if (selectedLocation) { {{ item.crop }} } @else { {{ item.location }} }
                       </td>
@@ -327,11 +331,12 @@ export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('marketValuesScroll') marketValuesScroll?: ElementRef;
 
   selectedYear: string = '2025';
-  selectedCrop: string = 'Wheat';
+  selectedCrop: string = 'Corn';
   searchQuery: string = '';
   selectedBasis: string = 'all';
   selectedLocation: string = '';
   selectedMarketCrop: string = 'Corn';
+  selectedBidItem: any = null;
 
   bidData: BidData[] = [];
   filteredBidItems: any[] = [];
@@ -371,6 +376,7 @@ export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private map: any = null;
   private markers: any[] = [];
+  private markersByLocation: { [key: string]: any } = {};
   private isMapInitialized = false;
 
   locationCoordinates: LocationCoords[] = [
@@ -517,11 +523,20 @@ export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
 
       marker.on('click', () => {
         this.selectedLocation = location.name;
+        // Create bid item for selection highlighting
+        this.selectedBidItem = {
+          location: location.name,
+          crop: this.selectedCrop,
+          year: parseInt(this.selectedYear),
+          bid: bid,
+          status: status
+        };
         this.filterBids();
         this.openEditPopup(marker, location.name, bid, status);
       });
 
       this.markers.push(marker);
+      this.markersByLocation[location.name] = { marker, bid, status };
     }
   }
 
@@ -636,6 +651,7 @@ export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
       marker.remove();
     }
     this.markers = [];
+    this.markersByLocation = {};
   }
 
   private destroyMap(): void {
@@ -653,6 +669,34 @@ export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
 
   clearLocationSelection(): void {
     this.selectedLocation = '';
+    this.selectedBidItem = null;
+    this.filterBids();
+  }
+
+  selectLocationFromTable(item: any): void {
+    this.selectedBidItem = item;
+    this.selectedLocation = item.location;
+    this.selectedCrop = item.crop;
+    this.selectedMarketCrop = item.crop;
+    this.selectedYear = item.year.toString();
+    this.filterBids();
+
+    // Open popup on map for the selected location
+    setTimeout(() => {
+      const markerData = this.markersByLocation[item.location];
+      if (markerData) {
+        this.openEditPopup(markerData.marker, item.location, markerData.bid, markerData.status);
+      }
+    }, 100);
+  }
+
+  onMarketCropChange(): void {
+    this.selectedCrop = this.selectedMarketCrop;
+    this.filterBids();
+  }
+
+  onMapCropChange(): void {
+    this.selectedMarketCrop = this.selectedCrop;
     this.filterBids();
   }
 
@@ -814,14 +858,20 @@ export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
     const year = parseInt(this.selectedYear);
     const query = this.searchQuery.toLowerCase();
 
-    // Filter bid data by year (or all years if location is selected)
-    const yearFilteredData = this.selectedLocation
-      ? this.bidData  // Show all years when location is selected
-      : this.bidData.filter(bd => bd.year === year);
+    // Filter bid data by year and crop
+    let filteredData = this.bidData;
+
+    // Filter by crop
+    filteredData = filteredData.filter(bd => bd.crop === this.selectedCrop);
+
+    // Filter by year (or all years if location is selected)
+    if (!this.selectedLocation) {
+      filteredData = filteredData.filter(bd => bd.year === year);
+    }
 
     // Flatten the data into individual bid items
     const allItems: any[] = [];
-    for (const data of yearFilteredData) {
+    for (const data of filteredData) {
       for (const location of Object.keys(data.locations)) {
         const bid = data.locations[location];
         if (bid) {
