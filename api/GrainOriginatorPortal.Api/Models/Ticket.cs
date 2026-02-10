@@ -23,16 +23,17 @@ public class Ticket
     public string? TicketPrefix { get; set; }
     public string TicketNumber { get; set; } = string.Empty;
     public string? TicketSuffix { get; set; }
+    public string? ShipmentTicketNumber { get; set; } // Full shipment ticket number from ODS
     public string? CtrmContractNumber { get; set; }
 
-    // Dates
-    public DateTime? Date { get; set; } // Maps to TicketDate
-    public DateTime? FinalSettledDate { get; set; }
+    // Dates - different types in ODS view
+    public string? Date { get; set; } // Maps to TicketBlDate (stored as string in DB)
+    public DateTime? FinalSettledDate { get; set; } // Stored as DateTime in DB
 
     // Quantities (various types in ODS)
     public decimal? UnloadQuantity { get; set; }
     public decimal? LoadoutQuantity { get; set; }
-    public decimal? AppliedDockQuantity { get; set; }
+    public long? AppliedDockQuantity { get; set; } // Maps to AppliedNetQuantity (bigint in ODS)
     public decimal? AppliedQuantity { get; set; }
     public int GrossWeight { get; set; }
     public int TareWeight { get; set; }
@@ -42,6 +43,7 @@ public class Ticket
     public decimal? Moisture { get; set; } // Maps to MoisturePercent
     public decimal? TestWeight { get; set; } // Maps to TestWeightPercent
     public decimal? ProteinPercent { get; set; }
+    public string? GradeCode { get; set; }
 
     // Status
     public bool IsActive { get; set; }

@@ -17,9 +17,12 @@ public class Customer
     public string Name { get; set; } = string.Empty; // Maps to CustomerName
 
     // Contact information (nullable - may not be available for all customers)
-    public string? Location { get; set; } // Maps to ExtendedCity
-    public string? Phone { get; set; } // Maps to ExtendedPrimaryPhone
-    public string? Email { get; set; } // Maps to AccountingExtendedEmail
+    public string? Location { get; set; } // Maps to MerchandisingCity
+    public string? StateProvince { get; set; } // Maps to MerchandisingStateProvince
+    public string? Phone { get; set; } // Maps to MerchandisingPhone
+    public string? Email { get; set; } // Maps to MerchandisingEmail
+    public string? ExtendedPrimaryPhone { get; set; } // Fallback phone number
+    public string? SupplementalEmail { get; set; } // Fallback email
 
     // Additional fields
     public int TotalAcres { get; set; }
@@ -33,7 +36,7 @@ public class Customer
 
     // ODS metadata fields
     public string Farm { get; set; } = string.Empty;
-    public bool IsCurrent { get; set; }
+    public bool IsActive { get; set; }
     public DateTime? EffectiveStartDate { get; set; }
     public DateTime? EffectiveEndDate { get; set; }
 }

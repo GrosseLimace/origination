@@ -31,24 +31,27 @@ public class OriginationDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        // Configure Customer entity - Maps to ODS vw_CurrentCustomers view in base schema
+        // Configure Customer entity - Maps to ODS Customer table in base schema
         modelBuilder.Entity<Customer>(entity =>
         {
-            entity.ToView("vw_CurrentCustomers", schema: "base"); // View that filters for current customers only
+            entity.ToTable("Customer", schema: "base"); // Base table with all customers (filter by IsActive in queries)
             entity.HasKey(e => e.Id);
 
             // Map to vw_CurrentCustomers column names (PascalCase in base schema views)
             entity.Property(e => e.Id).HasColumnName("CustomerId").IsRequired();
             entity.Property(e => e.Name).HasColumnName("CustomerName").HasMaxLength(500);
 
-            // Contact information from view - map to extended contact columns (nullable)
-            entity.Property(e => e.Phone).HasColumnName("ExtendedPrimaryPhone").HasMaxLength(100).IsRequired(false);
-            entity.Property(e => e.Email).HasColumnName("AccountingExtendedEmail").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.Location).HasColumnName("ExtendedCity").HasMaxLength(255).IsRequired(false);
+            // Contact information from view - map to merchandising contact columns (nullable)
+            entity.Property(e => e.Phone).HasColumnName("MerchandisingPhone").HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.Email).HasColumnName("MerchandisingEmail").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.ExtendedPrimaryPhone).HasColumnName("ExtendedPrimaryPhone").HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.SupplementalEmail).HasColumnName("SupplementalEmail").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.Location).HasColumnName("MerchandisingCity").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.StateProvince).HasColumnName("MerchandisingStateProvince").HasMaxLength(50).IsRequired(false);
 
             // Map available ODS metadata fields
             entity.Property(e => e.SourceCustomerId).HasColumnName("SourceCustomerId").HasMaxLength(400);
-            entity.Property(e => e.IsCurrent).HasColumnName("IsCurrent").IsRequired();
+            entity.Property(e => e.IsActive).HasColumnName("IsActive").IsRequired();
             entity.Property(e => e.EffectiveStartDate).HasColumnName("EffectiveStartDate");
             entity.Property(e => e.EffectiveEndDate).HasColumnName("EffectiveEndDate");
 
@@ -79,10 +82,10 @@ public class OriginationDbContext : DbContext
         //     entity.HasIndex(e => e.Name);
         // });
 
-        // Configure Contract entity - Maps to ODS vw_CurrentContracts view in base schema
+        // Configure Contract entity - Maps to ODS Contract table in base schema
         modelBuilder.Entity<Contract>(entity =>
         {
-            entity.ToView("vw_CurrentContracts", schema: "base"); // View that filters for current contracts only
+            entity.ToTable("Contract", schema: "base"); // Base table with all contracts (filter by IsActive in queries)
             entity.HasKey(e => e.Id);
 
             // Map to ODS column names - essential fields for displaying contracts
@@ -100,8 +103,9 @@ public class OriginationDbContext : DbContext
             // Quantity and pricing - mapped to actual ODS column names
             entity.Property(e => e.Quantity).HasColumnName("Quantity").HasColumnType("decimal(18,6)").IsRequired(false);
             entity.Property(e => e.Unit).HasColumnName("QuantityUom").HasMaxLength(16).IsRequired(false);
+            entity.Property(e => e.TotalValue).HasColumnName("TotalValue").HasColumnType("decimal(18,2)").IsRequired(false);
 
-            // Price field doesn't exist in view - ignore it for now
+            // Price will be calculated as TotalValue / Quantity
             entity.Ignore(e => e.Price);
 
             // Dates - mapped to actual ODS column names
@@ -111,7 +115,7 @@ public class OriginationDbContext : DbContext
             entity.Property(e => e.ClosedDate).HasColumnName("ClosedDate").HasColumnType("date").IsRequired(false);
 
             // Metadata
-            entity.Property(e => e.IsCurrent).HasColumnName("IsCurrent").IsRequired();
+            entity.Property(e => e.IsActive).HasColumnName("IsActive").IsRequired();
             entity.Property(e => e.EffectiveStartDate).HasColumnName("EffectiveStartDate").IsRequired(false);
             entity.Property(e => e.EffectiveEndDate).HasColumnName("EffectiveEndDate").IsRequired(false);
 
@@ -132,47 +136,48 @@ public class OriginationDbContext : DbContext
             entity.HasIndex(e => e.CustomerId);
         });
 
-        // Configure Ticket entity - Maps to ODS vw_CurrentTickets view in base schema
+        // Configure Ticket entity - Maps to ODS Ticket table in base schema
         modelBuilder.Entity<Ticket>(entity =>
         {
-            entity.ToView("vw_CurrentTickets", schema: "base"); // View that filters for current tickets only
+            entity.ToTable("Ticket", schema: "base"); // Base table with all tickets (filter by IsActive in queries)
             entity.HasKey(e => e.Id);
 
             // Map to ODS column names - only the fields that exist
             entity.Property(e => e.Id).HasColumnName("TicketId").IsRequired();
             entity.Property(e => e.ContractId).HasColumnName("ContractId");
             entity.Property(e => e.CustomerId).HasColumnName("CustomerId");
-            entity.Property(e => e.SourceTicketHeaderId).HasColumnName("SourceTicketHeaderId");
-            entity.Property(e => e.SourceTicketDetailId).HasColumnName("SourceTicketDetailId");
 
             // Ticket identifiers
             entity.Property(e => e.ProductCode).HasColumnName("ProductCode").HasMaxLength(100);
             entity.Property(e => e.TicketPrefix).HasColumnName("TicketPrefix").HasMaxLength(100);
             entity.Property(e => e.TicketNumber).HasColumnName("TicketNumber").HasMaxLength(100);
             entity.Property(e => e.TicketSuffix).HasColumnName("TicketSuffix").HasMaxLength(100);
-            entity.Property(e => e.CtrmContractNumber).HasColumnName("CtrmContractNumber").HasMaxLength(100);
+            entity.Property(e => e.ShipmentTicketNumber).HasColumnName("ShipmentTicketNumber").HasMaxLength(100);
+            entity.Property(e => e.CtrmContractNumber).HasColumnName("ContractNumber").HasMaxLength(100);
 
-            // Dates
-            entity.Property(e => e.Date).HasColumnName("TicketDate").HasColumnType("date");
-            entity.Property(e => e.FinalSettledDate).HasColumnName("FinalSettledDate").HasColumnType("date");
+            // Dates - using TicketBlDate and FinalSettledDate from view
+            entity.Property(e => e.Date).HasColumnName("TicketBlDate");
+            entity.Property(e => e.FinalSettledDate).HasColumnName("FinalSettledDate");
 
-            // Quantities
+            // Quantities - map to actual ODS columns
             entity.Property(e => e.UnloadQuantity).HasColumnName("UnloadQuantity").HasColumnType("decimal(18,6)");
             entity.Property(e => e.LoadoutQuantity).HasColumnName("LoadoutQuantity").HasColumnType("decimal(18,6)");
-            // Note: AppliedDockQuantity is bigint in ODS, not decimal
-            entity.Property(e => e.AppliedDockQuantity).HasColumnName("AppliedDockQuantity");
-            // AppliedQuantity doesn't exist in ODS - ignore it
-            entity.Ignore(e => e.AppliedQuantity);
-
-            // Quality measures
-            entity.Property(e => e.Moisture).HasColumnName("MoisturePercent").HasPrecision(5, 2);
-            entity.Property(e => e.TestWeight).HasColumnName("TestWeightPercent").HasPrecision(5, 2);
-            entity.Property(e => e.ProteinPercent).HasColumnName("ProteinPercent").HasPrecision(5, 2);
+            // AppliedNetQuantity is bigint in ODS - let EF Core handle the type automatically
+            entity.Property(e => e.AppliedDockQuantity).HasColumnName("AppliedNetQuantity");
 
             // Status
             entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true);
 
-            // Not mapped to ODS (application-specific fields)
+            // Quality measures available in ODS
+            entity.Property(e => e.GradeCode).HasColumnName("GradeCode").HasMaxLength(100);
+
+            // Fields not in ODS view - ignore these
+            entity.Ignore(e => e.SourceTicketHeaderId);
+            entity.Ignore(e => e.SourceTicketDetailId);
+            entity.Ignore(e => e.AppliedQuantity);
+            entity.Ignore(e => e.Moisture);
+            entity.Ignore(e => e.TestWeight);
+            entity.Ignore(e => e.ProteinPercent);
             entity.Ignore(e => e.FarmId);
             entity.Ignore(e => e.GrossWeight);
             entity.Ignore(e => e.TareWeight);

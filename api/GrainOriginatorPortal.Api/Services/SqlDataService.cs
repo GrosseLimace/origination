@@ -27,27 +27,39 @@ public class SqlDataService : IDataService
     {
         try
         {
-            // Get distinct CtrmCustomerId from the top 1000 most recent contracts
-            var contractCustomerIds = _context.Contracts
-                .OrderByDescending(c => c.Id)
-                .Take(1000)
+            // Get customer IDs that have contracts (via CtrmCustomerId -> SourceCustomerId)
+            var customerIdsWithContracts = _context.Contracts
+                .Where(c => c.IsActive && c.CtrmCustomerId != null)
                 .Select(c => c.CtrmCustomerId)
-                .Distinct();
+                .Distinct()
+                .ToList();
 
-            // Get customers where SourceCustomerId matches CtrmCustomerId from contracts
+            // Get customer IDs that have tickets (via CustomerId)
+            var customerIdsWithTickets = _context.Tickets
+                .Where(t => t.IsActive && t.CustomerId.HasValue)
+                .Select(t => t.CustomerId!.Value)
+                .Distinct()
+                .ToList();
+
+            _logger.LogInformation($"Found {customerIdsWithContracts.Count} customers with contracts, {customerIdsWithTickets.Count} customers with tickets");
+
+            // Get top 50 customers who have BOTH contracts AND tickets
             // Exclude customers with names containing DUP or DO NOT USE
             // Exclude customers with names starting with * or $
-            return _context.Customers
-                .Join(contractCustomerIds,
-                      customer => customer.SourceCustomerId,
-                      ctrmCustomerId => ctrmCustomerId,
-                      (customer, ctrmCustomerId) => customer)
-                .Where(c => !c.Name.Contains("DUP") &&
+            var customers = _context.Customers
+                .Where(c => c.IsActive &&
+                           customerIdsWithContracts.Contains(c.SourceCustomerId) &&
+                           customerIdsWithTickets.Contains(c.Id) &&
+                           !c.Name.Contains("DUP") &&
                            !c.Name.Contains("DO NOT USE") &&
                            !c.Name.StartsWith("*") &&
                            !c.Name.StartsWith("$"))
-                .OrderBy(c => c.Name)
+                .OrderByDescending(c => c.Id) // Most recent customers by ID
+                .Take(50) // Limit to 50 customers
                 .ToList();
+
+            _logger.LogInformation($"Returning {customers.Count} customers who have both contracts and tickets");
+            return customers;
         }
         catch (Exception ex)
         {
@@ -61,7 +73,7 @@ public class SqlDataService : IDataService
         try
         {
             return _context.Customers
-                .FirstOrDefault(c => c.Id == id);
+                .FirstOrDefault(c => c.Id == id && c.IsActive);
         }
         catch (Exception ex)
         {
@@ -74,7 +86,7 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var customer = _context.Customers.FirstOrDefault(c => c.Id == customerId);
+            var customer = _context.Customers.FirstOrDefault(c => c.Id == customerId && c.IsActive);
             if (customer == null)
             {
                 _logger.LogWarning("Customer {CustomerId} not found for update", customerId);
@@ -140,12 +152,41 @@ public class SqlDataService : IDataService
     {
         try
         {
-            // Get top 1000 most recent contracts
-            // Limited to avoid timeout on large dataset
-            var contracts = _context.Contracts
-                .OrderByDescending(c => c.Id)
-                .Take(1000)
+            // Get customer IDs that have contracts (via CtrmCustomerId -> SourceCustomerId)
+            var customerIdsWithContracts = _context.Contracts
+                .Where(c => c.IsActive && c.CtrmCustomerId != null)
+                .Select(c => c.CtrmCustomerId)
+                .Distinct()
                 .ToList();
+
+            // Get customer IDs that have tickets (via CustomerId)
+            var customerIdsWithTickets = _context.Tickets
+                .Where(t => t.IsActive && t.CustomerId.HasValue)
+                .Select(t => t.CustomerId!.Value)
+                .Distinct()
+                .ToList();
+
+            // Get SourceCustomerIds for top 50 customers who have BOTH contracts AND tickets
+            var customerCtrmIds = _context.Customers
+                .Where(c => c.IsActive &&
+                           customerIdsWithContracts.Contains(c.SourceCustomerId) &&
+                           customerIdsWithTickets.Contains(c.Id) &&
+                           !c.Name.Contains("DUP") &&
+                           !c.Name.Contains("DO NOT USE") &&
+                           !c.Name.StartsWith("*") &&
+                           !c.Name.StartsWith("$"))
+                .OrderByDescending(c => c.Id)
+                .Take(50)
+                .Select(c => c.SourceCustomerId)
+                .ToList();
+
+            // Get all contracts for those top 50 customers
+            var contracts = _context.Contracts
+                .Where(c => c.IsActive && c.CtrmCustomerId != null && customerCtrmIds.Contains(c.CtrmCustomerId))
+                .OrderByDescending(c => c.Id)
+                .ToList();
+
+            _logger.LogInformation($"Loaded {contracts.Count} contracts for top 50 customers who have both contracts and tickets");
 
             // Calculate status and set defaults for fields not in ODS view
             var today = DateTime.Today;
@@ -200,7 +241,7 @@ public class SqlDataService : IDataService
         try
         {
             var contracts = _context.Contracts
-                .Where(c => c.CustomerId == customerId)
+                .Where(c => c.IsActive && c.CustomerId == customerId)
                 .OrderByDescending(c => c.Id)
                 .ToList();
 
@@ -246,14 +287,61 @@ public class SqlDataService : IDataService
     {
         try
         {
-            // WARNING: Limit to recent tickets only - full table scan would timeout
-            // Get top 10,000 most recent tickets
-            _logger.LogInformation("Loading top 10,000 most recent tickets from ODS");
-
-            return _context.Tickets
-                .OrderByDescending(t => t.Date)
-                .Take(10000)
+            // Get customer IDs that have contracts (via CtrmCustomerId -> SourceCustomerId)
+            var customerIdsWithContracts = _context.Contracts
+                .Where(c => c.IsActive && c.CtrmCustomerId != null)
+                .Select(c => c.CtrmCustomerId)
+                .Distinct()
                 .ToList();
+
+            // Get customer IDs that have tickets (via CustomerId)
+            var customerIdsWithTickets = _context.Tickets
+                .Where(t => t.IsActive && t.CustomerId.HasValue)
+                .Select(t => t.CustomerId!.Value)
+                .Distinct()
+                .ToList();
+
+            // Get top 50 customer IDs who have BOTH contracts AND tickets
+            var top50CustomerIds = _context.Customers
+                .Where(c => c.IsActive &&
+                           customerIdsWithContracts.Contains(c.SourceCustomerId) &&
+                           customerIdsWithTickets.Contains(c.Id) &&
+                           !c.Name.Contains("DUP") &&
+                           !c.Name.Contains("DO NOT USE") &&
+                           !c.Name.StartsWith("*") &&
+                           !c.Name.StartsWith("$"))
+                .OrderByDescending(c => c.Id)
+                .Take(50)
+                .Select(c => c.Id)
+                .ToList();
+
+            _logger.LogInformation("Loading tickets for top 50 customers who have both contracts and tickets");
+
+            // Load all tickets for the top 50 customers
+            // NOTE: ContractId FK is NOW POPULATED in base.Ticket table (proper FK relationship)
+            // Can use proper FK joins instead of string matching
+            var tickets = _context.Tickets
+                .Where(t => t.IsActive && t.CustomerId.HasValue && top50CustomerIds.Contains(t.CustomerId.Value))
+                .OrderByDescending(t => t.Date)
+                .ToList();
+
+            // Log diagnostic info about ticket-contract relationships
+            var ticketsWithContractId = tickets.Count(t => t.ContractId.HasValue);
+            var ticketsWithContractNumber = tickets.Count(t => !string.IsNullOrEmpty(t.CtrmContractNumber));
+            var ticketsWithBoth = tickets.Count(t => t.ContractId.HasValue && !string.IsNullOrEmpty(t.CtrmContractNumber));
+
+            _logger.LogInformation($"Loaded {tickets.Count} tickets for top 50 customers and their contracts");
+            _logger.LogInformation($"  - {ticketsWithContractId} tickets have ContractId");
+            _logger.LogInformation($"  - {ticketsWithContractNumber} tickets have CtrmContractNumber");
+            _logger.LogInformation($"  - {ticketsWithBoth} tickets have both");
+
+            // Log first few tickets for debugging
+            foreach (var ticket in tickets.Take(3))
+            {
+                _logger.LogInformation($"Sample Ticket #{ticket.TicketNumber}: ContractId={ticket.ContractId}, CtrmContractNumber={ticket.CtrmContractNumber}, CustomerId={ticket.CustomerId}");
+            }
+
+            return tickets;
         }
         catch (Exception ex)
         {
@@ -266,11 +354,10 @@ public class SqlDataService : IDataService
     {
         try
         {
-            // Load tickets for specific customer, limited to last 2 years for performance
-            var twoYearsAgo = DateTime.Today.AddYears(-2);
-
+            // Load tickets for specific customer
+            // Note: Date is stored as string in ODS, so we can't filter by date range efficiently
             return _context.Tickets
-                .Where(t => t.CustomerId == customerId && t.Date >= twoYearsAgo)
+                .Where(t => t.IsActive && t.CustomerId == customerId)
                 .OrderByDescending(t => t.Date)
                 .ToList();
         }

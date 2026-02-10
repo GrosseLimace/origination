@@ -27,7 +27,8 @@ public class Contract
     public decimal? Quantity { get; set; }
     public decimal? Weight { get; set; }
     public string? Unit { get; set; }
-    public decimal? Price { get; set; }
+    public decimal? Price { get; set; } // Calculated: TotalValue / Quantity
+    public decimal? TotalValue { get; set; } // Total contract value from ODS
 
     // Dates
     public DateTime? ContractDate { get; set; }
@@ -40,7 +41,7 @@ public class Contract
     public bool Signed { get; set; }
 
     // ODS metadata fields
-    public bool IsCurrent { get; set; }
+    public bool IsActive { get; set; }
     public DateTime? EffectiveStartDate { get; set; }
     public DateTime? EffectiveEndDate { get; set; }
 }
