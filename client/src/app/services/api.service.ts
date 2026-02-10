@@ -35,7 +35,7 @@ export class ApiService {
   }
 
   /** Fetches a single customer by ID */
-  getCustomerById(id: string): Observable<Customer> {
+  getCustomerById(id: number): Observable<Customer> {
     return this.http.get<Customer>(`${this.baseUrl}/customers/${id}`);
   }
 
@@ -59,7 +59,7 @@ export class ApiService {
   }
 
   /** Fetches all farms belonging to a specific customer */
-  getFarmsByCustomer(customerId: string): Observable<Farm[]> {
+  getFarmsByCustomer(customerId: number): Observable<Farm[]> {
     return this.http.get<Farm[]>(`${this.baseUrl}/farms/customer/${customerId}`);
   }
 
@@ -78,7 +78,7 @@ export class ApiService {
   }
 
   /** Fetches all contracts for a specific customer */
-  getContractsByCustomer(customerId: string): Observable<Contract[]> {
+  getContractsByCustomer(customerId: number): Observable<Contract[]> {
     return this.http.get<Contract[]>(`${this.baseUrl}/contracts/customer/${customerId}`);
   }
 
@@ -97,7 +97,7 @@ export class ApiService {
   }
 
   /** Fetches all delivery tickets for a specific customer */
-  getTicketsByCustomer(customerId: string): Observable<Ticket[]> {
+  getTicketsByCustomer(customerId: number): Observable<Ticket[]> {
     return this.http.get<Ticket[]>(`${this.baseUrl}/tickets/customer/${customerId}`);
   }
 
@@ -116,13 +116,13 @@ export class ApiService {
   }
 
   /** Fetches all planting intentions for a specific customer */
-  getPlantingIntentionsByCustomer(customerId: string): Observable<PlantingIntention[]> {
+  getPlantingIntentionsByCustomer(customerId: number): Observable<PlantingIntention[]> {
     return this.http.get<PlantingIntention[]>(`${this.baseUrl}/plantingintentions/customer/${customerId}`);
   }
 
   /** Creates a new planting intention record */
   createPlantingIntention(data: {
-    customerId: string;
+    customerId: number;
     farmId: string;
     crop: string;
     acres: number;
@@ -154,12 +154,12 @@ export class ApiService {
   }
 
   /** Fetches all notes for a specific customer */
-  getNotesByCustomer(customerId: string): Observable<Note[]> {
+  getNotesByCustomer(customerId: number): Observable<Note[]> {
     return this.http.get<Note[]>(`${this.baseUrl}/notes/customer/${customerId}`);
   }
 
   /** Creates a new note for a customer */
-  createNote(customerId: string, content: string): Observable<Note> {
+  createNote(customerId: number, content: string): Observable<Note> {
     return this.http.post<Note>(`${this.baseUrl}/notes`, { customerId, content });
   }
 
@@ -178,7 +178,7 @@ export class ApiService {
   }
 
   /** Fetches all stored grain records for a specific customer */
-  getStoredGrainByCustomer(customerId: string): Observable<StoredGrain[]> {
+  getStoredGrainByCustomer(customerId: number): Observable<StoredGrain[]> {
     return this.http.get<StoredGrain[]>(`${this.baseUrl}/storedgrain/customer/${customerId}`);
   }
 
@@ -192,7 +192,7 @@ export class ApiService {
   }
 
   /** Creates a new saved list from a natural language query */
-  createSavedList(data: { name: string; query: string; customerIds: string[] }): Observable<void> {
+  createSavedList(data: { name: string; query: string; customerIds: number[] }): Observable<void> {
     return this.http.post<void>(`${this.baseUrl}/savedlists`, data);
   }
 

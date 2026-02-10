@@ -2,6 +2,6 @@ export interface SavedList {
   id: string;
   name: string;
   query: string;
-  customerIds: string[];
+  customerIds: number[];
   createdAt: Date;
 }

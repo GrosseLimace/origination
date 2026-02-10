@@ -273,7 +273,8 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
     };
   }
 
-  private hashCode(str: string): number {
+  private hashCode(value: string | number): number {
+    const str = value.toString();
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);

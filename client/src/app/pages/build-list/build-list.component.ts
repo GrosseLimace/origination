@@ -594,7 +594,7 @@ export class BuildListComponent implements OnInit, OnDestroy {
     if (lowerQuery.includes('in storage') || lowerQuery.includes('stored grain') ||
         lowerQuery.includes('storing grain') || lowerQuery.includes('have storage') ||
         lowerQuery.includes('with storage') || lowerQuery.includes('grain stored')) {
-      const customersWithStorage = new Set(this.storedGrain.map(s => s.customerId));
+      const customersWithStorage = new Set<number>(this.storedGrain.map(s => s.customerId));
       result = result.filter(c => customersWithStorage.has(c.id));
     }
 
@@ -603,7 +603,7 @@ export class BuildListComponent implements OnInit, OnDestroy {
     for (const grain of storageGrains) {
       if (lowerQuery.includes(`${grain} in storage`) || lowerQuery.includes(`storing ${grain}`) ||
           lowerQuery.includes(`stored ${grain}`) || lowerQuery.includes(`${grain} stored`)) {
-        const customersWithGrainStorage = new Set(
+        const customersWithGrainStorage = new Set<number>(
           this.storedGrain.filter(s => s.crop.toLowerCase().includes(grain)).map(s => s.customerId)
         );
         result = result.filter(c => customersWithGrainStorage.has(c.id));
@@ -615,12 +615,12 @@ export class BuildListComponent implements OnInit, OnDestroy {
     const storageQuantityMatch = lowerQuery.match(/(?:storage|stored|storing)\s*(?:over|more than|above|exceeding)?\s*(\d+(?:,\d+)?)\s*(?:bushels?|bu)/);
     if (storageQuantityMatch) {
       const minQuantity = parseInt(storageQuantityMatch[1].replace(',', ''));
-      const customerTotals = new Map<string, number>();
+      const customerTotals = new Map<number, number>();
       for (const sg of this.storedGrain) {
         const current = customerTotals.get(sg.customerId) || 0;
         customerTotals.set(sg.customerId, current + sg.quantity);
       }
-      const customersWithMinStorage = new Set(
+      const customersWithMinStorage = new Set<number>(
         Array.from(customerTotals.entries())
           .filter(([_, total]) => total >= minQuantity)
           .map(([customerId]) => customerId)
@@ -631,7 +631,7 @@ export class BuildListComponent implements OnInit, OnDestroy {
     // "no storage" or "without storage"
     if (lowerQuery.includes('no storage') || lowerQuery.includes('without storage') ||
         lowerQuery.includes('not storing')) {
-      const customersWithStorage = new Set(this.storedGrain.map(s => s.customerId));
+      const customersWithStorage = new Set<number>(this.storedGrain.map(s => s.customerId));
       result = result.filter(c => !customersWithStorage.has(c.id));
     }
 
@@ -643,7 +643,7 @@ export class BuildListComponent implements OnInit, OnDestroy {
       if (lowerQuery.includes(`planting ${crop}`) || lowerQuery.includes(`growing ${crop}`) ||
           lowerQuery.includes(`plant ${crop}`) || lowerQuery.includes(`plans to plant ${crop}`) ||
           lowerQuery.includes(`${crop} planting`) || lowerQuery.includes(`${crop} this season`)) {
-        const customersWithCrop = new Set(
+        const customersWithCrop = new Set<number>(
           this.plantingIntentions.filter(p => p.crop.toLowerCase().includes(crop)).map(p => p.customerId)
         );
         result = result.filter(c => customersWithCrop.has(c.id));
@@ -654,7 +654,7 @@ export class BuildListComponent implements OnInit, OnDestroy {
     // "with planting intentions" or "have planting plans"
     if (lowerQuery.includes('planting intention') || lowerQuery.includes('planting plan') ||
         lowerQuery.includes('planning to plant') || lowerQuery.includes('plans to grow')) {
-      const customersWithPlanting = new Set(this.plantingIntentions.map(p => p.customerId));
+      const customersWithPlanting = new Set<number>(this.plantingIntentions.map(p => p.customerId));
       result = result.filter(c => customersWithPlanting.has(c.id));
     }
 
@@ -662,12 +662,12 @@ export class BuildListComponent implements OnInit, OnDestroy {
     const plantingAcresMatch = lowerQuery.match(/planting\s*(?:over|more than|above)?\s*(\d+(?:,\d+)?)\s*acres?/);
     if (plantingAcresMatch) {
       const minPlantingAcres = parseInt(plantingAcresMatch[1].replace(',', ''));
-      const customerTotals = new Map<string, number>();
+      const customerTotals = new Map<number, number>();
       for (const pi of this.plantingIntentions) {
         const current = customerTotals.get(pi.customerId) || 0;
         customerTotals.set(pi.customerId, current + pi.acres);
       }
-      const customersWithMinPlanting = new Set(
+      const customersWithMinPlanting = new Set<number>(
         Array.from(customerTotals.entries())
           .filter(([_, total]) => total >= minPlantingAcres)
           .map(([customerId]) => customerId)
@@ -678,7 +678,7 @@ export class BuildListComponent implements OnInit, OnDestroy {
     // "no planting intentions" or "without planting plans"
     if (lowerQuery.includes('no planting') || lowerQuery.includes('without planting') ||
         lowerQuery.includes('no plans to plant')) {
-      const customersWithPlanting = new Set(this.plantingIntentions.map(p => p.customerId));
+      const customersWithPlanting = new Set<number>(this.plantingIntentions.map(p => p.customerId));
       result = result.filter(c => !customersWithPlanting.has(c.id));
     }
 
@@ -688,7 +688,7 @@ export class BuildListComponent implements OnInit, OnDestroy {
     // "no active contracts"
     if (lowerQuery.includes('no active contract') || lowerQuery.includes('no contract') ||
         lowerQuery.includes('without contract') || lowerQuery.includes('no contracts')) {
-      const customersWithActiveContracts = new Set(
+      const customersWithActiveContracts = new Set<number>(
         this.contracts
           .filter(c => c.status === 'Active' || c.status === 'Pending')
           .map(c => c.customerId)
@@ -699,7 +699,7 @@ export class BuildListComponent implements OnInit, OnDestroy {
     // "with active contracts"
     if (lowerQuery.includes('with active contract') || lowerQuery.includes('have contract') ||
         lowerQuery.includes('active contracts')) {
-      const customersWithActiveContracts = new Set(
+      const customersWithActiveContracts = new Set<number>(
         this.contracts
           .filter(c => c.status === 'Active' || c.status === 'Pending')
           .map(c => c.customerId)
@@ -709,7 +709,7 @@ export class BuildListComponent implements OnInit, OnDestroy {
 
     // "unsigned contracts"
     if (lowerQuery.includes('unsigned contract') || lowerQuery.includes('not signed')) {
-      const customersWithUnsigned = new Set(
+      const customersWithUnsigned = new Set<number>(
         this.contracts.filter(c => !c.signed).map(c => c.customerId)
       );
       result = result.filter(c => customersWithUnsigned.has(c.id));
@@ -812,7 +812,7 @@ export class BuildListComponent implements OnInit, OnDestroy {
     return '??';
   }
 
-  getLastContactInfo(customerId: string): { text: string; colorClass: string } {
+  getLastContactInfo(customerId: number): { text: string; colorClass: string } {
     const lastNote = this.notes
       .filter(n => n.customerId === customerId)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
@@ -830,7 +830,7 @@ export class BuildListComponent implements OnInit, OnDestroy {
     return { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-red-500' };
   }
 
-  getCustomerCrops(customerId: string): string[] {
+  getCustomerCrops(customerId: number): string[] {
     return [...new Set(
       this.plantingIntentions
         .filter(p => p.customerId === customerId)

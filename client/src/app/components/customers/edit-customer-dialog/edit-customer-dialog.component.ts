@@ -130,7 +130,7 @@ import { Customer, Farm } from '../../../models';
                       <button
                         type="button"
                         class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 h-8 w-8"
-                        (click)="removeIncomingLink(producer.id)"
+                        (click)="removeIncomingLink(producer.id.toString())"
                         title="Unlink from {{ producer.name }}"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -304,7 +304,7 @@ export class EditCustomerDialogComponent implements OnChanges {
 
   @Output() close = new EventEmitter<void>();
   @Output() save = new EventEmitter<{
-    customerId: string;
+    customerId: number;
     location: string;
     phone: string;
     email: string;
@@ -407,18 +407,20 @@ export class EditCustomerDialogComponent implements OnChanges {
   }
 
   getProducerById(producerId: string): Customer | undefined {
-    return this.allCustomers.find(c => c.id === producerId);
+    // Convert string producerId to number for comparison
+    const producerIdNum = parseInt(producerId, 10);
+    return this.allCustomers.find(c => c.id === producerIdNum);
   }
 
   getAvailableProducers(): Customer[] {
     // Get producers that link to this customer (so we don't show them in the available list)
     const producersLinkingToMe = this.allCustomers
-      .filter(c => c.linkedProducerIds && c.linkedProducerIds.includes(this.customer?.id || ''))
+      .filter(c => c.linkedProducerIds && c.linkedProducerIds.includes((this.customer?.id || 0).toString()))
       .map(c => c.id);
 
     return this.allCustomers.filter(c =>
       c.id !== this.customer?.id &&
-      !this.editLinkedProducerIds.includes(c.id) &&
+      !this.editLinkedProducerIds.includes(c.id.toString()) &&
       !producersLinkingToMe.includes(c.id)
     );
   }
@@ -426,7 +428,7 @@ export class EditCustomerDialogComponent implements OnChanges {
   getProducersLinkingToMe(): Customer[] {
     if (!this.customer) return [];
     return this.allCustomers.filter(c =>
-      c.linkedProducerIds && c.linkedProducerIds.includes(this.customer!.id)
+      c.linkedProducerIds && c.linkedProducerIds.includes(this.customer!.id.toString())
     );
   }
 

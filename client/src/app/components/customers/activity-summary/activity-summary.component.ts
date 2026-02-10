@@ -86,7 +86,7 @@ export class ActivitySummaryComponent implements OnChanges {
     // Linked producers info
     const linkedProducerIds = this.customer.linkedProducerIds || [];
     const customersLinkingToMe = this.allCustomers
-      .filter(c => c.linkedProducerIds && c.linkedProducerIds.includes(this.customer.id))
+      .filter(c => c.linkedProducerIds && c.linkedProducerIds.includes(this.customer.id.toString()))
       .map(c => c.id);
 
     const allLinkedIds = [...new Set([...linkedProducerIds, ...customersLinkingToMe])];
@@ -226,8 +226,8 @@ export class ActivitySummaryComponent implements OnChanges {
       return `Over the past 30 days, they've delivered ${this.formatQuantity(totalDelivered, 'lbs')}.`;
     }
 
-    const avgMoisture = ticketsWithMoisture.reduce((sum, t) => sum + t.moisture, 0) / ticketsWithMoisture.length;
-    const avgTestWeight = ticketsWithTestWeight.reduce((sum, t) => sum + t.testWeight, 0) / ticketsWithTestWeight.length;
+    const avgMoisture = ticketsWithMoisture.reduce((sum, t) => sum + (t.moisture || 0), 0) / ticketsWithMoisture.length;
+    const avgTestWeight = ticketsWithTestWeight.reduce((sum, t) => sum + (t.testWeight || 0), 0) / ticketsWithTestWeight.length;
 
     return `Recent deliveries total ${this.formatQuantity(totalDelivered, 'lbs')} over the past 30 days, with quality averaging ${avgMoisture.toFixed(1)}% moisture and ${avgTestWeight.toFixed(1)} lbs/bu test weight.`;
   }

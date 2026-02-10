@@ -88,14 +88,14 @@ interface LastContactInfo {
                       <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
                       <circle cx="12" cy="10" r="3"/>
                     </svg>
-                    <span class="truncate">{{ customer.location }}</span>
+                    <span class="truncate">{{ getFormattedLocation(customer) }}</span>
                   </div>
                   <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 h-5">
                     @if (customer.phone) {
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
                       </svg>
-                      <span>{{ customer.phone }}</span>
+                      <span>{{ getFormattedPhone(customer.phone) }}</span>
                     }
                   </div>
                   <div class="flex items-center gap-2 text-sm" [class]="lastContactCache.get(customer.id)?.cssClass || 'text-red-500'">
@@ -130,7 +130,7 @@ export class CustomerListComponent implements OnInit, OnChanges {
   filteredCustomers: Customer[] = [];
 
   // Performance optimization: Cache last contact info to avoid repeated filtering/sorting
-  lastContactCache = new Map<string, LastContactInfo>();
+  lastContactCache = new Map<number, LastContactInfo>();
 
   ngOnInit(): void {
     this.rebuildLastContactCache();
@@ -190,7 +190,7 @@ export class CustomerListComponent implements OnInit, OnChanges {
     this.lastContactCache.clear();
 
     // Group notes by customer ID - single pass through notes O(m)
-    const notesByCustomer = new Map<string, Note[]>();
+    const notesByCustomer = new Map<number, Note[]>();
     for (const note of this.notes) {
       if (!notesByCustomer.has(note.customerId)) {
         notesByCustomer.set(note.customerId, []);
@@ -246,5 +246,27 @@ export class CustomerListComponent implements OnInit, OnChanges {
     if (daysAgo <= 7) return 'text-green-500';
     if (daysAgo <= 30) return 'text-yellow-500';
     return 'text-red-500';
+  }
+
+  getFormattedLocation(customer: Customer): string {
+    if (!customer.location && !customer.stateProvince) {
+      return '';
+    }
+    if (customer.location && customer.stateProvince) {
+      return `${customer.location}, ${customer.stateProvince}`;
+    }
+    return customer.location || customer.stateProvince || '';
+  }
+
+  getFormattedPhone(phone: string): string {
+    if (!phone) return '';
+    // Remove all non-digit characters
+    const cleaned = phone.replace(/\D/g, '');
+    // Format as (XXX) XXX-XXXX
+    if (cleaned.length === 10) {
+      return `(${cleaned.substring(0, 3)}) ${cleaned.substring(3, 6)}-${cleaned.substring(6)}`;
+    }
+    // Return original if not 10 digits
+    return phone;
   }
 }

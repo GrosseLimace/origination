@@ -193,14 +193,16 @@ export class HomeComponent implements OnInit, OnDestroy {
   }
 
   private selectCustomerById(customerId: string): void {
+    // Convert customerId from query param string to number for comparison
+    const customerIdNum = parseInt(customerId, 10);
     // If customers are already loaded, select immediately
-    const customer = this.customers.find(c => c.id === customerId);
+    const customer = this.customers.find(c => c.id === customerIdNum);
     if (customer) {
       this.handleSelectCustomer(customer);
     } else {
       // Wait for customers to load, then select
       const checkInterval = setInterval(() => {
-        const c = this.customers.find(cust => cust.id === customerId);
+        const c = this.customers.find(cust => cust.id === customerIdNum);
         if (c) {
           clearInterval(checkInterval);
           this.handleSelectCustomer(c);
@@ -274,22 +276,24 @@ export class HomeComponent implements OnInit, OnDestroy {
     this.cdr.detectChanges();
   }
 
-  private loadCustomerData(customerId: string, customer?: Customer): void {
+  private loadCustomerData(customerId: number, customer?: Customer): void {
     // Create new array references to trigger change detection
     // Use provided customer or fall back to selectedCustomer
     const currentCustomer = customer || this.selectedCustomer;
     if (!currentCustomer) return;
 
-    // Get linked producer IDs (customers this customer links to)
+    // Get linked producer IDs (customers this customer links to) - these are stored as strings
     const linkedProducerIds = currentCustomer.linkedProducerIds || [];
 
     // Also find customers that link TO this customer (bidirectional linking)
+    // Convert customerId to string for comparison with linkedProducerIds (which are strings)
+    const customerIdStr = customerId.toString();
     const customersLinkingToMe = this.customers
-      .filter(c => c.linkedProducerIds && c.linkedProducerIds.includes(customerId))
+      .filter(c => c.linkedProducerIds && c.linkedProducerIds.includes(customerIdStr))
       .map(c => c.id);
 
     // Combine all linked customer IDs (both directions) - use Set to avoid duplicates
-    const allLinkedIds = [...new Set([...linkedProducerIds, ...customersLinkingToMe])];
+    const allLinkedIds = [...new Set([...linkedProducerIds.map(id => parseInt(id, 10)), ...customersLinkingToMe])];
 
     // Get all relevant customer IDs (current customer + all linked producers)
     const allCustomerIds = [customerId, ...allLinkedIds];
@@ -301,7 +305,7 @@ export class HomeComponent implements OnInit, OnDestroy {
 
     // Always load unfiltered data for Activity Summary (all farms from current customer + linked producers)
     this.allCustomerContracts = [...this.contracts.filter(c => c.ctrmCustomerId && sourceCustomerIds.includes(c.ctrmCustomerId))];
-    this.allCustomerTickets = [...this.tickets.filter(t => allCustomerIds.includes(t.customerId))];
+    this.allCustomerTickets = [...this.tickets.filter(t => t.customerId && allCustomerIds.includes(t.customerId))];
     this.allCustomerPlantingIntentions = [...this.plantingIntentions.filter(p => allCustomerIds.includes(p.customerId))];
     this.allCustomerStoredGrain = [...this.storedGrain.filter(s => allCustomerIds.includes(s.customerId))];
 
@@ -343,7 +347,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     }
   }
 
-  handleSaveCustomer(data: { customerId: string; location: string; phone: string; email: string; farmIds: string[]; linkedProducerIds: string[]; eSignEnabled: boolean }): void {
+  handleSaveCustomer(data: { customerId: number; location: string; phone: string; email: string; farmIds: string[]; linkedProducerIds: string[]; eSignEnabled: boolean }): void {
     const customer = this.customers.find(c => c.id === data.customerId);
     if (!customer) return;
 

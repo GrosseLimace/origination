@@ -327,7 +327,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     });
   }
 
-  navigateToCustomer(customerId: string): void {
+  navigateToCustomer(customerId: number): void {
     this.router.navigate(['/'], { queryParams: { customerId } });
   }
 
@@ -374,7 +374,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private calculatePlantingByCustomer(): void {
     if (this.customers.length === 0 || this.plantingIntentions.length === 0) return;
 
-    const customerMap = new Map<string, { name: string; crops: Map<string, number> }>();
+    const customerMap = new Map<number, { name: string; crops: Map<string, number> }>();
 
     for (const intention of this.plantingIntentions) {
       const customer = this.customers.find(c => c.id === intention.customerId);
@@ -395,7 +395,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     };
 
     this.plantingByCustomer = Array.from(customerMap.entries()).map(([customerId, data]) => ({
-      customerId,
+      customerId: customerId.toString(),
       customerName: data.name,
       crops: Array.from(data.crops.entries()).map(([name, acres]) => ({
         name,
@@ -414,10 +414,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
 
     // Calculate totals by crop
-    const cropMap = new Map<string, { bushels: number; customers: Set<string> }>();
+    const cropMap = new Map<string, { bushels: number; customers: Set<number> }>();
 
     for (const grain of this.storedGrain) {
-      const existing = cropMap.get(grain.crop) || { bushels: 0, customers: new Set<string>() };
+      const existing = cropMap.get(grain.crop) || { bushels: 0, customers: new Set<number>() };
       existing.bushels += grain.bushels;
       existing.customers.add(grain.customerId);
       cropMap.set(grain.crop, existing);

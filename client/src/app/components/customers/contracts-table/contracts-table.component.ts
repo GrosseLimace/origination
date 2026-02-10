@@ -186,7 +186,11 @@ type SortDirection = 'none' | 'asc' | 'desc';
                   <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ contract.quantity | number }} {{ contract.unit }}</span>
                 </app-table-cell>
                 <app-table-cell>
-                  <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ contract.price | currency:'USD':'symbol':'1.2-2' }}/{{ getSingularUnit(contract.unit) }}</span>
+                  @if (contract.price !== null && contract.price !== undefined) {
+                    <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ contract.price | currency:'USD':'symbol':'1.2-2' }}/{{ getSingularUnit(contract.unit) }}</span>
+                  } @else {
+                    <span class="text-gray-400">N/A</span>
+                  }
                 </app-table-cell>
                 <app-table-cell>
                   <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ contract.deliveryStart | date:'M/d/yyyy' }} - {{ contract.deliveryEnd | date:'M/d/yyyy' }}</span>
@@ -202,105 +206,108 @@ type SortDirection = 'none' | 'asc' | 'desc';
               @if (expandedRows.has(contract.id)) {
                 <app-table-row [class]="'bg-gray-50 dark:bg-gray-800/50'">
                   <app-table-cell [colspan]="6">
-                    <div class="py-4">
+                    <div class="block w-full py-6" style="display: block; width: 100%;">
                       <!-- Delivery Progress at top -->
-                      <div class="mb-10">
-                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">Delivery Progress</p>
+                      <div class="mb-8 w-full">
+                        <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Delivery Progress</p>
                         <!-- Custom progress bar: green for delivered, gray for remaining -->
                         <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden w-full">
                           <div
-                            class="h-full bg-green-500 rounded-full"
+                            class="h-full bg-green-500 rounded-full transition-all"
                             [style.width.%]="getDeliveryStats(contract).progressPercent"
                           ></div>
                         </div>
-                        <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-2 mb-6">
-                          <span>{{ getDeliveryStats(contract).deliveredBushels | number }} delivered</span>
-                          <span>{{ getDeliveryStats(contract).remainingBushels | number }} remaining</span>
+                        <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-2">
+                          <span>{{ getDeliveryStats(contract).deliveredBushels | number }} {{ contract.unit }} delivered</span>
+                          <span>{{ getDeliveryStats(contract).remainingBushels | number }} {{ contract.unit }} remaining</span>
                         </div>
                       </div>
 
-                      <!-- Two column layout -->
-                      <div class="grid grid-cols-2 gap-8">
+                      <!-- Two column layout using flexbox -->
+                      <div class="flex flex-row gap-16 w-full" style="display: flex; width: 100%; gap: 4rem;">
                         <!-- Left column -->
-                        <div class="space-y-6">
-                          <div>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Contract Value</p>
-                            <p>{{ contract.quantity * contract.price | currency:'USD':'symbol':'1.2-2' }}</p>
+                        <div class="flex-1 space-y-5" style="flex: 1; min-width: 0;">
+                          <div class="flex flex-col">
+                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Contract Value</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">
+                              {{ contract.totalValue !== null && contract.totalValue !== undefined ? (contract.totalValue | currency:'USD':'symbol':'1.2-2') : 'N/A' }}
+                            </span>
                           </div>
-                          <div>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Price per Bushel</p>
-                            <p>{{ contract.price | currency:'USD':'symbol':'1.2-2' }}</p>
+                          <div class="flex flex-col">
+                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Price per Bushel</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">
+                              {{ contract.price !== null && contract.price !== undefined ? (contract.price | currency:'USD':'symbol':'1.2-2') : 'N/A' }}
+                            </span>
                           </div>
-                          <div>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">End Date</p>
-                            <p>{{ contract.deliveryEnd | date:'M/d/yyyy' }}</p>
+                          <div class="flex flex-col">
+                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">End Date</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ contract.deliveryEnd | date:'M/d/yyyy' }}</span>
                           </div>
-                          <div>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Total Delivered</p>
-                            <p>{{ getDeliveryStats(contract).deliveredBushels | number }} {{ contract.unit }}</p>
+                          <div class="flex flex-col">
+                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Delivered</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ getDeliveryStats(contract).deliveredBushels | number }} {{ contract.unit }}</span>
                           </div>
-                          <div>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Delivery Progress</p>
-                            <p>{{ getDeliveryStats(contract).progressPercent | number:'1.0-0' }}%</p>
+                          <div class="flex flex-col">
+                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Delivery Progress</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ getDeliveryStats(contract).progressPercent | number:'1.0-0' }}%</span>
                           </div>
                         </div>
 
                         <!-- Right column -->
-                        <div class="space-y-6">
-                          <div>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Delivery Window</p>
-                            <p>{{ getDeliveryWindowStatus(contract) }}</p>
+                        <div class="flex-1 space-y-5" style="flex: 1; min-width: 0;">
+                          <div class="flex flex-col">
+                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Delivery Window</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ getDeliveryWindowStatus(contract) }}</span>
                           </div>
-                          <div>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Start Date</p>
-                            <p>{{ contract.deliveryStart | date:'M/d/yyyy' }}</p>
+                          <div class="flex flex-col">
+                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Start Date</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ contract.deliveryStart | date:'M/d/yyyy' }}</span>
                           </div>
-                          <div>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Unit Type</p>
-                            <p>{{ contract.unit }}</p>
+                          <div class="flex flex-col">
+                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Unit Type</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ contract.unit || 'N/A' }}</span>
                           </div>
-                          <div>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Remaining Quantity</p>
-                            <p>{{ getDeliveryStats(contract).remainingBushels | number }} {{ contract.unit }}</p>
+                          <div class="flex flex-col">
+                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Remaining Quantity</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ getDeliveryStats(contract).remainingBushels | number }} {{ contract.unit }}</span>
                           </div>
                         </div>
                       </div>
 
                       <!-- Applied Tickets Section -->
-                      <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-                        <p class="text-sm mb-4">Applied Tickets ({{ getAppliedTickets(contract).length }})</p>
+                      <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+                        <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">Applied Tickets ({{ getAppliedTickets(contract).length }})</p>
 
                         @if (getAppliedTickets(contract).length > 0) {
                           @for (ticket of getAppliedTickets(contract); track ticket.id) {
                             <div class="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 mb-3">
                               <!-- Row 1 -->
-                              <div class="grid grid-cols-3 gap-4 mb-4">
+                              <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-3">
                                 <div>
-                                  <p class="text-sm text-gray-500 dark:text-gray-400">Ticket ID</p>
-                                  <p>{{ ticket.id }}</p>
+                                  <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Shipment Ticket Number</p>
+                                  <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.shipmentTicketNumber || ((ticket.ticketPrefix || '') + ticket.ticketNumber + (ticket.ticketSuffix || '')) }}</p>
                                 </div>
                                 <div>
-                                  <p class="text-sm text-gray-500 dark:text-gray-400">Date</p>
-                                  <p>{{ ticket.date | date:'M/d/yyyy' }}</p>
+                                  <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Date</p>
+                                  <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.date }}</p>
                                 </div>
                                 <div>
-                                  <p class="text-sm text-gray-500 dark:text-gray-400">Net Weight</p>
-                                  <p>{{ ticket.netWeight | number }} lbs</p>
+                                  <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Net Weight</p>
+                                  <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.appliedDockQuantity | number }} lbs</p>
                                 </div>
                               </div>
                               <!-- Row 2 -->
-                              <div class="grid grid-cols-3 gap-4">
+                              <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                 <div>
-                                  <p class="text-sm text-gray-500 dark:text-gray-400">Moisture</p>
-                                  <p>{{ ticket.moisture | number:'1.1-1' }}%</p>
+                                  <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Product Code</p>
+                                  <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.productCode || 'N/A' }}</p>
                                 </div>
                                 <div>
-                                  <p class="text-sm text-gray-500 dark:text-gray-400">Test Weight</p>
-                                  <p>{{ ticket.testWeight | number:'1.1-1' }} lbs/bu</p>
+                                  <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Contract Number</p>
+                                  <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.ctrmContractNumber || 'N/A' }}</p>
                                 </div>
                                 <div>
-                                  <p class="text-sm text-gray-500 dark:text-gray-400">Product</p>
-                                  <p>{{ ticket.productCode }}</p>
+                                  <!-- Empty space for layout balance -->
                                 </div>
                               </div>
                             </div>
@@ -325,7 +332,7 @@ export class ContractsTableComponent implements OnChanges {
   @Input() tickets: Ticket[] = [];
   @Input() customer!: Customer;
 
-  expandedRows = new Set<string>();
+  expandedRows = new Set<number>();
   currentSortColumn: SortColumn | null = null;
   currentSortDirection: SortDirection = 'none';
 
@@ -392,7 +399,7 @@ export class ContractsTableComponent implements OnChanges {
     return 'text-gray-300 dark:text-gray-600';
   }
 
-  toggleRow(contractId: string): void {
+  toggleRow(contractId: number): void {
     if (this.expandedRows.has(contractId)) {
       this.expandedRows.delete(contractId);
     } else {
@@ -418,12 +425,93 @@ export class ContractsTableComponent implements OnChanges {
     const appliedTickets = this.getAppliedTickets(contract);
     const lbsPerBushel = this.getLbsPerBushel(contract.commodityDescription || contract.commodityCode || '');
 
-    const deliveredLbs = appliedTickets.reduce((sum, t) => sum + t.netWeight, 0);
-    const deliveredBushels = Math.floor(deliveredLbs / lbsPerBushel);
-    const remainingBushels = Math.max(0, (contract.quantity || 0) - deliveredBushels);
-    const progressPercent = (contract.quantity || 0) > 0 ? (deliveredBushels / (contract.quantity || 1)) * 100 : 0;
+    // DEBUG: Log ticket information
+    console.log(`\n=== CONTRACT ${contract.contractNumber} (${contract.commodityDescription || contract.commodityCode}) ===`);
+    console.log(`Contract Quantity: ${contract.quantity} ${contract.unit}`);
+    console.log(`Applied Tickets Count: ${appliedTickets.length}`);
+    appliedTickets.forEach((t, idx) => {
+      console.log(`  Ticket ${idx + 1}: appliedDockQuantity = ${t.appliedDockQuantity}`);
+    });
 
-    return { deliveredBushels, remainingBushels, progressPercent };
+    // Calculate delivered pounds from tickets (appliedDockQuantity/AppliedNetQuantity is in pounds)
+    const deliveredLbs = appliedTickets.reduce((sum, t) => sum + (t.appliedDockQuantity || 0), 0);
+    console.log(`Total deliveredLbs: ${deliveredLbs}`);
+
+    // Convert contract quantity to pounds based on unit type
+    const contractLbs = this.convertContractQuantityToPounds(contract.quantity || 0, contract.unit, lbsPerBushel);
+    console.log(`Contract in pounds: ${contractLbs} lbs (using unit: "${contract.unit}")`);
+
+    // Calculate delivered and remaining in the contract's original unit
+    const deliveredInContractUnits = this.convertPoundsToContractUnits(deliveredLbs, contract.unit, lbsPerBushel);
+    console.log(`Delivered in contract units: ${deliveredInContractUnits} ${contract.unit}`);
+    const remainingInContractUnits = Math.max(0, (contract.quantity || 0) - deliveredInContractUnits);
+    const progressPercent = contractLbs > 0 ? Math.min(100, (deliveredLbs / contractLbs) * 100) : 0;
+    console.log(`Progress: ${progressPercent.toFixed(2)}%\n`);
+
+    // Determine precision based on unit type
+    const unitLower = (contract.unit || '').toLowerCase().trim();
+    const isTons = unitLower === 'st' || unitLower.includes('ton');
+
+    // Apply appropriate precision: 2 decimals for tons, whole numbers for bushels/pounds
+    const delivered = isTons
+      ? Math.round(deliveredInContractUnits * 100) / 100  // 2 decimals for tons
+      : Math.round(deliveredInContractUnits);             // Whole numbers for bushels/pounds
+
+    const remaining = isTons
+      ? Math.round(remainingInContractUnits * 100) / 100  // 2 decimals for tons
+      : Math.round(remainingInContractUnits);             // Whole numbers for bushels/pounds
+
+    return {
+      deliveredBushels: delivered,
+      remainingBushels: remaining,
+      progressPercent
+    };
+  }
+
+  private convertContractQuantityToPounds(quantity: number, unit: string, lbsPerBushel: number): number {
+    const unitLower = (unit || '').toLowerCase().trim();
+
+    // Convert to pounds based on unit type
+    // Check for short tons (ST, ton, tons)
+    if (unitLower === 'st' || unitLower.includes('ton')) {
+      // Short tons to pounds (1 short ton = 2000 lbs)
+      return quantity * 2000;
+    } else if (unitLower.includes('bushel') || unitLower === 'bu') {
+      // Bushels to pounds (commodity-specific)
+      return quantity * lbsPerBushel;
+    } else if (unitLower.includes('pound') || unitLower.includes('lb')) {
+      // Already in pounds
+      return quantity;
+    } else if (unitLower === 'cwt' || unitLower.includes('hundredweight')) {
+      // Hundredweight to pounds (1 cwt = 100 lbs)
+      return quantity * 100;
+    }
+
+    // Default: assume bushels for grain contracts
+    return quantity * lbsPerBushel;
+  }
+
+  private convertPoundsToContractUnits(pounds: number, unit: string, lbsPerBushel: number): number {
+    const unitLower = (unit || '').toLowerCase().trim();
+
+    // Convert from pounds back to contract units
+    // Check for short tons (ST, ton, tons)
+    if (unitLower === 'st' || unitLower.includes('ton')) {
+      // Pounds to short tons
+      return pounds / 2000;
+    } else if (unitLower.includes('bushel') || unitLower === 'bu') {
+      // Pounds to bushels (commodity-specific)
+      return pounds / lbsPerBushel;
+    } else if (unitLower.includes('pound') || unitLower.includes('lb')) {
+      // Already in pounds
+      return pounds;
+    } else if (unitLower === 'cwt' || unitLower.includes('hundredweight')) {
+      // Pounds to hundredweight
+      return pounds / 100;
+    }
+
+    // Default: assume bushels for grain contracts
+    return pounds / lbsPerBushel;
   }
 
   private getLbsPerBushel(commodity: string): number {
@@ -435,33 +523,56 @@ export class ContractsTableComponent implements OnChanges {
   }
 
   getAppliedTickets(contract: Contract): Ticket[] {
-    return this.tickets.filter(t =>
-      t.productCode === (contract.commodityCode || contract.commodityDescription) &&
-      t.farmId === contract.farmId &&
-      new Date(t.date) >= new Date(contract.deliveryStart) &&
-      new Date(t.date) <= new Date(contract.deliveryEnd)
-    ).sort((a, b) => a.id.localeCompare(b.id));
+    // Match tickets to contracts using the correct ODS field mapping
+    // Ticket.ContractNumber (DB) → Contract.SourceContractId (DB)
+    return this.tickets.filter(t => {
+      // Primary: Match Ticket.CtrmContractNumber to Contract.SourceContractId (trim whitespace for comparison)
+      if (t.ctrmContractNumber && contract.sourceContractId) {
+        return t.ctrmContractNumber.trim() === contract.sourceContractId.trim();
+      }
+
+      // Fallback: Match by contractId FK (if populated in some cases)
+      if (t.contractId && contract.id) {
+        return t.contractId === contract.id;
+      }
+
+      return false;
+    }).sort((a, b) => {
+      // Sort by date (string comparison should work for ISO date strings)
+      return (a.date || '').localeCompare(b.date || '');
+    });
   }
 
   getCalculatedStatus(contract: Contract): string {
-    // Use the status from the API (calculated based on delivery dates and closed status)
-    // Fall back to ticket-based calculation if needed
-    if (contract.status) {
-      return contract.status;
-    }
-
-    // Fallback: calculate based on delivery progress from tickets
+    // Calculate delivery progress to check if contract is fulfilled
     const stats = this.getDeliveryStats(contract);
+    const now = new Date();
+    const startDate = new Date(contract.deliveryStart);
+    const endDate = new Date(contract.deliveryEnd);
 
-    if (stats.progressPercent >= 100) {
+    // If delivery is complete, always show Fulfilled (overrides everything)
+    // Check both percentage and remaining quantity to handle rounding edge cases
+    if (stats.progressPercent >= 100 || stats.remainingBushels <= 0) {
       return 'Fulfilled';
     }
 
-    if (stats.progressPercent === 0) {
-      return 'Pending';
+    // Check for cancelled status from API
+    if (contract.status === 'Cancelled') {
+      return 'Cancelled';
     }
 
-    return 'Active';
+    // Check if contract is overdue (past end date and not fulfilled)
+    if (now > endDate) {
+      return 'Overdue';
+    }
+
+    // Check if contract has reached its start date
+    if (now >= startDate) {
+      return 'Active';
+    }
+
+    // Before start date
+    return 'Pending';
   }
 
   getStatusClass(status: string): string {

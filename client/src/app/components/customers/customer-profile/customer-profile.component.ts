@@ -123,21 +123,25 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
                     <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
                     <circle cx="12" cy="10" r="3"/>
                   </svg>
-                  <span>{{ getSelectedFarmLocation() }}</span>
+                  <span>{{ getFormattedLocation() }}</span>
                 </div>
-                <a [href]="'tel:' + customer.phone" class="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors cursor-pointer">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
-                  </svg>
-                  <span>{{ customer.phone }}</span>
-                </a>
-                <a [href]="'mailto:' + customer.email" class="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors cursor-pointer">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect width="20" height="16" x="2" y="4" rx="2"/>
-                    <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
-                  </svg>
-                  <span class="truncate">{{ customer.email }}</span>
-                </a>
+                @if (getCustomerPhone()) {
+                  <a [href]="'tel:' + getCustomerPhone()" class="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors cursor-pointer">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+                    </svg>
+                    <span>{{ getFormattedPhone() }}</span>
+                  </a>
+                }
+                @if (getCustomerEmail()) {
+                  <a [href]="'mailto:' + getCustomerEmail()" class="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors cursor-pointer">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect width="20" height="16" x="2" y="4" rx="2"/>
+                      <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+                    </svg>
+                    <span class="truncate">{{ getCustomerEmail() }}</span>
+                  </a>
+                }
               </div>
             </div>
 
@@ -324,7 +328,7 @@ export class CustomerProfileComponent implements OnChanges {
   @Output() onAddNote = new EventEmitter<string>();
   @Output() onTogglePin = new EventEmitter<Note>();
   @Output() onFarmChange = new EventEmitter<string>();
-  @Output() onSaveCustomer = new EventEmitter<{ customerId: string; location: string; phone: string; email: string; farmIds: string[]; linkedProducerIds: string[]; eSignEnabled: boolean }>();
+  @Output() onSaveCustomer = new EventEmitter<{ customerId: number; location: string; phone: string; email: string; farmIds: string[]; linkedProducerIds: string[]; eSignEnabled: boolean }>();
   @Output() onCreateFarm = new EventEmitter<{ name: string; location: string; acres: number }>();
 
   private themeService = inject(ThemeService);
@@ -392,7 +396,7 @@ export class CustomerProfileComponent implements OnChanges {
     this.cdr.markForCheck();
   }
 
-  handleSaveCustomer(data: { customerId: string; location: string; phone: string; email: string; farmIds: string[]; linkedProducerIds: string[]; eSignEnabled: boolean }): void {
+  handleSaveCustomer(data: { customerId: number; location: string; phone: string; email: string; farmIds: string[]; linkedProducerIds: string[]; eSignEnabled: boolean }): void {
     this.onSaveCustomer.emit(data);
     this.closeEditDialog();
   }
@@ -547,16 +551,20 @@ export class CustomerProfileComponent implements OnChanges {
             <h3>Contact</h3>
             <div class="info-item">
               <div class="label">Location</div>
-              <div class="value">${this.customer.location}</div>
+              <div class="value">${this.getFormattedLocation()}</div>
             </div>
+            ${this.getCustomerPhone() ? `
             <div class="info-item">
               <div class="label">Phone</div>
-              <div class="value">${this.customer.phone}</div>
+              <div class="value">${this.getFormattedPhone()}</div>
             </div>
+            ` : ''}
+            ${this.getCustomerEmail() ? `
             <div class="info-item">
               <div class="label">Email</div>
-              <div class="value">${this.customer.email}</div>
+              <div class="value">${this.getCustomerEmail()}</div>
             </div>
+            ` : ''}
           </div>
           <div>
             <h3>Farm Details</h3>
@@ -667,5 +675,38 @@ export class CustomerProfileComponent implements OnChanges {
     const startMonth = startDate.toLocaleDateString('en-US', { month: 'short' });
     const endMonth = endDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
     return `${startMonth} - ${endMonth}`;
+  }
+
+  getFormattedLocation(): string {
+    if (!this.customer.location && !this.customer.stateProvince) {
+      return '';
+    }
+    if (this.customer.location && this.customer.stateProvince) {
+      return `${this.customer.location}, ${this.customer.stateProvince}`;
+    }
+    return this.customer.location || this.customer.stateProvince || '';
+  }
+
+  getCustomerPhone(): string {
+    // Use primary phone, fallback to extended phone if primary is empty
+    return this.customer.phone || this.customer.extendedPrimaryPhone || '';
+  }
+
+  getCustomerEmail(): string {
+    // Use primary email, fallback to supplemental email if primary is empty
+    return this.customer.email || this.customer.supplementalEmail || '';
+  }
+
+  getFormattedPhone(): string {
+    const phone = this.getCustomerPhone();
+    if (!phone) return '';
+    // Remove all non-digit characters
+    const cleaned = phone.replace(/\D/g, '');
+    // Format as (XXX) XXX-XXXX
+    if (cleaned.length === 10) {
+      return `(${cleaned.substring(0, 3)}) ${cleaned.substring(3, 6)}-${cleaned.substring(6)}`;
+    }
+    // Return original if not 10 digits
+    return phone;
   }
 }
