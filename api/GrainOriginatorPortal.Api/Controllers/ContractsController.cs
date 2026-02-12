@@ -16,9 +16,9 @@ public class ContractsController : ControllerBase
     }
 
     [HttpGet]
-    public ActionResult<List<Contract>> GetAll()
+    public ActionResult<List<Contract>> GetAll([FromQuery] List<string>? tradeUnits = null)
     {
-        return Ok(_dataService.GetContracts());
+        return Ok(_dataService.GetContracts(tradeUnits));
     }
 
     [HttpGet("customer/{customerId:long}")]

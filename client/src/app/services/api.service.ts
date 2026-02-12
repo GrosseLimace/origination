@@ -30,13 +30,24 @@ export class ApiService {
   // ==========================================================================
 
   /** Fetches all customers in the system */
-  getCustomers(): Observable<Customer[]> {
-    return this.http.get<Customer[]>(`${this.baseUrl}/customers`);
+  getCustomers(tradeUnits?: string[]): Observable<Customer[]> {
+    const params = tradeUnits && tradeUnits.length > 0
+      ? '?' + tradeUnits.map(tu => `tradeUnits=${encodeURIComponent(tu)}`).join('&')
+      : '';
+    return this.http.get<Customer[]>(`${this.baseUrl}/customers${params}`);
   }
 
-  /** Searches customers by name (max 25 results) */
-  searchCustomers(searchTerm: string): Observable<Customer[]> {
-    return this.http.get<Customer[]>(`${this.baseUrl}/customers/search?searchTerm=${encodeURIComponent(searchTerm)}`);
+  /** Searches customers by name (max 15 results) */
+  searchCustomers(searchTerm: string, tradeUnits?: string[]): Observable<Customer[]> {
+    const tradeUnitParams = tradeUnits && tradeUnits.length > 0
+      ? '&' + tradeUnits.map(tu => `tradeUnits=${encodeURIComponent(tu)}`).join('&')
+      : '';
+    return this.http.get<Customer[]>(`${this.baseUrl}/customers/search?searchTerm=${encodeURIComponent(searchTerm)}${tradeUnitParams}`);
+  }
+
+  /** Fetches all unique trade units / organization codes */
+  getTradeUnits(): Observable<string[]> {
+    return this.http.get<string[]>(`${this.baseUrl}/customers/trade-units`);
   }
 
   /** Fetches a single customer by ID */
@@ -78,8 +89,11 @@ export class ApiService {
   // ==========================================================================
 
   /** Fetches all contracts in the system */
-  getContracts(): Observable<Contract[]> {
-    return this.http.get<Contract[]>(`${this.baseUrl}/contracts`);
+  getContracts(tradeUnits?: string[]): Observable<Contract[]> {
+    const params = tradeUnits && tradeUnits.length > 0
+      ? '?' + tradeUnits.map(tu => `tradeUnits=${encodeURIComponent(tu)}`).join('&')
+      : '';
+    return this.http.get<Contract[]>(`${this.baseUrl}/contracts${params}`);
   }
 
   /** Fetches all contracts for a specific customer */
@@ -97,8 +111,11 @@ export class ApiService {
   // ==========================================================================
 
   /** Fetches all delivery tickets in the system */
-  getTickets(): Observable<Ticket[]> {
-    return this.http.get<Ticket[]>(`${this.baseUrl}/tickets`);
+  getTickets(tradeUnits?: string[]): Observable<Ticket[]> {
+    const params = tradeUnits && tradeUnits.length > 0
+      ? '?' + tradeUnits.map(tu => `tradeUnits=${encodeURIComponent(tu)}`).join('&')
+      : '';
+    return this.http.get<Ticket[]>(`${this.baseUrl}/tickets${params}`);
   }
 
   /** Fetches all delivery tickets for a specific customer */

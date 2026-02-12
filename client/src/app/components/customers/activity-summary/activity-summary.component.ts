@@ -126,31 +126,76 @@ export class ActivitySummaryComponent implements OnChanges {
   private generateContractSummary(): string {
     if (!this.contracts || this.contracts.length === 0) return '';
 
+    const now = new Date();
     const activeContracts = this.contracts.filter(c => c && c.status === 'Active');
     const pendingContracts = this.contracts.filter(c => c && c.status === 'Pending');
-    const totalContracts = this.contracts.length;
+    const fulfilledContracts = this.contracts.filter(c => c && c.status === 'Fulfilled');
+    const signedContracts = this.contracts.filter(c => c && c.signed);
+    const unsignedContracts = this.contracts.filter(c => c && !c.signed);
 
-    // Show all contracts if we have them, not just active
+    // Calculate overdue contracts (Active or Pending with delivery end date in the past)
+    const overdueContracts = this.contracts.filter(c => {
+      if (!c || !c.deliveryEnd) return false;
+      try {
+        const endDate = new Date(c.deliveryEnd);
+        return !isNaN(endDate.getTime()) &&
+               (c.status === 'Active' || c.status === 'Pending') &&
+               endDate < now;
+      } catch {
+        return false;
+      }
+    });
+
+    const totalContracts = this.contracts.length;
     if (totalContracts === 0) return '';
 
-    // If we have active contracts, focus on those
+    // Calculate totals for active contracts
+    const activeVolume = activeContracts.reduce((sum, c) => sum + (c.quantity || 0), 0);
+    const activeValue = activeContracts.reduce((sum, c) => sum + (c.totalValue || 0), 0);
+
+    // Build detailed summary
+    const parts: string[] = [];
+
+    // Main contract overview
     if (activeContracts.length > 0) {
-      const totalContracted = activeContracts.reduce((sum, c) => sum + (c.quantity || 0), 0);
-      // Use totalValue field from ODS instead of calculating quantity * price
-      const totalValue = activeContracts.reduce((sum, c) => sum + (c.totalValue || 0), 0);
-
-      let summary = `They currently have ${activeContracts.length} active contract${activeContracts.length !== 1 ? 's' : ''} totaling ${this.formatQuantity(totalContracted, 'bushels')} with a combined value of ${this.formatCurrency(totalValue)}`;
-
-      // Mention other contracts if they exist
-      if (pendingContracts.length > 0) {
-        summary += `, plus ${pendingContracts.length} pending contract${pendingContracts.length !== 1 ? 's' : ''}`;
-      }
-
-      return summary + '.';
+      parts.push(`They have ${activeContracts.length} active contract${activeContracts.length !== 1 ? 's' : ''} totaling ${this.formatQuantity(activeVolume, 'bushels')} valued at ${this.formatCurrency(activeValue)}`);
     } else {
-      // No active contracts, show total count
-      return `They have ${totalContracts} contract${totalContracts !== 1 ? 's' : ''} on file.`;
+      parts.push(`They currently have no active contracts`);
     }
+
+    // Status breakdown - build a comprehensive list
+    const statusDetails: string[] = [];
+
+    if (pendingContracts.length > 0) {
+      statusDetails.push(`${pendingContracts.length} pending`);
+    }
+
+    if (fulfilledContracts.length > 0) {
+      statusDetails.push(`${fulfilledContracts.length} fulfilled`);
+    }
+
+    if (overdueContracts.length > 0) {
+      statusDetails.push(`${overdueContracts.length} overdue`);
+    }
+
+    if (unsignedContracts.length > 0) {
+      statusDetails.push(`${unsignedContracts.length} unsigned`);
+    }
+
+    // Add status breakdown to summary
+    if (statusDetails.length > 0) {
+      if (statusDetails.length === 1) {
+        parts.push(`with ${statusDetails[0]}`);
+      } else if (statusDetails.length === 2) {
+        parts.push(`with ${statusDetails[0]} and ${statusDetails[1]}`);
+      } else {
+        const last = statusDetails[statusDetails.length - 1];
+        const others = statusDetails.slice(0, -1).join(', ');
+        parts.push(`with ${others}, and ${last}`);
+      }
+    }
+
+    return parts.join(' ') + '.';
   }
 
   private generatePlantingOverview(): string {
@@ -222,6 +267,8 @@ export class ActivitySummaryComponent implements OnChanges {
 
     const totalTickets = this.tickets.length;
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+
     const recentTickets = this.tickets.filter(t => {
       if (!t || !t.date) return false;
       try {
@@ -232,26 +279,49 @@ export class ActivitySummaryComponent implements OnChanges {
       }
     });
 
-    // If we have recent tickets, show those with details
+    const last90Days = this.tickets.filter(t => {
+      if (!t || !t.date) return false;
+      try {
+        const ticketDate = new Date(t.date);
+        return !isNaN(ticketDate.getTime()) && ticketDate >= ninetyDaysAgo;
+      } catch {
+        return false;
+      }
+    });
+
+    // Build delivery summary parts
+    const parts: string[] = [];
+
+    // Recent delivery activity
     if (recentTickets.length > 0) {
       const totalDelivered = recentTickets.reduce((sum, t) => sum + (t.netWeight || 0), 0);
+      parts.push(`Recent deliveries total ${this.formatQuantity(totalDelivered, 'lbs')} over the past 30 days (${recentTickets.length} ticket${recentTickets.length !== 1 ? 's' : ''})`);
 
-      // Only calculate averages if we have valid data
-      const ticketsWithMoisture = recentTickets.filter(t => typeof t.moisture === 'number' && !isNaN(t.moisture));
-      const ticketsWithTestWeight = recentTickets.filter(t => typeof t.testWeight === 'number' && !isNaN(t.testWeight));
+      // Quality metrics
+      const ticketsWithMoisture = recentTickets.filter(t => typeof t.moisture === 'number' && !isNaN(t.moisture) && t.moisture > 0);
+      const ticketsWithTestWeight = recentTickets.filter(t => typeof t.testWeight === 'number' && !isNaN(t.testWeight) && t.testWeight > 0);
 
-      if (ticketsWithMoisture.length === 0 || ticketsWithTestWeight.length === 0) {
-        return `Over the past 30 days, they've delivered ${this.formatQuantity(totalDelivered, 'lbs')} across ${recentTickets.length} ticket${recentTickets.length !== 1 ? 's' : ''}.`;
+      if (ticketsWithMoisture.length > 0 && ticketsWithTestWeight.length > 0) {
+        const avgMoisture = ticketsWithMoisture.reduce((sum, t) => sum + (t.moisture || 0), 0) / ticketsWithMoisture.length;
+        const avgTestWeight = ticketsWithTestWeight.reduce((sum, t) => sum + (t.testWeight || 0), 0) / ticketsWithTestWeight.length;
+        parts.push(`averaging ${avgMoisture.toFixed(1)}% moisture and ${avgTestWeight.toFixed(1)} lbs/bu test weight`);
       }
 
-      const avgMoisture = ticketsWithMoisture.reduce((sum, t) => sum + (t.moisture || 0), 0) / ticketsWithMoisture.length;
-      const avgTestWeight = ticketsWithTestWeight.reduce((sum, t) => sum + (t.testWeight || 0), 0) / ticketsWithTestWeight.length;
-
-      return `Recent deliveries total ${this.formatQuantity(totalDelivered, 'lbs')} over the past 30 days (${recentTickets.length} ticket${recentTickets.length !== 1 ? 's' : ''}), with quality averaging ${avgMoisture.toFixed(1)}% moisture and ${avgTestWeight.toFixed(1)} lbs/bu test weight.`;
+      // 90-day trend if different from 30-day
+      if (last90Days.length > recentTickets.length) {
+        const total90Days = last90Days.reduce((sum, t) => sum + (t.netWeight || 0), 0);
+        parts.push(`with ${last90Days.length} total deliveries over 90 days (${this.formatQuantity(total90Days, 'lbs')})`);
+      }
+    } else if (last90Days.length > 0) {
+      // No recent tickets, but have some in last 90 days
+      const total90Days = last90Days.reduce((sum, t) => sum + (t.netWeight || 0), 0);
+      parts.push(`They have ${last90Days.length} delivery ticket${last90Days.length !== 1 ? 's' : ''} in the past 90 days totaling ${this.formatQuantity(total90Days, 'lbs')}`);
     } else {
-      // No recent tickets, just show total count
-      return `They have ${totalTickets} delivery ticket${totalTickets !== 1 ? 's' : ''} on record.`;
+      // No recent activity
+      parts.push(`They have ${totalTickets} delivery ticket${totalTickets !== 1 ? 's' : ''} on record, but no recent activity in the past 90 days`);
     }
+
+    return parts.join(', ') + '.';
   }
 
   private generateEngagementSummary(): string {

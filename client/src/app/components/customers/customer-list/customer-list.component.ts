@@ -1,10 +1,11 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnChanges, OnDestroy, SimpleChanges, ChangeDetectorRef, ChangeDetectionStrategy, inject } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, OnChanges, OnDestroy, SimpleChanges, ChangeDetectorRef, ChangeDetectionStrategy, inject, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 import { Customer, SavedList, Note } from '../../../models';
 import { ApiService } from '../../../services/api.service';
+import { AppStateService } from '../../../services/app-state.service';
 import { CardComponent, CardContentComponent } from '../../ui/card/card.component';
 import { BadgeComponent } from '../../ui/badge/badge.component';
 
@@ -23,11 +24,66 @@ interface LastContactInfo {
   template: `
     <app-card>
       <app-card-content class="p-0">
-        <!-- Title and Search -->
-        <div class="px-4 pt-3 pb-2">
+        <!-- Header with Title and Filters -->
+        <div class="px-4 pt-4 pb-3 border-b border-gray-200 dark:border-gray-700 space-y-3">
+          <!-- Title Row -->
           <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Customers</h3>
-        </div>
-        <div class="px-4 py-2 border-b border-gray-200 dark:border-gray-700">
+
+          <!-- Trade Unit Dropdown -->
+          <div class="relative">
+            <button
+              (click)="toggleTradeUnitDropdown(); $event.stopPropagation()"
+              type="button"
+              class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500 flex items-center gap-2 justify-between transition-colors"
+            >
+              <div class="flex items-center gap-2 min-w-0 flex-1">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0 text-gray-400">
+                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                </svg>
+                <span class="truncate">{{ getTradeUnitButtonText() }}</span>
+              </div>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0 transition-transform" [class.rotate-180]="isTradeUnitDropdownOpen">
+                <path d="m6 9 6 6 6-6"/>
+              </svg>
+            </button>
+            @if (isTradeUnitDropdownOpen) {
+              <div
+                (click)="$event.stopPropagation()"
+                class="absolute left-0 right-0 mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg z-50"
+              >
+                <div class="max-h-[350px] overflow-y-auto p-2 space-y-1">
+                  @for (unit of tradeUnits; track unit) {
+                    <label class="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-600 rounded cursor-pointer transition-colors">
+                      <input
+                        type="checkbox"
+                        [checked]="isTradeUnitSelected(unit)"
+                        (change)="toggleTradeUnit(unit)"
+                        class="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                      />
+                      <span class="text-sm text-gray-900 dark:text-white">{{ unit }}</span>
+                    </label>
+                  }
+                </div>
+                @if (selectedTradeUnits.length > 0) {
+                  <div class="border-t border-gray-200 dark:border-gray-600 p-2">
+                    <button
+                      (click)="clearAllTradeUnits()"
+                      type="button"
+                      class="w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-md transition-colors flex items-center justify-center gap-2"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18 6L6 18"/>
+                        <path d="M6 6l12 12"/>
+                      </svg>
+                      Clear All
+                    </button>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+
+          <!-- Search Box -->
           <div class="relative">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
               <circle cx="11" cy="11" r="8"/>
@@ -38,7 +94,7 @@ interface LastContactInfo {
               [(ngModel)]="searchQuery"
               (ngModelChange)="applyFilters()"
               placeholder="Search customers..."
-              class="w-full h-10 pl-10 pr-10 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+              class="w-full h-9 pl-10 pr-10 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
             />
             @if (searchQuery) {
               <button
@@ -74,7 +130,24 @@ interface LastContactInfo {
 
         <!-- Customer List -->
         <div class="divide-y divide-gray-200 dark:divide-gray-700 max-h-[calc(100vh-12rem)] lg:max-h-[calc(100vh-16rem)] overflow-y-auto">
-          @if (filteredCustomers.length === 0) {
+          @if (loading) {
+            <div class="p-8 text-center">
+              <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-300 dark:border-gray-600 border-t-green-600 dark:border-t-green-500 mb-4"></div>
+              <p class="text-gray-500 dark:text-gray-400 font-medium">Loading customers...</p>
+            </div>
+          } @else if (selectedTradeUnits.length === 0 && !searchQuery) {
+            <div class="p-8 text-center text-gray-500">
+              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 opacity-50">
+                <path d="M3 3h18v18H3z"/>
+                <path d="M9 3v18"/>
+                <path d="M15 3v18"/>
+                <path d="M3 9h18"/>
+                <path d="M3 15h18"/>
+              </svg>
+              <p class="font-medium">Select Trade Units</p>
+              <p class="text-sm mt-2">Choose one or more trade units from the dropdown above to view customers, or use the search box to search all trade units</p>
+            </div>
+          } @else if (filteredCustomers.length === 0) {
             <div class="p-8 text-center text-gray-500">
               <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 opacity-50">
                 <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
@@ -91,9 +164,9 @@ interface LastContactInfo {
                 [class]="getCustomerItemClass(customer)"
               >
                 <!-- Row 1: Name and Acres -->
-                <div class="flex items-center justify-between">
-                  <h3 class="font-medium text-gray-900 dark:text-white truncate">{{ customer.name }}</h3>
-                  <app-badge variant="secondary">{{ customer.totalAcres | number }} acres</app-badge>
+                <div class="flex items-center justify-between gap-2">
+                  <h3 class="font-medium text-gray-900 dark:text-white truncate flex-1 min-w-0">{{ customer.name }}</h3>
+                  <app-badge variant="secondary" class="flex-shrink-0 whitespace-nowrap">{{ customer.totalAcres | number }} acres</app-badge>
                 </div>
 
                 <!-- Details - fixed height container -->
@@ -106,14 +179,23 @@ interface LastContactInfo {
                     </svg>
                     <span class="truncate">{{ getFormattedLocation(customer) }}</span>
                   </div>
-                  <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 h-5">
-                    @if (customer.phone) {
+                  @if (customer.phone) {
+                    <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
                       </svg>
                       <span>{{ getFormattedPhone(customer.phone) }}</span>
-                    }
-                  </div>
+                    </div>
+                  }
+                  @if (customer.email) {
+                    <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect width="20" height="16" x="2" y="4" rx="2"/>
+                        <path d="m2 7 8.97 5.7a1.94 1.94 0 0 0 2.06 0L22 7"/>
+                      </svg>
+                      <span class="truncate">{{ customer.email }}</span>
+                    </div>
+                  }
                   <div class="flex items-center gap-2 text-sm" [class]="lastContactCache.get(customer.id)?.cssClass || 'text-red-500'">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/>
@@ -137,23 +219,45 @@ export class CustomerListComponent implements OnInit, OnChanges, OnDestroy {
   @Input() selectedCustomer: Customer | null = null;
   @Input() savedLists: SavedList[] = [];
   @Input() notes: Note[] = [];
+  @Input() loading: boolean = false;
   @Output() selectCustomer = new EventEmitter<Customer>();
+  @Output() tradeUnitChange = new EventEmitter<string[]>();
 
   private cdr = inject(ChangeDetectorRef);
   private apiService = inject(ApiService);
+  private appStateService = inject(AppStateService);
   private destroy$ = new Subject<void>();
   private searchSubject$ = new Subject<string>();
 
   searchQuery = '';
   selectedListId = '';
+  selectedTradeUnits: string[] = [];
+  tradeUnits: string[] = [];
   filteredCustomers: Customer[] = [];
+  isTradeUnitDropdownOpen = false;
 
   // Performance optimization: Cache last contact info to avoid repeated filtering/sorting
   lastContactCache = new Map<number, LastContactInfo>();
 
   ngOnInit(): void {
     this.rebuildLastContactCache();
+
+    // Restore state from service
+    this.searchQuery = this.appStateService.searchQuery();
+    this.selectedTradeUnits = this.appStateService.selectedTradeUnits();
+
     this.applyFilters();
+
+    // Load trade units
+    this.apiService.getTradeUnits().pipe(
+      takeUntil(this.destroy$)
+    ).subscribe({
+      next: (units) => {
+        this.tradeUnits = units;
+        this.cdr.markForCheck();
+      },
+      error: (err) => console.error('Failed to load trade units:', err)
+    });
 
     // Set up search debouncing
     this.searchSubject$.pipe(
@@ -163,6 +267,58 @@ export class CustomerListComponent implements OnInit, OnChanges, OnDestroy {
     ).subscribe(searchTerm => {
       this.performSearch(searchTerm);
     });
+  }
+
+  toggleTradeUnitDropdown(): void {
+    this.isTradeUnitDropdownOpen = !this.isTradeUnitDropdownOpen;
+  }
+
+  closeDropdown(): void {
+    this.isTradeUnitDropdownOpen = false;
+  }
+
+  toggleTradeUnit(unit: string): void {
+    const index = this.selectedTradeUnits.indexOf(unit);
+    if (index > -1) {
+      this.selectedTradeUnits.splice(index, 1);
+    } else {
+      this.selectedTradeUnits.push(unit);
+    }
+    this.onTradeUnitsChange();
+  }
+
+  clearAllTradeUnits(): void {
+    this.selectedTradeUnits = [];
+    this.onTradeUnitsChange();
+    // Keep dropdown open so user can make new selections
+  }
+
+  isTradeUnitSelected(unit: string): boolean {
+    return this.selectedTradeUnits.includes(unit);
+  }
+
+  getTradeUnitButtonText(): string {
+    if (this.selectedTradeUnits.length === 0) {
+      return 'Select Trade Units';
+    } else if (this.selectedTradeUnits.length === 1) {
+      return this.selectedTradeUnits[0];
+    } else {
+      return `${this.selectedTradeUnits.length} trade units selected`;
+    }
+  }
+
+  onTradeUnitsChange(): void {
+    // Emit the array of selected trade units
+    this.tradeUnitChange.emit(this.selectedTradeUnits);
+  }
+
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: MouseEvent): void {
+    // Close dropdown when clicking outside
+    if (this.isTradeUnitDropdownOpen) {
+      this.closeDropdown();
+      this.cdr.markForCheck();
+    }
   }
 
   ngOnDestroy(): void {
@@ -187,16 +343,35 @@ export class CustomerListComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   applyFilters(): void {
-    const searchTerm = this.searchQuery.trim();
+    const searchTerm = this.searchQuery.trim().toLowerCase();
 
-    // If there's a search term, trigger API search
-    if (searchTerm) {
+    // Save search query to state service
+    this.appStateService.setSearchQuery(this.searchQuery);
+
+    // If there's a search term but no trade units selected, use API search to search all trade units
+    if (searchTerm && this.selectedTradeUnits.length === 0) {
       this.searchSubject$.next(searchTerm);
       return;
     }
 
-    // No search term - show initial customers with saved list filter
+    // Client-side filtering (instant) when we have customers loaded
     let result = [...this.customers];
+
+    // Apply search filter (client-side - much faster!)
+    if (searchTerm) {
+      result = result.filter(c => {
+        const searchableText = [
+          c.name,
+          c.farm,
+          c.location,
+          c.stateProvince,
+          c.phone,
+          c.email
+        ].filter(Boolean).join(' ').toLowerCase();
+
+        return searchableText.includes(searchTerm);
+      });
+    }
 
     // Apply saved list filter
     if (this.selectedListId) {
@@ -212,11 +387,14 @@ export class CustomerListComponent implements OnInit, OnChanges, OnDestroy {
 
   clearSearch(): void {
     this.searchQuery = '';
+    this.appStateService.setSearchQuery('');
     this.applyFilters();
   }
 
   private performSearch(searchTerm: string): void {
-    this.apiService.searchCustomers(searchTerm).pipe(
+    // Pass selectedTradeUnits to search - if no trade units selected, searches all trade units
+    const tradeUnits = this.selectedTradeUnits.length > 0 ? this.selectedTradeUnits : undefined;
+    this.apiService.searchCustomers(searchTerm, tradeUnits).pipe(
       takeUntil(this.destroy$)
     ).subscribe({
       next: (customers) => {

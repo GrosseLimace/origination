@@ -8,10 +8,13 @@ namespace GrainOriginatorPortal.Api.Services;
 public interface IDataService
 {
     // Customer Operations
-    List<Customer> GetCustomers();
-    List<Customer> SearchCustomers(string searchTerm);
+    List<Customer> GetCustomers(List<string>? tradeUnits = null);
+    List<Customer> SearchCustomers(string searchTerm, List<string>? tradeUnits = null);
     Customer? GetCustomerById(long id);
     void UpdateCustomer(long customerId, string location, string phone, string email, List<string> farmIds, List<string> linkedProducerIds);
+
+    // Trade Unit Operations
+    List<string> GetTradeUnits();
 
     // Farm Operations
     List<Farm> GetFarms();
@@ -20,12 +23,12 @@ public interface IDataService
     string CreateFarm(string name, string location, int acres);
 
     // Contract Operations
-    List<Contract> GetContracts();
+    List<Contract> GetContracts(List<string>? tradeUnits = null);
     List<Contract> GetContractsByCustomer(long customerId);
     List<Contract> GetContractsByFarm(string farmId);
 
     // Ticket Operations
-    List<Ticket> GetTickets();
+    List<Ticket> GetTickets(List<string>? tradeUnits = null);
     List<Ticket> GetTicketsByCustomer(long customerId);
     List<Ticket> GetTicketsByFarm(string farmId);
 

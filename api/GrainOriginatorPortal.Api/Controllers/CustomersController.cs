@@ -16,19 +16,25 @@ public class CustomersController : ControllerBase
     }
 
     [HttpGet]
-    public ActionResult<List<Customer>> GetAll()
+    public ActionResult<List<Customer>> GetAll([FromQuery] List<string>? tradeUnits = null)
     {
-        return Ok(_dataService.GetCustomers());
+        return Ok(_dataService.GetCustomers(tradeUnits));
     }
 
     [HttpGet("search")]
-    public ActionResult<List<Customer>> Search([FromQuery] string searchTerm)
+    public ActionResult<List<Customer>> Search([FromQuery] string searchTerm, [FromQuery] List<string>? tradeUnits = null)
     {
         if (string.IsNullOrWhiteSpace(searchTerm))
         {
-            return Ok(_dataService.GetCustomers());
+            return Ok(_dataService.GetCustomers(tradeUnits));
         }
-        return Ok(_dataService.SearchCustomers(searchTerm));
+        return Ok(_dataService.SearchCustomers(searchTerm, tradeUnits));
+    }
+
+    [HttpGet("trade-units")]
+    public ActionResult<List<string>> GetTradeUnits()
+    {
+        return Ok(_dataService.GetTradeUnits());
     }
 
     [HttpGet("{id:long}")]

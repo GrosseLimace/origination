@@ -16,9 +16,9 @@ public class TicketsController : ControllerBase
     }
 
     [HttpGet]
-    public ActionResult<List<Ticket>> GetAll()
+    public ActionResult<List<Ticket>> GetAll([FromQuery] List<string>? tradeUnits = null)
     {
-        return Ok(_dataService.GetTickets());
+        return Ok(_dataService.GetTickets(tradeUnits));
     }
 
     [HttpGet("customer/{customerId:long}")]

@@ -24,6 +24,9 @@ public class Contract
     public string? CommodityDescription { get; set; }
     public string? CommodityGroup { get; set; }
 
+    // Trade unit / organization
+    public string? TradeUnit { get; set; }
+
     // Quantity and pricing
     public decimal? Quantity { get; set; }
     public decimal? Weight { get; set; }

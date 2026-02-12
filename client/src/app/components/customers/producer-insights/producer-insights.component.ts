@@ -64,34 +64,37 @@ import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain } from
             <div [style]="sublabelStyle">bushels contracted</div>
           </div>
 
-          <!-- Total Revenue -->
+          <!-- Active Contracts -->
           <div class="rounded-xl p-4" [style]="cardStyle">
             <div class="flex items-center justify-between mb-3">
-              <span [style]="labelStyle">Total Revenue</span>
+              <span [style]="labelStyle">Active Contracts</span>
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [style]="iconStyle">
-                <line x1="12" x2="12" y1="2" y2="22"/>
-                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="9" x2="15" y1="13" y2="13"/>
+                <line x1="9" x2="15" y1="17" y2="17"/>
               </svg>
             </div>
             <div class="text-2xl text-white mb-1">
-              \${{ formatRevenue(totalRevenue) }}
+              {{ activeContractCount }}
             </div>
-            <div [style]="sublabelStyle">{{ activeContractCount }} contracts</div>
+            <div [style]="sublabelStyle">{{ signedContractCount }} signed</div>
           </div>
 
-          <!-- YOY Growth -->
+          <!-- Average Contract Size -->
           <div class="rounded-xl p-4" [style]="cardStyle">
             <div class="flex items-center justify-between mb-3">
-              <span [style]="labelStyle">YOY Growth</span>
+              <span [style]="labelStyle">Avg Contract</span>
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [style]="iconStyle">
-                <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
-                <polyline points="16 7 22 7 22 13"/>
+                <line x1="12" x2="12" y1="20" y2="10"/>
+                <line x1="18" x2="18" y1="20" y2="4"/>
+                <line x1="6" x2="6" y1="20" y2="16"/>
               </svg>
             </div>
             <div class="text-2xl text-white mb-1">
-              {{ yoyGrowth >= 0 ? '+' : '' }}{{ yoyGrowth | number:'1.1-1' }}%
+              {{ averageContractSize | number:'1.0-0' }}
             </div>
-            <div [style]="sublabelStyle">vs. previous year</div>
+            <div [style]="sublabelStyle">bushels per contract</div>
           </div>
 
           <!-- Engagement -->
@@ -181,41 +184,21 @@ export class ProducerInsightsComponent {
   }
 
   get totalContracted(): number {
-    return this.contracts
-      .filter(c => c.status === 'Active' || c.status === 'Pending')
-      .reduce((sum, c) => sum + c.quantity, 0);
-  }
-
-  get totalRevenue(): number {
-    return this.contracts
-      .filter(c => c.status === 'Active' || c.status === 'Fulfilled')
-      .reduce((sum, c) => sum + (c.quantity * c.price), 0);
+    // Sum of ALL contracts (not filtered by status)
+    return this.contracts.reduce((sum, c) => sum + c.quantity, 0);
   }
 
   get activeContractCount(): number {
-    return this.contracts.filter(c => c.status === 'Active' || c.status === 'Pending').length;
+    return this.contracts.filter(c => c.status === 'Active').length;
   }
 
-  get yoyGrowth(): number {
-    const currentYear = new Date().getFullYear();
-    const currentYearVolume = this.contracts
-      .filter(c => new Date(c.deliveryStart).getFullYear() === currentYear ||
-                   new Date(c.deliveryEnd).getFullYear() === currentYear)
-      .reduce((sum, c) => sum + c.quantity, 0);
-    const previousYearVolume = this.contracts
-      .filter(c => new Date(c.deliveryStart).getFullYear() === currentYear - 1 ||
-                   new Date(c.deliveryEnd).getFullYear() === currentYear - 1)
-      .reduce((sum, c) => sum + c.quantity, 0);
+  get signedContractCount(): number {
+    return this.contracts.filter(c => c.signed).length;
+  }
 
-    if (previousYearVolume === 0) {
-      const projectedProduction = this.plantingIntentions.reduce((sum, p) => sum + (p.acres * p.estimatedYield), 0);
-      if (projectedProduction > 0 && this.totalContracted > 0) {
-        return (this.totalContracted / projectedProduction) * 100 - 50;
-      }
-      return 12.5;
-    }
-
-    return ((currentYearVolume - previousYearVolume) / previousYearVolume) * 100;
+  get averageContractSize(): number {
+    if (this.contracts.length === 0) return 0;
+    return this.totalContracted / this.contracts.length;
   }
 
   get totalInteractions(): number {

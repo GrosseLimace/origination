@@ -1,9 +1,11 @@
 import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Subject, forkJoin } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
+import { AppStateService } from '../../services/app-state.service';
 import { ToastService } from '../../services/toast.service';
 import { Customer, Contract, PlantingIntention, StoredGrain } from '../../models';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '../../components/ui/card/card.component';
@@ -26,17 +28,56 @@ interface UnsignedContract {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent, BadgeComponent],
+  imports: [CommonModule, FormsModule, CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent, BadgeComponent],
   template: `
     <div class="space-y-6">
       <div class="flex items-center justify-between">
-        <div>
-          <h2 class="text-2xl font-semibold text-gray-900 dark:text-white">Territory Dashboard</h2>
-          <p class="text-gray-500 dark:text-gray-400">Overview of your territory performance</p>
+        <div class="flex-1">
+          <div class="flex items-center gap-3">
+            <h2 class="text-2xl font-semibold text-gray-900 dark:text-white">Trade Unit Dashboard</h2>
+            @if (availableTradeUnits.length > 1) {
+              <select
+                [(ngModel)]="selectedTradeUnitForDashboard"
+                (change)="onTradeUnitChange()"
+                class="px-3 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+              >
+                @for (unit of availableTradeUnits; track unit) {
+                  <option [value]="unit">{{ unit }}</option>
+                }
+              </select>
+            } @else if (availableTradeUnits.length === 1) {
+              <span class="text-lg font-medium text-gray-600 dark:text-gray-300">- {{ availableTradeUnits[0] }}</span>
+            }
+          </div>
+          <p class="text-gray-500 dark:text-gray-400 mt-1">
+            @if (selectedTradeUnitForDashboard) {
+              Overview of {{ selectedTradeUnitForDashboard }} performance
+            } @else {
+              Select a trade unit to view performance metrics
+            }
+          </p>
         </div>
       </div>
 
-      <!-- Summary Cards -->
+      @if (!selectedTradeUnitForDashboard) {
+        <div class="flex items-center justify-center py-20">
+          <div class="text-center">
+            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 text-gray-400 dark:text-gray-500">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+            </svg>
+            <p class="text-gray-500 dark:text-gray-400 font-medium text-lg mb-2">No Trade Unit Selected</p>
+            <p class="text-gray-400 dark:text-gray-500 text-sm">Please select a trade unit from the Customers page to view dashboard metrics</p>
+          </div>
+        </div>
+      } @else if (loading) {
+        <div class="flex items-center justify-center py-20">
+          <div class="text-center">
+            <div class="inline-block animate-spin rounded-full h-16 w-16 border-4 border-gray-300 dark:border-gray-600 border-t-green-600 dark:border-t-green-500 mb-4"></div>
+            <p class="text-gray-500 dark:text-gray-400 font-medium text-lg">Loading dashboard data...</p>
+          </div>
+        </div>
+      } @else {
+        <!-- Summary Cards -->
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <app-card class="!p-4">
           <div class="flex items-center gap-3">
@@ -259,20 +300,28 @@ interface UnsignedContract {
           </app-card-content>
         </app-card>
       </div>
+      }
     </div>
   `
 })
 export class DashboardComponent implements OnInit, OnDestroy {
   private apiService = inject(ApiService);
+  private appStateService = inject(AppStateService);
   private toastService = inject(ToastService);
   private router = inject(Router);
   private destroy$ = new Subject<void>();
 
+  // Data for display
   customers: Customer[] = [];
   contracts: Contract[] = [];
   plantingIntentions: PlantingIntention[] = [];
   storedGrain: StoredGrain[] = [];
 
+  // Trade unit selection
+  availableTradeUnits: string[] = [];
+  selectedTradeUnitForDashboard: string = '';
+
+  loading = false;
   totalAcres = 0;
   activeContracts = 0;
   totalContractValue = 0;
@@ -290,7 +339,14 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
-    this.loadData();
+    // Get selected trade units from app state
+    this.availableTradeUnits = this.appStateService.selectedTradeUnits();
+
+    // Set the first trade unit as default for dashboard view
+    if (this.availableTradeUnits.length > 0) {
+      this.selectedTradeUnitForDashboard = this.availableTradeUnits[0];
+      this.loadData();
+    }
   }
 
   ngOnDestroy(): void {
@@ -298,10 +354,20 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.destroy$.complete();
   }
 
+  onTradeUnitChange(): void {
+    // When user changes the selected trade unit, reload data for that specific trade unit
+    this.loadData();
+  }
+
   private loadData(): void {
+    // Load data for the currently selected trade unit for dashboard display
+    const tradeUnitToLoad = this.selectedTradeUnitForDashboard ? [this.selectedTradeUnitForDashboard] : undefined;
+
+    this.loading = true;
+
     forkJoin({
-      customers: this.apiService.getCustomers(),
-      contracts: this.apiService.getContracts(),
+      customers: this.apiService.getCustomers(tradeUnitToLoad),
+      contracts: this.apiService.getContracts(tradeUnitToLoad),
       plantingIntentions: this.apiService.getPlantingIntentions(),
       storedGrain: this.apiService.getStoredGrain()
     }).pipe(takeUntil(this.destroy$)).subscribe({
@@ -311,20 +377,32 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.plantingIntentions = data.plantingIntentions;
         this.storedGrain = data.storedGrain;
 
-        this.totalAcres = this.customers.reduce((sum, c) => sum + c.totalAcres, 0);
-        this.activeContracts = this.contracts.filter(c => c.status === 'Active').length;
-        this.totalContractValue = this.contracts.reduce((sum, c) => sum + c.quantity * c.price, 0);
+        // Filter planting intentions and stored grain by customer IDs from the loaded customers
+        const customerIds = new Set(this.customers.map(c => c.id));
+        this.plantingIntentions = this.plantingIntentions.filter(p => customerIds.has(p.customerId));
+        this.storedGrain = this.storedGrain.filter(s => customerIds.has(s.customerId));
 
-        this.calculateCropDistribution();
-        this.calculateContractStatus();
-        this.calculatePlantingByCustomer();
-        this.calculateStorageSummary();
-        this.calculateUnsignedContracts();
+        this.calculateMetrics();
+        this.loading = false;
       },
-      error: () => {
+      error: (err) => {
+        console.error('Failed to load dashboard data:', err);
         this.toastService.error('Failed to load dashboard data');
+        this.loading = false;
       }
     });
+  }
+
+  private calculateMetrics(): void {
+    this.totalAcres = this.customers.reduce((sum, c) => sum + c.totalAcres, 0);
+    this.activeContracts = this.contracts.filter(c => c.status === 'Active').length;
+    this.totalContractValue = this.contracts.reduce((sum, c) => sum + c.quantity * c.price, 0);
+
+    this.calculateCropDistribution();
+    this.calculateContractStatus();
+    this.calculatePlantingByCustomer();
+    this.calculateStorageSummary();
+    this.calculateUnsignedContracts();
   }
 
   navigateToCustomer(customerId: number): void {

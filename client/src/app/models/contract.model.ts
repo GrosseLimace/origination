@@ -10,6 +10,7 @@ export interface Contract {
   commodityCode?: string;
   commodityDescription?: string; // Grain type (Corn, Soybeans, Wheat)
   commodityGroup?: string; // Commodity group (e.g., "Wheat", "Corn", "Soybeans")
+  tradeUnit?: string;     // Trade unit / organization code
   quantity: number;       // Bushels
   unit: string;           // Usually "bushels"
   price: number;          // Price per bushel (calculated: totalValue / quantity)

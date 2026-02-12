@@ -34,7 +34,9 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
           [selectedCustomer]="selectedCustomer"
           [savedLists]="savedLists"
           [notes]="notes"
+          [loading]="loading"
           (selectCustomer)="handleSelectCustomer($event)"
+          (tradeUnitChange)="handleTradeUnitChange($event)"
         />
       </div>
 
@@ -153,6 +155,7 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   selectedCustomer: Customer | null = null;
   selectedFarmId: string | undefined = undefined;
+  selectedTradeUnits: string[] = [];
   customerContracts: Contract[] = [];
   customerTickets: Ticket[] = [];
   customerNotes: Note[] = [];
@@ -167,11 +170,14 @@ export class HomeComponent implements OnInit, OnDestroy {
   allCustomerStoredGrain: StoredGrain[] = [];
 
   isMobile = false;
+  loading = false;
 
   ngOnInit(): void {
-    this.loadAllData();
     this.checkMobile();
     window.addEventListener('resize', this.resizeHandler);
+
+    // Restore state from service if it exists
+    this.restoreStateFromService();
 
     // Handle customerId query param (from Build a List view customer link)
     this.route.queryParams.pipe(takeUntil(this.destroy$)).subscribe(params => {
@@ -180,6 +186,41 @@ export class HomeComponent implements OnInit, OnDestroy {
         this.selectCustomerById(customerId);
       }
     });
+  }
+
+  private restoreStateFromService(): void {
+    // Restore data from state service
+    const stateCustomers = this.appState.customers();
+    const stateContracts = this.appState.contracts();
+    const stateTickets = this.appState.tickets();
+    const statePlantingIntentions = this.appState.plantingIntentions();
+    const stateNotes = this.appState.notes();
+    const stateStoredGrain = this.appState.storedGrain();
+    const stateFarms = this.appState.farms();
+    const stateSavedLists = this.appState.savedLists();
+
+    // If we have cached data, restore it
+    if (stateCustomers.length > 0) {
+      this.customers = stateCustomers;
+      this.contracts = stateContracts;
+      this.tickets = stateTickets;
+      this.plantingIntentions = statePlantingIntentions;
+      this.notes = stateNotes;
+      this.storedGrain = stateStoredGrain;
+      this.farms = stateFarms;
+      this.savedLists = stateSavedLists;
+
+      // Restore selected customer
+      const stateSelectedCustomer = this.appState.selectedCustomer();
+      if (stateSelectedCustomer) {
+        this.selectedCustomer = stateSelectedCustomer;
+        this.selectedFarmId = this.appState.selectedFarmId() || undefined;
+        this.loadCustomerData(stateSelectedCustomer.id);
+      }
+
+      // Restore trade units
+      this.selectedTradeUnits = this.appState.selectedTradeUnits();
+    }
   }
 
   ngOnDestroy(): void {
@@ -213,49 +254,90 @@ export class HomeComponent implements OnInit, OnDestroy {
     }
   }
 
-  private loadAllData(): void {
+  private loadAllData(tradeUnits?: string[]): void {
     // Load each data type independently with error handling
     // This prevents one failing endpoint from blocking all data
 
-    this.apiService.getCustomers().pipe(takeUntil(this.destroy$)).subscribe({
-      next: (data) => { this.customers = data; },
-      error: (err) => { console.error('Failed to load customers:', err); }
+    this.loading = true;
+
+    this.apiService.getCustomers(tradeUnits).pipe(takeUntil(this.destroy$)).subscribe({
+      next: (data) => {
+        this.customers = data;
+        this.appState.setCustomers(data);
+        this.loading = false;
+      },
+      error: (err) => {
+        console.error('Failed to load customers:', err);
+        this.loading = false;
+      }
     });
 
-    this.apiService.getContracts().pipe(takeUntil(this.destroy$)).subscribe({
-      next: (data) => { this.contracts = data; },
+    this.apiService.getContracts(tradeUnits).pipe(takeUntil(this.destroy$)).subscribe({
+      next: (data) => {
+        this.contracts = data;
+        this.appState.setContracts(data);
+      },
       error: (err) => { console.error('Failed to load contracts:', err); }
     });
 
-    this.apiService.getTickets().pipe(takeUntil(this.destroy$)).subscribe({
-      next: (data) => { this.tickets = data; },
+    this.apiService.getTickets(tradeUnits).pipe(takeUntil(this.destroy$)).subscribe({
+      next: (data) => {
+        this.tickets = data;
+        this.appState.setTickets(data);
+      },
       error: (err) => { console.error('Failed to load tickets:', err); }
     });
 
     this.apiService.getPlantingIntentions().pipe(takeUntil(this.destroy$)).subscribe({
-      next: (data) => { this.plantingIntentions = data; },
+      next: (data) => {
+        this.plantingIntentions = data;
+        this.appState.setPlantingIntentions(data);
+      },
       error: (err) => { console.error('Failed to load planting intentions:', err); }
     });
 
     this.apiService.getNotes().pipe(takeUntil(this.destroy$)).subscribe({
-      next: (data) => { this.notes = data; },
+      next: (data) => {
+        this.notes = data;
+        this.appState.setNotes(data);
+      },
       error: (err) => { console.error('Failed to load notes:', err); }
     });
 
     this.apiService.getStoredGrain().pipe(takeUntil(this.destroy$)).subscribe({
-      next: (data) => { this.storedGrain = data; },
+      next: (data) => {
+        this.storedGrain = data;
+        this.appState.setStoredGrain(data);
+      },
       error: (err) => { console.error('Failed to load stored grain:', err); }
     });
 
     this.apiService.getFarms().pipe(takeUntil(this.destroy$)).subscribe({
-      next: (data) => { this.farms = data; },
+      next: (data) => {
+        this.farms = data;
+        this.appState.setFarms(data);
+      },
       error: (err) => { console.error('Failed to load farms:', err); }
     });
 
     this.apiService.getSavedLists().pipe(takeUntil(this.destroy$)).subscribe({
-      next: (data) => { this.savedLists = data; },
+      next: (data) => {
+        this.savedLists = data;
+        this.appState.setSavedLists(data);
+      },
       error: (err) => { console.error('Failed to load saved lists:', err); }
     });
+  }
+
+  handleTradeUnitChange(tradeUnits: string[]): void {
+    this.selectedTradeUnits = tradeUnits;
+    this.appState.setTradeUnits(tradeUnits);
+    this.selectedCustomer = null; // Clear selection when filter changes
+    this.appState.selectCustomer(null);
+    // Only load data if at least one trade unit is selected
+    if (tradeUnits && tradeUnits.length > 0) {
+      this.loadAllData(tradeUnits);
+    }
   }
 
   handleSelectCustomer(customer: Customer): void {
@@ -264,7 +346,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     this.appState.selectCustomer(customer);
 
     // Check if we have contracts and tickets for this customer using string matching
-    // If not, load them (this happens when selecting a searched customer not in initial 25)
+    // If not, load them (this happens when selecting a searched customer not in initial 15)
     const hasContracts = this.contracts.some(c => c.ctrmCustomerId === customer.sourceCustomerId);
     const hasTickets = this.tickets.some(t => t.customerCode === customer.sourceCustomerId);
 
@@ -314,6 +396,7 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   handleFarmChange(farmId: string): void {
     this.selectedFarmId = farmId;
+    this.appState.selectFarm(farmId);
     // Reload customer data to filter by the newly selected farm
     if (this.selectedCustomer) {
       this.loadCustomerData(this.selectedCustomer.id);

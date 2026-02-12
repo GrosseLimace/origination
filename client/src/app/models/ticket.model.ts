@@ -12,6 +12,7 @@ export interface Ticket {
   ticketSuffix?: string;
   shipmentTicketNumber?: string; // Full shipment ticket number from ODS
   ctrmContractNumber?: string; // Contract number from CTRM system
+  organizationCode?: string; // Organization code / trade unit
 
   // Dates
   date: string;           // TicketBlDate - stored as string in ODS

@@ -27,6 +27,9 @@ public class Ticket
     public string? ShipmentTicketNumber { get; set; } // Full shipment ticket number from ODS
     public string? CtrmContractNumber { get; set; }
 
+    // Organization / trade unit
+    public string? OrganizationCode { get; set; }
+
     // Dates - different types in ODS view
     public string? Date { get; set; } // Maps to TicketBlDate (stored as string in DB)
     public DateTime? FinalSettledDate { get; set; } // Stored as DateTime in DB

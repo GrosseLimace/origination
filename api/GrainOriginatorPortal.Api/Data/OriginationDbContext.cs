@@ -102,6 +102,7 @@ public class OriginationDbContext : DbContext
             entity.Property(e => e.CommodityCode).HasColumnName("CommodityCode").HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.CommodityDescription).HasColumnName("CommodityDescription").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.CommodityGroup).HasColumnName("CommodityGroup").HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.TradeUnit).HasColumnName("TradeUnit").HasMaxLength(100).IsRequired(false);
 
             // Quantity and pricing - mapped to actual ODS column names
             entity.Property(e => e.Quantity).HasColumnName("Quantity").HasColumnType("decimal(18,6)").IsRequired(false);
@@ -158,6 +159,7 @@ public class OriginationDbContext : DbContext
             entity.Property(e => e.TicketSuffix).HasColumnName("TicketSuffix").HasMaxLength(100);
             entity.Property(e => e.ShipmentTicketNumber).HasColumnName("ShipmentTicketNumber").HasMaxLength(100);
             entity.Property(e => e.CtrmContractNumber).HasColumnName("ContractNumber").HasMaxLength(100);
+            entity.Property(e => e.OrganizationCode).HasColumnName("OrganizationCode").HasMaxLength(100);
 
             // Dates - using TicketBlDate and FinalSettledDate from view
             entity.Property(e => e.Date).HasColumnName("TicketBlDate");
