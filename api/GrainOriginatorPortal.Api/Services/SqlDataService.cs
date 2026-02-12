@@ -43,11 +43,13 @@ public class SqlDataService : IDataService
 
             _logger.LogInformation($"Found {customerIdsWithContracts.Count} customers with contracts, {customerIdsWithTickets.Count} customers with tickets");
 
-            // Get top 50 customers who have BOTH contracts AND tickets
+            // Get top 15 customers who have BOTH contracts AND tickets
+            // Filter by IndustryCode1 = 'PR' (producer customers only)
             // Exclude customers with names containing DUP or DO NOT USE
             // Exclude customers with names starting with * or $
             var customers = _context.Customers
                 .Where(c => c.IsActive &&
+                           c.IndustryCode1 == "PR" &&
                            customerIdsWithContracts.Contains(c.SourceCustomerId) &&
                            customerIdsWithTickets.Contains(c.Id) &&
                            !c.Name.Contains("DUP") &&
@@ -55,10 +57,10 @@ public class SqlDataService : IDataService
                            !c.Name.StartsWith("*") &&
                            !c.Name.StartsWith("$"))
                 .OrderByDescending(c => c.Id) // Most recent customers by ID
-                .Take(50) // Limit to 50 customers
+                .Take(15) // Limit to 15 customers
                 .ToList();
 
-            _logger.LogInformation($"Returning {customers.Count} customers who have both contracts and tickets");
+            _logger.LogInformation($"Returning {customers.Count} producer customers who have both contracts and tickets");
             return customers;
         }
         catch (Exception ex)
@@ -66,6 +68,130 @@ public class SqlDataService : IDataService
             _logger.LogError(ex, "Error retrieving customers");
             throw;
         }
+    }
+
+    public List<Customer> SearchCustomers(string searchTerm)
+    {
+        try
+        {
+            // Split search term into words for flexible matching
+            // Example: "Jim Johnson" will match "Johnson, Jim R" because both "Jim" and "Johnson" are in the name
+            var searchWords = searchTerm.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                                        .Select(w => w.Trim())
+                                        .Where(w => w.Length > 0)
+                                        .ToList();
+
+            // Start with base query filtering by producer customers
+            var query = _context.Customers
+                .Where(c => c.IsActive &&
+                           c.IndustryCode1 == "PR" &&
+                           !c.Name.Contains("DUP") &&
+                           !c.Name.Contains("DO NOT USE") &&
+                           !c.Name.StartsWith("*") &&
+                           !c.Name.StartsWith("$"));
+
+            // Add Contains condition for each search word (all words must be present in name)
+            foreach (var word in searchWords)
+            {
+                query = query.Where(c => c.Name.Contains(word));
+            }
+
+            // Get candidates (without ordering in SQL - we'll order by relevance in memory)
+            var candidates = query
+                .Take(100) // Get more candidates for relevance scoring
+                .ToList();
+
+            // Score each customer by relevance
+            var scoredCustomers = candidates.Select(c => new
+            {
+                Customer = c,
+                Score = CalculateRelevanceScore(c.Name, searchWords, searchTerm)
+            })
+            .OrderByDescending(x => x.Score) // Most relevant first
+            .ThenBy(x => x.Customer.Name)     // Then alphabetically for ties
+            .Take(15)                          // Top 15 results
+            .Select(x => x.Customer)
+            .ToList();
+
+            _logger.LogInformation($"Search for '{searchTerm}' returned {scoredCustomers.Count} producer customers (ranked by relevance)");
+            return scoredCustomers;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error searching customers for term: {SearchTerm}", searchTerm);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Calculates a relevance score for a customer name based on how well it matches the search terms.
+    /// Higher scores indicate better matches.
+    /// </summary>
+    private int CalculateRelevanceScore(string customerName, List<string> searchWords, string originalSearchTerm)
+    {
+        var score = 0;
+        var nameUpper = customerName.ToUpper();
+        var searchTermUpper = originalSearchTerm.ToUpper();
+
+        // Boost 1: Exact match (very rare but highest priority)
+        if (nameUpper == searchTermUpper)
+        {
+            score += 10000;
+            return score; // Perfect match, no need for other checks
+        }
+
+        // Boost 2: Name starts with search term (e.g., "JIM" matches "JIM JOHNSON")
+        if (nameUpper.StartsWith(searchTermUpper))
+        {
+            score += 5000;
+        }
+
+        // Boost 3: Search term appears as contiguous substring (e.g., "Jim Johnson" in "Johnson, Jim R")
+        if (nameUpper.Contains(searchTermUpper.Replace(",", "").Replace("  ", " ")))
+        {
+            score += 3000;
+        }
+
+        // Boost 4: All search words appear in the same order they were typed
+        var lastIndex = -1;
+        var inOrder = true;
+        foreach (var word in searchWords)
+        {
+            var index = nameUpper.IndexOf(word.ToUpper(), lastIndex + 1);
+            if (index <= lastIndex)
+            {
+                inOrder = false;
+                break;
+            }
+            lastIndex = index;
+        }
+        if (inOrder)
+        {
+            score += 2000;
+        }
+
+        // Boost 5: Fewer total words in name (more specific matches rank higher)
+        // "Johnson, Jim R" (3 words) should rank higher than "JIM JOHNSON - PROJECT 17" (5 words)
+        var nameWords = customerName.Split(new[] { ' ', ',', '-' }, StringSplitOptions.RemoveEmptyEntries).Length;
+        score += Math.Max(0, 100 - (nameWords * 10)); // Penalize longer names
+
+        // Boost 6: Each search word that appears early in the name
+        foreach (var word in searchWords)
+        {
+            var index = nameUpper.IndexOf(word.ToUpper());
+            if (index >= 0)
+            {
+                // Earlier positions get higher scores (max 100 for position 0, decreasing)
+                score += Math.Max(0, 100 - index);
+            }
+        }
+
+        // Boost 7: Proportion of search words to total name words (coverage)
+        // If search has 3 words and name has 3 words, that's 100% coverage (better than 3 words in a 5-word name)
+        var coverage = (double)searchWords.Count / nameWords;
+        score += (int)(coverage * 500);
+
+        return score;
     }
 
     public Customer? GetCustomerById(long id)
@@ -166,9 +292,11 @@ public class SqlDataService : IDataService
                 .Distinct()
                 .ToList();
 
-            // Get SourceCustomerIds for top 50 customers who have BOTH contracts AND tickets
+            // Get SourceCustomerIds for top 15 customers who have BOTH contracts AND tickets
+            // Filter by IndustryCode1 = 'PR' (producer customers only)
             var customerCtrmIds = _context.Customers
                 .Where(c => c.IsActive &&
+                           c.IndustryCode1 == "PR" &&
                            customerIdsWithContracts.Contains(c.SourceCustomerId) &&
                            customerIdsWithTickets.Contains(c.Id) &&
                            !c.Name.Contains("DUP") &&
@@ -176,17 +304,17 @@ public class SqlDataService : IDataService
                            !c.Name.StartsWith("*") &&
                            !c.Name.StartsWith("$"))
                 .OrderByDescending(c => c.Id)
-                .Take(50)
+                .Take(15)
                 .Select(c => c.SourceCustomerId)
                 .ToList();
 
-            // Get all contracts for those top 50 customers
+            // Get all contracts for those top 15 customers
             var contracts = _context.Contracts
                 .Where(c => c.IsActive && c.CtrmCustomerId != null && customerCtrmIds.Contains(c.CtrmCustomerId))
                 .OrderByDescending(c => c.Id)
                 .ToList();
 
-            _logger.LogInformation($"Loaded {contracts.Count} contracts for top 50 customers who have both contracts and tickets");
+            _logger.LogInformation($"Loaded {contracts.Count} contracts for top 15 customers who have both contracts and tickets");
 
             // Calculate status and set defaults for fields not in ODS view
             var today = DateTime.Today;
@@ -240,8 +368,17 @@ public class SqlDataService : IDataService
     {
         try
         {
+            // Get the customer's SourceCustomerId for matching with contract.CtrmCustomerId
+            var customer = _context.Customers.FirstOrDefault(c => c.Id == customerId && c.IsActive);
+            if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
+            {
+                _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
+                return new List<Contract>();
+            }
+
+            // Match contracts using CtrmCustomerId = customer.SourceCustomerId (string matching)
             var contracts = _context.Contracts
-                .Where(c => c.IsActive && c.CustomerId == customerId)
+                .Where(c => c.IsActive && c.CtrmCustomerId == customer.SourceCustomerId)
                 .OrderByDescending(c => c.Id)
                 .ToList();
 
@@ -253,6 +390,7 @@ public class SqlDataService : IDataService
                 contract.Signed = true; // Default to signed since ODS doesn't have this field
             }
 
+            _logger.LogInformation($"Found {contracts.Count} contracts for customer {customerId} (SourceCustomerId: {customer.SourceCustomerId})");
             return contracts;
         }
         catch (Exception ex)
@@ -294,43 +432,74 @@ public class SqlDataService : IDataService
                 .Distinct()
                 .ToList();
 
-            // Get customer IDs that have tickets (via CustomerId)
-            var customerIdsWithTickets = _context.Tickets
-                .Where(t => t.IsActive && t.CustomerId.HasValue)
-                .Select(t => t.CustomerId!.Value)
+            // Get customer codes that have tickets (via CustomerCode)
+            var customerCodesWithTickets = _context.Tickets
+                .Where(t => t.IsActive && t.CustomerCode != null)
+                .Select(t => t.CustomerCode!)
                 .Distinct()
                 .ToList();
 
-            // Get top 50 customer IDs who have BOTH contracts AND tickets
-            var top50CustomerIds = _context.Customers
+            // Get top 15 producer customers who have BOTH contracts AND tickets
+            // Filter by IndustryCode1 = 'PR' (producer customers only)
+            // Get their SourceCustomerIds for matching with tickets
+            var producerCustomerCodes = _context.Customers
                 .Where(c => c.IsActive &&
+                           c.IndustryCode1 == "PR" &&
+                           c.SourceCustomerId != null &&
                            customerIdsWithContracts.Contains(c.SourceCustomerId) &&
-                           customerIdsWithTickets.Contains(c.Id) &&
+                           customerCodesWithTickets.Contains(c.SourceCustomerId) &&
                            !c.Name.Contains("DUP") &&
                            !c.Name.Contains("DO NOT USE") &&
                            !c.Name.StartsWith("*") &&
                            !c.Name.StartsWith("$"))
                 .OrderByDescending(c => c.Id)
-                .Take(50)
-                .Select(c => c.Id)
+                .Take(15)
+                .Select(c => c.SourceCustomerId!)
                 .ToList();
 
-            _logger.LogInformation("Loading tickets for top 50 customers who have both contracts and tickets");
+            _logger.LogInformation("Loading tickets for top 15 customers who have both contracts and tickets");
 
-            // Load all tickets for the top 50 customers
-            // NOTE: ContractId FK is NOW POPULATED in base.Ticket table (proper FK relationship)
-            // Can use proper FK joins instead of string matching
+            // Load all tickets for those producer customers using string matching (CustomerCode = SourceCustomerId)
             var tickets = _context.Tickets
-                .Where(t => t.IsActive && t.CustomerId.HasValue && top50CustomerIds.Contains(t.CustomerId.Value))
+                .Where(t => t.IsActive && t.CustomerCode != null && producerCustomerCodes.Contains(t.CustomerCode))
                 .OrderByDescending(t => t.Date)
                 .ToList();
+
+            // Load quality data for these tickets
+            var ticketIds = tickets.Select(t => t.Id).ToList();
+            var qualityData = _context.TicketQualities
+                .Where(q => ticketIds.Contains(q.TicketId))
+                .ToDictionary(q => q.TicketId);
+
+            // Populate moisture and quality data on tickets
+            var ticketsWithProtein = 0;
+            var wheatTickets = 0;
+            foreach (var ticket in tickets)
+            {
+                if (qualityData.TryGetValue(ticket.Id, out var quality))
+                {
+                    ticket.Moisture = quality.GradeFactorMoisturePercent;
+                    ticket.TestWeight = quality.GradeFactorTestWeightPercent;
+                    ticket.ProteinPercent = quality.GradeFactorProteinPercent;
+
+                    if (ticket.ProteinPercent.HasValue)
+                        ticketsWithProtein++;
+
+                    // GradeCode is already loaded from base.Ticket table
+                }
+
+                if ((ticket.ProductCode ?? "").ToLower().Contains("wheat"))
+                    wheatTickets++;
+            }
+
+            _logger.LogInformation($"Quality data: {ticketsWithProtein} tickets have protein data, {wheatTickets} wheat tickets found");
 
             // Log diagnostic info about ticket-contract relationships
             var ticketsWithContractId = tickets.Count(t => t.ContractId.HasValue);
             var ticketsWithContractNumber = tickets.Count(t => !string.IsNullOrEmpty(t.CtrmContractNumber));
             var ticketsWithBoth = tickets.Count(t => t.ContractId.HasValue && !string.IsNullOrEmpty(t.CtrmContractNumber));
 
-            _logger.LogInformation($"Loaded {tickets.Count} tickets for top 50 customers and their contracts");
+            _logger.LogInformation($"Loaded {tickets.Count} tickets for top 25 customers who have both contracts and tickets");
             _logger.LogInformation($"  - {ticketsWithContractId} tickets have ContractId");
             _logger.LogInformation($"  - {ticketsWithContractNumber} tickets have CtrmContractNumber");
             _logger.LogInformation($"  - {ticketsWithBoth} tickets have both");
@@ -354,12 +523,39 @@ public class SqlDataService : IDataService
     {
         try
         {
-            // Load tickets for specific customer
-            // Note: Date is stored as string in ODS, so we can't filter by date range efficiently
-            return _context.Tickets
-                .Where(t => t.IsActive && t.CustomerId == customerId)
+            // Get the customer's SourceCustomerId for matching with ticket.CustomerCode
+            var customer = _context.Customers.FirstOrDefault(c => c.Id == customerId && c.IsActive);
+            if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
+            {
+                _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
+                return new List<Ticket>();
+            }
+
+            // Match tickets using CustomerCode = customer.SourceCustomerId (string matching, like contracts)
+            var tickets = _context.Tickets
+                .Where(t => t.IsActive && t.CustomerCode == customer.SourceCustomerId)
                 .OrderByDescending(t => t.Date)
                 .ToList();
+
+            // Load quality data for these tickets
+            var ticketIds = tickets.Select(t => t.Id).ToList();
+            var qualityData = _context.TicketQualities
+                .Where(q => ticketIds.Contains(q.TicketId))
+                .ToDictionary(q => q.TicketId);
+
+            // Populate moisture and quality data on tickets
+            foreach (var ticket in tickets)
+            {
+                if (qualityData.TryGetValue(ticket.Id, out var quality))
+                {
+                    ticket.Moisture = quality.GradeFactorMoisturePercent;
+                    ticket.TestWeight = quality.GradeFactorTestWeightPercent;
+                    ticket.ProteinPercent = quality.GradeFactorProteinPercent;
+                }
+            }
+
+            _logger.LogInformation($"Found {tickets.Count} tickets for customer {customerId} (SourceCustomerId: {customer.SourceCustomerId})");
+            return tickets;
         }
         catch (Exception ex)
         {

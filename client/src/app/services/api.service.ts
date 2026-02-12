@@ -34,6 +34,11 @@ export class ApiService {
     return this.http.get<Customer[]>(`${this.baseUrl}/customers`);
   }
 
+  /** Searches customers by name (max 25 results) */
+  searchCustomers(searchTerm: string): Observable<Customer[]> {
+    return this.http.get<Customer[]>(`${this.baseUrl}/customers/search?searchTerm=${encodeURIComponent(searchTerm)}`);
+  }
+
   /** Fetches a single customer by ID */
   getCustomerById(id: number): Observable<Customer> {
     return this.http.get<Customer>(`${this.baseUrl}/customers/${id}`);

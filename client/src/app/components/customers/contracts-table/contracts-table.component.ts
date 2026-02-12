@@ -33,7 +33,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
             <app-table-row>
               <app-table-head [sortable]="true" (click)="handleSort('contractNumber')">
                 <span class="flex items-center gap-1">
-                  Contract ID
+                  Contract Number
                   <span [class]="getSortIconClass('contractNumber')">
                     @if (currentSortColumn === 'contractNumber' && currentSortDirection === 'asc') {
                       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -281,34 +281,39 @@ type SortDirection = 'none' | 'asc' | 'desc';
                         @if (getAppliedTickets(contract).length > 0) {
                           @for (ticket of getAppliedTickets(contract); track ticket.id) {
                             <div class="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 mb-3">
-                              <!-- Row 1 -->
-                              <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-3">
-                                <div>
-                                  <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Shipment Ticket Number</p>
-                                  <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.shipmentTicketNumber || ((ticket.ticketPrefix || '') + ticket.ticketNumber + (ticket.ticketSuffix || '')) }}</p>
+                              <div [class]="hasWheatInAppliedTickets(contract) ? 'grid grid-cols-1 sm:grid-cols-6 gap-4' : 'grid grid-cols-1 sm:grid-cols-5 gap-4'">
+                                <div class="text-center">
+                                  <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Ticket Number</p>
+                                  <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.ticketNumber }}</p>
                                 </div>
-                                <div>
+                                <div class="text-center">
                                   <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Date</p>
-                                  <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.date }}</p>
+                                  <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.date | date:'MMM d, yyyy' }}</p>
                                 </div>
-                                <div>
-                                  <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Net Weight</p>
-                                  <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.appliedDockQuantity | number }} lbs</p>
-                                </div>
-                              </div>
-                              <!-- Row 2 -->
-                              <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                <div>
-                                  <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Product Code</p>
+                                <div class="text-center">
+                                  <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Crop</p>
                                   <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.productCode || 'N/A' }}</p>
                                 </div>
-                                <div>
-                                  <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Contract Number</p>
-                                  <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.ctrmContractNumber || 'N/A' }}</p>
+                                <div class="text-center">
+                                  <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Net Weight (lbs)</p>
+                                  <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.appliedDockQuantity | number }}</p>
                                 </div>
-                                <div>
-                                  <!-- Empty space for layout balance -->
+                                <div class="text-center">
+                                  <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Moisture %</p>
+                                  <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.moisture | number:'1.1-1' }}%</p>
                                 </div>
+                                @if (hasWheatInAppliedTickets(contract)) {
+                                  <div class="text-center">
+                                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Protein %</p>
+                                    <p class="font-medium text-gray-900 dark:text-gray-100">
+                                      @if (ticket.proteinPercent !== null && ticket.proteinPercent !== undefined) {
+                                        {{ ticket.proteinPercent | number:'1.1-1' }}%
+                                      } @else {
+                                        - <span class="text-xs text-gray-400">({{ isWheat(ticket) ? 'wheat-no-data' : 'no-data' }})</span>
+                                      }
+                                    </p>
+                                  </div>
+                                }
                               </div>
                             </div>
                           }
@@ -541,6 +546,23 @@ export class ContractsTableComponent implements OnChanges {
       // Sort by date (string comparison should work for ISO date strings)
       return (a.date || '').localeCompare(b.date || '');
     });
+  }
+
+  hasWheatInAppliedTickets(contract: Contract): boolean {
+    // Check if the contract's commodity group is wheat
+    return this.isWheatContract(contract);
+  }
+
+  isWheatContract(contract: Contract): boolean {
+    if (contract.commodityGroup && contract.commodityGroup.toUpperCase().includes('WHEAT')) return true;
+    if (contract.commodityDescription && contract.commodityDescription.toUpperCase().includes('WHEAT')) return true;
+    return false;
+  }
+
+  isWheat(ticket: Ticket): boolean {
+    // For applied tickets, we already know the contract, so just return true
+    // since hasWheatInAppliedTickets already checked if the contract is wheat
+    return true;
   }
 
   getCalculatedStatus(contract: Contract): string {

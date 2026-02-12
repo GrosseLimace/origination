@@ -9,6 +9,7 @@ public interface IDataService
 {
     // Customer Operations
     List<Customer> GetCustomers();
+    List<Customer> SearchCustomers(string searchTerm);
     Customer? GetCustomerById(long id);
     void UpdateCustomer(long customerId, string location, string phone, string email, List<string> farmIds, List<string> linkedProducerIds);
 

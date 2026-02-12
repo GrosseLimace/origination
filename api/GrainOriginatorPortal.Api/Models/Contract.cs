@@ -22,6 +22,7 @@ public class Contract
     // Commodity information
     public string? CommodityCode { get; set; }
     public string? CommodityDescription { get; set; }
+    public string? CommodityGroup { get; set; }
 
     // Quantity and pricing
     public decimal? Quantity { get; set; }

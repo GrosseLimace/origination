@@ -262,9 +262,54 @@ export class HomeComponent implements OnInit, OnDestroy {
     this.selectedCustomer = customer;
     this.selectedFarmId = undefined; // Reset farm selection when changing customers
     this.appState.selectCustomer(customer);
+
+    // Check if we have contracts and tickets for this customer using string matching
+    // If not, load them (this happens when selecting a searched customer not in initial 25)
+    const hasContracts = this.contracts.some(c => c.ctrmCustomerId === customer.sourceCustomerId);
+    const hasTickets = this.tickets.some(t => t.customerCode === customer.sourceCustomerId);
+
+    if (!hasContracts || !hasTickets) {
+      // Load contracts and tickets for this specific customer
+      this.loadCustomerContractsAndTickets(customer.id, customer.sourceCustomerId);
+    }
+
     this.loadCustomerData(customer.id);
     // Force change detection to ensure UI updates immediately
     this.cdr.detectChanges();
+  }
+
+  private loadCustomerContractsAndTickets(customerId: number, sourceCustomerId?: string): void {
+    // Load contracts by customer
+    this.apiService.getContractsByCustomer(customerId).pipe(takeUntil(this.destroy$)).subscribe({
+      next: (contracts) => {
+        // Add any new contracts to our array (avoid duplicates)
+        contracts.forEach(contract => {
+          if (!this.contracts.some(existing => existing.id === contract.id)) {
+            this.contracts.push(contract);
+          }
+        });
+        this.contracts = [...this.contracts]; // Trigger change detection
+        this.loadCustomerData(customerId);
+        this.cdr.detectChanges();
+      },
+      error: (err) => console.error('Failed to load contracts for customer:', err)
+    });
+
+    // Load tickets by customer
+    this.apiService.getTicketsByCustomer(customerId).pipe(takeUntil(this.destroy$)).subscribe({
+      next: (tickets) => {
+        // Add any new tickets to our array (avoid duplicates)
+        tickets.forEach(ticket => {
+          if (!this.tickets.some(existing => existing.id === ticket.id)) {
+            this.tickets.push(ticket);
+          }
+        });
+        this.tickets = [...this.tickets]; // Trigger change detection
+        this.loadCustomerData(customerId);
+        this.cdr.detectChanges();
+      },
+      error: (err) => console.error('Failed to load tickets for customer:', err)
+    });
   }
 
   handleFarmChange(farmId: string): void {
@@ -282,44 +327,25 @@ export class HomeComponent implements OnInit, OnDestroy {
     const currentCustomer = customer || this.selectedCustomer;
     if (!currentCustomer) return;
 
-    // Get linked producer IDs (customers this customer links to) - these are stored as strings
-    const linkedProducerIds = currentCustomer.linkedProducerIds || [];
-
-    // Also find customers that link TO this customer (bidirectional linking)
-    // Convert customerId to string for comparison with linkedProducerIds (which are strings)
-    const customerIdStr = customerId.toString();
-    const customersLinkingToMe = this.customers
-      .filter(c => c.linkedProducerIds && c.linkedProducerIds.includes(customerIdStr))
-      .map(c => c.id);
-
-    // Combine all linked customer IDs (both directions) - use Set to avoid duplicates
-    const allLinkedIds = [...new Set([...linkedProducerIds.map(id => parseInt(id, 10)), ...customersLinkingToMe])];
-
-    // Get all relevant customer IDs (current customer + all linked producers)
-    const allCustomerIds = [customerId, ...allLinkedIds];
-
-    // Get sourceCustomerIds for all relevant customers to match with contract.ctrmCustomerId
-    const sourceCustomerIds = allCustomerIds
-      .map(id => this.customers.find(c => c.id === id)?.sourceCustomerId)
-      .filter(id => id !== undefined) as string[];
-
-    // Always load unfiltered data for Activity Summary (all farms from current customer + linked producers)
-    this.allCustomerContracts = [...this.contracts.filter(c => c.ctrmCustomerId && sourceCustomerIds.includes(c.ctrmCustomerId))];
-    this.allCustomerTickets = [...this.tickets.filter(t => t.customerId && allCustomerIds.includes(t.customerId))];
-    this.allCustomerPlantingIntentions = [...this.plantingIntentions.filter(p => allCustomerIds.includes(p.customerId))];
-    this.allCustomerStoredGrain = [...this.storedGrain.filter(s => allCustomerIds.includes(s.customerId))];
+    // Load data for current customer only (linked producer logic removed for now)
+    // Use string matching for both contracts and tickets (match with customer.sourceCustomerId)
+    // Always load unfiltered data for Activity Summary
+    this.allCustomerContracts = [...this.contracts.filter(c => c.ctrmCustomerId === currentCustomer.sourceCustomerId)];
+    this.allCustomerTickets = [...this.tickets.filter(t => t.customerCode === currentCustomer.sourceCustomerId)];
+    this.allCustomerPlantingIntentions = [...this.plantingIntentions.filter(p => p.customerId === customerId)];
+    this.allCustomerStoredGrain = [...this.storedGrain.filter(s => s.customerId === customerId)];
 
     // Filter by farm if one is selected, otherwise show all customer data for tabs
     if (this.selectedFarmId) {
-      // Filter data for the selected farm, regardless of which customer owns it
+      // Filter data for the selected farm
       this.customerContracts = [...this.contracts.filter(c => c.farmId === this.selectedFarmId)];
       this.customerTickets = [...this.tickets.filter(t => t.farmId === this.selectedFarmId)];
       this.customerPlantingIntentions = [...this.plantingIntentions.filter(p => p.farmId === this.selectedFarmId)];
       this.customerStoredGrain = [...this.storedGrain.filter(s => s.farmId === this.selectedFarmId)];
     } else {
-      // Match contracts using ctrmCustomerId = customer.sourceCustomerId
+      // Match contracts and tickets using string matching (customerCode = customer.sourceCustomerId)
       this.customerContracts = [...this.contracts.filter(c => c.ctrmCustomerId === currentCustomer.sourceCustomerId)];
-      this.customerTickets = [...this.tickets.filter(t => t.customerId === customerId)];
+      this.customerTickets = [...this.tickets.filter(t => t.customerCode === currentCustomer.sourceCustomerId)];
       this.customerPlantingIntentions = [...this.plantingIntentions.filter(p => p.customerId === customerId)];
       this.customerStoredGrain = [...this.storedGrain.filter(s => s.customerId === customerId)];
     }
@@ -327,19 +353,8 @@ export class HomeComponent implements OnInit, OnDestroy {
     this.customerNotes = [...this.notes.filter(n => n.customerId === customerId)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())];
 
-    // Load farms from current customer AND all linked producers (both directions)
-    const allFarmIds: string[] = [...(currentCustomer.farmIds || [])];
-
-    // Add farms from all linked producers
-    allLinkedIds.forEach(producerId => {
-      const linkedProducer = this.customers.find(c => c.id === producerId);
-      if (linkedProducer && linkedProducer.farmIds) {
-        allFarmIds.push(...linkedProducer.farmIds);
-      }
-    });
-
-    // Filter and set customer farms
-    this.customerFarms = [...this.farms.filter(f => allFarmIds.includes(f.id))];
+    // Load farms from current customer only
+    this.customerFarms = [...this.farms.filter(f => currentCustomer.farmIds?.includes(f.id))];
 
     // Set the selected farm to the first available farm if not already set
     if (!this.selectedFarmId && this.customerFarms.length > 0) {

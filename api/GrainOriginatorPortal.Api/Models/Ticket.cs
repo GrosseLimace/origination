@@ -17,6 +17,7 @@ public class Ticket
     // Source identifiers
     public long? SourceTicketHeaderId { get; set; }
     public long? SourceTicketDetailId { get; set; }
+    public string? CustomerCode { get; set; } // Maps to CustomerCode - used for string matching with Customer.SourceCustomerId
 
     // Ticket identifiers
     public string? ProductCode { get; set; }

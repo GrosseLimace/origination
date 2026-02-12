@@ -36,6 +36,7 @@ public class Customer
 
     // ODS metadata fields
     public string Farm { get; set; } = string.Empty;
+    public string? IndustryCode1 { get; set; } // Used to filter producer customers (PR)
     public bool IsActive { get; set; }
     public DateTime? EffectiveStartDate { get; set; }
     public DateTime? EffectiveEndDate { get; set; }

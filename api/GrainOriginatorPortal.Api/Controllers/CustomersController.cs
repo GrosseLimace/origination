@@ -21,6 +21,16 @@ public class CustomersController : ControllerBase
         return Ok(_dataService.GetCustomers());
     }
 
+    [HttpGet("search")]
+    public ActionResult<List<Customer>> Search([FromQuery] string searchTerm)
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            return Ok(_dataService.GetCustomers());
+        }
+        return Ok(_dataService.SearchCustomers(searchTerm));
+    }
+
     [HttpGet("{id:long}")]
     public ActionResult<Customer> GetById(long id)
     {

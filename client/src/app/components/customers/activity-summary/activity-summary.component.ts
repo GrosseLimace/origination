@@ -71,12 +71,25 @@ export class ActivitySummaryComponent implements OnChanges {
 
     const parts: string[] = [];
 
-    // Basic intro - handle missing or invalid data
+    // Basic intro - skip if no meaningful data
     const name = this.customer.name || 'Customer';
     const acres = this.customer.totalAcres || 0;
-    const farm = this.customer.farm || 'Unknown Farm';
+    const farm = this.customer.farm || '';
+    const location = this.customer.location || '';
+    const stateProvince = this.customer.stateProvince || '';
 
-    parts.push(`${name} operates ${this.formatQuantity(acres, 'acres')} at ${farm}`);
+    // Build intro with available data
+    if (acres > 0 && farm && farm !== 'Unknown Farm') {
+      parts.push(`${name} operates ${this.formatQuantity(acres, 'acres')} at ${farm}`);
+    } else if (acres > 0) {
+      parts.push(`${name} operates ${this.formatQuantity(acres, 'acres')}`);
+    } else if (location || stateProvince) {
+      const locationStr = location && stateProvince ? `${location}, ${stateProvince}` : (location || stateProvince);
+      parts.push(`${name} is located in ${locationStr}`);
+    } else {
+      // Just use the name if we don't have farm/acres/location data
+      parts.push(`${name} is a customer`);
+    }
 
     // Multi-farm operator
     if (this.customer.farmIds && Array.isArray(this.customer.farmIds) && this.customer.farmIds.length > 1) {
@@ -114,26 +127,30 @@ export class ActivitySummaryComponent implements OnChanges {
     if (!this.contracts || this.contracts.length === 0) return '';
 
     const activeContracts = this.contracts.filter(c => c && c.status === 'Active');
-    if (activeContracts.length === 0) return '';
+    const pendingContracts = this.contracts.filter(c => c && c.status === 'Pending');
+    const totalContracts = this.contracts.length;
 
-    // Safely calculate totals with null checks
-    const totalContracted = activeContracts.reduce((sum, c) => sum + (c.quantity || 0), 0);
-    const totalValue = activeContracts.reduce((sum, c) => sum + ((c.quantity || 0) * (c.price || 0)), 0);
+    // Show all contracts if we have them, not just active
+    if (totalContracts === 0) return '';
 
-    let summary = `They currently have ${activeContracts.length} active contract${activeContracts.length !== 1 ? 's' : ''} totaling ${this.formatQuantity(totalContracted, 'bushels')} with a combined value of ${this.formatCurrency(totalValue)}`;
+    // If we have active contracts, focus on those
+    if (activeContracts.length > 0) {
+      const totalContracted = activeContracts.reduce((sum, c) => sum + (c.quantity || 0), 0);
+      // Use totalValue field from ODS instead of calculating quantity * price
+      const totalValue = activeContracts.reduce((sum, c) => sum + (c.totalValue || 0), 0);
 
-    // Market share if planting data available
-    if (this.plantingIntentions && this.plantingIntentions.length > 0) {
-      const totalProjected = this.plantingIntentions.reduce((sum, p) => sum + ((p.acres || 0) * (p.estimatedYield || 0)), 0);
-      if (totalProjected > 0 && totalContracted > 0) {
-        const marketShare = (totalContracted / totalProjected) * 100;
-        // Prevent unrealistic market share percentages
-        const cappedMarketShare = Math.min(marketShare, 100);
-        summary += `, which represents ${cappedMarketShare.toFixed(0)}% of their projected yield`;
+      let summary = `They currently have ${activeContracts.length} active contract${activeContracts.length !== 1 ? 's' : ''} totaling ${this.formatQuantity(totalContracted, 'bushels')} with a combined value of ${this.formatCurrency(totalValue)}`;
+
+      // Mention other contracts if they exist
+      if (pendingContracts.length > 0) {
+        summary += `, plus ${pendingContracts.length} pending contract${pendingContracts.length !== 1 ? 's' : ''}`;
       }
-    }
 
-    return summary + '.';
+      return summary + '.';
+    } else {
+      // No active contracts, show total count
+      return `They have ${totalContracts} contract${totalContracts !== 1 ? 's' : ''} on file.`;
+    }
   }
 
   private generatePlantingOverview(): string {
@@ -203,6 +220,7 @@ export class ActivitySummaryComponent implements OnChanges {
   private generateDeliverySummary(): string {
     if (!this.tickets || this.tickets.length === 0) return '';
 
+    const totalTickets = this.tickets.length;
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const recentTickets = this.tickets.filter(t => {
       if (!t || !t.date) return false;
@@ -214,22 +232,26 @@ export class ActivitySummaryComponent implements OnChanges {
       }
     });
 
-    if (recentTickets.length === 0) return '';
+    // If we have recent tickets, show those with details
+    if (recentTickets.length > 0) {
+      const totalDelivered = recentTickets.reduce((sum, t) => sum + (t.netWeight || 0), 0);
 
-    const totalDelivered = recentTickets.reduce((sum, t) => sum + (t.netWeight || 0), 0);
+      // Only calculate averages if we have valid data
+      const ticketsWithMoisture = recentTickets.filter(t => typeof t.moisture === 'number' && !isNaN(t.moisture));
+      const ticketsWithTestWeight = recentTickets.filter(t => typeof t.testWeight === 'number' && !isNaN(t.testWeight));
 
-    // Only calculate averages if we have valid data
-    const ticketsWithMoisture = recentTickets.filter(t => typeof t.moisture === 'number' && !isNaN(t.moisture));
-    const ticketsWithTestWeight = recentTickets.filter(t => typeof t.testWeight === 'number' && !isNaN(t.testWeight));
+      if (ticketsWithMoisture.length === 0 || ticketsWithTestWeight.length === 0) {
+        return `Over the past 30 days, they've delivered ${this.formatQuantity(totalDelivered, 'lbs')} across ${recentTickets.length} ticket${recentTickets.length !== 1 ? 's' : ''}.`;
+      }
 
-    if (ticketsWithMoisture.length === 0 || ticketsWithTestWeight.length === 0) {
-      return `Over the past 30 days, they've delivered ${this.formatQuantity(totalDelivered, 'lbs')}.`;
+      const avgMoisture = ticketsWithMoisture.reduce((sum, t) => sum + (t.moisture || 0), 0) / ticketsWithMoisture.length;
+      const avgTestWeight = ticketsWithTestWeight.reduce((sum, t) => sum + (t.testWeight || 0), 0) / ticketsWithTestWeight.length;
+
+      return `Recent deliveries total ${this.formatQuantity(totalDelivered, 'lbs')} over the past 30 days (${recentTickets.length} ticket${recentTickets.length !== 1 ? 's' : ''}), with quality averaging ${avgMoisture.toFixed(1)}% moisture and ${avgTestWeight.toFixed(1)} lbs/bu test weight.`;
+    } else {
+      // No recent tickets, just show total count
+      return `They have ${totalTickets} delivery ticket${totalTickets !== 1 ? 's' : ''} on record.`;
     }
-
-    const avgMoisture = ticketsWithMoisture.reduce((sum, t) => sum + (t.moisture || 0), 0) / ticketsWithMoisture.length;
-    const avgTestWeight = ticketsWithTestWeight.reduce((sum, t) => sum + (t.testWeight || 0), 0) / ticketsWithTestWeight.length;
-
-    return `Recent deliveries total ${this.formatQuantity(totalDelivered, 'lbs')} over the past 30 days, with quality averaging ${avgMoisture.toFixed(1)}% moisture and ${avgTestWeight.toFixed(1)} lbs/bu test weight.`;
   }
 
   private generateEngagementSummary(): string {

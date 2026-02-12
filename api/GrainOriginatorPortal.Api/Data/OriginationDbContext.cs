@@ -19,6 +19,7 @@ public class OriginationDbContext : DbContext
     public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<Ticket> Tickets => Set<Ticket>();
+    public DbSet<TicketQuality> TicketQualities => Set<TicketQuality>();
 
     // These tables don't exist in ODS - will return empty data
     // public DbSet<Farm> Farms => Set<Farm>();
@@ -31,10 +32,10 @@ public class OriginationDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        // Configure Customer entity - Maps to ODS Customer table in base schema
+        // Configure Customer entity - Maps to ODS vw_CurrentCustomers view in base schema
         modelBuilder.Entity<Customer>(entity =>
         {
-            entity.ToTable("Customer", schema: "base"); // Base table with all customers (filter by IsActive in queries)
+            entity.ToTable("vw_CurrentCustomers", schema: "base"); // View with filtered customers
             entity.HasKey(e => e.Id);
 
             // Map to vw_CurrentCustomers column names (PascalCase in base schema views)
@@ -51,6 +52,7 @@ public class OriginationDbContext : DbContext
 
             // Map available ODS metadata fields
             entity.Property(e => e.SourceCustomerId).HasColumnName("SourceCustomerId").HasMaxLength(400);
+            entity.Property(e => e.IndustryCode1).HasColumnName("IndustryCode1").HasMaxLength(50).IsRequired(false);
             entity.Property(e => e.IsActive).HasColumnName("IsActive").IsRequired();
             entity.Property(e => e.EffectiveStartDate).HasColumnName("EffectiveStartDate");
             entity.Property(e => e.EffectiveEndDate).HasColumnName("EffectiveEndDate");
@@ -82,10 +84,10 @@ public class OriginationDbContext : DbContext
         //     entity.HasIndex(e => e.Name);
         // });
 
-        // Configure Contract entity - Maps to ODS Contract table in base schema
+        // Configure Contract entity - Maps to ODS vw_CurrentContracts view in base schema
         modelBuilder.Entity<Contract>(entity =>
         {
-            entity.ToTable("Contract", schema: "base"); // Base table with all contracts (filter by IsActive in queries)
+            entity.ToTable("vw_CurrentContracts", schema: "base"); // View with filtered contracts
             entity.HasKey(e => e.Id);
 
             // Map to ODS column names - essential fields for displaying contracts
@@ -99,6 +101,7 @@ public class OriginationDbContext : DbContext
             entity.Property(e => e.CustomerName).HasColumnName("CustomerName").HasMaxLength(500).IsRequired(false);
             entity.Property(e => e.CommodityCode).HasColumnName("CommodityCode").HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.CommodityDescription).HasColumnName("CommodityDescription").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.CommodityGroup).HasColumnName("CommodityGroup").HasMaxLength(100).IsRequired(false);
 
             // Quantity and pricing - mapped to actual ODS column names
             entity.Property(e => e.Quantity).HasColumnName("Quantity").HasColumnType("decimal(18,6)").IsRequired(false);
@@ -136,16 +139,17 @@ public class OriginationDbContext : DbContext
             entity.HasIndex(e => e.CustomerId);
         });
 
-        // Configure Ticket entity - Maps to ODS Ticket table in base schema
+        // Configure Ticket entity - Maps to ODS vw_CurrentTickets view in base schema
         modelBuilder.Entity<Ticket>(entity =>
         {
-            entity.ToTable("Ticket", schema: "base"); // Base table with all tickets (filter by IsActive in queries)
+            entity.ToTable("vw_CurrentTickets", schema: "base"); // View with filtered tickets (excludes cancellations)
             entity.HasKey(e => e.Id);
 
             // Map to ODS column names - only the fields that exist
             entity.Property(e => e.Id).HasColumnName("TicketId").IsRequired();
             entity.Property(e => e.ContractId).HasColumnName("ContractId");
             entity.Property(e => e.CustomerId).HasColumnName("CustomerId");
+            entity.Property(e => e.CustomerCode).HasColumnName("CustomerCode").HasMaxLength(400);
 
             // Ticket identifiers
             entity.Property(e => e.ProductCode).HasColumnName("ProductCode").HasMaxLength(100);
@@ -168,10 +172,10 @@ public class OriginationDbContext : DbContext
             // Status
             entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true);
 
-            // Quality measures available in ODS
+            // Quality measures - check if available in base.Ticket table
             entity.Property(e => e.GradeCode).HasColumnName("GradeCode").HasMaxLength(100);
 
-            // Fields not in ODS view - ignore these
+            // Fields not in base.Ticket table - ignore these
             entity.Ignore(e => e.SourceTicketHeaderId);
             entity.Ignore(e => e.SourceTicketDetailId);
             entity.Ignore(e => e.AppliedQuantity);
@@ -199,6 +203,19 @@ public class OriginationDbContext : DbContext
             entity.HasIndex(e => e.ContractId);
             entity.HasIndex(e => e.TicketNumber);
             entity.HasIndex(e => e.Date);
+        });
+
+        // Configure TicketQuality entity - Maps to ODS vw_TicketQuality view
+        modelBuilder.Entity<TicketQuality>(entity =>
+        {
+            entity.ToView("vw_TicketQuality", schema: "base");
+            entity.HasKey(e => e.TicketId);
+
+            entity.Property(e => e.TicketId).HasColumnName("TicketId").IsRequired();
+            entity.Property(e => e.GradeFactorMoisturePercent).HasColumnName("GradeFactorMoisturePercent").HasColumnType("decimal(18,6)");
+            entity.Property(e => e.GradeFactorProteinPercent).HasColumnName("GradeFactorProteinPercent").HasColumnType("decimal(18,6)");
+            entity.Property(e => e.GradeFactorTestWeightPercent).HasColumnName("GradeFactorTestWeightPercent").HasColumnType("decimal(18,6)");
+            entity.Property(e => e.GradeCode).HasColumnName("GradeCode").HasMaxLength(100);
         });
 
         // Configure PlantingIntention entity - DISABLED: Table doesn't exist in ODS

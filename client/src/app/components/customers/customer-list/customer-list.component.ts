@@ -1,7 +1,10 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnChanges, SimpleChanges, ChangeDetectorRef, ChangeDetectionStrategy, inject } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, OnChanges, OnDestroy, SimpleChanges, ChangeDetectorRef, ChangeDetectionStrategy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Subject } from 'rxjs';
+import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 import { Customer, SavedList, Note } from '../../../models';
+import { ApiService } from '../../../services/api.service';
 import { CardComponent, CardContentComponent } from '../../ui/card/card.component';
 import { BadgeComponent } from '../../ui/badge/badge.component';
 
@@ -35,8 +38,21 @@ interface LastContactInfo {
               [(ngModel)]="searchQuery"
               (ngModelChange)="applyFilters()"
               placeholder="Search customers..."
-              class="w-full h-10 pl-10 pr-4 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+              class="w-full h-10 pl-10 pr-10 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
             />
+            @if (searchQuery) {
+              <button
+                (click)="clearSearch()"
+                type="button"
+                class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                aria-label="Clear search"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 6L6 18"/>
+                  <path d="M6 6l12 12"/>
+                </svg>
+              </button>
+            }
           </div>
         </div>
 
@@ -116,7 +132,7 @@ interface LastContactInfo {
     </app-card>
   `
 })
-export class CustomerListComponent implements OnInit, OnChanges {
+export class CustomerListComponent implements OnInit, OnChanges, OnDestroy {
   @Input() customers: Customer[] = [];
   @Input() selectedCustomer: Customer | null = null;
   @Input() savedLists: SavedList[] = [];
@@ -124,6 +140,9 @@ export class CustomerListComponent implements OnInit, OnChanges {
   @Output() selectCustomer = new EventEmitter<Customer>();
 
   private cdr = inject(ChangeDetectorRef);
+  private apiService = inject(ApiService);
+  private destroy$ = new Subject<void>();
+  private searchSubject$ = new Subject<string>();
 
   searchQuery = '';
   selectedListId = '';
@@ -135,6 +154,20 @@ export class CustomerListComponent implements OnInit, OnChanges {
   ngOnInit(): void {
     this.rebuildLastContactCache();
     this.applyFilters();
+
+    // Set up search debouncing
+    this.searchSubject$.pipe(
+      debounceTime(150), // Wait 150ms after user stops typing
+      distinctUntilChanged(),
+      takeUntil(this.destroy$)
+    ).subscribe(searchTerm => {
+      this.performSearch(searchTerm);
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -154,18 +187,16 @@ export class CustomerListComponent implements OnInit, OnChanges {
   }
 
   applyFilters(): void {
-    let result = [...this.customers];
+    const searchTerm = this.searchQuery.trim();
 
-    // Apply search filter
-    if (this.searchQuery.trim()) {
-      const query = this.searchQuery.toLowerCase();
-      result = result.filter(c =>
-        (c.name || '').toLowerCase().includes(query) ||
-        (c.farm || '').toLowerCase().includes(query) ||
-        (c.location || '').toLowerCase().includes(query) ||
-        (c.email || '').toLowerCase().includes(query)
-      );
+    // If there's a search term, trigger API search
+    if (searchTerm) {
+      this.searchSubject$.next(searchTerm);
+      return;
     }
+
+    // No search term - show initial customers with saved list filter
+    let result = [...this.customers];
 
     // Apply saved list filter
     if (this.selectedListId) {
@@ -177,6 +208,36 @@ export class CustomerListComponent implements OnInit, OnChanges {
 
     this.filteredCustomers = result;
     this.cdr.markForCheck();
+  }
+
+  clearSearch(): void {
+    this.searchQuery = '';
+    this.applyFilters();
+  }
+
+  private performSearch(searchTerm: string): void {
+    this.apiService.searchCustomers(searchTerm).pipe(
+      takeUntil(this.destroy$)
+    ).subscribe({
+      next: (customers) => {
+        // Apply saved list filter to search results if needed
+        let result = customers;
+        if (this.selectedListId) {
+          const savedList = this.savedLists.find(l => l.id === this.selectedListId);
+          if (savedList) {
+            result = result.filter(c => savedList.customerIds.includes(c.id));
+          }
+        }
+        this.filteredCustomers = result;
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        console.error('Search failed:', err);
+        // Fall back to showing initial customers on error
+        this.filteredCustomers = [...this.customers];
+        this.cdr.markForCheck();
+      }
+    });
   }
 
   /**

@@ -275,7 +275,7 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
               <app-contracts-table [contracts]="contracts" [tickets]="tickets" [customer]="customer"></app-contracts-table>
             }
             @case ('tickets') {
-              <app-tickets-table [tickets]="tickets" [customer]="customer"></app-tickets-table>
+              <app-tickets-table [tickets]="tickets" [contracts]="contracts" [customer]="customer"></app-tickets-table>
             }
             @case ('planting') {
               <app-planting-intentions-table
