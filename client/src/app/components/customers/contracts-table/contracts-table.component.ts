@@ -1,29 +1,21 @@
-import { Component, Input, OnChanges, SimpleChanges, OnInit } from '@angular/core';
+import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
-import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableCellComponent } from '../../ui/table/table.component';
+import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '../../ui/table/table.component';
 import { Customer, Contract, Ticket } from '../../../models';
 
 type SortColumn = 'contractNumber' | 'crop' | 'quantity' | 'price' | 'deliveryStart' | 'status';
 type SortDirection = 'none' | 'asc' | 'desc';
-
-interface ColumnDefinition {
-  id: SortColumn;
-  label: string;
-  getValue: (contract: Contract) => any;
-  render: (contract: Contract, component: ContractsTableComponent) => string;
-}
 
 @Component({
   selector: 'app-contracts-table',
   standalone: true,
   imports: [
     CommonModule,
-    DragDropModule,
     TableComponent,
     TableHeaderComponent,
     TableBodyComponent,
     TableRowComponent,
+    TableHeadComponent,
     TableCellComponent
   ],
   template: `
@@ -38,51 +30,128 @@ interface ColumnDefinition {
       } @else {
         <app-table>
           <app-table-header>
-            <tr cdkDropList cdkDropListOrientation="horizontal" cdkDropListLockAxis="x" (cdkDropListDropped)="dropColumn($event)" class="border-b border-gray-200 dark:border-gray-700 select-none">
-              @for (column of displayColumns; track column.id; let isFirst = $first) {
-                <th
-                  cdkDrag
-                  class="h-12 px-4 text-left align-middle font-medium text-gray-500 dark:text-gray-400 group cursor-pointer select-none hover:bg-gray-50 dark:hover:bg-gray-800">
-
-                  <div class="flex items-center gap-2">
-                    <!-- Drag handle icon (visible on hover) -->
-                    <div cdkDragHandle class="opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing hover:bg-gray-200 dark:hover:bg-gray-700 rounded p-0.5 transition-all flex-shrink-0">
-                      <svg class="w-4 h-4 text-gray-500 dark:text-gray-400" fill="currentColor" viewBox="0 0 16 16">
-                        <path d="M7 2a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zM7 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zM7 8a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm-3 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm-3 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/>
+            <app-table-row>
+              <app-table-head [sortable]="true" (click)="handleSort('contractNumber')">
+                <span class="flex items-center gap-1">
+                  Contract Number
+                  <span [class]="getSortIconClass('contractNumber')">
+                    @if (currentSortColumn === 'contractNumber' && currentSortDirection === 'asc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
                       </svg>
-                    </div>
-
-                    <!-- Column label and sort (clickable for sorting) -->
-                    <span class="flex items-center gap-1 cursor-pointer" (click)="handleSort(column.id)">
-                      {{ column.label }}
-                      <span [class]="getSortIconClass(column.id)">
-                        @if (currentSortColumn === column.id && currentSortDirection === 'asc') {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                          </svg>
-                        } @else if (currentSortColumn === column.id && currentSortDirection === 'desc') {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                          </svg>
-                        } @else {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
-                          </svg>
-                        }
-                      </span>
-                    </span>
-                  </div>
-
-                  <!-- Custom drag preview -->
-                  <div *cdkDragPreview class="px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded shadow-lg">
-                    {{ column.label }}
-                  </div>
-
-                  <!-- Placeholder shown when dragging -->
-                  <div *cdkDragPlaceholder class="bg-gray-100 dark:bg-gray-700 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded min-h-[40px]"></div>
-                </th>
-              }
-            </tr>
+                    } @else if (currentSortColumn === 'contractNumber' && currentSortDirection === 'desc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                      </svg>
+                    } @else {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                      </svg>
+                    }
+                  </span>
+                </span>
+              </app-table-head>
+              <app-table-head [sortable]="true" (click)="handleSort('crop')">
+                <span class="flex items-center gap-1">
+                  Crop
+                  <span [class]="getSortIconClass('crop')">
+                    @if (currentSortColumn === 'crop' && currentSortDirection === 'asc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                      </svg>
+                    } @else if (currentSortColumn === 'crop' && currentSortDirection === 'desc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                      </svg>
+                    } @else {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                      </svg>
+                    }
+                  </span>
+                </span>
+              </app-table-head>
+              <app-table-head [sortable]="true" (click)="handleSort('quantity')">
+                <span class="flex items-center gap-1">
+                  Quantity
+                  <span [class]="getSortIconClass('quantity')">
+                    @if (currentSortColumn === 'quantity' && currentSortDirection === 'asc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                      </svg>
+                    } @else if (currentSortColumn === 'quantity' && currentSortDirection === 'desc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                      </svg>
+                    } @else {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                      </svg>
+                    }
+                  </span>
+                </span>
+              </app-table-head>
+              <app-table-head [sortable]="true" (click)="handleSort('price')">
+                <span class="flex items-center gap-1">
+                  Price
+                  <span [class]="getSortIconClass('price')">
+                    @if (currentSortColumn === 'price' && currentSortDirection === 'asc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                      </svg>
+                    } @else if (currentSortColumn === 'price' && currentSortDirection === 'desc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                      </svg>
+                    } @else {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                      </svg>
+                    }
+                  </span>
+                </span>
+              </app-table-head>
+              <app-table-head [sortable]="true" (click)="handleSort('deliveryStart')">
+                <span class="flex items-center gap-1">
+                  Delivery Period
+                  <span [class]="getSortIconClass('deliveryStart')">
+                    @if (currentSortColumn === 'deliveryStart' && currentSortDirection === 'asc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                      </svg>
+                    } @else if (currentSortColumn === 'deliveryStart' && currentSortDirection === 'desc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                      </svg>
+                    } @else {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                      </svg>
+                    }
+                  </span>
+                </span>
+              </app-table-head>
+              <app-table-head [sortable]="true" (click)="handleSort('status')">
+                <span class="flex items-center gap-1">
+                  Status
+                  <span [class]="getSortIconClass('status')">
+                    @if (currentSortColumn === 'status' && currentSortDirection === 'asc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                      </svg>
+                    } @else if (currentSortColumn === 'status' && currentSortDirection === 'desc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                      </svg>
+                    } @else {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                      </svg>
+                    }
+                  </span>
+                </span>
+              </app-table-head>
+            </app-table-row>
           </app-table-header>
           <app-table-body>
             @for (contract of sortedContracts; track contract.id) {
@@ -92,34 +161,51 @@ interface ColumnDefinition {
                 [clickable]="true"
                 (rowClick)="toggleRow(contract.id)"
               >
-                @for (column of displayColumns; track column.id; let isFirst = $first) {
-                  <app-table-cell>
-                    @if (isFirst) {
-                      <div class="flex items-center gap-2">
-                        <span class="text-gray-400">
-                          @if (expandedRows.has(contract.id)) {
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                            </svg>
-                          } @else {
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                            </svg>
-                          }
-                        </span>
-                        <span [innerHTML]="column.render(contract, this)"></span>
-                      </div>
-                    } @else {
-                      <span [innerHTML]="column.render(contract, this)"></span>
-                    }
-                  </app-table-cell>
-                }
+                <app-table-cell>
+                  <div class="flex items-center gap-2">
+                    <span class="text-gray-400">
+                      @if (expandedRows.has(contract.id)) {
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                        </svg>
+                      } @else {
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                      }
+                    </span>
+                    <span [class]="!contract.signed ? 'font-medium text-red-600 dark:text-red-400' : 'font-medium'">
+                      {{ contract.contractNumber }}
+                    </span>
+                  </div>
+                </app-table-cell>
+                <app-table-cell>
+                  <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ contract.commodityDescription || contract.commodityCode }}</span>
+                </app-table-cell>
+                <app-table-cell>
+                  <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ contract.quantity | number }} {{ contract.unit }}</span>
+                </app-table-cell>
+                <app-table-cell>
+                  @if (contract.price !== null && contract.price !== undefined) {
+                    <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ contract.price | currency:'USD':'symbol':'1.2-2' }}/{{ getSingularUnit(contract.unit) }}</span>
+                  } @else {
+                    <span class="text-gray-400">N/A</span>
+                  }
+                </app-table-cell>
+                <app-table-cell>
+                  <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ contract.deliveryStart | date:'M/d/yyyy' }} - {{ contract.deliveryEnd | date:'M/d/yyyy' }}</span>
+                </app-table-cell>
+                <app-table-cell>
+                  <span [class]="getStatusClass(getCalculatedStatus(contract))">
+                    {{ getCalculatedStatus(contract) }}
+                  </span>
+                </app-table-cell>
               </app-table-row>
 
               <!-- Expanded Row -->
               @if (expandedRows.has(contract.id)) {
                 <app-table-row [class]="'bg-gray-50 dark:bg-gray-800/50'">
-                  <app-table-cell [colspan]="displayColumns.length">
+                  <app-table-cell [colspan]="6">
                     <div class="block w-full py-6" style="display: block; width: 100%;">
                       <!-- Delivery Progress at top -->
                       <div class="mb-8 w-full">
@@ -246,7 +332,7 @@ interface ColumnDefinition {
     </div>
   `
 })
-export class ContractsTableComponent implements OnInit, OnChanges {
+export class ContractsTableComponent implements OnChanges {
   @Input() contracts: Contract[] = [];
   @Input() tickets: Ticket[] = [];
   @Input() customer!: Customer;
@@ -255,119 +341,10 @@ export class ContractsTableComponent implements OnInit, OnChanges {
   currentSortColumn: SortColumn | null = null;
   currentSortDirection: SortDirection = 'none';
 
-  private readonly STORAGE_KEY = 'contracts-column-order';
-
-  // Define all available columns
-  private readonly allColumns: ColumnDefinition[] = [
-    {
-      id: 'contractNumber',
-      label: 'Contract Number',
-      getValue: (c) => c.contractNumber,
-      render: (c, comp) => {
-        const highlightClass = !c.signed ? 'font-medium text-red-600 dark:text-red-400' : 'font-medium';
-        return `<span class="${highlightClass}">${c.contractNumber}</span>`;
-      }
-    },
-    {
-      id: 'crop',
-      label: 'Crop',
-      getValue: (c) => c.commodityDescription || c.commodityCode,
-      render: (c, comp) => {
-        const highlightClass = !c.signed ? 'text-red-600 dark:text-red-400' : '';
-        return `<span class="${highlightClass}">${c.commodityDescription || c.commodityCode}</span>`;
-      }
-    },
-    {
-      id: 'quantity',
-      label: 'Quantity',
-      getValue: (c) => c.quantity,
-      render: (c, comp) => {
-        const highlightClass = !c.signed ? 'text-red-600 dark:text-red-400' : '';
-        const formattedQty = c.quantity.toLocaleString();
-        return `<span class="${highlightClass}">${formattedQty} ${c.unit}</span>`;
-      }
-    },
-    {
-      id: 'price',
-      label: 'Price',
-      getValue: (c) => c.price,
-      render: (c, comp) => {
-        if (c.price !== null && c.price !== undefined) {
-          const highlightClass = !c.signed ? 'text-red-600 dark:text-red-400' : '';
-          const formattedPrice = c.price.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
-          return `<span class="${highlightClass}">${formattedPrice}/${comp.getSingularUnit(c.unit)}</span>`;
-        } else {
-          return '<span class="text-gray-400">N/A</span>';
-        }
-      }
-    },
-    {
-      id: 'deliveryStart',
-      label: 'Delivery Period',
-      getValue: (c) => c.deliveryStart,
-      render: (c, comp) => {
-        const highlightClass = !c.signed ? 'text-red-600 dark:text-red-400' : '';
-        const startDate = new Date(c.deliveryStart).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
-        const endDate = new Date(c.deliveryEnd).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
-        return `<span class="${highlightClass}">${startDate} - ${endDate}</span>`;
-      }
-    },
-    {
-      id: 'status',
-      label: 'Status',
-      getValue: (c) => c.status,
-      render: (c, comp) => {
-        const status = comp.getCalculatedStatus(c);
-        const statusClass = comp.getStatusClass(status);
-        return `<span class="${statusClass}">${status}</span>`;
-      }
-    }
-  ];
-
-  displayColumns: ColumnDefinition[] = [];
-
-  ngOnInit(): void {
-    this.loadColumnOrder();
-  }
-
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['contracts']) {
       this.expandedRows.clear();
     }
-  }
-
-  private loadColumnOrder(): void {
-    const savedOrder = localStorage.getItem(this.STORAGE_KEY);
-    if (savedOrder) {
-      try {
-        const columnIds: SortColumn[] = JSON.parse(savedOrder);
-        // Reorder columns based on saved order
-        this.displayColumns = columnIds
-          .map(id => this.allColumns.find(col => col.id === id))
-          .filter((col): col is ColumnDefinition => col !== undefined);
-
-        // Add any new columns that weren't in saved order
-        const existingIds = new Set(this.displayColumns.map(c => c.id));
-        const newColumns = this.allColumns.filter(col => !existingIds.has(col.id));
-        this.displayColumns.push(...newColumns);
-      } catch (e) {
-        // If parsing fails, use default order
-        this.displayColumns = [...this.allColumns];
-      }
-    } else {
-      // No saved order, use default
-      this.displayColumns = [...this.allColumns];
-    }
-  }
-
-  private saveColumnOrder(): void {
-    const columnIds = this.displayColumns.map(col => col.id);
-    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(columnIds));
-  }
-
-  dropColumn(event: CdkDragDrop<ColumnDefinition[]>): void {
-    moveItemInArray(this.displayColumns, event.previousIndex, event.currentIndex);
-    this.saveColumnOrder();
   }
 
   get sortedContracts(): Contract[] {

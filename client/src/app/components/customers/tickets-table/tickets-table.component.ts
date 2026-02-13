@@ -1,30 +1,21 @@
-import { Component, Input, OnInit } from '@angular/core';
+import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
-import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableCellComponent } from '../../ui/table/table.component';
+import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '../../ui/table/table.component';
 import { Customer, Ticket, Contract } from '../../../models';
 
 type SortColumn = 'id' | 'date' | 'crop' | 'appliedDockQuantity' | 'moisture' | 'protein';
 type SortDirection = 'none' | 'asc' | 'desc';
-
-interface ColumnDefinition {
-  id: SortColumn;
-  label: string;
-  getValue: (ticket: Ticket) => any;
-  render: (ticket: Ticket, component: TicketsTableComponent) => string;
-  showWhenWheat?: boolean; // Optional: only show this column when there are wheat contracts
-}
 
 @Component({
   selector: 'app-tickets-table',
   standalone: true,
   imports: [
     CommonModule,
-    DragDropModule,
     TableComponent,
     TableHeaderComponent,
     TableBodyComponent,
     TableRowComponent,
+    TableHeadComponent,
     TableCellComponent
   ],
   template: `
@@ -39,57 +30,147 @@ interface ColumnDefinition {
       } @else {
         <app-table>
           <app-table-header>
-            <tr cdkDropList cdkDropListOrientation="horizontal" cdkDropListLockAxis="x" (cdkDropListDropped)="dropColumn($event)" class="border-b border-gray-200 dark:border-gray-700 select-none">
-              @for (column of visibleColumns; track column.id) {
-                <th
-                  cdkDrag
-                  class="h-12 px-4 text-left align-middle font-medium text-gray-500 dark:text-gray-400 group cursor-pointer select-none hover:bg-gray-50 dark:hover:bg-gray-800">
-
-                  <div class="flex items-center gap-2">
-                    <!-- Drag handle icon (visible on hover) -->
-                    <div cdkDragHandle class="opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing hover:bg-gray-200 dark:hover:bg-gray-700 rounded p-0.5 transition-all flex-shrink-0">
-                      <svg class="w-4 h-4 text-gray-500 dark:text-gray-400" fill="currentColor" viewBox="0 0 16 16">
-                        <path d="M7 2a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zM7 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zM7 8a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm-3 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm-3 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/>
+            <app-table-row>
+              <app-table-head [sortable]="true" (click)="handleSort('id')">
+                <span class="flex items-center justify-center gap-1">
+                  Ticket Number
+                  <span [class]="getSortIconClass('id')">
+                    @if (currentSortColumn === 'id' && currentSortDirection === 'asc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
                       </svg>
-                    </div>
-
-                    <!-- Column label and sort (clickable for sorting) -->
-                    <span class="flex items-center gap-1 cursor-pointer" (click)="handleSort(column.id)">
-                      {{ column.label }}
-                      <span [class]="getSortIconClass(column.id)">
-                        @if (currentSortColumn === column.id && currentSortDirection === 'asc') {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                          </svg>
-                        } @else if (currentSortColumn === column.id && currentSortDirection === 'desc') {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                          </svg>
-                        } @else {
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
-                          </svg>
-                        }
-                      </span>
+                    } @else if (currentSortColumn === 'id' && currentSortDirection === 'desc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                      </svg>
+                    } @else {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                      </svg>
+                    }
+                  </span>
+                </span>
+              </app-table-head>
+              <app-table-head [sortable]="true" (click)="handleSort('date')">
+                <span class="flex items-center justify-center gap-1">
+                  Date
+                  <span [class]="getSortIconClass('date')">
+                    @if (currentSortColumn === 'date' && currentSortDirection === 'asc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                      </svg>
+                    } @else if (currentSortColumn === 'date' && currentSortDirection === 'desc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                      </svg>
+                    } @else {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                      </svg>
+                    }
+                  </span>
+                </span>
+              </app-table-head>
+              <app-table-head [sortable]="true" (click)="handleSort('crop')">
+                <span class="flex items-center justify-center gap-1">
+                  Crop
+                  <span [class]="getSortIconClass('crop')">
+                    @if (currentSortColumn === 'crop' && currentSortDirection === 'asc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                      </svg>
+                    } @else if (currentSortColumn === 'crop' && currentSortDirection === 'desc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                      </svg>
+                    } @else {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                      </svg>
+                    }
+                  </span>
+                </span>
+              </app-table-head>
+              <app-table-head [sortable]="true" (click)="handleSort('appliedDockQuantity')">
+                <span class="flex items-center justify-center gap-1">
+                  Net Weight (lbs)
+                  <span [class]="getSortIconClass('appliedDockQuantity')">
+                    @if (currentSortColumn === 'appliedDockQuantity' && currentSortDirection === 'asc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                      </svg>
+                    } @else if (currentSortColumn === 'appliedDockQuantity' && currentSortDirection === 'desc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                      </svg>
+                    } @else {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                      </svg>
+                    }
+                  </span>
+                </span>
+              </app-table-head>
+              <app-table-head [sortable]="true" (click)="handleSort('moisture')">
+                <span class="flex items-center justify-center gap-1">
+                  Moisture %
+                  <span [class]="getSortIconClass('moisture')">
+                    @if (currentSortColumn === 'moisture' && currentSortDirection === 'asc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                      </svg>
+                    } @else if (currentSortColumn === 'moisture' && currentSortDirection === 'desc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                      </svg>
+                    } @else {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                      </svg>
+                    }
+                  </span>
+                </span>
+              </app-table-head>
+              @if (hasWheatTickets) {
+                <app-table-head [sortable]="true" (click)="handleSort('protein')">
+                  <span class="flex items-center justify-center gap-1">
+                    Protein %
+                    <span [class]="getSortIconClass('protein')">
+                      @if (currentSortColumn === 'protein' && currentSortDirection === 'asc') {
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                        </svg>
+                      } @else if (currentSortColumn === 'protein' && currentSortDirection === 'desc') {
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                      } @else {
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                        </svg>
+                      }
                     </span>
-                  </div>
-
-                  <!-- Custom drag preview -->
-                  <div *cdkDragPreview class="px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded shadow-lg">
-                    {{ column.label }}
-                  </div>
-
-                  <!-- Placeholder shown when dragging -->
-                  <div *cdkDragPlaceholder class="bg-gray-100 dark:bg-gray-700 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded min-h-[40px]"></div>
-                </th>
+                  </span>
+                </app-table-head>
               }
-            </tr>
+            </app-table-row>
           </app-table-header>
           <app-table-body>
             @for (ticket of sortedTickets; track ticket.id) {
               <app-table-row>
-                @for (column of visibleColumns; track column.id) {
-                  <app-table-cell [innerHTML]="column.render(ticket, this)"></app-table-cell>
+                <app-table-cell class="text-center">{{ ticket.ticketNumber }}</app-table-cell>
+                <app-table-cell class="text-center">{{ ticket.date | date:'MMM d, yyyy' }}</app-table-cell>
+                <app-table-cell class="text-center">{{ ticket.productCode }}</app-table-cell>
+                <app-table-cell class="text-center">{{ ticket.appliedDockQuantity | number }}</app-table-cell>
+                <app-table-cell class="text-center">{{ ticket.moisture | number:'1.1-1' }}%</app-table-cell>
+                @if (hasWheatTickets) {
+                  <app-table-cell class="text-center">
+                    @if (ticket.proteinPercent !== null && ticket.proteinPercent !== undefined) {
+                      {{ ticket.proteinPercent | number:'1.1-1' }}%
+                    } @else {
+                      -
+                    }
+                  </app-table-cell>
                 }
               </app-table-row>
             }
@@ -99,7 +180,7 @@ interface ColumnDefinition {
     </div>
   `
 })
-export class TicketsTableComponent implements OnInit {
+export class TicketsTableComponent {
   @Input() tickets: Ticket[] = [];
   @Input() contracts: Contract[] = [];
   @Input() customer!: Customer;
@@ -107,110 +188,23 @@ export class TicketsTableComponent implements OnInit {
   currentSortColumn: SortColumn | null = null;
   currentSortDirection: SortDirection = 'none';
 
-  private readonly STORAGE_KEY = 'tickets-column-order';
-
-  // Define all available columns
-  private readonly allColumns: ColumnDefinition[] = [
-    {
-      id: 'id',
-      label: 'Ticket Number',
-      getValue: (t) => t.id,
-      render: (t, comp) => `${t.ticketNumber}`
-    },
-    {
-      id: 'date',
-      label: 'Date',
-      getValue: (t) => t.date,
-      render: (t, comp) => {
-        const date = new Date(t.date);
-        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-      }
-    },
-    {
-      id: 'crop',
-      label: 'Crop',
-      getValue: (t) => t.productCode,
-      render: (t, comp) => `${t.productCode}`
-    },
-    {
-      id: 'appliedDockQuantity',
-      label: 'Net Weight (lbs)',
-      getValue: (t) => t.appliedDockQuantity,
-      render: (t, comp) => (t.appliedDockQuantity || 0).toLocaleString()
-    },
-    {
-      id: 'moisture',
-      label: 'Moisture %',
-      getValue: (t) => t.moisture,
-      render: (t, comp) => `${(t.moisture || 0).toFixed(1)}%`
-    },
-    {
-      id: 'protein',
-      label: 'Protein %',
-      getValue: (t) => t.proteinPercent,
-      render: (t, comp) => {
-        if (t.proteinPercent !== null && t.proteinPercent !== undefined) {
-          return `${t.proteinPercent.toFixed(1)}%`;
-        }
-        return '-';
-      },
-      showWhenWheat: true
-    }
-  ];
-
-  displayColumns: ColumnDefinition[] = [];
-
-  ngOnInit(): void {
-    this.loadColumnOrder();
-  }
-
-  get visibleColumns(): ColumnDefinition[] {
-    // Filter columns based on wheat ticket presence
-    return this.displayColumns.filter(col => {
-      if (col.showWhenWheat) {
-        return this.hasWheatTickets;
-      }
-      return true;
-    });
-  }
-
   get hasWheatTickets(): boolean {
     // Check if any contract has wheat as commodity group or description
-    return this.contracts.some(c => this.isWheatCommodity(c.commodityGroup, c.commodityDescription));
-  }
+    const hasWheat = this.contracts.some(c => this.isWheatCommodity(c.commodityGroup, c.commodityDescription));
 
-  private loadColumnOrder(): void {
-    const savedOrder = localStorage.getItem(this.STORAGE_KEY);
-    if (savedOrder) {
-      try {
-        const columnIds: SortColumn[] = JSON.parse(savedOrder);
-        // Reorder columns based on saved order
-        this.displayColumns = columnIds
-          .map(id => this.allColumns.find(col => col.id === id))
-          .filter((col): col is ColumnDefinition => col !== undefined);
-
-        // Add any new columns that weren't in saved order
-        const existingIds = new Set(this.displayColumns.map(c => c.id));
-        const newColumns = this.allColumns.filter(col => !existingIds.has(col.id));
-        this.displayColumns.push(...newColumns);
-      } catch (e) {
-        // If parsing fails, use default order
-        this.displayColumns = [...this.allColumns];
-      }
-    } else {
-      // No saved order, use default
-      this.displayColumns = [...this.allColumns];
+    // Debug logging
+    if (this.contracts.length > 0) {
+      const wheatContracts = this.contracts.filter(c => this.isWheatCommodity(c.commodityGroup, c.commodityDescription));
+      console.log('=== WHEAT CONTRACT DEBUG ===');
+      console.log('Total contracts:', this.contracts.length);
+      console.log('Wheat contracts found:', wheatContracts.length);
+      console.log('Sample commodity groups:', this.contracts.slice(0, 10).map(c => c.commodityGroup));
+      console.log('Sample commodity descriptions:', this.contracts.slice(0, 10).map(c => c.commodityDescription));
+      console.log('Has wheat:', hasWheat);
+      console.log('========================');
     }
-  }
 
-  private saveColumnOrder(): void {
-    const columnIds = this.displayColumns.map(col => col.id);
-    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(columnIds));
-  }
-
-  dropColumn(event: CdkDragDrop<ColumnDefinition[]>): void {
-    moveItemInArray(this.displayColumns, event.previousIndex, event.currentIndex);
-    this.saveColumnOrder();
+    return hasWheat;
   }
 
   isWheatCommodity(commodityGroup: string | undefined, commodityDescription?: string | undefined): boolean {
@@ -242,13 +236,17 @@ export class TicketsTableComponent implements OnInit {
     }
 
     if (matchingContracts.length === 0) {
+      console.log('Ticket', ticket.ticketNumber, 'no contract match found');
       return false;
     }
 
     // Return true if ANY of the matching contracts is wheat
-    return matchingContracts.some(contract =>
+    const isWheat = matchingContracts.some(contract =>
       this.isWheatCommodity(contract.commodityGroup, contract.commodityDescription)
     );
+
+    console.log('Ticket', ticket.ticketNumber, 'matches', matchingContracts.length, 'contracts, isWheat:', isWheat);
+    return isWheat;
   }
 
   get sortedTickets(): Ticket[] {
