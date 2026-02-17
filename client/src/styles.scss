@@ -17,8 +17,8 @@ body {
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
@@ -43,4 +43,30 @@ body {
 
 .dark ::-webkit-scrollbar-thumb:hover {
   @apply bg-gray-500;
+}
+
+/* Responsive utilities */
+@layer utilities {
+  /* Smooth scrolling for all scrollable elements */
+  .smooth-scroll {
+    scroll-behavior: smooth;
+  }
+
+  /* Ensure minimum comfortable reading width */
+  .min-readable {
+    min-width: 280px;
+  }
+
+  /* Responsive text scaling for better readability on different screen sizes */
+  @media (min-width: 1536px) {
+    html {
+      font-size: 16px;
+    }
+  }
+
+  @media (min-width: 1920px) {
+    html {
+      font-size: 17px;
+    }
+  }
 }

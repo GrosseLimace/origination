@@ -186,7 +186,7 @@ export class ApiService {
   }
 
   /** Toggles the pinned status of a note */
-  toggleNotePin(id: string): Observable<Note> {
+  toggleNotePin(id: number): Observable<Note> {
     return this.http.put<Note>(`${this.baseUrl}/notes/${id}/toggle-pin`, {});
   }
 

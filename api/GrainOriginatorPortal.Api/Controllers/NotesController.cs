@@ -30,12 +30,12 @@ public class NotesController : ControllerBase
     [HttpPost]
     public ActionResult<Note> Create([FromBody] CreateNoteRequest request)
     {
-        var note = _dataService.AddNote(long.Parse(request.CustomerId), request.Content);
+        var note = _dataService.AddNote(request.CustomerId, request.Content);
         return Created($"/api/notes/{note.Id}", note);
     }
 
-    [HttpPut("{id}/toggle-pin")]
-    public ActionResult<Note> TogglePin(string id)
+    [HttpPut("{id:long}/toggle-pin")]
+    public ActionResult<Note> TogglePin(long id)
     {
         var note = _dataService.ToggleNotePin(id);
         if (note == null)
@@ -49,8 +49,7 @@ public class NotesController : ControllerBase
 public class CreateNoteRequest
 {
     [System.ComponentModel.DataAnnotations.Required]
-    [System.ComponentModel.DataAnnotations.StringLength(100)]
-    public string CustomerId { get; set; } = string.Empty;
+    public long CustomerId { get; set; }
 
     [System.ComponentModel.DataAnnotations.Required]
     [System.ComponentModel.DataAnnotations.StringLength(2000)]

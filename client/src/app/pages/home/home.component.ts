@@ -26,9 +26,9 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
     CardTitleComponent
   ],
   template: `
-    <div class="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-10 gap-6">
-      <!-- Customer List - 1/3 on lg, 20% on xl -->
-      <div class="lg:col-span-1 xl:col-span-2 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)]" [class.hidden]="selectedCustomer && isMobile" [class.lg:block]="true">
+    <div class="grid grid-cols-1 lg:grid-cols-[33.3%_66.7%] xl:grid-cols-[25%_75%] 2xl:grid-cols-[22%_78%] gap-4 lg:gap-6">
+      <!-- Customer List - Precisely sized for optimal space usage (22% on 2xl) -->
+      <div class="lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)]" [class.hidden]="selectedCustomer && isMobile" [class.lg:block]="true">
         <app-customer-list
           [customers]="customers"
           [selectedCustomer]="selectedCustomer"
@@ -40,11 +40,11 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
         />
       </div>
 
-      <!-- Profile and Notes Container - 2/3 on lg, then split on xl -->
-      <div class="lg:col-span-2 xl:col-span-8" [class.hidden]="!selectedCustomer && isMobile" [class.lg:block]="true">
-        <div class="xl:grid xl:grid-cols-8 xl:gap-6 space-y-6 xl:space-y-0">
-          <!-- Profile Section - Full width until xl, then 5/8 (62.5% = 50% of total) -->
-          <div class="xl:col-span-5 space-y-6">
+      <!-- Profile and Notes Container - Optimized content display (78% on 2xl) -->
+      <div [class.hidden]="!selectedCustomer && isMobile" [class.lg:block]="true">
+        <div class="xl:grid xl:grid-cols-[66.7%_33.3%] 2xl:grid-cols-[61.3%_38.7%] xl:gap-6 space-y-6 xl:space-y-0">
+          <!-- Profile Section - Optimized for data visibility (61.3% on 2xl) -->
+          <div class="space-y-6">
             @if (selectedCustomer) {
               <!-- Back button on mobile -->
               <button
@@ -101,9 +101,9 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
             }
           </div>
 
-          <!-- Notes Column - Below profile until xl, then 3/8 (37.5% = 30% of total), sticky on xl+ -->
+          <!-- Notes Column - Below profile until xl, then right sidebar, sticky on xl+ (38.7% on 2xl) -->
           @if (selectedCustomer) {
-            <div class="xl:col-span-3 xl:sticky xl:top-20 xl:self-start xl:max-h-[calc(100vh-6rem)] xl:overflow-auto">
+            <div class="xl:sticky xl:top-20 xl:self-start xl:max-h-[calc(100vh-6rem)] xl:overflow-auto">
               <app-card>
                 <app-card-header>
                   <div class="flex items-center justify-between">

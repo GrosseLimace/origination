@@ -15,16 +15,18 @@ public class OriginationDbContext : DbContext
     }
 
     // DbSet properties for each entity
-    // Only Customer, Contract, and Ticket exist in ODS currently
+    // Customer, Contract, and Ticket exist in ODS (base schema)
     public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<Ticket> Tickets => Set<Ticket>();
     public DbSet<TicketQuality> TicketQualities => Set<TicketQuality>();
 
-    // These tables don't exist in ODS - will return empty data
+    // Application tables in Origination database (dbo schema)
+    public DbSet<Note> Notes => Set<Note>();
+
+    // These tables don't exist yet - will return empty data
     // public DbSet<Farm> Farms => Set<Farm>();
     // public DbSet<PlantingIntention> PlantingIntentions => Set<PlantingIntention>();
-    // public DbSet<Note> Notes => Set<Note>();
     // public DbSet<StoredGrain> StoredGrains => Set<StoredGrain>();
     // public DbSet<SavedList> SavedLists => Set<SavedList>();
 
@@ -220,11 +222,38 @@ public class OriginationDbContext : DbContext
             entity.Property(e => e.GradeCode).HasColumnName("GradeCode").HasMaxLength(100);
         });
 
+        // Configure Note entity - Maps to dbo.Notes table in Origination database
+        modelBuilder.Entity<Note>(entity =>
+        {
+            entity.ToTable("Notes", schema: "dbo");
+            entity.HasKey(e => e.Id);
+
+            // Column mappings - exact match to database schema
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
+            entity.Property(e => e.CustomerName).HasColumnName("CustomerName").HasMaxLength(200).IsRequired();
+            entity.Property(e => e.TradeUnit).HasColumnName("TradeUnit").HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.Description).HasColumnName("Description").IsRequired();
+            entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(200).IsRequired();
+            entity.Property(e => e.CreatedOn).HasColumnName("CreatedOn").HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(200).IsRequired(false);
+            entity.Property(e => e.ModifiedOn).HasColumnName("ModifiedOn").IsRequired(false);
+            entity.Property(e => e.IsDeleted).HasColumnName("IsDeleted").HasDefaultValue(false).IsRequired();
+            entity.Property(e => e.DeletedBy).HasColumnName("DeletedBy").HasMaxLength(200).IsRequired(false);
+            entity.Property(e => e.DeletedOn).HasColumnName("DeletedOn").IsRequired(false);
+
+            // Ignore computed properties
+            entity.Ignore(e => e.CreatedAt);
+            entity.Ignore(e => e.Content);
+            entity.Ignore(e => e.IsPinned);
+
+            // Indexes for common queries
+            entity.HasIndex(e => e.CustomerId).HasDatabaseName("IX_Notes_CustomerId");
+            entity.HasIndex(e => new { e.CustomerId, e.CreatedOn }).HasDatabaseName("IX_Notes_CustomerId_Active").HasFilter("[IsDeleted] = 0");
+        });
+
         // Configure PlantingIntention entity - DISABLED: Table doesn't exist in ODS
         // modelBuilder.Entity<PlantingIntention>(entity => { ... });
-
-        // Configure Note entity - DISABLED: Table doesn't exist in ODS
-        // modelBuilder.Entity<Note>(entity => { ... });
 
         // Configure StoredGrain entity - DISABLED: Table doesn't exist in ODS
         // modelBuilder.Entity<StoredGrain>(entity => { ... });

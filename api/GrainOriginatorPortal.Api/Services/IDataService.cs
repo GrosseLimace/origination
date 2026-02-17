@@ -42,7 +42,7 @@ public interface IDataService
     List<Note> GetNotes();
     List<Note> GetNotesByCustomer(long customerId);
     Note AddNote(long customerId, string content);
-    Note? ToggleNotePin(string noteId);
+    Note? ToggleNotePin(long noteId);
 
     // Storage Operations
     List<StoredGrain> GetStoredGrain();

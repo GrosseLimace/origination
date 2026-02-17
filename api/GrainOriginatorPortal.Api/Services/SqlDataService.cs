@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.SqlClient;
 using GrainOriginatorPortal.Api.Data;
 using GrainOriginatorPortal.Api.Models;
 
@@ -746,39 +747,119 @@ public class SqlDataService : IDataService
     }
 
     // =========================================================================
-    // Note Operations - DISABLED: Table doesn't exist in ODS
+    // Note Operations - Uses dbo.Notes table in Origination database
     // =========================================================================
 
     public List<Note> GetNotes()
     {
-        _logger.LogWarning("Notes table doesn't exist in ODS - returning empty list");
-        return new List<Note>();
+        try
+        {
+            _logger.LogInformation("Attempting to retrieve notes from database");
+
+            return _context.Notes
+                .Where(n => !n.IsDeleted)
+                .OrderByDescending(n => n.CreatedOn)
+                .ToList();
+        }
+        catch (SqlException ex) when (ex.Number == 208) // Invalid object name
+        {
+            _logger.LogWarning("Notes table not accessible (likely permissions issue). Returning empty list. Error: {Error}", ex.Message);
+            return new List<Note>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving notes");
+            throw;
+        }
     }
 
     public List<Note> GetNotesByCustomer(long customerId)
     {
-        _logger.LogWarning("Notes table doesn't exist in ODS - returning empty list");
-        return new List<Note>();
+        try
+        {
+            return _context.Notes
+                .Where(n => n.CustomerId == customerId && !n.IsDeleted)
+                .OrderByDescending(n => n.CreatedOn)
+                .ToList();
+        }
+        catch (SqlException ex) when (ex.Number == 208) // Invalid object name
+        {
+            _logger.LogWarning("Notes table not accessible for customer {CustomerId}. Returning empty list.", customerId);
+            return new List<Note>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving notes for customer {CustomerId}", customerId);
+            throw;
+        }
     }
 
     public Note AddNote(long customerId, string content)
     {
-        _logger.LogWarning("Notes table doesn't exist in ODS - returning dummy note");
-        return new Note
+        try
         {
-            Id = Guid.NewGuid().ToString(),
-            CustomerId = customerId.ToString(),
-            Content = content,
-            CreatedAt = DateTime.UtcNow,
-            CreatedBy = "System",
-            IsPinned = false
-        };
+            // Get customer info for denormalized fields
+            var customer = _context.Customers.FirstOrDefault(c => c.Id == customerId);
+            if (customer == null)
+            {
+                throw new InvalidOperationException($"Customer with ID {customerId} not found");
+            }
+
+            // Get trade unit from customer's contracts (first available)
+            var tradeUnit = _context.Contracts
+                .Where(c => c.CustomerId == customerId && c.IsActive)
+                .Select(c => c.TradeUnit)
+                .FirstOrDefault();
+
+            var note = new Note
+            {
+                CustomerId = customerId,
+                CustomerName = customer.Name,
+                TradeUnit = tradeUnit,
+                Description = content,
+                CreatedBy = "System", // TODO: Get from authenticated user
+                CreatedOn = DateTime.UtcNow,
+                IsDeleted = false
+            };
+
+            _context.Notes.Add(note);
+            _context.SaveChanges();
+
+            _logger.LogInformation("Created note {NoteId} for customer {CustomerId}", note.Id, customerId);
+            return note;
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is SqlException sqlEx && sqlEx.Number == 208)
+        {
+            _logger.LogError("Notes table not accessible (permissions issue). Cannot add note for customer {CustomerId}", customerId);
+            throw new InvalidOperationException("Notes functionality is not available due to database permissions. Please contact your administrator.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating note for customer {CustomerId}", customerId);
+            throw;
+        }
     }
 
-    public Note? ToggleNotePin(string noteId)
+    public Note? ToggleNotePin(long noteId)
     {
-        _logger.LogWarning("Notes table doesn't exist in ODS - operation skipped");
-        return null;
+        try
+        {
+            var note = _context.Notes.FirstOrDefault(n => n.Id == noteId && !n.IsDeleted);
+            if (note == null)
+            {
+                return null;
+            }
+
+            // IsPinned is not implemented in database yet, so just return the note unchanged
+            // TODO: Add IsPinned column to database if this feature is needed
+            _logger.LogInformation("ToggleNotePin called for note {NoteId} - IsPinned not implemented, returning note unchanged", noteId);
+            return note;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error toggling pin for note {NoteId}", noteId);
+            throw;
+        }
     }
 
     // =========================================================================
