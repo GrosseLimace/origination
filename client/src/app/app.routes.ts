@@ -22,6 +22,10 @@ export const routes: Routes = [
     loadComponent: () => import('./pages/position-report/position-report.component').then(m => m.PositionReportComponent)
   },
   {
+    path: 'bid-sheet',
+    loadComponent: () => import('./pages/bid-sheet/bid-sheet.component').then(m => m.BidSheetComponent)
+  },
+  {
     path: '**',
     redirectTo: ''
   }

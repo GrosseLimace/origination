@@ -159,6 +159,23 @@ import { ButtonComponent } from '../../ui/button/button.component';
                 <span>{{ isActive('/position-report') ? 'Back to Customers' : 'Position Report' }}</span>
               </app-button>
 
+              <app-button
+                [variant]="isActive('/bid-sheet') ? 'default' : 'outline'"
+                (onClick)="navigate('/bid-sheet')"
+                class="gap-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  @if (isActive('/bid-sheet')) {
+                    <path d="m12 19-7-7 7-7"/>
+                    <path d="M19 12H5"/>
+                  } @else {
+                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+                    <circle cx="12" cy="10" r="3"/>
+                  }
+                </svg>
+                <span>{{ isActive('/bid-sheet') ? 'Back to Customers' : 'Bid Sheet' }}</span>
+              </app-button>
+
               <app-button variant="outline" size="icon" (onClick)="themeService.toggleTheme()">
                 @if (themeService.isDarkMode()) {
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -273,6 +290,23 @@ import { ButtonComponent } from '../../ui/button/button.component';
                 <span>{{ isActive('/position-report') ? 'Back to Customers' : 'Position Report' }}</span>
               </app-button>
 
+              <app-button
+                [variant]="isActive('/bid-sheet') ? 'default' : 'outline'"
+                (onClick)="navigate('/bid-sheet')"
+                class="gap-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  @if (isActive('/bid-sheet')) {
+                    <path d="m12 19-7-7 7-7"/>
+                    <path d="M19 12H5"/>
+                  } @else {
+                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+                    <circle cx="12" cy="10" r="3"/>
+                  }
+                </svg>
+                <span>{{ isActive('/bid-sheet') ? 'Back to Customers' : 'Bid Sheet' }}</span>
+              </app-button>
+
               <!-- Theme toggle - at the far right -->
               <app-button variant="outline" size="icon" (onClick)="themeService.toggleTheme()">
                 @if (themeService.isDarkMode()) {
@@ -365,6 +399,14 @@ import { ButtonComponent } from '../../ui/button/button.component';
                 <path d="m19 9-5 5-4-4-3 3"/>
               </svg>
               <span>Position Report</span>
+            </button>
+
+            <button type="button" [class]="getMobileNavClass('/bid-sheet')" (click)="mobileNavigate('/bid-sheet')">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+                <circle cx="12" cy="10" r="3"/>
+              </svg>
+              <span>Bid Sheet</span>
             </button>
           </nav>
 
