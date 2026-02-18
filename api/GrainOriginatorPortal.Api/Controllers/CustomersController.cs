@@ -54,9 +54,9 @@ public class CustomersController : ControllerBase
         // Update using the data service method (this ensures changes persist)
         _dataService.UpdateCustomer(
             id,
-            request.Location,
-            request.Phone,
-            request.Email,
+            request.Location ?? string.Empty,
+            request.Phone ?? string.Empty,
+            request.Email ?? string.Empty,
             request.FarmIds,
             request.LinkedProducerIds ?? new List<string>()
         );
