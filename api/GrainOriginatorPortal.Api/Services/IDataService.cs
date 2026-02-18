@@ -34,15 +34,18 @@ public interface IDataService
 
     // Planting Intention Operations
     List<PlantingIntention> GetPlantingIntentions();
-    List<PlantingIntention> GetPlantingIntentionsByCustomer(long customerId);
-    void AddPlantingIntention(long customerId, string farmId, string crop, int acres, string variety, DateTime plantingDate, int estimatedYield);
-    void UpdatePlantingIntention(string intentionId, string crop, int acres, string variety, DateTime plantingDate, int estimatedYield);
+    List<PlantingIntention> GetPlantingIntentionsByCustomer(string customerId);
+    PlantingIntention AddPlantingIntention(string customerId, string farmId, string crop, int acres, int plantingYear, int estimatedYield);
+    PlantingIntention? UpdatePlantingIntention(string intentionId, string crop, int acres, int plantingYear, int estimatedYield);
+    void DeletePlantingIntention(string intentionId);
 
     // Note Operations
     List<Note> GetNotes();
     List<Note> GetNotesByCustomer(long customerId);
     Note AddNote(long customerId, string content);
     Note? ToggleNotePin(long noteId);
+    Note? UpdateNote(long noteId, string content);
+    void DeleteNote(long noteId);
 
     // Storage Operations
     List<StoredGrain> GetStoredGrain();

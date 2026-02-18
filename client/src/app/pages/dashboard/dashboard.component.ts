@@ -1,34 +1,20 @@
-import { Component, OnInit, OnDestroy, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, NavigationEnd } from '@angular/router';
 import { Subject, forkJoin } from 'rxjs';
-import { takeUntil } from 'rxjs/operators';
+import { takeUntil, filter } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
 import { AppStateService } from '../../services/app-state.service';
 import { ToastService } from '../../services/toast.service';
 import { Customer, Contract, PlantingIntention, StoredGrain } from '../../models';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '../../components/ui/card/card.component';
-import { BadgeComponent } from '../../components/ui/badge/badge.component';
 
-interface StorageSummaryItem {
-  crop: string;
-  totalBushels: number;
-  customerCount: number;
-  percentage: number;
-  color: string;
-}
-
-interface UnsignedContract {
-  contract: Contract;
-  customerName: string;
-  value: number;
-}
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent, BadgeComponent],
+  imports: [CommonModule, FormsModule, CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent],
   template: `
     <div class="space-y-6">
       <div class="flex items-center justify-between">
@@ -193,113 +179,744 @@ interface UnsignedContract {
         </app-card>
       </div>
 
-      <!-- Unsigned Contracts Alert -->
-      @if (unsignedContracts.length > 0) {
-        <app-card class="border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10">
-          <app-card-header>
-            <div class="flex items-center gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-600 dark:text-red-400">
-                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
-                <line x1="12" x2="12" y1="9" y2="13"/>
-                <line x1="12" x2="12.01" y1="17" y2="17"/>
-              </svg>
-              <app-card-title class="text-red-800 dark:text-red-200">Unsigned Contracts Requiring Attention</app-card-title>
+      <!-- Planting Intentions - Full Width -->
+      <app-card>
+        <app-card-header>
+          <div
+            (click)="togglePlantingIntentions()"
+            class="flex items-center gap-3 w-full cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 -mx-6 -my-4 px-6 py-4 rounded-lg transition-colors"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="text-gray-500 dark:text-gray-400 transition-transform duration-200 flex-shrink-0"
+              [class.rotate-180]="!plantingIntentionsExpanded"
+            >
+              <polyline points="18 15 12 9 6 15"></polyline>
+            </svg>
+            <div>
+              <app-card-title>2025 Planting Intentions</app-card-title>
+              <app-card-description>Planned crops and production estimates across your territory</app-card-description>
             </div>
-            <app-card-description class="text-red-600 dark:text-red-400">{{ unsignedContracts.length }} contract(s) awaiting signature - \${{ totalUnsignedValue | number:'1.0-0' }} at risk</app-card-description>
-          </app-card-header>
-          <app-card-content>
-            <div class="space-y-3">
-              @for (item of unsignedContracts; track item.contract.id) {
-                <div
-                  class="flex items-center justify-between p-3 rounded-lg bg-white dark:bg-gray-800 border border-red-100 dark:border-red-900 cursor-pointer hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                  (click)="navigateToCustomer(item.contract.customerId)">
-                  <div class="flex items-center gap-3">
-                    <div class="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-600 dark:text-red-400">
-                        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                      </svg>
-                    </div>
-                    <div>
-                      <div class="font-medium text-gray-900 dark:text-white">{{ item.customerName }}</div>
-                      <div class="text-sm text-gray-500 dark:text-gray-400">{{ item.contract.contractNumber }} - {{ item.contract.commodityDescription || item.contract.commodityCode }} ({{ item.contract.quantity | number }} bu)</div>
-                    </div>
-                  </div>
-                  <div class="text-right">
-                    <div class="font-bold text-red-600 dark:text-red-400">\${{ item.value | number:'1.0-0' }}</div>
-                    <div class="text-xs text-gray-500 dark:text-gray-400">contract value</div>
-                  </div>
-                </div>
-              }
-            </div>
-          </app-card-content>
-        </app-card>
-      }
-
-      <!-- Bottom Row -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <!-- Storage Summary -->
-        <app-card>
-          <app-card-header>
-            <app-card-title>Territory Storage Summary</app-card-title>
-            <app-card-description>{{ totalStoredBushels | number }} bushels across {{ customersWithStorage }} customers</app-card-description>
-          </app-card-header>
-          <app-card-content>
-            @if (storageSummary.length > 0) {
-              <div class="space-y-4">
-                @for (item of storageSummary; track item.crop) {
+          </div>
+        </app-card-header>
+        @if (plantingIntentionsExpanded) {
+        <app-card-content>
+          <!-- First Row: Average Yield Estimates and Total Estimated Production -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <!-- Average Yield Estimates -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div class="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
+                <div class="flex items-center justify-between">
                   <div>
-                    <div class="flex justify-between mb-1">
-                      <div class="flex items-center gap-2">
-                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ item.crop }}</span>
-                        <span class="text-xs text-gray-400">({{ item.customerCount }} customer{{ item.customerCount !== 1 ? 's' : '' }})</span>
-                      </div>
-                      <span class="text-sm text-gray-500 dark:text-gray-400">{{ item.totalBushels | number }} bu ({{ item.percentage }}%)</span>
-                    </div>
-                    <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
-                      <div
-                        class="h-3 rounded-full transition-all"
-                        [class]="item.color"
-                        [style.width.%]="item.percentage"
-                      ></div>
-                    </div>
+                    <h3 class="text-base font-semibold text-gray-900 dark:text-white">Average Yield Estimates</h3>
+                    <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Expected yields per acre by crop type</p>
                   </div>
-                }
-              </div>
-            } @else {
-              <div class="text-center py-6 text-gray-500 dark:text-gray-400">
-                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-2 text-gray-400">
-                  <path d="M2 20h20"/>
-                  <path d="M5 20V8l7-5 7 5v12"/>
-                  <path d="M9 20v-6h6v6"/>
-                </svg>
-                <p>No grain currently in storage</p>
-              </div>
-            }
-          </app-card-content>
-        </app-card>
-
-        <!-- Planting Intentions -->
-        <app-card>
-          <app-card-header>
-            <app-card-title>2025 Planting Intentions</app-card-title>
-            <app-card-description>Planned crops by customer</app-card-description>
-          </app-card-header>
-          <app-card-content>
-            <div class="space-y-3">
-              @for (intention of plantingByCustomer; track intention.customerId) {
-                <div class="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-                  <div class="font-medium text-gray-900 dark:text-white mb-2">{{ intention.customerName }}</div>
-                  <div class="flex flex-wrap gap-2">
-                    @for (crop of intention.crops; track crop.name) {
-                      <app-badge [variant]="crop.variant">{{ crop.name }}: {{ crop.acres | number }} ac</app-badge>
-                    }
-                  </div>
+                  @if (!yieldEditMode) {
+                    <button
+                      (click)="startYieldEdit()"
+                      class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-green-300 dark:border-green-700 text-xs sm:text-sm font-medium text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+                      </svg>
+                      Edit
+                    </button>
+                  } @else {
+                    <div class="flex gap-2">
+                      <button
+                        (click)="cancelYieldEdit()"
+                        class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-gray-300 dark:border-gray-600 text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                        Cancel
+                      </button>
+                      <button
+                        (click)="saveYieldEdit()"
+                        class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-green-300 dark:border-green-700 text-xs sm:text-sm font-medium text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M20 6L9 17l-5-5"/>
+                        </svg>
+                        Save
+                      </button>
+                    </div>
+                  }
                 </div>
-              }
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full">
+                  <thead>
+                    <tr class="bg-gray-50 dark:bg-gray-700/50">
+                      <th class="text-left py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Crop Type</th>
+                      <th class="text-right py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Yield (bu/acre)</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2 px-4 text-sm text-gray-900 dark:text-gray-100 font-medium">IR HRWW</td>
+                      <td class="py-2 px-4 text-right text-sm">
+                        @if (yieldEditMode) {
+                          <input
+                            type="number"
+                            [(ngModel)]="tempYieldEstimates['IR HRWW']"
+                            class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        } @else {
+                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                            {{ yieldEstimates['IR HRWW'] }}
+                          </span>
+                        }
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2 px-4 text-sm text-gray-900 dark:text-gray-100 font-medium">DL HRWW</td>
+                      <td class="py-2 px-4 text-right text-sm">
+                        @if (yieldEditMode) {
+                          <input
+                            type="number"
+                            [(ngModel)]="tempYieldEstimates['DL HRWW']"
+                            class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        } @else {
+                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                            {{ yieldEstimates['DL HRWW'] }}
+                          </span>
+                        }
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2 px-4 text-sm text-gray-900 dark:text-gray-100 font-medium">IR Corn</td>
+                      <td class="py-2 px-4 text-right text-sm">
+                        @if (yieldEditMode) {
+                          <input
+                            type="number"
+                            [(ngModel)]="tempYieldEstimates['IR Corn']"
+                            class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        } @else {
+                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+                            {{ yieldEstimates['IR Corn'] }}
+                          </span>
+                        }
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2 px-4 text-sm text-gray-900 dark:text-gray-100 font-medium">DL YC</td>
+                      <td class="py-2 px-4 text-right text-sm">
+                        @if (yieldEditMode) {
+                          <input
+                            type="number"
+                            [(ngModel)]="tempYieldEstimates['DL YC']"
+                            class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        } @else {
+                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+                            {{ yieldEstimates['DL YC'] }}
+                          </span>
+                        }
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2 px-4 text-sm text-gray-900 dark:text-gray-100 font-medium">IR Milo</td>
+                      <td class="py-2 px-4 text-right text-sm">
+                        @if (yieldEditMode) {
+                          <input
+                            type="number"
+                            [(ngModel)]="tempYieldEstimates['IR Milo']"
+                            class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        } @else {
+                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">
+                            {{ yieldEstimates['IR Milo'] }}
+                          </span>
+                        }
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2 px-4 text-sm text-gray-900 dark:text-gray-100 font-medium">DL Milo</td>
+                      <td class="py-2 px-4 text-right text-sm">
+                        @if (yieldEditMode) {
+                          <input
+                            type="number"
+                            [(ngModel)]="tempYieldEstimates['DL Milo']"
+                            class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        } @else {
+                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">
+                            {{ yieldEstimates['DL Milo'] }}
+                          </span>
+                        }
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2 px-4 text-sm text-gray-900 dark:text-gray-100 font-medium">IR Beans</td>
+                      <td class="py-2 px-4 text-right text-sm">
+                        @if (yieldEditMode) {
+                          <input
+                            type="number"
+                            [(ngModel)]="tempYieldEstimates['IR Beans']"
+                            class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        } @else {
+                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                            {{ yieldEstimates['IR Beans'] }}
+                          </span>
+                        }
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2 px-4 text-sm text-gray-900 dark:text-gray-100 font-medium">DL YSB</td>
+                      <td class="py-2 px-4 text-right text-sm">
+                        @if (yieldEditMode) {
+                          <input
+                            type="number"
+                            [(ngModel)]="tempYieldEstimates['DL YSB']"
+                            class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        } @else {
+                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                            {{ yieldEstimates['DL YSB'] }}
+                          </span>
+                        }
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </app-card-content>
-        </app-card>
-      </div>
+
+            <!-- Total Estimated Production -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div class="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold text-gray-900 dark:text-white">Total Estimated Production</h3>
+                <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Combined production across all selected producers</p>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full">
+                  <thead>
+                    <tr class="bg-gray-50 dark:bg-gray-700/50">
+                      <th class="text-left py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Crop Category</th>
+                      <th class="text-right py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Total (bu)</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2.5 px-4">
+                        <div class="flex items-center gap-2">
+                          <div class="w-2 h-2 rounded-full bg-amber-500"></div>
+                          <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Wheat</span>
+                        </div>
+                      </td>
+                      <td class="py-2.5 px-4 text-right">
+                        <span class="text-base font-bold text-gray-900 dark:text-white">{{ totalProduction.wheat | number:'1.0-0' }}</span>
+                        <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">bu</span>
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2.5 px-4">
+                        <div class="flex items-center gap-2">
+                          <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                          <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Corn</span>
+                        </div>
+                      </td>
+                      <td class="py-2.5 px-4 text-right">
+                        <span class="text-base font-bold text-gray-900 dark:text-white">{{ totalProduction.corn | number:'1.0-0' }}</span>
+                        <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">bu</span>
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2.5 px-4">
+                        <div class="flex items-center gap-2">
+                          <div class="w-2 h-2 rounded-full bg-orange-500"></div>
+                          <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Milo</span>
+                        </div>
+                      </td>
+                      <td class="py-2.5 px-4 text-right">
+                        <span class="text-base font-bold text-gray-900 dark:text-white">{{ totalProduction.milo | number:'1.0-0' }}</span>
+                        <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">bu</span>
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2.5 px-4">
+                        <div class="flex items-center gap-2">
+                          <div class="w-2 h-2 rounded-full bg-blue-500"></div>
+                          <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Soybeans</span>
+                        </div>
+                      </td>
+                      <td class="py-2.5 px-4 text-right">
+                        <span class="text-base font-bold text-gray-900 dark:text-white">{{ totalProduction.soybeans | number:'1.0-0' }}</span>
+                        <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">bu</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Second Row: Market Share and Harvest Handle -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Estimated Market Share -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div class="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <h3 class="text-base font-semibold text-gray-900 dark:text-white">Estimated Market Share</h3>
+                    <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Expected percentage of production we will handle</p>
+                  </div>
+                  @if (!marketShareEditMode) {
+                    <button
+                      (click)="startMarketShareEdit()"
+                      class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-purple-300 dark:border-purple-700 text-xs sm:text-sm font-medium text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+                      </svg>
+                      Edit
+                    </button>
+                  } @else {
+                    <div class="flex gap-2">
+                      <button
+                        (click)="cancelMarketShareEdit()"
+                        class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-gray-300 dark:border-gray-600 text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                        Cancel
+                      </button>
+                      <button
+                        (click)="saveMarketShareEdit()"
+                        class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-purple-300 dark:border-purple-700 text-xs sm:text-sm font-medium text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M20 6L9 17l-5-5"/>
+                        </svg>
+                        Save
+                      </button>
+                    </div>
+                  }
+                </div>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full">
+                  <thead>
+                    <tr class="bg-gray-50 dark:bg-gray-700/50">
+                      <th class="text-left py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Crop Category</th>
+                      <th class="text-right py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Market Share</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2.5 px-4">
+                        <div class="flex items-center gap-2">
+                          <div class="w-2 h-2 rounded-full bg-amber-500"></div>
+                          <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Wheat</span>
+                        </div>
+                      </td>
+                      <td class="py-2.5 px-4 text-right">
+                        @if (marketShareEditMode) {
+                          <div class="inline-flex items-center gap-1">
+                            <input
+                              type="number"
+                              [(ngModel)]="tempMarketShare.wheat"
+                              min="0"
+                              max="100"
+                              step="1"
+                              class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                            />
+                            <span class="text-sm text-gray-500 dark:text-gray-400">%</span>
+                          </div>
+                        } @else {
+                          <span class="text-base font-bold text-gray-900 dark:text-white">{{ marketShare.wheat * 100 }}%</span>
+                        }
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2.5 px-4">
+                        <div class="flex items-center gap-2">
+                          <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                          <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Corn</span>
+                        </div>
+                      </td>
+                      <td class="py-2.5 px-4 text-right">
+                        @if (marketShareEditMode) {
+                          <div class="inline-flex items-center gap-1">
+                            <input
+                              type="number"
+                              [(ngModel)]="tempMarketShare.corn"
+                              min="0"
+                              max="100"
+                              step="1"
+                              class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                            />
+                            <span class="text-sm text-gray-500 dark:text-gray-400">%</span>
+                          </div>
+                        } @else {
+                          <span class="text-base font-bold text-gray-900 dark:text-white">{{ marketShare.corn * 100 }}%</span>
+                        }
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2.5 px-4">
+                        <div class="flex items-center gap-2">
+                          <div class="w-2 h-2 rounded-full bg-orange-500"></div>
+                          <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Milo</span>
+                        </div>
+                      </td>
+                      <td class="py-2.5 px-4 text-right">
+                        @if (marketShareEditMode) {
+                          <div class="inline-flex items-center gap-1">
+                            <input
+                              type="number"
+                              [(ngModel)]="tempMarketShare.milo"
+                              min="0"
+                              max="100"
+                              step="1"
+                              class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                            />
+                            <span class="text-sm text-gray-500 dark:text-gray-400">%</span>
+                          </div>
+                        } @else {
+                          <span class="text-base font-bold text-gray-900 dark:text-white">{{ marketShare.milo * 100 }}%</span>
+                        }
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2.5 px-4">
+                        <div class="flex items-center gap-2">
+                          <div class="w-2 h-2 rounded-full bg-blue-500"></div>
+                          <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Soybeans</span>
+                        </div>
+                      </td>
+                      <td class="py-2.5 px-4 text-right">
+                        @if (marketShareEditMode) {
+                          <div class="inline-flex items-center gap-1">
+                            <input
+                              type="number"
+                              [(ngModel)]="tempMarketShare.soybeans"
+                              min="0"
+                              max="100"
+                              step="1"
+                              class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                            />
+                            <span class="text-sm text-gray-500 dark:text-gray-400">%</span>
+                          </div>
+                        } @else {
+                          <span class="text-base font-bold text-gray-900 dark:text-white">{{ marketShare.soybeans * 100 }}%</span>
+                        }
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Estimated Harvest Handle -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div class="bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-900/20 dark:to-red-900/20 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold text-gray-900 dark:text-white">Estimated Harvest Handle</h3>
+                <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Expected bushels we will handle at harvest</p>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full">
+                  <thead>
+                    <tr class="bg-gray-50 dark:bg-gray-700/50">
+                      <th class="text-left py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Crop Category</th>
+                      <th class="text-right py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Harvest Handle (bu)</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2.5 px-4">
+                        <div class="flex items-center gap-2">
+                          <div class="w-2 h-2 rounded-full bg-amber-500"></div>
+                          <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Wheat</span>
+                        </div>
+                      </td>
+                      <td class="py-2.5 px-4 text-right">
+                        <span class="text-base font-bold text-gray-900 dark:text-white">{{ harvestHandle.wheat | number:'1.0-0' }}</span>
+                        <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">bu</span>
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2.5 px-4">
+                        <div class="flex items-center gap-2">
+                          <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                          <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Corn</span>
+                        </div>
+                      </td>
+                      <td class="py-2.5 px-4 text-right">
+                        <span class="text-base font-bold text-gray-900 dark:text-white">{{ harvestHandle.corn | number:'1.0-0' }}</span>
+                        <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">bu</span>
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2.5 px-4">
+                        <div class="flex items-center gap-2">
+                          <div class="w-2 h-2 rounded-full bg-orange-500"></div>
+                          <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Milo</span>
+                        </div>
+                      </td>
+                      <td class="py-2.5 px-4 text-right">
+                        <span class="text-base font-bold text-gray-900 dark:text-white">{{ harvestHandle.milo | number:'1.0-0' }}</span>
+                        <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">bu</span>
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2.5 px-4">
+                        <div class="flex items-center gap-2">
+                          <div class="w-2 h-2 rounded-full bg-blue-500"></div>
+                          <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Soybeans</span>
+                        </div>
+                      </td>
+                      <td class="py-2.5 px-4 text-right">
+                        <span class="text-base font-bold text-gray-900 dark:text-white">{{ harvestHandle.soybeans | number:'1.0-0' }}</span>
+                        <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">bu</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Third Row: Actual 2024 Harvest Handle and Actual Market Share -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+            <!-- Actual 2024 Producer Harvest Handle -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div class="bg-gradient-to-r from-red-50 to-orange-50 dark:from-red-900/20 dark:to-orange-900/20 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <h3 class="text-base font-semibold text-gray-900 dark:text-white">Actual 2024 Producer Harvest Handle</h3>
+                    <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Last year's actual harvest handle data</p>
+                  </div>
+                  @if (!actual2024EditMode) {
+                    <button
+                      (click)="startActual2024Edit()"
+                      class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-red-300 dark:border-red-700 text-xs sm:text-sm font-medium text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+                      </svg>
+                      Edit
+                    </button>
+                  } @else {
+                    <div class="flex gap-2">
+                      <button
+                        (click)="cancelActual2024Edit()"
+                        class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-gray-300 dark:border-gray-600 text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                        Cancel
+                      </button>
+                      <button
+                        (click)="saveActual2024Edit()"
+                        class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-red-300 dark:border-red-700 text-xs sm:text-sm font-medium text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M20 6L9 17l-5-5"/>
+                        </svg>
+                        Save
+                      </button>
+                    </div>
+                  }
+                </div>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full">
+                  <thead>
+                    <tr class="bg-gray-50 dark:bg-gray-700/50">
+                      <th class="text-left py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Crop Category</th>
+                      <th class="text-right py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">2024 Actual (bu)</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2.5 px-4">
+                        <div class="flex items-center gap-2">
+                          <div class="w-2 h-2 rounded-full bg-amber-500"></div>
+                          <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Wheat</span>
+                        </div>
+                      </td>
+                      <td class="py-2.5 px-4 text-right">
+                        @if (actual2024EditMode) {
+                          <div class="inline-flex items-center gap-1">
+                            <input
+                              type="number"
+                              [(ngModel)]="tempActual2024HarvestHandle.wheat"
+                              min="0"
+                              step="1"
+                              class="w-24 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                            />
+                            <span class="text-xs text-gray-500 dark:text-gray-400">bu</span>
+                          </div>
+                        } @else {
+                          <span class="text-base font-bold text-gray-900 dark:text-white">{{ actual2024HarvestHandle.wheat | number:'1.0-0' }}</span>
+                          <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">bu</span>
+                        }
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2.5 px-4">
+                        <div class="flex items-center gap-2">
+                          <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                          <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Corn</span>
+                        </div>
+                      </td>
+                      <td class="py-2.5 px-4 text-right">
+                        @if (actual2024EditMode) {
+                          <div class="inline-flex items-center gap-1">
+                            <input
+                              type="number"
+                              [(ngModel)]="tempActual2024HarvestHandle.corn"
+                              min="0"
+                              step="1"
+                              class="w-24 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                            />
+                            <span class="text-xs text-gray-500 dark:text-gray-400">bu</span>
+                          </div>
+                        } @else {
+                          <span class="text-base font-bold text-gray-900 dark:text-white">{{ actual2024HarvestHandle.corn | number:'1.0-0' }}</span>
+                          <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">bu</span>
+                        }
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2.5 px-4">
+                        <div class="flex items-center gap-2">
+                          <div class="w-2 h-2 rounded-full bg-orange-500"></div>
+                          <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Milo</span>
+                        </div>
+                      </td>
+                      <td class="py-2.5 px-4 text-right">
+                        @if (actual2024EditMode) {
+                          <div class="inline-flex items-center gap-1">
+                            <input
+                              type="number"
+                              [(ngModel)]="tempActual2024HarvestHandle.milo"
+                              min="0"
+                              step="1"
+                              class="w-24 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                            />
+                            <span class="text-xs text-gray-500 dark:text-gray-400">bu</span>
+                          </div>
+                        } @else {
+                          <span class="text-base font-bold text-gray-900 dark:text-white">{{ actual2024HarvestHandle.milo | number:'1.0-0' }}</span>
+                          <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">bu</span>
+                        }
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2.5 px-4">
+                        <div class="flex items-center gap-2">
+                          <div class="w-2 h-2 rounded-full bg-blue-500"></div>
+                          <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Soybeans</span>
+                        </div>
+                      </td>
+                      <td class="py-2.5 px-4 text-right">
+                        @if (actual2024EditMode) {
+                          <div class="inline-flex items-center gap-1">
+                            <input
+                              type="number"
+                              [(ngModel)]="tempActual2024HarvestHandle.soybeans"
+                              min="0"
+                              step="1"
+                              class="w-24 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                            />
+                            <span class="text-xs text-gray-500 dark:text-gray-400">bu</span>
+                          </div>
+                        } @else {
+                          <span class="text-base font-bold text-gray-900 dark:text-white">{{ actual2024HarvestHandle.soybeans | number:'1.0-0' }}</span>
+                          <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">bu</span>
+                        }
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Actual Market Share of Selected Producers -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div class="bg-gradient-to-r from-cyan-50 to-teal-50 dark:from-cyan-900/20 dark:to-teal-900/20 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold text-gray-900 dark:text-white">Actual Market Share of Selected Producers</h3>
+                <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Calculated from 2024 actual vs. estimated production</p>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full">
+                  <thead>
+                    <tr class="bg-gray-50 dark:bg-gray-700/50">
+                      <th class="text-left py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Crop Category</th>
+                      <th class="text-right py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Actual Market Share</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2.5 px-4">
+                        <div class="flex items-center gap-2">
+                          <div class="w-2 h-2 rounded-full bg-amber-500"></div>
+                          <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Wheat</span>
+                        </div>
+                      </td>
+                      <td class="py-2.5 px-4 text-right">
+                        <span class="text-base font-bold text-gray-900 dark:text-white">{{ actualMarketShare.wheat | number:'1.1-1' }}%</span>
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2.5 px-4">
+                        <div class="flex items-center gap-2">
+                          <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                          <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Corn</span>
+                        </div>
+                      </td>
+                      <td class="py-2.5 px-4 text-right">
+                        <span class="text-base font-bold text-gray-900 dark:text-white">{{ actualMarketShare.corn | number:'1.1-1' }}%</span>
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2.5 px-4">
+                        <div class="flex items-center gap-2">
+                          <div class="w-2 h-2 rounded-full bg-orange-500"></div>
+                          <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Milo</span>
+                        </div>
+                      </td>
+                      <td class="py-2.5 px-4 text-right">
+                        <span class="text-base font-bold text-gray-900 dark:text-white">{{ actualMarketShare.milo | number:'1.1-1' }}%</span>
+                      </td>
+                    </tr>
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="py-2.5 px-4">
+                        <div class="flex items-center gap-2">
+                          <div class="w-2 h-2 rounded-full bg-blue-500"></div>
+                          <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Soybeans</span>
+                        </div>
+                      </td>
+                      <td class="py-2.5 px-4 text-right">
+                        <span class="text-base font-bold text-gray-900 dark:text-white">{{ actualMarketShare.soybeans | number:'1.1-1' }}%</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </app-card-content>
+        }
+      </app-card>
+
       }
     </div>
   `
@@ -309,6 +926,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private appStateService = inject(AppStateService);
   private toastService = inject(ToastService);
   private router = inject(Router);
+  private cdr = inject(ChangeDetectorRef);
   private destroy$ = new Subject<void>();
 
   // Data for display
@@ -329,24 +947,105 @@ export class DashboardComponent implements OnInit, OnDestroy {
   cropDistribution: { name: string; bushels: number; percentage: number; color: string }[] = [];
   contractStatus: { name: string; count: number; dotColor: string }[] = [];
   plantingByCustomer: { customerId: string; customerName: string; crops: { name: string; acres: number; variant: 'default' | 'secondary' | 'success' }[] }[] = [];
-  storageSummary: StorageSummaryItem[] = [];
-  unsignedContracts: UnsignedContract[] = [];
-  totalStoredBushels = 0;
-  customersWithStorage = 0;
+  totalProduction = { wheat: 0, corn: 0, milo: 0, soybeans: 0 };
 
-  get totalUnsignedValue(): number {
-    return this.unsignedContracts.reduce((sum, item) => sum + item.value, 0);
-  }
+  // Yield estimates (bu/acre) - used by both Average Yield Estimates table and Total Production calculations
+  yieldEstimates: Record<string, number> = {
+    'IR HRWW': 75,
+    'DL HRWW': 50,
+    'IR Corn': 215,
+    'DL YC': 100,
+    'IR Milo': 120,
+    'DL Milo': 75,
+    'IR Beans': 60,
+    'DL YSB': 30
+  };
+
+  // Market share estimates (as decimals)
+  marketShare = { wheat: 0.80, corn: 0.80, milo: 0.85, soybeans: 0.80 };
+
+  // Estimated harvest handle based on production and market share
+  harvestHandle = { wheat: 0, corn: 0, milo: 0, soybeans: 0 };
+
+  // Actual 2024 harvest handle (manually entered from last year's data, in bushels)
+  actual2024HarvestHandle = { wheat: 285000, corn: 520000, milo: 165000, soybeans: 310000 };
+
+  // Calculated actual market share (actual 2024 / total estimated production * 100)
+  actualMarketShare = { wheat: 0, corn: 0, milo: 0, soybeans: 0 };
+
+  // Planting Intentions section expanded state
+  plantingIntentionsExpanded = false;
+
+  // Edit mode state
+  yieldEditMode = false;
+  marketShareEditMode = false;
+  actual2024EditMode = false;
+
+  // Temporary edit values
+  tempYieldEstimates: Record<string, number> = {};
+  tempMarketShare = { wheat: 0, corn: 0, milo: 0, soybeans: 0 };
+  tempActual2024HarvestHandle = { wheat: 0, corn: 0, milo: 0, soybeans: 0 };
+
+  // Loading state to prevent concurrent data loads
+  private isLoading = false;
+  private isFirstLoad = true;
 
   ngOnInit(): void {
-    // Get selected trade units from app state
-    this.availableTradeUnits = this.appStateService.selectedTradeUnits();
+    // Load the saved state from localStorage
+    const savedState = localStorage.getItem('plantingIntentionsExpanded');
+    if (savedState !== null) {
+      this.plantingIntentionsExpanded = savedState === 'true';
+    }
 
-    // Set the first trade unit as default for dashboard view
+    // Load saved yield estimates
+    const savedYields = localStorage.getItem('yieldEstimates');
+    if (savedYields) {
+      this.yieldEstimates = JSON.parse(savedYields);
+    }
+
+    // Load saved market share
+    const savedMarketShare = localStorage.getItem('marketShare');
+    if (savedMarketShare) {
+      this.marketShare = JSON.parse(savedMarketShare);
+    }
+
+    // Load saved actual 2024 harvest handle
+    const savedActual2024 = localStorage.getItem('actual2024HarvestHandle');
+    if (savedActual2024) {
+      this.actual2024HarvestHandle = JSON.parse(savedActual2024);
+    }
+
+    // Get selected trade units from app state and set default
+    this.availableTradeUnits = this.appStateService.selectedTradeUnits();
     if (this.availableTradeUnits.length > 0) {
       this.selectedTradeUnitForDashboard = this.availableTradeUnits[0];
-      this.loadData();
     }
+
+    // Initial data load
+    this.loadData();
+
+    // Reload data when navigating back to the dashboard route
+    this.router.events.pipe(
+      filter(event => event instanceof NavigationEnd),
+      takeUntil(this.destroy$)
+    ).subscribe((event: NavigationEnd) => {
+      // Skip the first NavigationEnd event which happens during component initialization
+      if (this.isFirstLoad) {
+        this.isFirstLoad = false;
+        return;
+      }
+
+      // Only reload if we're navigating TO the dashboard route
+      if (event.urlAfterRedirects === '/dashboard' || event.url === '/dashboard') {
+        this.loadData();
+      }
+    });
+  }
+
+  togglePlantingIntentions(): void {
+    this.plantingIntentionsExpanded = !this.plantingIntentionsExpanded;
+    // Save the state to localStorage
+    localStorage.setItem('plantingIntentionsExpanded', this.plantingIntentionsExpanded.toString());
   }
 
   ngOnDestroy(): void {
@@ -360,9 +1059,14 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   private loadData(): void {
+    // Prevent concurrent data loads
+    if (this.isLoading) {
+      return;
+    }
+
+    this.isLoading = true;
     // Load data for the currently selected trade unit for dashboard display
     const tradeUnitToLoad = this.selectedTradeUnitForDashboard ? [this.selectedTradeUnitForDashboard] : undefined;
-
     this.loading = true;
 
     forkJoin({
@@ -383,12 +1087,20 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.storedGrain = this.storedGrain.filter(s => customerIds.has(s.customerId));
 
         this.calculateMetrics();
+        this.calculateTotalProduction();
+        this.calculateHarvestHandle();
+        this.calculateActualMarketShare();
+
+        this.isLoading = false;
         this.loading = false;
+        this.cdr.detectChanges();
       },
       error: (err) => {
         console.error('Failed to load dashboard data:', err);
         this.toastService.error('Failed to load dashboard data');
+        this.isLoading = false;
         this.loading = false;
+        this.cdr.detectChanges();
       }
     });
   }
@@ -401,8 +1113,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.calculateCropDistribution();
     this.calculateContractStatus();
     this.calculatePlantingByCustomer();
-    this.calculateStorageSummary();
-    this.calculateUnsignedContracts();
   }
 
   navigateToCustomer(customerId: number): void {
@@ -411,20 +1121,26 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   private calculateCropDistribution(): void {
     const cropMap = new Map<string, number>();
+
     for (const contract of this.contracts) {
       const commodity = contract.commodityDescription || contract.commodityCode || 'Unknown';
       cropMap.set(commodity, (cropMap.get(commodity) || 0) + (contract.quantity || 0));
     }
 
     const total = Array.from(cropMap.values()).reduce((a, b) => a + b, 0);
-    const colors = ['bg-green-500', 'bg-blue-500', 'bg-amber-500', 'bg-purple-500'];
+    const cropColors: Record<string, string> = {
+      'Corn': 'bg-green-500',
+      'Soybeans': 'bg-blue-500',
+      'Wheat': 'bg-amber-500',
+      'Milo': 'bg-orange-500'
+    };
 
     this.cropDistribution = Array.from(cropMap.entries())
-      .map(([name, bushels], i) => ({
+      .map(([name, bushels]) => ({
         name,
         bushels,
         percentage: Math.round((bushels / total) * 100),
-        color: colors[i % colors.length]
+        color: cropColors[name] || 'bg-gray-500'
       }))
       .sort((a, b) => b.bushels - a.bushels);
   }
@@ -467,9 +1183,14 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
 
     const cropVariants: Record<string, 'default' | 'secondary' | 'success'> = {
-      'Corn': 'success',
-      'Soybeans': 'default',
-      'Wheat': 'secondary'
+      'IR Corn': 'success',
+      'DL YC': 'success',
+      'IR Beans': 'default',
+      'DL YSB': 'default',
+      'IR HRWW': 'secondary',
+      'DL HRWW': 'secondary',
+      'IR Milo': 'success',
+      'DL Milo': 'success'
     };
 
     this.plantingByCustomer = Array.from(customerMap.entries()).map(([customerId, data]) => ({
@@ -483,64 +1204,130 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }));
   }
 
-  private calculateStorageSummary(): void {
-    if (this.storedGrain.length === 0) {
-      this.storageSummary = [];
-      this.totalStoredBushels = 0;
-      this.customersWithStorage = 0;
-      return;
+  private calculateTotalProduction(): void {
+    // Reset totals
+    this.totalProduction = { wheat: 0, corn: 0, milo: 0, soybeans: 0 };
+
+    // Calculate production for each crop using yieldEstimates property
+    for (const intention of this.plantingIntentions) {
+      const acres = intention.acres;
+      const yield_per_acre = this.yieldEstimates[intention.crop] || 0;
+      const production = acres * yield_per_acre;
+
+      // Map crop names to categories
+      if (intention.crop === 'IR HRWW' || intention.crop === 'DL HRWW') {
+        this.totalProduction.wheat += production;
+      } else if (intention.crop === 'IR Corn' || intention.crop === 'DL YC') {
+        this.totalProduction.corn += production;
+      } else if (intention.crop === 'IR Milo' || intention.crop === 'DL Milo') {
+        this.totalProduction.milo += production;
+      } else if (intention.crop === 'IR Beans' || intention.crop === 'DL YSB') {
+        this.totalProduction.soybeans += production;
+      }
     }
+  }
 
-    // Calculate totals by crop
-    const cropMap = new Map<string, { bushels: number; customers: Set<number> }>();
+  private calculateHarvestHandle(): void {
+    // Calculate harvest handle based on total production and market share
+    this.harvestHandle.wheat = this.totalProduction.wheat * this.marketShare.wheat;
+    this.harvestHandle.corn = this.totalProduction.corn * this.marketShare.corn;
+    this.harvestHandle.milo = this.totalProduction.milo * this.marketShare.milo;
+    this.harvestHandle.soybeans = this.totalProduction.soybeans * this.marketShare.soybeans;
+  }
 
-    for (const grain of this.storedGrain) {
-      const existing = cropMap.get(grain.crop) || { bushels: 0, customers: new Set<number>() };
-      existing.bushels += grain.bushels;
-      existing.customers.add(grain.customerId);
-      cropMap.set(grain.crop, existing);
-    }
+  // Yield estimates edit methods
+  startYieldEdit(): void {
+    this.yieldEditMode = true;
+    // Copy current values to temp storage
+    this.tempYieldEstimates = { ...this.yieldEstimates };
+  }
 
-    // Calculate total and unique customers
-    this.totalStoredBushels = this.storedGrain.reduce((sum, g) => sum + g.bushels, 0);
-    this.customersWithStorage = new Set(this.storedGrain.map(g => g.customerId)).size;
+  saveYieldEdit(): void {
+    // Save temp values to actual values
+    this.yieldEstimates = { ...this.tempYieldEstimates };
+    localStorage.setItem('yieldEstimates', JSON.stringify(this.yieldEstimates));
+    this.calculateTotalProduction();
+    this.calculateHarvestHandle();
+    this.calculateActualMarketShare();
+    this.yieldEditMode = false;
+    this.toastService.success('Yield estimates updated');
+  }
 
-    // Color palette for crops
-    const colors: Record<string, string> = {
-      'Corn': 'bg-amber-500',
-      'Soybeans': 'bg-green-500',
-      'Wheat': 'bg-yellow-500',
-      'Oats': 'bg-orange-500',
-      'Barley': 'bg-purple-500',
-      'Sorghum': 'bg-red-500'
+  cancelYieldEdit(): void {
+    // Discard changes and exit edit mode
+    this.yieldEditMode = false;
+    this.tempYieldEstimates = {};
+  }
+
+  // Market share edit methods
+  startMarketShareEdit(): void {
+    this.marketShareEditMode = true;
+    // Copy current values to temp storage and convert to percentages
+    this.tempMarketShare = {
+      wheat: this.marketShare.wheat * 100,
+      corn: this.marketShare.corn * 100,
+      milo: this.marketShare.milo * 100,
+      soybeans: this.marketShare.soybeans * 100
     };
-    const defaultColors = ['bg-blue-500', 'bg-teal-500', 'bg-indigo-500', 'bg-pink-500'];
-    let colorIndex = 0;
-
-    this.storageSummary = Array.from(cropMap.entries())
-      .map(([crop, data]) => ({
-        crop,
-        totalBushels: data.bushels,
-        customerCount: data.customers.size,
-        percentage: Math.round((data.bushels / this.totalStoredBushels) * 100),
-        color: colors[crop] || defaultColors[colorIndex++ % defaultColors.length]
-      }))
-      .sort((a, b) => b.totalBushels - a.totalBushels);
   }
 
-  private calculateUnsignedContracts(): void {
-    if (this.customers.length === 0 || this.contracts.length === 0) return;
-
-    this.unsignedContracts = this.contracts
-      .filter(c => !c.signed && (c.status === 'Active' || c.status === 'Pending'))
-      .map(contract => {
-        const customer = this.customers.find(c => c.id === contract.customerId);
-        return {
-          contract,
-          customerName: customer?.name || 'Unknown',
-          value: contract.quantity * contract.price
-        };
-      })
-      .sort((a, b) => b.value - a.value);
+  saveMarketShareEdit(): void {
+    // Convert percentages to decimals and save
+    this.marketShare = {
+      wheat: this.tempMarketShare.wheat / 100,
+      corn: this.tempMarketShare.corn / 100,
+      milo: this.tempMarketShare.milo / 100,
+      soybeans: this.tempMarketShare.soybeans / 100
+    };
+    localStorage.setItem('marketShare', JSON.stringify(this.marketShare));
+    this.calculateHarvestHandle();
+    this.marketShareEditMode = false;
+    this.toastService.success('Market share updated');
   }
+
+  cancelMarketShareEdit(): void {
+    // Discard changes and exit edit mode
+    this.marketShareEditMode = false;
+    this.tempMarketShare = { wheat: 0, corn: 0, milo: 0, soybeans: 0 };
+  }
+
+  // Actual 2024 harvest handle edit methods
+  startActual2024Edit(): void {
+    this.actual2024EditMode = true;
+    // Copy current values to temp storage
+    this.tempActual2024HarvestHandle = { ...this.actual2024HarvestHandle };
+  }
+
+  saveActual2024Edit(): void {
+    // Save temp values to actual values
+    this.actual2024HarvestHandle = { ...this.tempActual2024HarvestHandle };
+    localStorage.setItem('actual2024HarvestHandle', JSON.stringify(this.actual2024HarvestHandle));
+    this.calculateActualMarketShare();
+    this.actual2024EditMode = false;
+    this.toastService.success('Actual 2024 harvest handle updated');
+  }
+
+  cancelActual2024Edit(): void {
+    // Discard changes and exit edit mode
+    this.actual2024EditMode = false;
+    this.tempActual2024HarvestHandle = { wheat: 0, corn: 0, milo: 0, soybeans: 0 };
+  }
+
+  private calculateActualMarketShare(): void {
+    // Calculate actual market share as (actual 2024 harvest / total estimated production) * 100
+    // Avoid division by zero
+    this.actualMarketShare.wheat = this.totalProduction.wheat > 0
+      ? (this.actual2024HarvestHandle.wheat / this.totalProduction.wheat) * 100
+      : 0;
+    this.actualMarketShare.corn = this.totalProduction.corn > 0
+      ? (this.actual2024HarvestHandle.corn / this.totalProduction.corn) * 100
+      : 0;
+    this.actualMarketShare.milo = this.totalProduction.milo > 0
+      ? (this.actual2024HarvestHandle.milo / this.totalProduction.milo) * 100
+      : 0;
+    this.actualMarketShare.soybeans = this.totalProduction.soybeans > 0
+      ? (this.actual2024HarvestHandle.soybeans / this.totalProduction.soybeans) * 100
+      : 0;
+  }
+
 }

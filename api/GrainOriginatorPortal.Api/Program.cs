@@ -61,13 +61,13 @@ builder.Services.AddScoped<IDataService, SqlDataService>();
 // builder.Services.AddSingleton<IDataService, MockDataService>();
 
 // Configure CORS to allow requests from the Angular development server.
-// This is required because the Angular app runs on a different port (4200)
+// This is required because the Angular app runs on a different port (4200/4202)
 // than the API (5000), which would otherwise be blocked by browser security.
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAngular", policy =>
     {
-        policy.WithOrigins("http://localhost:4200")
+        policy.WithOrigins("http://localhost:4200", "http://localhost:4201", "http://localhost:4202")
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
@@ -112,11 +112,12 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
+// Apply CORS policy to allow Angular frontend requests
+// MUST come before UseHttpsRedirection to handle preflight requests correctly
+app.UseCors("AllowAngular");
+
 // Redirect HTTP requests to HTTPS for security
 app.UseHttpsRedirection();
-
-// Apply CORS policy to allow Angular frontend requests
-app.UseCors("AllowAngular");
 
 // Map controller routes (e.g., /api/customers, /api/contracts, etc.)
 app.MapControllers();

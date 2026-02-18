@@ -11,6 +11,6 @@ public class PlantingIntention
     public string Crop { get; set; } = string.Empty;
     public int Acres { get; set; }
     public string Variety { get; set; } = string.Empty;
-    public DateTime PlantingDate { get; set; }
+    public int PlantingYear { get; set; }
     public int EstimatedYield { get; set; }
 }

@@ -167,10 +167,10 @@ import { ButtonComponent } from '../../ui/button/button.component';
             </div>
           </div>
 
-          <!-- Grid layout for xl screens - Aligned with 3-column layout -->
-          <div class="hidden xl:grid xl:grid-cols-10 xl:gap-6">
-            <!-- Left: Logo/Title (2 cols - aligned with customer list) -->
-            <div class="xl:col-span-2 flex items-center gap-3">
+          <!-- Grid layout for xl screens - Aligned with 2-column layout (12-col grid) -->
+          <div class="hidden xl:grid xl:grid-cols-12 xl:gap-6">
+            <!-- Left: Logo/Title (4 cols - aligned with customer list) -->
+            <div class="xl:col-span-4 flex items-center gap-3">
               <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600 dark:text-green-500 flex-shrink-0">
                 <path d="M2 22 16 8"/>
                 <path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
@@ -181,9 +181,9 @@ import { ButtonComponent } from '../../ui/button/button.component';
                 <path d="M15.47 13.47 17 15l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L9 15l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
                 <path d="M19.47 9.47 21 11l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L13 11l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
               </svg>
-              <div class="min-w-0">
-                <h1 class="text-2xl font-semibold text-gray-900 dark:text-white truncate">Grain Originator Portal</h1>
-                <p class="text-sm text-gray-500 dark:text-gray-400 truncate">Customer & Contract Management</p>
+              <div class="min-w-0 flex-1">
+                <h1 class="text-xl xl:text-2xl font-semibold text-gray-900 dark:text-white whitespace-nowrap">Grain Originator Portal</h1>
+                <p class="text-xs xl:text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">Customer & Contract Management</p>
               </div>
             </div>
 

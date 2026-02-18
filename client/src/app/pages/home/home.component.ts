@@ -1,8 +1,8 @@
 import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ActivatedRoute } from '@angular/router';
-import { Subject, forkJoin } from 'rxjs';
-import { takeUntil } from 'rxjs/operators';
+import { ActivatedRoute, Router, NavigationEnd } from '@angular/router';
+import { Subject } from 'rxjs';
+import { takeUntil, filter } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
 import { AppStateService } from '../../services/app-state.service';
 import { ToastService } from '../../services/toast.service';
@@ -75,29 +75,13 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                 [allCustomerStoredGrain]="allCustomerStoredGrain"
                 (onAddPlanting)="addPlantingIntention($event)"
                 (onEditPlanting)="editPlantingIntention($event)"
+                (onDeletePlanting)="deletePlantingIntention($event)"
                 (onAddNote)="addNote($event)"
                 (onTogglePin)="toggleNotePin($event)"
                 (onFarmChange)="handleFarmChange($event)"
                 (onSaveCustomer)="handleSaveCustomer($event)"
                 (onCreateFarm)="handleCreateFarm($event)">
               </app-customer-profile>
-            } @else {
-              <!-- No customer selected - matches Blazor: just the prompt card, no map -->
-              <app-card class="p-12 text-center">
-                <app-card-content>
-                  <div class="text-gray-500 dark:text-gray-400">
-                    <svg class="mx-auto h-16 w-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
-                    </svg>
-                    <h3 class="mt-4 text-lg font-medium text-gray-900 dark:text-gray-100">
-                      Select a Customer
-                    </h3>
-                    <p class="mt-2">
-                      Choose a customer from the list to view their details, contracts, tickets, and more.
-                    </p>
-                  </div>
-                </app-card-content>
-              </app-card>
             }
           </div>
 
@@ -115,7 +99,7 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                         <line x1="8" x2="8" y1="2" y2="6"/>
                         <line x1="3" x2="21" y1="10" y2="10"/>
                       </svg>
-                      <span>Last contacted: {{ getLastContactedDate() }}</span>
+                      <span class="hidden sm:inline">Last contacted: {{ getLastContactedDate() }}</span>
                     </div>
                   </div>
                 </app-card-header>
@@ -124,7 +108,9 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                     [notes]="customerNotes"
                     [customer]="selectedCustomer"
                     (addNote)="addNote($event)"
-                    (togglePin)="toggleNotePin($event)">
+                    (togglePin)="toggleNotePin($event)"
+                    (editNote)="editNote($event)"
+                    (deleteNote)="deleteNote($event)">
                   </app-customer-notes>
                 </app-card-content>
               </app-card>
@@ -141,8 +127,13 @@ export class HomeComponent implements OnInit, OnDestroy {
   private toastService = inject(ToastService);
   private cdr = inject(ChangeDetectorRef);
   private route = inject(ActivatedRoute);
+  private router = inject(Router);
   private destroy$ = new Subject<void>();
   private resizeHandler = () => this.checkMobile();
+
+  // Loading state to prevent concurrent data loads
+  private isLoading = false;
+  private isFirstLoad = true;
 
   customers: Customer[] = [];
   contracts: Contract[] = [];
@@ -173,6 +164,8 @@ export class HomeComponent implements OnInit, OnDestroy {
   loading = false;
 
   ngOnInit(): void {
+    console.log('[Home] ngOnInit - Starting initial data load');
+    this.loadAllData();
     this.checkMobile();
     window.addEventListener('resize', this.resizeHandler);
 
@@ -184,6 +177,32 @@ export class HomeComponent implements OnInit, OnDestroy {
       const customerId = params['customerId'];
       if (customerId) {
         this.selectCustomerById(customerId);
+      }
+    });
+
+    // Reload data when navigating back to the home route
+    this.router.events.pipe(
+      filter(event => event instanceof NavigationEnd),
+      takeUntil(this.destroy$)
+    ).subscribe((event: NavigationEnd) => {
+      console.log('[Home] Navigation event:', event.url, event.urlAfterRedirects);
+
+      // Skip the first NavigationEnd event which happens during component initialization
+      if (this.isFirstLoad) {
+        console.log('[Home] Skipping first NavigationEnd (component initialization)');
+        this.isFirstLoad = false;
+        return;
+      }
+
+      // Only reload if we're navigating TO the home route (check for root path or with query params)
+      const isHomeRoute = event.urlAfterRedirects === '/' ||
+                          event.urlAfterRedirects.startsWith('/?') ||
+                          event.url === '/' ||
+                          event.url.startsWith('/?');
+
+      if (isHomeRoute) {
+        console.log('[Home] Reloading data after navigation to home');
+        this.loadAllData();
       }
     });
   }
@@ -255,9 +274,13 @@ export class HomeComponent implements OnInit, OnDestroy {
   }
 
   private loadAllData(tradeUnits?: string[]): void {
-    // Load each data type independently with error handling
-    // This prevents one failing endpoint from blocking all data
+    // Prevent concurrent data loads
+    if (this.isLoading) {
+      console.log('[Home] loadAllData() called but already loading, skipping...');
+      return;
+    }
 
+    this.isLoading = true;
     this.loading = true;
 
     this.apiService.getCustomers(tradeUnits).pipe(takeUntil(this.destroy$)).subscribe({
@@ -265,10 +288,12 @@ export class HomeComponent implements OnInit, OnDestroy {
         this.customers = data;
         this.appState.setCustomers(data);
         this.loading = false;
+        this.isLoading = false;
       },
       error: (err) => {
         console.error('Failed to load customers:', err);
         this.loading = false;
+        this.isLoading = false;
       }
     });
 
@@ -408,7 +433,10 @@ export class HomeComponent implements OnInit, OnDestroy {
     // Create new array references to trigger change detection
     // Use provided customer or fall back to selectedCustomer
     const currentCustomer = customer || this.selectedCustomer;
-    if (!currentCustomer) return;
+    if (!currentCustomer) {
+      console.warn('[Home] No customer found for loadCustomerData');
+      return;
+    }
 
     // Load data for current customer only (linked producer logic removed for now)
     // Use string matching for both contracts and tickets (match with customer.sourceCustomerId)
@@ -438,6 +466,13 @@ export class HomeComponent implements OnInit, OnDestroy {
 
     // Load farms from current customer only
     this.customerFarms = [...this.farms.filter(f => currentCustomer.farmIds?.includes(f.id))];
+
+    // Validate selectedFarmId - if it's set but no longer in the available farms, reset it
+    if (this.selectedFarmId && !this.customerFarms.find(f => f.id === this.selectedFarmId)) {
+      // Currently selected farm is no longer available (e.g., after unlinking), reset to first farm or undefined
+      this.selectedFarmId = this.customerFarms.length > 0 ? this.customerFarms[0].id : undefined;
+      this.appState.selectFarm(this.selectedFarmId || null);
+    }
 
     // Set the selected farm to the first available farm if not already set
     if (!this.selectedFarmId && this.customerFarms.length > 0) {
@@ -542,12 +577,109 @@ export class HomeComponent implements OnInit, OnDestroy {
     });
   }
 
-  addPlantingIntention(data: {crop: string, acres: number, variety: string, plantingDate: Date, estimatedYield: number}): void {
-    this.toastService.info(`Adding ${data.crop} planting intention - coming soon`);
+  addPlantingIntention(data: {farmId: string, crop: string, acres: number, plantingYear: number, estimatedYield: number}): void {
+    console.log('addPlantingIntention called with:', data);
+    console.log('selectedCustomer:', this.selectedCustomer?.id);
+    console.log('selectedFarmId:', this.selectedFarmId);
+
+    if (!this.selectedCustomer) {
+      console.log('No customer selected, returning');
+      return;
+    }
+
+    const apiData = {
+      customerId: this.selectedCustomer.id,
+      farmId: data.farmId,
+      crop: data.crop,
+      acres: data.acres,
+      plantingYear: data.plantingYear,
+      estimatedYield: data.estimatedYield
+    };
+    console.log('Calling API with:', apiData);
+
+    this.apiService.createPlantingIntention(apiData).subscribe({
+      next: (intention) => {
+        console.log('API returned intention:', intention);
+        console.log('Current customerPlantingIntentions length:', this.customerPlantingIntentions.length);
+
+        // Add to global list
+        this.plantingIntentions = [...this.plantingIntentions, intention];
+
+        // Add to customer-specific list if it matches the selected farm
+        if (!this.selectedFarmId || intention.farmId === this.selectedFarmId) {
+          this.customerPlantingIntentions = [...this.customerPlantingIntentions, intention];
+          console.log('Added to customerPlantingIntentions, new length:', this.customerPlantingIntentions.length);
+        } else {
+          console.log('NOT added to customerPlantingIntentions - farm mismatch', {
+            intentionFarmId: intention.farmId,
+            selectedFarmId: this.selectedFarmId
+          });
+        }
+
+        // Update allCustomerPlantingIntentions for Activity Summary
+        this.allCustomerPlantingIntentions = [...this.allCustomerPlantingIntentions, intention];
+
+        this.toastService.success('Planting intention added');
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('API error:', err);
+        this.toastService.error('Failed to add planting intention');
+      }
+    });
   }
 
-  editPlantingIntention(data: {intentionId: string, crop: string, acres: number, variety: string, plantingDate: Date, estimatedYield: number}): void {
-    this.toastService.info(`Editing ${data.crop} intention - coming soon`);
+  editPlantingIntention(data: {intentionId: string, farmId: string, crop: string, acres: number, plantingYear: number, estimatedYield: number}): void {
+    this.apiService.updatePlantingIntention(data.intentionId, {
+      crop: data.crop,
+      acres: data.acres,
+      plantingYear: data.plantingYear,
+      estimatedYield: data.estimatedYield
+    }).subscribe({
+      next: (updatedIntention) => {
+        // Update in global list
+        this.plantingIntentions = this.plantingIntentions.map(p =>
+          p.id === data.intentionId ? updatedIntention : p
+        );
+
+        // Update in customer-specific list
+        this.customerPlantingIntentions = this.customerPlantingIntentions.map(p =>
+          p.id === data.intentionId ? updatedIntention : p
+        );
+
+        // Update in allCustomerPlantingIntentions for Activity Summary
+        this.allCustomerPlantingIntentions = this.allCustomerPlantingIntentions.map(p =>
+          p.id === data.intentionId ? updatedIntention : p
+        );
+
+        this.toastService.success('Planting intention updated');
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.toastService.error('Failed to update planting intention');
+      }
+    });
+  }
+
+  deletePlantingIntention(intentionId: string): void {
+    this.apiService.deletePlantingIntention(intentionId).subscribe({
+      next: () => {
+        // Remove from global list
+        this.plantingIntentions = this.plantingIntentions.filter(p => p.id !== intentionId);
+
+        // Remove from customer-specific list
+        this.customerPlantingIntentions = this.customerPlantingIntentions.filter(p => p.id !== intentionId);
+
+        // Remove from allCustomerPlantingIntentions for Activity Summary
+        this.allCustomerPlantingIntentions = this.allCustomerPlantingIntentions.filter(p => p.id !== intentionId);
+
+        this.toastService.success('Planting intention deleted');
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.toastService.error('Failed to delete planting intention');
+      }
+    });
   }
 
   addNote(content: string): void {
@@ -582,6 +714,46 @@ export class HomeComponent implements OnInit, OnDestroy {
       },
       error: () => {
         this.toastService.error('Failed to update note');
+      }
+    });
+  }
+
+  editNote(data: { noteId: string; content: string }): void {
+    this.apiService.updateNote(data.noteId, data.content).subscribe({
+      next: (updated) => {
+        // Update in global list
+        const index = this.notes.findIndex(n => n.id === updated.id);
+        if (index >= 0) {
+          this.notes[index] = updated;
+          this.notes = [...this.notes];
+        }
+        // Update in customer-specific list
+        const customerIndex = this.customerNotes.findIndex(n => n.id === updated.id);
+        if (customerIndex >= 0) {
+          this.customerNotes[customerIndex] = updated;
+          this.customerNotes = [...this.customerNotes];
+        }
+        this.toastService.success('Note updated');
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.toastService.error('Failed to update note');
+      }
+    });
+  }
+
+  deleteNote(noteId: string): void {
+    this.apiService.deleteNote(noteId).subscribe({
+      next: () => {
+        // Remove from global list
+        this.notes = this.notes.filter(n => n.id !== noteId);
+        // Remove from customer-specific list
+        this.customerNotes = this.customerNotes.filter(n => n.id !== noteId);
+        this.toastService.success('Note deleted');
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.toastService.error('Failed to delete note');
       }
     });
   }

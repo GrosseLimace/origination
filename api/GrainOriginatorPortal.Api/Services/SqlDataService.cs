@@ -754,18 +754,25 @@ public class SqlDataService : IDataService
         return new List<PlantingIntention>();
     }
 
-    public List<PlantingIntention> GetPlantingIntentionsByCustomer(long customerId)
+    public List<PlantingIntention> GetPlantingIntentionsByCustomer(string customerId)
     {
         _logger.LogWarning("PlantingIntentions table doesn't exist in ODS - returning empty list");
         return new List<PlantingIntention>();
     }
 
-    public void AddPlantingIntention(long customerId, string farmId, string crop, int acres, string variety, DateTime plantingDate, int estimatedYield)
+    public PlantingIntention AddPlantingIntention(string customerId, string farmId, string crop, int acres, int plantingYear, int estimatedYield)
     {
         _logger.LogWarning("PlantingIntentions table doesn't exist in ODS - operation skipped");
+        return new PlantingIntention { Id = Guid.NewGuid().ToString(), CustomerId = customerId, FarmId = farmId, Crop = crop, Acres = acres, PlantingYear = plantingYear, EstimatedYield = estimatedYield };
     }
 
-    public void UpdatePlantingIntention(string intentionId, string crop, int acres, string variety, DateTime plantingDate, int estimatedYield)
+    public PlantingIntention? UpdatePlantingIntention(string intentionId, string crop, int acres, int plantingYear, int estimatedYield)
+    {
+        _logger.LogWarning("PlantingIntentions table doesn't exist in ODS - operation skipped");
+        return null;
+    }
+
+    public void DeletePlantingIntention(string intentionId)
     {
         _logger.LogWarning("PlantingIntentions table doesn't exist in ODS - operation skipped");
     }
@@ -882,6 +889,55 @@ public class SqlDataService : IDataService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error toggling pin for note {NoteId}", noteId);
+            throw;
+        }
+    }
+
+    public Note? UpdateNote(long noteId, string content)
+    {
+        try
+        {
+            var note = _context.Notes.FirstOrDefault(n => n.Id == noteId && !n.IsDeleted);
+            if (note == null)
+            {
+                return null;
+            }
+
+            note.Description = content;
+            note.ModifiedBy = "System"; // TODO: Get from authenticated user
+            note.ModifiedOn = DateTime.UtcNow;
+            _context.SaveChanges();
+
+            _logger.LogInformation("Updated note {NoteId}", noteId);
+            return note;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating note {NoteId}", noteId);
+            throw;
+        }
+    }
+
+    public void DeleteNote(long noteId)
+    {
+        try
+        {
+            var note = _context.Notes.FirstOrDefault(n => n.Id == noteId && !n.IsDeleted);
+            if (note == null)
+            {
+                return;
+            }
+
+            note.IsDeleted = true;
+            note.DeletedBy = "System"; // TODO: Get from authenticated user
+            note.DeletedOn = DateTime.UtcNow;
+            _context.SaveChanges();
+
+            _logger.LogInformation("Soft-deleted note {NoteId}", noteId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting note {NoteId}", noteId);
             throw;
         }
     }
