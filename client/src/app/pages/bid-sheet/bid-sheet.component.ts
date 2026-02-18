@@ -1,7 +1,7 @@
 import { Component, OnInit, AfterViewInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent } from '../../components/ui/card/card.component';
+import { CardComponent, CardContentComponent, CardHeaderComponent } from '../../components/ui/card/card.component';
 
 declare const L: any;
 
@@ -21,7 +21,7 @@ interface LocationCoords {
 @Component({
   selector: 'app-bid-sheet',
   standalone: true,
-  imports: [CommonModule, FormsModule, CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent],
+  imports: [CommonModule, FormsModule, CardComponent, CardContentComponent, CardHeaderComponent],
   template: `
     <div class="space-y-4">
       <!-- Header -->
