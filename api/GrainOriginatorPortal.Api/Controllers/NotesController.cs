@@ -30,8 +30,15 @@ public class NotesController : ControllerBase
     [HttpPost]
     public ActionResult<Note> Create([FromBody] CreateNoteRequest request)
     {
-        var note = _dataService.AddNote(request.CustomerId, request.Content);
-        return Created($"/api/notes/{note.Id}", note);
+        try
+        {
+            var note = _dataService.AddNote(request.CustomerId, request.Content);
+            return Created($"/api/notes/{note.Id}", note);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("database permissions"))
+        {
+            return StatusCode(503, new { error = ex.Message });
+        }
     }
 
     [HttpPut("{id:long}/toggle-pin")]

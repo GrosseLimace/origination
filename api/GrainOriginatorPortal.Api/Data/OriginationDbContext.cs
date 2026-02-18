@@ -23,6 +23,7 @@ public class OriginationDbContext : DbContext
 
     // Application tables in Origination database (dbo schema)
     public DbSet<Note> Notes => Set<Note>();
+    public DbSet<TradeUnit> TradeUnits => Set<TradeUnit>();
 
     // These tables don't exist yet - will return empty data
     // public DbSet<Farm> Farms => Set<Farm>();
@@ -250,6 +251,19 @@ public class OriginationDbContext : DbContext
             // Indexes for common queries
             entity.HasIndex(e => e.CustomerId).HasDatabaseName("IX_Notes_CustomerId");
             entity.HasIndex(e => new { e.CustomerId, e.CreatedOn }).HasDatabaseName("IX_Notes_CustomerId_Active").HasFilter("[IsDeleted] = 0");
+        });
+
+        // Configure TradeUnit entity - Maps to dbo.TradeUnits table in Origination database
+        modelBuilder.Entity<TradeUnit>(entity =>
+        {
+            entity.ToTable("TradeUnits", schema: "dbo");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.Code).HasColumnName("Code").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
+
+            entity.HasIndex(e => e.Code).IsUnique().HasDatabaseName("IX_TradeUnits_Code");
         });
 
         // Configure PlantingIntention entity - DISABLED: Table doesn't exist in ODS

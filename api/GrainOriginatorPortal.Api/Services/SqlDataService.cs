@@ -302,34 +302,58 @@ public class SqlDataService : IDataService
     {
         try
         {
-            // Get unique trade units from contracts
-            var contractTradeUnits = _context.Contracts
-                .Where(c => c.IsActive && !string.IsNullOrEmpty(c.TradeUnit))
-                .Select(c => c.TradeUnit!)
-                .Distinct()
+            // Try to query the cached dbo.TradeUnits table first (fast path)
+            var cachedTradeUnits = _context.TradeUnits
+                .Where(tu => tu.IsActive)
+                .Select(tu => tu.Code)
+                .OrderBy(c => c)
                 .ToList();
 
-            // Get unique organization codes from tickets
-            var ticketOrgCodes = _context.Tickets
-                .Where(t => t.IsActive && !string.IsNullOrEmpty(t.OrganizationCode))
-                .Select(t => t.OrganizationCode!)
-                .Distinct()
-                .ToList();
+            if (cachedTradeUnits.Count > 0)
+            {
+                _logger.LogInformation($"Returning {cachedTradeUnits.Count} trade units from dbo.TradeUnits cache");
+                return cachedTradeUnits;
+            }
 
-            // Combine and return unique sorted list
-            var allTradeUnits = contractTradeUnits
-                .Union(ticketOrgCodes)
-                .OrderBy(tu => tu)
-                .ToList();
-
-            _logger.LogInformation($"Found {allTradeUnits.Count} unique trade units/organization codes");
-            return allTradeUnits;
+            _logger.LogWarning("dbo.TradeUnits table is empty or not available - falling back to view queries");
+            return GetTradeUnitsFromViews();
+        }
+        catch (SqlException ex) when (ex.Number == 208) // Invalid object name - table doesn't exist yet
+        {
+            _logger.LogWarning("dbo.TradeUnits table not found - falling back to view queries. Error: {Error}", ex.Message);
+            return GetTradeUnitsFromViews();
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving trade units");
             throw;
         }
+    }
+
+    private List<string> GetTradeUnitsFromViews()
+    {
+        // Get unique trade units from contracts
+        var contractTradeUnits = _context.Contracts
+            .Where(c => c.IsActive && !string.IsNullOrEmpty(c.TradeUnit))
+            .Select(c => c.TradeUnit!)
+            .Distinct()
+            .ToList();
+
+        // Get unique organization codes from tickets
+        var ticketOrgCodes = _context.Tickets
+            .Where(t => t.IsActive && !string.IsNullOrEmpty(t.OrganizationCode))
+            .Select(t => t.OrganizationCode!)
+            .Distinct()
+            .ToList();
+
+        // Combine and return unique sorted list
+        var allTradeUnits = contractTradeUnits
+            .Union(ticketOrgCodes)
+            .OrderBy(tu => tu)
+            .ToList();
+
+        _logger.LogInformation($"Found {allTradeUnits.Count} unique trade units/organization codes from views");
+        return allTradeUnits;
     }
 
     // =========================================================================
