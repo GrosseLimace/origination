@@ -52,8 +52,8 @@ public class NotesController : ControllerBase
         return Ok(note);
     }
 
-    [HttpPut("{id}")]
-    public ActionResult<Note> Update(string id, [FromBody] UpdateNoteRequest request)
+    [HttpPut("{id:long}")]
+    public ActionResult<Note> Update(long id, [FromBody] UpdateNoteRequest request)
     {
         var note = _dataService.UpdateNote(id, request.Content);
         if (note == null)
@@ -63,8 +63,8 @@ public class NotesController : ControllerBase
         return Ok(note);
     }
 
-    [HttpDelete("{id}")]
-    public ActionResult Delete(string id)
+    [HttpDelete("{id:long}")]
+    public ActionResult Delete(long id)
     {
         _dataService.DeleteNote(id);
         return Ok();

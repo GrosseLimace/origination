@@ -7,6 +7,8 @@ export interface Customer {
   farm: string;
   location: string;
   stateProvince?: string; // State/province for location display
+  addressLine1?: string;  // MerchandisingAddressLine1
+  postalCode?: string;    // MerchandisingPostalCode
   phone: string;
   email: string;
   extendedPrimaryPhone?: string; // Fallback phone number

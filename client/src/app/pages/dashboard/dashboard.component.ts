@@ -56,7 +56,7 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
           </div>
         </div>
       } @else if (loading) {
-        <div class="flex items-center justify-center py-20">
+        <div class="flex min-h-[60vh] items-center justify-center">
           <div class="text-center">
             <div class="inline-block animate-spin rounded-full h-16 w-16 border-4 border-gray-300 dark:border-gray-600 border-t-green-600 dark:border-t-green-500 mb-4"></div>
             <p class="text-gray-500 dark:text-gray-400 font-medium text-lg">Loading dashboard data...</p>

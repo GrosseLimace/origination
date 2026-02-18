@@ -19,6 +19,8 @@ public class Customer
     // Contact information (nullable - may not be available for all customers)
     public string? Location { get; set; } // Maps to MerchandisingCity
     public string? StateProvince { get; set; } // Maps to MerchandisingStateProvince
+    public string? AddressLine1 { get; set; }  // Maps to MerchandisingAddressLine1
+    public string? PostalCode { get; set; }    // Maps to MerchandisingPostalCode
     public string? Phone { get; set; } // Maps to MerchandisingPhone
     public string? Email { get; set; } // Maps to MerchandisingEmail
     public string? ExtendedPrimaryPhone { get; set; } // Fallback phone number

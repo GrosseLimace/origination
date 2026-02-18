@@ -82,6 +82,20 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                 (onSaveCustomer)="handleSaveCustomer($event)"
                 (onCreateFarm)="handleCreateFarm($event)">
               </app-customer-profile>
+            } @else {
+              <!-- Empty state — shown on desktop when no customer is selected -->
+              <div class="hidden lg:block rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                <div class="p-8 text-center text-gray-500 dark:text-gray-400">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 opacity-40">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                  </svg>
+                  <p class="font-medium text-gray-700 dark:text-gray-300">Select a Customer</p>
+                  <p class="text-sm mt-1">Choose a customer from the list to view their profile, contracts, tickets, and notes.</p>
+                </div>
+              </div>
             }
           </div>
 
@@ -164,13 +178,19 @@ export class HomeComponent implements OnInit, OnDestroy {
   loading = false;
 
   ngOnInit(): void {
-    console.log('[Home] ngOnInit - Starting initial data load');
-    this.loadAllData();
+    console.log('[Home] ngOnInit - Restoring state');
     this.checkMobile();
     window.addEventListener('resize', this.resizeHandler);
 
     // Restore state from service if it exists
     this.restoreStateFromService();
+
+    // Only load data if trade units are selected AND we have no cached data yet.
+    // If customers were restored from AppStateService, skip the reload entirely —
+    // data will only be refreshed when the user explicitly changes trade units.
+    if (this.selectedTradeUnits.length > 0 && this.customers.length === 0) {
+      this.loadAllData(this.selectedTradeUnits);
+    }
 
     // Handle customerId query param (from Build a List view customer link)
     this.route.queryParams.pipe(takeUntil(this.destroy$)).subscribe(params => {
@@ -200,9 +220,9 @@ export class HomeComponent implements OnInit, OnDestroy {
                           event.url === '/' ||
                           event.url.startsWith('/?');
 
-      if (isHomeRoute) {
-        console.log('[Home] Reloading data after navigation to home');
-        this.loadAllData();
+      if (isHomeRoute && this.selectedTradeUnits.length > 0 && this.customers.length === 0) {
+        console.log('[Home] Reloading data after navigation to home (no cached data)');
+        this.loadAllData(this.selectedTradeUnits);
       }
     });
   }
@@ -718,7 +738,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     });
   }
 
-  editNote(data: { noteId: string; content: string }): void {
+  editNote(data: { noteId: number; content: string }): void {
     this.apiService.updateNote(data.noteId, data.content).subscribe({
       next: (updated) => {
         // Update in global list
@@ -742,7 +762,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     });
   }
 
-  deleteNote(noteId: string): void {
+  deleteNote(noteId: number): void {
     this.apiService.deleteNote(noteId).subscribe({
       next: () => {
         // Remove from global list

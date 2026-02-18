@@ -183,14 +183,14 @@ export class CustomerNotesComponent implements OnChanges, OnDestroy {
   @Input() customer!: Customer;
   @Output() addNote = new EventEmitter<string>();
   @Output() togglePin = new EventEmitter<Note>();
-  @Output() editNote = new EventEmitter<{ noteId: string; content: string }>();
-  @Output() deleteNote = new EventEmitter<string>();
+  @Output() editNote = new EventEmitter<{ noteId: number; content: string }>();
+  @Output() deleteNote = new EventEmitter<number>();
 
   private cdr = inject(ChangeDetectorRef);
 
   newNote = '';
-  openMenuId: string | null = null;
-  editingNoteId: string | null = null;
+  openMenuId: number | null = null;
+  editingNoteId: number | null = null;
   editContent = '';
   showDeleteConfirm = false;
   noteToDelete: Note | null = null;
@@ -286,7 +286,7 @@ export class CustomerNotesComponent implements OnChanges, OnDestroy {
     }
   }
 
-  toggleMenu(noteId: string, event: Event) {
+  toggleMenu(noteId: number, event: Event) {
     event.stopPropagation();
     this.openMenuId = this.openMenuId === noteId ? null : noteId;
     this.cdr.markForCheck();

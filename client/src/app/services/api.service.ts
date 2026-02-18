@@ -194,12 +194,12 @@ export class ApiService {
   }
 
   /** Updates the content of a note */
-  updateNote(id: string, content: string): Observable<Note> {
+  updateNote(id: number, content: string): Observable<Note> {
     return this.http.put<Note>(`${this.baseUrl}/notes/${id}`, { content });
   }
 
   /** Deletes a note */
-  deleteNote(id: string): Observable<void> {
+  deleteNote(id: number): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/notes/${id}`);
   }
 

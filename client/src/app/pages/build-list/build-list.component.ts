@@ -5,6 +5,7 @@ import { Router } from '@angular/router';
 import { Subject, forkJoin } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
+import { AppStateService } from '../../services/app-state.service';
 import { ToastService } from '../../services/toast.service';
 import { Customer, Contract, PlantingIntention, Note, StoredGrain, SavedList } from '../../models';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '../../components/ui/card/card.component';
@@ -44,7 +45,13 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
           <h2 class="text-2xl font-semibold text-gray-900 dark:text-white">Build a List</h2>
           <p class="text-gray-500 dark:text-gray-400">Use natural language to create a custom customer list based on your criteria</p>
         </div>
-        <app-button [variant]="showMap ? 'default' : 'outline'" (onClick)="toggleMap()">
+        <app-button
+          [variant]="showMap ? 'default' : 'outline'"
+          (onClick)="hasTradeUnits && toggleMap()"
+          [disabled]="!hasTradeUnits"
+          [class.opacity-50]="!hasTradeUnits"
+          [class.cursor-not-allowed]="!hasTradeUnits"
+        >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2">
             <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/>
             <line x1="9" x2="9" y1="3" y2="18"/>
@@ -54,10 +61,29 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
         </app-button>
       </div>
 
-      <!-- Map View (toggleable) - always shows all customers -->
-      @if (showMap && customers.length > 0) {
+      <!-- No trade unit selected banner -->
+      @if (!hasTradeUnits) {
+        <app-card>
+          <app-card-content class="!p-6">
+            <div class="flex items-start gap-4">
+              <div class="flex-shrink-0 w-10 h-10 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600 dark:text-green-400">
+                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                </svg>
+              </div>
+              <div>
+                <p class="font-semibold text-gray-900 dark:text-white">Select a Trade Unit to Get Started</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Use the Trade Unit filter on the Customers panel to select one or more trade units. Once selected, you can build lists and view customer locations on the map.</p>
+              </div>
+            </div>
+          </app-card-content>
+        </app-card>
+      }
+
+      <!-- Map View (toggleable) - shows filtered customers if NLQ ran, otherwise all -->
+      @if (showMap && getMapCustomers().length > 0) {
         <app-customer-map
-          [customers]="customers"
+          [customers]="getMapCustomers()"
           [focusedState]="detectedState"
           (close)="toggleMap()"
           (selectCustomer)="selectCustomer($event)"
@@ -81,15 +107,16 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
             <textarea
               [(ngModel)]="queryText"
               (ngModelChange)="onQueryChange($event)"
-              placeholder="Describe the type of customers you want to find... e.g., 'Show me farms in Nebraska' or 'Customers growing corn in Iowa'"
+              placeholder="Describe the customers you want to find... e.g., 'Customers with more than 500 acres' or 'Farmers I have not contacted in over 30 days'"
               rows="3"
-              class="w-full p-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
+              [disabled]="!hasTradeUnits"
+              class="w-full p-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 resize-none disabled:opacity-50 disabled:cursor-not-allowed"
             ></textarea>
           </div>
 
           <!-- Generate Button -->
           <div class="mb-6">
-            <app-button variant="default" (onClick)="processQuery()" [disabled]="!queryText.trim() || isProcessing">
+            <app-button variant="default" (onClick)="processQuery()" [disabled]="!hasTradeUnits || !queryText.trim() || isProcessing">
               @if (isProcessing) {
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2 animate-spin">
                   <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
@@ -112,8 +139,9 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
               @for (example of exampleQueries; track example) {
                 <button
                   type="button"
-                  (click)="useExampleQuery(example)"
-                  class="px-3 py-1.5 text-sm rounded-full border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-0"
+                  (click)="hasTradeUnits && useExampleQuery(example)"
+                  [disabled]="!hasTradeUnits"
+                  class="px-3 py-1.5 text-sm rounded-full border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                 >
                   {{ example }}
                 </button>
@@ -122,6 +150,29 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
           </div>
         </app-card-content>
       </app-card>
+
+      <!-- Unrecognized Query Message -->
+      @if (queryUnrecognized && queryText.trim()) {
+        <app-card>
+          <app-card-content class="!p-6">
+            <div class="flex items-start gap-3">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-yellow-500 flex-shrink-0 mt-0.5">
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+                <path d="M12 9v4"/><path d="M12 17h.01"/>
+              </svg>
+              <div>
+                <p class="font-medium text-gray-900 dark:text-white">Couldn't understand that query</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Try rephrasing using keywords like acres, contacted, contracts, storage, or planting. For example:</p>
+                <ul class="mt-2 space-y-1">
+                  <li class="text-sm text-gray-500 dark:text-gray-400">• "Customers with more than 500 acres"</li>
+                  <li class="text-sm text-gray-500 dark:text-gray-400">• "Farmers not contacted in over 30 days"</li>
+                  <li class="text-sm text-gray-500 dark:text-gray-400">• "Customers with active contracts"</li>
+                </ul>
+              </div>
+            </div>
+          </app-card-content>
+        </app-card>
+      }
 
       <!-- Results Section (only shown after generating and when query has text) -->
       @if (hasGenerated && queryText.trim()) {
@@ -169,7 +220,14 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
                   <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
                 </svg>
                 <h3 class="text-gray-500 dark:text-gray-400 mb-2">No Customers Found</h3>
-                <p class="text-sm text-gray-400 dark:text-gray-500">Try adjusting your query</p>
+                <p class="text-sm text-gray-400 dark:text-gray-500 mt-1">No customers matched your criteria. Try broadening your query or adjusting the filters.</p>
+                <button
+                  type="button"
+                  (click)="queryText = ''; hasGenerated = false; filteredCustomers = []"
+                  class="mt-3 text-sm text-green-600 hover:text-green-700 dark:text-green-400 underline"
+                >
+                  Clear query
+                </button>
               </div>
             } @else {
               <div class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -284,6 +342,7 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
 })
 export class BuildListComponent implements OnInit, OnDestroy {
   private apiService = inject(ApiService);
+  private appState = inject(AppStateService);
   private toastService = inject(ToastService);
   private router = inject(Router);
   private destroy$ = new Subject<void>();
@@ -295,6 +354,10 @@ export class BuildListComponent implements OnInit, OnDestroy {
   storedGrain: StoredGrain[] = [];
   savedLists: SavedList[] = [];
 
+  get hasTradeUnits(): boolean {
+    return this.appState.selectedTradeUnits().length > 0;
+  }
+
   queryText = '';
   filteredCustomers: Customer[] = [];
   showSaveDialog = false;
@@ -303,17 +366,17 @@ export class BuildListComponent implements OnInit, OnDestroy {
   hasGenerated = false;
   showMap = false;
   detectedState: string | null = null;
+  queryUnrecognized = false;
+
+  private lastContactCache = new Map<number, { text: string; colorClass: string }>();
+  private customerCropsCache = new Map<number, string[]>();
 
   exampleQueries = [
-    'Show me farms in Nebraska',
-    'Customers with more than 1000 acres',
-    'Farmers I have not contacted in over 60 days',
-    'Customers contacted in the last 7 days',
-    'Farms with grain in storage',
-    'Customers planting corn this season',
-    'Large operations over 2000 acres in Iowa',
-    'Producers with soybeans in storage',
-    'Top 10 largest operations'
+    'Top 10 largest operations',
+    'Customers with more than 500 acres',
+    'Farmers not contacted in over 30 days',
+    'Customers with active contracts',
+    'Customers contacted in the last 7 days'
   ];
 
   private stateNames: { [key: string]: string } = {
@@ -344,9 +407,25 @@ export class BuildListComponent implements OnInit, OnDestroy {
   }
 
   private loadData(): void {
+    // Use cached data from AppStateService if already loaded (trade-unit-filtered by home)
+    const cachedCustomers = this.appState.customers();
+    if (cachedCustomers.length > 0) {
+      this.customers = cachedCustomers;
+      this.contracts = this.appState.contracts();
+      this.plantingIntentions = this.appState.plantingIntentions();
+      this.notes = this.appState.notes();
+      this.storedGrain = this.appState.storedGrain();
+      this.savedLists = this.appState.savedLists();
+      this.rebuildCaches();
+      return;
+    }
+
+    // No cache — load from API respecting selected trade units
+    const tradeUnits = this.appState.selectedTradeUnits();
+    const tuParam = tradeUnits.length > 0 ? tradeUnits : undefined;
     forkJoin({
-      customers: this.apiService.getCustomers(),
-      contracts: this.apiService.getContracts(),
+      customers: this.apiService.getCustomers(tuParam),
+      contracts: this.apiService.getContracts(tuParam),
       plantingIntentions: this.apiService.getPlantingIntentions(),
       notes: this.apiService.getNotes(),
       storedGrain: this.apiService.getStoredGrain(),
@@ -359,6 +438,13 @@ export class BuildListComponent implements OnInit, OnDestroy {
         this.notes = data.notes;
         this.storedGrain = data.storedGrain;
         this.savedLists = data.savedLists;
+        this.appState.setCustomers(data.customers);
+        this.appState.setContracts(data.contracts);
+        this.appState.setPlantingIntentions(data.plantingIntentions);
+        this.appState.setNotes(data.notes);
+        this.appState.setStoredGrain(data.storedGrain);
+        this.appState.setSavedLists(data.savedLists);
+        this.rebuildCaches();
       },
       error: () => {
         this.toastService.error('Failed to load data');
@@ -379,33 +465,150 @@ export class BuildListComponent implements OnInit, OnDestroy {
       this.hasGenerated = false;
       this.filteredCustomers = [];
       this.detectedState = null;
+      this.queryUnrecognized = false;
     }
   }
 
-  async useExampleQuery(example: string): Promise<void> {
+  useExampleQuery(example: string): void {
     this.detectedState = null;
     this.hasGenerated = false;
     this.filteredCustomers = [];
+    this.queryUnrecognized = false;
     this.queryText = example;
-    await this.processQuery();
+    this.processQuery();
   }
 
-  async processQuery(): Promise<void> {
+  processQuery(): void {
     if (!this.queryText.trim()) return;
 
     this.isProcessing = true;
-
-    // Simulate processing delay
-    await new Promise(resolve => setTimeout(resolve, 800));
-
-    // Detect state in query
     this.detectedState = this.detectStateInQuery(this.queryText);
-
-    // Parse natural language query and filter
     this.filteredCustomers = this.parseAndFilter(this.queryText);
-    this.hasGenerated = true;
 
+    const matchedPatterns = this.detectPatterns(this.queryText);
+    if (matchedPatterns.length === 0) {
+      this.queryUnrecognized = true;
+      this.hasGenerated = false;
+    } else {
+      this.queryUnrecognized = false;
+      this.hasGenerated = true;
+    }
+
+    this.rebuildCaches();
     this.isProcessing = false;
+  }
+
+  private detectPatterns(query: string): string[] {
+    const lowerQuery = query.toLowerCase();
+    const matched: string[] = [];
+
+    // state_filter
+    if (this.detectedState !== null) {
+      matched.push('state_filter');
+    }
+
+    // acres_more
+    if (/(?:more than|over|at least|greater than|above|exceeding)\s*\d/.test(lowerQuery)) {
+      matched.push('acres_more');
+    }
+
+    // acres_less
+    if (/(?:less than|under|fewer than|below)\s*\d/.test(lowerQuery)) {
+      matched.push('acres_less');
+    }
+
+    // acres_between
+    if (/between\s*\d+.*acres?/.test(lowerQuery)) {
+      matched.push('acres_between');
+    }
+
+    // large_farm
+    if ((lowerQuery.includes('large') || lowerQuery.includes('big')) &&
+        (lowerQuery.includes('operation') || lowerQuery.includes('farm'))) {
+      matched.push('large_farm');
+    }
+
+    // small_farm
+    if (lowerQuery.includes('small') &&
+        (lowerQuery.includes('operation') || lowerQuery.includes('farm'))) {
+      matched.push('small_farm');
+    }
+
+    // not_contacted
+    if (lowerQuery.includes('have not contacted') || lowerQuery.includes("haven't contacted") ||
+        lowerQuery.includes('not contacted') || lowerQuery.includes('never contacted')) {
+      matched.push('not_contacted');
+    }
+
+    // recently_contacted
+    if (lowerQuery.includes('contacted in') || lowerQuery.includes('contacted within') ||
+        lowerQuery.includes('contacted last') || lowerQuery.includes('contacted this') ||
+        lowerQuery.includes('recently contacted')) {
+      matched.push('recently_contacted');
+    }
+
+    // storage
+    if (lowerQuery.includes('in storage') || lowerQuery.includes('stored grain') ||
+        lowerQuery.includes('storing grain') || lowerQuery.includes('have storage') ||
+        lowerQuery.includes('with storage')) {
+      matched.push('storage');
+    }
+
+    // planting — contains "planting" or "growing" and a crop name
+    const plantingCrops = ['corn', 'soybeans', 'wheat', 'oats', 'barley', 'sorghum'];
+    if ((lowerQuery.includes('planting') || lowerQuery.includes('growing')) &&
+        plantingCrops.some(crop => lowerQuery.includes(crop))) {
+      matched.push('planting');
+    }
+
+    // active_contract
+    if (lowerQuery.includes('active contract') || lowerQuery.includes('have contract') ||
+        lowerQuery.includes('with active contract')) {
+      matched.push('active_contract');
+    }
+
+    // no_contract
+    if (lowerQuery.includes('no active contract') || lowerQuery.includes('no contract') ||
+        lowerQuery.includes('without contract')) {
+      matched.push('no_contract');
+    }
+
+    // unsigned_contract
+    if (lowerQuery.includes('unsigned contract') || lowerQuery.includes('not signed')) {
+      matched.push('unsigned_contract');
+    }
+
+    // commodity_contract
+    const contractCommodities = ['corn', 'soybean', 'soybeans', 'wheat', 'oats', 'barley', 'sorghum'];
+    for (const commodity of contractCommodities) {
+      if (lowerQuery.includes(`${commodity} contract`) || lowerQuery.includes(`contracts for ${commodity}`) ||
+          lowerQuery.includes(`contract ${commodity}`) || lowerQuery.includes(`with ${commodity}`)) {
+        matched.push('commodity_contract');
+        break;
+      }
+    }
+
+    // top_n
+    if (/top\s*\d+/.test(lowerQuery)) {
+      matched.push('top_n');
+    }
+
+    // bottom_n
+    if (/(?:bottom|smallest)\s*\d+/.test(lowerQuery)) {
+      matched.push('bottom_n');
+    }
+
+    // largest
+    if (lowerQuery.includes('largest') || lowerQuery.includes('biggest')) {
+      matched.push('largest');
+    }
+
+    return matched;
+  }
+
+  private rebuildCaches(): void {
+    this.lastContactCache.clear();
+    this.customerCropsCache.clear();
   }
 
   private detectStateInQuery(query: string): string | null {
@@ -469,10 +672,11 @@ export class BuildListComponent implements OnInit, OnDestroy {
     // ==========================================
     if (this.detectedState) {
       const stateAbbrev = this.getStateAbbreviation(this.detectedState);
-      result = result.filter(c =>
-        c.location.toLowerCase().includes(this.detectedState!) ||
-        c.location.toLowerCase().includes(stateAbbrev)
-      );
+      result = result.filter(c => {
+        // Prefer stateProvince field; fall back to scanning location string
+        const stateVal = (c.stateProvince || c.location || '').toLowerCase();
+        return stateVal.includes(this.detectedState!) || stateVal.includes(stateAbbrev);
+      });
     }
 
     // ==========================================
@@ -684,35 +888,53 @@ export class BuildListComponent implements OnInit, OnDestroy {
 
     // ==========================================
     // CONTRACT FILTER
+    // Uses string matching: contract.ctrmCustomerId === customer.sourceCustomerId
     // ==========================================
+
     // "no active contracts"
     if (lowerQuery.includes('no active contract') || lowerQuery.includes('no contract') ||
         lowerQuery.includes('without contract') || lowerQuery.includes('no contracts')) {
-      const customersWithActiveContracts = new Set<number>(
+      const ids = new Set<string>(
         this.contracts
           .filter(c => c.status === 'Active' || c.status === 'Pending')
-          .map(c => c.customerId)
+          .map(c => c.ctrmCustomerId).filter((id): id is string => !!id)
       );
-      result = result.filter(c => !customersWithActiveContracts.has(c.id));
+      result = result.filter(c => !ids.has(c.sourceCustomerId ?? ''));
     }
 
-    // "with active contracts"
+    // "with active contracts" / "customers with active contracts"
     if (lowerQuery.includes('with active contract') || lowerQuery.includes('have contract') ||
-        lowerQuery.includes('active contracts')) {
-      const customersWithActiveContracts = new Set<number>(
+        lowerQuery.includes('active contract')) {
+      const ids = new Set<string>(
         this.contracts
           .filter(c => c.status === 'Active' || c.status === 'Pending')
-          .map(c => c.customerId)
+          .map(c => c.ctrmCustomerId).filter((id): id is string => !!id)
       );
-      result = result.filter(c => customersWithActiveContracts.has(c.id));
+      result = result.filter(c => ids.has(c.sourceCustomerId ?? ''));
     }
 
     // "unsigned contracts"
     if (lowerQuery.includes('unsigned contract') || lowerQuery.includes('not signed')) {
-      const customersWithUnsigned = new Set<number>(
-        this.contracts.filter(c => !c.signed).map(c => c.customerId)
+      const ids = new Set<string>(
+        this.contracts.filter(c => !c.signed)
+          .map(c => c.ctrmCustomerId).filter((id): id is string => !!id)
       );
-      result = result.filter(c => customersWithUnsigned.has(c.id));
+      result = result.filter(c => ids.has(c.sourceCustomerId ?? ''));
+    }
+
+    // "corn contracts", "soybean contracts", "wheat contracts", etc.
+    const contractCommodities = ['corn', 'soybean', 'soybeans', 'wheat', 'oats', 'barley', 'sorghum'];
+    for (const commodity of contractCommodities) {
+      if (lowerQuery.includes(`${commodity} contract`) || lowerQuery.includes(`contracts for ${commodity}`) ||
+          lowerQuery.includes(`contract ${commodity}`) || lowerQuery.includes(`with ${commodity}`)) {
+        const ids = new Set<string>(
+          this.contracts
+            .filter(c => (c.commodityDescription || c.commodityCode || '').toLowerCase().includes(commodity))
+            .map(c => c.ctrmCustomerId).filter((id): id is string => !!id)
+        );
+        result = result.filter(c => ids.has(c.sourceCustomerId ?? ''));
+        break;
+      }
     }
 
     // ==========================================
@@ -743,6 +965,7 @@ export class BuildListComponent implements OnInit, OnDestroy {
     this.detectedState = this.detectStateInQuery(list.query);
     this.filteredCustomers = this.customers.filter(c => list.customerIds.includes(c.id));
     this.hasGenerated = true;
+    this.rebuildCaches();
   }
 
   openSaveDialog(): void {
@@ -813,28 +1036,56 @@ export class BuildListComponent implements OnInit, OnDestroy {
   }
 
   getLastContactInfo(customerId: number): { text: string; colorClass: string } {
+    const cached = this.lastContactCache.get(customerId);
+    if (cached !== undefined) {
+      return cached;
+    }
+
     const lastNote = this.notes
       .filter(n => n.customerId === customerId)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
 
+    let result: { text: string; colorClass: string };
+
     if (!lastNote) {
-      return { text: 'Never contacted', colorClass: 'text-red-500' };
+      result = { text: 'Never contacted', colorClass: 'text-red-500' };
+    } else {
+      const daysAgo = Math.floor((Date.now() - new Date(lastNote.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+
+      if (daysAgo === 0) result = { text: 'Contacted today', colorClass: 'text-green-500' };
+      else if (daysAgo === 1) result = { text: 'Contacted yesterday', colorClass: 'text-green-500' };
+      else if (daysAgo < 7) result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-green-500' };
+      else if (daysAgo < 30) result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-yellow-500' };
+      else result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-red-500' };
     }
 
-    const daysAgo = Math.floor((Date.now() - new Date(lastNote.createdAt).getTime()) / (1000 * 60 * 60 * 24));
-
-    if (daysAgo === 0) return { text: 'Contacted today', colorClass: 'text-green-500' };
-    if (daysAgo === 1) return { text: 'Contacted yesterday', colorClass: 'text-green-500' };
-    if (daysAgo < 7) return { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-green-500' };
-    if (daysAgo < 30) return { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-yellow-500' };
-    return { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-red-500' };
+    this.lastContactCache.set(customerId, result);
+    return result;
   }
 
   getCustomerCrops(customerId: number): string[] {
-    return [...new Set(
-      this.plantingIntentions
-        .filter(p => p.customerId === customerId)
-        .map(p => p.crop)
-    )].slice(0, 3);
+    const cached = this.customerCropsCache.get(customerId);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const customer = this.customers.find(c => c.id === customerId);
+    // Contract commodities (real ODS data) — primary source
+    const contractCrops = customer?.sourceCustomerId
+      ? [...new Set(
+          this.contracts
+            .filter(c => c.ctrmCustomerId === customer.sourceCustomerId)
+            .map(c => c.commodityDescription || c.commodityCode)
+            .filter((crop): crop is string => !!crop)
+        )]
+      : [];
+    // Planting intentions as supplemental source
+    const intentionCrops = [...new Set(
+      this.plantingIntentions.filter(p => p.customerId === customerId).map(p => p.crop)
+    )];
+    const result = [...new Set([...contractCrops, ...intentionCrops])].slice(0, 3);
+
+    this.customerCropsCache.set(customerId, result);
+    return result;
   }
 }
