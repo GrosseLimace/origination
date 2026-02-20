@@ -5,7 +5,7 @@ import { Router } from '@angular/router';
 import { Subject, forkJoin } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
-import { AppStateService } from '../../services/app-state.service';
+import { AppStateService, BuildListState } from '../../services/app-state.service';
 import { ToastService } from '../../services/toast.service';
 import { Customer, Contract, PlantingIntention, Note, StoredGrain, SavedList } from '../../models';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '../../components/ui/card/card.component';
@@ -103,15 +103,27 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
           </div>
 
           <!-- Query Input -->
-          <div class="mb-4">
+          <div class="relative mb-4">
             <textarea
               [(ngModel)]="queryText"
               (ngModelChange)="onQueryChange($event)"
               placeholder="Describe the customers you want to find... e.g., 'Customers with more than 500 acres' or 'Farmers I have not contacted in over 30 days'"
               rows="3"
               [disabled]="!hasTradeUnits"
-              class="w-full p-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 resize-none disabled:opacity-50 disabled:cursor-not-allowed"
+              class="w-full p-3 pr-9 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 resize-none disabled:opacity-50 disabled:cursor-not-allowed"
             ></textarea>
+            @if (queryText.trim()) {
+              <button
+                type="button"
+                (click)="clearQuery()"
+                title="Clear query"
+                class="absolute top-2 right-2 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+                </svg>
+              </button>
+            }
           </div>
 
           <!-- Generate Button -->
@@ -402,6 +414,15 @@ export class BuildListComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    // Persist UI state so it survives navigation back to this page
+    this.appState.setBuildListState({
+      queryText: this.queryText,
+      filteredCustomerIds: this.filteredCustomers.map(c => c.id),
+      hasGenerated: this.hasGenerated,
+      showMap: this.showMap,
+      detectedState: this.detectedState,
+      queryUnrecognized: this.queryUnrecognized
+    });
     this.destroy$.next();
     this.destroy$.complete();
   }
@@ -417,6 +438,8 @@ export class BuildListComponent implements OnInit, OnDestroy {
       this.storedGrain = this.appState.storedGrain();
       this.savedLists = this.appState.savedLists();
       this.rebuildCaches();
+      // Restore UI state if we have it
+      this.restoreUIState();
       return;
     }
 
@@ -445,11 +468,26 @@ export class BuildListComponent implements OnInit, OnDestroy {
         this.appState.setStoredGrain(data.storedGrain);
         this.appState.setSavedLists(data.savedLists);
         this.rebuildCaches();
+        this.restoreUIState();
       },
       error: () => {
         this.toastService.error('Failed to load data');
       }
     });
+  }
+
+  private restoreUIState(): void {
+    const saved = this.appState.buildListState();
+    if (!saved) return;
+    this.queryText = saved.queryText;
+    this.hasGenerated = saved.hasGenerated;
+    this.showMap = saved.showMap;
+    this.detectedState = saved.detectedState;
+    this.queryUnrecognized = saved.queryUnrecognized;
+    if (saved.hasGenerated && saved.filteredCustomerIds.length > 0) {
+      const idSet = new Set(saved.filteredCustomerIds);
+      this.filteredCustomers = this.customers.filter(c => idSet.has(c.id));
+    }
   }
 
   toggleMap(): void {
@@ -458,6 +496,16 @@ export class BuildListComponent implements OnInit, OnDestroy {
 
   getMapCustomers(): Customer[] {
     return this.hasGenerated ? this.filteredCustomers : this.customers;
+  }
+
+  clearQuery(): void {
+    this.queryText = '';
+    this.hasGenerated = false;
+    this.filteredCustomers = [];
+    this.detectedState = null;
+    this.queryUnrecognized = false;
+    this.showMap = false;
+    this.appState.clearBuildListState();
   }
 
   onQueryChange(query: string): void {

@@ -15,12 +15,9 @@ public class Note
     public DateTime CreatedOn { get; set; }
     public string? ModifiedBy { get; set; }
     public DateTime? ModifiedOn { get; set; }
-    public bool IsDeleted { get; set; }
-    public string? DeletedBy { get; set; }
-    public DateTime? DeletedOn { get; set; }
+    public bool IsPinned { get; set; }
 
     // Computed properties for backward compatibility with frontend
     public DateTime CreatedAt => CreatedOn; // Alias for frontend compatibility
     public string Content => Description; // Alias for frontend compatibility
-    public bool IsPinned => false; // Keep for now, can implement later if needed
 }

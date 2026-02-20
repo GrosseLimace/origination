@@ -184,8 +184,8 @@ export class ApiService {
   }
 
   /** Creates a new note for a customer */
-  createNote(customerId: number, content: string): Observable<Note> {
-    return this.http.post<Note>(`${this.baseUrl}/notes`, { customerId, content });
+  createNote(customerId: number, content: string, tradeUnit?: string): Observable<Note> {
+    return this.http.post<Note>(`${this.baseUrl}/notes`, { customerId, content, tradeUnit });
   }
 
   /** Toggles the pinned status of a note */

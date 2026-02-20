@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnChanges, OnDestroy, SimpleChanges, ChangeDetectorRef, ChangeDetectionStrategy, inject, HostListener } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, OnChanges, OnDestroy, AfterViewInit, SimpleChanges, ChangeDetectorRef, ChangeDetectionStrategy, inject, HostListener, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
@@ -129,7 +129,7 @@ interface LastContactInfo {
         }
 
         <!-- Customer List -->
-        <div class="divide-y divide-gray-200 dark:divide-gray-700 max-h-[calc(100vh-12rem)] lg:max-h-[calc(100vh-16rem)] overflow-y-auto">
+        <div #scrollContainer class="divide-y divide-gray-200 dark:divide-gray-700 max-h-[calc(100vh-12rem)] lg:max-h-[calc(100vh-16rem)] overflow-y-auto">
           @if (loading) {
             <div class="p-8 text-center">
               <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-300 dark:border-gray-600 border-t-green-600 dark:border-t-green-500 mb-4"></div>
@@ -160,6 +160,7 @@ interface LastContactInfo {
           } @else {
             @for (customer of filteredCustomers; track customer.id) {
               <div
+                [id]="'customer-item-' + customer.id"
                 (click)="selectCustomer.emit(customer)"
                 [class]="getCustomerItemClass(customer)"
               >
@@ -214,7 +215,9 @@ interface LastContactInfo {
     </app-card>
   `
 })
-export class CustomerListComponent implements OnInit, OnChanges, OnDestroy {
+export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, OnDestroy {
+  @ViewChild('scrollContainer') scrollContainer!: ElementRef<HTMLElement>;
+
   @Input() customers: Customer[] = [];
   @Input() selectedCustomer: Customer | null = null;
   @Input() savedLists: SavedList[] = [];
@@ -321,6 +324,21 @@ export class CustomerListComponent implements OnInit, OnChanges, OnDestroy {
     }
   }
 
+  ngAfterViewInit(): void {
+    // When this component is recreated after navigation (scroll position is lost),
+    // scroll back to the last selected customer so they're still visible.
+    const lastId = this.appStateService.lastScrolledCustomerId();
+    if (lastId !== null) {
+      setTimeout(() => {
+        const el = this.scrollContainer?.nativeElement
+          ?.querySelector<HTMLElement>(`#customer-item-${lastId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'auto', block: 'center' });
+        }
+      }, 50);
+    }
+  }
+
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
@@ -339,6 +357,23 @@ export class CustomerListComponent implements OnInit, OnChanges, OnDestroy {
     // Force UI update when selected customer changes
     if (changes['selectedCustomer'] || changes['notes']) {
       this.cdr.markForCheck();
+    }
+
+    // Scroll the selected customer into view only when the ID actually changes.
+    // lastScrolledCustomerId lives in AppStateService so it survives navigation —
+    // coming back to the same screen with the same customer will not re-scroll.
+    if (changes['selectedCustomer'] && this.selectedCustomer) {
+      const newId = this.selectedCustomer.id;
+      if (newId !== this.appStateService.lastScrolledCustomerId()) {
+        this.appStateService.setLastScrolledCustomerId(newId);
+        setTimeout(() => {
+          const el = this.scrollContainer?.nativeElement
+            ?.querySelector<HTMLElement>(`#customer-item-${newId}`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 50);
+      }
     }
   }
 

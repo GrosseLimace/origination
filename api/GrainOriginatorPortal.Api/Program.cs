@@ -50,10 +50,52 @@ builder.Services.AddDbContext<OriginationDbContext>(options =>
     }
 });
 
-// Register data service implementation
-// IMPORTANT: Changed from Singleton to Scoped to match DbContext lifetime
-// - Scoped: New instance per HTTP request (required for DbContext)
-// - DO NOT use Singleton with DbContext (causes concurrency issues)
+// Configure ApplicationDbContext for app-owned tables in the Origination database
+// (Notes, and eventually TradeUnits once that table is created)
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+{
+    var connectionString = builder.Configuration.GetConnectionString("OriginationConnection");
+
+    options.UseSqlServer(connectionString, sqlOptions =>
+    {
+        sqlOptions.EnableRetryOnFailure(
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(30),
+            errorNumbersToAdd: null);
+    });
+
+    if (builder.Environment.IsDevelopment())
+    {
+        options.EnableSensitiveDataLogging();
+        options.EnableDetailedErrors();
+    }
+});
+
+// =============================================================================
+// DATA SERVICE REGISTRATION
+// Currently using direct SQL connection (SqlDataService).
+// When APIM is ready, follow these steps to switch:
+//
+//   STEP 1 - Add APIM config to appsettings.json:
+//     "Apim": {
+//       "BaseUrl": "https://<your-apim-instance>.azure-api.net",
+//       "SubscriptionKey": "<your-subscription-key>"
+//     }
+//
+//   STEP 2 - Register the APIM HTTP client (replace the AddScoped line below):
+//     builder.Services.AddHttpClient<IDataService, ApimDataService>(client =>
+//     {
+//         client.BaseAddress = new Uri(builder.Configuration["Apim:BaseUrl"]!);
+//         client.DefaultRequestHeaders.Add("Ocp-Apim-Subscription-Key", builder.Configuration["Apim:SubscriptionKey"]);
+//     });
+//
+//   STEP 3 - Remove or comment out the DbContext registration above (no longer needed)
+//
+//   STEP 4 - Fill in the APIM endpoint URLs in ApimDataService.cs
+// =============================================================================
+
+// CURRENT: Direct SQL connection via Entity Framework Core
+// TO SWITCH TO APIM: See instructions above
 builder.Services.AddScoped<IDataService, SqlDataService>();
 
 // OPTIONAL: Keep MockDataService for testing/comparison

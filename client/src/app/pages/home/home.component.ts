@@ -705,7 +705,8 @@ export class HomeComponent implements OnInit, OnDestroy {
   addNote(content: string): void {
     if (!this.selectedCustomer) return;
 
-    this.apiService.createNote(this.selectedCustomer.id, content).subscribe({
+    const tradeUnit = this.selectedTradeUnits.length === 1 ? this.selectedTradeUnits[0] : undefined;
+    this.apiService.createNote(this.selectedCustomer.id, content, tradeUnit).subscribe({
       next: (note) => {
         this.notes = [...this.notes, note];
         this.customerNotes = [note, ...this.customerNotes];

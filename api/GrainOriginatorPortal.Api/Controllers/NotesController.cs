@@ -32,7 +32,7 @@ public class NotesController : ControllerBase
     {
         try
         {
-            var note = _dataService.AddNote(request.CustomerId, request.Content);
+            var note = _dataService.AddNote(request.CustomerId, request.Content, request.TradeUnit);
             return Created($"/api/notes/{note.Id}", note);
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("database permissions"))
@@ -79,6 +79,8 @@ public class CreateNoteRequest
     [System.ComponentModel.DataAnnotations.Required]
     [System.ComponentModel.DataAnnotations.StringLength(2000)]
     public string Content { get; set; } = string.Empty;
+
+    public string? TradeUnit { get; set; }
 }
 
 public class UpdateNoteRequest

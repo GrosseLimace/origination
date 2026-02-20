@@ -1,5 +1,6 @@
 import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '../../ui/table/table.component';
 import { Customer, Contract, Ticket } from '../../../models';
 
@@ -11,6 +12,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
   standalone: true,
   imports: [
     CommonModule,
+    FormsModule,
     TableComponent,
     TableHeaderComponent,
     TableBodyComponent,
@@ -28,6 +30,33 @@ type SortDirection = 'none' | 'asc' | 'desc';
           <p>No contracts found for this customer</p>
         </div>
       } @else {
+        <!-- Search toolbar -->
+        <div class="flex items-center border-b border-gray-100 dark:border-gray-800 px-3 py-1.5">
+          @if (showSearch) {
+            <div class="flex items-center w-full gap-2">
+              <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+              </svg>
+              <input
+                type="text"
+                [(ngModel)]="searchQuery"
+                placeholder="Search by contract #, crop, or status..."
+                class="flex-1 py-1 text-sm bg-transparent focus:outline-none text-gray-900 dark:text-white placeholder-gray-400"
+              />
+              <button (click)="clearSearch()" title="Clear search" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+          } @else {
+            <button (click)="showSearch = true" title="Search contracts" class="ml-auto p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+              </svg>
+            </button>
+          }
+        </div>
         <app-table>
           <app-table-header>
             <app-table-row>
@@ -154,7 +183,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
             </app-table-row>
           </app-table-header>
           <app-table-body>
-            @for (contract of sortedContracts; track contract.id) {
+            @for (contract of displayedContracts; track contract.id) {
               <!-- Main Row -->
               <app-table-row
                 [highlighted]="!contract.signed"
@@ -328,6 +357,11 @@ type SortDirection = 'none' | 'asc' | 'desc';
             }
           </app-table-body>
         </app-table>
+        @if (displayedContracts.length === 0 && searchQuery.trim()) {
+          <div class="text-center py-8 text-sm text-gray-500 dark:text-gray-400">
+            No contracts match "<span class="font-medium text-gray-700 dark:text-gray-300">{{ searchQuery }}</span>"
+          </div>
+        }
       }
     </div>
   `
@@ -340,11 +374,67 @@ export class ContractsTableComponent implements OnChanges {
   expandedRows = new Set<number>();
   currentSortColumn: SortColumn | null = null;
   currentSortDirection: SortDirection = 'none';
+  showSearch = false;
+  searchQuery = '';
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['contracts']) {
       this.expandedRows.clear();
     }
+  }
+
+  clearSearch(): void {
+    this.searchQuery = '';
+    this.showSearch = false;
+  }
+
+  get displayedContracts(): Contract[] {
+    const q = this.searchQuery.trim().toLowerCase();
+    if (!q) return this.sortedContracts;
+    const terms = this.expandWithAliases(q);
+    return this.sortedContracts.filter(c => {
+      const deliveryPeriod = this.formatDeliveryPeriod(c);
+      return terms.some(term =>
+        c.contractNumber.toLowerCase().includes(term) ||
+        (c.commodityDescription || '').toLowerCase().includes(term) ||
+        (c.commodityCode || '').toLowerCase().includes(term) ||
+        (c.commodityGroup || '').toLowerCase().includes(term) ||
+        this.getCalculatedStatus(c).toLowerCase().includes(term) ||
+        deliveryPeriod.toLowerCase().includes(term)
+      );
+    });
+  }
+
+  private formatDeliveryPeriod(contract: Contract): string {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const start = new Date(contract.deliveryStart);
+    const end = new Date(contract.deliveryEnd);
+    return `${months[start.getMonth()]} ${start.getFullYear()} ${months[end.getMonth()]} ${end.getFullYear()}`;
+  }
+
+  private expandWithAliases(q: string): string[] {
+    const aliases: { [key: string]: string[] } = {
+      'yc':        ['yc', 'corn', 'yellow corn'],
+      'corn':      ['yc', 'corn', 'yellow corn'],
+      'yellow corn': ['yc', 'corn', 'yellow corn'],
+      'hrw':       ['hrw', 'wheat', 'hard red winter'],
+      'hw':        ['hw', 'wheat'],
+      'wheat':     ['wheat', 'hrw', 'hw', 'hard red winter'],
+      'sb':        ['sb', 'soybeans', 'beans', 'soy'],
+      'soybeans':  ['sb', 'soybeans', 'beans', 'soy'],
+      'beans':     ['sb', 'soybeans', 'beans', 'soy'],
+      'soy':       ['sb', 'soybeans', 'beans', 'soy'],
+      'milo':      ['milo', 'sorghum', 'sg'],
+      'sorghum':   ['milo', 'sorghum', 'sg'],
+      'sg':        ['milo', 'sorghum', 'sg'],
+    };
+    if (aliases[q]) return aliases[q];
+    // Partial prefix match — "yellow" matches "yellow corn" key and expands to corn terms
+    const expanded = new Set<string>([q]);
+    for (const [key, terms] of Object.entries(aliases)) {
+      if (key.startsWith(q)) terms.forEach(t => expanded.add(t));
+    }
+    return Array.from(expanded);
   }
 
   get sortedContracts(): Contract[] {

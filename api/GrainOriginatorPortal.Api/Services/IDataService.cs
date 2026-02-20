@@ -42,7 +42,7 @@ public interface IDataService
     // Note Operations
     List<Note> GetNotes();
     List<Note> GetNotesByCustomer(long customerId);
-    Note AddNote(long customerId, string content);
+    Note AddNote(long customerId, string content, string? tradeUnit = null);
     Note? ToggleNotePin(long noteId);
     Note? UpdateNote(long noteId, string content);
     void DeleteNote(long noteId);

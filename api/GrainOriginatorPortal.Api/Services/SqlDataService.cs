@@ -12,11 +12,13 @@ namespace GrainOriginatorPortal.Api.Services;
 public class SqlDataService : IDataService
 {
     private readonly OriginationDbContext _context;
+    private readonly ApplicationDbContext _appContext;
     private readonly ILogger<SqlDataService> _logger;
 
-    public SqlDataService(OriginationDbContext context, ILogger<SqlDataService> logger)
+    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger)
     {
         _context = context;
+        _appContext = appContext;
         _logger = logger;
     }
 
@@ -302,8 +304,7 @@ public class SqlDataService : IDataService
     {
         try
         {
-            // Try to query the cached dbo.TradeUnits table first (fast path)
-            var cachedTradeUnits = _context.TradeUnits
+            var cachedTradeUnits = _appContext.TradeUnits
                 .Where(tu => tu.IsActive)
                 .Select(tu => tu.Code)
                 .OrderBy(c => c)
@@ -311,17 +312,20 @@ public class SqlDataService : IDataService
 
             if (cachedTradeUnits.Count > 0)
             {
-                _logger.LogInformation($"Returning {cachedTradeUnits.Count} trade units from dbo.TradeUnits cache");
+                _logger.LogInformation("Returning {Count} trade units from dbo.TradeUnits", cachedTradeUnits.Count);
                 return cachedTradeUnits;
             }
 
-            _logger.LogWarning("dbo.TradeUnits table is empty or not available - falling back to view queries");
-            return GetTradeUnitsFromViews();
-        }
-        catch (SqlException ex) when (ex.Number == 208) // Invalid object name - table doesn't exist yet
-        {
-            _logger.LogWarning("dbo.TradeUnits table not found - falling back to view queries. Error: {Error}", ex.Message);
-            return GetTradeUnitsFromViews();
+            // Table is empty - one-time population from ODS
+            _logger.LogInformation("dbo.TradeUnits is empty - performing one-time population from ODS");
+            var tradeUnitsFromOds = GetTradeUnitsFromViews();
+
+            foreach (var code in tradeUnitsFromOds)
+            {
+                _appContext.TradeUnits.Add(new TradeUnit { Code = code, IsActive = true });
+            }
+            _appContext.SaveChanges();
+            return tradeUnitsFromOds;
         }
         catch (Exception ex)
         {
@@ -787,8 +791,7 @@ public class SqlDataService : IDataService
         {
             _logger.LogInformation("Attempting to retrieve notes from database");
 
-            return _context.Notes
-                .Where(n => !n.IsDeleted)
+            return _appContext.Notes
                 .OrderByDescending(n => n.CreatedOn)
                 .ToList();
         }
@@ -808,8 +811,8 @@ public class SqlDataService : IDataService
     {
         try
         {
-            return _context.Notes
-                .Where(n => n.CustomerId == customerId && !n.IsDeleted)
+            return _appContext.Notes
+                .Where(n => n.CustomerId == customerId)
                 .OrderByDescending(n => n.CreatedOn)
                 .ToList();
         }
@@ -825,7 +828,7 @@ public class SqlDataService : IDataService
         }
     }
 
-    public Note AddNote(long customerId, string content)
+    public Note AddNote(long customerId, string content, string? tradeUnit = null)
     {
         try
         {
@@ -836,12 +839,6 @@ public class SqlDataService : IDataService
                 throw new InvalidOperationException($"Customer with ID {customerId} not found");
             }
 
-            // Get trade unit from customer's contracts (first available)
-            var tradeUnit = _context.Contracts
-                .Where(c => c.CustomerId == customerId && c.IsActive)
-                .Select(c => c.TradeUnit)
-                .FirstOrDefault();
-
             var note = new Note
             {
                 CustomerId = customerId,
@@ -849,20 +846,14 @@ public class SqlDataService : IDataService
                 TradeUnit = tradeUnit,
                 Description = content,
                 CreatedBy = "System", // TODO: Get from authenticated user
-                CreatedOn = DateTime.UtcNow,
-                IsDeleted = false
+                CreatedOn = DateTime.UtcNow
             };
 
-            _context.Notes.Add(note);
-            _context.SaveChanges();
+            _appContext.Notes.Add(note);
+            _appContext.SaveChanges();
 
             _logger.LogInformation("Created note {NoteId} for customer {CustomerId}", note.Id, customerId);
             return note;
-        }
-        catch (DbUpdateException ex) when (ex.InnerException is SqlException sqlEx && sqlEx.Number == 208)
-        {
-            _logger.LogError("Notes table not accessible (permissions issue). Cannot add note for customer {CustomerId}", customerId);
-            throw new InvalidOperationException("Notes functionality is not available due to database permissions. Please contact your administrator.");
         }
         catch (Exception ex)
         {
@@ -875,15 +866,16 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var note = _context.Notes.FirstOrDefault(n => n.Id == noteId && !n.IsDeleted);
+            var note = _appContext.Notes.FirstOrDefault(n => n.Id == noteId);
             if (note == null)
             {
                 return null;
             }
 
-            // IsPinned is not implemented in database yet, so just return the note unchanged
-            // TODO: Add IsPinned column to database if this feature is needed
-            _logger.LogInformation("ToggleNotePin called for note {NoteId} - IsPinned not implemented, returning note unchanged", noteId);
+            note.IsPinned = !note.IsPinned;
+            _appContext.SaveChanges();
+
+            _logger.LogInformation("Toggled pin for note {NoteId} - IsPinned is now {IsPinned}", noteId, note.IsPinned);
             return note;
         }
         catch (Exception ex)
@@ -897,7 +889,7 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var note = _context.Notes.FirstOrDefault(n => n.Id == noteId && !n.IsDeleted);
+            var note = _appContext.Notes.FirstOrDefault(n => n.Id == noteId);
             if (note == null)
             {
                 return null;
@@ -906,7 +898,7 @@ public class SqlDataService : IDataService
             note.Description = content;
             note.ModifiedBy = "System"; // TODO: Get from authenticated user
             note.ModifiedOn = DateTime.UtcNow;
-            _context.SaveChanges();
+            _appContext.SaveChanges();
 
             _logger.LogInformation("Updated note {NoteId}", noteId);
             return note;
@@ -922,18 +914,16 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var note = _context.Notes.FirstOrDefault(n => n.Id == noteId && !n.IsDeleted);
+            var note = _appContext.Notes.FirstOrDefault(n => n.Id == noteId);
             if (note == null)
             {
                 return;
             }
 
-            note.IsDeleted = true;
-            note.DeletedBy = "System"; // TODO: Get from authenticated user
-            note.DeletedOn = DateTime.UtcNow;
-            _context.SaveChanges();
+            _appContext.Notes.Remove(note);
+            _appContext.SaveChanges();
 
-            _logger.LogInformation("Soft-deleted note {NoteId}", noteId);
+            _logger.LogInformation("Deleted note {NoteId}", noteId);
         }
         catch (Exception ex)
         {

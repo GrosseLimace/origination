@@ -1,6 +1,15 @@
 import { Injectable, signal, computed } from '@angular/core';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, Farm, SavedList } from '../models';
 
+export interface BuildListState {
+  queryText: string;
+  filteredCustomerIds: number[];
+  hasGenerated: boolean;
+  showMap: boolean;
+  detectedState: string | null;
+  queryUnrecognized: boolean;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -12,6 +21,12 @@ export class AppStateService {
   selectedCustomer = signal<Customer | null>(null);
   selectedFarmId = signal<string | null>(null);
   selectedTradeUnits = signal<string[]>([]);
+
+  // Scroll state — tracks last customer scrolled to in the list so re-navigation doesn't re-scroll
+  lastScrolledCustomerId = signal<number | null>(null);
+
+  // Build a List UI state — persists across navigation
+  buildListState = signal<BuildListState | null>(null);
 
   // Search state
   searchQuery = signal<string>('');
@@ -84,6 +99,25 @@ export class AppStateService {
     this.savedLists.set(savedLists);
   }
 
+  // Geocode cache — plain Map (not a signal) so mutation is cheap and in-place
+  mapGeocodeCache = new Map<string, { lat: number; lng: number }>();
+
+  clearMapGeocodeCache(): void {
+    this.mapGeocodeCache.clear();
+  }
+
+  setLastScrolledCustomerId(id: number | null): void {
+    this.lastScrolledCustomerId.set(id);
+  }
+
+  setBuildListState(state: BuildListState): void {
+    this.buildListState.set(state);
+  }
+
+  clearBuildListState(): void {
+    this.buildListState.set(null);
+  }
+
   clearSelection(): void {
     this.selectedCustomer.set(null);
     this.selectedFarmId.set(null);
@@ -103,5 +137,7 @@ export class AppStateService {
     this.storedGrain.set([]);
     this.farms.set([]);
     this.savedLists.set([]);
+    this.buildListState.set(null);
+    this.lastScrolledCustomerId.set(null);
   }
 }

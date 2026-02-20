@@ -1,7 +1,8 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, OnChanges, SimpleChanges, AfterViewInit } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, OnChanges, SimpleChanges, AfterViewInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Customer } from '../../models';
 import { BadgeComponent } from '../ui/badge/badge.component';
+import { AppStateService } from '../../services/app-state.service';
 
 declare const L: any;
 
@@ -78,6 +79,8 @@ interface StateInfo {
   `
 })
 export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, AfterViewInit {
+  private appState = inject(AppStateService);
+
   @Input() customers: Customer[] = [];
   @Input() focusedState: string | null = null;
   @Input() centerLat: number | null = null;
@@ -92,7 +95,11 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
   private map: any = null;
   private markers: any[] = [];
   private isMapInitialized = false;
-  private geocodeCache = new Map<string, { lat: number; lng: number }>();
+
+  // Use shared cache from AppStateService so geocoded coords persist across navigation
+  private get geocodeCache(): Map<string, { lat: number; lng: number }> {
+    return this.appState.mapGeocodeCache;
+  }
 
   private stateInfo: { [key: string]: StateInfo } = {
     'ia': { lat: 41.8780, lng: -93.0977, zoom: 7, displayName: 'Iowa' },
@@ -305,31 +312,77 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
   }
 
   private buildMarker(customer: Customer, coords: { lat: number; lng: number }): any {
+    const locationParts = [customer.location, customer.stateProvince].filter(Boolean).join(', ');
+    const contactLine = customer.phone
+      ? customer.phone
+      : (customer.email || '');
+
     const popupContent = `
-      <div style="min-width: 150px;">
-        <strong>${customer.name}</strong><br/>
-        <span style="color: #666;">${customer.farm || ''}</span><br/>
-        ${customer.addressLine1 ? `<span style="font-size: 12px;">${customer.addressLine1}</span><br/>` : ''}
-        <span style="font-size: 12px;">${[customer.location, customer.stateProvince, customer.postalCode].filter(Boolean).join(', ')}</span><br/>
-        <span style="font-size: 12px; color: #22c55e;">${customer.totalAcres.toLocaleString()} acres</span><br/>
-        <a href="#" class="view-customer-link" data-customer-id="${customer.id}"
-           style="color: #16a34a; text-decoration: underline; font-weight: 500; cursor: pointer;">
-          View Customer →
-        </a>
+      <div style="min-width: 180px; font-family: inherit; padding: 2px 0;">
+        <div style="font-size: 14px; font-weight: 600; color: #111827; margin-bottom: 6px; line-height: 1.3;">
+          ${customer.name}
+        </div>
+        ${locationParts ? `
+        <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 4px;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+            <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
+          </svg>
+          <span style="font-size: 12px; color: #6b7280;">${locationParts}</span>
+        </div>` : ''}
+        ${contactLine ? `
+        <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 4px;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+            ${customer.phone
+              ? `<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.13 12 19.79 19.79 0 0 1 1.06 3.4 2 2 0 0 1 3 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.09 8.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21 16z"/>`
+              : `<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m2 7 8.97 5.7a1.94 1.94 0 0 0 2.06 0L22 7"/>`
+            }
+          </svg>
+          <span style="font-size: 12px; color: #6b7280;">${contactLine}</span>
+        </div>` : ''}
+        <div style="border-top: 1px solid #f3f4f6; margin-top: 8px; padding-top: 8px;">
+          <a href="#" class="view-customer-link" data-customer-id="${customer.id}"
+             style="font-size: 12px; color: #16a34a; font-weight: 500; text-decoration: none; display: flex; align-items: center; gap: 4px;">
+            View Customer
+            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          </a>
+        </div>
       </div>
     `;
 
     const marker = L.marker([coords.lat, coords.lng])
       .addTo(this.map)
-      .bindPopup(popupContent);
+      .bindPopup(popupContent, { closeButton: false, offset: [0, -5] });
+
+    // Track close timer so hover into popup can cancel it
+    let closeTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleClose = () => {
+      closeTimer = setTimeout(() => marker.closePopup(), 250);
+    };
+
+    const cancelClose = () => {
+      if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+    };
+
+    // Open on hover
+    marker.on('mouseover', () => { cancelClose(); marker.openPopup(); });
+    marker.on('mouseout', scheduleClose);
 
     marker.on('popupopen', () => {
+      // Wire up "View Customer →" link
       const link = document.querySelector(`.view-customer-link[data-customer-id="${customer.id}"]`);
       if (link) {
         (link as HTMLElement).onclick = (e: Event) => {
           e.preventDefault();
           this.selectCustomer.emit(customer);
         };
+      }
+
+      // Keep popup open while mouse is inside it
+      const popupEl = marker.getPopup()?.getElement();
+      if (popupEl) {
+        popupEl.addEventListener('mouseenter', cancelClose);
+        popupEl.addEventListener('mouseleave', scheduleClose);
       }
     });
 

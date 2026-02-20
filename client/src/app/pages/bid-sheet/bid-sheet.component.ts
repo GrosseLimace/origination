@@ -30,7 +30,149 @@ interface LocationCoords {
         <p class="text-gray-500 dark:text-gray-400">Grain bids by location and crop</p>
       </div>
 
-      <!-- Top Section: Market Values and Rail Offers -->
+      <!-- Map and Bids Table -->
+      <div class="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4">
+        <!-- Location Map -->
+        <app-card>
+          <app-card-content class="!p-0">
+            <div style="position: relative; height: 700px; width: 100%;">
+              <div id="bid-locations-map" style="height: 100%; width: 100%;"></div>
+
+              <!-- Filters Overlay -->
+              <div class="absolute top-2.5 left-16 z-[1000] flex items-center gap-3 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm p-2.5 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+                <!-- Crop Filter -->
+                <select [(ngModel)]="selectedCrop" (change)="onMapCropChange()" class="px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
+                  @for (crop of crops; track crop) {
+                    <option [value]="crop">{{ crop }}</option>
+                  }
+                </select>
+
+                <!-- Year Filter -->
+                <select [(ngModel)]="selectedYear" (change)="filterBids()" class="px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
+                  <option value="2025">2025</option>
+                  <option value="2026">2026</option>
+                </select>
+
+                <!-- Basis Filter -->
+                <select [(ngModel)]="selectedBasis" (change)="filterBids()" class="px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
+                  <option value="all">All Basis</option>
+                  <option value="positive">Positive</option>
+                  <option value="negative">Negative</option>
+                </select>
+
+                <!-- Divider -->
+                <div class="h-8 w-px bg-gray-300 dark:bg-gray-600"></div>
+
+                <!-- Search -->
+                <div class="relative w-80">
+                  <input
+                    type="text"
+                    [(ngModel)]="searchQuery"
+                    (input)="filterBids()"
+                    placeholder="Search locations, crops, or bids..."
+                    class="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
+                  />
+                </div>
+              </div>
+            </div>
+          </app-card-content>
+        </app-card>
+
+        <!-- Bids Table -->
+        <app-card>
+          <app-card-header class="!p-0 border-b border-gray-200 dark:border-gray-700">
+            <div class="flex items-center justify-between h-[72px] px-4">
+              <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Current Bids</h3>
+              <div class="flex items-center gap-3">
+                <span class="text-xs text-gray-400 dark:text-gray-500">{{ timeSinceRefresh }}</span>
+                <button
+                  (click)="refreshBids()"
+                  class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-green-700 dark:text-green-400 hover:text-white hover:bg-green-700 dark:hover:bg-green-600 border border-green-700 dark:border-green-600 rounded transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+                    <path d="M21 3v5h-5"/>
+                    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+                    <path d="M8 16H3v5"/>
+                  </svg>
+                  Refresh
+                </button>
+              </div>
+            </div>
+          </app-card-header>
+          <app-card-content class="!p-0">
+            <div class="overflow-auto" style="height: 628px;">
+              <!-- Selected Location Header -->
+              @if (selectedLocation) {
+                <div class="sticky top-0 z-20 bg-green-50 dark:bg-green-900/20 border-b border-green-200 dark:border-green-800 px-4 py-3">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600 dark:text-green-400">
+                        <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+                        <circle cx="12" cy="10" r="3"/>
+                      </svg>
+                      <span class="text-sm font-medium text-green-900 dark:text-green-100">{{ selectedLocation }}</span>
+                    </div>
+                    <button (click)="clearLocationSelection()" class="text-xs text-green-700 dark:text-green-300 hover:text-green-900 dark:hover:text-green-100 font-medium hover:underline">
+                      Show All
+                    </button>
+                  </div>
+                </div>
+              }
+              <table class="w-full border-collapse text-sm">
+                <thead class="sticky z-10" [class.top-0]="!selectedLocation" [class.top-[52px]]="selectedLocation">
+                  <tr class="bg-gray-50 dark:bg-gray-800">
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
+                      @if (selectedLocation) { Crop } @else { Location }
+                    </th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
+                      @if (selectedLocation) { Year } @else { Crop }
+                    </th>
+                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
+                      Bid
+                    </th>
+                    <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
+                      Status
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (item of filteredBidItems; track item.location + item.crop + item.year) {
+                    <tr
+                      (click)="selectLocationFromTable(item)"
+                      class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors border-b border-gray-200 dark:border-gray-700 cursor-pointer"
+                      [ngClass]="{'bg-green-50 dark:bg-green-900/20': selectedBidItem && selectedBidItem.location === item.location && selectedBidItem.crop === item.crop && selectedBidItem.year === item.year}"
+                    >
+                      <td class="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                        @if (selectedLocation) { {{ item.crop }} } @else { {{ item.location }} }
+                      </td>
+                      <td class="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                        @if (selectedLocation) { {{ item.year }} } @else { {{ item.crop }} }
+                      </td>
+                      <td class="px-4 py-3 text-sm text-right font-mono text-gray-900 dark:text-white">
+                        {{ item.bid }}
+                      </td>
+                      <td class="px-4 py-3 text-center">
+                        @if (item.status !== 'none') {
+                          <span class="inline-flex px-2 py-1 text-xs font-medium rounded-full" [ngClass]="{
+                            'bg-yellow-200 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-400': item.status === 'matching',
+                            'bg-red-200 text-red-800 dark:bg-red-900/40 dark:text-red-400': item.status === 'beating',
+                            'bg-green-200 text-green-800 dark:bg-green-900/40 dark:text-green-400': item.status === 'changed'
+                          }">
+                            {{ item.status }}
+                          </span>
+                        }
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </app-card-content>
+        </app-card>
+      </div>
+
+      <!-- Market Values and Rail Offers -->
       <div class="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-4">
         <!-- Market Values Table -->
         <app-card class="min-w-0">
@@ -140,7 +282,7 @@ interface LocationCoords {
           </app-card-content>
         </app-card>
 
-        <!-- Right Column: Rail Offers and Key -->
+        <!-- Right Column: Rail Offers -->
         <div class="space-y-4 min-w-0">
           <!-- Rail Offers -->
           <app-card>
@@ -203,127 +345,6 @@ interface LocationCoords {
 
         </div>
       </div>
-
-      <div class="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4">
-        <!-- Location Map -->
-        <app-card>
-          <app-card-content class="!p-0">
-            <div style="position: relative; height: 700px; width: 100%;">
-              <div id="bid-locations-map" style="height: 100%; width: 100%;"></div>
-
-              <!-- Filters Overlay -->
-              <div class="absolute top-2.5 left-16 z-[1000] flex items-center gap-3 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm p-2.5 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
-                <!-- Crop Filter -->
-                <select [(ngModel)]="selectedCrop" (change)="onMapCropChange()" class="px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
-                  @for (crop of crops; track crop) {
-                    <option [value]="crop">{{ crop }}</option>
-                  }
-                </select>
-
-                <!-- Year Filter -->
-                <select [(ngModel)]="selectedYear" (change)="filterBids()" class="px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
-                  <option value="2025">2025</option>
-                  <option value="2026">2026</option>
-                </select>
-
-                <!-- Basis Filter -->
-                <select [(ngModel)]="selectedBasis" (change)="filterBids()" class="px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
-                  <option value="all">All Basis</option>
-                  <option value="positive">Positive</option>
-                  <option value="negative">Negative</option>
-                </select>
-
-                <!-- Divider -->
-                <div class="h-8 w-px bg-gray-300 dark:bg-gray-600"></div>
-
-                <!-- Search -->
-                <div class="relative w-80">
-                  <input
-                    type="text"
-                    [(ngModel)]="searchQuery"
-                    (input)="filterBids()"
-                    placeholder="Search locations, crops, or bids..."
-                    class="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
-                  />
-                </div>
-              </div>
-            </div>
-          </app-card-content>
-        </app-card>
-
-        <!-- Bids Table -->
-        <app-card>
-          <app-card-content class="!p-0">
-            <div class="overflow-auto" style="height: 700px;">
-              <!-- Selected Location Header -->
-              @if (selectedLocation) {
-                <div class="sticky top-0 z-20 bg-green-50 dark:bg-green-900/20 border-b border-green-200 dark:border-green-800 px-4 py-3">
-                  <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600 dark:text-green-400">
-                        <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
-                        <circle cx="12" cy="10" r="3"/>
-                      </svg>
-                      <span class="text-sm font-medium text-green-900 dark:text-green-100">{{ selectedLocation }}</span>
-                    </div>
-                    <button (click)="clearLocationSelection()" class="text-xs text-green-700 dark:text-green-300 hover:text-green-900 dark:hover:text-green-100 font-medium hover:underline">
-                      Show All
-                    </button>
-                  </div>
-                </div>
-              }
-              <table class="w-full border-collapse text-sm">
-                <thead class="sticky z-10" [class.top-0]="!selectedLocation" [class.top-[52px]]="selectedLocation">
-                  <tr class="bg-gray-50 dark:bg-gray-800">
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
-                      @if (selectedLocation) { Crop } @else { Location }
-                    </th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
-                      @if (selectedLocation) { Year } @else { Crop }
-                    </th>
-                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
-                      Bid
-                    </th>
-                    <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
-                      Status
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (item of filteredBidItems; track item.location + item.crop + item.year) {
-                    <tr
-                      (click)="selectLocationFromTable(item)"
-                      class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors border-b border-gray-200 dark:border-gray-700 cursor-pointer"
-                      [ngClass]="{'bg-green-50 dark:bg-green-900/20': selectedBidItem && selectedBidItem.location === item.location && selectedBidItem.crop === item.crop && selectedBidItem.year === item.year}"
-                    >
-                      <td class="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                        @if (selectedLocation) { {{ item.crop }} } @else { {{ item.location }} }
-                      </td>
-                      <td class="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                        @if (selectedLocation) { {{ item.year }} } @else { {{ item.crop }} }
-                      </td>
-                      <td class="px-4 py-3 text-sm text-right font-mono text-gray-900 dark:text-white">
-                        {{ item.bid }}
-                      </td>
-                      <td class="px-4 py-3 text-center">
-                        @if (item.status !== 'none') {
-                          <span class="inline-flex px-2 py-1 text-xs font-medium rounded-full" [ngClass]="{
-                            'bg-yellow-200 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-400': item.status === 'matching',
-                            'bg-red-200 text-red-800 dark:bg-red-900/40 dark:text-red-400': item.status === 'beating',
-                            'bg-green-200 text-green-800 dark:bg-green-900/40 dark:text-green-400': item.status === 'changed'
-                          }">
-                            {{ item.status }}
-                          </span>
-                        }
-                      </td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          </app-card-content>
-        </app-card>
-      </div>
     </div>
   `
 })
@@ -337,6 +358,10 @@ export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
   selectedLocation: string = '';
   selectedMarketCrop: string = 'Corn';
   selectedBidItem: any = null;
+
+  lastRefreshed: Date = new Date();
+  timeSinceRefresh: string = 'Just now';
+  private refreshTimer: any = null;
 
   bidData: BidData[] = [];
   filteredBidItems: any[] = [];
@@ -395,6 +420,7 @@ export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
     this.loadBidData();
     this.filterBids();
     this.loadLeafletStyles();
+    this.startRefreshTimer();
   }
 
   ngAfterViewInit(): void {
@@ -403,6 +429,35 @@ export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.destroyMap();
+    if (this.refreshTimer) {
+      clearInterval(this.refreshTimer);
+    }
+  }
+
+  refreshBids(): void {
+    this.startRefreshTimer();
+  }
+
+  private startRefreshTimer(): void {
+    this.lastRefreshed = new Date();
+    this.timeSinceRefresh = 'Just now';
+    if (this.refreshTimer) {
+      clearInterval(this.refreshTimer);
+    }
+    this.refreshTimer = setInterval(() => this.updateTimeSinceRefresh(), 1000);
+  }
+
+  private updateTimeSinceRefresh(): void {
+    const seconds = Math.floor((new Date().getTime() - this.lastRefreshed.getTime()) / 1000);
+    if (seconds < 60) {
+      this.timeSinceRefresh = 'A few seconds ago';
+    } else if (seconds < 3600) {
+      const minutes = Math.floor(seconds / 60);
+      this.timeSinceRefresh = `${minutes}m ago`;
+    } else {
+      const hours = Math.floor(seconds / 3600);
+      this.timeSinceRefresh = `${hours}h ago`;
+    }
   }
 
   private loadLeafletStyles(): void {
