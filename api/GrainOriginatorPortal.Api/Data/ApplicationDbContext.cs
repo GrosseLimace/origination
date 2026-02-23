@@ -17,6 +17,8 @@ public class ApplicationDbContext : DbContext
 
     public DbSet<Note> Notes => Set<Note>();
     public DbSet<TradeUnit> TradeUnits => Set<TradeUnit>();
+    public DbSet<TradeUnitGroup> TradeUnitGroups => Set<TradeUnitGroup>();
+    public DbSet<GroupTradeUnit> GroupTradeUnits => Set<GroupTradeUnit>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -32,6 +34,28 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
 
             entity.HasIndex(e => e.Code).IsUnique().HasDatabaseName("IX_TradeUnits_Code");
+        });
+
+        modelBuilder.Entity<TradeUnitGroup>(entity =>
+        {
+            entity.ToTable("TradeUnitGroups", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.GroupName).HasColumnName("GroupName").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
+            entity.HasMany(e => e.TradeUnits).WithOne().HasForeignKey(tu => tu.GroupId);
+        });
+
+        modelBuilder.Entity<GroupTradeUnit>(entity =>
+        {
+            entity.ToTable("GroupTradeUnits", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.GroupId).HasColumnName("GroupId").IsRequired();
+            entity.Property(e => e.TradeUnitCode).HasColumnName("TradeUnitCode").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Location).HasColumnName("Location").HasMaxLength(200).IsRequired(false);
+            entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
+            entity.HasIndex(e => e.TradeUnitCode).HasDatabaseName("IX_GroupTradeUnits_TradeUnitCode");
         });
 
         modelBuilder.Entity<Note>(entity =>

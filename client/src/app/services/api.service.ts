@@ -50,6 +50,11 @@ export class ApiService {
     return this.http.get<string[]>(`${this.baseUrl}/customers/trade-units`);
   }
 
+  /** Fetches all trade unit groups with their member trade units */
+  getTradeUnitGroups(): Observable<{ id: number; groupName: string; tradeUnits: { tradeUnitCode: string }[] }[]> {
+    return this.http.get<{ id: number; groupName: string; tradeUnits: { tradeUnitCode: string }[] }[]>(`${this.baseUrl}/tradeunitgroups`);
+  }
+
   /** Fetches a single customer by ID */
   getCustomerById(id: number): Observable<Customer> {
     return this.http.get<Customer>(`${this.baseUrl}/customers/${id}`);

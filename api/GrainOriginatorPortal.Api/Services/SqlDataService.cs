@@ -356,8 +356,27 @@ public class SqlDataService : IDataService
             .OrderBy(tu => tu)
             .ToList();
 
-        _logger.LogInformation($"Found {allTradeUnits.Count} unique trade units/organization codes from views");
         return allTradeUnits;
+    }
+
+    public List<TradeUnitGroup> GetTradeUnitGroups()
+    {
+        try
+        {
+            var groups = _appContext.TradeUnitGroups
+                .Where(g => g.IsActive)
+                .Include(g => g.TradeUnits.Where(tu => tu.IsActive))
+                .OrderBy(g => g.GroupName)
+                .ToList();
+
+            _logger.LogInformation("Returning {Count} trade unit groups", groups.Count);
+            return groups;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving trade unit groups");
+            throw;
+        }
     }
 
     // =========================================================================

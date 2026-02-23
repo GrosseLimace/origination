@@ -333,7 +333,7 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
         const el = this.scrollContainer?.nativeElement
           ?.querySelector<HTMLElement>(`#customer-item-${lastId}`);
         if (el) {
-          el.scrollIntoView({ behavior: 'auto', block: 'center' });
+          this.scrollItemIntoView(el, 'auto');
         }
       }, 50);
     }
@@ -370,11 +370,22 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
           const el = this.scrollContainer?.nativeElement
             ?.querySelector<HTMLElement>(`#customer-item-${newId}`);
           if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            this.scrollItemIntoView(el, 'smooth');
           }
         }, 50);
       }
     }
+  }
+
+  /** Scroll a customer item into view within the list container only — never scrolls the document. */
+  private scrollItemIntoView(el: HTMLElement, behavior: ScrollBehavior): void {
+    const container = this.scrollContainer?.nativeElement;
+    if (!container) return;
+    const containerTop = container.getBoundingClientRect().top;
+    const elTop = el.getBoundingClientRect().top;
+    const offset = elTop - containerTop;
+    const target = container.scrollTop + offset - (container.clientHeight / 2) + (el.clientHeight / 2);
+    container.scrollTo({ top: target, behavior });
   }
 
   applyFilters(): void {

@@ -79,6 +79,11 @@ public class ApimDataService : IDataService
         throw new NotImplementedException("TODO: Wire up APIM endpoint for GetTradeUnits");
     }
 
+    public List<TradeUnitGroup> GetTradeUnitGroups()
+    {
+        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetTradeUnitGroups");
+    }
+
     // =========================================================================
     // Farm Operations
     // =========================================================================

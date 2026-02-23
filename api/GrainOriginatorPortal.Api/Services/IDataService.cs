@@ -15,6 +15,7 @@ public interface IDataService
 
     // Trade Unit Operations
     List<string> GetTradeUnits();
+    List<TradeUnitGroup> GetTradeUnitGroups();
 
     // Farm Operations
     List<Farm> GetFarms();

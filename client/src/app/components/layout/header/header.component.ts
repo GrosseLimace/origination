@@ -125,8 +125,43 @@ import { ButtonComponent } from '../../ui/button/button.component';
                 <span>{{ isActive('/build-list') ? 'Back to Customers' : 'Build a List' }}</span>
               </app-button>
 
-              <!-- Hidden for now: Actionable Insights -->
-              <!-- Hidden for now: Position Report -->
+              <app-button
+                [variant]="isActive('/insights') ? 'default' : 'outline'"
+                (onClick)="navigate('/insights')"
+                class="gap-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  @if (isActive('/insights')) {
+                    <path d="m12 19-7-7 7-7"/>
+                    <path d="M19 12H5"/>
+                  } @else {
+                    <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/>
+                    <path d="M9 18h6"/>
+                    <path d="M10 22h4"/>
+                  }
+                </svg>
+                <span>{{ isActive('/insights') ? 'Back to Customers' : 'Insights' }}</span>
+              </app-button>
+
+              <app-button
+                [variant]="isActive('/position-report') ? 'default' : 'outline'"
+                (onClick)="navigate('/position-report')"
+                class="gap-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  @if (isActive('/position-report')) {
+                    <path d="m12 19-7-7 7-7"/>
+                    <path d="M19 12H5"/>
+                  } @else {
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" x2="8" y1="13" y2="13"/>
+                    <line x1="16" x2="8" y1="17" y2="17"/>
+                    <polyline points="10 9 9 9 8 9"/>
+                  }
+                </svg>
+                <span>{{ isActive('/position-report') ? 'Back to Customers' : 'Position Report' }}</span>
+              </app-button>
 
               <app-button
                 [variant]="isActive('/bid-sheet') ? 'default' : 'outline'"
@@ -225,8 +260,43 @@ import { ButtonComponent } from '../../ui/button/button.component';
                 <span>{{ isActive('/build-list') ? 'Back to Customers' : 'Build a List' }}</span>
               </app-button>
 
-              <!-- Hidden for now: Actionable Insights -->
-              <!-- Hidden for now: Position Report -->
+              <app-button
+                [variant]="isActive('/insights') ? 'default' : 'outline'"
+                (onClick)="navigate('/insights')"
+                class="gap-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  @if (isActive('/insights')) {
+                    <path d="m12 19-7-7 7-7"/>
+                    <path d="M19 12H5"/>
+                  } @else {
+                    <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/>
+                    <path d="M9 18h6"/>
+                    <path d="M10 22h4"/>
+                  }
+                </svg>
+                <span>{{ isActive('/insights') ? 'Back to Customers' : 'Insights' }}</span>
+              </app-button>
+
+              <app-button
+                [variant]="isActive('/position-report') ? 'default' : 'outline'"
+                (onClick)="navigate('/position-report')"
+                class="gap-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  @if (isActive('/position-report')) {
+                    <path d="m12 19-7-7 7-7"/>
+                    <path d="M19 12H5"/>
+                  } @else {
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" x2="8" y1="13" y2="13"/>
+                    <line x1="16" x2="8" y1="17" y2="17"/>
+                    <polyline points="10 9 9 9 8 9"/>
+                  }
+                </svg>
+                <span>{{ isActive('/position-report') ? 'Back to Customers' : 'Position Report' }}</span>
+              </app-button>
 
               <app-button
                 [variant]="isActive('/bid-sheet') ? 'default' : 'outline'"
@@ -314,7 +384,14 @@ import { ButtonComponent } from '../../ui/button/button.component';
               <span>Dashboard</span>
             </button>
 
-            <!-- Hidden for now: Actionable Insights -->
+            <button type="button" [class]="getMobileNavClass('/insights')" (click)="mobileNavigate('/insights')">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/>
+                <path d="M9 18h6"/>
+                <path d="M10 22h4"/>
+              </svg>
+              <span>Insights</span>
+            </button>
 
             <button type="button" [class]="getMobileNavClass('/build-list')" (click)="mobileNavigate('/build-list')">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -325,7 +402,16 @@ import { ButtonComponent } from '../../ui/button/button.component';
               <span>Build a List</span>
             </button>
 
-            <!-- Hidden for now: Position Report -->
+            <button type="button" [class]="getMobileNavClass('/position-report')" (click)="mobileNavigate('/position-report')">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" x2="8" y1="13" y2="13"/>
+                <line x1="16" x2="8" y1="17" y2="17"/>
+                <polyline points="10 9 9 9 8 9"/>
+              </svg>
+              <span>Position Report</span>
+            </button>
 
             <button type="button" [class]="getMobileNavClass('/bid-sheet')" (click)="mobileNavigate('/bid-sheet')">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
