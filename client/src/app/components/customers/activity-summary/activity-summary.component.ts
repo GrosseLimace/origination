@@ -2,8 +2,6 @@ import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain } from '../../../models';
 
-type Season = 'spring' | 'summer' | 'fall' | 'winter';
-
 @Component({
   selector: 'app-activity-summary',
   standalone: true,
@@ -61,7 +59,6 @@ export class ActivitySummaryComponent implements OnChanges {
 
       return filteredSections.join(' ');
     } catch (error) {
-      console.error('Error generating activity summary:', error);
       return 'Unable to generate activity summary at this time.';
     }
   }
@@ -89,11 +86,6 @@ export class ActivitySummaryComponent implements OnChanges {
     } else {
       // Just use the name if we don't have farm/acres/location data
       parts.push(`${name} is a customer`);
-    }
-
-    // Multi-farm operator
-    if (this.customer.farmIds && Array.isArray(this.customer.farmIds) && this.customer.farmIds.length > 1) {
-      parts.push(`across ${this.customer.farmIds.length} farm locations`);
     }
 
     // Linked producers info
@@ -432,42 +424,6 @@ export class ActivitySummaryComponent implements OnChanges {
     return alerts.length > 0 ? alerts.join(', ') + '.' : '';
   }
 
-  private generateUpcomingActions(): string {
-    const sentences: string[] = [];
-    const now = new Date();
-
-    // Upcoming deliveries
-    const upcomingDeliveries = this.contracts
-      .filter(c => c.status === 'Active' && new Date(c.deliveryEnd) >= now)
-      .sort((a, b) => new Date(a.deliveryEnd).getTime() - new Date(b.deliveryEnd).getTime());
-
-    if (upcomingDeliveries.length > 0) {
-      const nextContract = upcomingDeliveries[0];
-      const daysRemaining = this.calculateDaysBetween(now, new Date(nextContract.deliveryEnd));
-      const cropName = nextContract.commodityDescription || nextContract.commodityCode || 'grain';
-      sentences.push(`Next delivery deadline: ${cropName} contract ends in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}`);
-    }
-
-    // Overdue deliveries
-    const overdueContracts = this.contracts.filter(c =>
-      (c.status === 'Active' || c.status === 'Pending') &&
-      new Date(c.deliveryEnd) < now
-    );
-
-    if (overdueContracts.length > 0) {
-      sentences.push(`${overdueContracts.length} contract${overdueContracts.length !== 1 ? 's are' : ' is'} past delivery deadline and require${overdueContracts.length === 1 ? 's' : ''} attention`);
-    }
-
-    // Seasonal recommendations
-    const season = this.getCurrentSeason();
-    const seasonalMessage = this.getSeasonalMessage(season);
-    if (seasonalMessage) {
-      sentences.push(seasonalMessage);
-    }
-
-    return sentences.length > 0 ? sentences.join('. ') + '.' : '';
-  }
-
   // Helper utility methods
 
   private formatCurrency(value: number): string {
@@ -494,31 +450,4 @@ export class ActivitySummaryComponent implements OnChanges {
     return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
   }
 
-  private calculateStorageCost(grain: StoredGrain): number {
-    const startDate = new Date(grain.storageStartDate);
-    const now = new Date();
-    const monthsStored = (now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 30);
-    return grain.quantity * grain.storageRate * monthsStored;
-  }
-
-  private getCurrentSeason(): Season {
-    const month = new Date().getMonth(); // 0-11
-    if (month >= 2 && month <= 4) return 'spring';  // Mar-May
-    if (month >= 5 && month <= 7) return 'summer';  // Jun-Aug
-    if (month >= 8 && month <= 10) return 'fall';   // Sep-Nov
-    return 'winter'; // Dec-Feb
-  }
-
-  private getSeasonalMessage(season: Season): string {
-    switch (season) {
-      case 'spring':
-        return 'Spring planting season is underway - ideal time to finalize crop plans and secure contracts';
-      case 'summer':
-        return 'Growing season in progress - monitor crop health and prepare storage facilities';
-      case 'fall':
-        return 'Harvest season - focus on delivery schedules, quality assessments, and storage management';
-      case 'winter':
-        return 'Planning season - review stored grain positions and establish marketing strategy for next year';
-    }
-  }
 }

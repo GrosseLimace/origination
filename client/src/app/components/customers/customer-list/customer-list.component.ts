@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
-import { Customer, SavedList, Note } from '../../../models';
+import { Customer, SavedList, Note, ProducerDetails } from '../../../models';
 import { ApiService } from '../../../services/api.service';
 import { AppStateService } from '../../../services/app-state.service';
 import { CardComponent, CardContentComponent } from '../../ui/card/card.component';
@@ -169,9 +169,12 @@ interface LastContactInfo {
                   <h3 class="font-medium text-gray-900 dark:text-white truncate flex-1 min-w-0">{{ customer.name }}</h3>
                   <app-badge variant="secondary" class="flex-shrink-0 whitespace-nowrap">{{ customer.totalAcres | number }} acres</app-badge>
                 </div>
+                @if (customer.sourceCustomerId) {
+                  <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{{ customer.sourceCustomerId }}</p>
+                }
 
                 <!-- Details - fixed height container -->
-                <div class="space-y-1 mt-2 min-h-[88px]">
+                <div class="space-y-1 mt-1.5 min-h-[88px]">
                   <p class="text-sm text-gray-600 dark:text-gray-400 truncate">{{ customer.farm }}</p>
                   <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -204,7 +207,7 @@ interface LastContactInfo {
                       <line x1="8" x2="8" y1="2" y2="6"/>
                       <line x1="3" x2="21" y1="10" y2="10"/>
                     </svg>
-                    <span>{{ lastContactCache.get(customer.id)?.text || 'No contact' }}</span>
+                    <span>{{ lastContactCache.get(customer.id)?.text || 'Never contacted' }}</span>
                   </div>
                 </div>
               </div>
@@ -223,6 +226,7 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
   @Input() savedLists: SavedList[] = [];
   @Input() notes: Note[] = [];
   @Input() loading: boolean = false;
+  @Input() producerDetailsMap = new Map<number, ProducerDetails>();
   @Output() selectCustomer = new EventEmitter<Customer>();
   @Output() tradeUnitChange = new EventEmitter<string[]>();
 
@@ -259,7 +263,7 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
         this.tradeUnits = units;
         this.cdr.markForCheck();
       },
-      error: (err) => console.error('Failed to load trade units:', err)
+      error: () => {}
     });
 
     // Set up search debouncing
@@ -345,8 +349,8 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    // Rebuild cache when notes change
-    if (changes['notes']) {
+    // Rebuild cache when notes or customers change (customers may load after notes)
+    if (changes['notes'] || changes['customers']) {
       this.rebuildLastContactCache();
     }
 
@@ -412,7 +416,8 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
           c.location,
           c.stateProvince,
           c.phone,
-          c.email
+          c.email,
+          c.sourceCustomerId
         ].filter(Boolean).join(' ').toLowerCase();
 
         return searchableText.includes(searchTerm);
@@ -444,8 +449,22 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
       takeUntil(this.destroy$)
     ).subscribe({
       next: (customers) => {
+        // Merge producer details into search results (ODS doesn't return these fields)
+        let result = customers.map(c => {
+          const pd = this.producerDetailsMap.get(c.id);
+          if (pd) {
+            return {
+              ...c,
+              totalAcres: pd.totalAcres ?? c.totalAcres,
+              binCapacity: pd.binCapacity ?? c.binCapacity,
+              primaryContact: pd.primaryContact ?? c.primaryContact,
+              commodities: pd.commodities ? pd.commodities.split(',').map(s => s.trim()) : c.commodities
+            };
+          }
+          return c;
+        });
+
         // Apply saved list filter to search results if needed
-        let result = customers;
         if (this.selectedListId) {
           const savedList = this.savedLists.find(l => l.id === this.selectedListId);
           if (savedList) {
@@ -455,8 +474,7 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
         this.filteredCustomers = result;
         this.cdr.markForCheck();
       },
-      error: (err) => {
-        console.error('Search failed:', err);
+      error: () => {
         // Fall back to showing initial customers on error
         this.filteredCustomers = [...this.customers];
         this.cdr.markForCheck();
@@ -489,7 +507,7 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
 
       if (customerNotes.length === 0) {
         this.lastContactCache.set(customer.id, {
-          text: 'No contact',
+          text: 'Never contacted',
           daysAgo: -1,
           cssClass: 'text-red-500'
         });
@@ -501,15 +519,20 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
         return new Date(note.createdAt).getTime() > new Date(latest.createdAt).getTime() ? note : latest;
       }, customerNotes[0]);
 
-      const daysAgo = Math.floor((Date.now() - new Date(lastNote.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+      const daysAgo = Math.max(0, Math.floor((Date.now() - new Date(lastNote.createdAt).getTime()) / (1000 * 60 * 60 * 24)));
 
       let text: string;
       if (daysAgo === 0) text = 'Today';
-      else if (daysAgo === 1) text = 'Yesterday';
-      else if (daysAgo < 7) text = `${daysAgo} days ago`;
-      else if (daysAgo < 30) text = `${Math.floor(daysAgo / 7)} weeks ago`;
-      else if (daysAgo < 365) text = `${Math.floor(daysAgo / 30)} months ago`;
-      else text = `${Math.floor(daysAgo / 365)} years ago`;
+      else if (daysAgo === 1) text = '1 day ago';
+      else if (daysAgo < 30) text = `${daysAgo} days ago`;
+      else if (daysAgo < 365) {
+        const months = Math.floor(daysAgo / 30);
+        text = months === 1 ? '1 month ago' : `${months} months ago`;
+      }
+      else {
+        const years = Math.floor(daysAgo / 365);
+        text = years === 1 ? '1 year ago' : `${years} years ago`;
+      }
 
       const cssClass = this.getLastContactClass(daysAgo);
 

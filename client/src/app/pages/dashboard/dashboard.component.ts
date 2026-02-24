@@ -1095,8 +1095,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.loading = false;
         this.cdr.detectChanges();
       },
-      error: (err) => {
-        console.error('Failed to load dashboard data:', err);
+      error: () => {
         this.toastService.error('Failed to load dashboard data');
         this.isLoading = false;
         this.loading = false;

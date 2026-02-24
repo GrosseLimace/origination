@@ -246,6 +246,30 @@ public class ApimDataService : IDataService
     }
 
     // =========================================================================
+    // Producer Details Operations
+    // =========================================================================
+
+    public ProducerDetails? GetProducerDetails(long customerId)
+    {
+        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetProducerDetails");
+    }
+
+    public List<ProducerDetails> GetAllProducerDetails()
+    {
+        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetAllProducerDetails");
+    }
+
+    public ProducerDetails UpsertProducerDetails(long customerId, string? sourceCustomerId, string customerName, decimal? totalAcres, decimal? binCapacity, string? primaryContact, string? commodities, string? linkedProducerIds = null)
+    {
+        throw new NotImplementedException("TODO: Wire up APIM endpoint for UpsertProducerDetails");
+    }
+
+    public void DeleteProducerDetails(long customerId)
+    {
+        throw new NotImplementedException("TODO: Wire up APIM endpoint for DeleteProducerDetails");
+    }
+
+    // =========================================================================
     // Storage Operations
     // =========================================================================
 
@@ -259,6 +283,15 @@ public class ApimDataService : IDataService
     {
         // TODO: Replace with actual APIM endpoint path
         throw new NotImplementedException("TODO: Wire up APIM endpoint for GetStoredGrainByCustomer");
+    }
+
+    // =========================================================================
+    // Commodity Operations
+    // =========================================================================
+
+    public List<Commodity> GetCommodities()
+    {
+        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetCommodities");
     }
 
     // =========================================================================

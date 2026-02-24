@@ -3,13 +3,14 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
   Customer,
-  Farm,
   Contract,
   Ticket,
   PlantingIntention,
   Note,
   StoredGrain,
-  SavedList
+  SavedList,
+  Commodity,
+  ProducerDetails
 } from '../models';
 
 /**
@@ -66,30 +67,6 @@ export class ApiService {
   }
 
   // ==========================================================================
-  // Farm Operations
-  // ==========================================================================
-
-  /** Fetches all farms in the system */
-  getFarms(): Observable<Farm[]> {
-    return this.http.get<Farm[]>(`${this.baseUrl}/farms`);
-  }
-
-  /** Fetches a single farm by ID */
-  getFarmById(id: string): Observable<Farm> {
-    return this.http.get<Farm>(`${this.baseUrl}/farms/${id}`);
-  }
-
-  /** Fetches all farms belonging to a specific customer */
-  getFarmsByCustomer(customerId: number): Observable<Farm[]> {
-    return this.http.get<Farm[]>(`${this.baseUrl}/farms/customer/${customerId}`);
-  }
-
-  /** Creates a new farm and returns the generated ID */
-  createFarm(data: { name: string; location: string; acres: number }): Observable<string> {
-    return this.http.post<string>(`${this.baseUrl}/farms`, data);
-  }
-
-  // ==========================================================================
   // Contract Operations
   // ==========================================================================
 
@@ -104,11 +81,6 @@ export class ApiService {
   /** Fetches all contracts for a specific customer */
   getContractsByCustomer(customerId: number): Observable<Contract[]> {
     return this.http.get<Contract[]>(`${this.baseUrl}/contracts/customer/${customerId}`);
-  }
-
-  /** Fetches all contracts associated with a specific farm */
-  getContractsByFarm(farmId: string): Observable<Contract[]> {
-    return this.http.get<Contract[]>(`${this.baseUrl}/contracts/farm/${farmId}`);
   }
 
   // ==========================================================================
@@ -126,11 +98,6 @@ export class ApiService {
   /** Fetches all delivery tickets for a specific customer */
   getTicketsByCustomer(customerId: number): Observable<Ticket[]> {
     return this.http.get<Ticket[]>(`${this.baseUrl}/tickets/customer/${customerId}`);
-  }
-
-  /** Fetches all delivery tickets associated with a specific farm */
-  getTicketsByFarm(farmId: string): Observable<Ticket[]> {
-    return this.http.get<Ticket[]>(`${this.baseUrl}/tickets/farm/${farmId}`);
   }
 
   // ==========================================================================
@@ -209,6 +176,30 @@ export class ApiService {
   }
 
   // ==========================================================================
+  // Producer Details Operations
+  // ==========================================================================
+
+  /** Fetches all producer details records */
+  getAllProducerDetails(): Observable<ProducerDetails[]> {
+    return this.http.get<ProducerDetails[]>(`${this.baseUrl}/producerdetails`);
+  }
+
+  /** Fetches producer details for a specific customer */
+  getProducerDetails(customerId: number): Observable<ProducerDetails> {
+    return this.http.get<ProducerDetails>(`${this.baseUrl}/producerdetails/customer/${customerId}`);
+  }
+
+  /** Creates or updates producer details for a customer */
+  saveProducerDetails(customerId: number, data: { sourceCustomerId?: string | null; customerName: string; totalAcres?: number | null; binCapacity?: number | null; primaryContact?: string | null; commodities?: string | null; linkedProducerIds?: string | null }): Observable<ProducerDetails> {
+    return this.http.put<ProducerDetails>(`${this.baseUrl}/producerdetails/customer/${customerId}`, data);
+  }
+
+  /** Deletes producer details for a customer */
+  deleteProducerDetails(customerId: number): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/producerdetails/customer/${customerId}`);
+  }
+
+  // ==========================================================================
   // Stored Grain Operations
   // ==========================================================================
 
@@ -220,6 +211,15 @@ export class ApiService {
   /** Fetches all stored grain records for a specific customer */
   getStoredGrainByCustomer(customerId: number): Observable<StoredGrain[]> {
     return this.http.get<StoredGrain[]>(`${this.baseUrl}/storedgrain/customer/${customerId}`);
+  }
+
+  // ==========================================================================
+  // Commodity Operations
+  // ==========================================================================
+
+  /** Fetches all active commodities from the lookup table */
+  getCommodities(): Observable<Commodity[]> {
+    return this.http.get<Commodity[]>(`${this.baseUrl}/commodities`);
   }
 
   // ==========================================================================

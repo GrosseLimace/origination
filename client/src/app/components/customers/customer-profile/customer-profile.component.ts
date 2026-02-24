@@ -1,6 +1,5 @@
 import { Component, Input, Output, EventEmitter, inject, OnChanges, SimpleChanges, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
 import { ThemeService } from '../../../services/theme.service';
 import { ContractsTableComponent } from '../contracts-table/contracts-table.component';
 import { TicketsTableComponent } from '../tickets-table/tickets-table.component';
@@ -10,7 +9,7 @@ import { ProducerInsightsComponent } from '../producer-insights/producer-insight
 import { AIGrowthForecastComponent } from '../ai-growth-forecast/ai-growth-forecast.component';
 import { ActivitySummaryComponent } from '../activity-summary/activity-summary.component';
 import { EditCustomerDialogComponent } from '../edit-customer-dialog/edit-customer-dialog.component';
-import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note } from '../../../models';
+import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note } from '../../../models';
 
 @Component({
   selector: 'app-customer-profile',
@@ -18,7 +17,6 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
-    FormsModule,
     ContractsTableComponent,
     TicketsTableComponent,
     PlantingIntentionsTableComponent,
@@ -47,7 +45,7 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
         </button>
         <div class="p-4 sm:p-6 pr-12 sm:pr-16">
           <!-- Row 1: Customer Name + eSign Badge (on same line) -->
-          <div class="flex items-center gap-2 sm:gap-3 flex-wrap mb-1">
+          <div class="flex items-center gap-2 sm:gap-3 flex-wrap mb-0.5">
             <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white">{{ customer.name }}</h1>
             @if (customer.eSignEnabled) {
               <span class="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-xs sm:text-sm font-medium bg-green-600 text-white">
@@ -66,10 +64,32 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
             }
           </div>
 
-          <!-- Row 2: Farm Name -->
-          <p class="text-sm sm:text-base text-gray-500 dark:text-gray-400 mb-3">{{ getSelectedFarmName() }}</p>
+          <!-- Row 2: Source Customer ID -->
+          @if (customer.sourceCustomerId) {
+            <p class="text-xs text-gray-400 dark:text-gray-500 mb-1">{{ customer.sourceCustomerId }}</p>
+          }
 
-          <!-- Row 3: Producer Insights and Edit buttons (under farm name) -->
+          <!-- Linked Customer Switcher -->
+          @if (linkedCustomers.length > 0) {
+            <div class="flex items-center gap-2 mb-2">
+              <label class="text-xs text-gray-500 dark:text-gray-400 font-medium whitespace-nowrap">Viewing:</label>
+              <select
+                class="h-7 px-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                [value]="customer.id"
+                (change)="onSelectLinkedCustomer.emit(+$any($event.target).value)"
+              >
+                <option [value]="customer.id">{{ customer.name }} (current)</option>
+                @for (linked of linkedCustomers; track linked.id) {
+                  <option [value]="linked.id">{{ linked.name }}</option>
+                }
+              </select>
+            </div>
+          }
+
+          <!-- Row 3: Farm Name -->
+          <p class="text-sm sm:text-base text-gray-500 dark:text-gray-400 mb-3">{{ customer.farm }}</p>
+
+          <!-- Row 3: Producer Insights and Edit buttons -->
           <div class="flex items-center gap-2 flex-wrap mb-6">
             <button
               type="button"
@@ -96,28 +116,20 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
             </button>
           </div>
 
-          <!-- Row 4: Select Farm Dropdown (only show if more than one farm) -->
-          @if (farms.length > 1) {
-            <div class="mb-6">
-              <label class="block text-xs sm:text-sm font-medium text-gray-900 dark:text-white mb-1">Select Farm</label>
-              <select
-                class="w-full h-9 sm:h-10 px-2.5 sm:px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-xs sm:text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
-                [ngModel]="getSelectedFarmIdOrFirst()"
-                (ngModelChange)="onFarmChange.emit($event)"
-              >
-                @for (farm of farms; track farm.id) {
-                  <option [value]="farm.id">{{ farm.name }}</option>
-                }
-              </select>
-            </div>
-          }
-
-          <!-- Row 5: Contact / Farm Details (2 columns) -->
+          <!-- Row 4: Contact / Farm Details (2 columns) -->
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <!-- Contact Info -->
             <div>
               <h3 class="text-xs sm:text-sm font-medium text-gray-900 dark:text-white mb-3">Contact</h3>
               <div class="space-y-2 text-xs sm:text-sm">
+                @if (customer.primaryContact) {
+                  <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                    </svg>
+                    <span>{{ customer.primaryContact }}</span>
+                  </div>
+                }
                 <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
@@ -162,20 +174,38 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
                     <circle cx="18" cy="18" r="2"/>
                     <circle cx="7" cy="15" r="5"/>
                   </svg>
-                  <span>{{ getSelectedFarmAcres() | number }} acres</span>
+                  <span>{{ (customer.totalAcres || 0) | number }} acres</span>
                 </div>
-                @if (getSelectedFarmStorage() > 0) {
-                  <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                    <!-- Warehouse icon -->
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z"/>
-                      <path d="M6 18h12"/>
-                      <path d="M6 14h12"/>
-                      <rect width="12" height="12" x="6" y="10"/>
-                    </svg>
-                    <span>{{ getSelectedFarmStorage() | number }} bu storage</span>
-                  </div>
-                }
+                <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                  <!-- Grain bin (cylinder) icon -->
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                    <path d="M3 5v14a9 3 0 0 0 18 0V5"/>
+                  </svg>
+                  <span>{{ (customer.binCapacity || 0) | number }} bu capacity</span>
+                </div>
+                <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                  <!-- Wheat/crop icon -->
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M2 22 16 8"/>
+                    <path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
+                    <path d="M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
+                    <path d="M11.47 4.53 13 3l1.53 1.53a3.5 3.5 0 0 1 0 4.94L13 11l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
+                    <path d="M20 2h2v2a4 4 0 0 1-4 4h-2V6a4 4 0 0 1 4-4Z"/>
+                    <path d="M11.47 17.47 13 19l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L5 19l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
+                    <path d="M15.47 13.47 17 15l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L9 15l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
+                    <path d="M19.47 9.47 21 11l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L13 11l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
+                  </svg>
+                  @if (getEffectiveCommodities().length > 0) {
+                    <div class="flex flex-wrap gap-1">
+                      @for (commodity of getEffectiveCommodities(); track commodity) {
+                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">{{ commodity }}</span>
+                      }
+                    </div>
+                  } @else {
+                    <span>No commodities</span>
+                  }
+                </div>
               </div>
             </div>
           </div>
@@ -281,8 +311,6 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
               <app-planting-intentions-table
                 [plantingIntentions]="plantingIntentions"
                 [customer]="customer"
-                [selectedFarmId]="selectedFarmId || null"
-                [farms]="farms"
                 (add)="onAddPlanting.emit($event)"
                 (edit)="onEditPlanting.emit($event)"
                 (delete)="onDeletePlanting.emit($event)">
@@ -300,40 +328,36 @@ import { Customer, Farm, Contract, Ticket, PlantingIntention, StoredGrain, Note 
     <app-edit-customer-dialog
       [isOpen]="showEditDialog"
       [customer]="customer"
-      [allFarms]="allFarms"
+      [tickets]="tickets"
       [allCustomers]="allCustomers"
       (close)="closeEditDialog()"
-      (save)="handleSaveCustomer($event)"
-      (createFarm)="onCreateFarm.emit($event)">
+      (save)="handleSaveCustomer($event)">
     </app-edit-customer-dialog>
   `
 })
 export class CustomerProfileComponent implements OnChanges {
   @Input() customer!: Customer;
-  @Input() farms: Farm[] = [];
-  @Input() allFarms: Farm[] = [];
   @Input() allCustomers: Customer[] = [];
   @Input() contracts: Contract[] = [];
   @Input() tickets: Ticket[] = [];
   @Input() plantingIntentions: PlantingIntention[] = [];
   @Input() storedGrain: StoredGrain[] = [];
   @Input() notes: Note[] = [];
-  @Input() selectedFarmId?: string;
 
-  // Unfiltered data for Activity Summary (all farms)
+  // Unfiltered data for Activity Summary
   @Input() allCustomerContracts: Contract[] = [];
   @Input() allCustomerTickets: Ticket[] = [];
   @Input() allCustomerPlantingIntentions: PlantingIntention[] = [];
   @Input() allCustomerStoredGrain: StoredGrain[] = [];
 
-  @Output() onAddPlanting = new EventEmitter<{farmId: string, crop: string, acres: number, plantingYear: number, estimatedYield: number}>();
-  @Output() onEditPlanting = new EventEmitter<{intentionId: string, farmId: string, crop: string, acres: number, plantingYear: number, estimatedYield: number}>();
+  @Output() onAddPlanting = new EventEmitter<{crop: string, acres: number, plantingYear: number, estimatedYield: number}>();
+  @Output() onEditPlanting = new EventEmitter<{intentionId: string, crop: string, acres: number, plantingYear: number, estimatedYield: number}>();
   @Output() onDeletePlanting = new EventEmitter<string>();
   @Output() onAddNote = new EventEmitter<string>();
   @Output() onTogglePin = new EventEmitter<Note>();
-  @Output() onFarmChange = new EventEmitter<string>();
-  @Output() onSaveCustomer = new EventEmitter<{ customerId: number; location: string; phone: string; email: string; farmIds: string[]; linkedProducerIds: string[]; eSignEnabled: boolean }>();
-  @Output() onCreateFarm = new EventEmitter<{ name: string; location: string; acres: number }>();
+  @Output() onSaveCustomer = new EventEmitter<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; eSignEnabled: boolean }>();
+  @Input() linkedCustomers: Customer[] = [];
+  @Output() onSelectLinkedCustomer = new EventEmitter<number>();
 
   private themeService = inject(ThemeService);
   private cdr = inject(ChangeDetectorRef);
@@ -349,6 +373,7 @@ export class CustomerProfileComponent implements OnChanges {
   private _marketSharePercentage = 0;
   private _bushelsAvailable = 0;
   private _tabs: any[] = [];
+  private _effectiveCommodities: string[] = [];
 
   ngOnChanges(changes: SimpleChanges): void {
     // Recalculate cached values when relevant inputs change
@@ -380,7 +405,18 @@ export class CustomerProfileComponent implements OnChanges {
       ];
     }
 
-    if (changes['customer'] || changes['contracts'] || changes['notes'] || changes['farms']) {
+    // Rebuild effective commodities from tickets + user-added
+    if (changes['customer'] || changes['tickets']) {
+      const ticketCommodities = [...new Set(
+        this.tickets
+          .map(t => t.productCode || '')
+          .filter(Boolean)
+      )];
+      const userCommodities = this.customer?.commodities || [];
+      this._effectiveCommodities = [...new Set([...ticketCommodities, ...userCommodities])].sort();
+    }
+
+    if (changes['customer'] || changes['contracts'] || changes['notes']) {
       this.cdr.markForCheck();
     }
   }
@@ -400,7 +436,7 @@ export class CustomerProfileComponent implements OnChanges {
     this.cdr.markForCheck();
   }
 
-  handleSaveCustomer(data: { customerId: number; location: string; phone: string; email: string; farmIds: string[]; linkedProducerIds: string[]; eSignEnabled: boolean }): void {
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; eSignEnabled: boolean }): void {
     this.onSaveCustomer.emit(data);
     this.closeEditDialog();
   }
@@ -423,50 +459,6 @@ export class CustomerProfileComponent implements OnChanges {
     return `${baseClass} bg-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white`;
   }
 
-  getSelectedFarmIdOrFirst(): string {
-    if (this.selectedFarmId) {
-      return this.selectedFarmId;
-    }
-    return this.farms.length > 0 ? this.farms[0].id : '';
-  }
-
-  getSelectedFarmAcres(): number {
-    const farmId = this.getSelectedFarmIdOrFirst();
-    if (farmId) {
-      const farm = this.farms.find(f => f.id === farmId);
-      return farm?.acres || this.customer.totalAcres;
-    }
-    return this.customer.totalAcres;
-  }
-
-  getSelectedFarmStorage(): number {
-    const farmId = this.getSelectedFarmIdOrFirst();
-    if (farmId) {
-      const farm = this.farms.find(f => f.id === farmId);
-      return farm?.binStorageCapacity || 0;
-    }
-    const farmWithStorage = this.farms.find(f => f.binStorageCapacity && f.binStorageCapacity > 0);
-    return farmWithStorage?.binStorageCapacity || 0;
-  }
-
-  getSelectedFarmName(): string {
-    const farmId = this.getSelectedFarmIdOrFirst();
-    if (farmId) {
-      const farm = this.farms.find(f => f.id === farmId);
-      return farm?.name || this.customer.farm;
-    }
-    return this.customer.farm;
-  }
-
-  getSelectedFarmLocation(): string {
-    const farmId = this.getSelectedFarmIdOrFirst();
-    if (farmId) {
-      const farm = this.farms.find(f => f.id === farmId);
-      return farm?.location || this.customer.location;
-    }
-    return this.customer.location;
-  }
-
   get totalProjectedYield(): number {
     return this._totalProjectedYield;
   }
@@ -483,25 +475,8 @@ export class CustomerProfileComponent implements OnChanges {
     return this._bushelsAvailable;
   }
 
-  getLastContactedDate(): string {
-    if (this.notes.length === 0) return 'Never';
-
-    const sorted = [...this.notes].sort((a, b) =>
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-    const lastNote = sorted[0];
-    const diff = Date.now() - new Date(lastNote.createdAt).getTime();
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-    if (days === 0) return 'Today';
-    if (days === 1) return 'Yesterday';
-    if (days < 7) return `${days} days ago`;
-
-    return new Date(lastNote.createdAt).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    });
+  getEffectiveCommodities(): string[] {
+    return this._effectiveCommodities;
   }
 
   /** Opens a print dialog with formatted customer information */
@@ -574,12 +549,12 @@ export class CustomerProfileComponent implements OnChanges {
             <h3>Farm Details</h3>
             <div class="info-item">
               <div class="label">Total Acres</div>
-              <div class="value">${this.getSelectedFarmAcres().toLocaleString()} acres</div>
+              <div class="value">${(this.customer.totalAcres || 0).toLocaleString()} acres</div>
             </div>
-            ${this.getSelectedFarmStorage() > 0 ? `
+            ${(this.customer.binCapacity || 0) > 0 ? `
             <div class="info-item">
-              <div class="label">Storage Capacity</div>
-              <div class="value">${this.getSelectedFarmStorage().toLocaleString()} bushels</div>
+              <div class="label">Bin Capacity</div>
+              <div class="value">${(this.customer.binCapacity || 0).toLocaleString()} bushels</div>
             </div>
             ` : ''}
             <div class="info-item">
@@ -587,30 +562,6 @@ export class CustomerProfileComponent implements OnChanges {
               <div class="value">${this.customer.eSignEnabled ? 'Enabled' : 'Not Enrolled'}</div>
             </div>
           </div>
-        </div>
-
-        <h2>Farm Overview</h2>
-        <div class="section">
-          ${this.farms.length > 0 ? `
-          <table>
-            <thead>
-              <tr>
-                <th>Farm Name</th>
-                <th class="text-right">Acres</th>
-                <th>Location</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${this.farms.map(farm => `
-              <tr>
-                <td>${farm.name}</td>
-                <td class="text-right">${farm.acres?.toLocaleString() || '-'}</td>
-                <td>${farm.location || '-'}</td>
-              </tr>
-              `).join('')}
-            </tbody>
-          </table>
-          ` : '<p>No farms on record</p>'}
         </div>
 
         <h2>Contract Summary</h2>

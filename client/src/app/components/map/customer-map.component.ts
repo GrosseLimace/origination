@@ -209,7 +209,7 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
       this.isMapInitialized = true;
       this.addMarkers();
     } catch (error) {
-      console.error('Error initializing map:', error);
+      // map init failed silently
     }
   }
 
@@ -230,7 +230,7 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
         this.fitBounds();
       }
     } catch (error) {
-      console.error('Error refreshing map:', error);
+      // map refresh failed silently
     }
   }
 
@@ -420,7 +420,7 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
         };
       }
     } catch (error) {
-      console.warn('Geocoding failed for', city, state, zip, error);
+      // geocoding failed silently
     }
     return null;
   }

@@ -16,9 +16,11 @@ public class ApplicationDbContext : DbContext
     }
 
     public DbSet<Note> Notes => Set<Note>();
+    public DbSet<ProducerDetails> ProducerDetails => Set<ProducerDetails>();
     public DbSet<TradeUnit> TradeUnits => Set<TradeUnit>();
     public DbSet<TradeUnitGroup> TradeUnitGroups => Set<TradeUnitGroup>();
     public DbSet<GroupTradeUnit> GroupTradeUnits => Set<GroupTradeUnit>();
+    public DbSet<Commodity> Commodities => Set<Commodity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -58,6 +60,19 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => e.TradeUnitCode).HasDatabaseName("IX_GroupTradeUnits_TradeUnitCode");
         });
 
+        modelBuilder.Entity<Commodity>(entity =>
+        {
+            entity.ToTable("Commodities", schema: "dbo");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.Code).HasColumnName("Code").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Name).HasColumnName("Name").HasMaxLength(255).IsRequired();
+            entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
+
+            entity.HasIndex(e => e.Code).IsUnique().HasDatabaseName("IX_Commodities_Code");
+        });
+
         modelBuilder.Entity<Note>(entity =>
         {
             entity.ToTable("Notes", schema: "dbo");
@@ -78,6 +93,28 @@ public class ApplicationDbContext : DbContext
             entity.Ignore(e => e.Content);
 
             entity.HasIndex(e => e.CustomerId).HasDatabaseName("IX_Notes_CustomerId");
+        });
+
+        modelBuilder.Entity<ProducerDetails>(entity =>
+        {
+            entity.ToTable("ProducerDetails", schema: "dbo");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
+            entity.Property(e => e.SourceCustomerId).HasColumnName("SourceCustomerId").HasMaxLength(400).IsRequired(false);
+            entity.Property(e => e.CustomerName).HasColumnName("CustomerName").HasMaxLength(255).IsRequired();
+            entity.Property(e => e.TotalAcres).HasColumnName("TotalAcres").HasColumnType("decimal(18,2)").IsRequired(false);
+            entity.Property(e => e.BinCapacity).HasColumnName("BinCapacity").HasColumnType("decimal(18,2)").IsRequired(false);
+            entity.Property(e => e.PrimaryContact).HasColumnName("PrimaryContact").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.Commodities).HasColumnName("Commodities").HasMaxLength(1000).IsRequired(false);
+            entity.Property(e => e.LinkedProducerIds).HasColumnName("LinkedProducerIds").HasMaxLength(1000).IsRequired(false);
+            entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
+            entity.Property(e => e.CreatedOn).HasColumnName("CreatedOn").HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.ModifiedOn).HasColumnName("ModifiedOn").IsRequired(false);
+
+            entity.HasIndex(e => e.CustomerId).IsUnique().HasDatabaseName("IX_ProducerDetails_CustomerId");
         });
     }
 }

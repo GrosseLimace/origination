@@ -14,8 +14,12 @@ export interface Customer {
   extendedPrimaryPhone?: string; // Fallback phone number
   supplementalEmail?: string;    // Fallback email
   totalAcres: number;
-  farmIds: string[];
   linkedProducerIds: string[];
   eSignEnabled: boolean;
   coordinates?: Coordinates;
+
+  // CustomerDetails fields (populated from app DB / ProducerDetails table)
+  binCapacity?: number;       // Bushels - bin storage capacity
+  commodities?: string[];     // e.g. ['Corn', 'Soybeans', 'Wheat']
+  primaryContact?: string;    // User-entered primary contact name
 }

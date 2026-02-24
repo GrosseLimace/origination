@@ -1,7 +1,6 @@
 export * from './coordinates.model';
 export * from './contract-status.model';
 export * from './customer.model';
-export * from './farm.model';
 export * from './contract.model';
 export * from './ticket.model';
 export * from './planting-intention.model';
@@ -9,3 +8,5 @@ export * from './note.model';
 export * from './stored-grain.model';
 export * from './saved-list.model';
 export * from './position.model';
+export * from './commodity.model';
+export * from './producer-details.model';

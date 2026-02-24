@@ -33,9 +33,7 @@ interface LocationCoords {
     <div class="space-y-4">
       <!-- Header -->
       <div>
-        <h2 class="text-2xl font-semibold text-gray-900 dark:text-white">
-          {{ groupName ? groupName + ' - Bid Sheet' : 'Bid Sheet' }}
-        </h2>
+        <h2 class="text-2xl font-semibold text-gray-900 dark:text-white">Bid Sheet</h2>
         <p class="text-gray-500 dark:text-gray-400">Grain bids by location and crop</p>
       </div>
 
@@ -67,7 +65,7 @@ interface LocationCoords {
         <!-- Location Map -->
         <app-card>
           <app-card-content class="!p-0">
-            <div style="position: relative; height: 700px; width: 100%;">
+            <div style="position: relative; height: min(700px, calc(100vh - 13rem)); min-height: 350px; width: 100%;">
               <div id="bid-locations-map" style="height: 100%; width: 100%;"></div>
 
               <!-- Filters Overlay -->
@@ -114,21 +112,23 @@ interface LocationCoords {
         <!-- Bids Table -->
         <app-card>
           <app-card-header class="!p-0 border-b border-gray-200 dark:border-gray-700">
-            <div class="flex items-center justify-between h-[72px] px-4">
-              <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Current Bids <span class="text-gray-400 dark:text-gray-500 font-normal">{{ selectedCrop }} {{ selectedYear }}</span></h3>
-              <div class="flex items-center gap-3">
+            <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 min-h-[56px]">
+              <h3 class="text-base font-semibold text-gray-900 dark:text-white whitespace-nowrap">Current Bids <span class="text-gray-400 dark:text-gray-500 font-normal">{{ selectedCrop }} {{ selectedYear }}</span></h3>
+              <div class="flex items-center gap-2 flex-wrap">
                 <button
                   (click)="toggleAddLocationRow()"
-                  class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-white hover:bg-gray-600 dark:hover:bg-gray-500 border border-gray-300 dark:border-gray-600 rounded transition-colors"
+                  class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-white hover:bg-gray-600 dark:hover:bg-gray-500 border border-gray-300 dark:border-gray-600 rounded transition-colors whitespace-nowrap"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M5 12h14"/><path d="M12 5v14"/>
                   </svg>
-                  Add Location
+                  <span class="hidden sm:inline">Add Location</span>
+                  <span class="sm:hidden">Add</span>
                 </button>
                 <button
                   (click)="refreshBids()"
-                  class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-green-700 dark:text-green-400 hover:text-white hover:bg-green-700 dark:hover:bg-green-600 border border-green-700 dark:border-green-600 rounded transition-colors"
+                  class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-green-700 dark:text-green-400 hover:text-white hover:bg-green-700 dark:hover:bg-green-600 border border-green-700 dark:border-green-600 rounded transition-colors"
+                  [title]="timeSinceRefresh"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
@@ -136,14 +136,14 @@ interface LocationCoords {
                     <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
                     <path d="M8 16H3v5"/>
                   </svg>
-                  Refresh
+                  <span class="hidden sm:inline">Refresh</span>
                 </button>
-                <span class="text-xs text-gray-400 dark:text-gray-500">{{ timeSinceRefresh }}</span>
+                <span class="text-xs text-gray-400 dark:text-gray-500 hidden md:inline whitespace-nowrap">{{ timeSinceRefresh }}</span>
               </div>
             </div>
           </app-card-header>
           <app-card-content class="!p-0">
-            <div class="overflow-auto relative" style="height: 628px;">
+            <div class="overflow-auto relative" style="height: min(644px, calc(100vh - 16.5rem)); min-height: 278px;">
               <!-- Change Reference Location Confirmation -->
               @if (showReferenceConfirm) {
                 <div class="absolute inset-0 z-30 bg-black/40 backdrop-blur-sm flex items-center justify-center">
@@ -700,10 +700,7 @@ export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.isMapInitialized || typeof L === 'undefined') return;
 
     const mapElement = document.getElementById('bid-locations-map');
-    if (!mapElement) {
-      console.error('Map container not found');
-      return;
-    }
+    if (!mapElement) return;
 
     try {
       this.map = L.map('bid-locations-map').setView([37.9, -98.8], 7);
@@ -723,7 +720,7 @@ export class BidSheetComponent implements OnInit, AfterViewInit, OnDestroy {
       this.addMarkers();
       this.panToReference();
     } catch (error) {
-      console.error('Error initializing map:', error);
+      // map init failed silently
     }
   }
 

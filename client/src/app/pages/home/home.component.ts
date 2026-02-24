@@ -6,7 +6,7 @@ import { takeUntil, filter } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
 import { AppStateService } from '../../services/app-state.service';
 import { ToastService } from '../../services/toast.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, Farm, SavedList } from '../../models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, ProducerDetails } from '../../models';
 import { CustomerListComponent } from '../../components/customers/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customers/customer-profile/customer-profile.component';
 import { CustomerNotesComponent } from '../../components/customers/customer-notes/customer-notes.component';
@@ -35,6 +35,7 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
           [savedLists]="savedLists"
           [notes]="notes"
           [loading]="loading"
+          [producerDetailsMap]="producerDetailsMap"
           (selectCustomer)="handleSelectCustomer($event)"
           (tradeUnitChange)="handleTradeUnitChange($event)"
         />
@@ -60,15 +61,12 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
               <!-- Profile -->
               <app-customer-profile
                 [customer]="selectedCustomer"
-                [farms]="customerFarms"
-                [allFarms]="farms"
                 [allCustomers]="customers"
                 [contracts]="customerContracts"
                 [tickets]="customerTickets"
                 [plantingIntentions]="customerPlantingIntentions"
                 [storedGrain]="customerStoredGrain"
                 [notes]="customerNotes"
-                [selectedFarmId]="selectedFarmId"
                 [allCustomerContracts]="allCustomerContracts"
                 [allCustomerTickets]="allCustomerTickets"
                 [allCustomerPlantingIntentions]="allCustomerPlantingIntentions"
@@ -76,11 +74,11 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                 (onAddPlanting)="addPlantingIntention($event)"
                 (onEditPlanting)="editPlantingIntention($event)"
                 (onDeletePlanting)="deletePlantingIntention($event)"
+                [linkedCustomers]="selectedCustomer ? getLinkedGroup(selectedCustomer) : []"
                 (onAddNote)="addNote($event)"
                 (onTogglePin)="toggleNotePin($event)"
-                (onFarmChange)="handleFarmChange($event)"
                 (onSaveCustomer)="handleSaveCustomer($event)"
-                (onCreateFarm)="handleCreateFarm($event)">
+                (onSelectLinkedCustomer)="handleSelectLinkedCustomer($event)">
               </app-customer-profile>
             } @else {
               <!-- Empty state — shown on desktop when no customer is selected -->
@@ -155,16 +153,15 @@ export class HomeComponent implements OnInit, OnDestroy {
   plantingIntentions: PlantingIntention[] = [];
   notes: Note[] = [];
   storedGrain: StoredGrain[] = [];
-  farms: Farm[] = [];
   savedLists: SavedList[] = [];
+  private pendingProducerDetails: ProducerDetails[] | null = null;
+  producerDetailsMap = new Map<number, ProducerDetails>();
 
   selectedCustomer: Customer | null = null;
-  selectedFarmId: string | undefined = undefined;
   selectedTradeUnits: string[] = [];
   customerContracts: Contract[] = [];
   customerTickets: Ticket[] = [];
   customerNotes: Note[] = [];
-  customerFarms: Farm[] = [];
   customerPlantingIntentions: PlantingIntention[] = [];
   customerStoredGrain: StoredGrain[] = [];
 
@@ -178,12 +175,14 @@ export class HomeComponent implements OnInit, OnDestroy {
   loading = false;
 
   ngOnInit(): void {
-    console.log('[Home] ngOnInit - Restoring state');
     this.checkMobile();
     window.addEventListener('resize', this.resizeHandler);
 
     // Restore state from service if it exists
     this.restoreStateFromService();
+
+    // Always load producer details on init (independent of trade units)
+    this.loadProducerDetails();
 
     // Only load data if trade units are selected AND we have no cached data yet.
     // If customers were restored from AppStateService, skip the reload entirely —
@@ -205,11 +204,8 @@ export class HomeComponent implements OnInit, OnDestroy {
       filter(event => event instanceof NavigationEnd),
       takeUntil(this.destroy$)
     ).subscribe((event: NavigationEnd) => {
-      console.log('[Home] Navigation event:', event.url, event.urlAfterRedirects);
-
       // Skip the first NavigationEnd event which happens during component initialization
       if (this.isFirstLoad) {
-        console.log('[Home] Skipping first NavigationEnd (component initialization)');
         this.isFirstLoad = false;
         return;
       }
@@ -221,7 +217,6 @@ export class HomeComponent implements OnInit, OnDestroy {
                           event.url.startsWith('/?');
 
       if (isHomeRoute && this.selectedTradeUnits.length > 0 && this.customers.length === 0) {
-        console.log('[Home] Reloading data after navigation to home (no cached data)');
         this.loadAllData(this.selectedTradeUnits);
       }
     });
@@ -235,7 +230,6 @@ export class HomeComponent implements OnInit, OnDestroy {
     const statePlantingIntentions = this.appState.plantingIntentions();
     const stateNotes = this.appState.notes();
     const stateStoredGrain = this.appState.storedGrain();
-    const stateFarms = this.appState.farms();
     const stateSavedLists = this.appState.savedLists();
 
     // If we have cached data, restore it
@@ -246,14 +240,12 @@ export class HomeComponent implements OnInit, OnDestroy {
       this.plantingIntentions = statePlantingIntentions;
       this.notes = stateNotes;
       this.storedGrain = stateStoredGrain;
-      this.farms = stateFarms;
       this.savedLists = stateSavedLists;
 
       // Restore selected customer
       const stateSelectedCustomer = this.appState.selectedCustomer();
       if (stateSelectedCustomer) {
         this.selectedCustomer = stateSelectedCustomer;
-        this.selectedFarmId = this.appState.selectedFarmId() || undefined;
         this.loadCustomerData(stateSelectedCustomer.id);
       }
 
@@ -295,10 +287,7 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   private loadAllData(tradeUnits?: string[]): void {
     // Prevent concurrent data loads
-    if (this.isLoading) {
-      console.log('[Home] loadAllData() called but already loading, skipping...');
-      return;
-    }
+    if (this.isLoading) return;
 
     this.isLoading = true;
     this.loading = true;
@@ -309,9 +298,17 @@ export class HomeComponent implements OnInit, OnDestroy {
         this.appState.setCustomers(data);
         this.loading = false;
         this.isLoading = false;
+
+        // Merge producer details into newly loaded customers
+        if (this.pendingProducerDetails) {
+          this.mergeProducerDetails(this.pendingProducerDetails);
+          this.pendingProducerDetails = null;
+        } else if (this.producerDetailsMap.size > 0) {
+          // Re-merge from map for subsequent loads (e.g., trade unit changes)
+          this.mergeProducerDetails(Array.from(this.producerDetailsMap.values()));
+        }
       },
-      error: (err) => {
-        console.error('Failed to load customers:', err);
+      error: () => {
         this.loading = false;
         this.isLoading = false;
       }
@@ -319,18 +316,26 @@ export class HomeComponent implements OnInit, OnDestroy {
 
     this.apiService.getContracts(tradeUnits).pipe(takeUntil(this.destroy$)).subscribe({
       next: (data) => {
-        this.contracts = data;
-        this.appState.setContracts(data);
+        // Merge: the batch loads by customerCode, but FK loads (getContractsByCustomer)
+        // may have added contracts not in this batch. Retain those extras.
+        const batchIds = new Set(data.map(c => c.id));
+        const fkExtras = this.contracts.filter(c => !batchIds.has(c.id));
+        this.contracts = [...data, ...fkExtras];
+        this.appState.setContracts(this.contracts);
       },
-      error: (err) => { console.error('Failed to load contracts:', err); }
+      error: () => {}
     });
 
     this.apiService.getTickets(tradeUnits).pipe(takeUntil(this.destroy$)).subscribe({
       next: (data) => {
-        this.tickets = data;
-        this.appState.setTickets(data);
+        // Merge: the batch loads by customerCode, but FK loads (getTicketsByCustomer)
+        // may have added tickets not in this batch. Retain those extras.
+        const batchIds = new Set(data.map(t => t.id));
+        const fkExtras = this.tickets.filter(t => !batchIds.has(t.id));
+        this.tickets = [...data, ...fkExtras];
+        this.appState.setTickets(this.tickets);
       },
-      error: (err) => { console.error('Failed to load tickets:', err); }
+      error: () => {}
     });
 
     this.apiService.getPlantingIntentions().pipe(takeUntil(this.destroy$)).subscribe({
@@ -338,7 +343,7 @@ export class HomeComponent implements OnInit, OnDestroy {
         this.plantingIntentions = data;
         this.appState.setPlantingIntentions(data);
       },
-      error: (err) => { console.error('Failed to load planting intentions:', err); }
+      error: () => {}
     });
 
     this.apiService.getNotes().pipe(takeUntil(this.destroy$)).subscribe({
@@ -346,7 +351,7 @@ export class HomeComponent implements OnInit, OnDestroy {
         this.notes = data;
         this.appState.setNotes(data);
       },
-      error: (err) => { console.error('Failed to load notes:', err); }
+      error: () => {}
     });
 
     this.apiService.getStoredGrain().pipe(takeUntil(this.destroy$)).subscribe({
@@ -354,15 +359,7 @@ export class HomeComponent implements OnInit, OnDestroy {
         this.storedGrain = data;
         this.appState.setStoredGrain(data);
       },
-      error: (err) => { console.error('Failed to load stored grain:', err); }
-    });
-
-    this.apiService.getFarms().pipe(takeUntil(this.destroy$)).subscribe({
-      next: (data) => {
-        this.farms = data;
-        this.appState.setFarms(data);
-      },
-      error: (err) => { console.error('Failed to load farms:', err); }
+      error: () => {}
     });
 
     this.apiService.getSavedLists().pipe(takeUntil(this.destroy$)).subscribe({
@@ -370,8 +367,63 @@ export class HomeComponent implements OnInit, OnDestroy {
         this.savedLists = data;
         this.appState.setSavedLists(data);
       },
-      error: (err) => { console.error('Failed to load saved lists:', err); }
+      error: () => {}
     });
+
+  }
+
+  private loadProducerDetails(): void {
+    this.apiService.getAllProducerDetails().pipe(takeUntil(this.destroy$)).subscribe({
+      next: (details) => {
+        // Always store in map for use when selecting searched customers
+        details.forEach(d => this.producerDetailsMap.set(d.customerId, d));
+
+        if (this.customers.length > 0) {
+          this.mergeProducerDetails(details);
+        } else {
+          // Customers haven't loaded yet — store for later merge
+          this.pendingProducerDetails = details;
+        }
+      },
+      error: () => {}
+    });
+  }
+
+  private mergeProducerDetails(details: ProducerDetails[]): void {
+    if (details.length === 0) return;
+    // Store for later use when selecting searched customers
+    details.forEach(d => this.producerDetailsMap.set(d.customerId, d));
+
+    const detailsMap = new Map(details.map(d => [d.customerId, d]));
+    let changed = false;
+
+    this.customers = this.customers.map(customer => {
+      const pd = detailsMap.get(customer.id);
+      if (pd) {
+        changed = true;
+        return {
+          ...customer,
+          totalAcres: pd.totalAcres ?? customer.totalAcres,
+          binCapacity: pd.binCapacity ?? customer.binCapacity,
+          primaryContact: pd.primaryContact ?? customer.primaryContact,
+          commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
+          linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
+        };
+      }
+      return customer;
+    });
+
+    if (changed) {
+      this.customers = [...this.customers];
+      // Update selected customer if it was affected
+      if (this.selectedCustomer) {
+        const updated = this.customers.find(c => c.id === this.selectedCustomer!.id);
+        if (updated) {
+          this.selectedCustomer = updated;
+        }
+      }
+      this.cdr.detectChanges();
+    }
   }
 
   handleTradeUnitChange(tradeUnits: string[]): void {
@@ -386,19 +438,44 @@ export class HomeComponent implements OnInit, OnDestroy {
   }
 
   handleSelectCustomer(customer: Customer): void {
+    // Apply producer details if available (for searched customers not in initial batch)
+    const pd = this.producerDetailsMap.get(customer.id);
+    if (pd) {
+      customer = {
+        ...customer,
+        totalAcres: pd.totalAcres ?? customer.totalAcres,
+        binCapacity: pd.binCapacity ?? customer.binCapacity,
+        primaryContact: pd.primaryContact ?? customer.primaryContact,
+        commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities
+      };
+    } else {
+      // Map not populated yet — fetch for this specific customer as fallback
+      this.apiService.getProducerDetails(customer.id).pipe(takeUntil(this.destroy$)).subscribe({
+        next: (details) => {
+          this.producerDetailsMap.set(details.customerId, details);
+          if (this.selectedCustomer?.id === customer.id) {
+            this.selectedCustomer = {
+              ...this.selectedCustomer,
+              totalAcres: details.totalAcres ?? this.selectedCustomer.totalAcres,
+              binCapacity: details.binCapacity ?? this.selectedCustomer.binCapacity,
+              primaryContact: details.primaryContact ?? this.selectedCustomer.primaryContact,
+              commodities: details.commodities ? details.commodities.split(',').map(c => c.trim()) : this.selectedCustomer.commodities
+            };
+            this.cdr.detectChanges();
+          }
+        },
+        error: () => {} // 404 if no producer details exist — that's fine
+      });
+    }
+
     this.selectedCustomer = customer;
-    this.selectedFarmId = undefined; // Reset farm selection when changing customers
     this.appState.selectCustomer(customer);
 
-    // Check if we have contracts and tickets for this customer using string matching
-    // If not, load them (this happens when selecting a searched customer not in initial 15)
-    const hasContracts = this.contracts.some(c => c.ctrmCustomerId === customer.sourceCustomerId);
-    const hasTickets = this.tickets.some(t => t.customerCode === customer.sourceCustomerId);
-
-    if (!hasContracts || !hasTickets) {
-      // Load contracts and tickets for this specific customer
-      this.loadCustomerContractsAndTickets(customer.id, customer.sourceCustomerId);
-    }
+    // Always load contracts and tickets by FK for the selected customer.
+    // The initial batch uses customerCode string matching which may not capture all tickets
+    // (some tickets have a different customerCode but correct FK customerId).
+    // Duplicate check inside loadCustomerContractsAndTickets prevents double-counting.
+    this.loadCustomerContractsAndTickets(customer.id, customer.sourceCustomerId);
 
     this.loadCustomerData(customer.id);
     // Force change detection to ensure UI updates immediately
@@ -416,10 +493,11 @@ export class HomeComponent implements OnInit, OnDestroy {
           }
         });
         this.contracts = [...this.contracts]; // Trigger change detection
+        this.appState.setContracts(this.contracts); // Persist so navigation restore includes these contracts
         this.loadCustomerData(customerId);
         this.cdr.detectChanges();
       },
-      error: (err) => console.error('Failed to load contracts for customer:', err)
+      error: () => {}
     });
 
     // Load tickets by customer
@@ -432,157 +510,215 @@ export class HomeComponent implements OnInit, OnDestroy {
           }
         });
         this.tickets = [...this.tickets]; // Trigger change detection
+        this.appState.setTickets(this.tickets); // Persist so navigation restore includes these tickets
         this.loadCustomerData(customerId);
+
+        // Silently persist any newly-discovered ticket commodities to ProducerDetails
+        const customer = this.customers.find(c => c.id === customerId) || this.selectedCustomer;
+        if (customer) {
+          this.autoSaveCommodities(customer, tickets);
+        }
+
         this.cdr.detectChanges();
       },
-      error: (err) => console.error('Failed to load tickets for customer:', err)
+      error: () => {}
     });
   }
 
-  handleFarmChange(farmId: string): void {
-    this.selectedFarmId = farmId;
-    this.appState.selectFarm(farmId);
-    // Reload customer data to filter by the newly selected farm
-    if (this.selectedCustomer) {
-      this.loadCustomerData(this.selectedCustomer.id);
-    }
-    this.cdr.detectChanges();
-  }
-
   private loadCustomerData(customerId: number, customer?: Customer): void {
-    // Create new array references to trigger change detection
-    // Use provided customer or fall back to selectedCustomer
     const currentCustomer = customer || this.selectedCustomer;
     if (!currentCustomer) {
-      console.warn('[Home] No customer found for loadCustomerData');
       return;
     }
 
-    // Load data for current customer only (linked producer logic removed for now)
-    // Use string matching for both contracts and tickets (match with customer.sourceCustomerId)
-    // Always load unfiltered data for Activity Summary
+    // Contracts and tickets use customer-based string matching
     this.allCustomerContracts = [...this.contracts.filter(c => c.ctrmCustomerId === currentCustomer.sourceCustomerId)];
     this.allCustomerTickets = [...this.tickets.filter(t => t.customerCode === currentCustomer.sourceCustomerId)];
+    this.customerContracts = [...this.allCustomerContracts];
+    this.customerTickets = [...this.allCustomerTickets];
+
+    // Planting intentions and stored grain filter by customerId
     this.allCustomerPlantingIntentions = [...this.plantingIntentions.filter(p => p.customerId === customerId)];
     this.allCustomerStoredGrain = [...this.storedGrain.filter(s => s.customerId === customerId)];
-
-    // Filter by farm if one is selected, otherwise show all customer data for tabs
-    if (this.selectedFarmId) {
-      // Filter data for the selected farm
-      this.customerContracts = [...this.contracts.filter(c => c.farmId === this.selectedFarmId)];
-      this.customerTickets = [...this.tickets.filter(t => t.farmId === this.selectedFarmId)];
-      this.customerPlantingIntentions = [...this.plantingIntentions.filter(p => p.farmId === this.selectedFarmId)];
-      this.customerStoredGrain = [...this.storedGrain.filter(s => s.farmId === this.selectedFarmId)];
-    } else {
-      // Match contracts and tickets using string matching (customerCode = customer.sourceCustomerId)
-      this.customerContracts = [...this.contracts.filter(c => c.ctrmCustomerId === currentCustomer.sourceCustomerId)];
-      this.customerTickets = [...this.tickets.filter(t => t.customerCode === currentCustomer.sourceCustomerId)];
-      this.customerPlantingIntentions = [...this.plantingIntentions.filter(p => p.customerId === customerId)];
-      this.customerStoredGrain = [...this.storedGrain.filter(s => s.customerId === customerId)];
-    }
+    this.customerPlantingIntentions = [...this.allCustomerPlantingIntentions];
+    this.customerStoredGrain = [...this.allCustomerStoredGrain];
 
     this.customerNotes = [...this.notes.filter(n => n.customerId === customerId)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())];
-
-    // Load farms from current customer only
-    this.customerFarms = [...this.farms.filter(f => currentCustomer.farmIds?.includes(f.id))];
-
-    // Validate selectedFarmId - if it's set but no longer in the available farms, reset it
-    if (this.selectedFarmId && !this.customerFarms.find(f => f.id === this.selectedFarmId)) {
-      // Currently selected farm is no longer available (e.g., after unlinking), reset to first farm or undefined
-      this.selectedFarmId = this.customerFarms.length > 0 ? this.customerFarms[0].id : undefined;
-      this.appState.selectFarm(this.selectedFarmId || null);
-    }
-
-    // Set the selected farm to the first available farm if not already set
-    if (!this.selectedFarmId && this.customerFarms.length > 0) {
-      this.selectedFarmId = this.customerFarms[0].id;
-    }
   }
 
-  handleSaveCustomer(data: { customerId: number; location: string; phone: string; email: string; farmIds: string[]; linkedProducerIds: string[]; eSignEnabled: boolean }): void {
-    const customer = this.customers.find(c => c.id === data.customerId);
+  private autoSaveCommodities(customer: Customer, customerTickets: Ticket[]): void {
+    const ticketCommodities = [...new Set(customerTickets.map(t => t.productCode || '').filter(Boolean))];
+    if (ticketCommodities.length === 0) return;
+
+    const storedCommodities = customer.commodities || [];
+    const hasNew = ticketCommodities.some(tc => !storedCommodities.includes(tc));
+    if (!hasNew) return;
+
+    const merged = [...new Set([...storedCommodities, ...ticketCommodities])].sort();
+    const existingPd = this.producerDetailsMap.get(customer.id);
+    this.apiService.saveProducerDetails(customer.id, {
+      sourceCustomerId: customer.sourceCustomerId || null,
+      customerName: customer.name,
+      commodities: merged.join(','),
+      linkedProducerIds: existingPd?.linkedProducerIds ?? null
+    }).subscribe({
+      next: (pd) => {
+        this.producerDetailsMap.set(pd.customerId, pd);
+        const updatedCustomer = { ...customer, commodities: merged };
+        const index = this.customers.findIndex(c => c.id === customer.id);
+        if (index >= 0) {
+          this.customers[index] = updatedCustomer;
+          this.customers = [...this.customers];
+        }
+        if (this.selectedCustomer?.id === customer.id) {
+          this.selectedCustomer = updatedCustomer;
+        }
+        this.cdr.detectChanges();
+      },
+      error: () => {}
+    });
+  }
+
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; eSignEnabled: boolean }): void {
+    // Find customer from array OR fall back to selectedCustomer (search scenario)
+    const customer = this.customers.find(c => c.id === data.customerId)
+      || (this.selectedCustomer?.id === data.customerId ? this.selectedCustomer : null);
     if (!customer) return;
 
-    const updatedCustomer: Customer = {
+    // Combine ticket-derived commodities (from loaded tickets) with user-added ones.
+    // The full merged set is persisted so commodity history survives ticket aging.
+    const ticketCommodities = [...new Set(
+      this.allCustomerTickets.map(t => t.productCode || '').filter(Boolean)
+    )];
+    const allCommodities = [...new Set([...ticketCommodities, ...data.commodities])].sort();
+
+    // Build the updated customer locally (preserve all ODS fields from original)
+    const updated: Customer = {
       ...customer,
-      location: data.location,
-      phone: data.phone,
-      email: data.email,
-      farmIds: data.farmIds,
+      totalAcres: data.acres,
+      binCapacity: data.binCapacity,
+      commodities: allCommodities,
+      primaryContact: data.primaryContact,
       linkedProducerIds: data.linkedProducerIds,
       eSignEnabled: data.eSignEnabled
     };
 
-    this.apiService.updateCustomer(updatedCustomer).subscribe({
-      next: (updated) => {
-        // Update customer in the array
-        const index = this.customers.findIndex(c => c.id === updated.id);
-        if (index >= 0) {
-          this.customers[index] = updated;
-          this.customers = [...this.customers];
-        }
+    // Build the payload for ProducerDetails — use null (not undefined) for cleared fields
+    // so JSON serialization sends them explicitly and the API clears the old value.
+    const savedCommodities = allCommodities.length > 0 ? allCommodities.join(',') : null;
+    const savedLinkedIds = data.linkedProducerIds.length > 0 ? data.linkedProducerIds.join(',') : null;
+    const savePayload = {
+      sourceCustomerId: customer.sourceCustomerId || null,
+      customerName: customer.name,
+      totalAcres: data.acres || null,
+      binCapacity: data.binCapacity || null,
+      primaryContact: data.primaryContact || null,
+      commodities: savedCommodities,
+      linkedProducerIds: savedLinkedIds
+    };
 
-        // Update selected customer
-        this.selectedCustomer = updated;
+    // Update producerDetailsMap immediately so re-selecting this customer
+    // before the API responds still uses the latest values.
+    const existingPd = this.producerDetailsMap.get(data.customerId);
+    if (existingPd) {
+      this.producerDetailsMap.set(data.customerId, {
+        ...existingPd,
+        totalAcres: data.acres || undefined,
+        binCapacity: data.binCapacity || undefined,
+        primaryContact: data.primaryContact || undefined,
+        commodities: savedCommodities ?? undefined,
+        linkedProducerIds: savedLinkedIds ?? undefined
+      });
+    }
 
-        // If a new farm was added, select it automatically
-        const newFarmIds = updated.farmIds.filter(id => !customer.farmIds.includes(id));
-        if (newFarmIds.length > 0) {
-          this.selectedFarmId = newFarmIds[0];
-        }
-
-        // If a farm was deleted and it was the currently selected farm, revert to default (first farm)
-        const deletedFarmIds = customer.farmIds.filter(id => !updated.farmIds.includes(id));
-        if (deletedFarmIds.length > 0 && this.selectedFarmId && deletedFarmIds.includes(this.selectedFarmId)) {
-          // Reset to first available farm or undefined if no farms
-          this.selectedFarmId = updated.farmIds.length > 0 ? updated.farmIds[0] : undefined;
-        }
-
-        // Reload customer data AFTER updating farm selection, passing the updated customer to include farms from linked producers
-        this.loadCustomerData(updated.id, updated);
-
+    // Save producer details to ProducerDetails table (the only persistent store needed)
+    this.apiService.saveProducerDetails(data.customerId, savePayload).subscribe({
+      next: (pd) => {
+        this.producerDetailsMap.set(pd.customerId, pd);
         this.toastService.success('Customer updated successfully');
-        this.cdr.detectChanges();
       },
       error: () => {
-        this.toastService.error('Failed to update customer');
+        this.toastService.error('Failed to save producer details');
       }
     });
+
+    // Silently propagate this customer's Primary Contact to all linked customers.
+    // Each linked customer inherits the parent's contact regardless of what they had before.
+    if (data.primaryContact && data.linkedProducerIds.length > 0) {
+      data.linkedProducerIds.forEach(linkedId => {
+        const linkedCustomer = this.customers.find(c => c.id.toString() === linkedId);
+        if (!linkedCustomer) return;
+        const linkedPd = this.producerDetailsMap.get(linkedCustomer.id);
+        this.apiService.saveProducerDetails(linkedCustomer.id, {
+          sourceCustomerId: linkedCustomer.sourceCustomerId || null,
+          customerName: linkedCustomer.name,
+          primaryContact: data.primaryContact,
+          linkedProducerIds: linkedPd?.linkedProducerIds ?? null
+        }).subscribe({
+          next: (pd) => {
+            this.producerDetailsMap.set(pd.customerId, pd);
+            const idx = this.customers.findIndex(c => c.id === linkedCustomer.id);
+            if (idx >= 0) {
+              this.customers[idx] = { ...this.customers[idx], primaryContact: data.primaryContact };
+              this.customers = [...this.customers];
+            }
+          },
+          error: () => {}
+        });
+      });
+    }
+
+    // Update customer in the array immediately (no ODS round-trip needed)
+    const index = this.customers.findIndex(c => c.id === updated.id);
+    if (index >= 0) {
+      this.customers[index] = updated;
+      this.customers = [...this.customers];
+    } else {
+      // Customer came from search — add to array so future saves work
+      this.customers = [...this.customers, updated];
+    }
+
+    // Update selected customer
+    this.selectedCustomer = updated;
+
+    // Persist updated state to appState so navigation away and back restores correctly
+    this.appState.setCustomers(this.customers);
+    this.appState.selectCustomer(updated);
+
+    // Reload customer data with the locally-updated customer
+    this.loadCustomerData(updated.id, updated);
+    this.cdr.detectChanges();
   }
 
-  handleCreateFarm(data: { name: string; location: string; acres: number }): void {
-    this.apiService.createFarm(data).subscribe({
-      next: (newFarmId) => {
-        const newFarm: Farm = {
-          id: newFarmId,
-          name: data.name,
-          location: data.location,
-          acres: data.acres
-        };
-        this.farms = [...this.farms, newFarm];
+  getLinkedGroup(customer: Customer): Customer[] {
+    // Outgoing: customers this customer explicitly links to
+    const outgoing = (customer.linkedProducerIds || [])
+      .map(id => this.customers.find(c => c.id.toString() === id))
+      .filter((c): c is Customer => !!c);
+    // Incoming: customers in the loaded list that link to this customer
+    const incoming = this.customers.filter(c =>
+      (c.linkedProducerIds || []).includes(customer.id.toString())
+    );
+    // Deduplicate by id, exclude current customer
+    return [...new Map([...outgoing, ...incoming].map(c => [c.id, c])).values()]
+      .filter(c => c.id !== customer.id);
+  }
 
-        // Reload customer data if a customer is selected to refresh the farm list
-        if (this.selectedCustomer) {
-          this.loadCustomerData(this.selectedCustomer.id);
-        }
-
-        this.toastService.success('Farm created successfully');
-        this.cdr.detectChanges();
-      },
-      error: () => {
-        this.toastService.error('Failed to create farm');
-      }
-    });
+  handleSelectLinkedCustomer(customerId: number): void {
+    const customer = this.customers.find(c => c.id === customerId);
+    if (!customer || customer.id === this.selectedCustomer?.id) return;
+    this.selectedCustomer = customer;
+    this.appState.selectCustomer(customer);
+    this.loadCustomerContractsAndTickets(customer.id);
+    this.cdr.detectChanges();
   }
 
   getLastContactedDate(): string {
     if (this.customerNotes.length === 0) return 'Never';
 
-    const sorted = [...this.customerNotes].sort((a, b) =>
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-    const lastNote = sorted[0];
+    // customerNotes is already sorted newest-first in loadCustomerData()
+    const lastNote = this.customerNotes[0];
     const diff = Date.now() - new Date(lastNote.createdAt).getTime();
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
 
@@ -597,44 +733,26 @@ export class HomeComponent implements OnInit, OnDestroy {
     });
   }
 
-  addPlantingIntention(data: {farmId: string, crop: string, acres: number, plantingYear: number, estimatedYield: number}): void {
-    console.log('addPlantingIntention called with:', data);
-    console.log('selectedCustomer:', this.selectedCustomer?.id);
-    console.log('selectedFarmId:', this.selectedFarmId);
-
-    if (!this.selectedCustomer) {
-      console.log('No customer selected, returning');
-      return;
-    }
+  addPlantingIntention(data: {crop: string, acres: number, plantingYear: number, estimatedYield: number}): void {
+    if (!this.selectedCustomer) return;
 
     const apiData = {
       customerId: this.selectedCustomer.id,
-      farmId: data.farmId,
+      farmId: '',
       crop: data.crop,
       acres: data.acres,
       plantingYear: data.plantingYear,
       estimatedYield: data.estimatedYield
     };
-    console.log('Calling API with:', apiData);
 
     this.apiService.createPlantingIntention(apiData).subscribe({
       next: (intention) => {
-        console.log('API returned intention:', intention);
-        console.log('Current customerPlantingIntentions length:', this.customerPlantingIntentions.length);
-
         // Add to global list
         this.plantingIntentions = [...this.plantingIntentions, intention];
+        this.appState.setPlantingIntentions(this.plantingIntentions);
 
-        // Add to customer-specific list if it matches the selected farm
-        if (!this.selectedFarmId || intention.farmId === this.selectedFarmId) {
-          this.customerPlantingIntentions = [...this.customerPlantingIntentions, intention];
-          console.log('Added to customerPlantingIntentions, new length:', this.customerPlantingIntentions.length);
-        } else {
-          console.log('NOT added to customerPlantingIntentions - farm mismatch', {
-            intentionFarmId: intention.farmId,
-            selectedFarmId: this.selectedFarmId
-          });
-        }
+        // Add to customer-specific list
+        this.customerPlantingIntentions = [...this.customerPlantingIntentions, intention];
 
         // Update allCustomerPlantingIntentions for Activity Summary
         this.allCustomerPlantingIntentions = [...this.allCustomerPlantingIntentions, intention];
@@ -642,14 +760,13 @@ export class HomeComponent implements OnInit, OnDestroy {
         this.toastService.success('Planting intention added');
         this.cdr.detectChanges();
       },
-      error: (err) => {
-        console.error('API error:', err);
+      error: () => {
         this.toastService.error('Failed to add planting intention');
       }
     });
   }
 
-  editPlantingIntention(data: {intentionId: string, farmId: string, crop: string, acres: number, plantingYear: number, estimatedYield: number}): void {
+  editPlantingIntention(data: {intentionId: string, crop: string, acres: number, plantingYear: number, estimatedYield: number}): void {
     this.apiService.updatePlantingIntention(data.intentionId, {
       crop: data.crop,
       acres: data.acres,
@@ -661,6 +778,7 @@ export class HomeComponent implements OnInit, OnDestroy {
         this.plantingIntentions = this.plantingIntentions.map(p =>
           p.id === data.intentionId ? updatedIntention : p
         );
+        this.appState.setPlantingIntentions(this.plantingIntentions);
 
         // Update in customer-specific list
         this.customerPlantingIntentions = this.customerPlantingIntentions.map(p =>
@@ -686,6 +804,7 @@ export class HomeComponent implements OnInit, OnDestroy {
       next: () => {
         // Remove from global list
         this.plantingIntentions = this.plantingIntentions.filter(p => p.id !== intentionId);
+        this.appState.setPlantingIntentions(this.plantingIntentions);
 
         // Remove from customer-specific list
         this.customerPlantingIntentions = this.customerPlantingIntentions.filter(p => p.id !== intentionId);
@@ -709,6 +828,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     this.apiService.createNote(this.selectedCustomer.id, content, tradeUnit).subscribe({
       next: (note) => {
         this.notes = [...this.notes, note];
+        this.appState.setNotes(this.notes);
         this.customerNotes = [note, ...this.customerNotes];
         this.toastService.success('Note added');
       },
@@ -725,6 +845,7 @@ export class HomeComponent implements OnInit, OnDestroy {
         if (index >= 0) {
           this.notes[index] = updated;
           this.notes = [...this.notes];
+          this.appState.setNotes(this.notes);
         }
         const customerIndex = this.customerNotes.findIndex(n => n.id === updated.id);
         if (customerIndex >= 0) {
@@ -747,6 +868,7 @@ export class HomeComponent implements OnInit, OnDestroy {
         if (index >= 0) {
           this.notes[index] = updated;
           this.notes = [...this.notes];
+          this.appState.setNotes(this.notes);
         }
         // Update in customer-specific list
         const customerIndex = this.customerNotes.findIndex(n => n.id === updated.id);
@@ -768,6 +890,7 @@ export class HomeComponent implements OnInit, OnDestroy {
       next: () => {
         // Remove from global list
         this.notes = this.notes.filter(n => n.id !== noteId);
+        this.appState.setNotes(this.notes);
         // Remove from customer-specific list
         this.customerNotes = this.customerNotes.filter(n => n.id !== noteId);
         this.toastService.success('Note deleted');

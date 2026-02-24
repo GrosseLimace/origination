@@ -6,7 +6,7 @@ import { ButtonComponent } from '../../ui/button/button.component';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '../../ui/dialog/dialog.component';
 import { InputComponent } from '../../ui/input/input.component';
 import { SelectComponent } from '../../ui/select/select.component';
-import { Customer, PlantingIntention, Farm } from '../../../models';
+import { Customer, PlantingIntention } from '../../../models';
 
 type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'estimatedYield' | 'totalProduction';
 type SortDirection = 'none' | 'asc' | 'desc';
@@ -43,31 +43,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
             </svg>
             <p class="mt-2">No planting intentions recorded for this customer</p>
           </div>
-          @if (!selectedFarmId) {
-            <div class="flex justify-center">
-              <div class="text-center px-4 py-2 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200 rounded-lg">
-                <p class="text-sm">Please select a farm from the dropdown above to add planting intentions</p>
-              </div>
-            </div>
-          } @else {
-            <div class="flex justify-center">
-              <app-button variant="default" (onClick)="openAddDialog()">
-                <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                </svg>
-                Add Planting Intention
-              </app-button>
-            </div>
-          }
-        </div>
-      } @else {
-        <!-- Add Button -->
-        @if (!selectedFarmId) {
-          <div class="mb-4 px-4 py-2 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200 rounded-lg">
-            <p class="text-sm">Please select a farm from the dropdown above to add planting intentions</p>
-          </div>
-        } @else {
-          <div class="flex justify-end mb-4">
+          <div class="flex justify-center">
             <app-button variant="default" (onClick)="openAddDialog()">
               <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -75,7 +51,17 @@ type SortDirection = 'none' | 'asc' | 'desc';
               Add Planting Intention
             </app-button>
           </div>
-        }
+        </div>
+      } @else {
+        <!-- Add Button -->
+        <div class="flex justify-end mb-4">
+          <app-button variant="default" (onClick)="openAddDialog()">
+            <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            Add Planting Intention
+          </app-button>
+        </div>
 
         <!-- Mobile Card View -->
         <div class="md:hidden space-y-3">
@@ -292,15 +278,9 @@ type SortDirection = 'none' | 'asc' | 'desc';
       <app-dialog [isOpen]="showAddDialog" (close)="closeAddDialog()" size="md">
         <app-dialog-header>
           <app-dialog-title>Add Planting Intention</app-dialog-title>
-          <app-dialog-description>Record a new planting intention for {{ customer.name }} at {{ selectedFarmName }}</app-dialog-description>
+          <app-dialog-description>Record a new planting intention for {{ customer.name }}</app-dialog-description>
         </app-dialog-header>
         <app-dialog-content>
-          @if (!selectedFarmId) {
-            <div class="mb-4 px-4 py-3 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200 rounded-lg border border-red-200 dark:border-red-800">
-              <p class="text-sm font-medium">No farm selected</p>
-              <p class="text-sm mt-1">Please close this dialog and select a farm from the dropdown before adding planting intentions.</p>
-            </div>
-          }
           <div class="space-y-4">
             <div class="space-y-2">
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Crop</label>
@@ -420,10 +400,8 @@ type SortDirection = 'none' | 'asc' | 'desc';
 export class PlantingIntentionsTableComponent implements OnDestroy {
   @Input() plantingIntentions: PlantingIntention[] = [];
   @Input() customer!: Customer;
-  @Input() selectedFarmId: string | null = null;
-  @Input() farms: Farm[] = [];
-  @Output() add = new EventEmitter<{farmId: string, crop: string, acres: number, plantingYear: number, estimatedYield: number}>();
-  @Output() edit = new EventEmitter<{intentionId: string, farmId: string, crop: string, acres: number, plantingYear: number, estimatedYield: number}>();
+  @Output() add = new EventEmitter<{crop: string, acres: number, plantingYear: number, estimatedYield: number}>();
+  @Output() edit = new EventEmitter<{intentionId: string, crop: string, acres: number, plantingYear: number, estimatedYield: number}>();
   @Output() delete = new EventEmitter<string>();
 
   // Average Yield Estimates (bu/acre) - Used for auto-calculating estimated yield
@@ -570,8 +548,7 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
   }
 
   getFarmName(farmId: string): string {
-    const farm = this.farms.find(f => f.id === farmId);
-    return farm ? farm.name : 'Unknown Farm';
+    return this.customer?.farm || '';
   }
 
   /**
@@ -582,16 +559,8 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
     return this.YIELD_ESTIMATES[crop] || 0;
   }
 
-  get selectedFarmName(): string {
-    if (!this.selectedFarmId) return '';
-    const farm = this.farms.find(f => f.id === this.selectedFarmId);
-    return farm ? farm.name : '';
-  }
-
   get editIntentionFarmName(): string {
-    if (!this.selectedIntention) return '';
-    const farm = this.farms.find(f => f.id === this.selectedIntention!.farmId);
-    return farm ? farm.name : '';
+    return this.customer?.farm || '';
   }
 
   openAddDialog(): void {
@@ -622,9 +591,8 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
   }
 
   submitAdd(): void {
-    if (this.isAddFormValid() && this.selectedFarmId) {
+    if (this.isAddFormValid()) {
       const data = {
-        farmId: this.selectedFarmId,
         crop: this.addForm.crop,
         acres: parseInt(this.addForm.acres),
         plantingYear: parseInt(this.addForm.plantingYear),
@@ -675,7 +643,6 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
     if (this.isEditFormValid() && this.selectedIntention) {
       this.edit.emit({
         intentionId: this.selectedIntention.id,
-        farmId: this.selectedIntention.farmId,
         crop: this.editForm.crop,
         acres: parseInt(this.editForm.acres),
         plantingYear: parseInt(this.editForm.plantingYear),

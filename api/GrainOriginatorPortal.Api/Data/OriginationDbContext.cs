@@ -109,6 +109,7 @@ public class OriginationDbContext : DbContext
 
             // Quantity and pricing - mapped to actual ODS column names
             entity.Property(e => e.Quantity).HasColumnName("Quantity").HasColumnType("decimal(18,6)").IsRequired(false);
+            entity.Property(e => e.PricedQuantity).HasColumnName("PricedQuantity").HasColumnType("decimal(18,6)").IsRequired(false);
             entity.Property(e => e.Unit).HasColumnName("QuantityUom").HasMaxLength(16).IsRequired(false);
             entity.Property(e => e.TotalValue).HasColumnName("TotalValue").HasColumnType("decimal(18,2)").IsRequired(false);
 

@@ -1,5 +1,5 @@
 import { Injectable, signal, computed } from '@angular/core';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, Farm, SavedList } from '../models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList } from '../models';
 
 export interface BuildListState {
   queryText: string;
@@ -19,7 +19,6 @@ export class AppStateService {
 
   // Selection state
   selectedCustomer = signal<Customer | null>(null);
-  selectedFarmId = signal<string | null>(null);
   selectedTradeUnits = signal<string[]>([]);
 
   // Scroll state — tracks last customer scrolled to in the list so re-navigation doesn't re-scroll
@@ -38,7 +37,6 @@ export class AppStateService {
   plantingIntentions = signal<PlantingIntention[]>([]);
   notes = signal<Note[]>([]);
   storedGrain = signal<StoredGrain[]>([]);
-  farms = signal<Farm[]>([]);
   savedLists = signal<SavedList[]>([]);
 
   setView(view: 'customers' | 'insights' | 'buildlist' | 'dashboard'): void {
@@ -47,15 +45,6 @@ export class AppStateService {
 
   selectCustomer(customer: Customer | null): void {
     this.selectedCustomer.set(customer);
-    if (customer && customer.farmIds.length > 0) {
-      this.selectedFarmId.set(customer.farmIds[0]);
-    } else {
-      this.selectedFarmId.set(null);
-    }
-  }
-
-  selectFarm(farmId: string | null): void {
-    this.selectedFarmId.set(farmId);
   }
 
   setTradeUnits(tradeUnits: string[]): void {
@@ -91,10 +80,6 @@ export class AppStateService {
     this.storedGrain.set(storedGrain);
   }
 
-  setFarms(farms: Farm[]): void {
-    this.farms.set(farms);
-  }
-
   setSavedLists(savedLists: SavedList[]): void {
     this.savedLists.set(savedLists);
   }
@@ -120,13 +105,11 @@ export class AppStateService {
 
   clearSelection(): void {
     this.selectedCustomer.set(null);
-    this.selectedFarmId.set(null);
   }
 
   // Clear all state (for logout or reset)
   clearAll(): void {
     this.selectedCustomer.set(null);
-    this.selectedFarmId.set(null);
     this.selectedTradeUnits.set([]);
     this.searchQuery.set('');
     this.customers.set([]);
@@ -135,7 +118,6 @@ export class AppStateService {
     this.plantingIntentions.set([]);
     this.notes.set([]);
     this.storedGrain.set([]);
-    this.farms.set([]);
     this.savedLists.set([]);
     this.buildListState.set(null);
     this.lastScrolledCustomerId.set(null);

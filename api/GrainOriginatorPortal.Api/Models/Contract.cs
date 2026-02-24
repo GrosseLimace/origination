@@ -29,6 +29,7 @@ public class Contract
 
     // Quantity and pricing
     public decimal? Quantity { get; set; }
+    public decimal? PricedQuantity { get; set; } // Quantity that has been priced
     public decimal? Weight { get; set; }
     public string? Unit { get; set; }
     public decimal? Price { get; set; } // Calculated: TotalValue / Quantity

@@ -141,10 +141,10 @@ public class SqlDataService : IDataService
                     customerIdsWithTradeUnitTickets.Contains(c.Id));
             }
 
-            // Add Contains condition for each search word (all words must be present in name)
+            // Add Contains condition for each search word (all words must match name OR sourceCustomerId)
             foreach (var word in searchWords)
             {
-                query = query.Where(c => c.Name.Contains(word));
+                query = query.Where(c => c.Name.Contains(word) || (c.SourceCustomerId != null && c.SourceCustomerId.Contains(word)));
             }
 
             // Get candidates (without ordering in SQL - we'll order by relevance in memory)
@@ -357,6 +357,58 @@ public class SqlDataService : IDataService
             .ToList();
 
         return allTradeUnits;
+    }
+
+    // =========================================================================
+    // Commodity Operations
+    // =========================================================================
+
+    public List<Commodity> GetCommodities()
+    {
+        try
+        {
+            var commodities = _appContext.Commodities
+                .Where(c => c.IsActive)
+                .OrderBy(c => c.Name)
+                .ToList();
+
+            if (commodities.Count > 0)
+            {
+                _logger.LogInformation("Returning {Count} commodities from dbo.Commodities", commodities.Count);
+                return commodities;
+            }
+
+            // Table is empty - one-time population from ODS contracts
+            _logger.LogInformation("dbo.Commodities is empty - performing one-time population from ODS");
+            var contractCommodities = _context.Contracts
+                .Where(c => c.IsActive
+                    && !string.IsNullOrEmpty(c.CommodityCode)
+                    && !string.IsNullOrEmpty(c.CommodityDescription))
+                .Select(c => new { c.CommodityCode, c.CommodityDescription })
+                .Distinct()
+                .ToList();
+
+            foreach (var item in contractCommodities)
+            {
+                _appContext.Commodities.Add(new Commodity
+                {
+                    Code = item.CommodityCode!,
+                    Name = item.CommodityDescription!,
+                    IsActive = true
+                });
+            }
+            _appContext.SaveChanges();
+
+            return _appContext.Commodities
+                .Where(c => c.IsActive)
+                .OrderBy(c => c.Name)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving commodities");
+            throw;
+        }
     }
 
     public List<TradeUnitGroup> GetTradeUnitGroups()
@@ -947,6 +999,106 @@ public class SqlDataService : IDataService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting note {NoteId}", noteId);
+            throw;
+        }
+    }
+
+    // =========================================================================
+    // Producer Details Operations - Uses dbo.ProducerDetails table in Origination database
+    // =========================================================================
+
+    public ProducerDetails? GetProducerDetails(long customerId)
+    {
+        try
+        {
+            return _appContext.ProducerDetails.FirstOrDefault(pd => pd.CustomerId == customerId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("ProducerDetails table not accessible for customer {CustomerId}. Error: {Error}", customerId, ex.Message);
+            return null;
+        }
+    }
+
+    public List<ProducerDetails> GetAllProducerDetails()
+    {
+        try
+        {
+            return _appContext.ProducerDetails.ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("ProducerDetails table not accessible. Returning empty list. Error: {Error}", ex.Message);
+            return new List<ProducerDetails>();
+        }
+    }
+
+    public ProducerDetails UpsertProducerDetails(long customerId, string? sourceCustomerId, string customerName, decimal? totalAcres, decimal? binCapacity, string? primaryContact, string? commodities, string? linkedProducerIds = null)
+    {
+        try
+        {
+            var existing = _appContext.ProducerDetails.FirstOrDefault(pd => pd.CustomerId == customerId);
+
+            if (existing != null)
+            {
+                existing.SourceCustomerId = sourceCustomerId;
+                existing.CustomerName = customerName;
+                existing.TotalAcres = totalAcres;
+                existing.BinCapacity = binCapacity;
+                existing.PrimaryContact = primaryContact;
+                existing.Commodities = commodities;
+                existing.LinkedProducerIds = linkedProducerIds;
+                existing.ModifiedBy = "system";
+                existing.ModifiedOn = DateTime.UtcNow;
+
+                _appContext.SaveChanges();
+                _logger.LogInformation("Updated ProducerDetails for customer {CustomerId}", customerId);
+                return existing;
+            }
+            else
+            {
+                var details = new ProducerDetails
+                {
+                    CustomerId = customerId,
+                    SourceCustomerId = sourceCustomerId,
+                    CustomerName = customerName,
+                    TotalAcres = totalAcres,
+                    BinCapacity = binCapacity,
+                    PrimaryContact = primaryContact,
+                    Commodities = commodities,
+                    LinkedProducerIds = linkedProducerIds,
+                    CreatedBy = "system",
+                    CreatedOn = DateTime.UtcNow
+                };
+
+                _appContext.ProducerDetails.Add(details);
+                _appContext.SaveChanges();
+                _logger.LogInformation("Created ProducerDetails for customer {CustomerId}", customerId);
+                return details;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error upserting ProducerDetails for customer {CustomerId}", customerId);
+            throw;
+        }
+    }
+
+    public void DeleteProducerDetails(long customerId)
+    {
+        try
+        {
+            var existing = _appContext.ProducerDetails.FirstOrDefault(pd => pd.CustomerId == customerId);
+            if (existing != null)
+            {
+                _appContext.ProducerDetails.Remove(existing);
+                _appContext.SaveChanges();
+                _logger.LogInformation("Deleted ProducerDetails for customer {CustomerId}", customerId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting ProducerDetails for customer {CustomerId}", customerId);
             throw;
         }
     }

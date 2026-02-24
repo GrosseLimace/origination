@@ -273,18 +273,6 @@ export class TicketsTableComponent {
     // Check if any contract has wheat as commodity group or description
     const hasWheat = this.contracts.some(c => this.isWheatCommodity(c.commodityGroup, c.commodityDescription));
 
-    // Debug logging
-    if (this.contracts.length > 0) {
-      const wheatContracts = this.contracts.filter(c => this.isWheatCommodity(c.commodityGroup, c.commodityDescription));
-      console.log('=== WHEAT CONTRACT DEBUG ===');
-      console.log('Total contracts:', this.contracts.length);
-      console.log('Wheat contracts found:', wheatContracts.length);
-      console.log('Sample commodity groups:', this.contracts.slice(0, 10).map(c => c.commodityGroup));
-      console.log('Sample commodity descriptions:', this.contracts.slice(0, 10).map(c => c.commodityDescription));
-      console.log('Has wheat:', hasWheat);
-      console.log('========================');
-    }
-
     return hasWheat;
   }
 
@@ -317,17 +305,13 @@ export class TicketsTableComponent {
     }
 
     if (matchingContracts.length === 0) {
-      console.log('Ticket', ticket.ticketNumber, 'no contract match found');
       return false;
     }
 
     // Return true if ANY of the matching contracts is wheat
-    const isWheat = matchingContracts.some(contract =>
+    return matchingContracts.some(contract =>
       this.isWheatCommodity(contract.commodityGroup, contract.commodityDescription)
     );
-
-    console.log('Ticket', ticket.ticketNumber, 'matches', matchingContracts.length, 'contracts, isWheat:', isWheat);
-    return isWheat;
   }
 
   get sortedTickets(): Ticket[] {

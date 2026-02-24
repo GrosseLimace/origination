@@ -215,7 +215,11 @@ type SortDirection = 'none' | 'asc' | 'desc';
                   <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ contract.quantity | number }} {{ contract.unit }}</span>
                 </app-table-cell>
                 <app-table-cell>
-                  @if (contract.price !== null && contract.price !== undefined) {
+                  @if (getPricingStatus(contract) === 'UNPRICED') {
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">Unpriced</span>
+                  } @else if (getPricingStatus(contract) === 'PARTIAL') {
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">Partial</span>
+                  } @else if (contract.price !== null && contract.price !== undefined) {
                     <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ contract.price | currency:'USD':'symbol':'1.2-2' }}/{{ getSingularUnit(contract.unit) }}</span>
                   } @else {
                     <span class="text-gray-400">N/A</span>
@@ -265,7 +269,15 @@ type SortDirection = 'none' | 'asc' | 'desc';
                           <div class="flex flex-col">
                             <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Price per Bushel</span>
                             <span class="font-medium text-gray-900 dark:text-gray-100">
-                              {{ contract.price !== null && contract.price !== undefined ? (contract.price | currency:'USD':'symbol':'1.2-2') : 'N/A' }}
+                              @if (getPricingStatus(contract) === 'UNPRICED') {
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">Unpriced</span>
+                              } @else if (getPricingStatus(contract) === 'PARTIAL') {
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">Partial</span>
+                              } @else if (contract.price !== null && contract.price !== undefined) {
+                                {{ contract.price | currency:'USD':'symbol':'1.2-2' }}
+                              } @else {
+                                N/A
+                              }
                             </span>
                           </div>
                           <div class="flex flex-col">
@@ -506,6 +518,15 @@ export class ContractsTableComponent implements OnChanges {
     return unit.endsWith('s') ? unit.slice(0, -1) : unit;
   }
 
+  getPricingStatus(contract: Contract): 'UNPRICED' | 'PARTIAL' | 'PRICED' {
+    const pricedQty = contract.pricedQuantity ?? 0;
+    const totalQty = contract.quantity ?? 0;
+
+    if (pricedQty === 0) return 'UNPRICED';
+    if (pricedQty < totalQty) return 'PARTIAL';
+    return 'PRICED';
+  }
+
   getDeliveryWindowStatus(contract: Contract): string {
     const now = new Date();
     const start = new Date(contract.deliveryStart);
@@ -520,28 +541,16 @@ export class ContractsTableComponent implements OnChanges {
     const appliedTickets = this.getAppliedTickets(contract);
     const lbsPerBushel = this.getLbsPerBushel(contract.commodityDescription || contract.commodityCode || '');
 
-    // DEBUG: Log ticket information
-    console.log(`\n=== CONTRACT ${contract.contractNumber} (${contract.commodityDescription || contract.commodityCode}) ===`);
-    console.log(`Contract Quantity: ${contract.quantity} ${contract.unit}`);
-    console.log(`Applied Tickets Count: ${appliedTickets.length}`);
-    appliedTickets.forEach((t, idx) => {
-      console.log(`  Ticket ${idx + 1}: appliedDockQuantity = ${t.appliedDockQuantity}`);
-    });
-
     // Calculate delivered pounds from tickets (appliedDockQuantity/AppliedNetQuantity is in pounds)
     const deliveredLbs = appliedTickets.reduce((sum, t) => sum + (t.appliedDockQuantity || 0), 0);
-    console.log(`Total deliveredLbs: ${deliveredLbs}`);
 
     // Convert contract quantity to pounds based on unit type
     const contractLbs = this.convertContractQuantityToPounds(contract.quantity || 0, contract.unit, lbsPerBushel);
-    console.log(`Contract in pounds: ${contractLbs} lbs (using unit: "${contract.unit}")`);
 
     // Calculate delivered and remaining in the contract's original unit
     const deliveredInContractUnits = this.convertPoundsToContractUnits(deliveredLbs, contract.unit, lbsPerBushel);
-    console.log(`Delivered in contract units: ${deliveredInContractUnits} ${contract.unit}`);
     const remainingInContractUnits = Math.max(0, (contract.quantity || 0) - deliveredInContractUnits);
     const progressPercent = contractLbs > 0 ? Math.min(100, (deliveredLbs / contractLbs) * 100) : 0;
-    console.log(`Progress: ${progressPercent.toFixed(2)}%\n`);
 
     // Determine precision based on unit type
     const unitLower = (contract.unit || '').toLowerCase().trim();

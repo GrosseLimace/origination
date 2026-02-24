@@ -48,6 +48,15 @@ public interface IDataService
     Note? UpdateNote(long noteId, string content);
     void DeleteNote(long noteId);
 
+    // Producer Details Operations
+    ProducerDetails? GetProducerDetails(long customerId);
+    List<ProducerDetails> GetAllProducerDetails();
+    ProducerDetails UpsertProducerDetails(long customerId, string? sourceCustomerId, string customerName, decimal? totalAcres, decimal? binCapacity, string? primaryContact, string? commodities, string? linkedProducerIds = null);
+    void DeleteProducerDetails(long customerId);
+
+    // Commodity Operations
+    List<Commodity> GetCommodities();
+
     // Storage Operations
     List<StoredGrain> GetStoredGrain();
     List<StoredGrain> GetStoredGrainByCustomer(long customerId);
