@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnDestroy } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '../../ui/table/table.component';
@@ -6,9 +6,10 @@ import { ButtonComponent } from '../../ui/button/button.component';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '../../ui/dialog/dialog.component';
 import { InputComponent } from '../../ui/input/input.component';
 import { SelectComponent } from '../../ui/select/select.component';
-import { Customer, PlantingIntention } from '../../../models';
+import { Customer, PlantingIntention, Commodity } from '../../../models';
+import { ApiService } from '../../../services/api.service';
 
-type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'estimatedYield' | 'totalProduction';
+type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'createdOn';
 type SortDirection = 'none' | 'asc' | 'desc';
 
 @Component({
@@ -94,30 +95,26 @@ type SortDirection = 'none' | 'asc' | 'desc';
                 </button>
               </div>
 
-              <div class="grid grid-cols-2 gap-3">
+              <div class="grid grid-cols-3 gap-3">
                 <div>
                   <div class="text-xs text-gray-500 dark:text-gray-400">Acres</div>
                   <div class="text-sm text-gray-900 dark:text-white">{{ intention.acres | number }}</div>
                 </div>
                 <div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400">Est. Yield</div>
-                  <div class="text-sm text-gray-900 dark:text-white">{{ intention.estimatedYield }} bu/acre</div>
-                </div>
-                <div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400">Total Production</div>
-                  <div class="text-sm font-medium text-green-600 dark:text-green-400">{{ intention.acres * intention.estimatedYield | number }} bu</div>
-                </div>
-                <div>
                   <div class="text-xs text-gray-500 dark:text-gray-400">Planting Year</div>
                   <div class="text-sm text-gray-900 dark:text-white">{{ intention.plantingYear }}</div>
                 </div>
-              </div>
-
-              <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
-                <div class="text-xs text-gray-500 dark:text-gray-400">
-                  <span>Variety: {{ intention.variety || 'Not specified' }}</span>
+                <div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">Created On</div>
+                  <div class="text-sm text-gray-900 dark:text-white">{{ intention.createdOn | date:'M/d/yy' }}</div>
                 </div>
               </div>
+
+              @if (intention.tradeUnit) {
+                <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                  <div class="text-xs text-gray-500 dark:text-gray-400">Trade Unit: {{ intention.tradeUnit }}</div>
+                </div>
+              }
             </div>
           }
         </div>
@@ -127,8 +124,8 @@ type SortDirection = 'none' | 'asc' | 'desc';
           <app-table>
             <app-table-header>
               <app-table-row>
-                <app-table-head [sortable]="true" (click)="handleSort('crop')">
-                  <div class="flex items-center gap-1.5">
+                <app-table-head [sortable]="true" (click)="handleSort('crop')" class="w-[24%] text-center">
+                  <div class="flex items-center justify-center gap-1.5">
                     <span>Crop</span>
                     <span [class]="getSortIconClass('crop')">
                       @if (currentSortColumn === 'crop' && currentSortDirection === 'asc') {
@@ -147,7 +144,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
                     </span>
                   </div>
                 </app-table-head>
-                <app-table-head [sortable]="true" (click)="handleSort('acres')" class="text-center">
+                <app-table-head [sortable]="true" (click)="handleSort('acres')" class="w-[24%] text-center">
                   <div class="flex items-center justify-center gap-1.5">
                     <span>Acres</span>
                     <span [class]="getSortIconClass('acres')">
@@ -167,7 +164,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
                     </span>
                   </div>
                 </app-table-head>
-                <app-table-head [sortable]="true" (click)="handleSort('plantingYear')" class="text-center">
+                <app-table-head [sortable]="true" (click)="handleSort('plantingYear')" class="w-[24%] text-center">
                   <div class="flex items-center justify-center gap-1.5">
                     <span>Planting Year</span>
                     <span [class]="getSortIconClass('plantingYear')">
@@ -187,15 +184,15 @@ type SortDirection = 'none' | 'asc' | 'desc';
                     </span>
                   </div>
                 </app-table-head>
-                <app-table-head [sortable]="true" (click)="handleSort('estimatedYield')" class="text-center">
+                <app-table-head [sortable]="true" (click)="handleSort('createdOn')" class="w-[24%] text-center">
                   <div class="flex items-center justify-center gap-1.5">
-                    <span>Est. Yield (bu/acre)</span>
-                    <span [class]="getSortIconClass('estimatedYield')">
-                      @if (currentSortColumn === 'estimatedYield' && currentSortDirection === 'asc') {
+                    <span>Created On</span>
+                    <span [class]="getSortIconClass('createdOn')">
+                      @if (currentSortColumn === 'createdOn' && currentSortDirection === 'asc') {
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
                         </svg>
-                      } @else if (currentSortColumn === 'estimatedYield' && currentSortDirection === 'desc') {
+                      } @else if (currentSortColumn === 'createdOn' && currentSortDirection === 'desc') {
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                         </svg>
@@ -207,27 +204,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
                     </span>
                   </div>
                 </app-table-head>
-                <app-table-head [sortable]="true" (click)="handleSort('totalProduction')" class="text-center">
-                  <div class="flex items-center justify-center gap-1.5">
-                    <span>Total Est. Production</span>
-                    <span [class]="getSortIconClass('totalProduction')">
-                      @if (currentSortColumn === 'totalProduction' && currentSortDirection === 'asc') {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                        </svg>
-                      } @else if (currentSortColumn === 'totalProduction' && currentSortDirection === 'desc') {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                        </svg>
-                      } @else {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
-                        </svg>
-                      }
-                    </span>
-                  </div>
-                </app-table-head>
-                <app-table-head class="text-center"></app-table-head>
+                <app-table-head class="w-[4%] text-center"></app-table-head>
               </app-table-row>
             </app-table-header>
             <app-table-body>
@@ -235,7 +212,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
                 <!-- Year Separator Row -->
                 @if (shouldShowYearSeparator(i, intention)) {
                   <app-table-row>
-                    <app-table-cell [colspan]="6" class="bg-gray-50 dark:bg-gray-800/50">
+                    <app-table-cell [colspan]="5" class="bg-gray-50 dark:bg-gray-800/50">
                       <div class="py-2 px-3 flex items-center gap-2">
                         <div class="h-px flex-1 bg-gray-300 dark:bg-gray-600"></div>
                         <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">
@@ -249,20 +226,17 @@ type SortDirection = 'none' | 'asc' | 'desc';
 
                 <!-- Data Row -->
                 <app-table-row>
-                  <app-table-cell>
-                    <span class="font-medium">{{ intention.crop }}</span>
-                  </app-table-cell>
+                  <app-table-cell class="text-center">{{ intention.crop }}</app-table-cell>
                   <app-table-cell class="text-center">{{ intention.acres | number }}</app-table-cell>
                   <app-table-cell class="text-center">{{ intention.plantingYear }}</app-table-cell>
-                  <app-table-cell class="text-center">{{ intention.estimatedYield }}</app-table-cell>
-                  <app-table-cell class="text-center">{{ intention.acres * intention.estimatedYield | number }} bu</app-table-cell>
+                  <app-table-cell class="text-center">{{ intention.createdOn | date:'M/d/yy' }}</app-table-cell>
                   <app-table-cell class="text-center">
                     <button
                       type="button"
-                      class="h-10 w-10 inline-flex items-center justify-center text-gray-400 hover:text-green-600 dark:hover:text-green-400 bg-transparent border-0 p-0"
+                      class="h-7 w-7 inline-flex items-center justify-center text-gray-400 hover:text-green-600 dark:hover:text-green-400 bg-transparent border-0 p-0"
                       (click)="openEditDialog(intention)"
                     >
-                      <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
                       </svg>
                     </button>
@@ -284,16 +258,16 @@ type SortDirection = 'none' | 'asc' | 'desc';
           <div class="space-y-4">
             <div class="space-y-2">
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Crop</label>
-              <app-select [(ngModel)]="addForm.crop" placeholder="Select a crop">
-                <option value="IR HRWW">IR HRWW</option>
-                <option value="DL HRWW">DL HRWW</option>
-                <option value="IR Corn">IR Corn</option>
-                <option value="DL YC">DL YC</option>
-                <option value="IR Milo">IR Milo</option>
-                <option value="DL Milo">DL Milo</option>
-                <option value="IR Beans">IR Beans</option>
-                <option value="DL YSB">DL YSB</option>
-              </app-select>
+              <select
+                [(ngModel)]="addForm.crop"
+                (ngModelChange)="onAddCropChange($event)"
+                class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+              >
+                <option value="" disabled>Select a crop...</option>
+                @for (commodity of availableCrops; track commodity.id) {
+                  <option [value]="commodity.code">{{ commodity.name }} ({{ commodity.code }})</option>
+                }
+              </select>
             </div>
 
             <div class="space-y-2">
@@ -305,6 +279,17 @@ type SortDirection = 'none' | 'asc' | 'desc';
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Planting Year</label>
               <app-input type="number" [(ngModel)]="addForm.plantingYear" placeholder="Enter year (e.g., 2025)" min="2020" max="2100"></app-input>
             </div>
+
+            @if (tradeUnits.length > 1) {
+              <div class="space-y-2">
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Trade Unit</label>
+                <app-select [(ngModel)]="addForm.tradeUnit">
+                  @for (tu of tradeUnits; track tu) {
+                    <option [value]="tu">{{ tu }}</option>
+                  }
+                </app-select>
+              </div>
+            }
           </div>
         </app-dialog-content>
         <app-dialog-footer>
@@ -317,22 +302,21 @@ type SortDirection = 'none' | 'asc' | 'desc';
       <app-dialog [isOpen]="showEditDialog" (close)="closeEditDialog()" size="md">
         <app-dialog-header>
           <app-dialog-title>Edit Planting Intention</app-dialog-title>
-          <app-dialog-description>Update planting intention for {{ customer.name }} at {{ editIntentionFarmName }}</app-dialog-description>
+          <app-dialog-description>Update planting intention for {{ customer.name }}</app-dialog-description>
         </app-dialog-header>
         <app-dialog-content>
           <div class="space-y-4">
             <div class="space-y-2">
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Crop</label>
-              <app-select [(ngModel)]="editForm.crop">
-                <option value="IR HRWW">IR HRWW</option>
-                <option value="DL HRWW">DL HRWW</option>
-                <option value="IR Corn">IR Corn</option>
-                <option value="DL YC">DL YC</option>
-                <option value="IR Milo">IR Milo</option>
-                <option value="DL Milo">DL Milo</option>
-                <option value="IR Beans">IR Beans</option>
-                <option value="DL YSB">DL YSB</option>
-              </app-select>
+              <select
+                [(ngModel)]="editForm.crop"
+                (ngModelChange)="onEditCropChange($event)"
+                class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+              >
+                @for (commodity of availableCrops; track commodity.id) {
+                  <option [value]="commodity.code">{{ commodity.name }} ({{ commodity.code }})</option>
+                }
+              </select>
             </div>
 
             <div class="space-y-2">
@@ -372,12 +356,18 @@ type SortDirection = 'none' | 'asc' | 'desc';
             </p>
             <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 mb-4 space-y-2">
               <div class="pb-2 mb-2 border-b border-gray-200 dark:border-gray-600">
-                <span class="text-sm font-semibold text-gray-900 dark:text-gray-200">{{ customer.name }} | {{ getFarmName(selectedIntention.farmId) }}</span>
+                <span class="text-sm font-semibold text-gray-900 dark:text-gray-200">{{ customer.name }}</span>
               </div>
               <div class="flex justify-between">
                 <span class="text-sm text-gray-600 dark:text-gray-400">Crop:</span>
                 <span class="text-sm font-medium text-gray-900 dark:text-gray-300">{{ selectedIntention.crop }}</span>
               </div>
+              @if (selectedIntention.description) {
+                <div class="flex justify-between">
+                  <span class="text-sm text-gray-600 dark:text-gray-400">Description:</span>
+                  <span class="text-sm font-medium text-gray-900 dark:text-gray-300">{{ selectedIntention.description }}</span>
+                </div>
+              }
               <div class="flex justify-between">
                 <span class="text-sm text-gray-600 dark:text-gray-400">Acres:</span>
                 <span class="text-sm font-medium text-gray-900 dark:text-gray-300">{{ selectedIntention.acres | number }}</span>
@@ -398,25 +388,24 @@ type SortDirection = 'none' | 'asc' | 'desc';
   `
 })
 export class PlantingIntentionsTableComponent implements OnDestroy {
+  private apiService = inject(ApiService);
+
   @Input() plantingIntentions: PlantingIntention[] = [];
   @Input() customer!: Customer;
-  @Output() add = new EventEmitter<{crop: string, acres: number, plantingYear: number, estimatedYield: number}>();
-  @Output() edit = new EventEmitter<{intentionId: string, crop: string, acres: number, plantingYear: number, estimatedYield: number}>();
-  @Output() delete = new EventEmitter<string>();
+  @Input() tradeUnits: string[] = [];
+  @Input() customerCommodityCodes: string[] = [];
+  @Output() add = new EventEmitter<{crop: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
+  @Output() edit = new EventEmitter<{intentionId: number, crop: string, description?: string, acres: number, plantingYear: number}>();
+  @Output() delete = new EventEmitter<number>();
 
-  // Average Yield Estimates (bu/acre) - Used for auto-calculating estimated yield
-  private readonly YIELD_ESTIMATES: Record<string, number> = {
-    'IR HRWW': 75,      // Irrigated Hard Red Winter Wheat
-    'DL HRWW': 50,      // Dryland Hard Red Winter Wheat
-    'IR Corn': 215,     // Irrigated Corn
-    'DL YC': 100,       // Dryland Yellow Corn
-    'IR Milo': 120,     // Irrigated Milo
-    'DL Milo': 75,      // Dryland Milo
-    'IR Beans': 60,     // Irrigated Beans
-    'DL YSB': 30        // Dryland Yellow Soybeans
-  };
+  allCommodities: Commodity[] = [];
 
-  expandedRows = new Set<string>();
+  get availableCrops(): Commodity[] {
+    if (this.customerCommodityCodes.length === 0) return this.allCommodities;
+    return this.allCommodities.filter(c => this.customerCommodityCodes.includes(c.code));
+  }
+
+  expandedRows = new Set<number>();
   currentSortColumn: SortColumn | null = null;
   currentSortDirection: SortDirection = 'none';
 
@@ -427,18 +416,22 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
 
   addForm = {
     crop: '',
+    description: '',
     acres: '',
-    plantingYear: ''
+    plantingYear: '',
+    tradeUnit: ''
   };
 
   editForm = {
     crop: '',
+    description: '',
     acres: '',
     plantingYear: ''
   };
 
   originalEditForm = {
     crop: '',
+    description: '',
     acres: '',
     plantingYear: ''
   };
@@ -477,11 +470,8 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
           case 'acres':
             comparison = a.acres - b.acres;
             break;
-          case 'estimatedYield':
-            comparison = a.estimatedYield - b.estimatedYield;
-            break;
-          case 'totalProduction':
-            comparison = (a.acres * a.estimatedYield) - (b.acres * b.estimatedYield);
+          case 'createdOn':
+            comparison = new Date(a.createdOn).getTime() - new Date(b.createdOn).getTime();
             break;
         }
         return this.currentSortDirection === 'desc' ? -comparison : comparison;
@@ -535,7 +525,7 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
     return previousIntention.plantingYear !== intention.plantingYear;
   }
 
-  toggleRow(id: string): void {
+  toggleRow(id: number): void {
     if (this.expandedRows.has(id)) {
       this.expandedRows.delete(id);
     } else {
@@ -543,42 +533,48 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
     }
   }
 
-  isExpanded(id: string): boolean {
+  isExpanded(id: number): boolean {
     return this.expandedRows.has(id);
   }
 
-  getFarmName(farmId: string): string {
-    return this.customer?.farm || '';
+  // ── Commodity dropdown ───────────────────────────────────────────────────────
+
+  private loadCommodities(): void {
+    if (this.allCommodities.length > 0) return;
+    this.apiService.getCommodities().subscribe({
+      next: (commodities) => { this.allCommodities = commodities; }
+    });
   }
 
-  /**
-   * Get the estimated yield for a given crop from the yield estimates table.
-   * Returns 0 if the crop is not found in the table.
-   */
-  getEstimatedYield(crop: string): number {
-    return this.YIELD_ESTIMATES[crop] || 0;
+  onAddCropChange(code: string): void {
+    const commodity = this.availableCrops.find(c => c.code === code);
+    this.addForm.description = commodity?.name || '';
   }
 
-  get editIntentionFarmName(): string {
-    return this.customer?.farm || '';
+  onEditCropChange(code: string): void {
+    const commodity = this.availableCrops.find(c => c.code === code);
+    this.editForm.description = commodity?.name || '';
   }
+
+  // ────────────────────────────────────────────────────────────────────────────
 
   openAddDialog(): void {
     const lastYear = new Date().getFullYear() - 1;
 
     this.addForm = {
       crop: '',
+      description: '',
       acres: '',
-      plantingYear: lastYear.toString()
+      plantingYear: lastYear.toString(),
+      tradeUnit: this.tradeUnits.length > 0 ? this.tradeUnits[0] : ''
     };
+    this.loadCommodities();
     this.showAddDialog = true;
-    // Prevent body scroll when dialog opens
     document.body.style.overflow = 'hidden';
   }
 
   closeAddDialog(): void {
     this.showAddDialog = false;
-    // Restore body scroll when dialog closes
     document.body.style.overflow = '';
   }
 
@@ -587,16 +583,18 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
       && this.addForm.acres !== ''
       && !isNaN(parseInt(this.addForm.acres))
       && this.addForm.plantingYear !== ''
-      && !isNaN(parseInt(this.addForm.plantingYear));
+      && !isNaN(parseInt(this.addForm.plantingYear))
+      && this.addForm.tradeUnit !== '';
   }
 
   submitAdd(): void {
     if (this.isAddFormValid()) {
       const data = {
         crop: this.addForm.crop,
+        description: this.addForm.description || undefined,
         acres: parseInt(this.addForm.acres),
         plantingYear: parseInt(this.addForm.plantingYear),
-        estimatedYield: this.getEstimatedYield(this.addForm.crop)
+        tradeUnit: this.addForm.tradeUnit
       };
       this.add.emit(data);
       this.closeAddDialog();
@@ -607,25 +605,26 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
     this.selectedIntention = intention;
     const formData = {
       crop: intention.crop,
+      description: intention.description || '',
       acres: intention.acres.toString(),
       plantingYear: intention.plantingYear.toString()
     };
     this.editForm = { ...formData };
     this.originalEditForm = { ...formData };
+    this.loadCommodities();
     this.showEditDialog = true;
-    // Prevent body scroll when dialog opens
     document.body.style.overflow = 'hidden';
   }
 
   closeEditDialog(): void {
     this.showEditDialog = false;
     this.selectedIntention = null;
-    // Restore body scroll when dialog closes
     document.body.style.overflow = '';
   }
 
   hasEditFormChanged(): boolean {
     return this.editForm.crop !== this.originalEditForm.crop
+      || this.editForm.description !== this.originalEditForm.description
       || this.editForm.acres !== this.originalEditForm.acres
       || this.editForm.plantingYear !== this.originalEditForm.plantingYear;
   }
@@ -644,9 +643,9 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
       this.edit.emit({
         intentionId: this.selectedIntention.id,
         crop: this.editForm.crop,
+        description: this.editForm.description || undefined,
         acres: parseInt(this.editForm.acres),
-        plantingYear: parseInt(this.editForm.plantingYear),
-        estimatedYield: this.getEstimatedYield(this.editForm.crop)
+        plantingYear: parseInt(this.editForm.plantingYear)
       });
       this.closeEditDialog();
     }
@@ -654,13 +653,11 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
 
   openDeleteConfirm(): void {
     this.showDeleteConfirm = true;
-    // Prevent body scroll when dialog opens
     document.body.style.overflow = 'hidden';
   }
 
   closeDeleteConfirm(): void {
     this.showDeleteConfirm = false;
-    // Restore body scroll when dialog closes
     document.body.style.overflow = '';
   }
 
@@ -673,7 +670,6 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
   }
 
   ngOnDestroy(): void {
-    // Ensure body scroll is restored if component is destroyed while any dialog is open
     if (this.showDeleteConfirm || this.showEditDialog || this.showAddDialog) {
       document.body.style.overflow = '';
     }

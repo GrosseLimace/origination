@@ -22,7 +22,7 @@ public class PlantingIntentionsController : ControllerBase
     }
 
     [HttpGet("customer/{customerId}")]
-    public ActionResult<List<PlantingIntention>> GetByCustomer(string customerId)
+    public ActionResult<List<PlantingIntention>> GetByCustomer(int customerId)
     {
         return Ok(_dataService.GetPlantingIntentionsByCustomer(customerId));
     }
@@ -32,30 +32,33 @@ public class PlantingIntentionsController : ControllerBase
     {
         var newIntention = _dataService.AddPlantingIntention(
             request.CustomerId,
-            request.FarmId,
+            request.CustomerName,
+            request.CustomerCode,
+            request.TradeUnit,
             request.Crop,
+            request.Description,
             request.Acres,
-            request.PlantingYear,
-            request.EstimatedYield
+            request.PlantingYear
         );
         return Ok(newIntention);
     }
 
     [HttpPut("{id}")]
-    public ActionResult Update(string id, [FromBody] UpdatePlantingIntentionRequest request)
+    public ActionResult Update(int id, [FromBody] UpdatePlantingIntentionRequest request)
     {
         var updatedIntention = _dataService.UpdatePlantingIntention(
             id,
             request.Crop,
+            request.Description,
             request.Acres,
-            request.PlantingYear,
-            request.EstimatedYield
+            request.PlantingYear
         );
+        if (updatedIntention == null) return NotFound();
         return Ok(updatedIntention);
     }
 
     [HttpDelete("{id}")]
-    public ActionResult Delete(string id)
+    public ActionResult Delete(int id)
     {
         _dataService.DeletePlantingIntention(id);
         return Ok();
@@ -65,39 +68,46 @@ public class PlantingIntentionsController : ControllerBase
 public class CreatePlantingIntentionRequest
 {
     [System.ComponentModel.DataAnnotations.Required]
-    [System.ComponentModel.DataAnnotations.StringLength(100)]
-    public string CustomerId { get; set; } = string.Empty;
+    public int CustomerId { get; set; }
 
     [System.ComponentModel.DataAnnotations.Required]
-    [System.ComponentModel.DataAnnotations.StringLength(100)]
-    public string FarmId { get; set; } = string.Empty;
+    [System.ComponentModel.DataAnnotations.StringLength(255)]
+    public string CustomerName { get; set; } = string.Empty;
 
     [System.ComponentModel.DataAnnotations.Required]
     [System.ComponentModel.DataAnnotations.StringLength(50)]
+    public string CustomerCode { get; set; } = string.Empty;
+
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.StringLength(100)]
+    public string TradeUnit { get; set; } = string.Empty;
+
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.StringLength(100)]
     public string Crop { get; set; } = string.Empty;
+
+    [System.ComponentModel.DataAnnotations.StringLength(255)]
+    public string? Description { get; set; }
 
     [System.ComponentModel.DataAnnotations.Range(1, 100000)]
     public int Acres { get; set; }
 
     [System.ComponentModel.DataAnnotations.Range(2020, 2100)]
     public int PlantingYear { get; set; }
-
-    [System.ComponentModel.DataAnnotations.Range(1, 500)]
-    public int EstimatedYield { get; set; }
 }
 
 public class UpdatePlantingIntentionRequest
 {
     [System.ComponentModel.DataAnnotations.Required]
-    [System.ComponentModel.DataAnnotations.StringLength(50)]
+    [System.ComponentModel.DataAnnotations.StringLength(100)]
     public string Crop { get; set; } = string.Empty;
+
+    [System.ComponentModel.DataAnnotations.StringLength(255)]
+    public string? Description { get; set; }
 
     [System.ComponentModel.DataAnnotations.Range(1, 100000)]
     public int Acres { get; set; }
 
     [System.ComponentModel.DataAnnotations.Range(2020, 2100)]
     public int PlantingYear { get; set; }
-
-    [System.ComponentModel.DataAnnotations.Range(1, 500)]
-    public int EstimatedYield { get; set; }
 }

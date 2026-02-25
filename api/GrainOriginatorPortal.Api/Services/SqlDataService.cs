@@ -820,36 +820,129 @@ public class SqlDataService : IDataService
     }
 
     // =========================================================================
-    // Planting Intention Operations - DISABLED: Table doesn't exist in ODS
+    // Planting Intention Operations - Uses dbo.ProducerPlantingIntentions table
     // =========================================================================
 
     public List<PlantingIntention> GetPlantingIntentions()
     {
-        _logger.LogWarning("PlantingIntentions table doesn't exist in ODS - returning empty list");
-        return new List<PlantingIntention>();
+        try
+        {
+            return _appContext.PlantingIntentions
+                .OrderByDescending(p => p.PlantingYear)
+                .ThenBy(p => p.CustomerName)
+                .ToList();
+        }
+        catch (SqlException ex) when (ex.Number == 208)
+        {
+            _logger.LogWarning("ProducerPlantingIntentions table not accessible. Returning empty list. Error: {Error}", ex.Message);
+            return new List<PlantingIntention>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving planting intentions");
+            throw;
+        }
     }
 
-    public List<PlantingIntention> GetPlantingIntentionsByCustomer(string customerId)
+    public List<PlantingIntention> GetPlantingIntentionsByCustomer(int customerId)
     {
-        _logger.LogWarning("PlantingIntentions table doesn't exist in ODS - returning empty list");
-        return new List<PlantingIntention>();
+        try
+        {
+            return _appContext.PlantingIntentions
+                .Where(p => p.CustomerId == customerId)
+                .OrderByDescending(p => p.PlantingYear)
+                .ThenBy(p => p.Crop)
+                .ToList();
+        }
+        catch (SqlException ex) when (ex.Number == 208)
+        {
+            _logger.LogWarning("ProducerPlantingIntentions table not accessible for customer {CustomerId}. Returning empty list.", customerId);
+            return new List<PlantingIntention>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving planting intentions for customer {CustomerId}", customerId);
+            throw;
+        }
     }
 
-    public PlantingIntention AddPlantingIntention(string customerId, string farmId, string crop, int acres, int plantingYear, int estimatedYield)
+    public PlantingIntention AddPlantingIntention(int customerId, string customerName, string customerCode, string tradeUnit, string crop, string? description, int acres, int plantingYear)
     {
-        _logger.LogWarning("PlantingIntentions table doesn't exist in ODS - operation skipped");
-        return new PlantingIntention { Id = Guid.NewGuid().ToString(), CustomerId = customerId, FarmId = farmId, Crop = crop, Acres = acres, PlantingYear = plantingYear, EstimatedYield = estimatedYield };
+        try
+        {
+            var intention = new PlantingIntention
+            {
+                CustomerId = customerId,
+                CustomerName = customerName,
+                CustomerCode = customerCode,
+                TradeUnit = tradeUnit,
+                Crop = crop,
+                Description = description,
+                Acres = acres,
+                PlantingYear = plantingYear,
+                CreatedBy = "System", // TODO: Get from authenticated user
+                CreatedOn = DateTime.Now
+            };
+
+            _appContext.PlantingIntentions.Add(intention);
+            _appContext.SaveChanges();
+
+            _logger.LogInformation("Created planting intention {Id} for customer {CustomerId}", intention.Id, customerId);
+            return intention;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating planting intention for customer {CustomerId}", customerId);
+            throw;
+        }
     }
 
-    public PlantingIntention? UpdatePlantingIntention(string intentionId, string crop, int acres, int plantingYear, int estimatedYield)
+    public PlantingIntention? UpdatePlantingIntention(int intentionId, string crop, string? description, int acres, int plantingYear)
     {
-        _logger.LogWarning("PlantingIntentions table doesn't exist in ODS - operation skipped");
-        return null;
+        try
+        {
+            var intention = _appContext.PlantingIntentions.FirstOrDefault(p => p.Id == intentionId);
+            if (intention == null)
+            {
+                return null;
+            }
+
+            intention.Crop = crop;
+            intention.Description = description;
+            intention.Acres = acres;
+            intention.PlantingYear = plantingYear;
+            intention.ModifiedBy = "System"; // TODO: Get from authenticated user
+            intention.ModifiedOn = DateTime.Now;
+
+            _appContext.SaveChanges();
+
+            _logger.LogInformation("Updated planting intention {Id}", intentionId);
+            return intention;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating planting intention {Id}", intentionId);
+            throw;
+        }
     }
 
-    public void DeletePlantingIntention(string intentionId)
+    public void DeletePlantingIntention(int intentionId)
     {
-        _logger.LogWarning("PlantingIntentions table doesn't exist in ODS - operation skipped");
+        try
+        {
+            var intention = _appContext.PlantingIntentions.FirstOrDefault(p => p.Id == intentionId);
+            if (intention != null)
+            {
+                _appContext.PlantingIntentions.Remove(intention);
+                _appContext.SaveChanges();
+                _logger.LogInformation("Deleted planting intention {Id}", intentionId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting planting intention {Id}", intentionId);
+            throw;
+        }
     }
 
     // =========================================================================
@@ -1137,5 +1230,51 @@ public class SqlDataService : IDataService
     public void DeleteList(string listId)
     {
         _logger.LogWarning("SavedLists table doesn't exist in ODS - operation skipped");
+    }
+
+    // =========================================================================
+    // Dashboard Planting Estimate Operations
+    // =========================================================================
+
+    public List<DashboardPlantingEstimate> GetDashboardPlantingEstimates(string tradeUnitKey, int plantingYear)
+    {
+        return _appContext.DashboardPlantingEstimates
+            .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear)
+            .OrderBy(e => e.Crop)
+            .ToList();
+    }
+
+    public void UpsertDashboardPlantingEstimates(List<UpsertDashboardEstimateRequest> estimates, string username)
+    {
+        foreach (var req in estimates)
+        {
+            var existing = _appContext.DashboardPlantingEstimates
+                .FirstOrDefault(e => e.TradeUnitKey == req.TradeUnitKey
+                                  && e.Crop == req.Crop
+                                  && e.PlantingYear == req.PlantingYear);
+            if (existing != null)
+            {
+                existing.YieldEstimate = req.YieldEstimate;
+                existing.MarketSharePct = req.MarketSharePct;
+                existing.ActualHarvestHandle = req.ActualHarvestHandle;
+                existing.ModifiedOn = DateTime.UtcNow;
+                existing.ModifiedBy = username;
+            }
+            else
+            {
+                _appContext.DashboardPlantingEstimates.Add(new DashboardPlantingEstimate
+                {
+                    TradeUnitKey = req.TradeUnitKey,
+                    Crop = req.Crop,
+                    PlantingYear = req.PlantingYear,
+                    YieldEstimate = req.YieldEstimate,
+                    MarketSharePct = req.MarketSharePct,
+                    ActualHarvestHandle = req.ActualHarvestHandle,
+                    CreatedOn = DateTime.UtcNow,
+                    CreatedBy = username
+                });
+            }
+        }
+        _appContext.SaveChanges();
     }
 }

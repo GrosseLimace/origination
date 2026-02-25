@@ -35,10 +35,10 @@ public interface IDataService
 
     // Planting Intention Operations
     List<PlantingIntention> GetPlantingIntentions();
-    List<PlantingIntention> GetPlantingIntentionsByCustomer(string customerId);
-    PlantingIntention AddPlantingIntention(string customerId, string farmId, string crop, int acres, int plantingYear, int estimatedYield);
-    PlantingIntention? UpdatePlantingIntention(string intentionId, string crop, int acres, int plantingYear, int estimatedYield);
-    void DeletePlantingIntention(string intentionId);
+    List<PlantingIntention> GetPlantingIntentionsByCustomer(int customerId);
+    PlantingIntention AddPlantingIntention(int customerId, string customerName, string customerCode, string tradeUnit, string crop, string? description, int acres, int plantingYear);
+    PlantingIntention? UpdatePlantingIntention(int intentionId, string crop, string? description, int acres, int plantingYear);
+    void DeletePlantingIntention(int intentionId);
 
     // Note Operations
     List<Note> GetNotes();
@@ -53,6 +53,10 @@ public interface IDataService
     List<ProducerDetails> GetAllProducerDetails();
     ProducerDetails UpsertProducerDetails(long customerId, string? sourceCustomerId, string customerName, decimal? totalAcres, decimal? binCapacity, string? primaryContact, string? commodities, string? linkedProducerIds = null);
     void DeleteProducerDetails(long customerId);
+
+    // Dashboard Planting Estimate Operations
+    List<DashboardPlantingEstimate> GetDashboardPlantingEstimates(string tradeUnitKey, int plantingYear);
+    void UpsertDashboardPlantingEstimates(List<UpsertDashboardEstimateRequest> estimates, string username);
 
     // Commodity Operations
     List<Commodity> GetCommodities();

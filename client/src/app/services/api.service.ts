@@ -10,7 +10,8 @@ import {
   StoredGrain,
   SavedList,
   Commodity,
-  ProducerDetails
+  ProducerDetails,
+  DashboardPlantingEstimate
 } from '../models';
 
 /**
@@ -114,31 +115,46 @@ export class ApiService {
     return this.http.get<PlantingIntention[]>(`${this.baseUrl}/plantingintentions/customer/${customerId}`);
   }
 
+
   /** Creates a new planting intention record */
   createPlantingIntention(data: {
     customerId: number;
-    farmId: string;
+    customerName: string;
+    customerCode: string;
+    tradeUnit: string;
     crop: string;
+    description?: string;
     acres: number;
     plantingYear: number;
-    estimatedYield: number;
   }): Observable<PlantingIntention> {
     return this.http.post<PlantingIntention>(`${this.baseUrl}/plantingintentions`, data);
   }
 
   /** Updates an existing planting intention */
-  updatePlantingIntention(id: string, data: {
+  updatePlantingIntention(id: number, data: {
     crop: string;
+    description?: string;
     acres: number;
     plantingYear: number;
-    estimatedYield: number;
   }): Observable<PlantingIntention> {
     return this.http.put<PlantingIntention>(`${this.baseUrl}/plantingintentions/${id}`, data);
   }
 
   /** Deletes a planting intention */
-  deletePlantingIntention(id: string): Observable<void> {
+  deletePlantingIntention(id: number): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/plantingintentions/${id}`);
+  }
+
+  /** Gets saved dashboard planting estimates for a trade unit key + year */
+  getDashboardPlantingEstimates(tradeUnitKey: string, plantingYear: number): Observable<DashboardPlantingEstimate[]> {
+    return this.http.get<DashboardPlantingEstimate[]>(
+      `${this.baseUrl}/dashboardplantingestimates?tradeUnitKey=${encodeURIComponent(tradeUnitKey)}&plantingYear=${plantingYear}`
+    );
+  }
+
+  /** Upserts dashboard planting estimates for a trade unit key + year */
+  upsertDashboardPlantingEstimates(estimates: { tradeUnitKey: string; crop: string; plantingYear: number; yieldEstimate?: number | null; marketSharePct?: number | null; actualHarvestHandle?: number | null }[]): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/dashboardplantingestimates/upsert`, estimates);
   }
 
   // ==========================================================================

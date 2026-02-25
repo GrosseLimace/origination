@@ -1,10 +1,15 @@
 export interface PlantingIntention {
-  id: string;
-  customerId: number;     // FK to Customer - maps to bigint in C# API
-  farmId: string;
-  crop: string;
-  acres: number;
-  variety: string;
+  id: number;
+  customerId: number;
+  customerName: string;
+  customerCode: string;
+  tradeUnit: string;
   plantingYear: number;
-  estimatedYield: number;
+  crop: string;
+  description?: string;
+  acres: number;
+  createdOn: string;
+  createdBy: string;
+  modifiedOn?: string;
+  modifiedBy?: string;
 }

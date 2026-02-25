@@ -10,3 +10,4 @@ export * from './saved-list.model';
 export * from './position.model';
 export * from './commodity.model';
 export * from './producer-details.model';
+export * from './dashboard-planting-estimate.model';

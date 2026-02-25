@@ -29,127 +29,125 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note } from
   template: `
     <div class="space-y-8">
       <!-- Header Card -->
-      <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm relative">
-        <!-- Print Button - Top Right -->
-        <button
-          type="button"
-          class="absolute top-3 right-3 sm:top-4 sm:right-4 p-1.5 sm:p-2 rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-colors"
-          (click)="printCustomerInfo()"
-          title="Print Customer Info"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" class="sm:w-[18px] sm:h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="6 9 6 2 18 2 18 9"/>
-            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-            <rect width="12" height="8" x="6" y="14"/>
-          </svg>
-        </button>
-        <div class="p-4 sm:p-6 pr-12 sm:pr-16">
-          <!-- Row 1: Customer Name + eSign Badge (on same line) -->
-          <div class="flex items-center gap-2 sm:gap-3 flex-wrap mb-0.5">
-            <h1 class="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white">{{ customer.name }}</h1>
-            @if (customer.eSignEnabled) {
-              <span class="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-xs sm:text-sm font-medium bg-green-600 text-white">
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" class="sm:w-3.5 sm:h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                  <polyline points="22 4 12 14.01 9 11.01"/>
-                </svg>
-                <span class="hidden sm:inline">eSign Enabled</span>
-                <span class="sm:hidden">eSign</span>
-              </span>
-            } @else {
-              <span class="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-xs sm:text-sm font-medium bg-gray-400 text-white">
-                <span class="hidden sm:inline">eSign Not Enrolled</span>
-                <span class="sm:hidden">No eSign</span>
-              </span>
-            }
-          </div>
-
-          <!-- Row 2: Source Customer ID -->
-          @if (customer.sourceCustomerId) {
-            <p class="text-xs text-gray-400 dark:text-gray-500 mb-1">{{ customer.sourceCustomerId }}</p>
-          }
-
-          <!-- Linked Customer Switcher -->
-          @if (linkedCustomers.length > 0) {
-            <div class="flex items-center gap-2 mb-2">
-              <label class="text-xs text-gray-500 dark:text-gray-400 font-medium whitespace-nowrap">Viewing:</label>
-              <select
-                class="h-7 px-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
-                [value]="customer.id"
-                (change)="onSelectLinkedCustomer.emit(+$any($event.target).value)"
-              >
-                <option [value]="customer.id">{{ customer.name }} (current)</option>
-                @for (linked of linkedCustomers; track linked.id) {
-                  <option [value]="linked.id">{{ linked.name }}</option>
+      <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
+        <div class="p-4 sm:p-6">
+          <!-- Top: Name block + action buttons -->
+          <div class="flex items-start justify-between gap-3 mb-4">
+            <div class="min-w-0">
+              <!-- Name + eSign badge on same line -->
+              <div class="flex items-center gap-2 min-w-0">
+                <h1 class="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 dark:text-white leading-tight truncate min-w-0">{{ customer.name }}</h1>
+                @if (customer.eSignEnabled) {
+                  <span class="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 border border-green-200 dark:border-green-800">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+                    </svg>
+                    eSign Enabled
+                  </span>
+                } @else {
+                  <span class="shrink-0 inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 border border-gray-200 dark:border-gray-600">
+                    No eSign
+                  </span>
                 }
-              </select>
+              </div>
+              @if (customer.sourceCustomerId) {
+                <p class="text-sm text-gray-400 dark:text-gray-500 mt-0.5">{{ customer.sourceCustomerId }}</p>
+              }
+              @if (customer.farm) {
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{{ customer.farm }}</p>
+              }
+              <div class="flex items-center gap-2 mt-2 flex-wrap">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs sm:text-sm font-medium transition-colors"
+                  [class]="showProducerInsights ? 'bg-green-600 text-white border-green-600' : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                  (click)="toggleProducerInsights()"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" x2="18" y1="20" y2="10"/>
+                    <line x1="12" x2="12" y1="20" y2="4"/>
+                    <line x1="6" x2="6" y1="20" y2="14"/>
+                  </svg>
+                  Producer Insights
+                </button>
+                @if (linkedCustomers.length > 0) {
+                  <select
+                    class="h-9 w-auto max-w-xs px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    [value]="customer.id"
+                    (change)="onSelectLinkedCustomer.emit(+$any($event.target).value)"
+                  >
+                    <option [value]="customer.id">{{ customer.name }}{{ customer.sourceCustomerId ? ' (' + customer.sourceCustomerId + ')' : '' }}</option>
+                    @for (linked of linkedCustomers; track linked.id) {
+                      <option [value]="linked.id">{{ linked.name }}{{ linked.sourceCustomerId ? ' (' + linked.sourceCustomerId + ')' : '' }}</option>
+                    }
+                  </select>
+                }
+              </div>
             </div>
-          }
 
-          <!-- Row 3: Farm Name -->
-          <p class="text-sm sm:text-base text-gray-500 dark:text-gray-400 mb-3">{{ customer.farm }}</p>
-
-          <!-- Row 3: Producer Insights and Edit buttons -->
-          <div class="flex items-center gap-2 flex-wrap mb-6">
-            <button
-              type="button"
-              class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border text-xs sm:text-sm font-medium transition-colors"
-              [class]="showProducerInsights ? 'bg-green-600 text-white border-green-600' : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'"
-              (click)="toggleProducerInsights()"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="18" x2="18" y1="20" y2="10"/>
-                <line x1="12" x2="12" y1="20" y2="4"/>
-                <line x1="6" x2="6" y1="20" y2="14"/>
-              </svg>
-              Producer Insights
-            </button>
-            <button
-              type="button"
-              class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-gray-300 dark:border-gray-600 text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-              (click)="openEditDialog()"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
-              </svg>
-              Edit
-            </button>
+            <!-- Action buttons -->
+            <div class="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-colors"
+                (click)="printCustomerInfo()"
+                title="Print"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="6 9 6 2 18 2 18 9"/>
+                  <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                  <rect width="12" height="8" x="6" y="14"/>
+                </svg>
+                <span class="hidden sm:inline">Print</span>
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-colors"
+                (click)="openEditDialog()"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+                </svg>
+                Edit
+              </button>
+            </div>
           </div>
 
-          <!-- Row 4: Contact / Farm Details (2 columns) -->
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <!-- Contact Info -->
+          <!-- Divider -->
+          <div class="border-t border-gray-100 dark:border-gray-700 mb-4"></div>
+
+          <!-- Details: Contact + Farm Details + Market Share -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-4">
+            <!-- Contact -->
             <div>
-              <h3 class="text-xs sm:text-sm font-medium text-gray-900 dark:text-white mb-3">Contact</h3>
+              <h3 class="text-xs sm:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-2.5">Contact</h3>
               <div class="space-y-2 text-xs sm:text-sm">
                 @if (customer.primaryContact) {
                   <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
                     </svg>
                     <span>{{ customer.primaryContact }}</span>
                   </div>
                 }
                 <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
-                    <circle cx="12" cy="10" r="3"/>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
                   </svg>
                   <span>{{ getFormattedLocation() }}</span>
                 </div>
                 @if (getCustomerPhone()) {
-                  <a [href]="'tel:' + getCustomerPhone()" class="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors cursor-pointer">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <a [href]="'tel:' + getCustomerPhone()" class="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
                     </svg>
                     <span>{{ getFormattedPhone() }}</span>
                   </a>
                 }
                 @if (getCustomerEmail()) {
-                  <a [href]="'mailto:' + getCustomerEmail()" class="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors cursor-pointer">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <rect width="20" height="16" x="2" y="4" rx="2"/>
-                      <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+                  <a [href]="'mailto:' + getCustomerEmail()" class="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
                     </svg>
                     <span class="truncate">{{ getCustomerEmail() }}</span>
                   </a>
@@ -159,34 +157,26 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note } from
 
             <!-- Farm Details -->
             <div>
-              <h3 class="text-xs sm:text-sm font-medium text-gray-900 dark:text-white mb-3">Farm Details</h3>
+              <h3 class="text-xs sm:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-2.5">Farm Details</h3>
               <div class="space-y-2 text-xs sm:text-sm">
                 <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                  <!-- Tractor icon -->
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="m10 11 11 .9a1 1 0 0 1 .8 1.1l-.665 4.158a1 1 0 0 1-.988.842H20"/>
-                    <path d="M16 18h-5"/>
-                    <path d="M18 5a1 1 0 0 0-1 1v5.573"/>
+                    <path d="M16 18h-5"/><path d="M18 5a1 1 0 0 0-1 1v5.573"/>
                     <path d="M3 4h8.129a1 1 0 0 1 .99.863L13 11.246"/>
-                    <path d="M4 11V4"/>
-                    <path d="M7 15h.01"/>
-                    <path d="M8 10.1V4"/>
-                    <circle cx="18" cy="18" r="2"/>
-                    <circle cx="7" cy="15" r="5"/>
+                    <path d="M4 11V4"/><path d="M7 15h.01"/><path d="M8 10.1V4"/>
+                    <circle cx="18" cy="18" r="2"/><circle cx="7" cy="15" r="5"/>
                   </svg>
                   <span>{{ (customer.totalAcres || 0) | number }} acres</span>
                 </div>
                 <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                  <!-- Grain bin (cylinder) icon -->
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <ellipse cx="12" cy="5" rx="9" ry="3"/>
-                    <path d="M3 5v14a9 3 0 0 0 18 0V5"/>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/>
                   </svg>
                   <span>{{ (customer.binCapacity || 0) | number }} bu capacity</span>
                 </div>
-                <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                  <!-- Wheat/crop icon -->
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <div class="flex items-start gap-2 text-gray-600 dark:text-gray-400">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 mt-0.5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M2 22 16 8"/>
                     <path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
                     <path d="M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
@@ -208,44 +198,30 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note } from
                 </div>
               </div>
             </div>
-          </div>
-
-          <!-- Row 6: Activity / Market Share (2 columns with stat boxes) -->
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <!-- Activity -->
-            <div>
-              <h3 class="text-xs sm:text-sm font-medium text-gray-900 dark:text-white mb-3">Activity</h3>
-              <div class="flex gap-4">
-                <div class="flex-1 border border-gray-200 dark:border-gray-700 rounded-lg p-2 sm:p-3 text-center">
-                  <div class="text-xl sm:text-2xl lg:text-3xl font-bold text-green-600">{{ contracts.length }}</div>
-                  <div class="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">Contracts</div>
-                </div>
-                <div class="flex-1 border border-gray-200 dark:border-gray-700 rounded-lg p-2 sm:p-3 text-center">
-                  <div class="text-xl sm:text-2xl lg:text-3xl font-bold text-blue-600">{{ tickets.length }}</div>
-                  <div class="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">Tickets</div>
-                </div>
-              </div>
-            </div>
 
             <!-- Market Share -->
             <div>
-              <h3 class="text-xs sm:text-sm font-medium text-gray-900 dark:text-white mb-3">Market Share</h3>
+              <h3 class="text-xs sm:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-2.5">Market Share</h3>
               <div
-                class="border rounded-lg p-2 sm:p-3 text-center"
+                class="border rounded-lg px-14 py-2.5 text-center inline-block min-w-[170px] relative group"
                 [class]="marketSharePercentage > 0 ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/30' : 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30'"
               >
-                <div
-                  class="text-xl sm:text-2xl lg:text-3xl font-bold"
-                  [class]="marketSharePercentage > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
-                >
+                @if (marketSharePercentage === 0) {
+                  <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10 whitespace-nowrap">
+                    <div class="bg-gray-900 dark:bg-gray-700 text-white text-xs rounded px-2.5 py-1.5 shadow-lg">
+                      Add planting intentions to calculate market share
+                    </div>
+                    <div class="w-2 h-2 bg-gray-900 dark:bg-gray-700 rotate-45 mx-auto -mt-1"></div>
+                  </div>
+                }
+                <div class="text-2xl sm:text-3xl font-bold" [class]="marketSharePercentage > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'">
                   {{ marketSharePercentage | number:'1.0-0' }}%
                 </div>
-                <div class="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
-                  {{ bushelsAvailable | number }} bu available
-                </div>
+                <div class="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">{{ bushelsAvailable | number }} bu available</div>
               </div>
             </div>
           </div>
+
         </div>
       </div>
 
@@ -311,6 +287,8 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note } from
               <app-planting-intentions-table
                 [plantingIntentions]="plantingIntentions"
                 [customer]="customer"
+                [tradeUnits]="selectedTradeUnits"
+                [customerCommodityCodes]="getEffectiveCommodities()"
                 (add)="onAddPlanting.emit($event)"
                 (edit)="onEditPlanting.emit($event)"
                 (delete)="onDeletePlanting.emit($event)">
@@ -330,6 +308,7 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note } from
       [customer]="customer"
       [tickets]="tickets"
       [allCustomers]="allCustomers"
+      [selectedTradeUnits]="selectedTradeUnits"
       (close)="closeEditDialog()"
       (save)="handleSaveCustomer($event)">
     </app-edit-customer-dialog>
@@ -338,6 +317,7 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note } from
 export class CustomerProfileComponent implements OnChanges {
   @Input() customer!: Customer;
   @Input() allCustomers: Customer[] = [];
+  @Input() selectedTradeUnits: string[] = [];
   @Input() contracts: Contract[] = [];
   @Input() tickets: Ticket[] = [];
   @Input() plantingIntentions: PlantingIntention[] = [];
@@ -350,12 +330,12 @@ export class CustomerProfileComponent implements OnChanges {
   @Input() allCustomerPlantingIntentions: PlantingIntention[] = [];
   @Input() allCustomerStoredGrain: StoredGrain[] = [];
 
-  @Output() onAddPlanting = new EventEmitter<{crop: string, acres: number, plantingYear: number, estimatedYield: number}>();
-  @Output() onEditPlanting = new EventEmitter<{intentionId: string, crop: string, acres: number, plantingYear: number, estimatedYield: number}>();
-  @Output() onDeletePlanting = new EventEmitter<string>();
+  @Output() onAddPlanting = new EventEmitter<{crop: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
+  @Output() onEditPlanting = new EventEmitter<{intentionId: number, crop: string, description?: string, acres: number, plantingYear: number}>();
+  @Output() onDeletePlanting = new EventEmitter<number>();
   @Output() onAddNote = new EventEmitter<string>();
   @Output() onTogglePin = new EventEmitter<Note>();
-  @Output() onSaveCustomer = new EventEmitter<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; eSignEnabled: boolean }>();
+  @Output() onSaveCustomer = new EventEmitter<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean }>();
   @Input() linkedCustomers: Customer[] = [];
   @Output() onSelectLinkedCustomer = new EventEmitter<number>();
 
@@ -378,7 +358,7 @@ export class CustomerProfileComponent implements OnChanges {
   ngOnChanges(changes: SimpleChanges): void {
     // Recalculate cached values when relevant inputs change
     if (changes['plantingIntentions']) {
-      this._totalProjectedYield = this.plantingIntentions.reduce((sum, p) => sum + (p.acres * p.estimatedYield), 0);
+      this._totalProjectedYield = 0;
     }
 
     if (changes['contracts']) {
@@ -436,7 +416,7 @@ export class CustomerProfileComponent implements OnChanges {
     this.cdr.markForCheck();
   }
 
-  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; eSignEnabled: boolean }): void {
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean }): void {
     this.onSaveCustomer.emit(data);
     this.closeEditDialog();
   }

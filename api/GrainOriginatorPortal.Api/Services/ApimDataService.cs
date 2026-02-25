@@ -176,25 +176,25 @@ public class ApimDataService : IDataService
         throw new NotImplementedException("TODO: Wire up APIM endpoint for GetPlantingIntentions");
     }
 
-    public List<PlantingIntention> GetPlantingIntentionsByCustomer(string customerId)
+    public List<PlantingIntention> GetPlantingIntentionsByCustomer(int customerId)
     {
         // TODO: Replace with actual APIM endpoint path
         throw new NotImplementedException("TODO: Wire up APIM endpoint for GetPlantingIntentionsByCustomer");
     }
 
-    public PlantingIntention AddPlantingIntention(string customerId, string farmId, string crop, int acres, int plantingYear, int estimatedYield)
+    public PlantingIntention AddPlantingIntention(int customerId, string customerName, string customerCode, string tradeUnit, string crop, string? description, int acres, int plantingYear)
     {
         // TODO: Replace with actual APIM endpoint path
         throw new NotImplementedException("TODO: Wire up APIM endpoint for AddPlantingIntention");
     }
 
-    public PlantingIntention? UpdatePlantingIntention(string intentionId, string crop, int acres, int plantingYear, int estimatedYield)
+    public PlantingIntention? UpdatePlantingIntention(int intentionId, string crop, string? description, int acres, int plantingYear)
     {
         // TODO: Replace with actual APIM endpoint path
         throw new NotImplementedException("TODO: Wire up APIM endpoint for UpdatePlantingIntention");
     }
 
-    public void DeletePlantingIntention(string intentionId)
+    public void DeletePlantingIntention(int intentionId)
     {
         // TODO: Replace with actual APIM endpoint path
         throw new NotImplementedException("TODO: Wire up APIM endpoint for DeletePlantingIntention");
@@ -315,4 +315,11 @@ public class ApimDataService : IDataService
         // TODO: Replace with actual APIM endpoint path
         throw new NotImplementedException("TODO: Wire up APIM endpoint for DeleteList");
     }
+
+    // Dashboard Planting Estimate Operations
+    public List<DashboardPlantingEstimate> GetDashboardPlantingEstimates(string tradeUnitKey, int plantingYear)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetDashboardPlantingEstimates");
+
+    public void UpsertDashboardPlantingEstimates(List<UpsertDashboardEstimateRequest> estimates, string username)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for UpsertDashboardPlantingEstimates");
 }

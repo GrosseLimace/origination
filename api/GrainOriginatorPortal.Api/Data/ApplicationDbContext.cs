@@ -17,10 +17,12 @@ public class ApplicationDbContext : DbContext
 
     public DbSet<Note> Notes => Set<Note>();
     public DbSet<ProducerDetails> ProducerDetails => Set<ProducerDetails>();
+    public DbSet<PlantingIntention> PlantingIntentions => Set<PlantingIntention>();
     public DbSet<TradeUnit> TradeUnits => Set<TradeUnit>();
     public DbSet<TradeUnitGroup> TradeUnitGroups => Set<TradeUnitGroup>();
     public DbSet<GroupTradeUnit> GroupTradeUnits => Set<GroupTradeUnit>();
     public DbSet<Commodity> Commodities => Set<Commodity>();
+    public DbSet<DashboardPlantingEstimate> DashboardPlantingEstimates => Set<DashboardPlantingEstimate>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -93,6 +95,47 @@ public class ApplicationDbContext : DbContext
             entity.Ignore(e => e.Content);
 
             entity.HasIndex(e => e.CustomerId).HasDatabaseName("IX_Notes_CustomerId");
+        });
+
+        modelBuilder.Entity<PlantingIntention>(entity =>
+        {
+            entity.ToTable("ProducerPlantingIntentions", schema: "dbo");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
+            entity.Property(e => e.CustomerName).HasColumnName("CustomerName").HasMaxLength(255).IsRequired();
+            entity.Property(e => e.CustomerCode).HasColumnName("CustomerCode").HasMaxLength(50).IsRequired();
+            entity.Property(e => e.TradeUnit).HasColumnName("TradeUnit").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.PlantingYear).HasColumnName("PlantingYear").IsRequired();
+            entity.Property(e => e.Crop).HasColumnName("Crop").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Description).HasColumnName("Description").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.Acres).HasColumnName("Acres").IsRequired();
+            entity.Property(e => e.CreatedOn).HasColumnName("CreatedOn").HasDefaultValueSql("GETDATE()").IsRequired();
+            entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
+            entity.Property(e => e.ModifiedOn).HasColumnName("ModifiedOn").IsRequired(false);
+            entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
+
+            entity.HasIndex(e => e.CustomerId).HasDatabaseName("IX_ProducerPlantingIntentions_CustomerId");
+            entity.HasIndex(e => e.TradeUnit).HasDatabaseName("IX_ProducerPlantingIntentions_TradeUnit");
+        });
+
+        modelBuilder.Entity<DashboardPlantingEstimate>(entity =>
+        {
+            entity.ToTable("DashboardPlantingEstimates", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.TradeUnitKey).HasColumnName("TradeUnitKey").HasMaxLength(500).IsRequired();
+            entity.Property(e => e.Crop).HasColumnName("Crop").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.PlantingYear).HasColumnName("PlantingYear").IsRequired();
+            entity.Property(e => e.YieldEstimate).HasColumnName("YieldEstimate").HasColumnType("decimal(10,2)").IsRequired(false);
+            entity.Property(e => e.MarketSharePct).HasColumnName("MarketSharePct").HasColumnType("decimal(5,2)").IsRequired(false);
+            entity.Property(e => e.ActualHarvestHandle).HasColumnName("ActualHarvestHandle").IsRequired(false);
+            entity.Property(e => e.CreatedOn).HasColumnName("CreatedOn").HasDefaultValueSql("GETDATE()").IsRequired();
+            entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
+            entity.Property(e => e.ModifiedOn).HasColumnName("ModifiedOn").IsRequired(false);
+            entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
+            entity.HasIndex(e => new { e.TradeUnitKey, e.Crop, e.PlantingYear }).IsUnique().HasDatabaseName("UC_DashEst");
         });
 
         modelBuilder.Entity<ProducerDetails>(entity =>

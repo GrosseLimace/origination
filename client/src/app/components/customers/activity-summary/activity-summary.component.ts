@@ -41,23 +41,23 @@ export class ActivitySummaryComponent implements OnChanges {
 
   private generateSummaryParagraph(): string {
     try {
-      const sections: string[] = [];
+      const paragraphs: string[] = [];
 
-      sections.push(this.generateCustomerIntro());
-      sections.push(this.generateContractSummary());
-      sections.push(this.generatePlantingOverview());
-      sections.push(this.generateStorageSummary());
-      sections.push(this.generateDeliverySummary());
-      sections.push(this.generateEngagementSummary());
-      sections.push(this.generateActionItems());
+      paragraphs.push(this.generateCustomerIntro());
+      paragraphs.push(this.generateContractSummary());
+      paragraphs.push(this.generatePlantingOverview());
+      paragraphs.push(this.generateStorageSummary());
+      paragraphs.push(this.generateDeliverySummary());
+      paragraphs.push(this.generateEngagementSummary());
+      paragraphs.push(this.generateActionItems());
 
-      const filteredSections = sections.filter(s => s && s.length > 0);
+      const filtered = paragraphs.filter(s => s && s.length > 0);
 
-      if (filteredSections.length === 0) {
+      if (filtered.length === 0) {
         return 'No activity data available for this customer.';
       }
 
-      return filteredSections.join(' ');
+      return filtered.join(' ');
     } catch (error) {
       return 'Unable to generate activity summary at this time.';
     }
@@ -66,53 +66,64 @@ export class ActivitySummaryComponent implements OnChanges {
   private generateCustomerIntro(): string {
     if (!this.customer) return '';
 
+    const name = this.customer.name || 'This customer';
+    const acres = this.customer.totalAcres || 0;
+    const binCapacity = this.customer.binCapacity || 0;
+    const farm = this.customer.farm || '';
+    const primaryContact = this.customer.primaryContact || '';
+    const commodities = this.customer.commodities || [];
+    const linkedGroup = this.getLinkedGroup();
+
+    const commStr = commodities.length === 1
+      ? commodities[0]
+      : commodities.length > 1
+        ? commodities.slice(0, -1).join(', ') + ' and ' + commodities[commodities.length - 1]
+        : '';
+
     const parts: string[] = [];
 
-    // Basic intro - skip if no meaningful data
-    const name = this.customer.name || 'Customer';
-    const acres = this.customer.totalAcres || 0;
-    const farm = this.customer.farm || '';
-    const location = this.customer.location || '';
-    const stateProvince = this.customer.stateProvince || '';
-
-    // Build intro with available data
+    // Opening sentence — who they are
+    let opening = name;
     if (acres > 0 && farm && farm !== 'Unknown Farm') {
-      parts.push(`${name} operates ${this.formatQuantity(acres, 'acres')} at ${farm}`);
+      opening += ` operates ${this.formatQuantity(acres, 'acres')} at ${farm}`;
     } else if (acres > 0) {
-      parts.push(`${name} operates ${this.formatQuantity(acres, 'acres')}`);
-    } else if (location || stateProvince) {
-      const locationStr = location && stateProvince ? `${location}, ${stateProvince}` : (location || stateProvince);
-      parts.push(`${name} is located in ${locationStr}`);
-    } else {
-      // Just use the name if we don't have farm/acres/location data
-      parts.push(`${name} is a customer`);
+      opening += ` operates ${this.formatQuantity(acres, 'acres')}`;
+    } else if (farm && farm !== 'Unknown Farm') {
+      opening += ` farms at ${farm}`;
+    }
+    if (commStr) opening += `, primarily growing ${commStr}`;
+    parts.push(opening + '.');
+
+    // Contact + bin capacity
+    const details: string[] = [];
+    if (primaryContact) details.push(`primary contact is ${primaryContact}`);
+    if (binCapacity > 0) details.push(`${this.formatQuantity(binCapacity, 'bushels')} of on-farm bin capacity`);
+    if (details.length > 0) {
+      parts.push(details.map((d, i) => i === 0 ? d.charAt(0).toUpperCase() + d.slice(1) : d).join(', ') + '.');
     }
 
-    // Linked producers info
-    const linkedProducerIds = this.customer.linkedProducerIds || [];
-    const customersLinkingToMe = this.allCustomers
-      .filter(c => c.linkedProducerIds && c.linkedProducerIds.includes(this.customer.id.toString()))
-      .map(c => c.id);
-
-    const allLinkedIds = [...new Set([...linkedProducerIds, ...customersLinkingToMe])];
-
-    if (allLinkedIds.length > 0) {
-      const linkedProducers = allLinkedIds
-        .map(id => this.allCustomers.find(c => c.id === id))
-        .filter(c => c != null) as Customer[];
-
-      if (linkedProducers.length === 1) {
-        parts.push(`This producer is linked with ${linkedProducers[0].name}, and this summary includes combined activity from both operations`);
-      } else if (linkedProducers.length === 2) {
-        parts.push(`This producer is linked with ${linkedProducers[0].name} and ${linkedProducers[1].name}, and this summary includes combined activity from all three operations`);
-      } else if (linkedProducers.length > 2) {
-        const names = linkedProducers.slice(0, -1).map(p => p.name).join(', ');
-        const lastName = linkedProducers[linkedProducers.length - 1].name;
-        parts.push(`This producer is linked with ${names}, and ${lastName}, and this summary includes combined activity from all ${linkedProducers.length + 1} operations`);
-      }
+    // Linked producers
+    if (linkedGroup.length === 1) {
+      parts.push(`Linked with ${linkedGroup[0].name}${linkedGroup[0].sourceCustomerId ? ' (' + linkedGroup[0].sourceCustomerId + ')' : ''}.`);
+    } else if (linkedGroup.length >= 2) {
+      const names = linkedGroup.map(p => p.name).join(' and ');
+      parts.push(`Linked with ${names}.`);
     }
 
-    return parts.join('. ') + '.';
+    return parts.join(' ');
+  }
+
+  private getLinkedGroup(): Customer[] {
+    if (!this.customer || !this.allCustomers) return [];
+    const mySourceId = this.customer.sourceCustomerId || '';
+    const outgoing = (this.customer.linkedProducerIds || [])
+      .map(id => this.allCustomers.find(c => c.sourceCustomerId === id))
+      .filter((c): c is Customer => !!c);
+    const incoming = this.allCustomers.filter(c =>
+      mySourceId && (c.linkedProducerIds || []).includes(mySourceId)
+    );
+    return [...new Map([...outgoing, ...incoming].map(c => [c.id, c])).values()]
+      .filter(c => c.id !== this.customer.id);
   }
 
   private generateContractSummary(): string {
@@ -122,72 +133,38 @@ export class ActivitySummaryComponent implements OnChanges {
     const activeContracts = this.contracts.filter(c => c && c.status === 'Active');
     const pendingContracts = this.contracts.filter(c => c && c.status === 'Pending');
     const fulfilledContracts = this.contracts.filter(c => c && c.status === 'Fulfilled');
-    const signedContracts = this.contracts.filter(c => c && c.signed);
-    const unsignedContracts = this.contracts.filter(c => c && !c.signed);
+    const unsignedContracts = this.contracts.filter(c => c && c.signed === false);
 
-    // Calculate overdue contracts (Active or Pending with delivery end date in the past)
     const overdueContracts = this.contracts.filter(c => {
       if (!c || !c.deliveryEnd) return false;
       try {
         const endDate = new Date(c.deliveryEnd);
-        return !isNaN(endDate.getTime()) &&
-               (c.status === 'Active' || c.status === 'Pending') &&
-               endDate < now;
-      } catch {
-        return false;
-      }
+        return !isNaN(endDate.getTime()) && (c.status === 'Active' || c.status === 'Pending') && endDate < now;
+      } catch { return false; }
     });
 
-    const totalContracts = this.contracts.length;
-    if (totalContracts === 0) return '';
+    if (activeContracts.length === 0 && fulfilledContracts.length === 0) return '';
 
-    // Calculate totals for active contracts
+    const parts: string[] = [];
     const activeVolume = activeContracts.reduce((sum, c) => sum + (c.quantity || 0), 0);
     const activeValue = activeContracts.reduce((sum, c) => sum + (c.totalValue || 0), 0);
 
-    // Build detailed summary
-    const parts: string[] = [];
-
-    // Main contract overview
     if (activeContracts.length > 0) {
-      parts.push(`They have ${activeContracts.length} active contract${activeContracts.length !== 1 ? 's' : ''} totaling ${this.formatQuantity(activeVolume, 'bushels')} valued at ${this.formatCurrency(activeValue)}`);
+      parts.push(`On the contract side, they currently have ${activeContracts.length} active contract${activeContracts.length !== 1 ? 's' : ''} totaling ${this.formatQuantity(activeVolume, 'bushels')} — worth ${this.formatCurrency(activeValue)}.`);
     } else {
-      parts.push(`They currently have no active contracts`);
+      parts.push(`All ${fulfilledContracts.length} contract${fulfilledContracts.length !== 1 ? 's have' : ' has'} been fulfilled.`);
     }
 
-    // Status breakdown - build a comprehensive list
-    const statusDetails: string[] = [];
+    const notes: string[] = [];
+    if (pendingContracts.length > 0) notes.push(`${pendingContracts.length} pending`);
+    if (overdueContracts.length > 0) notes.push(`${overdueContracts.length} past their delivery deadline`);
+    if (unsignedContracts.length > 0) notes.push(`${unsignedContracts.length} still awaiting signature`);
 
-    if (pendingContracts.length > 0) {
-      statusDetails.push(`${pendingContracts.length} pending`);
+    if (notes.length > 0) {
+      parts.push(`Worth noting: ${notes.join(', ')}.`);
     }
 
-    if (fulfilledContracts.length > 0) {
-      statusDetails.push(`${fulfilledContracts.length} fulfilled`);
-    }
-
-    if (overdueContracts.length > 0) {
-      statusDetails.push(`${overdueContracts.length} overdue`);
-    }
-
-    if (unsignedContracts.length > 0) {
-      statusDetails.push(`${unsignedContracts.length} unsigned`);
-    }
-
-    // Add status breakdown to summary
-    if (statusDetails.length > 0) {
-      if (statusDetails.length === 1) {
-        parts.push(`with ${statusDetails[0]}`);
-      } else if (statusDetails.length === 2) {
-        parts.push(`with ${statusDetails[0]} and ${statusDetails[1]}`);
-      } else {
-        const last = statusDetails[statusDetails.length - 1];
-        const others = statusDetails.slice(0, -1).join(', ');
-        parts.push(`with ${others}, and ${last}`);
-      }
-    }
-
-    return parts.join(' ') + '.';
+    return parts.join(' ');
   }
 
   private generatePlantingOverview(): string {
@@ -199,17 +176,14 @@ export class ActivitySummaryComponent implements OnChanges {
 
       const crop = p.crop;
       if (!acc[crop]) {
-        acc[crop] = { acres: 0, estimatedYield: 0 };
+        acc[crop] = { acres: 0 };
       }
       acc[crop].acres += p.acres || 0;
-      acc[crop].estimatedYield += (p.acres || 0) * (p.estimatedYield || 0);
       return acc;
-    }, {} as Record<string, { acres: number; estimatedYield: number }>);
+    }, {} as Record<string, { acres: number }>);
 
     // Check if we have valid data after filtering
     if (Object.keys(cropGroups).length === 0) return '';
-
-    const totalYield = Object.values(cropGroups).reduce((sum, g) => sum + g.estimatedYield, 0);
 
     // Planting details with natural flow
     const cropEntries = Object.entries(cropGroups);
@@ -227,7 +201,7 @@ export class ActivitySummaryComponent implements OnChanges {
               `, and ${this.formatQuantity(lastCrop[1].acres, 'acres')} of ${lastCrop[0]}`;
     }
 
-    return `Their planting plans include ${crops}, expecting to yield approximately ${this.formatQuantity(totalYield, 'bushels')}.`;
+    return `Planting intentions on file: ${crops}.`;
   }
 
   private generateStorageSummary(): string {
@@ -251,7 +225,7 @@ export class ActivitySummaryComponent implements OnChanges {
       }
     }, 0) / validGrain.length;
 
-    return `In storage, they're holding ${this.formatQuantity(totalStored, 'bushels')} that has been stored for an average of ${Math.floor(avgDays)} days.`;
+    return `Currently holding ${this.formatQuantity(totalStored, 'bushels')} in on-farm storage, averaging ${Math.floor(avgDays)} days in.`;
   }
 
   private generateDeliverySummary(): string {
@@ -281,39 +255,26 @@ export class ActivitySummaryComponent implements OnChanges {
       }
     });
 
-    // Build delivery summary parts
-    const parts: string[] = [];
-
-    // Recent delivery activity
     if (recentTickets.length > 0) {
       const totalDelivered = recentTickets.reduce((sum, t) => sum + (t.netWeight || 0), 0);
-      parts.push(`Recent deliveries total ${this.formatQuantity(totalDelivered, 'lbs')} over the past 30 days (${recentTickets.length} ticket${recentTickets.length !== 1 ? 's' : ''})`);
+      const parts: string[] = [];
+      parts.push(`${recentTickets.length} delivery ticket${recentTickets.length !== 1 ? 's' : ''} in the last 30 days totaling ${this.formatQuantity(totalDelivered, 'lbs')}.`);
 
-      // Quality metrics
       const ticketsWithMoisture = recentTickets.filter(t => typeof t.moisture === 'number' && !isNaN(t.moisture) && t.moisture > 0);
       const ticketsWithTestWeight = recentTickets.filter(t => typeof t.testWeight === 'number' && !isNaN(t.testWeight) && t.testWeight > 0);
-
       if (ticketsWithMoisture.length > 0 && ticketsWithTestWeight.length > 0) {
         const avgMoisture = ticketsWithMoisture.reduce((sum, t) => sum + (t.moisture || 0), 0) / ticketsWithMoisture.length;
         const avgTestWeight = ticketsWithTestWeight.reduce((sum, t) => sum + (t.testWeight || 0), 0) / ticketsWithTestWeight.length;
-        parts.push(`averaging ${avgMoisture.toFixed(1)}% moisture and ${avgTestWeight.toFixed(1)} lbs/bu test weight`);
+        parts.push(`Avg quality: ${avgMoisture.toFixed(1)}% moisture, ${avgTestWeight.toFixed(1)} lbs/bu test weight.`);
       }
 
-      // 90-day trend if different from 30-day
-      if (last90Days.length > recentTickets.length) {
-        const total90Days = last90Days.reduce((sum, t) => sum + (t.netWeight || 0), 0);
-        parts.push(`with ${last90Days.length} total deliveries over 90 days (${this.formatQuantity(total90Days, 'lbs')})`);
-      }
+      return parts.join(' ');
     } else if (last90Days.length > 0) {
-      // No recent tickets, but have some in last 90 days
       const total90Days = last90Days.reduce((sum, t) => sum + (t.netWeight || 0), 0);
-      parts.push(`They have ${last90Days.length} delivery ticket${last90Days.length !== 1 ? 's' : ''} in the past 90 days totaling ${this.formatQuantity(total90Days, 'lbs')}`);
+      return `${last90Days.length} deliver${last90Days.length !== 1 ? 'ies' : 'y'} in the past 90 days (${this.formatQuantity(total90Days, 'lbs')}), none in the last 30 days.`;
     } else {
-      // No recent activity
-      parts.push(`They have ${totalTickets} delivery ticket${totalTickets !== 1 ? 's' : ''} on record, but no recent activity in the past 90 days`);
+      return `${totalTickets} delivery ticket${totalTickets !== 1 ? 's' : ''} on record, no activity in the past 90 days.`;
     }
-
-    return parts.join(', ') + '.';
   }
 
   private generateEngagementSummary(): string {
@@ -337,20 +298,24 @@ export class ActivitySummaryComponent implements OnChanges {
       const lastNote = sorted[0];
       if (!lastNote) return '';
 
-      const lastDate = new Date(lastNote.createdAt);
+      const raw = typeof lastNote.createdAt === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(lastNote.createdAt as any)
+        ? (lastNote.createdAt as any) + 'Z' : lastNote.createdAt;
+      const lastDate = new Date(raw);
       if (isNaN(lastDate.getTime())) return '';
 
       const daysSince = this.calculateDaysBetween(lastDate, new Date());
       const createdBy = lastNote.createdBy || 'Unknown';
 
       if (daysSince === 0) {
-        return `Our most recent contact was today with ${createdBy}.`;
+        return `Last contact was today by ${createdBy}.`;
       } else if (daysSince === 1) {
-        return `We last connected yesterday with ${createdBy}.`;
+        return `Last contact was yesterday by ${createdBy}.`;
       } else if (daysSince <= 7) {
-        return `${createdBy} touched base with them ${Math.abs(daysSince)} days ago.`;
+        return `Last contact was ${Math.abs(daysSince)} days ago by ${createdBy}.`;
+      } else if (daysSince <= 30) {
+        return `Last contact was ${Math.abs(daysSince)} days ago by ${createdBy}.`;
       } else {
-        return `Our last interaction was ${Math.abs(daysSince)} days ago with ${createdBy}.`;
+        return `Last contact was ${Math.abs(daysSince)} days ago by ${createdBy}.`;
       }
     } catch {
       return '';
@@ -377,51 +342,44 @@ export class ActivitySummaryComponent implements OnChanges {
     });
 
     if (overdueContracts.length > 0) {
-      alerts.push(`Important: ${overdueContracts.length} contract${overdueContracts.length !== 1 ? 's have' : ' has'} passed ${overdueContracts.length !== 1 ? 'their' : 'its'} delivery deadline`);
+      alerts.push(`${overdueContracts.length} contract${overdueContracts.length !== 1 ? 's have' : ' has'} passed the delivery deadline`);
     }
 
-    // Check for unsigned contracts
     const unsignedContracts = this.contracts.filter(c => c && c.signed === false);
     if (unsignedContracts.length > 0) {
-      const prefix = alerts.length > 0 ? 'additionally, ' : 'Note: ';
-      alerts.push(`${prefix}${unsignedContracts.length} contract${unsignedContracts.length !== 1 ? 's are' : ' is'} still awaiting signature`);
+      alerts.push(`${unsignedContracts.length} contract${unsignedContracts.length !== 1 ? 's are' : ' is'} still unsigned`);
     }
 
-    // Upcoming delivery deadline with validation
     const upcomingDeliveries = this.contracts
       .filter(c => {
         if (!c || !c.deliveryEnd || c.status !== 'Active') return false;
         try {
           const endDate = new Date(c.deliveryEnd);
           return !isNaN(endDate.getTime()) && endDate >= now;
-        } catch {
-          return false;
-        }
+        } catch { return false; }
       })
-      .sort((a, b) => {
-        const dateA = new Date(a.deliveryEnd).getTime();
-        const dateB = new Date(b.deliveryEnd).getTime();
-        return dateA - dateB;
-      });
+      .sort((a, b) => new Date(a.deliveryEnd).getTime() - new Date(b.deliveryEnd).getTime());
 
-    if (upcomingDeliveries.length > 0 && alerts.length === 0) {
+    if (upcomingDeliveries.length > 0) {
       const nextContract = upcomingDeliveries[0];
       try {
         const daysRemaining = this.calculateDaysBetween(now, new Date(nextContract.deliveryEnd));
         if (daysRemaining <= 30 && daysRemaining >= 0) {
-          const crop = nextContract.commodityDescription || nextContract.commodityCode || 'grain';
+          const crop = nextContract.commodityCode || nextContract.commodityDescription || 'grain';
           if (daysRemaining <= 7) {
-            alerts.push(`Upcoming: their ${crop} contract delivery window closes in just ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}`);
+            alerts.push(`their ${crop} delivery window closes in just ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}`);
           } else {
-            alerts.push(`The next ${crop} delivery deadline is coming up in ${daysRemaining} days`);
+            alerts.push(`their next ${crop} delivery deadline is ${daysRemaining} days away`);
           }
         }
-      } catch {
-        // Skip if date calculation fails
-      }
+      } catch { }
     }
 
-    return alerts.length > 0 ? alerts.join(', ') + '.' : '';
+    if (alerts.length === 0) return '';
+    if (alerts.length === 1) return alerts[0].charAt(0).toUpperCase() + alerts[0].slice(1) + '.';
+    const last = alerts[alerts.length - 1];
+    const rest = alerts.slice(0, -1).join(', ');
+    return rest.charAt(0).toUpperCase() + rest.slice(1) + ', and ' + last + '.';
   }
 
   // Helper utility methods

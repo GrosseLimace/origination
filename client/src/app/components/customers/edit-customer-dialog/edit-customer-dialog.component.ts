@@ -1,6 +1,7 @@
 import { Component, Input, Output, EventEmitter, OnChanges, SimpleChanges, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { switchMap } from 'rxjs/operators';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '../../ui/dialog/dialog.component';
 import { Customer, Ticket, Commodity } from '../../../models';
 import { ApiService } from '../../../services/api.service';
@@ -154,7 +155,7 @@ import { ApiService } from '../../../services/api.service';
                     <input
                       type="text"
                       [(ngModel)]="newCommodity"
-                      placeholder="Search commodities..."
+                      placeholder="Add commodities"
                       (input)="onCommoditySearch()"
                       (keydown.enter)="selectFirstSuggestion()"
                       (focus)="showSuggestions = true"
@@ -193,43 +194,13 @@ import { ApiService } from '../../../services/api.service';
             <div class="space-y-4">
               <h4 class="font-medium text-gray-900 dark:text-white">Link Producers</h4>
 
-              @if (!editPrimaryContact.trim()) {
-                <p class="text-sm text-amber-600 dark:text-amber-400">A Primary Contact is required before linking producers.</p>
-              } @else {
-
-                <!-- Outgoing Links: Producers this customer links to -->
-                @if (editLinkedProducerIds.length > 0) {
-                  <div class="space-y-2">
-                    <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Linked To:</div>
-                    @for (producerId of editLinkedProducerIds; track producerId) {
-                      @if (getProducerById(producerId); as producer) {
-                        <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
-                          <div>
-                            <div class="font-medium text-gray-900 dark:text-white">{{ producer.name }}</div>
-                            <div class="text-xs text-gray-500 dark:text-gray-400">{{ producer.sourceCustomerId || producer.location }}</div>
-                          </div>
-                          <button
-                            type="button"
-                            class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 h-8 w-8"
-                            (click)="removeLinkedProducer(producerId)"
-                            title="Unlink"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                              <line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/>
-                            </svg>
-                          </button>
-                        </div>
-                      }
-                    }
-                  </div>
-                }
-
-                <!-- Incoming Links: Producers that link to this customer -->
-                @if (getProducersLinkingToMe().length > 0) {
-                  <div class="space-y-2">
-                    <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Linked From:</div>
-                    @for (producer of getProducersLinkingToMe(); track producer.id) {
-                      <div class="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+              <!-- Outgoing Links: always visible so they can be removed without a Primary Contact -->
+              @if (editLinkedProducerIds.length > 0) {
+                <div class="space-y-2">
+                  <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Linked To:</div>
+                  @for (producerId of editLinkedProducerIds; track producerId) {
+                    @if (getProducerById(producerId); as producer) {
+                      <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
                         <div>
                           <div class="font-medium text-gray-900 dark:text-white">{{ producer.name }}</div>
                           <div class="text-xs text-gray-500 dark:text-gray-400">{{ producer.sourceCustomerId || producer.location }}</div>
@@ -237,8 +208,8 @@ import { ApiService } from '../../../services/api.service';
                         <button
                           type="button"
                           class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 h-8 w-8"
-                          (click)="removeIncomingLink(producer.id.toString())"
-                          title="Unlink from {{ producer.name }}"
+                          (click)="removeLinkedProducer(producerId)"
+                          title="Unlink"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/>
@@ -246,10 +217,39 @@ import { ApiService } from '../../../services/api.service';
                         </button>
                       </div>
                     }
-                  </div>
-                }
+                  }
+                </div>
+              }
 
-                <!-- Search to add a linked producer -->
+              <!-- Incoming Links: always visible so they can be removed without a Primary Contact -->
+              @if (getProducersLinkingToMe().length > 0) {
+                <div class="space-y-2">
+                  <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Linked From:</div>
+                  @for (producer of getProducersLinkingToMe(); track producer.id) {
+                    <div class="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <div>
+                        <div class="font-medium text-gray-900 dark:text-white">{{ producer.name }}</div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400">{{ producer.sourceCustomerId || producer.location }}</div>
+                      </div>
+                      <button
+                        type="button"
+                        class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 h-8 w-8"
+                        (click)="removeIncomingLink(producer.sourceCustomerId || producer.id.toString())"
+                        title="Unlink from {{ producer.name }}"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/>
+                        </svg>
+                      </button>
+                    </div>
+                  }
+                </div>
+              }
+
+              <!-- Search to add — requires Primary Contact -->
+              @if (!editPrimaryContact.trim()) {
+                <p class="text-sm text-amber-600 dark:text-amber-400">A Primary Contact is required to link additional producers.</p>
+              } @else {
                 <div class="space-y-2">
                   <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Search to Link Producer</label>
                   <div class="relative">
@@ -266,6 +266,11 @@ import { ApiService } from '../../../services/api.service';
                       <button type="button" (mousedown)="newProducerSearch = ''; filteredProducers = []; showProducerSuggestions = false" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
                       </button>
+                    }
+                    @if (newProducerSearch.trim() && isLoadingProducers) {
+                      <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg px-3 py-2 text-sm text-gray-400 dark:text-gray-500">
+                        Loading producers...
+                      </div>
                     }
                     @if (showProducerSuggestions && filteredProducers.length > 0) {
                       <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-48 overflow-y-auto">
@@ -285,7 +290,6 @@ import { ApiService } from '../../../services/api.service';
                     }
                   </div>
                 </div>
-
               }
             </div>
           </div>
@@ -320,6 +324,7 @@ export class EditCustomerDialogComponent implements OnChanges {
   @Input() customer: Customer | null = null;
   @Input() tickets: Ticket[] = [];
   @Input() allCustomers: Customer[] = [];
+  @Input() selectedTradeUnits: string[] = [];
 
   @Output() close = new EventEmitter<void>();
   @Output() save = new EventEmitter<{
@@ -329,6 +334,7 @@ export class EditCustomerDialogComponent implements OnChanges {
     commodities: string[];
     primaryContact: string;
     linkedProducerIds: string[];
+    removedIncomingIds: string[];
     eSignEnabled: boolean;
   }>();
 
@@ -337,6 +343,7 @@ export class EditCustomerDialogComponent implements OnChanges {
   editCommodities: string[] = [];
   private ticketCommoditySet = new Set<string>();
   editLinkedProducerIds: string[] = [];
+  removedIncomingIds: string[] = []; // incoming links removed locally, saved on Save Changes
   editESignEnabled = false;
   editPrimaryContact = '';
   newCommodity = '';
@@ -347,6 +354,8 @@ export class EditCustomerDialogComponent implements OnChanges {
   showSuggestions = false;
 
   // Producer search
+  // allProducersForSearch caches the full cross-trade-unit list (only loaded when no trade units selected)
+  private allProducersForSearch: Customer[] = [];
   newProducerSearch = '';
   filteredProducers: Customer[] = [];
   showProducerSuggestions = false;
@@ -360,8 +369,15 @@ export class EditCustomerDialogComponent implements OnChanges {
   private originalPrimaryContact = '';
 
   private initialized = false;
+  isLoadingProducers = false;
 
   ngOnChanges(changes: SimpleChanges): void {
+    // Eagerly load all producers whenever selectedTradeUnits becomes empty so the cache is
+    // ready before the user opens the link search. Cached — only fetches once per session.
+    if ('selectedTradeUnits' in changes && this.selectedTradeUnits.length === 0 && this.allProducersForSearch.length === 0 && !this.isLoadingProducers) {
+      this.loadAllProducersForSearch();
+    }
+
     // When isOpen becomes true, initialize the form from the customer
     if (this.isOpen && this.customer && !this.initialized) {
       this.editAcres = this.customer.totalAcres || 0;
@@ -373,6 +389,7 @@ export class EditCustomerDialogComponent implements OnChanges {
       const userCommodities = this.customer.commodities || [];
       this.editCommodities = [...new Set([...ticketCommodities, ...userCommodities])].sort();
       this.editLinkedProducerIds = [...(this.customer.linkedProducerIds || [])];
+      this.removedIncomingIds = [];
       this.editESignEnabled = this.customer.eSignEnabled;
       this.editPrimaryContact = this.customer.primaryContact || '';
 
@@ -390,6 +407,12 @@ export class EditCustomerDialogComponent implements OnChanges {
           this.allCommodities = commodities;
           this.cdr.markForCheck();
         });
+      }
+
+      // If no trade units and the cache still isn't loaded (edge case: first open before ngOnChanges
+      // on selectedTradeUnits fired), kick off the load now.
+      if (this.selectedTradeUnits.length === 0 && this.allProducersForSearch.length === 0 && !this.isLoadingProducers) {
+        this.loadAllProducersForSearch();
       }
 
       this.initialized = true;
@@ -418,7 +441,8 @@ export class EditCustomerDialogComponent implements OnChanges {
       || commoditiesChanged
       || this.editESignEnabled !== this.originalESignEnabled
       || this.editPrimaryContact !== this.originalPrimaryContact
-      || linkedProducerIdsChanged;
+      || linkedProducerIdsChanged
+      || this.removedIncomingIds.length > 0;
   }
 
   addCommodity(): void {
@@ -446,14 +470,14 @@ export class EditCustomerDialogComponent implements OnChanges {
     }
     this.filteredCommodities = this.allCommodities.filter(c =>
       (c.name.toLowerCase().includes(term) || c.code.toLowerCase().includes(term))
-      && !this.editCommodities.some(ec => ec === c.name || ec === c.code)
+      && !this.editCommodities.includes(c.code)
     );
     this.showSuggestions = true;
   }
 
   selectCommodity(commodity: Commodity): void {
-    if (!this.editCommodities.some(ec => ec === commodity.name || ec === commodity.code)) {
-      this.editCommodities = [...this.editCommodities, commodity.name];
+    if (!this.editCommodities.includes(commodity.code)) {
+      this.editCommodities = [...this.editCommodities, commodity.code];
     }
     this.newCommodity = '';
     this.filteredCommodities = [];
@@ -489,15 +513,47 @@ export class EditCustomerDialogComponent implements OnChanges {
     setTimeout(() => { this.showSuggestions = false; }, 200);
   }
 
+  private loadAllProducersForSearch(): void {
+    this.isLoadingProducers = true;
+    this.apiService.getTradeUnits().pipe(
+      switchMap(tradeUnits => this.apiService.getCustomers(tradeUnits))
+    ).subscribe({
+      next: (customers) => {
+        this.allProducersForSearch = customers;
+        this.isLoadingProducers = false;
+        // If the user already typed in the search box, refresh results now that data is loaded
+        if (this.newProducerSearch.trim()) {
+          this.onProducerSearch();
+        }
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.isLoadingProducers = false;
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  private get producerPool(): Customer[] {
+    // No trade units selected → use the full cross-trade-unit cache
+    // Trade units selected → use the already-loaded filtered list (instant, no extra API call)
+    return this.selectedTradeUnits.length === 0
+      ? this.allProducersForSearch
+      : this.allCustomers;
+  }
+
   getProducerById(producerId: string): Customer | undefined {
-    const producerIdNum = parseInt(producerId, 10);
-    return this.allCustomers.find(c => c.id === producerIdNum);
+    return this.producerPool.find(c => c.sourceCustomerId === producerId)
+      ?? this.allCustomers.find(c => c.sourceCustomerId === producerId);
   }
 
   getProducersLinkingToMe(): Customer[] {
     if (!this.customer) return [];
-    return this.allCustomers.filter(c =>
-      c.linkedProducerIds && c.linkedProducerIds.includes(this.customer!.id.toString())
+    const mySourceId = this.customer.sourceCustomerId || '';
+    return this.producerPool.filter(c =>
+      c.linkedProducerIds &&
+      c.linkedProducerIds.includes(mySourceId) &&
+      !this.removedIncomingIds.includes(c.sourceCustomerId || '')
     );
   }
 
@@ -507,9 +563,9 @@ export class EditCustomerDialogComponent implements OnChanges {
       this.filteredProducers = [];
       return;
     }
-    this.filteredProducers = this.allCustomers.filter(c =>
+    this.filteredProducers = this.producerPool.filter(c =>
       c.id !== this.customer?.id &&
-      !this.editLinkedProducerIds.includes(c.id.toString()) &&
+      !this.editLinkedProducerIds.includes(c.sourceCustomerId || '') &&
       (
         c.name.toLowerCase().includes(term) ||
         c.id.toString().includes(term) ||
@@ -520,7 +576,7 @@ export class EditCustomerDialogComponent implements OnChanges {
   }
 
   selectProducer(producer: Customer): void {
-    const idStr = producer.id.toString();
+    const idStr = producer.sourceCustomerId || producer.id.toString();
     if (!this.editLinkedProducerIds.includes(idStr)) {
       this.editLinkedProducerIds = [...this.editLinkedProducerIds, idStr];
     }
@@ -538,7 +594,9 @@ export class EditCustomerDialogComponent implements OnChanges {
   }
 
   removeIncomingLink(producerId: string): void {
-    alert(`To unlink from ${this.getProducerById(producerId)?.name}, please edit that producer and remove this link from there.`);
+    if (!this.removedIncomingIds.includes(producerId)) {
+      this.removedIncomingIds = [...this.removedIncomingIds, producerId];
+    }
   }
 
   onCancel(): void {
@@ -547,6 +605,7 @@ export class EditCustomerDialogComponent implements OnChanges {
     this.editBinCapacity = this.originalBinCapacity || null;
     this.editCommodities = [...this.originalCommodities];
     this.editLinkedProducerIds = [...this.originalLinkedProducerIds];
+    this.removedIncomingIds = [];
     this.editESignEnabled = this.originalESignEnabled;
     this.editPrimaryContact = this.originalPrimaryContact;
     this.newCommodity = '';
@@ -570,6 +629,7 @@ export class EditCustomerDialogComponent implements OnChanges {
         commodities: this.editCommodities.filter(c => !this.isTicketCommodity(c)),
         primaryContact: this.editPrimaryContact,
         linkedProducerIds: this.editLinkedProducerIds,
+        removedIncomingIds: this.removedIncomingIds,
         eSignEnabled: this.editESignEnabled
       });
       this.initialized = false;

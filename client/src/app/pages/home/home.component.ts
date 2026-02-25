@@ -62,6 +62,7 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
               <app-customer-profile
                 [customer]="selectedCustomer"
                 [allCustomers]="customers"
+                [selectedTradeUnits]="selectedTradeUnits"
                 [contracts]="customerContracts"
                 [tickets]="customerTickets"
                 [plantingIntentions]="customerPlantingIntentions"
@@ -119,6 +120,7 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                   <app-customer-notes
                     [notes]="customerNotes"
                     [customer]="selectedCustomer"
+                    [customerCodeMap]="customerCodeMap"
                     (addNote)="addNote($event)"
                     (togglePin)="toggleNotePin($event)"
                     (editNote)="editNote($event)"
@@ -162,6 +164,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   customerContracts: Contract[] = [];
   customerTickets: Ticket[] = [];
   customerNotes: Note[] = [];
+  customerCodeMap: Map<number, string> = new Map();
   customerPlantingIntentions: PlantingIntention[] = [];
   customerStoredGrain: StoredGrain[] = [];
 
@@ -543,7 +546,14 @@ export class HomeComponent implements OnInit, OnDestroy {
     this.customerPlantingIntentions = [...this.allCustomerPlantingIntentions];
     this.customerStoredGrain = [...this.allCustomerStoredGrain];
 
-    this.customerNotes = [...this.notes.filter(n => n.customerId === customerId)
+    const linkedGroup = this.getLinkedGroup(currentCustomer);
+    const linkedIds = new Set([customerId, ...linkedGroup.map(c => c.id)]);
+    const codeMap = new Map<number, string>();
+    [currentCustomer, ...linkedGroup].forEach(c => {
+      if (c?.sourceCustomerId) codeMap.set(c.id, c.sourceCustomerId);
+    });
+    this.customerCodeMap = codeMap;
+    this.customerNotes = [...this.notes.filter(n => linkedIds.has(n.customerId))
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())];
   }
 
@@ -560,6 +570,9 @@ export class HomeComponent implements OnInit, OnDestroy {
     this.apiService.saveProducerDetails(customer.id, {
       sourceCustomerId: customer.sourceCustomerId || null,
       customerName: customer.name,
+      totalAcres: existingPd?.totalAcres ?? null,
+      binCapacity: existingPd?.binCapacity ?? null,
+      primaryContact: existingPd?.primaryContact ?? null,
       commodities: merged.join(','),
       linkedProducerIds: existingPd?.linkedProducerIds ?? null
     }).subscribe({
@@ -580,7 +593,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     });
   }
 
-  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; eSignEnabled: boolean }): void {
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean }): void {
     // Find customer from array OR fall back to selectedCustomer (search scenario)
     const customer = this.customers.find(c => c.id === data.customerId)
       || (this.selectedCustomer?.id === data.customerId ? this.selectedCustomer : null);
@@ -643,30 +656,74 @@ export class HomeComponent implements OnInit, OnDestroy {
       }
     });
 
-    // Silently propagate this customer's Primary Contact to all linked customers.
-    // Each linked customer inherits the parent's contact regardless of what they had before.
-    if (data.primaryContact && data.linkedProducerIds.length > 0) {
-      data.linkedProducerIds.forEach(linkedId => {
-        const linkedCustomer = this.customers.find(c => c.id.toString() === linkedId);
-        if (!linkedCustomer) return;
-        const linkedPd = this.producerDetailsMap.get(linkedCustomer.id);
-        this.apiService.saveProducerDetails(linkedCustomer.id, {
+    // For each incoming link the user removed, update the OTHER customer's ProducerDetails
+    // to remove the current customer from their linkedProducerIds.
+    for (const linkedIdStr of data.removedIncomingIds) {
+      const linkedCustomer = this.customers.find(c => c.sourceCustomerId === linkedIdStr);
+      if (!linkedCustomer) continue;
+
+      const currentSourceId = customer.sourceCustomerId || '';
+      const updatedLinkedIds = (linkedCustomer.linkedProducerIds || []).filter(id => id !== currentSourceId);
+      const linkedId = linkedCustomer.id;
+      const existingPd = this.producerDetailsMap.get(linkedId);
+      this.apiService.saveProducerDetails(linkedId, {
+        sourceCustomerId: linkedCustomer.sourceCustomerId || null,
+        customerName: linkedCustomer.name,
+        totalAcres: existingPd?.totalAcres ?? null,
+        binCapacity: existingPd?.binCapacity ?? null,
+        primaryContact: existingPd?.primaryContact ?? null,
+        commodities: existingPd?.commodities ?? null,
+        linkedProducerIds: updatedLinkedIds.length > 0 ? updatedLinkedIds.join(',') : null
+      }).subscribe({
+        next: (pd) => {
+          this.producerDetailsMap.set(pd.customerId, pd);
+          // Update the linked customer locally so getLinkedGroup & getProducersLinkingToMe reflect the change
+          const updatedLinkedCustomer: Customer = { ...linkedCustomer, linkedProducerIds: updatedLinkedIds };
+          const idx = this.customers.findIndex(c => c.id === linkedId);
+          if (idx >= 0) {
+            this.customers[idx] = updatedLinkedCustomer;
+            this.customers = [...this.customers];
+            this.appState.setCustomers(this.customers);
+          }
+        },
+        error: () => {}
+      });
+    }
+
+    // For each NEWLY linked producer that has no primary contact, inherit the current
+    // customer's primary contact. If they already have one, leave it alone.
+    if (data.primaryContact) {
+      const previousLinkedIds = new Set(customer.linkedProducerIds || []);
+      const newlyLinkedIds = data.linkedProducerIds.filter(id => !previousLinkedIds.has(id));
+      for (const linkedIdStr of newlyLinkedIds) {
+        const linkedCustomer = this.customers.find(c => c.sourceCustomerId === linkedIdStr);
+        if (!linkedCustomer) continue;
+        const linkedId = linkedCustomer.id;
+        const linkedPd = this.producerDetailsMap.get(linkedId);
+        if (linkedPd?.primaryContact) continue; // already has one — leave it
+        this.apiService.saveProducerDetails(linkedId, {
           sourceCustomerId: linkedCustomer.sourceCustomerId || null,
           customerName: linkedCustomer.name,
+          totalAcres: linkedPd?.totalAcres ?? null,
+          binCapacity: linkedPd?.binCapacity ?? null,
           primaryContact: data.primaryContact,
+          commodities: linkedPd?.commodities ?? null,
           linkedProducerIds: linkedPd?.linkedProducerIds ?? null
         }).subscribe({
           next: (pd) => {
             this.producerDetailsMap.set(pd.customerId, pd);
-            const idx = this.customers.findIndex(c => c.id === linkedCustomer.id);
+            // Reflect the new primary contact on the local customer object
+            const updatedLinkedCustomer: Customer = { ...linkedCustomer, primaryContact: data.primaryContact };
+            const idx = this.customers.findIndex(c => c.id === linkedId);
             if (idx >= 0) {
-              this.customers[idx] = { ...this.customers[idx], primaryContact: data.primaryContact };
+              this.customers[idx] = updatedLinkedCustomer;
               this.customers = [...this.customers];
+              this.appState.setCustomers(this.customers);
             }
           },
           error: () => {}
         });
-      });
+      }
     }
 
     // Update customer in the array immediately (no ODS round-trip needed)
@@ -692,13 +749,13 @@ export class HomeComponent implements OnInit, OnDestroy {
   }
 
   getLinkedGroup(customer: Customer): Customer[] {
-    // Outgoing: customers this customer explicitly links to
+    // Outgoing: customers this customer explicitly links to (stored as sourceCustomerId)
     const outgoing = (customer.linkedProducerIds || [])
-      .map(id => this.customers.find(c => c.id.toString() === id))
+      .map(id => this.customers.find(c => c.sourceCustomerId === id))
       .filter((c): c is Customer => !!c);
-    // Incoming: customers in the loaded list that link to this customer
+    // Incoming: customers in the loaded list that link to this customer (by sourceCustomerId)
     const incoming = this.customers.filter(c =>
-      (c.linkedProducerIds || []).includes(customer.id.toString())
+      (c.linkedProducerIds || []).includes(customer.sourceCustomerId || '')
     );
     // Deduplicate by id, exclude current customer
     return [...new Map([...outgoing, ...incoming].map(c => [c.id, c])).values()]
@@ -709,7 +766,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     const customer = this.customers.find(c => c.id === customerId);
     if (!customer || customer.id === this.selectedCustomer?.id) return;
     this.selectedCustomer = customer;
-    this.appState.selectCustomer(customer);
+    // Do NOT call appState.selectCustomer() — keeps customer list highlighting on the originally selected customer
     this.loadCustomerContractsAndTickets(customer.id);
     this.cdr.detectChanges();
   }
@@ -719,7 +776,9 @@ export class HomeComponent implements OnInit, OnDestroy {
 
     // customerNotes is already sorted newest-first in loadCustomerData()
     const lastNote = this.customerNotes[0];
-    const diff = Date.now() - new Date(lastNote.createdAt).getTime();
+    const raw = typeof lastNote.createdAt === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(lastNote.createdAt as any)
+      ? (lastNote.createdAt as any) + 'Z' : lastNote.createdAt;
+    const diff = Date.now() - new Date(raw).getTime();
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
 
     if (days === 0) return 'Today';
@@ -733,16 +792,18 @@ export class HomeComponent implements OnInit, OnDestroy {
     });
   }
 
-  addPlantingIntention(data: {crop: string, acres: number, plantingYear: number, estimatedYield: number}): void {
+  addPlantingIntention(data: {crop: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}): void {
     if (!this.selectedCustomer) return;
 
     const apiData = {
       customerId: this.selectedCustomer.id,
-      farmId: '',
+      customerName: this.selectedCustomer.name,
+      customerCode: this.selectedCustomer.sourceCustomerId || '',
+      tradeUnit: data.tradeUnit,
       crop: data.crop,
+      description: data.description,
       acres: data.acres,
-      plantingYear: data.plantingYear,
-      estimatedYield: data.estimatedYield
+      plantingYear: data.plantingYear
     };
 
     this.apiService.createPlantingIntention(apiData).subscribe({
@@ -766,12 +827,12 @@ export class HomeComponent implements OnInit, OnDestroy {
     });
   }
 
-  editPlantingIntention(data: {intentionId: string, crop: string, acres: number, plantingYear: number, estimatedYield: number}): void {
+  editPlantingIntention(data: {intentionId: number, crop: string, description?: string, acres: number, plantingYear: number}): void {
     this.apiService.updatePlantingIntention(data.intentionId, {
       crop: data.crop,
+      description: data.description,
       acres: data.acres,
-      plantingYear: data.plantingYear,
-      estimatedYield: data.estimatedYield
+      plantingYear: data.plantingYear
     }).subscribe({
       next: (updatedIntention) => {
         // Update in global list
@@ -799,7 +860,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     });
   }
 
-  deletePlantingIntention(intentionId: string): void {
+  deletePlantingIntention(intentionId: number): void {
     this.apiService.deletePlantingIntention(intentionId).subscribe({
       next: () => {
         // Remove from global list

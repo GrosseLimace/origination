@@ -205,7 +205,7 @@ export class AIGrowthForecastComponent {
     items.push('Contract volumes have remained relatively stable year-over-year.');
 
     // Market share analysis
-    const totalProjected = this.plantingIntentions.reduce((sum, p) => sum + (p.acres * p.estimatedYield), 0);
+    const totalProjected = 0;
     const totalContracted = this.contracts
       .filter(c => c.status === 'Active' || c.status === 'Pending')
       .reduce((sum, c) => sum + c.quantity, 0);
@@ -243,7 +243,7 @@ export class AIGrowthForecastComponent {
     }
 
     // Revenue opportunity
-    const totalProjected = this.plantingIntentions.reduce((sum, p) => sum + (p.acres * p.estimatedYield), 0);
+    const totalProjected = 0;
     const totalContracted = this.contracts
       .filter(c => c.status === 'Active' || c.status === 'Pending')
       .reduce((sum, c) => sum + c.quantity, 0);

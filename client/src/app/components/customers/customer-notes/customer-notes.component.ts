@@ -120,8 +120,13 @@ import { Customer, Note } from '../../../models';
                   <div class="font-medium text-gray-900 dark:text-white">
                     {{ note.createdBy || 'User' }}
                   </div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400">
-                    {{ formatTimestamp(note.createdAt) }}
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-xs text-gray-500 dark:text-gray-400">{{ formatTimestamp(note.createdAt) }}</span>
+                    @if (customerCodeMap.size > 1 && customerCodeMap.has(note.customerId)) {
+                      <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
+                        {{ customerCodeMap.get(note.customerId) }}
+                      </span>
+                    }
                   </div>
                 </div>
               </div>
@@ -181,6 +186,7 @@ import { Customer, Note } from '../../../models';
 export class CustomerNotesComponent implements OnChanges, OnDestroy {
   @Input() notes: Note[] = [];
   @Input() customer!: Customer;
+  @Input() customerCodeMap: Map<number, string> = new Map();
   @Output() addNote = new EventEmitter<string>();
   @Output() togglePin = new EventEmitter<Note>();
   @Output() editNote = new EventEmitter<{ noteId: number; content: string }>();
@@ -249,7 +255,10 @@ export class CustomerNotesComponent implements OnChanges, OnDestroy {
   }
 
   formatTimestamp(timestamp: string | Date): string {
-    const date = new Date(timestamp);
+    // Treat bare ISO strings as UTC (API returns without Z suffix)
+    const raw = typeof timestamp === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(timestamp)
+      ? timestamp + 'Z' : timestamp;
+    const date = new Date(raw);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));

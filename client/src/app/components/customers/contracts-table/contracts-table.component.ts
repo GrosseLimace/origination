@@ -57,12 +57,13 @@ type SortDirection = 'none' | 'asc' | 'desc';
             </button>
           }
         </div>
+        <div class="max-h-[480px] overflow-y-auto overflow-x-auto overscroll-y-none">
         <app-table>
           <app-table-header>
             <app-table-row>
               <app-table-head [sortable]="true" (click)="handleSort('contractNumber')">
                 <span class="flex items-center gap-1">
-                  Contract Number
+                  Contract
                   <span [class]="getSortIconClass('contractNumber')">
                     @if (currentSortColumn === 'contractNumber' && currentSortDirection === 'asc') {
                       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -204,12 +205,12 @@ type SortDirection = 'none' | 'asc' | 'desc';
                       }
                     </span>
                     <span [class]="!contract.signed ? 'font-medium text-red-600 dark:text-red-400' : 'font-medium'">
-                      {{ contract.contractNumber }}
+                      {{ contract.sourceContractId || contract.contractNumber }}
                     </span>
                   </div>
                 </app-table-cell>
                 <app-table-cell>
-                  <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ contract.commodityDescription || contract.commodityCode }}</span>
+                  <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ contract.commodityCode || contract.commodityDescription }}</span>
                 </app-table-cell>
                 <app-table-cell>
                   <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ contract.quantity | number }} {{ contract.unit }}</span>
@@ -317,49 +318,67 @@ type SortDirection = 'none' | 'asc' | 'desc';
 
                       <!-- Applied Tickets Section -->
                       <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-                        <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">Applied Tickets ({{ getAppliedTickets(contract).length }})</p>
+                        <button
+                          class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors mb-4"
+                          (click)="toggleTicketSection(contract.id)"
+                        >
+                          <span class="text-gray-400">
+                            @if (expandedTicketSections.has(contract.id)) {
+                              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                              </svg>
+                            } @else {
+                              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                              </svg>
+                            }
+                          </span>
+                          Applied Tickets ({{ getAppliedTickets(contract).length }})
+                        </button>
 
-                        @if (getAppliedTickets(contract).length > 0) {
-                          @for (ticket of getAppliedTickets(contract); track ticket.id) {
-                            <div class="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 mb-3">
-                              <div [class]="hasWheatInAppliedTickets(contract) ? 'grid grid-cols-1 sm:grid-cols-6 gap-4' : 'grid grid-cols-1 sm:grid-cols-5 gap-4'">
-                                <div class="text-center">
-                                  <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Ticket Number</p>
-                                  <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.ticketNumber }}</p>
-                                </div>
-                                <div class="text-center">
-                                  <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Date</p>
-                                  <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.date | date:'MMM d, yyyy' }}</p>
-                                </div>
-                                <div class="text-center">
-                                  <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Crop</p>
-                                  <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.productCode || 'N/A' }}</p>
-                                </div>
-                                <div class="text-center">
-                                  <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Net Weight (lbs)</p>
-                                  <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.appliedDockQuantity | number }}</p>
-                                </div>
-                                <div class="text-center">
-                                  <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Moisture %</p>
-                                  <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.moisture | number:'1.1-1' }}%</p>
-                                </div>
-                                @if (hasWheatInAppliedTickets(contract)) {
+                        @if (expandedTicketSections.has(contract.id)) {
+                          @if (getAppliedTickets(contract).length > 0) {
+                            @for (ticket of getAppliedTickets(contract); track ticket.id) {
+                              <div class="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 mb-3">
+                                <div [class]="hasWheatInAppliedTickets(contract) ? 'grid grid-cols-1 sm:grid-cols-6 gap-4' : 'grid grid-cols-1 sm:grid-cols-5 gap-4'">
                                   <div class="text-center">
-                                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Protein %</p>
-                                    <p class="font-medium text-gray-900 dark:text-gray-100">
-                                      @if (ticket.proteinPercent !== null && ticket.proteinPercent !== undefined) {
-                                        {{ ticket.proteinPercent | number:'1.1-1' }}%
-                                      } @else {
-                                        - <span class="text-xs text-gray-400">({{ isWheat(ticket) ? 'wheat-no-data' : 'no-data' }})</span>
-                                      }
-                                    </p>
+                                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Ticket Number</p>
+                                    <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.ticketNumber }}</p>
                                   </div>
-                                }
+                                  <div class="text-center">
+                                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Date</p>
+                                    <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.date | date:'MMM d, yyyy' }}</p>
+                                  </div>
+                                  <div class="text-center">
+                                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Crop</p>
+                                    <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.productCode || 'N/A' }}</p>
+                                  </div>
+                                  <div class="text-center">
+                                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Net Weight (lbs)</p>
+                                    <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.appliedDockQuantity | number }}</p>
+                                  </div>
+                                  <div class="text-center">
+                                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Moisture %</p>
+                                    <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.moisture | number:'1.1-1' }}%</p>
+                                  </div>
+                                  @if (hasWheatInAppliedTickets(contract)) {
+                                    <div class="text-center">
+                                      <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Protein %</p>
+                                      <p class="font-medium text-gray-900 dark:text-gray-100">
+                                        @if (ticket.proteinPercent !== null && ticket.proteinPercent !== undefined) {
+                                          {{ ticket.proteinPercent | number:'1.1-1' }}%
+                                        } @else {
+                                          - <span class="text-xs text-gray-400">({{ isWheat(ticket) ? 'wheat-no-data' : 'no-data' }})</span>
+                                        }
+                                      </p>
+                                    </div>
+                                  }
+                                </div>
                               </div>
-                            </div>
+                            }
+                          } @else {
+                            <p class="text-gray-500 dark:text-gray-400 text-sm">No tickets applied to this contract yet.</p>
                           }
-                        } @else {
-                          <p class="text-gray-500 dark:text-gray-400 text-sm">No tickets applied to this contract yet.</p>
                         }
                       </div>
                     </div>
@@ -369,6 +388,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
             }
           </app-table-body>
         </app-table>
+        </div>
         @if (displayedContracts.length === 0 && searchQuery.trim()) {
           <div class="text-center py-8 text-sm text-gray-500 dark:text-gray-400">
             No contracts match "<span class="font-medium text-gray-700 dark:text-gray-300">{{ searchQuery }}</span>"
@@ -384,6 +404,7 @@ export class ContractsTableComponent implements OnChanges {
   @Input() customer!: Customer;
 
   expandedRows = new Set<number>();
+  expandedTicketSections = new Set<number>();
   currentSortColumn: SortColumn | null = null;
   currentSortDirection: SortDirection = 'none';
   showSearch = false;
@@ -509,8 +530,17 @@ export class ContractsTableComponent implements OnChanges {
   toggleRow(contractId: number): void {
     if (this.expandedRows.has(contractId)) {
       this.expandedRows.delete(contractId);
+      this.expandedTicketSections.delete(contractId);
     } else {
       this.expandedRows.add(contractId);
+    }
+  }
+
+  toggleTicketSection(contractId: number): void {
+    if (this.expandedTicketSections.has(contractId)) {
+      this.expandedTicketSections.delete(contractId);
+    } else {
+      this.expandedTicketSections.add(contractId);
     }
   }
 
