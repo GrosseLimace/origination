@@ -2,7 +2,8 @@ import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '../../ui/table/table.component';
-import { Customer, Contract, Ticket } from '../../../models';
+import { Customer, Contract, Ticket, ContractPricingLine } from '../../../models';
+import { ApiService } from '../../../services/api.service';
 
 type SortColumn = 'contractNumber' | 'crop' | 'quantity' | 'price' | 'deliveryStart' | 'status';
 type SortDirection = 'none' | 'asc' | 'desc';
@@ -216,14 +217,20 @@ type SortDirection = 'none' | 'asc' | 'desc';
                   <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ contract.quantity | number }} {{ contract.unit }}</span>
                 </app-table-cell>
                 <app-table-cell>
-                  @if (getPricingStatus(contract) === 'UNPRICED') {
-                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">Unpriced</span>
-                  } @else if (getPricingStatus(contract) === 'PARTIAL') {
-                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">Partial</span>
-                  } @else if (contract.price !== null && contract.price !== undefined) {
-                    <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ contract.price | currency:'USD':'symbol':'1.2-2' }}/{{ getSingularUnit(contract.unit) }}</span>
-                  } @else {
-                    <span class="text-gray-400">N/A</span>
+                  @if (getPricingInfo(contract); as info) {
+                    @if (info.status === 'UNPRICED') {
+                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">Unpriced</span>
+                    } @else if (info.status === 'PARTIAL') {
+                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">Partial</span>
+                    } @else if (info.status === 'PRICED') {
+                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Priced</span>
+                    } @else if (info.status === 'CASH' && info.cashPrice != null) {
+                      <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ info.cashPrice | currency:'USD':'symbol':'1.2-2' }}/{{ getSingularUnit(contract.unit) }}</span>
+                    } @else if (info.status === 'LOADING') {
+                      <span class="text-gray-400 text-xs">...</span>
+                    } @else {
+                      <span class="text-gray-400">N/A</span>
+                    }
                   }
                 </app-table-cell>
                 <app-table-cell>
@@ -270,14 +277,20 @@ type SortDirection = 'none' | 'asc' | 'desc';
                           <div class="flex flex-col">
                             <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Price per Bushel</span>
                             <span class="font-medium text-gray-900 dark:text-gray-100">
-                              @if (getPricingStatus(contract) === 'UNPRICED') {
-                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">Unpriced</span>
-                              } @else if (getPricingStatus(contract) === 'PARTIAL') {
-                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">Partial</span>
-                              } @else if (contract.price !== null && contract.price !== undefined) {
-                                {{ contract.price | currency:'USD':'symbol':'1.2-2' }}
-                              } @else {
-                                N/A
+                              @if (getPricingInfo(contract); as info) {
+                                @if (info.status === 'UNPRICED') {
+                                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">Unpriced</span>
+                                } @else if (info.status === 'PARTIAL') {
+                                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">Partial</span>
+                                } @else if (info.status === 'PRICED') {
+                                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Priced</span>
+                                } @else if (info.status === 'CASH' && info.cashPrice != null) {
+                                  {{ info.cashPrice | currency:'USD':'symbol':'1.4-4' }}
+                                } @else if (info.status === 'LOADING') {
+                                  <span class="text-gray-400 text-xs">Loading...</span>
+                                } @else {
+                                  N/A
+                                }
                               }
                             </span>
                           </div>
@@ -314,6 +327,80 @@ type SortDirection = 'none' | 'asc' | 'desc';
                             <span class="font-medium text-gray-900 dark:text-gray-100">{{ getDeliveryStats(contract).remainingBushels | number }} {{ contract.unit }}</span>
                           </div>
                         </div>
+                      </div>
+
+                      <!-- Pricing Lines Section -->
+                      <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+                        <button
+                          class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors mb-4"
+                          (click)="togglePricingSection(contract.id)"
+                        >
+                          <span class="text-gray-400">
+                            @if (expandedPricingSections.has(contract.id)) {
+                              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                              </svg>
+                            } @else {
+                              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                              </svg>
+                            }
+                          </span>
+                          Pricing Lines
+                          @if (contract.sourceContractId && pricingLinesMap.has(contract.sourceContractId)) {
+                            ({{ pricingLinesMap.get(contract.sourceContractId)!.length }})
+                          }
+                          @if (contract.sourceContractId && loadingPricingLines.has(contract.sourceContractId)) {
+                            <span class="text-xs text-gray-400 font-normal">Loading...</span>
+                          }
+                        </button>
+
+                        @if (expandedPricingSections.has(contract.id)) {
+                          @if (contract.sourceContractId && pricingLinesMap.has(contract.sourceContractId)) {
+                            @if (pricingLinesMap.get(contract.sourceContractId)!.length === 0) {
+                              <p class="text-gray-500 dark:text-gray-400 text-sm">No pricing lines found.</p>
+                            } @else {
+                              @for (line of pricingLinesMap.get(contract.sourceContractId)!; track line.priceSequence) {
+                                <div class="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 mb-3">
+                                  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                    <div class="text-center">
+                                      <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Price Type</p>
+                                      <p class="font-medium text-gray-900 dark:text-gray-100">{{ line.priceType }}</p>
+                                    </div>
+                                    <div class="text-center">
+                                      <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Cash Price</p>
+                                      <p class="font-medium text-gray-900 dark:text-gray-100">{{ line.cashPrice != null ? (line.cashPrice | currency:'USD':'symbol':'1.4-4') : 'N/A' }}</p>
+                                    </div>
+                                    <div class="text-center">
+                                      <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Basis</p>
+                                      <p class="font-medium text-gray-900 dark:text-gray-100">{{ line.basisPrice != null ? (line.basisPrice | currency:'USD':'symbol':'1.4-4') : 'N/A' }}</p>
+                                    </div>
+                                    <div class="text-center">
+                                      <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Futures Month</p>
+                                      <p class="font-medium text-gray-900 dark:text-gray-100">{{ line.futuresMonth || 'N/A' }}</p>
+                                    </div>
+                                    <div class="text-center">
+                                      <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Priced Qty</p>
+                                      <p class="font-medium text-gray-900 dark:text-gray-100">{{ line.pricedQty | number }} {{ contract.unit }}</p>
+                                    </div>
+                                    <div class="text-center">
+                                      <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Priced Date</p>
+                                      <p class="font-medium text-gray-900 dark:text-gray-100">{{ line.pricedAt | date:'M/d/yyyy' }}</p>
+                                    </div>
+                                    <div class="text-center">
+                                      <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Signature</p>
+                                      <p class="font-medium text-gray-900 dark:text-gray-100">{{ line.signatureStatus }}</p>
+                                    </div>
+                                    <div class="text-center">
+                                      <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Delivery Status</p>
+                                      <p class="font-medium text-gray-900 dark:text-gray-100">{{ line.deliveryStatus }}</p>
+                                    </div>
+                                  </div>
+                                </div>
+                              }
+                            }
+                          }
+                        }
                       </div>
 
                       <!-- Applied Tickets Section -->
@@ -405,14 +492,21 @@ export class ContractsTableComponent implements OnChanges {
 
   expandedRows = new Set<number>();
   expandedTicketSections = new Set<number>();
+  expandedPricingSections = new Set<number>();
+  pricingLinesMap = new Map<string, ContractPricingLine[]>();
+  loadingPricingLines = new Set<string>();
   currentSortColumn: SortColumn | null = null;
   currentSortDirection: SortDirection = 'none';
   showSearch = false;
   searchQuery = '';
 
+  constructor(private apiService: ApiService) {}
+
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['contracts']) {
       this.expandedRows.clear();
+      this.pricingLinesMap.clear();
+      this.loadingPricingLines.clear();
     }
   }
 
@@ -531,8 +625,24 @@ export class ContractsTableComponent implements OnChanges {
     if (this.expandedRows.has(contractId)) {
       this.expandedRows.delete(contractId);
       this.expandedTicketSections.delete(contractId);
+      this.expandedPricingSections.delete(contractId);
     } else {
       this.expandedRows.add(contractId);
+      const contract = this.contracts.find(c => c.id === contractId);
+      if (contract?.sourceContractId && !this.pricingLinesMap.has(contract.sourceContractId)) {
+        const key = contract.sourceContractId;
+        this.loadingPricingLines.add(key);
+        this.apiService.getPricingLines(key).subscribe({
+          next: (lines) => {
+            this.pricingLinesMap.set(key, lines);
+            this.loadingPricingLines.delete(key);
+          },
+          error: () => {
+            this.pricingLinesMap.set(key, []);
+            this.loadingPricingLines.delete(key);
+          }
+        });
+      }
     }
   }
 
@@ -544,17 +654,51 @@ export class ContractsTableComponent implements OnChanges {
     }
   }
 
+  togglePricingSection(contractId: number): void {
+    if (this.expandedPricingSections.has(contractId)) {
+      this.expandedPricingSections.delete(contractId);
+    } else {
+      this.expandedPricingSections.add(contractId);
+    }
+  }
+
   getSingularUnit(unit: string): string {
     return unit.endsWith('s') ? unit.slice(0, -1) : unit;
   }
 
-  getPricingStatus(contract: Contract): 'UNPRICED' | 'PARTIAL' | 'PRICED' {
+  getPricingInfo(contract: Contract): { status: 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'CASH' | 'LOADING'; cashPrice?: number } {
+    const key = contract.sourceContractId;
+
+    if (key && this.loadingPricingLines.has(key)) {
+      return { status: 'LOADING' };
+    }
+
+    const lines = key ? this.pricingLinesMap.get(key) : undefined;
+
+    if (lines !== undefined) {
+      if (lines.length === 0) return { status: 'UNPRICED' };
+
+      const totalPricedQty = lines.reduce((sum, l) => sum + (l.pricedQty ?? 0), 0);
+      const contractQty = lines[0].contractQty ?? contract.quantity ?? 0;
+
+      if (totalPricedQty === 0) return { status: 'UNPRICED' };
+      if (totalPricedQty < contractQty) return { status: 'PARTIAL' };
+      if (lines.length > 1) return { status: 'PRICED' };
+
+      // Single fully-priced line — show cash price
+      const cashPrice = lines[0].cashPrice;
+      if (cashPrice != null) return { status: 'CASH', cashPrice };
+      return { status: 'PRICED' };
+    }
+
+    // Fallback: use contract fields before lines are loaded
     const pricedQty = contract.pricedQuantity ?? 0;
     const totalQty = contract.quantity ?? 0;
 
-    if (pricedQty === 0) return 'UNPRICED';
-    if (pricedQty < totalQty) return 'PARTIAL';
-    return 'PRICED';
+    if (pricedQty === 0) return { status: 'UNPRICED' };
+    if (pricedQty < totalQty) return { status: 'PARTIAL' };
+    if (contract.price != null) return { status: 'CASH', cashPrice: contract.price };
+    return { status: 'PRICED' };
   }
 
   getDeliveryWindowStatus(contract: Contract): string {

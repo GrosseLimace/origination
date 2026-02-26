@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnDestroy, inject } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '../../ui/table/table.component';
@@ -82,7 +82,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
             <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800">
               <div class="flex items-start justify-between mb-3">
                 <div class="flex-1">
-                  <div class="font-medium text-gray-900 dark:text-white">{{ intention.crop }}</div>
+                  <div class="font-medium text-gray-900 dark:text-white">{{ intention.type ? intention.type + ' ' : '' }}{{ getCropCategory(intention.crop) }}</div>
                 </div>
                 <button
                   type="button"
@@ -226,7 +226,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
 
                 <!-- Data Row -->
                 <app-table-row>
-                  <app-table-cell class="text-center">{{ intention.crop }}</app-table-cell>
+                  <app-table-cell class="text-center">{{ intention.type ? intention.type + ' ' : '' }}{{ getCropCategory(intention.crop) }}</app-table-cell>
                   <app-table-cell class="text-center">{{ intention.acres | number }}</app-table-cell>
                   <app-table-cell class="text-center">{{ intention.plantingYear }}</app-table-cell>
                   <app-table-cell class="text-center">{{ intention.createdOn | date:'M/d/yy' }}</app-table-cell>
@@ -257,6 +257,19 @@ type SortDirection = 'none' | 'asc' | 'desc';
         <app-dialog-content>
           <div class="space-y-4">
             <div class="space-y-2">
+              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
+              <select
+                [(ngModel)]="addForm.type"
+                (ngModelChange)="onAddTypeChange()"
+                class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+              >
+                <option value="">Select type...</option>
+                <option value="Irrigated">Irrigated</option>
+                <option value="Dryland">Dryland</option>
+              </select>
+            </div>
+
+            <div class="space-y-2">
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Crop</label>
               <select
                 [(ngModel)]="addForm.crop"
@@ -268,6 +281,9 @@ type SortDirection = 'none' | 'asc' | 'desc';
                   <option [value]="commodity.code">{{ commodity.name }} ({{ commodity.code }})</option>
                 }
               </select>
+              @if (availableCrops.length === 0) {
+                <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">No crops configured. Add crop yield estimates in the Trade Unit Dashboard first.</p>
+              }
             </div>
 
             <div class="space-y-2">
@@ -306,6 +322,19 @@ type SortDirection = 'none' | 'asc' | 'desc';
         </app-dialog-header>
         <app-dialog-content>
           <div class="space-y-4">
+            <div class="space-y-2">
+              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
+              <select
+                [(ngModel)]="editForm.type"
+                (ngModelChange)="onEditTypeChange()"
+                class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+              >
+                <option value="">Select type...</option>
+                <option value="Irrigated">Irrigated</option>
+                <option value="Dryland">Dryland</option>
+              </select>
+            </div>
+
             <div class="space-y-2">
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Crop</label>
               <select
@@ -360,7 +389,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
               </div>
               <div class="flex justify-between">
                 <span class="text-sm text-gray-600 dark:text-gray-400">Crop:</span>
-                <span class="text-sm font-medium text-gray-900 dark:text-gray-300">{{ selectedIntention.crop }}</span>
+                <span class="text-sm font-medium text-gray-900 dark:text-gray-300">{{ selectedIntention.type ? selectedIntention.type + ' ' : '' }}{{ getCropCategory(selectedIntention.crop) }}</span>
               </div>
               @if (selectedIntention.description) {
                 <div class="flex justify-between">
@@ -387,22 +416,40 @@ type SortDirection = 'none' | 'asc' | 'desc';
     </div>
   `
 })
-export class PlantingIntentionsTableComponent implements OnDestroy {
+export class PlantingIntentionsTableComponent implements OnInit, OnDestroy {
   private apiService = inject(ApiService);
 
   @Input() plantingIntentions: PlantingIntention[] = [];
   @Input() customer!: Customer;
   @Input() tradeUnits: string[] = [];
   @Input() customerCommodityCodes: string[] = [];
-  @Output() add = new EventEmitter<{crop: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
-  @Output() edit = new EventEmitter<{intentionId: number, crop: string, description?: string, acres: number, plantingYear: number}>();
+  @Input() yieldEstimateCrops: string[] = [];
+  @Output() add = new EventEmitter<{crop: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
+  @Output() edit = new EventEmitter<{intentionId: number, crop: string, type?: string, description?: string, acres: number, plantingYear: number}>();
   @Output() delete = new EventEmitter<number>();
 
   allCommodities: Commodity[] = [];
 
   get availableCrops(): Commodity[] {
+    // Prefer crops from dashboard yield estimates if available
+    if (this.yieldEstimateCrops.length > 0) {
+      return this.allCommodities.filter(c => this.yieldEstimateCrops.includes(c.code));
+    }
     if (this.customerCommodityCodes.length === 0) return this.allCommodities;
     return this.allCommodities.filter(c => this.customerCommodityCodes.includes(c.code));
+  }
+
+  get showNoCropsMessage(): boolean {
+    return this.yieldEstimateCrops.length === 0 && this.customerCommodityCodes.length === 0 && this.allCommodities.length > 0;
+  }
+
+  ngOnInit(): void {
+    this.loadCommodities();
+  }
+
+  getCropCategory(cropCode: string): string {
+    const commodity = this.allCommodities.find(c => c.code === cropCode);
+    return commodity?.category || cropCode;
   }
 
   expandedRows = new Set<number>();
@@ -416,6 +463,7 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
 
   addForm = {
     crop: '',
+    type: '',
     description: '',
     acres: '',
     plantingYear: '',
@@ -424,6 +472,7 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
 
   editForm = {
     crop: '',
+    type: '',
     description: '',
     acres: '',
     plantingYear: ''
@@ -431,6 +480,7 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
 
   originalEditForm = {
     crop: '',
+    type: '',
     description: '',
     acres: '',
     plantingYear: ''
@@ -548,12 +598,26 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
 
   onAddCropChange(code: string): void {
     const commodity = this.availableCrops.find(c => c.code === code);
-    this.addForm.description = commodity?.name || '';
+    const name = commodity?.name || '';
+    this.addForm.description = [this.addForm.type, name].filter(Boolean).join(' ');
+  }
+
+  onAddTypeChange(): void {
+    if (this.addForm.crop) {
+      this.onAddCropChange(this.addForm.crop);
+    }
   }
 
   onEditCropChange(code: string): void {
     const commodity = this.availableCrops.find(c => c.code === code);
-    this.editForm.description = commodity?.name || '';
+    const name = commodity?.name || '';
+    this.editForm.description = [this.editForm.type, name].filter(Boolean).join(' ');
+  }
+
+  onEditTypeChange(): void {
+    if (this.editForm.crop) {
+      this.onEditCropChange(this.editForm.crop);
+    }
   }
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -563,6 +627,7 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
 
     this.addForm = {
       crop: '',
+      type: '',
       description: '',
       acres: '',
       plantingYear: lastYear.toString(),
@@ -591,6 +656,7 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
     if (this.isAddFormValid()) {
       const data = {
         crop: this.addForm.crop,
+        type: this.addForm.type || undefined,
         description: this.addForm.description || undefined,
         acres: parseInt(this.addForm.acres),
         plantingYear: parseInt(this.addForm.plantingYear),
@@ -605,6 +671,7 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
     this.selectedIntention = intention;
     const formData = {
       crop: intention.crop,
+      type: intention.type || '',
       description: intention.description || '',
       acres: intention.acres.toString(),
       plantingYear: intention.plantingYear.toString()
@@ -624,6 +691,7 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
 
   hasEditFormChanged(): boolean {
     return this.editForm.crop !== this.originalEditForm.crop
+      || this.editForm.type !== this.originalEditForm.type
       || this.editForm.description !== this.originalEditForm.description
       || this.editForm.acres !== this.originalEditForm.acres
       || this.editForm.plantingYear !== this.originalEditForm.plantingYear;
@@ -643,6 +711,7 @@ export class PlantingIntentionsTableComponent implements OnDestroy {
       this.edit.emit({
         intentionId: this.selectedIntention.id,
         crop: this.editForm.crop,
+        type: this.editForm.type || undefined,
         description: this.editForm.description || undefined,
         acres: parseInt(this.editForm.acres),
         plantingYear: parseInt(this.editForm.plantingYear)

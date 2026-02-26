@@ -27,6 +27,7 @@ public interface IDataService
     List<Contract> GetContracts(List<string>? tradeUnits = null);
     List<Contract> GetContractsByCustomer(long customerId);
     List<Contract> GetContractsByFarm(string farmId);
+    List<ContractPricingLine> GetPricingLines(string sourceContractId);
 
     // Ticket Operations
     List<Ticket> GetTickets(List<string>? tradeUnits = null);
@@ -36,8 +37,8 @@ public interface IDataService
     // Planting Intention Operations
     List<PlantingIntention> GetPlantingIntentions();
     List<PlantingIntention> GetPlantingIntentionsByCustomer(int customerId);
-    PlantingIntention AddPlantingIntention(int customerId, string customerName, string customerCode, string tradeUnit, string crop, string? description, int acres, int plantingYear);
-    PlantingIntention? UpdatePlantingIntention(int intentionId, string crop, string? description, int acres, int plantingYear);
+    PlantingIntention AddPlantingIntention(int customerId, string customerName, string customerCode, string tradeUnit, string crop, string? type, string? description, int acres, int plantingYear);
+    PlantingIntention? UpdatePlantingIntention(int intentionId, string crop, string? type, string? description, int acres, int plantingYear);
     void DeletePlantingIntention(int intentionId);
 
     // Note Operations
@@ -58,6 +59,10 @@ public interface IDataService
     List<DashboardPlantingEstimate> GetDashboardPlantingEstimates(string tradeUnitKey, int plantingYear);
     void UpsertDashboardPlantingEstimates(List<UpsertDashboardEstimateRequest> estimates, string username);
 
+    // Dashboard Market Share Operations
+    List<DashboardMarketShare> GetDashboardMarketShares(string tradeUnitKey, int plantingYear);
+    void UpsertDashboardMarketShares(List<UpsertDashboardMarketShareRequest> shares, string username);
+
     // Commodity Operations
     List<Commodity> GetCommodities();
 
@@ -67,6 +72,6 @@ public interface IDataService
 
     // Saved List Operations
     List<SavedList> GetSavedLists();
-    void SaveList(string name, string query, List<string> customerIds);
-    void DeleteList(string listId);
+    SavedList SaveList(string name, string query, string? tradeUnits);
+    void DeleteList(int listId);
 }

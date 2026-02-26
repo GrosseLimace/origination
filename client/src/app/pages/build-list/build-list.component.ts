@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -7,7 +7,8 @@ import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
 import { AppStateService, BuildListState } from '../../services/app-state.service';
 import { ToastService } from '../../services/toast.service';
-import { Customer, Contract, PlantingIntention, Note, StoredGrain, SavedList } from '../../models';
+import { NlqFilterService, NlqFilterContext } from '../../services/nlq-filter.service';
+import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, ProducerDetails } from '../../models';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '../../components/ui/card/card.component';
 import { ButtonComponent } from '../../components/ui/button/button.component';
 import { BadgeComponent } from '../../components/ui/badge/badge.component';
@@ -109,7 +110,7 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
               (ngModelChange)="onQueryChange($event)"
               placeholder="Describe the customers you want to find... e.g., 'Customers with more than 500 acres' or 'Farmers I have not contacted in over 30 days'"
               rows="3"
-              [disabled]="!hasTradeUnits"
+              [disabled]="!hasTradeUnits || loading"
               class="w-full p-3 pr-9 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 resize-none disabled:opacity-50 disabled:cursor-not-allowed"
             ></textarea>
             @if (queryText.trim()) {
@@ -128,7 +129,7 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
 
           <!-- Generate Button -->
           <div class="mb-6">
-            <app-button variant="default" (onClick)="processQuery()" [disabled]="!hasTradeUnits || !queryText.trim() || isProcessing">
+            <app-button variant="default" (onClick)="processQuery()" [disabled]="!hasTradeUnits || !queryText.trim() || isProcessing || loading">
               @if (isProcessing) {
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2 animate-spin">
                   <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
@@ -174,11 +175,12 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
               </svg>
               <div>
                 <p class="font-medium text-gray-900 dark:text-white">Couldn't understand that query</p>
-                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Try rephrasing using keywords like acres, contacted, contracts, storage, or planting. For example:</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Try rephrasing using keywords like acres, contacted, contracts, deliveries, planting, storage, email, phone, or moisture. For example:</p>
                 <ul class="mt-2 space-y-1">
                   <li class="text-sm text-gray-500 dark:text-gray-400">• "Customers with more than 500 acres"</li>
-                  <li class="text-sm text-gray-500 dark:text-gray-400">• "Farmers not contacted in over 30 days"</li>
-                  <li class="text-sm text-gray-500 dark:text-gray-400">• "Customers with active contracts"</li>
+                  <li class="text-sm text-gray-500 dark:text-gray-400">• "Growers who delivered corn this year"</li>
+                  <li class="text-sm text-gray-500 dark:text-gray-400">• "Producers with overdue contracts"</li>
+                  <li class="text-sm text-gray-500 dark:text-gray-400">• "Farmers planting soybeans in 2026"</li>
                 </ul>
               </div>
             </div>
@@ -253,14 +255,14 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
                         <span class="text-sm font-medium text-green-700 dark:text-green-300">{{ getInitials(customer.name) }}</span>
                       </div>
                       <div>
-                        <div class="font-medium text-gray-900 dark:text-white">{{ customer.name }}</div>
+                        <div class="font-medium text-gray-900 dark:text-white">{{ customer.name }} <span class="text-gray-400 dark:text-gray-500 font-normal">({{ customer.sourceCustomerId }})</span></div>
                         <div class="text-sm text-gray-500 dark:text-gray-400">{{ customer.farm }}</div>
                         <div class="flex items-center gap-2 mt-1">
                           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400">
                             <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
                             <circle cx="12" cy="10" r="3"/>
                           </svg>
-                          <span class="text-xs text-gray-400">{{ customer.location }}</span>
+                          <span class="text-xs text-gray-400">{{ getFormattedLocation(customer) }}</span>
                           <span class="text-gray-300 dark:text-gray-600">•</span>
                           <span class="text-sm text-gray-500 dark:text-gray-400">{{ customer.totalAcres | number }} acres</span>
                         </div>
@@ -296,7 +298,12 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
           <app-card-description>Your saved customer lists for quick access</app-card-description>
         </app-card-header>
         <app-card-content>
-          @if (savedLists.length === 0) {
+          @if (loading) {
+            <div class="p-8 text-center">
+              <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-300 dark:border-gray-600 border-t-green-600 dark:border-t-green-500 mb-4"></div>
+              <p class="text-gray-500 dark:text-gray-400 font-medium">Loading customers...</p>
+            </div>
+          } @else if (savedLists.length === 0) {
             <div class="text-center py-8">
               <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 text-gray-300 dark:text-gray-600">
                 <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
@@ -310,7 +317,7 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
                 <div class="flex items-center justify-between gap-4 p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                   <button type="button" (click)="loadSavedList(list)" class="flex-1 text-left min-w-0">
                     <div class="font-medium text-gray-900 dark:text-white truncate">{{ list.name }}</div>
-                    <div class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ list.customerIds.length }} customers • Created from: "{{ list.query }}"</div>
+                    <div class="text-xs text-gray-500 dark:text-gray-400 truncate">"{{ list.query }}"</div>
                   </button>
                   <button type="button" (click)="deleteList(list.id)" class="text-red-500 hover:text-red-600 bg-transparent border-0 p-0 flex-shrink-0">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -349,6 +356,18 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
           <app-button (onClick)="saveList()" [disabled]="!newListName.trim()">Save List</app-button>
         </app-dialog-footer>
       </app-dialog>
+
+      <!-- Delete Confirmation Dialog -->
+      <app-dialog [isOpen]="showDeleteDialog" (close)="closeDeleteDialog()" size="sm">
+        <app-dialog-header>
+          <app-dialog-title>Delete List</app-dialog-title>
+          <app-dialog-description>Are you sure you want to delete this list? This action cannot be undone.</app-dialog-description>
+        </app-dialog-header>
+        <app-dialog-footer>
+          <app-button variant="outline" (onClick)="closeDeleteDialog()">Cancel</app-button>
+          <app-button variant="destructive" (onClick)="confirmDeleteList()">Delete</app-button>
+        </app-dialog-footer>
+      </app-dialog>
     </div>
   `
 })
@@ -356,11 +375,14 @@ export class BuildListComponent implements OnInit, OnDestroy {
   private apiService = inject(ApiService);
   private appState = inject(AppStateService);
   private toastService = inject(ToastService);
+  private nlqFilterService = inject(NlqFilterService);
   private router = inject(Router);
+  private cdr = inject(ChangeDetectorRef);
   private destroy$ = new Subject<void>();
 
   customers: Customer[] = [];
   contracts: Contract[] = [];
+  tickets: Ticket[] = [];
   plantingIntentions: PlantingIntention[] = [];
   notes: Note[] = [];
   storedGrain: StoredGrain[] = [];
@@ -373,10 +395,13 @@ export class BuildListComponent implements OnInit, OnDestroy {
   queryText = '';
   filteredCustomers: Customer[] = [];
   showSaveDialog = false;
+  showDeleteDialog = false;
+  deleteListId: number | null = null;
   newListName = '';
   isProcessing = false;
   hasGenerated = false;
   showMap = false;
+  loading = false;
   detectedState: string | null = null;
   queryUnrecognized = false;
 
@@ -387,27 +412,13 @@ export class BuildListComponent implements OnInit, OnDestroy {
     'Top 10 largest operations',
     'Customers with more than 500 acres',
     'Farmers not contacted in over 30 days',
-    'Customers with active contracts',
-    'Customers contacted in the last 7 days'
+    'Producers with active contracts',
+    'Growers who delivered corn this year',
+    'Customers with overdue contracts',
+    'Farmers with no email',
+    'Customers planting soybeans in 2026'
   ];
 
-  private stateNames: { [key: string]: string } = {
-    'iowa': 'Iowa',
-    'nebraska': 'Nebraska',
-    'illinois': 'Illinois',
-    'minnesota': 'Minnesota',
-    'wisconsin': 'Wisconsin',
-    'missouri': 'Missouri',
-    'kansas': 'Kansas',
-    'south dakota': 'South Dakota',
-    'north dakota': 'North Dakota',
-    'indiana': 'Indiana',
-    'ohio': 'Ohio',
-    'michigan': 'Michigan',
-    'texas': 'Texas',
-    'oklahoma': 'Oklahoma',
-    'colorado': 'Colorado'
-  };
 
   ngOnInit(): void {
     this.loadData();
@@ -428,11 +439,14 @@ export class BuildListComponent implements OnInit, OnDestroy {
   }
 
   private loadData(): void {
+    this.loading = true;
+
     // Use cached data from AppStateService if already loaded (trade-unit-filtered by home)
     const cachedCustomers = this.appState.customers();
     if (cachedCustomers.length > 0) {
       this.customers = cachedCustomers;
       this.contracts = this.appState.contracts();
+      this.tickets = this.appState.tickets();
       this.plantingIntentions = this.appState.plantingIntentions();
       this.notes = this.appState.notes();
       this.storedGrain = this.appState.storedGrain();
@@ -440,6 +454,8 @@ export class BuildListComponent implements OnInit, OnDestroy {
       this.rebuildCaches();
       // Restore UI state if we have it
       this.restoreUIState();
+      // Load and merge ProducerDetails (commodities, bin capacity, etc.) if not already merged
+      this.loadAndMergeProducerDetails();
       return;
     }
 
@@ -449,6 +465,7 @@ export class BuildListComponent implements OnInit, OnDestroy {
     forkJoin({
       customers: this.apiService.getCustomers(tuParam),
       contracts: this.apiService.getContracts(tuParam),
+      tickets: this.apiService.getTickets(tuParam),
       plantingIntentions: this.apiService.getPlantingIntentions(),
       notes: this.apiService.getNotes(),
       storedGrain: this.apiService.getStoredGrain(),
@@ -457,21 +474,67 @@ export class BuildListComponent implements OnInit, OnDestroy {
       next: (data) => {
         this.customers = data.customers;
         this.contracts = data.contracts;
+        this.tickets = data.tickets;
         this.plantingIntentions = data.plantingIntentions;
         this.notes = data.notes;
         this.storedGrain = data.storedGrain;
         this.savedLists = data.savedLists;
         this.appState.setCustomers(data.customers);
         this.appState.setContracts(data.contracts);
+        this.appState.setTickets(data.tickets);
         this.appState.setPlantingIntentions(data.plantingIntentions);
         this.appState.setNotes(data.notes);
         this.appState.setStoredGrain(data.storedGrain);
         this.appState.setSavedLists(data.savedLists);
         this.rebuildCaches();
         this.restoreUIState();
+        // Load and merge ProducerDetails (commodities, bin capacity, etc.)
+        this.loadAndMergeProducerDetails();
       },
       error: () => {
+        this.loading = false;
         this.toastService.error('Failed to load data');
+      }
+    });
+  }
+
+  private loadAndMergeProducerDetails(): void {
+    this.apiService.getAllProducerDetails().pipe(takeUntil(this.destroy$)).subscribe({
+      next: (details) => {
+        if (details.length === 0) {
+          this.loading = false;
+          this.cdr.detectChanges();
+          return;
+        }
+        const detailsMap = new Map(details.map(d => [d.customerId, d]));
+        let changed = false;
+        this.customers = this.customers.map(customer => {
+          const pd = detailsMap.get(customer.id);
+          if (pd) {
+            changed = true;
+            return {
+              ...customer,
+              totalAcres: pd.totalAcres ?? customer.totalAcres,
+              binCapacity: pd.binCapacity ?? customer.binCapacity,
+              primaryContact: pd.primaryContact ?? customer.primaryContact,
+              commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
+              linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
+            };
+          }
+          return customer;
+        });
+        if (changed) {
+          this.customers = [...this.customers];
+          this.appState.setCustomers(this.customers);
+          // Clear crops cache so it picks up farmer detail commodities
+          this.customerCropsCache.clear();
+        }
+        this.loading = false;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.loading = false;
+        this.cdr.detectChanges();
       }
     });
   }
@@ -530,11 +593,19 @@ export class BuildListComponent implements OnInit, OnDestroy {
     if (!this.queryText.trim()) return;
 
     this.isProcessing = true;
-    this.detectedState = this.detectStateInQuery(this.queryText);
-    this.filteredCustomers = this.parseAndFilter(this.queryText);
+    const context: NlqFilterContext = {
+      customers: this.customers,
+      contracts: this.contracts,
+      tickets: this.tickets,
+      notes: this.notes,
+      plantingIntentions: this.plantingIntentions,
+      storedGrain: this.storedGrain
+    };
+    const result = this.nlqFilterService.parseAndFilter(this.queryText, context);
+    this.filteredCustomers = result.customers;
+    this.detectedState = result.detectedState;
 
-    const matchedPatterns = this.detectPatterns(this.queryText);
-    if (matchedPatterns.length === 0) {
+    if (result.matchedPatterns.length === 0) {
       this.queryUnrecognized = true;
       this.hasGenerated = false;
     } else {
@@ -546,474 +617,19 @@ export class BuildListComponent implements OnInit, OnDestroy {
     this.isProcessing = false;
   }
 
-  private detectPatterns(query: string): string[] {
-    const lowerQuery = query.toLowerCase();
-    const matched: string[] = [];
-
-    // state_filter
-    if (this.detectedState !== null) {
-      matched.push('state_filter');
-    }
-
-    // acres_more
-    if (/(?:more than|over|at least|greater than|above|exceeding)\s*\d/.test(lowerQuery)) {
-      matched.push('acres_more');
-    }
-
-    // acres_less
-    if (/(?:less than|under|fewer than|below)\s*\d/.test(lowerQuery)) {
-      matched.push('acres_less');
-    }
-
-    // acres_between
-    if (/between\s*\d+.*acres?/.test(lowerQuery)) {
-      matched.push('acres_between');
-    }
-
-    // large_farm
-    if ((lowerQuery.includes('large') || lowerQuery.includes('big')) &&
-        (lowerQuery.includes('operation') || lowerQuery.includes('farm'))) {
-      matched.push('large_farm');
-    }
-
-    // small_farm
-    if (lowerQuery.includes('small') &&
-        (lowerQuery.includes('operation') || lowerQuery.includes('farm'))) {
-      matched.push('small_farm');
-    }
-
-    // not_contacted
-    if (lowerQuery.includes('have not contacted') || lowerQuery.includes("haven't contacted") ||
-        lowerQuery.includes('not contacted') || lowerQuery.includes('never contacted')) {
-      matched.push('not_contacted');
-    }
-
-    // recently_contacted
-    if (lowerQuery.includes('contacted in') || lowerQuery.includes('contacted within') ||
-        lowerQuery.includes('contacted last') || lowerQuery.includes('contacted this') ||
-        lowerQuery.includes('recently contacted')) {
-      matched.push('recently_contacted');
-    }
-
-    // storage
-    if (lowerQuery.includes('in storage') || lowerQuery.includes('stored grain') ||
-        lowerQuery.includes('storing grain') || lowerQuery.includes('have storage') ||
-        lowerQuery.includes('with storage')) {
-      matched.push('storage');
-    }
-
-    // planting — contains "planting" or "growing" and a crop name
-    const plantingCrops = ['corn', 'soybeans', 'wheat', 'oats', 'barley', 'sorghum'];
-    if ((lowerQuery.includes('planting') || lowerQuery.includes('growing')) &&
-        plantingCrops.some(crop => lowerQuery.includes(crop))) {
-      matched.push('planting');
-    }
-
-    // active_contract
-    if (lowerQuery.includes('active contract') || lowerQuery.includes('have contract') ||
-        lowerQuery.includes('with active contract')) {
-      matched.push('active_contract');
-    }
-
-    // no_contract
-    if (lowerQuery.includes('no active contract') || lowerQuery.includes('no contract') ||
-        lowerQuery.includes('without contract')) {
-      matched.push('no_contract');
-    }
-
-    // unsigned_contract
-    if (lowerQuery.includes('unsigned contract') || lowerQuery.includes('not signed')) {
-      matched.push('unsigned_contract');
-    }
-
-    // commodity_contract
-    const contractCommodities = ['corn', 'soybean', 'soybeans', 'wheat', 'oats', 'barley', 'sorghum'];
-    for (const commodity of contractCommodities) {
-      if (lowerQuery.includes(`${commodity} contract`) || lowerQuery.includes(`contracts for ${commodity}`) ||
-          lowerQuery.includes(`contract ${commodity}`) || lowerQuery.includes(`with ${commodity}`)) {
-        matched.push('commodity_contract');
-        break;
-      }
-    }
-
-    // top_n
-    if (/top\s*\d+/.test(lowerQuery)) {
-      matched.push('top_n');
-    }
-
-    // bottom_n
-    if (/(?:bottom|smallest)\s*\d+/.test(lowerQuery)) {
-      matched.push('bottom_n');
-    }
-
-    // largest
-    if (lowerQuery.includes('largest') || lowerQuery.includes('biggest')) {
-      matched.push('largest');
-    }
-
-    return matched;
-  }
 
   private rebuildCaches(): void {
     this.lastContactCache.clear();
     this.customerCropsCache.clear();
   }
 
-  private detectStateInQuery(query: string): string | null {
-    const lowerQuery = query.toLowerCase();
-
-    // Check for full state names first
-    for (const state of Object.keys(this.stateNames)) {
-      if (lowerQuery.includes(state)) {
-        return state;
-      }
-    }
-
-    // Also check for state abbreviations
-    const stateAbbreviations: { [key: string]: string } = {
-      ' ia ': 'iowa', ' ia,': 'iowa', ' ia.': 'iowa',
-      ' ne ': 'nebraska', ' ne,': 'nebraska', ' ne.': 'nebraska',
-      ' il ': 'illinois', ' il,': 'illinois', ' il.': 'illinois',
-      ' mn ': 'minnesota', ' mn,': 'minnesota', ' mn.': 'minnesota',
-      ' wi ': 'wisconsin', ' wi,': 'wisconsin', ' wi.': 'wisconsin',
-      ' mo ': 'missouri', ' mo,': 'missouri', ' mo.': 'missouri',
-      ' ks ': 'kansas', ' ks,': 'kansas', ' ks.': 'kansas',
-      ' sd ': 'south dakota', ' sd,': 'south dakota', ' sd.': 'south dakota',
-      ' nd ': 'north dakota', ' nd,': 'north dakota', ' nd.': 'north dakota',
-      ',in ': 'indiana', ' in,': 'indiana', ' in.': 'indiana',
-      ' oh ': 'ohio', ' oh,': 'ohio', ' oh.': 'ohio',
-      ' mi ': 'michigan', ' mi,': 'michigan', ' mi.': 'michigan',
-      ' tx ': 'texas', ' tx,': 'texas', ' tx.': 'texas',
-      ' ok ': 'oklahoma', ' ok,': 'oklahoma', ' ok.': 'oklahoma',
-      ' co ': 'colorado', ' co,': 'colorado', ' co.': 'colorado'
-    };
-
-    for (const [abbrev, state] of Object.entries(stateAbbreviations)) {
-      if (lowerQuery.includes(abbrev)) {
-        return state;
-      }
-    }
-
-    return null;
-  }
-
   getStateDisplayName(state: string): string {
-    return this.stateNames[state.toLowerCase()] || state.charAt(0).toUpperCase() + state.slice(1);
-  }
-
-  private getStateAbbreviation(state: string): string {
-    const abbrevs: { [key: string]: string } = {
-      'iowa': 'ia', 'illinois': 'il', 'nebraska': 'ne', 'minnesota': 'mn',
-      'wisconsin': 'wi', 'missouri': 'mo', 'kansas': 'ks', 'south dakota': 'sd',
-      'north dakota': 'nd', 'indiana': 'in', 'ohio': 'oh', 'michigan': 'mi',
-      'texas': 'tx', 'oklahoma': 'ok', 'colorado': 'co'
-    };
-    return abbrevs[state.toLowerCase()] || '';
-  }
-
-  private parseAndFilter(query: string): Customer[] {
-    const lowerQuery = query.toLowerCase();
-    let result = [...this.customers];
-
-    // ==========================================
-    // LOCATION/STATE FILTER
-    // ==========================================
-    if (this.detectedState) {
-      const stateAbbrev = this.getStateAbbreviation(this.detectedState);
-      result = result.filter(c => {
-        // Prefer stateProvince field; fall back to scanning location string
-        const stateVal = (c.stateProvince || c.location || '').toLowerCase();
-        return stateVal.includes(this.detectedState!) || stateVal.includes(stateAbbrev);
-      });
-    }
-
-    // ==========================================
-    // ACRES FILTER
-    // ==========================================
-    // "more than X acres", "over X acres", "at least X acres", "greater than X acres"
-    const moreAcresMatch = lowerQuery.match(/(?:more than|over|at least|greater than|above|exceeding)\s*(\d+(?:,\d+)?)\s*acres?/);
-    if (moreAcresMatch) {
-      const minAcres = parseInt(moreAcresMatch[1].replace(',', ''));
-      result = result.filter(c => c.totalAcres >= minAcres);
-    }
-
-    // "less than X acres", "under X acres", "fewer than X acres"
-    const lessAcresMatch = lowerQuery.match(/(?:less than|under|fewer than|below)\s*(\d+(?:,\d+)?)\s*acres?/);
-    if (lessAcresMatch) {
-      const maxAcres = parseInt(lessAcresMatch[1].replace(',', ''));
-      result = result.filter(c => c.totalAcres < maxAcres);
-    }
-
-    // "between X and Y acres"
-    const betweenAcresMatch = lowerQuery.match(/between\s*(\d+(?:,\d+)?)\s*(?:and|to|-)\s*(\d+(?:,\d+)?)\s*acres?/);
-    if (betweenAcresMatch) {
-      const minAcres = parseInt(betweenAcresMatch[1].replace(',', ''));
-      const maxAcres = parseInt(betweenAcresMatch[2].replace(',', ''));
-      result = result.filter(c => c.totalAcres >= minAcres && c.totalAcres <= maxAcres);
-    }
-
-    // "large operations" or "big farms" (default to 1500+ acres)
-    const isTopQuery = /top\s*\d+/.test(lowerQuery);
-    if ((lowerQuery.includes('large') || lowerQuery.includes('big')) &&
-        (lowerQuery.includes('operation') || lowerQuery.includes('farm')) &&
-        !isTopQuery) {
-      if (!moreAcresMatch) {
-        result = result.filter(c => c.totalAcres >= 1500);
-      }
-    }
-
-    // "small farms" (default to under 500 acres)
-    if (lowerQuery.includes('small') && (lowerQuery.includes('operation') || lowerQuery.includes('farm'))) {
-      if (!lessAcresMatch) {
-        result = result.filter(c => c.totalAcres < 500);
-      }
-    }
-
-    // ==========================================
-    // LAST CONTACTED FILTER
-    // ==========================================
-    const isNotContactedQuery = lowerQuery.includes('have not contacted') ||
-                                lowerQuery.includes("haven't contacted") ||
-                                lowerQuery.includes('not contacted') ||
-                                lowerQuery.includes('never contacted') ||
-                                (lowerQuery.includes('contacted') && lowerQuery.includes('over') && lowerQuery.includes('days'));
-
-    if (isNotContactedQuery) {
-      const notContactedMatch = lowerQuery.match(/(\d+)\s*days?/);
-      if (notContactedMatch) {
-        const notContactedDays = parseInt(notContactedMatch[1]);
-        const cutoffDate = new Date(Date.now() - notContactedDays * 24 * 60 * 60 * 1000);
-        result = result.filter(c => {
-          const lastNote = this.notes
-            .filter(n => n.customerId === c.id)
-            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-          return !lastNote || new Date(lastNote.createdAt) < cutoffDate;
-        });
-      } else if (lowerQuery.includes('never contacted') || lowerQuery.includes('no contact history')) {
-        result = result.filter(c => !this.notes.some(n => n.customerId === c.id));
-      }
-    }
-
-    // "contacted in the last X days" or "contacted within X days" or "recently contacted"
-    if (!isNotContactedQuery) {
-      const recentlyContactedMatch = lowerQuery.match(/contacted\s*(?:in|within)?\s*(?:the)?\s*(?:last|past)?\s*(\d+)\s*days?/);
-      if (recentlyContactedMatch) {
-        const recentDays = parseInt(recentlyContactedMatch[1]);
-        const cutoffDate = new Date(Date.now() - recentDays * 24 * 60 * 60 * 1000);
-        result = result.filter(c => {
-          const lastNote = this.notes
-            .filter(n => n.customerId === c.id)
-            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-          return lastNote && new Date(lastNote.createdAt) >= cutoffDate;
-        });
-      } else if (lowerQuery.includes('recently contacted') || lowerQuery.includes('contacted recently')) {
-        const cutoffDate = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-        result = result.filter(c => {
-          const lastNote = this.notes
-            .filter(n => n.customerId === c.id)
-            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-          return lastNote && new Date(lastNote.createdAt) >= cutoffDate;
-        });
-      }
-
-      // "contacted last week"
-      if (lowerQuery.includes('contacted last week') || lowerQuery.includes('contacted this week')) {
-        const cutoffDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-        result = result.filter(c => {
-          const lastNote = this.notes
-            .filter(n => n.customerId === c.id)
-            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-          return lastNote && new Date(lastNote.createdAt) >= cutoffDate;
-        });
-      }
-
-      // "contacted last month" or "contacted this month"
-      if (lowerQuery.includes('contacted last month') || lowerQuery.includes('contacted this month')) {
-        const cutoffDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-        result = result.filter(c => {
-          const lastNote = this.notes
-            .filter(n => n.customerId === c.id)
-            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-          return lastNote && new Date(lastNote.createdAt) >= cutoffDate;
-        });
-      }
-    }
-
-    // ==========================================
-    // STORAGE FILTER
-    // ==========================================
-    // "with grain in storage", "have stored grain", "storing grain"
-    if (lowerQuery.includes('in storage') || lowerQuery.includes('stored grain') ||
-        lowerQuery.includes('storing grain') || lowerQuery.includes('have storage') ||
-        lowerQuery.includes('with storage') || lowerQuery.includes('grain stored')) {
-      const customersWithStorage = new Set<number>(this.storedGrain.map(s => s.customerId));
-      result = result.filter(c => customersWithStorage.has(c.id));
-    }
-
-    // "with corn in storage", "storing soybeans", etc.
-    const storageGrains = ['corn', 'soybeans', 'wheat', 'oats', 'barley', 'sorghum'];
-    for (const grain of storageGrains) {
-      if (lowerQuery.includes(`${grain} in storage`) || lowerQuery.includes(`storing ${grain}`) ||
-          lowerQuery.includes(`stored ${grain}`) || lowerQuery.includes(`${grain} stored`)) {
-        const customersWithGrainStorage = new Set<number>(
-          this.storedGrain.filter(s => s.crop.toLowerCase().includes(grain)).map(s => s.customerId)
-        );
-        result = result.filter(c => customersWithGrainStorage.has(c.id));
-        break;
-      }
-    }
-
-    // "storage over X bushels" or "more than X bushels in storage"
-    const storageQuantityMatch = lowerQuery.match(/(?:storage|stored|storing)\s*(?:over|more than|above|exceeding)?\s*(\d+(?:,\d+)?)\s*(?:bushels?|bu)/);
-    if (storageQuantityMatch) {
-      const minQuantity = parseInt(storageQuantityMatch[1].replace(',', ''));
-      const customerTotals = new Map<number, number>();
-      for (const sg of this.storedGrain) {
-        const current = customerTotals.get(sg.customerId) || 0;
-        customerTotals.set(sg.customerId, current + sg.quantity);
-      }
-      const customersWithMinStorage = new Set<number>(
-        Array.from(customerTotals.entries())
-          .filter(([_, total]) => total >= minQuantity)
-          .map(([customerId]) => customerId)
-      );
-      result = result.filter(c => customersWithMinStorage.has(c.id));
-    }
-
-    // "no storage" or "without storage"
-    if (lowerQuery.includes('no storage') || lowerQuery.includes('without storage') ||
-        lowerQuery.includes('not storing')) {
-      const customersWithStorage = new Set<number>(this.storedGrain.map(s => s.customerId));
-      result = result.filter(c => !customersWithStorage.has(c.id));
-    }
-
-    // ==========================================
-    // PLANTING INTENTIONS FILTER
-    // ==========================================
-    const plantingCrops = ['corn', 'soybeans', 'wheat', 'oats', 'barley', 'sorghum'];
-    for (const crop of plantingCrops) {
-      if (lowerQuery.includes(`planting ${crop}`) || lowerQuery.includes(`growing ${crop}`) ||
-          lowerQuery.includes(`plant ${crop}`) || lowerQuery.includes(`plans to plant ${crop}`) ||
-          lowerQuery.includes(`${crop} planting`) || lowerQuery.includes(`${crop} this season`)) {
-        const customersWithCrop = new Set<number>(
-          this.plantingIntentions.filter(p => p.crop.toLowerCase().includes(crop)).map(p => p.customerId)
-        );
-        result = result.filter(c => customersWithCrop.has(c.id));
-        break;
-      }
-    }
-
-    // "with planting intentions" or "have planting plans"
-    if (lowerQuery.includes('planting intention') || lowerQuery.includes('planting plan') ||
-        lowerQuery.includes('planning to plant') || lowerQuery.includes('plans to grow')) {
-      const customersWithPlanting = new Set<number>(this.plantingIntentions.map(p => p.customerId));
-      result = result.filter(c => customersWithPlanting.has(c.id));
-    }
-
-    // "planting over X acres" or "planting more than X acres"
-    const plantingAcresMatch = lowerQuery.match(/planting\s*(?:over|more than|above)?\s*(\d+(?:,\d+)?)\s*acres?/);
-    if (plantingAcresMatch) {
-      const minPlantingAcres = parseInt(plantingAcresMatch[1].replace(',', ''));
-      const customerTotals = new Map<number, number>();
-      for (const pi of this.plantingIntentions) {
-        const current = customerTotals.get(pi.customerId) || 0;
-        customerTotals.set(pi.customerId, current + pi.acres);
-      }
-      const customersWithMinPlanting = new Set<number>(
-        Array.from(customerTotals.entries())
-          .filter(([_, total]) => total >= minPlantingAcres)
-          .map(([customerId]) => customerId)
-      );
-      result = result.filter(c => customersWithMinPlanting.has(c.id));
-    }
-
-    // "no planting intentions" or "without planting plans"
-    if (lowerQuery.includes('no planting') || lowerQuery.includes('without planting') ||
-        lowerQuery.includes('no plans to plant')) {
-      const customersWithPlanting = new Set<number>(this.plantingIntentions.map(p => p.customerId));
-      result = result.filter(c => !customersWithPlanting.has(c.id));
-    }
-
-    // ==========================================
-    // CONTRACT FILTER
-    // Uses string matching: contract.ctrmCustomerId === customer.sourceCustomerId
-    // ==========================================
-
-    // "no active contracts"
-    if (lowerQuery.includes('no active contract') || lowerQuery.includes('no contract') ||
-        lowerQuery.includes('without contract') || lowerQuery.includes('no contracts')) {
-      const ids = new Set<string>(
-        this.contracts
-          .filter(c => c.status === 'Active' || c.status === 'Pending')
-          .map(c => c.ctrmCustomerId).filter((id): id is string => !!id)
-      );
-      result = result.filter(c => !ids.has(c.sourceCustomerId ?? ''));
-    }
-
-    // "with active contracts" / "customers with active contracts"
-    if (lowerQuery.includes('with active contract') || lowerQuery.includes('have contract') ||
-        lowerQuery.includes('active contract')) {
-      const ids = new Set<string>(
-        this.contracts
-          .filter(c => c.status === 'Active' || c.status === 'Pending')
-          .map(c => c.ctrmCustomerId).filter((id): id is string => !!id)
-      );
-      result = result.filter(c => ids.has(c.sourceCustomerId ?? ''));
-    }
-
-    // "unsigned contracts"
-    if (lowerQuery.includes('unsigned contract') || lowerQuery.includes('not signed')) {
-      const ids = new Set<string>(
-        this.contracts.filter(c => !c.signed)
-          .map(c => c.ctrmCustomerId).filter((id): id is string => !!id)
-      );
-      result = result.filter(c => ids.has(c.sourceCustomerId ?? ''));
-    }
-
-    // "corn contracts", "soybean contracts", "wheat contracts", etc.
-    const contractCommodities = ['corn', 'soybean', 'soybeans', 'wheat', 'oats', 'barley', 'sorghum'];
-    for (const commodity of contractCommodities) {
-      if (lowerQuery.includes(`${commodity} contract`) || lowerQuery.includes(`contracts for ${commodity}`) ||
-          lowerQuery.includes(`contract ${commodity}`) || lowerQuery.includes(`with ${commodity}`)) {
-        const ids = new Set<string>(
-          this.contracts
-            .filter(c => (c.commodityDescription || c.commodityCode || '').toLowerCase().includes(commodity))
-            .map(c => c.ctrmCustomerId).filter((id): id is string => !!id)
-        );
-        result = result.filter(c => ids.has(c.sourceCustomerId ?? ''));
-        break;
-      }
-    }
-
-    // ==========================================
-    // TOP/LARGEST FILTER
-    // ==========================================
-    const topMatch = lowerQuery.match(/top\s*(\d+)\s*(?:largest|biggest|customers?|farms?|operations?)?/);
-    if (topMatch) {
-      const topN = parseInt(topMatch[1]);
-      result = result.sort((a, b) => b.totalAcres - a.totalAcres).slice(0, topN);
-    } else if (lowerQuery.includes('largest') || lowerQuery.includes('biggest')) {
-      result = result.sort((a, b) => b.totalAcres - a.totalAcres).slice(0, 10);
-    }
-
-    // "bottom X" or "smallest"
-    const bottomMatch = lowerQuery.match(/(?:bottom|smallest)\s*(\d+)/);
-    if (bottomMatch) {
-      const bottomN = parseInt(bottomMatch[1]);
-      result = result.sort((a, b) => a.totalAcres - b.totalAcres).slice(0, bottomN);
-    } else if (lowerQuery.includes('smallest')) {
-      result = result.sort((a, b) => a.totalAcres - b.totalAcres).slice(0, 10);
-    }
-
-    return result;
+    return this.nlqFilterService.getStateDisplayName(state);
   }
 
   loadSavedList(list: SavedList): void {
     this.queryText = list.query;
-    this.detectedState = this.detectStateInQuery(list.query);
-    this.filteredCustomers = this.customers.filter(c => list.customerIds.includes(c.id));
-    this.hasGenerated = true;
-    this.rebuildCaches();
+    this.processQuery();
   }
 
   openSaveDialog(): void {
@@ -1028,10 +644,11 @@ export class BuildListComponent implements OnInit, OnDestroy {
   saveList(): void {
     if (!this.newListName.trim() || this.filteredCustomers.length === 0) return;
 
+    const tradeUnits = this.appState.selectedTradeUnits();
     this.apiService.createSavedList({
       name: this.newListName,
       query: this.queryText,
-      customerIds: this.filteredCustomers.map(c => c.id)
+      tradeUnits: tradeUnits.length > 0 ? tradeUnits.join(',') : undefined
     }).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
         this.toastService.success(`List "${this.newListName}" saved with ${this.filteredCustomers.length} customers`);
@@ -1049,21 +666,42 @@ export class BuildListComponent implements OnInit, OnDestroy {
     });
   }
 
-  deleteList(listId: string): void {
+  deleteList(listId: number): void {
+    this.deleteListId = listId;
+    this.showDeleteDialog = true;
+  }
+
+  closeDeleteDialog(): void {
+    this.showDeleteDialog = false;
+    this.deleteListId = null;
+  }
+
+  confirmDeleteList(): void {
+    if (!this.deleteListId) return;
+    const listId = this.deleteListId;
+    this.closeDeleteDialog();
+
+    // Remove from local array immediately for instant UI feedback
+    this.savedLists = this.savedLists.filter(l => l.id !== listId);
+    this.appState.setSavedLists(this.savedLists);
+
     this.apiService.deleteSavedList(listId).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
         this.toastService.info('List deleted');
-        this.refreshSavedLists();
       },
       error: () => {
         this.toastService.error('Failed to delete list');
+        this.refreshSavedLists(); // Re-fetch on error to restore
       }
     });
   }
 
   private refreshSavedLists(): void {
     this.apiService.getSavedLists().pipe(takeUntil(this.destroy$)).subscribe({
-      next: (data) => this.savedLists = data,
+      next: (data) => {
+        this.savedLists = data;
+        this.appState.setSavedLists(data);
+      },
       error: () => this.toastService.error('Failed to refresh lists')
     });
   }
@@ -1081,6 +719,16 @@ export class BuildListComponent implements OnInit, OnDestroy {
       return parts[0].substring(0, 2).toUpperCase();
     }
     return '??';
+  }
+
+  getFormattedLocation(customer: Customer): string {
+    if (customer.extendedCity && customer.extendedStateProvince) {
+      return `${customer.extendedCity}, ${customer.extendedStateProvince}`;
+    }
+    if (customer.location && customer.stateProvince) {
+      return `${customer.location}, ${customer.stateProvince}`;
+    }
+    return customer.extendedCity || customer.location || customer.stateProvince || '';
   }
 
   getLastContactInfo(customerId: number): { text: string; colorClass: string } {
@@ -1118,12 +766,14 @@ export class BuildListComponent implements OnInit, OnDestroy {
     }
 
     const customer = this.customers.find(c => c.id === customerId);
-    // Contract commodities (real ODS data) — primary source
+    // Farmer detail commodities (ProducerDetails) — primary source
+    const detailCrops = customer?.commodities?.length ? [...customer.commodities] : [];
+    // Contract commodities (ODS data) — supplemental source
     const contractCrops = customer?.sourceCustomerId
       ? [...new Set(
           this.contracts
             .filter(c => c.ctrmCustomerId === customer.sourceCustomerId)
-            .map(c => c.commodityDescription || c.commodityCode)
+            .map(c => c.commodityCode)
             .filter((crop): crop is string => !!crop)
         )]
       : [];
@@ -1131,7 +781,7 @@ export class BuildListComponent implements OnInit, OnDestroy {
     const intentionCrops = [...new Set(
       this.plantingIntentions.filter(p => p.customerId === customerId).map(p => p.crop)
     )];
-    const result = [...new Set([...contractCrops, ...intentionCrops])].slice(0, 3);
+    const result = [...new Set([...detailCrops, ...contractCrops, ...intentionCrops])].slice(0, 5);
 
     this.customerCropsCache.set(customerId, result);
     return result;

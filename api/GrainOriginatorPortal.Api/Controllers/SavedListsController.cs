@@ -1,6 +1,7 @@
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Services;
 using Microsoft.AspNetCore.Mvc;
+using System.ComponentModel.DataAnnotations;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -22,14 +23,14 @@ public class SavedListsController : ControllerBase
     }
 
     [HttpPost]
-    public ActionResult Create([FromBody] CreateSavedListRequest request)
+    public ActionResult<SavedList> Create([FromBody] CreateSavedListRequest request)
     {
-        _dataService.SaveList(request.Name, request.Query, request.CustomerIds);
-        return Created();
+        var savedList = _dataService.SaveList(request.Name, request.Query, request.TradeUnits);
+        return Created($"/api/savedlists/{savedList.Id}", savedList);
     }
 
     [HttpDelete("{id}")]
-    public ActionResult Delete(string id)
+    public ActionResult Delete(int id)
     {
         _dataService.DeleteList(id);
         return NoContent();
@@ -38,13 +39,14 @@ public class SavedListsController : ControllerBase
 
 public class CreateSavedListRequest
 {
-    [System.ComponentModel.DataAnnotations.Required]
-    [System.ComponentModel.DataAnnotations.StringLength(100)]
+    [Required]
+    [StringLength(100)]
     public string Name { get; set; } = string.Empty;
 
-    [System.ComponentModel.DataAnnotations.StringLength(500)]
+    [Required]
+    [StringLength(500)]
     public string Query { get; set; } = string.Empty;
 
-    [System.ComponentModel.DataAnnotations.Required]
-    public List<string> CustomerIds { get; set; } = new();
+    [StringLength(500)]
+    public string? TradeUnits { get; set; } // Comma-separated trade unit keys
 }

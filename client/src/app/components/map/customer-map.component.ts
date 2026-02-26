@@ -3,8 +3,19 @@ import { CommonModule } from '@angular/common';
 import { Customer } from '../../models';
 import { BadgeComponent } from '../ui/badge/badge.component';
 import { AppStateService } from '../../services/app-state.service';
+import * as L from 'leaflet';
 
-declare const L: any;
+// Fix Leaflet default marker icon paths when bundled via npm
+const iconDefault = L.icon({
+  iconUrl: 'assets/leaflet/marker-icon.png',
+  iconRetinaUrl: 'assets/leaflet/marker-icon-2x.png',
+  shadowUrl: 'assets/leaflet/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+L.Marker.prototype.options.icon = iconDefault;
 
 interface StateInfo {
   lat: number;
@@ -28,36 +39,34 @@ interface StateInfo {
             <line x1="15" x2="15" y1="6" y2="21"/>
           </svg>
           <h3 class="font-semibold text-gray-900 dark:text-white">Customer Locations</h3>
-          <app-badge variant="secondary">{{ isGeocoding ? geocodingProgress : (customers.length + ' locations') }}</app-badge>
+          <app-badge variant="secondary">{{ customers.length }} locations</app-badge>
+          @if (isGeocoding) {
+            <span class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+              <svg class="animate-spin h-3.5 w-3.5 text-green-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+              </svg>
+              Refining...
+            </span>
+          }
         </div>
-        <button
-          type="button"
-          class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
-          (click)="closeMap()"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
-          </svg>
-        </button>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
+            (click)="closeMap()"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+            </svg>
+          </button>
+        </div>
       </div>
 
       <!-- Map Container -->
       <div class="relative">
         <div id="customer-map" style="height: 400px; width: 100%;"></div>
 
-        <!-- Geocoding loading overlay — covers the map until refining is complete -->
-        @if (isGeocoding) {
-          <div class="absolute inset-0 z-[1000] flex flex-col items-center justify-center gap-3 bg-white/75 dark:bg-gray-900/75 backdrop-blur-sm">
-            <svg class="animate-spin h-10 w-10 text-green-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-            </svg>
-            <div class="text-center">
-              <p class="text-sm font-medium text-gray-700 dark:text-gray-200">Refining Locations</p>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ geocodingProgress }} locations pinpointed</p>
-            </div>
-          </div>
-        }
       </div>
 
       <!-- Legend -->
@@ -71,8 +80,6 @@ interface StateInfo {
             <span class="text-gray-300 dark:text-gray-600">|</span>
             <span class="text-green-600 dark:text-green-400">Focused on: {{ getDisplayName(focusedState) }}</span>
           }
-          <span class="text-gray-300 dark:text-gray-600">|</span>
-          <span>Click a marker to see customer details</span>
         </div>
       </div>
     </div>
@@ -90,7 +97,6 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
   @Output() selectCustomer = new EventEmitter<Customer>();
 
   isGeocoding = false;
-  geocodingProgress = '';
 
   private map: any = null;
   private markers: any[] = [];
@@ -134,13 +140,9 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
     'colorado': { lat: 39.5501, lng: -105.7821, zoom: 7, displayName: 'Colorado' }
   };
 
-  ngOnInit(): void {
-    // Load Leaflet CSS if not already loaded
-    this.loadLeafletStyles();
-  }
+  ngOnInit(): void {}
 
   ngAfterViewInit(): void {
-    // Small delay to ensure DOM is ready
     setTimeout(() => this.initializeMap(), 100);
   }
 
@@ -164,26 +166,8 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
     this.close.emit();
   }
 
-  private loadLeafletStyles(): void {
-    if (!document.getElementById('leaflet-css')) {
-      const link = document.createElement('link');
-      link.id = 'leaflet-css';
-      link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      document.head.appendChild(link);
-    }
-
-    if (!document.getElementById('leaflet-js')) {
-      const script = document.createElement('script');
-      script.id = 'leaflet-js';
-      script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-      script.onload = () => this.initializeMap();
-      document.head.appendChild(script);
-    }
-  }
-
   private initializeMap(): void {
-    if (this.isMapInitialized || typeof L === 'undefined') return;
+    if (this.isMapInitialized) return;
 
     try {
       let centerLat = this.centerLat ?? 41.8780;
@@ -239,6 +223,35 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
     this.initializeMarkersWithGeocoding();
   }
 
+  /**
+   * Resolves the best address for a customer using Extended fields with Merchandising fallback.
+   */
+  private resolveAddress(customer: Customer): { street: string; city: string; state: string; zip: string; county: string } {
+    const street = customer.extendedAddressLine1
+      || customer.extendedAddressLine2
+      || customer.extendedAddressLine3
+      || customer.extendedAddressLine4
+      || customer.addressLine1
+      || '';
+    const city = customer.extendedCity || customer.location || '';
+    const state = customer.extendedStateProvince || customer.stateProvince || '';
+    const zip = customer.extendedPostalCode || customer.postalCode || '';
+    const county = customer.extendedCountry || '';
+    return { street, city, state, zip, county };
+  }
+
+  /**
+   * Builds a geocode cache key from resolved address parts.
+   * Uses city+state+zip (no street) — city-level precision is sufficient for map pins
+   * and dramatically reduces unique geocoding calls.
+   */
+  private geocodeCacheKey(addr: { city: string; state: string; zip: string }): string {
+    const parts = [addr.city, addr.state, addr.zip]
+      .map(p => p.toLowerCase().trim())
+      .filter(Boolean);
+    return parts.join(',');
+  }
+
   private async initializeMarkersWithGeocoding(): Promise<void> {
     // ── Phase 1: Place all markers INSTANTLY using cached or fallback coords ──
     const markerMap = new Map<number, any>(); // customerId → leaflet marker
@@ -246,9 +259,10 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
     for (const customer of this.customers) {
       if (!this.map) return;
 
-      const cityKey = `${(customer.location ?? '').toLowerCase()},${(customer.stateProvince ?? '').toLowerCase()}`;
-      const coords = this.geocodeCache.has(cityKey)
-        ? this.geocodeCache.get(cityKey)!
+      const addr = this.resolveAddress(customer);
+      const cacheKey = this.geocodeCacheKey(addr);
+      const coords = this.geocodeCache.has(cacheKey)
+        ? this.geocodeCache.get(cacheKey)!
         : this.getCoordinatesForCustomer(customer);
 
       const marker = this.buildMarker(customer, coords);
@@ -261,58 +275,58 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
       this.fitBounds();
     }
 
-    // ── Phase 2: Geocode unique cities in the background, update markers ──
-    // Group customers by "city,state" key (lowercase, deduped)
-    const cityGroups = new Map<string, number[]>(); // cityKey → [customerId, ...]
+    // ── Phase 2: Geocode unique addresses in the background, update markers ──
+    const addressGroups = new Map<string, { addr: { street: string; city: string; state: string; zip: string }; customerIds: number[] }>();
     for (const customer of this.customers) {
-      const city = (customer.location ?? '').toLowerCase();
-      const state = (customer.stateProvince ?? '').toLowerCase();
-      if (!city && !state) continue;
-      const key = `${city},${state}`;
-      if (!cityGroups.has(key)) cityGroups.set(key, []);
-      cityGroups.get(key)!.push(customer.id);
+      const addr = this.resolveAddress(customer);
+      if (!addr.city && !addr.state && !addr.zip) continue;
+      const key = this.geocodeCacheKey(addr);
+      if (!addressGroups.has(key)) addressGroups.set(key, { addr, customerIds: [] });
+      addressGroups.get(key)!.customerIds.push(customer.id);
     }
 
-    // Only geocode cities not already resolved in cache
-    const citiesToGeocode = [...cityGroups.keys()].filter(k => !this.geocodeCache.has(k));
+    // Only geocode locations not already resolved in cache
+    const toGeocode = [...addressGroups.entries()].filter(([key]) => !this.geocodeCache.has(key));
 
-    if (citiesToGeocode.length === 0) return;
+    if (toGeocode.length === 0) return;
 
     this.isGeocoding = true;
-    const total = this.customers.length;
-    let refined = 0;
-    this.geocodingProgress = `0/${total}`;
 
-    for (const cityKey of citiesToGeocode) {
-      if (!this.map) break; // User closed the map
+    // Geocode one at a time via API proxy (server enforces 1 req/sec rate limit)
+    for (const [cacheKey, { addr, customerIds }] of toGeocode) {
+      if (!this.map) break;
 
-      const [city, state] = cityKey.split(',');
-      const coords = await this.geocodeAddress(city, state, '');
+      try {
+        const response = await fetch('http://localhost:5000/api/geocode/single', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: cacheKey, city: addr.city, state: addr.state, zip: addr.zip })
+        });
 
-      if (coords) {
-        this.geocodeCache.set(cityKey, coords);
-
-        // Move all markers in this city to the real coordinates
-        const customerIds = cityGroups.get(cityKey) ?? [];
-        for (const customerId of customerIds) {
-          const marker = markerMap.get(customerId);
-          if (marker && this.map) {
-            marker.setLatLng([coords.lat, coords.lng]);
+        if (response.ok) {
+          const result: { key: string; lat: number | null; lng: number | null } = await response.json();
+          if (result.lat != null && result.lng != null) {
+            const coords = { lat: result.lat, lng: result.lng };
+            this.geocodeCache.set(cacheKey, coords);
+            for (const customerId of customerIds) {
+              const marker = markerMap.get(customerId);
+              if (marker && this.map) {
+                marker.setLatLng([coords.lat, coords.lng]);
+              }
+            }
           }
         }
-        refined += customerIds.length;
+      } catch {
+        // API unavailable — skip this address
       }
-
-      this.geocodingProgress = `${refined}/${total}`;
-      await this.delay(1100);
     }
 
     this.isGeocoding = false;
-    this.geocodingProgress = '';
   }
 
   private buildMarker(customer: Customer, coords: { lat: number; lng: number }): any {
-    const locationParts = [customer.location, customer.stateProvince].filter(Boolean).join(', ');
+    const addr = this.resolveAddress(customer);
+    const locationParts = [addr.city, addr.state].filter(Boolean).join(', ');
     const contactLine = customer.phone
       ? customer.phone
       : (customer.email || '');
@@ -390,53 +404,14 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
     return marker;
   }
 
-  private async geocodeAddress(city: string, state: string, zip: string): Promise<{ lat: number; lng: number } | null> {
-    try {
-      const params = new URLSearchParams({
-        city,
-        state,
-        country: 'US',
-        format: 'json',
-        limit: '1'
-      });
-      if (zip) {
-        params.set('postalcode', zip);
-      }
-
-      const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent': 'GrainOriginatorPortal/1.0'
-        }
-      });
-
-      if (!response.ok) return null;
-
-      const results = await response.json();
-      if (results && results.length > 0) {
-        return {
-          lat: parseFloat(results[0].lat),
-          lng: parseFloat(results[0].lon)
-        };
-      }
-    } catch (error) {
-      // geocoding failed silently
-    }
-    return null;
-  }
-
-  private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
   private getCoordinatesForCustomer(customer: Customer): { lat: number; lng: number } {
-    const location = (customer.location ?? '').toLowerCase();
-    const state = (customer.stateProvince ?? '').toLowerCase();
-    const searchStr = `${location} ${state}`;
+    const addr = this.resolveAddress(customer);
+    const stateStr = addr.state.toLowerCase().trim();
 
-    for (const [key, info] of Object.entries(this.stateInfo)) {
-      if (searchStr.includes(key)) {
-        // Create deterministic offset based on customer ID
+    // Match on state field only (not city) to avoid false matches like "Burlington" → "in" (Indiana)
+    if (stateStr) {
+      const info = this.stateInfo[stateStr];
+      if (info) {
         const hash = this.hashCode(customer.id);
         const latOffset = ((hash % 1000) / 1000 - 0.5) * 1.5;
         const lngOffset = (((hash >> 10) % 1000) / 1000 - 0.5) * 1.5;

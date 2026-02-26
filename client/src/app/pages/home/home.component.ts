@@ -6,6 +6,7 @@ import { takeUntil, filter } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
 import { AppStateService } from '../../services/app-state.service';
 import { ToastService } from '../../services/toast.service';
+import { NlqFilterService, NlqFilterContext } from '../../services/nlq-filter.service';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, ProducerDetails } from '../../models';
 import { CustomerListComponent } from '../../components/customers/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customers/customer-profile/customer-profile.component';
@@ -68,6 +69,7 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                 [plantingIntentions]="customerPlantingIntentions"
                 [storedGrain]="customerStoredGrain"
                 [notes]="customerNotes"
+                [yieldEstimateCrops]="yieldEstimateCrops"
                 [allCustomerContracts]="allCustomerContracts"
                 [allCustomerTickets]="allCustomerTickets"
                 [allCustomerPlantingIntentions]="allCustomerPlantingIntentions"
@@ -139,6 +141,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   private apiService = inject(ApiService);
   private appState = inject(AppStateService);
   private toastService = inject(ToastService);
+  private nlqFilterService = inject(NlqFilterService);
   private cdr = inject(ChangeDetectorRef);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
@@ -173,6 +176,9 @@ export class HomeComponent implements OnInit, OnDestroy {
   allCustomerTickets: Ticket[] = [];
   allCustomerPlantingIntentions: PlantingIntention[] = [];
   allCustomerStoredGrain: StoredGrain[] = [];
+
+  // Yield estimate crop codes from dashboard (for planting intentions dropdown)
+  yieldEstimateCrops: string[] = [];
 
   isMobile = false;
   loading = false;
@@ -226,6 +232,9 @@ export class HomeComponent implements OnInit, OnDestroy {
   }
 
   private restoreStateFromService(): void {
+    // Always restore trade units so data reloads if navigation interrupted a prior load
+    this.selectedTradeUnits = this.appState.selectedTradeUnits();
+
     // Restore data from state service
     const stateCustomers = this.appState.customers();
     const stateContracts = this.appState.contracts();
@@ -244,6 +253,7 @@ export class HomeComponent implements OnInit, OnDestroy {
       this.notes = stateNotes;
       this.storedGrain = stateStoredGrain;
       this.savedLists = stateSavedLists;
+      this.enrichSavedLists();
 
       // Restore selected customer
       const stateSelectedCustomer = this.appState.selectedCustomer();
@@ -251,9 +261,6 @@ export class HomeComponent implements OnInit, OnDestroy {
         this.selectedCustomer = stateSelectedCustomer;
         this.loadCustomerData(stateSelectedCustomer.id);
       }
-
-      // Restore trade units
-      this.selectedTradeUnits = this.appState.selectedTradeUnits();
     }
   }
 
@@ -301,6 +308,7 @@ export class HomeComponent implements OnInit, OnDestroy {
         this.appState.setCustomers(data);
         this.loading = false;
         this.isLoading = false;
+        this.enrichSavedLists();
 
         // Merge producer details into newly loaded customers
         if (this.pendingProducerDetails) {
@@ -365,10 +373,14 @@ export class HomeComponent implements OnInit, OnDestroy {
       error: () => {}
     });
 
+    // Load yield estimate crop codes for planting intentions dropdown
+    this.loadYieldEstimateCrops();
+
     this.apiService.getSavedLists().pipe(takeUntil(this.destroy$)).subscribe({
       next: (data) => {
         this.savedLists = data;
         this.appState.setSavedLists(data);
+        this.enrichSavedLists();
       },
       error: () => {}
     });
@@ -418,6 +430,8 @@ export class HomeComponent implements OnInit, OnDestroy {
 
     if (changed) {
       this.customers = [...this.customers];
+      // Update appState cache so build-list and other pages see enriched data
+      this.appState.setCustomers(this.customers);
       // Update selected customer if it was affected
       if (this.selectedCustomer) {
         const updated = this.customers.find(c => c.id === this.selectedCustomer!.id);
@@ -427,6 +441,42 @@ export class HomeComponent implements OnInit, OnDestroy {
       }
       this.cdr.detectChanges();
     }
+  }
+
+  private loadYieldEstimateCrops(): void {
+    const key = [...this.selectedTradeUnits].sort().join(',');
+    if (!key) {
+      this.yieldEstimateCrops = [];
+      return;
+    }
+    const currentYear = new Date().getFullYear();
+    this.apiService.getDashboardPlantingEstimates(key, currentYear)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (data) => {
+          this.yieldEstimateCrops = data.map(e => e.crop);
+          this.cdr.detectChanges();
+        },
+        error: () => {
+          this.yieldEstimateCrops = [];
+        }
+      });
+  }
+
+  private enrichSavedLists(): void {
+    if (!this.savedLists.length || !this.customers.length) return;
+    const context: NlqFilterContext = {
+      customers: this.customers,
+      contracts: this.contracts,
+      tickets: this.tickets,
+      notes: this.notes,
+      plantingIntentions: this.plantingIntentions,
+      storedGrain: this.storedGrain
+    };
+    this.savedLists = this.savedLists.map(list => ({
+      ...list,
+      customerIds: this.nlqFilterService.parseAndFilter(list.query, context).customers.map(c => c.id)
+    }));
   }
 
   handleTradeUnitChange(tradeUnits: string[]): void {
@@ -792,7 +842,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     });
   }
 
-  addPlantingIntention(data: {crop: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}): void {
+  addPlantingIntention(data: {crop: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}): void {
     if (!this.selectedCustomer) return;
 
     const apiData = {
@@ -801,6 +851,7 @@ export class HomeComponent implements OnInit, OnDestroy {
       customerCode: this.selectedCustomer.sourceCustomerId || '',
       tradeUnit: data.tradeUnit,
       crop: data.crop,
+      type: data.type,
       description: data.description,
       acres: data.acres,
       plantingYear: data.plantingYear
@@ -827,9 +878,10 @@ export class HomeComponent implements OnInit, OnDestroy {
     });
   }
 
-  editPlantingIntention(data: {intentionId: number, crop: string, description?: string, acres: number, plantingYear: number}): void {
+  editPlantingIntention(data: {intentionId: number, crop: string, type?: string, description?: string, acres: number, plantingYear: number}): void {
     this.apiService.updatePlantingIntention(data.intentionId, {
       crop: data.crop,
+      type: data.type,
       description: data.description,
       acres: data.acres,
       plantingYear: data.plantingYear

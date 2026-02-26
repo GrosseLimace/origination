@@ -6,6 +6,7 @@ export interface PlantingIntention {
   tradeUnit: string;
   plantingYear: number;
   crop: string;
+  type?: string;
   description?: string;
   acres: number;
   createdOn: string;

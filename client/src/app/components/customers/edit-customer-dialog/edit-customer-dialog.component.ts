@@ -168,6 +168,11 @@ import { ApiService } from '../../../services/api.service';
                       </button>
                     }
                   </div>
+                  @if (newCommodity.trim() && isLoadingCommodities) {
+                    <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg px-3 py-2 text-sm text-gray-400 dark:text-gray-500">
+                      Loading commodities...
+                    </div>
+                  }
                   @if (showSuggestions && filteredCommodities.length > 0) {
                     <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-48 overflow-y-auto">
                       @for (commodity of filteredCommodities; track commodity.id) {
@@ -369,6 +374,7 @@ export class EditCustomerDialogComponent implements OnChanges {
   private originalPrimaryContact = '';
 
   private initialized = false;
+  isLoadingCommodities = false;
   isLoadingProducers = false;
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -402,10 +408,22 @@ export class EditCustomerDialogComponent implements OnChanges {
       this.originalPrimaryContact = this.customer.primaryContact || '';
 
       // Load commodity lookup table
-      if (this.allCommodities.length === 0) {
-        this.apiService.getCommodities().subscribe(commodities => {
-          this.allCommodities = commodities;
-          this.cdr.markForCheck();
+      if (this.allCommodities.length === 0 && !this.isLoadingCommodities) {
+        this.isLoadingCommodities = true;
+        this.apiService.getCommodities().subscribe({
+          next: (commodities) => {
+            this.allCommodities = commodities;
+            this.isLoadingCommodities = false;
+            // If the user already typed in the commodity search, refresh results now
+            if (this.newCommodity.trim()) {
+              this.onCommoditySearch();
+            }
+            this.cdr.markForCheck();
+          },
+          error: () => {
+            this.isLoadingCommodities = false;
+            this.cdr.markForCheck();
+          }
         });
       }
 

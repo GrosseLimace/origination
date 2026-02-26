@@ -11,3 +11,5 @@ export * from './position.model';
 export * from './commodity.model';
 export * from './producer-details.model';
 export * from './dashboard-planting-estimate.model';
+export * from './dashboard-market-share.model';
+export * from './contract-pricing-line.model';

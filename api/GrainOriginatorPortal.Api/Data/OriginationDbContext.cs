@@ -20,6 +20,7 @@ public class OriginationDbContext : DbContext
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<Ticket> Tickets => Set<Ticket>();
     public DbSet<TicketQuality> TicketQualities => Set<TicketQuality>();
+    public DbSet<ContractPricingLine> ContractPricingLines => Set<ContractPricingLine>();
 
     // Application tables - Notes and TradeUnits moved to ApplicationDbContext (Origination database)
 
@@ -52,6 +53,16 @@ public class OriginationDbContext : DbContext
             entity.Property(e => e.StateProvince).HasColumnName("MerchandisingStateProvince").HasMaxLength(50).IsRequired(false);
             entity.Property(e => e.AddressLine1).HasColumnName("MerchandisingAddressLine1").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.PostalCode).HasColumnName("MerchandisingPostalCode").HasMaxLength(20).IsRequired(false);
+
+            // Extended address fields — more accurate location data for geocoding
+            entity.Property(e => e.ExtendedAddressLine1).HasColumnName("ExtendedAddressLine1").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.ExtendedAddressLine2).HasColumnName("ExtendedAddressLine2").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.ExtendedAddressLine3).HasColumnName("ExtendedAddressLine3").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.ExtendedAddressLine4).HasColumnName("ExtendedAddressLine4").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.ExtendedCity).HasColumnName("ExtendedCity").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.ExtendedPostalCode).HasColumnName("ExtendedPostalCode").HasMaxLength(20).IsRequired(false);
+            entity.Property(e => e.ExtendedStateProvince).HasColumnName("ExtendedStateProvince").HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.ExtendedCountry).HasColumnName("ExtendedCountry").HasMaxLength(255).IsRequired(false);
 
             // Map available ODS metadata fields
             entity.Property(e => e.SourceCustomerId).HasColumnName("SourceCustomerId").HasMaxLength(400);
@@ -222,6 +233,46 @@ public class OriginationDbContext : DbContext
             entity.Property(e => e.GradeFactorProteinPercent).HasColumnName("GradeFactorProteinPercent").HasColumnType("decimal(18,6)");
             entity.Property(e => e.GradeFactorTestWeightPercent).HasColumnName("GradeFactorTestWeightPercent").HasColumnType("decimal(18,6)");
             entity.Property(e => e.GradeCode).HasColumnName("GradeCode").HasMaxLength(100);
+        });
+
+        // Configure ContractPricingLine — maps to originations.vw_ContractPricing (read-only view)
+        modelBuilder.Entity<ContractPricingLine>(entity =>
+        {
+            entity.HasNoKey();
+            entity.ToView("vw_ContractPricing", schema: "originations");
+
+            entity.Property(e => e.PriceSequence).HasColumnName("price_sequence");
+            entity.Property(e => e.ContractId).HasColumnName("contract_id").HasMaxLength(64);
+            entity.Property(e => e.DisplayId).HasColumnName("display_id").HasMaxLength(64);
+            entity.Property(e => e.QuantityUom).HasColumnName("quantity_uom").HasMaxLength(16);
+            entity.Property(e => e.CommodityCode).HasColumnName("commodity_code").HasMaxLength(100);
+            entity.Property(e => e.PriceType).HasColumnName("price_type").HasMaxLength(16);
+            entity.Property(e => e.Adjustment).HasColumnName("adjustment").HasColumnType("decimal(18,6)");
+            entity.Property(e => e.BasisPrice).HasColumnName("basis_price").HasColumnType("decimal(18,6)");
+            entity.Property(e => e.CashPrice).HasColumnName("cash_price").HasColumnType("decimal(18,6)");
+            entity.Property(e => e.FuturesPrice).HasColumnName("futures_price").HasColumnType("decimal(18,6)");
+            entity.Property(e => e.FuturesMonth).HasColumnName("futures_month").HasMaxLength(10);
+            entity.Property(e => e.Currency).HasColumnName("currency").HasMaxLength(10);
+            entity.Property(e => e.AppliedQty).HasColumnName("applied_qty").HasColumnType("decimal(18,6)");
+            entity.Property(e => e.PricedQty).HasColumnName("priced_qty").HasColumnType("decimal(18,6)");
+            entity.Property(e => e.ContractQty).HasColumnName("contract_qty").HasColumnType("decimal(18,6)");
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+            entity.Property(e => e.PricedAt).HasColumnName("priced_at");
+            entity.Property(e => e.DeliveryPeriodStart).HasColumnName("delivery_period_start");
+            entity.Property(e => e.DeliveryPeriodEnd).HasColumnName("delivery_period_end");
+            entity.Property(e => e.SignatureStatus).HasColumnName("signature_status").HasMaxLength(16);
+            entity.Property(e => e.DeliveryStatus).HasColumnName("delivery_status").HasMaxLength(32);
+            entity.Property(e => e.PricingStatus).HasColumnName("pricing_status").HasMaxLength(32);
+            entity.Property(e => e.LocationId).HasColumnName("location_id").HasMaxLength(50);
+            entity.Property(e => e.SequenceNumber).HasColumnName("sequence_number");
+            entity.Property(e => e.CustomerId).HasColumnName("customer_id").HasMaxLength(50);
+            entity.Property(e => e.CompanyCode).HasColumnName("company_code").HasMaxLength(10);
+            entity.Property(e => e.DivisionCode).HasColumnName("division_code").HasMaxLength(10);
+            entity.Property(e => e.LocationCode).HasColumnName("location_code").HasMaxLength(10);
+            entity.Property(e => e.PrefixType).HasColumnName("prefix_type").HasMaxLength(4);
+            entity.Property(e => e.PrefixCode).HasColumnName("prefix_code").HasMaxLength(4);
+            entity.Property(e => e.ContractNumber).HasColumnName("contract_number").HasMaxLength(50);
+            entity.Property(e => e.ContractSuffix).HasColumnName("contract_suffix").HasMaxLength(10);
         });
 
         // Note and TradeUnit entity configuration moved to ApplicationDbContext

@@ -14,6 +14,4 @@ public class UpsertDashboardEstimateRequest
     public int PlantingYear { get; set; }
 
     public decimal? YieldEstimate { get; set; }
-    public decimal? MarketSharePct { get; set; }
-    public long? ActualHarvestHandle { get; set; }
 }

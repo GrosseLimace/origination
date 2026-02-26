@@ -367,42 +367,88 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var commodities = _appContext.Commodities
-                .Where(c => c.IsActive)
-                .OrderBy(c => c.Name)
-                .ToList();
+            var existingCodes = new HashSet<string>(
+                _appContext.Commodities.Where(c => c.IsActive).Select(c => c.Code),
+                StringComparer.OrdinalIgnoreCase
+            );
 
-            if (commodities.Count > 0)
-            {
-                _logger.LogInformation("Returning {Count} commodities from dbo.Commodities", commodities.Count);
-                return commodities;
-            }
-
-            // Table is empty - one-time population from ODS contracts
-            _logger.LogInformation("dbo.Commodities is empty - performing one-time population from ODS");
+            // Pull all commodity data from contracts (Code, Name, Category)
             var contractCommodities = _context.Contracts
                 .Where(c => c.IsActive
                     && !string.IsNullOrEmpty(c.CommodityCode)
                     && !string.IsNullOrEmpty(c.CommodityDescription))
-                .Select(c => new { c.CommodityCode, c.CommodityDescription })
+                .Select(c => new { c.CommodityCode, c.CommodityDescription, c.CommodityGroup })
                 .Distinct()
                 .ToList();
 
+            // Pull all distinct product codes from tickets
+            var ticketProductCodes = _context.Tickets
+                .Where(t => t.IsActive && !string.IsNullOrEmpty(t.ProductCode))
+                .Select(t => t.ProductCode!)
+                .Distinct()
+                .ToList();
+
+            // Build lookup from contracts for description and category
+            var contractLookup = contractCommodities
+                .GroupBy(c => c.CommodityCode!, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+            bool changed = false;
+
+            // Add any contract commodities not yet in the table
             foreach (var item in contractCommodities)
             {
-                _appContext.Commodities.Add(new Commodity
+                if (!existingCodes.Contains(item.CommodityCode!))
                 {
-                    Code = item.CommodityCode!,
-                    Name = item.CommodityDescription!,
-                    IsActive = true
-                });
+                    _appContext.Commodities.Add(new Commodity
+                    {
+                        Code = item.CommodityCode!,
+                        Name = item.CommodityDescription!,
+                        Category = item.CommodityGroup,
+                        IsActive = true
+                    });
+                    existingCodes.Add(item.CommodityCode!);
+                    changed = true;
+                }
             }
-            _appContext.SaveChanges();
 
-            return _appContext.Commodities
-                .Where(c => c.IsActive)
-                .OrderBy(c => c.Name)
-                .ToList();
+            // Add any ticket product codes not already covered by contracts
+            foreach (var productCode in ticketProductCodes)
+            {
+                if (!existingCodes.Contains(productCode))
+                {
+                    contractLookup.TryGetValue(productCode, out var match);
+                    _appContext.Commodities.Add(new Commodity
+                    {
+                        Code = productCode,
+                        Name = match?.CommodityDescription ?? productCode,
+                        Category = match?.CommodityGroup,
+                        IsActive = true
+                    });
+                    existingCodes.Add(productCode);
+                    changed = true;
+                }
+            }
+
+            // Backfill Category for any commodities missing it
+            var allCommodities = _appContext.Commodities.Where(c => c.IsActive).ToList();
+            foreach (var commodity in allCommodities.Where(c => string.IsNullOrEmpty(c.Category)))
+            {
+                if (contractLookup.TryGetValue(commodity.Code, out var match)
+                    && !string.IsNullOrEmpty(match.CommodityGroup))
+                {
+                    commodity.Category = match.CommodityGroup;
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                _appContext.SaveChanges();
+                _logger.LogInformation("Synced commodities from ODS - now {Count} total", allCommodities.Count);
+            }
+
+            return allCommodities.OrderBy(c => c.Name).ToList();
         }
         catch (Exception ex)
         {
@@ -626,6 +672,22 @@ public class SqlDataService : IDataService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving contracts for farm {FarmId}", farmId);
+            throw;
+        }
+    }
+
+    public List<ContractPricingLine> GetPricingLines(string sourceContractId)
+    {
+        try
+        {
+            return _context.ContractPricingLines
+                .Where(p => p.ContractId == sourceContractId)
+                .OrderBy(p => p.PriceSequence)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving pricing lines for contract {ContractId}", sourceContractId);
             throw;
         }
     }
@@ -866,7 +928,7 @@ public class SqlDataService : IDataService
         }
     }
 
-    public PlantingIntention AddPlantingIntention(int customerId, string customerName, string customerCode, string tradeUnit, string crop, string? description, int acres, int plantingYear)
+    public PlantingIntention AddPlantingIntention(int customerId, string customerName, string customerCode, string tradeUnit, string crop, string? type, string? description, int acres, int plantingYear)
     {
         try
         {
@@ -877,6 +939,7 @@ public class SqlDataService : IDataService
                 CustomerCode = customerCode,
                 TradeUnit = tradeUnit,
                 Crop = crop,
+                Type = type,
                 Description = description,
                 Acres = acres,
                 PlantingYear = plantingYear,
@@ -897,7 +960,7 @@ public class SqlDataService : IDataService
         }
     }
 
-    public PlantingIntention? UpdatePlantingIntention(int intentionId, string crop, string? description, int acres, int plantingYear)
+    public PlantingIntention? UpdatePlantingIntention(int intentionId, string crop, string? type, string? description, int acres, int plantingYear)
     {
         try
         {
@@ -908,6 +971,7 @@ public class SqlDataService : IDataService
             }
 
             intention.Crop = crop;
+            intention.Type = type;
             intention.Description = description;
             intention.Acres = acres;
             intention.PlantingYear = plantingYear;
@@ -1213,23 +1277,62 @@ public class SqlDataService : IDataService
     }
 
     // =========================================================================
-    // Saved List Operations - DISABLED: Table doesn't exist in ODS
+    // Saved List Operations
     // =========================================================================
 
     public List<SavedList> GetSavedLists()
     {
-        _logger.LogWarning("SavedLists table doesn't exist in ODS - returning empty list");
-        return new List<SavedList>();
+        try
+        {
+            return _appContext.SavedLists
+                .Where(s => s.IsActive)
+                .OrderByDescending(s => s.CreatedOn)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving saved lists");
+            return new List<SavedList>();
+        }
     }
 
-    public void SaveList(string name, string query, List<string> customerIds)
+    public SavedList SaveList(string name, string query, string? tradeUnits)
     {
-        _logger.LogWarning("SavedLists table doesn't exist in ODS - operation skipped");
+        try
+        {
+            var savedList = new SavedList
+            {
+                Name = name,
+                Query = query,
+                TradeUnits = tradeUnits,
+                CreatedBy = "System",
+                CreatedOn = DateTime.UtcNow
+            };
+            _appContext.SavedLists.Add(savedList);
+            _appContext.SaveChanges();
+            return savedList;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error saving list");
+            throw;
+        }
     }
 
-    public void DeleteList(string listId)
+    public void DeleteList(int listId)
     {
-        _logger.LogWarning("SavedLists table doesn't exist in ODS - operation skipped");
+        try
+        {
+            var list = _appContext.SavedLists.FirstOrDefault(s => s.Id == listId);
+            if (list == null) return;
+            list.IsActive = false;
+            _appContext.SaveChanges();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting saved list {ListId}", listId);
+            throw;
+        }
     }
 
     // =========================================================================
@@ -1255,8 +1358,6 @@ public class SqlDataService : IDataService
             if (existing != null)
             {
                 existing.YieldEstimate = req.YieldEstimate;
-                existing.MarketSharePct = req.MarketSharePct;
-                existing.ActualHarvestHandle = req.ActualHarvestHandle;
                 existing.ModifiedOn = DateTime.UtcNow;
                 existing.ModifiedBy = username;
             }
@@ -1268,8 +1369,44 @@ public class SqlDataService : IDataService
                     Crop = req.Crop,
                     PlantingYear = req.PlantingYear,
                     YieldEstimate = req.YieldEstimate,
+                    CreatedOn = DateTime.UtcNow,
+                    CreatedBy = username
+                });
+            }
+        }
+        _appContext.SaveChanges();
+    }
+
+    public List<DashboardMarketShare> GetDashboardMarketShares(string tradeUnitKey, int plantingYear)
+    {
+        return _appContext.DashboardMarketShares
+            .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear)
+            .OrderBy(e => e.CropCategory)
+            .ToList();
+    }
+
+    public void UpsertDashboardMarketShares(List<UpsertDashboardMarketShareRequest> shares, string username)
+    {
+        foreach (var req in shares)
+        {
+            var existing = _appContext.DashboardMarketShares
+                .FirstOrDefault(e => e.TradeUnitKey == req.TradeUnitKey
+                                  && e.CropCategory == req.CropCategory
+                                  && e.PlantingYear == req.PlantingYear);
+            if (existing != null)
+            {
+                existing.MarketSharePct = req.MarketSharePct;
+                existing.ModifiedOn = DateTime.UtcNow;
+                existing.ModifiedBy = username;
+            }
+            else
+            {
+                _appContext.DashboardMarketShares.Add(new DashboardMarketShare
+                {
+                    TradeUnitKey = req.TradeUnitKey,
+                    CropCategory = req.CropCategory,
+                    PlantingYear = req.PlantingYear,
                     MarketSharePct = req.MarketSharePct,
-                    ActualHarvestHandle = req.ActualHarvestHandle,
                     CreatedOn = DateTime.UtcNow,
                     CreatedBy = username
                 });

@@ -30,5 +30,21 @@ public class DashboardPlantingEstimatesController : ControllerBase
         _dataService.UpsertDashboardPlantingEstimates(estimates, "system");
         return Ok();
     }
+
+    [HttpGet("marketshares")]
+    public ActionResult<List<DashboardMarketShare>> GetMarketShares([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear)
+    {
+        if (string.IsNullOrWhiteSpace(tradeUnitKey) || plantingYear <= 0)
+            return BadRequest("tradeUnitKey and plantingYear are required.");
+        return Ok(_dataService.GetDashboardMarketShares(tradeUnitKey, plantingYear));
+    }
+
+    [HttpPost("marketshares/upsert")]
+    public ActionResult UpsertMarketShares([FromBody] List<UpsertDashboardMarketShareRequest> shares)
+    {
+        if (shares == null || shares.Count == 0) return BadRequest("No market shares provided.");
+        _dataService.UpsertDashboardMarketShares(shares, "system");
+        return Ok();
+    }
 }
 

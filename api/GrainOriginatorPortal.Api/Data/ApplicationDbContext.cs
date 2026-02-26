@@ -23,6 +23,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<GroupTradeUnit> GroupTradeUnits => Set<GroupTradeUnit>();
     public DbSet<Commodity> Commodities => Set<Commodity>();
     public DbSet<DashboardPlantingEstimate> DashboardPlantingEstimates => Set<DashboardPlantingEstimate>();
+    public DbSet<DashboardMarketShare> DashboardMarketShares => Set<DashboardMarketShare>();
+    public DbSet<SavedList> SavedLists => Set<SavedList>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -70,6 +72,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
             entity.Property(e => e.Code).HasColumnName("Code").HasMaxLength(100).IsRequired();
             entity.Property(e => e.Name).HasColumnName("Name").HasMaxLength(255).IsRequired();
+            entity.Property(e => e.Category).HasColumnName("Category").HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
 
             entity.HasIndex(e => e.Code).IsUnique().HasDatabaseName("IX_Commodities_Code");
@@ -109,6 +112,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.TradeUnit).HasColumnName("TradeUnit").HasMaxLength(100).IsRequired();
             entity.Property(e => e.PlantingYear).HasColumnName("PlantingYear").IsRequired();
             entity.Property(e => e.Crop).HasColumnName("Crop").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Type).HasColumnName("Type").HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.Description).HasColumnName("Description").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.Acres).HasColumnName("Acres").IsRequired();
             entity.Property(e => e.CreatedOn).HasColumnName("CreatedOn").HasDefaultValueSql("GETDATE()").IsRequired();
@@ -129,13 +133,40 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Crop).HasColumnName("Crop").HasMaxLength(100).IsRequired();
             entity.Property(e => e.PlantingYear).HasColumnName("PlantingYear").IsRequired();
             entity.Property(e => e.YieldEstimate).HasColumnName("YieldEstimate").HasColumnType("decimal(10,2)").IsRequired(false);
-            entity.Property(e => e.MarketSharePct).HasColumnName("MarketSharePct").HasColumnType("decimal(5,2)").IsRequired(false);
-            entity.Property(e => e.ActualHarvestHandle).HasColumnName("ActualHarvestHandle").IsRequired(false);
             entity.Property(e => e.CreatedOn).HasColumnName("CreatedOn").HasDefaultValueSql("GETDATE()").IsRequired();
             entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
             entity.Property(e => e.ModifiedOn).HasColumnName("ModifiedOn").IsRequired(false);
             entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
             entity.HasIndex(e => new { e.TradeUnitKey, e.Crop, e.PlantingYear }).IsUnique().HasDatabaseName("UC_DashEst");
+        });
+
+        modelBuilder.Entity<DashboardMarketShare>(entity =>
+        {
+            entity.ToTable("DashboardMarketShares", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.TradeUnitKey).HasColumnName("TradeUnitKey").HasMaxLength(500).IsRequired();
+            entity.Property(e => e.CropCategory).HasColumnName("CropCategory").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.PlantingYear).HasColumnName("PlantingYear").IsRequired();
+            entity.Property(e => e.MarketSharePct).HasColumnName("MarketSharePct").HasColumnType("decimal(5,2)").IsRequired(false);
+            entity.Property(e => e.CreatedOn).HasColumnName("CreatedOn").HasDefaultValueSql("GETDATE()").IsRequired();
+            entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
+            entity.Property(e => e.ModifiedOn).HasColumnName("ModifiedOn").IsRequired(false);
+            entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
+            entity.HasIndex(e => new { e.TradeUnitKey, e.CropCategory, e.PlantingYear }).IsUnique().HasDatabaseName("UC_DashMarketShare");
+        });
+
+        modelBuilder.Entity<SavedList>(entity =>
+        {
+            entity.ToTable("SavedLists", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.Name).HasColumnName("Name").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Query).HasColumnName("Query").HasMaxLength(500).IsRequired();
+            entity.Property(e => e.TradeUnits).HasColumnName("TradeUnits").HasMaxLength(500).IsRequired(false);
+            entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
+            entity.Property(e => e.CreatedOn).HasColumnName("CreatedOn").HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
         });
 
         modelBuilder.Entity<ProducerDetails>(entity =>

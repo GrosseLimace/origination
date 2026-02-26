@@ -4,6 +4,4 @@ export interface DashboardPlantingEstimate {
   crop: string;
   plantingYear: number;
   yieldEstimate?: number;
-  marketSharePct?: number;
-  actualHarvestHandle?: number;
 }

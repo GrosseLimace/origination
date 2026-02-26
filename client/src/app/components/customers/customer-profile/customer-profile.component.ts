@@ -116,7 +116,7 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note } from
           <!-- Divider -->
           <div class="border-t border-gray-100 dark:border-gray-700 mb-4"></div>
 
-          <!-- Details: Contact + Farm Details + Market Share -->
+          <!-- Details: Contact + Farm Details + Contract Percentage -->
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-4">
             <!-- Contact -->
             <div>
@@ -199,9 +199,9 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note } from
               </div>
             </div>
 
-            <!-- Market Share -->
+            <!-- Contract Percentage -->
             <div>
-              <h3 class="text-xs sm:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-2.5">Market Share</h3>
+              <h3 class="text-xs sm:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-2.5">Contract Percentage</h3>
               <div
                 class="border rounded-lg px-14 py-2.5 text-center inline-block min-w-[170px] relative group"
                 [class]="marketSharePercentage > 0 ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/30' : 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30'"
@@ -209,7 +209,7 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note } from
                 @if (marketSharePercentage === 0) {
                   <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10 whitespace-nowrap">
                     <div class="bg-gray-900 dark:bg-gray-700 text-white text-xs rounded px-2.5 py-1.5 shadow-lg">
-                      Add planting intentions to calculate market share
+                      Add planting intentions to calculate contract percentage
                     </div>
                     <div class="w-2 h-2 bg-gray-900 dark:bg-gray-700 rotate-45 mx-auto -mt-1"></div>
                   </div>
@@ -268,7 +268,7 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note } from
                 (click)="activeTab = tab.id"
               >
                 <span class="hidden sm:inline">{{ tab.label }} ({{ tab.count }})</span>
-                <span class="sm:hidden">{{ tab.label.substring(0, 4) }} ({{ tab.count }})</span>
+                <span class="sm:hidden">{{ tab.shortLabel }} ({{ tab.count }})</span>
               </button>
             }
           </div>
@@ -289,6 +289,7 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note } from
                 [customer]="customer"
                 [tradeUnits]="selectedTradeUnits"
                 [customerCommodityCodes]="getEffectiveCommodities()"
+                [yieldEstimateCrops]="yieldEstimateCrops"
                 (add)="onAddPlanting.emit($event)"
                 (edit)="onEditPlanting.emit($event)"
                 (delete)="onDeletePlanting.emit($event)">
@@ -323,6 +324,7 @@ export class CustomerProfileComponent implements OnChanges {
   @Input() plantingIntentions: PlantingIntention[] = [];
   @Input() storedGrain: StoredGrain[] = [];
   @Input() notes: Note[] = [];
+  @Input() yieldEstimateCrops: string[] = [];
 
   // Unfiltered data for Activity Summary
   @Input() allCustomerContracts: Contract[] = [];
@@ -330,8 +332,8 @@ export class CustomerProfileComponent implements OnChanges {
   @Input() allCustomerPlantingIntentions: PlantingIntention[] = [];
   @Input() allCustomerStoredGrain: StoredGrain[] = [];
 
-  @Output() onAddPlanting = new EventEmitter<{crop: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
-  @Output() onEditPlanting = new EventEmitter<{intentionId: number, crop: string, description?: string, acres: number, plantingYear: number}>();
+  @Output() onAddPlanting = new EventEmitter<{crop: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
+  @Output() onEditPlanting = new EventEmitter<{intentionId: number, crop: string, type?: string, description?: string, acres: number, plantingYear: number}>();
   @Output() onDeletePlanting = new EventEmitter<number>();
   @Output() onAddNote = new EventEmitter<string>();
   @Output() onTogglePin = new EventEmitter<Note>();
@@ -353,6 +355,7 @@ export class CustomerProfileComponent implements OnChanges {
   private _marketSharePercentage = 0;
   private _bushelsAvailable = 0;
   private _tabs: any[] = [];
+  private _unappliedTicketCount = 0;
   private _effectiveCommodities: string[] = [];
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -375,13 +378,25 @@ export class CustomerProfileComponent implements OnChanges {
       this._bushelsAvailable = Math.max(0, this._totalProjectedYield - this._totalContracted);
     }
 
+    // Update unapplied ticket count
+    if (changes['contracts'] || changes['tickets']) {
+      const appliedContractIds = new Set(
+        this.contracts
+          .map(c => c.sourceContractId)
+          .filter((id): id is string => !!id)
+      );
+      this._unappliedTicketCount = this.tickets.filter(t =>
+        !t.ctrmContractNumber || !appliedContractIds.has(t.ctrmContractNumber.trim())
+      ).length;
+    }
+
     // Update tabs cache
     if (changes['contracts'] || changes['tickets'] || changes['plantingIntentions'] || changes['storedGrain']) {
       this._tabs = [
-        { id: 'contracts', label: 'Contracts', count: this.contracts.length },
-        { id: 'tickets', label: 'Tickets', count: this.tickets.length },
-        { id: 'planting', label: 'Planting', count: this.plantingIntentions.length },
-        { id: 'storage', label: 'Storage', count: this.storedGrain.length }
+        { id: 'contracts', label: 'Contracts', shortLabel: 'Cont', count: this.contracts.length },
+        { id: 'tickets', label: 'Unapplied Tickets', shortLabel: 'Tick', count: this.unappliedTicketCount },
+        { id: 'planting', label: 'Planting', shortLabel: 'Plan', count: this.plantingIntentions.length },
+        { id: 'storage', label: 'Storage', shortLabel: 'Stor', count: this.storedGrain.length }
       ];
     }
 
@@ -453,6 +468,10 @@ export class CustomerProfileComponent implements OnChanges {
 
   get bushelsAvailable(): number {
     return this._bushelsAvailable;
+  }
+
+  get unappliedTicketCount(): number {
+    return this._unappliedTicketCount;
   }
 
   getEffectiveCommodities(): string[] {

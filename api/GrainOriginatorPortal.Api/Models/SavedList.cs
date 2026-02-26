@@ -2,12 +2,15 @@ namespace GrainOriginatorPortal.Api.Models;
 
 /// <summary>
 /// Represents a saved customer list created via the list builder.
+/// Only the query prompt is stored; customer IDs are computed dynamically at runtime.
 /// </summary>
 public class SavedList
 {
-    public string Id { get; set; } = string.Empty;
+    public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Query { get; set; } = string.Empty;
-    public List<string> CustomerIds { get; set; } = new();
-    public DateTime CreatedAt { get; set; }
+    public string? TradeUnits { get; set; } // Comma-separated trade unit keys (e.g. "TU1,TU2")
+    public string CreatedBy { get; set; } = string.Empty;
+    public DateTime CreatedOn { get; set; }
+    public bool IsActive { get; set; } = true;
 }

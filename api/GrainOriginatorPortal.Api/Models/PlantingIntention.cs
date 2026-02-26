@@ -13,6 +13,7 @@ public class PlantingIntention
     public string TradeUnit { get; set; } = string.Empty;
     public int PlantingYear { get; set; }
     public string Crop { get; set; } = string.Empty;
+    public string? Type { get; set; }
     public string? Description { get; set; }
     public int Acres { get; set; }
     public DateTime CreatedOn { get; set; }

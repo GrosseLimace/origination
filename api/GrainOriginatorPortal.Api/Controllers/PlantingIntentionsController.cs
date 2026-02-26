@@ -36,6 +36,7 @@ public class PlantingIntentionsController : ControllerBase
             request.CustomerCode,
             request.TradeUnit,
             request.Crop,
+            request.Type,
             request.Description,
             request.Acres,
             request.PlantingYear
@@ -49,6 +50,7 @@ public class PlantingIntentionsController : ControllerBase
         var updatedIntention = _dataService.UpdatePlantingIntention(
             id,
             request.Crop,
+            request.Type,
             request.Description,
             request.Acres,
             request.PlantingYear
@@ -86,6 +88,9 @@ public class CreatePlantingIntentionRequest
     [System.ComponentModel.DataAnnotations.StringLength(100)]
     public string Crop { get; set; } = string.Empty;
 
+    [System.ComponentModel.DataAnnotations.StringLength(100)]
+    public string? Type { get; set; }
+
     [System.ComponentModel.DataAnnotations.StringLength(255)]
     public string? Description { get; set; }
 
@@ -101,6 +106,9 @@ public class UpdatePlantingIntentionRequest
     [System.ComponentModel.DataAnnotations.Required]
     [System.ComponentModel.DataAnnotations.StringLength(100)]
     public string Crop { get; set; } = string.Empty;
+
+    [System.ComponentModel.DataAnnotations.StringLength(100)]
+    public string? Type { get; set; }
 
     [System.ComponentModel.DataAnnotations.StringLength(255)]
     public string? Description { get; set; }

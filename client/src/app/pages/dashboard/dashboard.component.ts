@@ -7,7 +7,7 @@ import { takeUntil, filter } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
 import { AppStateService } from '../../services/app-state.service';
 import { ToastService } from '../../services/toast.service';
-import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEstimate } from '../../models';
+import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEstimate, DashboardMarketShare, Commodity } from '../../models';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '../../components/ui/card/card.component';
 
 
@@ -22,22 +22,37 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
           <div class="flex items-center gap-3">
             <h2 class="text-2xl font-semibold text-gray-900 dark:text-white">Trade Unit Dashboard</h2>
             @if (availableTradeUnits.length > 1) {
-              <select
-                [(ngModel)]="selectedTradeUnitForDashboard"
-                (change)="onTradeUnitChange()"
-                class="px-3 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
-              >
-                @for (unit of availableTradeUnits; track unit) {
-                  <option [value]="unit">{{ unit }}</option>
+              <div class="relative">
+                <button
+                  (click)="showTradeUnitDropdown = !showTradeUnitDropdown"
+                  class="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                >
+                  <span>{{ selectedDashboardTradeUnits.length === availableTradeUnits.length ? 'All Trade Units' : selectedDashboardTradeUnits.length + ' selected' }}</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                @if (showTradeUnitDropdown) {
+                  <div class="absolute top-full left-0 mt-1 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50 py-1">
+                    @for (unit of availableTradeUnits; track unit) {
+                      <label
+                        class="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer text-sm text-gray-900 dark:text-white"
+                      >
+                        <input
+                          type="checkbox"
+                          [checked]="selectedDashboardTradeUnits.includes(unit)"
+                          (change)="toggleDashboardTradeUnit(unit)"
+                          class="rounded border-gray-300 dark:border-gray-600 text-green-600 focus:ring-green-500"
+                        />
+                        {{ unit }}
+                      </label>
+                    }
+                  </div>
                 }
-              </select>
-            } @else if (availableTradeUnits.length === 1) {
-              <span class="text-lg font-medium text-gray-600 dark:text-gray-300">- {{ availableTradeUnits[0] }}</span>
+              </div>
             }
           </div>
           <p class="text-gray-500 dark:text-gray-400 mt-1">
-            @if (selectedTradeUnitForDashboard) {
-              Overview of {{ selectedTradeUnitForDashboard }} performance
+            @if (selectedDashboardTradeUnits.length > 0) {
+              Overview of {{ selectedDashboardTradeUnits.join(', ') }} performance
             } @else {
               Select a trade unit to view performance metrics
             }
@@ -45,18 +60,18 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
         </div>
       </div>
 
-      @if (!selectedTradeUnitForDashboard) {
+      @if (selectedDashboardTradeUnits.length === 0) {
         <div class="flex items-center justify-center py-20">
           <div class="text-center">
-            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 text-gray-400 dark:text-gray-500">
-              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 text-gray-300 dark:text-gray-600">
+              <path d="M12 2a10 10 0 1 0 10 10H12V2z"/>
+              <path d="M12 2v10h10"/>
             </svg>
-            <p class="text-gray-500 dark:text-gray-400 font-medium text-lg mb-2">No Trade Unit Selected</p>
-            <p class="text-gray-400 dark:text-gray-500 text-sm">Please select a trade unit from the Customers page to view dashboard metrics</p>
+            <p class="text-gray-400 dark:text-gray-500">Select a trade unit above to view dashboard</p>
           </div>
         </div>
       } @else if (loading) {
-        <div class="flex min-h-[60vh] items-center justify-center">
+        <div class="flex items-center justify-center py-20">
           <div class="text-center">
             <div class="inline-block animate-spin rounded-full h-16 w-16 border-4 border-gray-300 dark:border-gray-600 border-t-green-600 dark:border-t-green-500 mb-4"></div>
             <p class="text-gray-500 dark:text-gray-400 font-medium text-lg">Loading dashboard data...</p>
@@ -203,75 +218,46 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
             </svg>
             <div class="flex items-center gap-3 flex-1">
               <div>
-                <app-card-title>Planting Intentions</app-card-title>
+                <app-card-title>Planting Intentions <span class="text-base font-normal text-gray-500 dark:text-gray-400">({{ selectedDashboardTradeUnits.join(', ') }})</span></app-card-title>
                 <app-card-description>Planned crops and production estimates across your territory</app-card-description>
               </div>
-              @if (availablePlantingYears.length > 0) {
-                <select
-                  [(ngModel)]="selectedPlantingYear"
-                  (change)="onPlantingYearChange()"
-                  (click)="$event.stopPropagation()"
-                  class="ml-2 px-2.5 py-1 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
-                >
-                  @for (year of availablePlantingYears; track year) {
-                    <option [value]="year">{{ year }}</option>
-                  }
-                </select>
-              }
             </div>
           </div>
         </app-card-header>
         @if (plantingIntentionsExpanded) {
         <app-card-content>
-          @if (plantingRows.length === 0) {
-            <div class="flex items-center justify-center py-10 text-gray-400 dark:text-gray-500 text-sm">
-              No planting intentions found for the selected trade units and year.
-            </div>
-          } @else {
-          <!-- Row 1: Estimated Production and Estimated Harvest Handle -->
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <!-- 2x2 Grid: Tables stacked two and two -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-            <!-- Estimated Production -->
+            <!-- Table 1: Average Yield Estimates (Crop Code Level) -->
             <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
               <div class="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
                 <div class="flex items-center justify-between">
                   <div>
-                    <h3 class="text-base font-semibold text-gray-900 dark:text-white">Estimated Production</h3>
-                    <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Total acres × yield estimate per acre</p>
+                    <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Average Yield Estimates</h3>
+                    <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Yield estimates per crop code</p>
                   </div>
-                  @if (!yieldEditMode) {
-                    <button
-                      (click)="startYieldEdit()"
-                      class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-green-300 dark:border-green-700 text-xs sm:text-sm font-medium text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
-                      </svg>
-                      Edit
-                    </button>
-                  } @else {
-                    <div class="flex gap-2">
+                  <div class="flex gap-2">
+                    @if (!yieldEditMode) {
+                      <button
+                        (click)="startYieldEdit()"
+                        class="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-green-300 dark:border-green-700 text-xs font-medium text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+                        Edit
+                      </button>
+                    } @else {
                       <button
                         (click)="cancelYieldEdit()"
-                        class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-gray-300 dark:border-gray-600 text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M18 6L6 18M6 6l12 12"/>
-                        </svg>
-                        Cancel
-                      </button>
+                        class="px-2 py-1 rounded-md border border-gray-300 dark:border-gray-600 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                      >Cancel</button>
                       <button
                         (click)="saveYieldEdit()"
                         [disabled]="estimatesSaving"
-                        class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-green-300 dark:border-green-700 text-xs sm:text-sm font-medium text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors disabled:opacity-50"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M20 6L9 17l-5-5"/>
-                        </svg>
-                        Save
-                      </button>
-                    </div>
-                  }
+                        class="px-2 py-1 rounded-md border border-green-300 dark:border-green-700 text-xs font-medium text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors disabled:opacity-50"
+                      >Save</button>
+                    }
+                  </div>
                 </div>
               </div>
               <div class="overflow-x-auto">
@@ -279,37 +265,27 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                   <thead>
                     <tr class="bg-gray-50 dark:bg-gray-700/50">
                       <th class="text-left py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Crop</th>
-                      <th class="text-right py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Acres</th>
-                      <th class="text-right py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Yield (bu/ac)</th>
-                      <th class="text-right py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Production (bu)</th>
+                      <th class="text-right py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Yield Est. (bu/ac)</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-                    @for (row of plantingRows; track row.crop) {
+                    @for (row of yieldRows; track row.cropCode) {
                       <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                        <td class="py-2 px-4 text-sm font-medium text-gray-900 dark:text-gray-100">{{ row.crop }}</td>
-                        <td class="py-2 px-4 text-right text-sm text-gray-700 dark:text-gray-300">{{ row.totalAcres | number:'1.0-0' }}</td>
+                        <td class="py-2 px-4 text-sm font-medium text-gray-900 dark:text-gray-100">{{ row.cropName }}</td>
                         <td class="py-2 px-4 text-right text-sm">
                           @if (yieldEditMode) {
                             <input
                               type="number"
-                              [(ngModel)]="tempYieldMap[row.crop]"
+                              [(ngModel)]="tempYieldMap[row.cropCode]"
                               min="0"
-                              class="w-20 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                              class="w-24 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
                           } @else {
                             @if (row.yieldEstimate != null) {
                               <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">{{ row.yieldEstimate }}</span>
                             } @else {
-                              <span class="text-gray-400 dark:text-gray-500 italic text-xs">—</span>
+                              <span class="text-gray-400 dark:text-gray-500 italic text-xs">--</span>
                             }
-                          }
-                        </td>
-                        <td class="py-2 px-4 text-right text-sm font-bold text-gray-900 dark:text-white">
-                          @if (row.yieldEstimate != null) {
-                            {{ row.totalProduction | number:'1.0-0' }}
-                          } @else {
-                            <span class="text-gray-400 dark:text-gray-500 italic text-xs">—</span>
                           }
                         </td>
                       </tr>
@@ -319,45 +295,65 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
               </div>
             </div>
 
-            <!-- Estimated Harvest Handle -->
+            <!-- Table 2: Total Estimated Production (READ-ONLY) -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div class="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Total Estimated Production</h3>
+                <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Sum of (acres x yield) by category</p>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full">
+                  <thead>
+                    <tr class="bg-gray-50 dark:bg-gray-700/50">
+                      <th class="text-left py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Category</th>
+                      <th class="text-right py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Production (bu)</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                    @for (row of categoryRows; track row.category) {
+                      <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                        <td class="py-2 px-4 text-sm font-medium text-gray-900 dark:text-gray-100">{{ row.category }}</td>
+                        <td class="py-2 px-4 text-right text-sm font-bold text-gray-900 dark:text-white">
+                          @if (row.totalEstimatedProduction > 0) {
+                            {{ row.totalEstimatedProduction | number:'1.0-0' }}
+                          } @else {
+                            <span class="text-gray-400 dark:text-gray-500 italic text-xs">--</span>
+                          }
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Table 3: Estimated Market Share (EDITABLE %) -->
             <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
               <div class="bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/20 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
                 <div class="flex items-center justify-between">
                   <div>
-                    <h3 class="text-base font-semibold text-gray-900 dark:text-white">Estimated Harvest Handle</h3>
-                    <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Production × market share %</p>
+                    <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Est. Market Share</h3>
+                    <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Expected share by category</p>
                   </div>
                   @if (!marketShareEditMode) {
                     <button
                       (click)="startMarketShareEdit()"
-                      class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-orange-300 dark:border-orange-700 text-xs sm:text-sm font-medium text-orange-700 dark:text-orange-300 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
+                      class="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-orange-300 dark:border-orange-700 text-xs font-medium text-orange-700 dark:text-orange-300 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
-                      </svg>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
                       Edit
                     </button>
                   } @else {
-                    <div class="flex gap-2">
+                    <div class="flex gap-1">
                       <button
                         (click)="cancelMarketShareEdit()"
-                        class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-gray-300 dark:border-gray-600 text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M18 6L6 18M6 6l12 12"/>
-                        </svg>
-                        Cancel
-                      </button>
+                        class="px-2 py-1 rounded-md border border-gray-300 dark:border-gray-600 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                      >Cancel</button>
                       <button
                         (click)="saveMarketShareEdit()"
                         [disabled]="estimatesSaving"
-                        class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-orange-300 dark:border-orange-700 text-xs sm:text-sm font-medium text-orange-700 dark:text-orange-300 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors disabled:opacity-50"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M20 6L9 17l-5-5"/>
-                        </svg>
-                        Save
-                      </button>
+                        class="px-2 py-1 rounded-md border border-orange-300 dark:border-orange-700 text-xs font-medium text-orange-700 dark:text-orange-300 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors disabled:opacity-50"
+                      >Save</button>
                     </div>
                   }
                 </div>
@@ -366,33 +362,24 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                 <table class="w-full">
                   <thead>
                     <tr class="bg-gray-50 dark:bg-gray-700/50">
-                      <th class="text-left py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Crop</th>
-                      <th class="text-right py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Production (bu)</th>
+                      <th class="text-left py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Category</th>
                       <th class="text-right py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Mkt Share %</th>
-                      <th class="text-right py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Est. Handle (bu)</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-                    @for (row of plantingRows; track row.crop) {
+                    @for (row of categoryRows; track row.category) {
                       <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                        <td class="py-2 px-4 text-sm font-medium text-gray-900 dark:text-gray-100">{{ row.crop }}</td>
-                        <td class="py-2 px-4 text-right text-sm text-gray-700 dark:text-gray-300">
-                          @if (row.yieldEstimate != null) {
-                            {{ row.totalProduction | number:'1.0-0' }}
-                          } @else {
-                            <span class="text-gray-400 dark:text-gray-500 italic text-xs">—</span>
-                          }
-                        </td>
+                        <td class="py-2 px-4 text-sm font-medium text-gray-900 dark:text-gray-100">{{ row.category }}</td>
                         <td class="py-2 px-4 text-right text-sm">
                           @if (marketShareEditMode) {
                             <div class="inline-flex items-center gap-1">
                               <input
                                 type="number"
-                                [(ngModel)]="tempMarketShareMap[row.crop]"
+                                [(ngModel)]="tempMarketShareMap[row.category]"
                                 min="0"
                                 max="100"
                                 step="1"
-                                class="w-16 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                class="w-16 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                               />
                               <span class="text-xs text-gray-400">%</span>
                             </div>
@@ -400,15 +387,40 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                             @if (row.marketSharePct != null) {
                               <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">{{ row.marketSharePct }}%</span>
                             } @else {
-                              <span class="text-gray-400 dark:text-gray-500 italic text-xs">—</span>
+                              <span class="text-gray-400 dark:text-gray-500 italic text-xs">0%</span>
                             }
                           }
                         </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Table 4: Estimated Harvest Handle (READ-ONLY, CALCULATED) -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div class="bg-gradient-to-r from-teal-50 to-cyan-50 dark:from-teal-900/20 dark:to-cyan-900/20 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Est. Harvest Handle</h3>
+                <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Production x market share %</p>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full">
+                  <thead>
+                    <tr class="bg-gray-50 dark:bg-gray-700/50">
+                      <th class="text-left py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Category</th>
+                      <th class="text-right py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Est. Handle (bu)</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                    @for (row of categoryRows; track row.category) {
+                      <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                        <td class="py-2 px-4 text-sm font-medium text-gray-900 dark:text-gray-100">{{ row.category }}</td>
                         <td class="py-2 px-4 text-right text-sm font-bold text-gray-900 dark:text-white">
-                          @if (row.marketSharePct != null && row.yieldEstimate != null) {
-                            {{ row.estHarvestHandle | number:'1.0-0' }}
+                          @if (row.estimatedHarvestHandle > 0) {
+                            {{ row.estimatedHarvestHandle | number:'1.0-0' }}
                           } @else {
-                            <span class="text-gray-400 dark:text-gray-500 italic text-xs">—</span>
+                            <span class="text-gray-400 dark:text-gray-500 italic text-xs">--</span>
                           }
                         </td>
                       </tr>
@@ -417,127 +429,9 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                 </table>
               </div>
             </div>
+
           </div>
 
-          <!-- Row 2: Actual Harvest Handle and Actual Market Share -->
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-            <!-- Actual Harvest Handle -->
-            <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-              <div class="bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-900/20 dark:to-rose-900/20 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
-                <div class="flex items-center justify-between">
-                  <div>
-                    <h3 class="text-base font-semibold text-gray-900 dark:text-white">Actual Harvest Handle</h3>
-                    <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Actual bushels handled at harvest</p>
-                  </div>
-                  @if (!actualHarvestEditMode) {
-                    <button
-                      (click)="startActualHarvestEdit()"
-                      class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-red-300 dark:border-red-700 text-xs sm:text-sm font-medium text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
-                      </svg>
-                      Edit
-                    </button>
-                  } @else {
-                    <div class="flex gap-2">
-                      <button
-                        (click)="cancelActualHarvestEdit()"
-                        class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-gray-300 dark:border-gray-600 text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M18 6L6 18M6 6l12 12"/>
-                        </svg>
-                        Cancel
-                      </button>
-                      <button
-                        (click)="saveActualHarvestEdit()"
-                        [disabled]="estimatesSaving"
-                        class="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-md border border-red-300 dark:border-red-700 text-xs sm:text-sm font-medium text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M20 6L9 17l-5-5"/>
-                        </svg>
-                        Save
-                      </button>
-                    </div>
-                  }
-                </div>
-              </div>
-              <div class="overflow-x-auto">
-                <table class="w-full">
-                  <thead>
-                    <tr class="bg-gray-50 dark:bg-gray-700/50">
-                      <th class="text-left py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Crop</th>
-                      <th class="text-right py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Actual Handle (bu)</th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-                    @for (row of plantingRows; track row.crop) {
-                      <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                        <td class="py-2.5 px-4 text-sm font-medium text-gray-900 dark:text-gray-100">{{ row.crop }}</td>
-                        <td class="py-2.5 px-4 text-right text-sm">
-                          @if (actualHarvestEditMode) {
-                            <div class="inline-flex items-center gap-1">
-                              <input
-                                type="number"
-                                [(ngModel)]="tempActualMap[row.crop]"
-                                min="0"
-                                step="1"
-                                class="w-28 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
-                              />
-                              <span class="text-xs text-gray-400">bu</span>
-                            </div>
-                          } @else {
-                            @if (row.actualHarvestHandle != null) {
-                              <span class="text-base font-bold text-gray-900 dark:text-white">{{ row.actualHarvestHandle | number:'1.0-0' }}</span>
-                              <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">bu</span>
-                            } @else {
-                              <span class="text-gray-400 dark:text-gray-500 italic text-xs">—</span>
-                            }
-                          }
-                        </td>
-                      </tr>
-                    }
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <!-- Actual Market Share -->
-            <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-              <div class="bg-gradient-to-r from-cyan-50 to-teal-50 dark:from-cyan-900/20 dark:to-teal-900/20 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
-                <h3 class="text-base font-semibold text-gray-900 dark:text-white">Actual Market Share</h3>
-                <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">Actual handle ÷ estimated production</p>
-              </div>
-              <div class="overflow-x-auto">
-                <table class="w-full">
-                  <thead>
-                    <tr class="bg-gray-50 dark:bg-gray-700/50">
-                      <th class="text-left py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Crop</th>
-                      <th class="text-right py-2 px-4 text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Actual Market Share</th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-                    @for (row of plantingRows; track row.crop) {
-                      <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                        <td class="py-2.5 px-4 text-sm font-medium text-gray-900 dark:text-gray-100">{{ row.crop }}</td>
-                        <td class="py-2.5 px-4 text-right text-sm">
-                          @if (row.actualHarvestHandle != null && row.totalProduction > 0) {
-                            <span class="text-base font-bold text-gray-900 dark:text-white">{{ row.actualMarketSharePct | number:'1.1-1' }}%</span>
-                          } @else {
-                            <span class="text-gray-400 dark:text-gray-500 italic text-xs">—</span>
-                          }
-                        </td>
-                      </tr>
-                    }
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-          }
         </app-card-content>
         }
       </app-card>
@@ -559,10 +453,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
   contracts: Contract[] = [];
   plantingIntentions: PlantingIntention[] = [];
   storedGrain: StoredGrain[] = [];
+  allCommodities: Commodity[] = [];
 
   // Trade unit selection
   availableTradeUnits: string[] = [];
-  selectedTradeUnitForDashboard: string = '';
+  selectedDashboardTradeUnits: string[] = [];
+  showTradeUnitDropdown = false;
 
   loading = false;
   totalAcres = 0;
@@ -573,56 +469,54 @@ export class DashboardComponent implements OnInit, OnDestroy {
   contractStatus: { name: string; count: number; dotColor: string }[] = [];
 
   // Planting Intentions section state
-  savedEstimates: DashboardPlantingEstimate[] = [];
-  plantingRows: { crop: string; totalAcres: number; yieldEstimate: number | null; totalProduction: number; marketSharePct: number | null; estHarvestHandle: number; actualHarvestHandle: number | null; actualMarketSharePct: number }[] = [];
+  savedYieldEstimates: DashboardPlantingEstimate[] = [];
+  savedMarketShares: DashboardMarketShare[] = [];
+
+  // Table 1: Yield rows (crop code level)
+  yieldRows: { cropCode: string; cropName: string; category: string; totalAcres: number; yieldEstimate: number | null }[] = [];
+
+  // Tables 2-4: Category rows
+  categoryRows: { category: string; totalEstimatedProduction: number; marketSharePct: number | null; estimatedHarvestHandle: number }[] = [];
+
   availablePlantingYears: number[] = [];
   selectedPlantingYear: number = new Date().getFullYear();
 
   plantingIntentionsExpanded = false;
 
+  // Add crop dialog
+
   // Edit mode flags
   yieldEditMode = false;
   marketShareEditMode = false;
-  actualHarvestEditMode = false;
   estimatesSaving = false;
 
-  // Temporary edit maps (keyed by crop code)
+  // Temporary edit maps
   tempYieldMap: Record<string, number | null> = {};
   tempMarketShareMap: Record<string, number | null> = {};
-  tempActualMap: Record<string, number | null> = {};
 
   // Loading state to prevent concurrent data loads
   private isLoading = false;
   private isFirstLoad = true;
 
   ngOnInit(): void {
-    // Load the saved state from localStorage
     const savedState = localStorage.getItem('plantingIntentionsExpanded');
     if (savedState !== null) {
       this.plantingIntentionsExpanded = savedState === 'true';
     }
 
-    // Get selected trade units from app state and set default
     this.availableTradeUnits = this.appStateService.selectedTradeUnits();
-    if (this.availableTradeUnits.length > 0) {
-      this.selectedTradeUnitForDashboard = this.availableTradeUnits[0];
-    }
+    this.selectedDashboardTradeUnits = [...this.availableTradeUnits];
 
-    // Initial data load
     this.loadData();
 
-    // Reload data when navigating back to the dashboard route
     this.router.events.pipe(
       filter(event => event instanceof NavigationEnd),
       takeUntil(this.destroy$)
     ).subscribe((event: NavigationEnd) => {
-      // Skip the first NavigationEnd event which happens during component initialization
       if (this.isFirstLoad) {
         this.isFirstLoad = false;
         return;
       }
-
-      // Only reload if we're navigating TO the dashboard route
       if (event.urlAfterRedirects === '/dashboard' || event.url === '/dashboard') {
         this.loadData();
       }
@@ -631,7 +525,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   togglePlantingIntentions(): void {
     this.plantingIntentionsExpanded = !this.plantingIntentionsExpanded;
-    // Save the state to localStorage
     localStorage.setItem('plantingIntentionsExpanded', this.plantingIntentionsExpanded.toString());
   }
 
@@ -640,40 +533,43 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.destroy$.complete();
   }
 
-  onTradeUnitChange(): void {
-    // When user changes the selected trade unit, reload data for that specific trade unit
+  toggleDashboardTradeUnit(unit: string): void {
+    const idx = this.selectedDashboardTradeUnits.indexOf(unit);
+    if (idx >= 0) {
+      if (this.selectedDashboardTradeUnits.length > 1) {
+        this.selectedDashboardTradeUnits = this.selectedDashboardTradeUnits.filter(u => u !== unit);
+      }
+    } else {
+      this.selectedDashboardTradeUnits = [...this.selectedDashboardTradeUnits, unit];
+    }
     this.loadData();
   }
 
   private loadData(): void {
-    // Prevent concurrent data loads
-    if (this.isLoading) {
-      return;
-    }
-
+    if (this.isLoading) return;
     this.isLoading = true;
-    // Load data for the currently selected trade unit for dashboard display
-    const tradeUnitToLoad = this.selectedTradeUnitForDashboard ? [this.selectedTradeUnitForDashboard] : undefined;
+    const tradeUnitToLoad = this.selectedDashboardTradeUnits.length > 0 ? this.selectedDashboardTradeUnits : undefined;
     this.loading = true;
 
     forkJoin({
       customers: this.apiService.getCustomers(tradeUnitToLoad),
       contracts: this.apiService.getContracts(tradeUnitToLoad),
       plantingIntentions: this.apiService.getPlantingIntentions(),
-      storedGrain: this.apiService.getStoredGrain()
+      storedGrain: this.apiService.getStoredGrain(),
+      commodities: this.apiService.getCommodities()
     }).pipe(takeUntil(this.destroy$)).subscribe({
       next: (data) => {
         this.customers = data.customers;
         this.contracts = data.contracts;
         this.plantingIntentions = data.plantingIntentions;
         this.storedGrain = data.storedGrain;
+        this.allCommodities = data.commodities;
 
-        // Filter stored grain by customer IDs from the loaded customers
         const customerIds = new Set(this.customers.map(c => c.id));
         this.storedGrain = this.storedGrain.filter(s => customerIds.has(s.customerId));
 
         this.calculateMetrics();
-        this.calculatePlantingRows();
+        this.calculateYieldRows();
         this.loadDashboardEstimates();
 
         this.isLoading = false;
@@ -704,7 +600,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   private calculateCropDistribution(): void {
     const cropMap = new Map<string, number>();
-
     for (const contract of this.contracts) {
       const commodity = contract.commodityDescription || contract.commodityCode || 'Unknown';
       cropMap.set(commodity, (cropMap.get(commodity) || 0) + (contract.quantity || 0));
@@ -753,22 +648,22 @@ export class DashboardComponent implements OnInit, OnDestroy {
   // =========================================================================
 
   get tradeUnitKey(): string {
-    return [...this.appStateService.selectedTradeUnits()].sort().join(',');
+    return [...this.selectedDashboardTradeUnits].sort().join(',');
   }
 
   onPlantingYearChange(): void {
     this.loadDashboardEstimates();
+    this.loadDashboardMarketShares();
   }
 
-  private calculatePlantingRows(): void {
-    const globalTUs = this.appStateService.selectedTradeUnits();
+  private calculateYieldRows(): void {
+    const selectedTUs = this.selectedDashboardTradeUnits;
 
-    // All intentions for the globally selected TUs
     const forGlobalTUs = this.plantingIntentions.filter(p =>
-      globalTUs.length === 0 || globalTUs.includes(p.tradeUnit)
+      selectedTUs.length === 0 || selectedTUs.includes(p.tradeUnit)
     );
 
-    // Available years come from all intentions for those TUs
+    // Available years
     const years = [...new Set(forGlobalTUs.map(p => p.plantingYear))].sort((a, b) => b - a);
     this.availablePlantingYears = years;
     if (years.length > 0 && !years.includes(this.selectedPlantingYear)) {
@@ -778,46 +673,99 @@ export class DashboardComponent implements OnInit, OnDestroy {
     // Filter by selected year
     const filtered = forGlobalTUs.filter(p => p.plantingYear === this.selectedPlantingYear);
 
-    // Group acres by crop
-    const cropMap = new Map<string, number>();
+    // Group acres by combined type+category key (e.g. "Dryland Wheat", "Irrigated Corn")
+    const cropAcresMap = new Map<string, number>();
+    const cropCategoryMap = new Map<string, string>();
     for (const p of filtered) {
-      cropMap.set(p.crop, (cropMap.get(p.crop) || 0) + p.acres);
+      const commodity = this.allCommodities.find(c => c.code === p.crop);
+      const category = commodity?.category || p.crop;
+      const cropKey = [p.type, category].filter(Boolean).join(' ');
+      cropAcresMap.set(cropKey, (cropAcresMap.get(cropKey) || 0) + p.acres);
+      cropCategoryMap.set(cropKey, category);
     }
 
-    const uniqueCrops = [...cropMap.keys()].sort();
-    this.plantingRows = uniqueCrops.map(crop => {
-      const totalAcres = cropMap.get(crop) || 0;
-      const saved = this.savedEstimates.find(e => e.crop === crop);
-      const yieldEstimate = saved?.yieldEstimate ?? null;
-      const totalProduction = yieldEstimate != null ? totalAcres * yieldEstimate : 0;
-      const marketSharePct = saved?.marketSharePct ?? null;
-      const estHarvestHandle = (marketSharePct != null && yieldEstimate != null) ? totalProduction * (marketSharePct / 100) : 0;
-      const actualHarvestHandle = saved?.actualHarvestHandle ?? null;
-      const actualMarketSharePct = (actualHarvestHandle != null && totalProduction > 0)
-        ? (actualHarvestHandle / totalProduction) * 100
-        : 0;
-      return { crop, totalAcres, yieldEstimate, totalProduction, marketSharePct, estHarvestHandle, actualHarvestHandle, actualMarketSharePct };
+    // Use crop keys from planting intentions only
+    const allCropCodes = new Set<string>(cropAcresMap.keys());
+
+    this.yieldRows = [...allCropCodes].sort().map(cropCode => {
+      const saved = this.savedYieldEstimates.find(e => e.crop === cropCode);
+      return {
+        cropCode,
+        cropName: cropCode,
+        category: cropCategoryMap.get(cropCode) || 'Unknown',
+        totalAcres: cropAcresMap.get(cropCode) || 0,
+        yieldEstimate: saved?.yieldEstimate ?? null
+      };
     });
+
+    this.calculateCategoryRows();
+  }
+
+  private calculateCategoryRows(): void {
+    // Group yield rows by category, sum production
+    const categoryMap = new Map<string, number>();
+    for (const row of this.yieldRows) {
+      const production = (row.yieldEstimate != null && row.totalAcres > 0)
+        ? row.totalAcres * row.yieldEstimate
+        : 0;
+      const current = categoryMap.get(row.category) || 0;
+      categoryMap.set(row.category, current + production);
+    }
+
+    this.categoryRows = [...categoryMap.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([category, totalEstimatedProduction]) => {
+        const savedShare = this.savedMarketShares.find(s => s.cropCategory === category);
+        const marketSharePct = savedShare?.marketSharePct ?? null;
+        const estimatedHarvestHandle = (marketSharePct != null && totalEstimatedProduction > 0)
+          ? totalEstimatedProduction * (marketSharePct / 100)
+          : 0;
+        return { category, totalEstimatedProduction, marketSharePct, estimatedHarvestHandle };
+      });
   }
 
   loadDashboardEstimates(): void {
     const key = this.tradeUnitKey;
     if (!key) {
-      this.savedEstimates = [];
-      this.calculatePlantingRows();
+      this.savedYieldEstimates = [];
+      this.calculateYieldRows();
       return;
     }
     this.apiService.getDashboardPlantingEstimates(key, this.selectedPlantingYear)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (data) => {
-          this.savedEstimates = data;
-          this.calculatePlantingRows();
+          this.savedYieldEstimates = data;
+          this.calculateYieldRows();
+          this.loadDashboardMarketShares();
           this.cdr.detectChanges();
         },
         error: () => {
-          this.savedEstimates = [];
-          this.calculatePlantingRows();
+          this.savedYieldEstimates = [];
+          this.calculateYieldRows();
+          this.cdr.detectChanges();
+        }
+      });
+  }
+
+  loadDashboardMarketShares(): void {
+    const key = this.tradeUnitKey;
+    if (!key) {
+      this.savedMarketShares = [];
+      this.calculateCategoryRows();
+      return;
+    }
+    this.apiService.getDashboardMarketShares(key, this.selectedPlantingYear)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (data) => {
+          this.savedMarketShares = data;
+          this.calculateCategoryRows();
+          this.cdr.detectChanges();
+        },
+        error: () => {
+          this.savedMarketShares = [];
+          this.calculateCategoryRows();
           this.cdr.detectChanges();
         }
       });
@@ -830,25 +778,20 @@ export class DashboardComponent implements OnInit, OnDestroy {
   startYieldEdit(): void {
     this.yieldEditMode = true;
     this.tempYieldMap = {};
-    for (const row of this.plantingRows) {
-      this.tempYieldMap[row.crop] = row.yieldEstimate;
+    for (const row of this.yieldRows) {
+      this.tempYieldMap[row.cropCode] = row.yieldEstimate;
     }
   }
 
   saveYieldEdit(): void {
     const key = this.tradeUnitKey;
     if (!key) return;
-    const estimates = this.plantingRows.map(row => {
-      const existing = this.savedEstimates.find(e => e.crop === row.crop);
-      return {
-        tradeUnitKey: key,
-        crop: row.crop,
-        plantingYear: this.selectedPlantingYear,
-        yieldEstimate: this.tempYieldMap[row.crop] ?? null,
-        marketSharePct: existing?.marketSharePct ?? null,
-        actualHarvestHandle: existing?.actualHarvestHandle ?? null
-      };
-    });
+    const estimates = this.yieldRows.map(row => ({
+      tradeUnitKey: key,
+      crop: row.cropCode,
+      plantingYear: this.selectedPlantingYear,
+      yieldEstimate: this.tempYieldMap[row.cropCode] ?? null
+    }));
     this.estimatesSaving = true;
     this.apiService.upsertDashboardPlantingEstimates(estimates)
       .pipe(takeUntil(this.destroy$))
@@ -878,34 +821,29 @@ export class DashboardComponent implements OnInit, OnDestroy {
   startMarketShareEdit(): void {
     this.marketShareEditMode = true;
     this.tempMarketShareMap = {};
-    for (const row of this.plantingRows) {
-      this.tempMarketShareMap[row.crop] = row.marketSharePct;
+    for (const row of this.categoryRows) {
+      this.tempMarketShareMap[row.category] = row.marketSharePct;
     }
   }
 
   saveMarketShareEdit(): void {
     const key = this.tradeUnitKey;
     if (!key) return;
-    const estimates = this.plantingRows.map(row => {
-      const existing = this.savedEstimates.find(e => e.crop === row.crop);
-      return {
-        tradeUnitKey: key,
-        crop: row.crop,
-        plantingYear: this.selectedPlantingYear,
-        yieldEstimate: existing?.yieldEstimate ?? null,
-        marketSharePct: this.tempMarketShareMap[row.crop] ?? null,
-        actualHarvestHandle: existing?.actualHarvestHandle ?? null
-      };
-    });
+    const shares = this.categoryRows.map(row => ({
+      tradeUnitKey: key,
+      cropCategory: row.category,
+      plantingYear: this.selectedPlantingYear,
+      marketSharePct: this.tempMarketShareMap[row.category] ?? null
+    }));
     this.estimatesSaving = true;
-    this.apiService.upsertDashboardPlantingEstimates(estimates)
+    this.apiService.upsertDashboardMarketShares(shares)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: () => {
           this.marketShareEditMode = false;
           this.estimatesSaving = false;
           this.toastService.success('Market share saved');
-          this.loadDashboardEstimates();
+          this.loadDashboardMarketShares();
         },
         error: () => {
           this.estimatesSaving = false;
@@ -920,51 +858,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   // =========================================================================
-  // Actual harvest handle edit
+  // Add crop to yield estimates
   // =========================================================================
-
-  startActualHarvestEdit(): void {
-    this.actualHarvestEditMode = true;
-    this.tempActualMap = {};
-    for (const row of this.plantingRows) {
-      this.tempActualMap[row.crop] = row.actualHarvestHandle;
-    }
-  }
-
-  saveActualHarvestEdit(): void {
-    const key = this.tradeUnitKey;
-    if (!key) return;
-    const estimates = this.plantingRows.map(row => {
-      const existing = this.savedEstimates.find(e => e.crop === row.crop);
-      return {
-        tradeUnitKey: key,
-        crop: row.crop,
-        plantingYear: this.selectedPlantingYear,
-        yieldEstimate: existing?.yieldEstimate ?? null,
-        marketSharePct: existing?.marketSharePct ?? null,
-        actualHarvestHandle: this.tempActualMap[row.crop] ?? null
-      };
-    });
-    this.estimatesSaving = true;
-    this.apiService.upsertDashboardPlantingEstimates(estimates)
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: () => {
-          this.actualHarvestEditMode = false;
-          this.estimatesSaving = false;
-          this.toastService.success('Actual harvest handle saved');
-          this.loadDashboardEstimates();
-        },
-        error: () => {
-          this.estimatesSaving = false;
-          this.toastService.error('Failed to save actual harvest handle');
-        }
-      });
-  }
-
-  cancelActualHarvestEdit(): void {
-    this.actualHarvestEditMode = false;
-    this.tempActualMap = {};
-  }
 
 }

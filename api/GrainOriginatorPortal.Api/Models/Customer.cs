@@ -26,6 +26,16 @@ public class Customer
     public string? ExtendedPrimaryPhone { get; set; } // Fallback phone number
     public string? SupplementalEmail { get; set; } // Fallback email
 
+    // Extended address fields — more accurate location data for geocoding
+    public string? ExtendedAddressLine1 { get; set; }
+    public string? ExtendedAddressLine2 { get; set; }
+    public string? ExtendedAddressLine3 { get; set; }
+    public string? ExtendedAddressLine4 { get; set; }
+    public string? ExtendedCity { get; set; }
+    public string? ExtendedPostalCode { get; set; }
+    public string? ExtendedStateProvince { get; set; }
+    public string? ExtendedCountry { get; set; }
+
     // Additional fields
     public int TotalAcres { get; set; }
     public List<string> FarmIds { get; set; } = new();

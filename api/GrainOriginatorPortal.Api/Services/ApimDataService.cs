@@ -141,6 +141,12 @@ public class ApimDataService : IDataService
         throw new NotImplementedException("TODO: Wire up APIM endpoint for GetContractsByFarm");
     }
 
+    public List<ContractPricingLine> GetPricingLines(string sourceContractId)
+    {
+        // TODO: Wire up APIM endpoint for GetPricingLines
+        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetPricingLines");
+    }
+
     // =========================================================================
     // Ticket Operations
     // =========================================================================
@@ -182,13 +188,13 @@ public class ApimDataService : IDataService
         throw new NotImplementedException("TODO: Wire up APIM endpoint for GetPlantingIntentionsByCustomer");
     }
 
-    public PlantingIntention AddPlantingIntention(int customerId, string customerName, string customerCode, string tradeUnit, string crop, string? description, int acres, int plantingYear)
+    public PlantingIntention AddPlantingIntention(int customerId, string customerName, string customerCode, string tradeUnit, string crop, string? type, string? description, int acres, int plantingYear)
     {
         // TODO: Replace with actual APIM endpoint path
         throw new NotImplementedException("TODO: Wire up APIM endpoint for AddPlantingIntention");
     }
 
-    public PlantingIntention? UpdatePlantingIntention(int intentionId, string crop, string? description, int acres, int plantingYear)
+    public PlantingIntention? UpdatePlantingIntention(int intentionId, string crop, string? type, string? description, int acres, int plantingYear)
     {
         // TODO: Replace with actual APIM endpoint path
         throw new NotImplementedException("TODO: Wire up APIM endpoint for UpdatePlantingIntention");
@@ -300,17 +306,15 @@ public class ApimDataService : IDataService
 
     public List<SavedList> GetSavedLists()
     {
-        // TODO: Replace with actual APIM endpoint path (if SavedLists are exposed via APIM)
         throw new NotImplementedException("TODO: Wire up APIM endpoint for GetSavedLists");
     }
 
-    public void SaveList(string name, string query, List<string> customerIds)
+    public SavedList SaveList(string name, string query, string? tradeUnits)
     {
-        // TODO: Replace with actual APIM endpoint path
         throw new NotImplementedException("TODO: Wire up APIM endpoint for SaveList");
     }
 
-    public void DeleteList(string listId)
+    public void DeleteList(int listId)
     {
         // TODO: Replace with actual APIM endpoint path
         throw new NotImplementedException("TODO: Wire up APIM endpoint for DeleteList");
@@ -322,4 +326,11 @@ public class ApimDataService : IDataService
 
     public void UpsertDashboardPlantingEstimates(List<UpsertDashboardEstimateRequest> estimates, string username)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for UpsertDashboardPlantingEstimates");
+
+    // Dashboard Market Share Operations
+    public List<DashboardMarketShare> GetDashboardMarketShares(string tradeUnitKey, int plantingYear)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetDashboardMarketShares");
+
+    public void UpsertDashboardMarketShares(List<UpsertDashboardMarketShareRequest> shares, string username)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for UpsertDashboardMarketShares");
 }

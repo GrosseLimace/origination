@@ -32,4 +32,13 @@ public class ContractsController : ControllerBase
     {
         return Ok(_dataService.GetContractsByFarm(farmId));
     }
+
+    [HttpGet("pricing-lines")]
+    public ActionResult<List<ContractPricingLine>> GetPricingLines([FromQuery] string sourceContractId)
+    {
+        if (string.IsNullOrWhiteSpace(sourceContractId))
+            return BadRequest("sourceContractId is required");
+
+        return Ok(_dataService.GetPricingLines(sourceContractId));
+    }
 }

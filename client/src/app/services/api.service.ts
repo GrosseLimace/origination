@@ -11,7 +11,9 @@ import {
   SavedList,
   Commodity,
   ProducerDetails,
-  DashboardPlantingEstimate
+  DashboardPlantingEstimate,
+  DashboardMarketShare,
+  ContractPricingLine
 } from '../models';
 
 /**
@@ -84,6 +86,13 @@ export class ApiService {
     return this.http.get<Contract[]>(`${this.baseUrl}/contracts/customer/${customerId}`);
   }
 
+  /** Fetches pricing lines for a specific contract by its sourceContractId */
+  getPricingLines(sourceContractId: string): Observable<ContractPricingLine[]> {
+    return this.http.get<ContractPricingLine[]>(
+      `${this.baseUrl}/contracts/pricing-lines?sourceContractId=${encodeURIComponent(sourceContractId)}`
+    );
+  }
+
   // ==========================================================================
   // Ticket Operations (Grain delivery tickets)
   // ==========================================================================
@@ -123,6 +132,7 @@ export class ApiService {
     customerCode: string;
     tradeUnit: string;
     crop: string;
+    type?: string;
     description?: string;
     acres: number;
     plantingYear: number;
@@ -133,6 +143,7 @@ export class ApiService {
   /** Updates an existing planting intention */
   updatePlantingIntention(id: number, data: {
     crop: string;
+    type?: string;
     description?: string;
     acres: number;
     plantingYear: number;
@@ -152,9 +163,21 @@ export class ApiService {
     );
   }
 
-  /** Upserts dashboard planting estimates for a trade unit key + year */
-  upsertDashboardPlantingEstimates(estimates: { tradeUnitKey: string; crop: string; plantingYear: number; yieldEstimate?: number | null; marketSharePct?: number | null; actualHarvestHandle?: number | null }[]): Observable<void> {
+  /** Upserts dashboard planting estimates (yield only) for a trade unit key + year */
+  upsertDashboardPlantingEstimates(estimates: { tradeUnitKey: string; crop: string; plantingYear: number; yieldEstimate?: number | null }[]): Observable<void> {
     return this.http.post<void>(`${this.baseUrl}/dashboardplantingestimates/upsert`, estimates);
+  }
+
+  /** Gets saved dashboard market shares for a trade unit key + year */
+  getDashboardMarketShares(tradeUnitKey: string, plantingYear: number): Observable<DashboardMarketShare[]> {
+    return this.http.get<DashboardMarketShare[]>(
+      `${this.baseUrl}/dashboardplantingestimates/marketshares?tradeUnitKey=${encodeURIComponent(tradeUnitKey)}&plantingYear=${plantingYear}`
+    );
+  }
+
+  /** Upserts dashboard market shares for a trade unit key + year */
+  upsertDashboardMarketShares(shares: { tradeUnitKey: string; cropCategory: string; plantingYear: number; marketSharePct?: number | null }[]): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/dashboardplantingestimates/marketshares/upsert`, shares);
   }
 
   // ==========================================================================
@@ -247,13 +270,13 @@ export class ApiService {
     return this.http.get<SavedList[]>(`${this.baseUrl}/savedlists`);
   }
 
-  /** Creates a new saved list from a natural language query */
-  createSavedList(data: { name: string; query: string; customerIds: number[] }): Observable<void> {
-    return this.http.post<void>(`${this.baseUrl}/savedlists`, data);
+  /** Creates a new saved list (stores only the query prompt, not customer IDs) */
+  createSavedList(data: { name: string; query: string; tradeUnits?: string }): Observable<SavedList> {
+    return this.http.post<SavedList>(`${this.baseUrl}/savedlists`, data);
   }
 
   /** Deletes a saved list by ID */
-  deleteSavedList(id: string): Observable<void> {
+  deleteSavedList(id: number): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/savedlists/${id}`);
   }
 }

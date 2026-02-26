@@ -6,6 +6,7 @@ import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 import { Customer, SavedList, Note, ProducerDetails } from '../../../models';
 import { ApiService } from '../../../services/api.service';
 import { AppStateService } from '../../../services/app-state.service';
+import { NlqFilterService, NlqFilterContext } from '../../../services/nlq-filter.service';
 import { CardComponent, CardContentComponent } from '../../ui/card/card.component';
 import { BadgeComponent } from '../../ui/badge/badge.component';
 
@@ -113,24 +114,27 @@ interface LastContactInfo {
         </div>
 
         <!-- Saved Lists Filter -->
-        @if (savedLists.length > 0) {
+        @if (getVisibleSavedLists().length > 0) {
           <div class="py-2 border-b border-gray-200 dark:border-gray-700 px-4">
             <select
               [(ngModel)]="selectedListId"
-              (ngModelChange)="applyFilters()"
-              class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+              (ngModelChange)="onSavedListChange()"
+              class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+              [class]="selectedListId ? 'text-gray-900 dark:text-white' : 'text-gray-400'"
             >
-              <option value="">All Customers</option>
-              @for (list of savedLists; track list.id) {
-                <option [value]="list.id">{{ list.name }} ({{ list.customerIds.length }})</option>
+              <option value="" disabled [selected]="!selectedListId" class="text-gray-400">Saved Lists</option>
+              <option value="all" class="text-gray-900 dark:text-white">All Customers</option>
+              @for (list of getVisibleSavedLists(); track list.id) {
+                <option [value]="list.id" class="text-gray-900 dark:text-white">{{ list.name }}{{ selectedListId === '' + list.id && (list.customerIds || []).length ? ' (' + (list.customerIds || []).length + ')' : '' }}</option>
               }
             </select>
           </div>
         }
 
         <!-- Customer List -->
-        <div #scrollContainer class="divide-y divide-gray-200 dark:divide-gray-700 max-h-[calc(100vh-12rem)] lg:max-h-[calc(100vh-16rem)] overflow-y-auto">
-          @if (loading) {
+        <div #scrollContainer class="divide-y divide-gray-200 dark:divide-gray-700 overflow-y-auto" [style.max-height]="getVisibleSavedLists().length > 0 ? 'calc(100vh - 21rem)' : 'calc(100vh - 16rem)'"
+        >
+          @if (loading && selectedTradeUnits.length > 0) {
             <div class="p-8 text-center">
               <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-300 dark:border-gray-600 border-t-green-600 dark:border-t-green-500 mb-4"></div>
               <p class="text-gray-500 dark:text-gray-400 font-medium">Loading customers...</p>
@@ -233,6 +237,7 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
   private cdr = inject(ChangeDetectorRef);
   private apiService = inject(ApiService);
   private appStateService = inject(AppStateService);
+  private nlqFilterService = inject(NlqFilterService);
   private destroy$ = new Subject<void>();
   private searchSubject$ = new Subject<string>();
 
@@ -424,16 +429,56 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
       });
     }
 
-    // Apply saved list filter
-    if (this.selectedListId) {
-      const savedList = this.savedLists.find(l => l.id === this.selectedListId);
-      if (savedList) {
-        result = result.filter(c => savedList.customerIds.includes(c.id));
+    // Apply saved list filter (skip for "all" which means show all customers)
+    if (this.selectedListId && this.selectedListId !== 'all') {
+      const savedList = this.savedLists.find(l => String(l.id) === this.selectedListId);
+      if (savedList && savedList.customerIds?.length) {
+        result = result.filter(c => savedList.customerIds!.includes(c.id));
       }
     }
 
     this.filteredCustomers = result;
     this.cdr.markForCheck();
+  }
+
+  /** Returns saved lists whose trade units overlap with the currently selected trade units. */
+  getVisibleSavedLists(): SavedList[] {
+    if (this.selectedTradeUnits.length === 0) return this.savedLists;
+    return this.savedLists.filter(list => {
+      if (!list.tradeUnits) return true; // Legacy lists without trade units show everywhere
+      const listUnits = list.tradeUnits.split(',').map(u => u.trim());
+      return listUnits.some(u => this.selectedTradeUnits.includes(u));
+    });
+  }
+
+  /** Called when the user selects a saved list from the dropdown. Runs the NLQ query dynamically. */
+  onSavedListChange(): void {
+    if (!this.selectedListId || this.selectedListId === 'all') {
+      this.applyFilters();
+      return;
+    }
+
+    const savedList = this.savedLists.find(l => String(l.id) === this.selectedListId);
+    if (!savedList) {
+      this.applyFilters();
+      return;
+    }
+
+    // Build NLQ context from AppStateService cache
+    const context: NlqFilterContext = {
+      customers: this.customers,
+      contracts: this.appStateService.contracts(),
+      tickets: this.appStateService.tickets(),
+      notes: this.appStateService.notes(),
+      plantingIntentions: this.appStateService.plantingIntentions(),
+      storedGrain: this.appStateService.storedGrain()
+    };
+
+    // Run the NLQ query and populate customerIds on the saved list
+    const result = this.nlqFilterService.parseAndFilter(savedList.query, context);
+    savedList.customerIds = result.customers.map(c => c.id);
+
+    this.applyFilters();
   }
 
   clearSearch(): void {
@@ -466,9 +511,9 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
 
         // Apply saved list filter to search results if needed
         if (this.selectedListId) {
-          const savedList = this.savedLists.find(l => l.id === this.selectedListId);
+          const savedList = this.savedLists.find(l => String(l.id) === this.selectedListId);
           if (savedList) {
-            result = result.filter(c => savedList.customerIds.includes(c.id));
+            result = result.filter(c => (savedList.customerIds || []).includes(c.id));
           }
         }
         this.filteredCustomers = result;

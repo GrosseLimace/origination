@@ -13,6 +13,16 @@ export interface Customer {
   email: string;
   extendedPrimaryPhone?: string; // Fallback phone number
   supplementalEmail?: string;    // Fallback email
+
+  // Extended address fields — more accurate location for geocoding
+  extendedAddressLine1?: string;
+  extendedAddressLine2?: string;
+  extendedAddressLine3?: string;
+  extendedAddressLine4?: string;
+  extendedCity?: string;
+  extendedPostalCode?: string;
+  extendedStateProvince?: string;
+  extendedCountry?: string;
   totalAcres: number;
   linkedProducerIds: string[];
   eSignEnabled: boolean;
