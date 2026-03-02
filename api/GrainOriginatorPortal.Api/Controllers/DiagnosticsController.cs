@@ -9,10 +9,12 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class DiagnosticsController : ControllerBase
 {
     private readonly OriginationDbContext _context;
+    private readonly ILogger<DiagnosticsController> _logger;
 
-    public DiagnosticsController(OriginationDbContext context)
+    public DiagnosticsController(OriginationDbContext context, ILogger<DiagnosticsController> logger)
     {
         _context = context;
+        _logger = logger;
     }
 
     [HttpGet("tables")]
@@ -33,14 +35,14 @@ public class DiagnosticsController : ControllerBase
 
             return Ok(new {
                 Database = dbName,
-                Server = "azrscosqld01.database.windows.net",
                 TableCount = tables.Count,
                 Tables = tables
             });
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { Error = ex.Message, StackTrace = ex.StackTrace });
+            _logger.LogError(ex, "Error retrieving table list");
+            return StatusCode(500, new { error = "An error occurred" });
         }
     }
 
@@ -60,7 +62,8 @@ public class DiagnosticsController : ControllerBase
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { Error = ex.Message, StackTrace = ex.StackTrace });
+            _logger.LogError(ex, "Error retrieving table schema for {TableName}", tableName);
+            return StatusCode(500, new { error = "An error occurred" });
         }
     }
 
@@ -90,7 +93,8 @@ public class DiagnosticsController : ControllerBase
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { Error = ex.Message, StackTrace = ex.StackTrace });
+            _logger.LogError(ex, "Error retrieving column schema for {TableName}", tableName);
+            return StatusCode(500, new { error = "An error occurred" });
         }
     }
 

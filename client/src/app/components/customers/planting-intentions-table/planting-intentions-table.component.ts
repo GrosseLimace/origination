@@ -263,7 +263,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
                 (ngModelChange)="onAddTypeChange()"
                 class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
               >
-                <option value="">Select type...</option>
+                <option value="" disabled>Select type...</option>
                 <option value="Irrigated">Irrigated</option>
                 <option value="Dryland">Dryland</option>
               </select>
@@ -288,12 +288,12 @@ type SortDirection = 'none' | 'asc' | 'desc';
 
             <div class="space-y-2">
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Acres</label>
-              <app-input type="number" [(ngModel)]="addForm.acres" placeholder="Enter acres"></app-input>
+              <app-input type="text" inputmode="numeric" [(ngModel)]="addForm.acres" placeholder="e.g., 1,200"></app-input>
             </div>
 
             <div class="space-y-2">
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Planting Year</label>
-              <app-input type="number" [(ngModel)]="addForm.plantingYear" placeholder="Enter year (e.g., 2025)" min="2020" max="2100"></app-input>
+              <app-input type="text" inputmode="numeric" [(ngModel)]="addForm.plantingYear" placeholder="e.g., 2025"></app-input>
             </div>
 
             @if (tradeUnits.length > 1) {
@@ -329,7 +329,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
                 (ngModelChange)="onEditTypeChange()"
                 class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
               >
-                <option value="">Select type...</option>
+                <option value="" disabled>Select type...</option>
                 <option value="Irrigated">Irrigated</option>
                 <option value="Dryland">Dryland</option>
               </select>
@@ -342,6 +342,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
                 (ngModelChange)="onEditCropChange($event)"
                 class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
               >
+                <option value="" disabled>Select a crop...</option>
                 @for (commodity of availableCrops; track commodity.id) {
                   <option [value]="commodity.code">{{ commodity.name }} ({{ commodity.code }})</option>
                 }
@@ -350,12 +351,12 @@ type SortDirection = 'none' | 'asc' | 'desc';
 
             <div class="space-y-2">
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Acres</label>
-              <app-input type="number" [(ngModel)]="editForm.acres"></app-input>
+              <app-input type="text" inputmode="numeric" [(ngModel)]="editForm.acres" placeholder="e.g., 1,200"></app-input>
             </div>
 
             <div class="space-y-2">
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Planting Year</label>
-              <app-input type="number" [(ngModel)]="editForm.plantingYear" min="2020" max="2100"></app-input>
+              <app-input type="text" inputmode="numeric" [(ngModel)]="editForm.plantingYear" placeholder="e.g., 2025"></app-input>
             </div>
           </div>
         </app-dialog-content>
@@ -643,12 +644,16 @@ export class PlantingIntentionsTableComponent implements OnInit, OnDestroy {
     document.body.style.overflow = '';
   }
 
+  private parseIntInput(value: string): number {
+    return parseInt(value.replace(/[^0-9]/g, ''), 10);
+  }
+
   isAddFormValid(): boolean {
     return this.addForm.crop !== ''
       && this.addForm.acres !== ''
-      && !isNaN(parseInt(this.addForm.acres))
+      && !isNaN(this.parseIntInput(this.addForm.acres))
       && this.addForm.plantingYear !== ''
-      && !isNaN(parseInt(this.addForm.plantingYear))
+      && !isNaN(this.parseIntInput(this.addForm.plantingYear))
       && this.addForm.tradeUnit !== '';
   }
 
@@ -658,8 +663,8 @@ export class PlantingIntentionsTableComponent implements OnInit, OnDestroy {
         crop: this.addForm.crop,
         type: this.addForm.type || undefined,
         description: this.addForm.description || undefined,
-        acres: parseInt(this.addForm.acres),
-        plantingYear: parseInt(this.addForm.plantingYear),
+        acres: this.parseIntInput(this.addForm.acres),
+        plantingYear: this.parseIntInput(this.addForm.plantingYear),
         tradeUnit: this.addForm.tradeUnit
       };
       this.add.emit(data);
@@ -700,9 +705,9 @@ export class PlantingIntentionsTableComponent implements OnInit, OnDestroy {
   isEditFormValid(): boolean {
     return this.editForm.crop !== ''
       && this.editForm.acres !== ''
-      && !isNaN(parseInt(this.editForm.acres))
+      && !isNaN(this.parseIntInput(this.editForm.acres))
       && this.editForm.plantingYear !== ''
-      && !isNaN(parseInt(this.editForm.plantingYear))
+      && !isNaN(this.parseIntInput(this.editForm.plantingYear))
       && this.hasEditFormChanged();
   }
 
@@ -713,8 +718,8 @@ export class PlantingIntentionsTableComponent implements OnInit, OnDestroy {
         crop: this.editForm.crop,
         type: this.editForm.type || undefined,
         description: this.editForm.description || undefined,
-        acres: parseInt(this.editForm.acres),
-        plantingYear: parseInt(this.editForm.plantingYear)
+        acres: this.parseIntInput(this.editForm.acres),
+        plantingYear: this.parseIntInput(this.editForm.plantingYear)
       });
       this.closeEditDialog();
     }

@@ -28,6 +28,7 @@ public interface IDataService
     List<Contract> GetContractsByCustomer(long customerId);
     List<Contract> GetContractsByFarm(string farmId);
     List<ContractPricingLine> GetPricingLines(string sourceContractId);
+    List<ContractPricingLine> GetPricingLinesByCustomer(string sourceCustomerId);
 
     // Ticket Operations
     List<Ticket> GetTickets(List<string>? tradeUnits = null);

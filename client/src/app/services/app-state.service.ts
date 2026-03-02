@@ -8,6 +8,7 @@ export interface BuildListState {
   showMap: boolean;
   detectedState: string | null;
   queryUnrecognized: boolean;
+  tradeUnits: string[];
 }
 
 @Injectable({
@@ -29,6 +30,9 @@ export class AppStateService {
 
   // Search state
   searchQuery = signal<string>('');
+
+  // Saved list selection state — persists across navigation
+  selectedSavedListId = signal<string>('');
 
   // Data cache - persists across navigation
   customers = signal<Customer[]>([]);
@@ -53,6 +57,10 @@ export class AppStateService {
 
   setSearchQuery(query: string): void {
     this.searchQuery.set(query);
+  }
+
+  setSelectedSavedListId(id: string): void {
+    this.selectedSavedListId.set(id);
   }
 
   // Update data cache
@@ -112,6 +120,7 @@ export class AppStateService {
     this.selectedCustomer.set(null);
     this.selectedTradeUnits.set([]);
     this.searchQuery.set('');
+    this.selectedSavedListId.set('');
     this.customers.set([]);
     this.contracts.set([]);
     this.tickets.set([]);

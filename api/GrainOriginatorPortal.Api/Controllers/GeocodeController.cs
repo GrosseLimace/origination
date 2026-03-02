@@ -15,6 +15,12 @@ public class GeocodeController : ControllerBase
     };
     private static readonly SemaphoreSlim _rateLimiter = new(1, 1);
     private static DateTime _lastNominatimCall = DateTime.MinValue;
+    private readonly ILogger<GeocodeController> _logger;
+
+    public GeocodeController(ILogger<GeocodeController> logger)
+    {
+        _logger = logger;
+    }
 
     /// <summary>
     /// Geocode a single address via Nominatim (server-side, no CORS issues).
@@ -66,7 +72,10 @@ public class GeocodeController : ControllerBase
                 }
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Geocode failed for address {CacheKey}", cacheKey);
+        }
         finally
         {
             _rateLimiter.Release();

@@ -3,7 +3,6 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '../../ui/table/table.component';
 import { Customer, Contract, Ticket, ContractPricingLine } from '../../../models';
-import { ApiService } from '../../../services/api.service';
 
 type SortColumn = 'contractNumber' | 'crop' | 'quantity' | 'price' | 'deliveryStart' | 'status';
 type SortDirection = 'none' | 'asc' | 'desc';
@@ -329,80 +328,6 @@ type SortDirection = 'none' | 'asc' | 'desc';
                         </div>
                       </div>
 
-                      <!-- Pricing Lines Section -->
-                      <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-                        <button
-                          class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors mb-4"
-                          (click)="togglePricingSection(contract.id)"
-                        >
-                          <span class="text-gray-400">
-                            @if (expandedPricingSections.has(contract.id)) {
-                              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                              </svg>
-                            } @else {
-                              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                              </svg>
-                            }
-                          </span>
-                          Pricing Lines
-                          @if (contract.sourceContractId && pricingLinesMap.has(contract.sourceContractId)) {
-                            ({{ pricingLinesMap.get(contract.sourceContractId)!.length }})
-                          }
-                          @if (contract.sourceContractId && loadingPricingLines.has(contract.sourceContractId)) {
-                            <span class="text-xs text-gray-400 font-normal">Loading...</span>
-                          }
-                        </button>
-
-                        @if (expandedPricingSections.has(contract.id)) {
-                          @if (contract.sourceContractId && pricingLinesMap.has(contract.sourceContractId)) {
-                            @if (pricingLinesMap.get(contract.sourceContractId)!.length === 0) {
-                              <p class="text-gray-500 dark:text-gray-400 text-sm">No pricing lines found.</p>
-                            } @else {
-                              @for (line of pricingLinesMap.get(contract.sourceContractId)!; track line.priceSequence) {
-                                <div class="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 mb-3">
-                                  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                                    <div class="text-center">
-                                      <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Price Type</p>
-                                      <p class="font-medium text-gray-900 dark:text-gray-100">{{ line.priceType }}</p>
-                                    </div>
-                                    <div class="text-center">
-                                      <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Cash Price</p>
-                                      <p class="font-medium text-gray-900 dark:text-gray-100">{{ line.cashPrice != null ? (line.cashPrice | currency:'USD':'symbol':'1.4-4') : 'N/A' }}</p>
-                                    </div>
-                                    <div class="text-center">
-                                      <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Basis</p>
-                                      <p class="font-medium text-gray-900 dark:text-gray-100">{{ line.basisPrice != null ? (line.basisPrice | currency:'USD':'symbol':'1.4-4') : 'N/A' }}</p>
-                                    </div>
-                                    <div class="text-center">
-                                      <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Futures Month</p>
-                                      <p class="font-medium text-gray-900 dark:text-gray-100">{{ line.futuresMonth || 'N/A' }}</p>
-                                    </div>
-                                    <div class="text-center">
-                                      <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Priced Qty</p>
-                                      <p class="font-medium text-gray-900 dark:text-gray-100">{{ line.pricedQty | number }} {{ contract.unit }}</p>
-                                    </div>
-                                    <div class="text-center">
-                                      <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Priced Date</p>
-                                      <p class="font-medium text-gray-900 dark:text-gray-100">{{ line.pricedAt | date:'M/d/yyyy' }}</p>
-                                    </div>
-                                    <div class="text-center">
-                                      <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Signature</p>
-                                      <p class="font-medium text-gray-900 dark:text-gray-100">{{ line.signatureStatus }}</p>
-                                    </div>
-                                    <div class="text-center">
-                                      <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Delivery Status</p>
-                                      <p class="font-medium text-gray-900 dark:text-gray-100">{{ line.deliveryStatus }}</p>
-                                    </div>
-                                  </div>
-                                </div>
-                              }
-                            }
-                          }
-                        }
-                      </div>
-
                       <!-- Applied Tickets Section -->
                       <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
                         <button
@@ -488,25 +413,38 @@ type SortDirection = 'none' | 'asc' | 'desc';
 export class ContractsTableComponent implements OnChanges {
   @Input() contracts: Contract[] = [];
   @Input() tickets: Ticket[] = [];
+  @Input() pricingLines: ContractPricingLine[] = [];
   @Input() customer!: Customer;
 
   expandedRows = new Set<number>();
   expandedTicketSections = new Set<number>();
-  expandedPricingSections = new Set<number>();
   pricingLinesMap = new Map<string, ContractPricingLine[]>();
-  loadingPricingLines = new Set<string>();
   currentSortColumn: SortColumn | null = null;
   currentSortDirection: SortDirection = 'none';
   showSearch = false;
   searchQuery = '';
 
-  constructor(private apiService: ApiService) {}
+  private deliveryStatsCache = new Map<number, { deliveredBushels: number; remainingBushels: number; progressPercent: number }>();
+  private statusCache = new Map<number, string>();
+
 
   ngOnChanges(changes: SimpleChanges): void {
+    if (changes['contracts'] || changes['tickets']) {
+      this.deliveryStatsCache.clear();
+      this.statusCache.clear();
+    }
     if (changes['contracts']) {
       this.expandedRows.clear();
       this.pricingLinesMap.clear();
-      this.loadingPricingLines.clear();
+    }
+    if (changes['pricingLines']) {
+      this.pricingLinesMap.clear();
+      for (const line of this.pricingLines) {
+        if (!line.contractId) continue;
+        const key = line.contractId;
+        if (!this.pricingLinesMap.has(key)) this.pricingLinesMap.set(key, []);
+        this.pricingLinesMap.get(key)!.push(line);
+      }
     }
   }
 
@@ -625,24 +563,8 @@ export class ContractsTableComponent implements OnChanges {
     if (this.expandedRows.has(contractId)) {
       this.expandedRows.delete(contractId);
       this.expandedTicketSections.delete(contractId);
-      this.expandedPricingSections.delete(contractId);
     } else {
       this.expandedRows.add(contractId);
-      const contract = this.contracts.find(c => c.id === contractId);
-      if (contract?.sourceContractId && !this.pricingLinesMap.has(contract.sourceContractId)) {
-        const key = contract.sourceContractId;
-        this.loadingPricingLines.add(key);
-        this.apiService.getPricingLines(key).subscribe({
-          next: (lines) => {
-            this.pricingLinesMap.set(key, lines);
-            this.loadingPricingLines.delete(key);
-          },
-          error: () => {
-            this.pricingLinesMap.set(key, []);
-            this.loadingPricingLines.delete(key);
-          }
-        });
-      }
     }
   }
 
@@ -654,25 +576,12 @@ export class ContractsTableComponent implements OnChanges {
     }
   }
 
-  togglePricingSection(contractId: number): void {
-    if (this.expandedPricingSections.has(contractId)) {
-      this.expandedPricingSections.delete(contractId);
-    } else {
-      this.expandedPricingSections.add(contractId);
-    }
-  }
-
   getSingularUnit(unit: string): string {
     return unit.endsWith('s') ? unit.slice(0, -1) : unit;
   }
 
   getPricingInfo(contract: Contract): { status: 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'CASH' | 'LOADING'; cashPrice?: number } {
     const key = contract.sourceContractId;
-
-    if (key && this.loadingPricingLines.has(key)) {
-      return { status: 'LOADING' };
-    }
-
     const lines = key ? this.pricingLinesMap.get(key) : undefined;
 
     if (lines !== undefined) {
@@ -712,6 +621,14 @@ export class ContractsTableComponent implements OnChanges {
   }
 
   getDeliveryStats(contract: Contract): { deliveredBushels: number; remainingBushels: number; progressPercent: number } {
+    const cached = this.deliveryStatsCache.get(contract.id);
+    if (cached) return cached;
+    const result = this.computeDeliveryStats(contract);
+    this.deliveryStatsCache.set(contract.id, result);
+    return result;
+  }
+
+  private computeDeliveryStats(contract: Contract): { deliveredBushels: number; remainingBushels: number; progressPercent: number } {
     const appliedTickets = this.getAppliedTickets(contract);
     const lbsPerBushel = this.getLbsPerBushel(contract.commodityDescription || contract.commodityCode || '');
 
@@ -839,6 +756,14 @@ export class ContractsTableComponent implements OnChanges {
   }
 
   getCalculatedStatus(contract: Contract): string {
+    const cached = this.statusCache.get(contract.id);
+    if (cached !== undefined) return cached;
+    const result = this.computeCalculatedStatus(contract);
+    this.statusCache.set(contract.id, result);
+    return result;
+  }
+
+  private computeCalculatedStatus(contract: Contract): string {
     // Calculate delivery progress to check if contract is fulfilled
     const stats = this.getDeliveryStats(contract);
     const now = new Date();

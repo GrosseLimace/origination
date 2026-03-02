@@ -55,21 +55,26 @@ import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain } from
             <div [style]="sublabelStyle">bushels contracted</div>
           </div>
 
-          <!-- Active Contracts -->
+          <!-- Contract Pacing -->
           <div class="rounded-xl p-4" [style]="cardStyle">
             <div class="flex items-center justify-between mb-3">
-              <span [style]="labelStyle">Active Contracts</span>
+              <span [style]="labelStyle">Contract Pacing</span>
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [style]="iconStyle">
-                <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
-                <polyline points="14 2 14 8 20 8"/>
-                <line x1="9" x2="15" y1="13" y2="13"/>
-                <line x1="9" x2="15" y1="17" y2="17"/>
+                <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
+                <polyline points="16 7 22 7 22 13"/>
               </svg>
             </div>
             <div class="text-2xl text-white mb-1">
-              {{ activeContractCount }}
+              {{ totalBushelsThisYear | number:'1.0-0' }}
             </div>
-            <div [style]="sublabelStyle">{{ signedContractCount }} signed</div>
+            <div class="flex items-center gap-1.5" [style]="sublabelStyle">
+              <span>{{ currentDeliveryYear }} delivery</span>
+              @if (pacingPercentChange !== null) {
+                <span [style]="getPacingChangeStyle(pacingPercentChange)">
+                  {{ pacingPercentChange >= 0 ? '↑' : '↓' }}{{ pacingPercentChange | number:'1.0-0' }}%
+                </span>
+              }
+            </div>
           </div>
 
           <!-- Average Contract Size -->
@@ -102,6 +107,72 @@ import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain } from
             <div [style]="sublabelStyle">total interactions</div>
           </div>
         </div>
+
+        <!-- Contract Pacing — Commodity × Delivery Window Breakdown -->
+        @if (pacingByCommodity.length > 0) {
+          <div class="mt-6">
+            <div class="mb-4" style="height: 1px; background: rgba(134, 239, 172, 0.15);"></div>
+
+            <!-- Column labels -->
+            <div class="flex items-center gap-4 mb-3">
+              <span class="flex-1" [style]="colHeaderStyle">Commodity</span>
+              <span class="w-28 text-right" [style]="colHeaderStyle">{{ currentDeliveryYear - 1 }} (bu)</span>
+              <span class="w-28 text-right" [style]="colHeaderStyle">{{ currentDeliveryYear }} (bu)</span>
+              <span class="w-20 text-right" [style]="colHeaderStyle">Change</span>
+            </div>
+
+            <!-- Commodity rows -->
+            <div class="space-y-2.5">
+              @for (row of pacingByCommodity; track row.commodity) {
+                <div class="flex items-center gap-4">
+                  <span class="flex-1 text-white text-sm font-medium">{{ row.commodity }}</span>
+
+                  <!-- Last year -->
+                  <span class="w-28 text-right text-sm tabular-nums font-medium" [style]="sublabelStyle">
+                    {{ row.lastYear > 0 ? (row.lastYear | number:'1.0-0') : '—' }}
+                  </span>
+
+                  <!-- This year -->
+                  <span class="w-28 text-right text-sm tabular-nums font-bold text-white">
+                    {{ row.thisYear | number:'1.0-0' }}
+                  </span>
+
+                  <!-- Change badge -->
+                  <div class="w-20 text-right">
+                    @if (row.pct !== null) {
+                      <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-bold"
+                        [style]="getPacingBadgeStyle(row.pct)">
+                        {{ row.pct >= 0 ? '▲' : '▼' }}&nbsp;{{ row.pct | number:'1.0-0' }}%
+                      </span>
+                    } @else {
+                      <span class="inline-flex px-2 py-0.5 rounded text-xs font-bold"
+                        style="background: rgba(134,239,172,0.1); color: #86efac;">new</span>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+
+            <!-- Total divider + row -->
+            <div class="mt-4 pt-3 flex items-center gap-4" style="border-top: 1px solid rgba(134,239,172,0.2);">
+              <span class="flex-1" [style]="colHeaderStyle">Total Bushels</span>
+              <span class="w-28 text-right text-sm tabular-nums font-semibold" [style]="sublabelStyle">
+                {{ totalBushelsLastYear > 0 ? (totalBushelsLastYear | number:'1.0-0') : '—' }}
+              </span>
+              <span class="w-28 text-right text-sm tabular-nums font-bold text-white">
+                {{ totalBushelsThisYear | number:'1.0-0' }}
+              </span>
+              <div class="w-20 text-right">
+                @if (pacingPercentChange !== null) {
+                  <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-bold"
+                    [style]="getPacingBadgeStyle(pacingPercentChange)">
+                    {{ pacingPercentChange >= 0 ? '▲' : '▼' }}&nbsp;{{ pacingPercentChange | number:'1.0-0' }}%
+                  </span>
+                }
+              </div>
+            </div>
+          </div>
+        }
       </div>
     </div>
   `
@@ -120,71 +191,70 @@ export class ProducerInsightsComponent {
     return this.themeService.isDarkMode();
   }
 
-  // Main gradient - darker in dark mode
   get gradientStyle(): string {
     return this.isDarkMode
       ? 'background: linear-gradient(145deg, #166534 0%, #15803d 20%, #14532d 50%, #052e16 100%);'
       : 'background: linear-gradient(145deg, #22c55e 0%, #16a34a 35%, #15803d 65%, #166534 100%);';
   }
 
-  // Subtitle color
   get subtitleStyle(): string {
     return this.isDarkMode
       ? 'color: #86efac; font-size: 0.875rem;'
       : 'color: #bbf7d0; font-size: 0.875rem;';
   }
 
-  // Card styling
   get cardStyle(): string {
     return this.isDarkMode
       ? 'background: rgba(21, 128, 61, 0.3); border: 1px solid rgba(34, 197, 94, 0.4);'
       : 'background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(134, 239, 172, 0.3);';
   }
 
-  // Labels inside cards
   get labelStyle(): string {
     return this.isDarkMode
       ? 'color: #86efac; font-size: 0.875rem;'
       : 'color: #bbf7d0; font-size: 0.875rem;';
   }
 
-  // Icons inside cards
   get iconStyle(): string {
     return this.isDarkMode
       ? 'color: #4ade80;'
       : 'color: #86efac;';
   }
 
-  // Sublabels (bushels contracted, etc.)
   get sublabelStyle(): string {
     return 'color: #86efac; font-size: 0.75rem;';
   }
 
-  // eSign Enabled badge
   get badgeStyle(): string {
     return this.isDarkMode
       ? 'background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4);'
       : 'background: rgba(255, 255, 255, 0.15); color: white; border: 1px solid rgba(255, 255, 255, 0.3);';
   }
 
-  // eSign Not Enrolled badge
-  get badgeNotEnrolledStyle(): string {
-    return this.isDarkMode
-      ? 'background: rgba(75, 85, 99, 0.5); color: #9ca3af; border: 1px solid rgba(107, 114, 128, 0.5);'
-      : 'background: rgba(255, 255, 255, 0.15); color: rgba(255, 255, 255, 0.7); border: 1px solid rgba(255, 255, 255, 0.2);';
+  getPacingChangeStyle(pct: number): string {
+    return pct >= 0 ? 'color: #4ade80;' : 'color: #f87171;';
   }
+
+  getPacingBadgeStyle(pct: number): string {
+    return pct >= 0
+      ? 'background: rgba(74, 222, 128, 0.15); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.3);'
+      : 'background: rgba(248, 113, 113, 0.15); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.3);';
+  }
+
+  get pacingRowStyle(): string {
+    return this.isDarkMode
+      ? 'background: rgba(15, 100, 45, 0.3);'
+      : 'background: rgba(255, 255, 255, 0.05);';
+  }
+
+  get colHeaderStyle(): string {
+    return 'color: #86efac; font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700;';
+  }
+
+  // ─── Stats ────────────────────────────────────────────────────────────────
 
   get totalContracted(): number {
-    // Sum of ALL contracts (not filtered by status)
     return this.contracts.reduce((sum, c) => sum + c.quantity, 0);
-  }
-
-  get activeContractCount(): number {
-    return this.contracts.filter(c => c.status === 'Active').length;
-  }
-
-  get signedContractCount(): number {
-    return this.contracts.filter(c => c.signed).length;
   }
 
   get averageContractSize(): number {
@@ -196,13 +266,110 @@ export class ProducerInsightsComponent {
     return this.notes.length + this.tickets.length;
   }
 
+  // ─── Contract Pacing ──────────────────────────────────────────────────────
+
+  /**
+   * Current delivery year = max year found in deliveryStart across all contracts.
+   * Using deliveryStart (not cropYear) correctly separates old crop bin bushels
+   * (delivering Jan–Mar 2026) from new crop forward sales (delivering Oct–Nov 2026).
+   */
+  get currentDeliveryYear(): number {
+    let max = 0;
+    for (const c of this.contracts) {
+      if (c.deliveryStart) {
+        const y = new Date(c.deliveryStart).getFullYear();
+        if (y > max) max = y;
+      }
+    }
+    return max > 0 ? max : new Date().getFullYear();
+  }
+
+  /**
+   * "Same calendar date last year" cutoff used to make a fair apples-to-apples
+   * comparison: only count prior-year contracts booked by this point last year.
+   */
+  private get samePointLastYear(): Date {
+    const today = new Date();
+    return new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
+  }
+
+  /** Contracts delivering in the current delivery year. */
+  private get contractsThisYear(): Contract[] {
+    const year = this.currentDeliveryYear;
+    return this.contracts.filter(c =>
+      c.deliveryStart && new Date(c.deliveryStart).getFullYear() === year
+    );
+  }
+
+  /**
+   * Contracts delivering in the prior delivery year that were booked on or before
+   * the same calendar date last year — true apples-to-apples pacing baseline.
+   */
+  private get contractsLastYear(): Contract[] {
+    const priorYear = this.currentDeliveryYear - 1;
+    const cutoff = this.samePointLastYear;
+    return this.contracts.filter(c => {
+      if (!c.deliveryStart || new Date(c.deliveryStart).getFullYear() !== priorYear) return false;
+      if (!c.contractDate) return true; // include if booking date unavailable
+      return new Date(c.contractDate) <= cutoff;
+    });
+  }
+
+  get totalBushelsThisYear(): number {
+    return this.contractsThisYear.reduce((sum, c) => sum + c.quantity, 0);
+  }
+
+  get totalBushelsLastYear(): number {
+    return this.contractsLastYear.reduce((sum, c) => sum + c.quantity, 0);
+  }
+
+  get pacingPercentChange(): number | null {
+    if (this.totalBushelsLastYear === 0) return null;
+    return ((this.totalBushelsThisYear - this.totalBushelsLastYear) / this.totalBushelsLastYear) * 100;
+  }
+
+  /**
+   * Per-commodity pacing rows comparing this delivery year vs last delivery year.
+   * The prior-year column only counts contracts booked by this date last year.
+   */
+  get pacingByCommodity(): { commodity: string; thisYear: number; lastYear: number; pct: number | null }[] {
+    const label = (c: Contract) => c.commodityDescription || c.commodityGroup || '';
+
+    const rowMap = new Map<string, { thisYear: number; lastYear: number }>();
+    const ensureRow = (commodity: string) => {
+      if (!rowMap.has(commodity)) rowMap.set(commodity, { thisYear: 0, lastYear: 0 });
+      return rowMap.get(commodity)!;
+    };
+
+    for (const c of this.contractsThisYear) {
+      const commodity = label(c);
+      if (commodity) ensureRow(commodity).thisYear += c.quantity;
+    }
+
+    for (const c of this.contractsLastYear) {
+      const commodity = label(c);
+      if (commodity) ensureRow(commodity).lastYear += c.quantity;
+    }
+
+    return Array.from(rowMap.entries())
+      .map(([commodity, row]) => ({
+        commodity,
+        thisYear: row.thisYear,
+        lastYear: row.lastYear,
+        pct: row.lastYear > 0 ? ((row.thisYear - row.lastYear) / row.lastYear) * 100 : null
+      }))
+      .sort((a, b) => b.thisYear - a.thisYear);
+  }
+
+  formatBu(bu: number): string {
+    if (bu >= 1_000_000) return `${(bu / 1_000_000).toFixed(1)}M`;
+    if (bu >= 1_000) return `${Math.round(bu / 1_000)}K`;
+    return bu.toLocaleString();
+  }
+
   formatRevenue(amount: number): string {
-    if (amount >= 1000000) {
-      return `${(amount / 1000000).toFixed(1)}M`;
-    }
-    if (amount >= 1000) {
-      return `${Math.floor(amount / 1000)}K`;
-    }
+    if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
+    if (amount >= 1000) return `${Math.floor(amount / 1000)}K`;
     return amount.toLocaleString();
   }
 }

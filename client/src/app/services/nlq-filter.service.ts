@@ -205,6 +205,9 @@ export class NlqFilterService {
     if (/contract\s*(?:value|worth)\s*(?:over|above|more than|exceeding)\s*\$?[\d,]+/i.test(lowerQuery)) matched.push('contract_value');
     if (/(?:contract\s*)?price\s*(?:over|above|more than|below|under)\s*\$?[\d.]+/i.test(lowerQuery)) matched.push('contract_price');
     if (/contract\s*(?:delivering|delivery|expir|ending)\s*(?:in|before|after|by|this|next|soon)/i.test(lowerQuery)) matched.push('contract_delivery_date');
+    if (/crop\s*year\s*\d{4}|cy\s*\d{4}|\d{4}\s*crop\s*year/i.test(lowerQuery)) matched.push('contract_crop_year');
+    if (/open\s*balance|unshipped\s*bushels?|remaining\s*bushels?/i.test(lowerQuery)) matched.push('contract_open_balance');
+    if (/booked\s*(?:in|since|after|before|this|last)|contracted\s*(?:in|since|after|before|this|last)/i.test(lowerQuery)) matched.push('contract_booked_date');
 
     // Commodity contracts (contract/sell/sold/market language)
     for (const commodity of this.grainCrops) {
@@ -789,7 +792,7 @@ export class NlqFilterService {
     }
 
     const getCustomerContracts = (c: Customer): Contract[] =>
-      contractsByCustomer.get(c.sourceCustomerId ?? '') || [];
+      c.sourceCustomerId ? contractsByCustomer.get(c.sourceCustomerId) ?? [] : [];
 
     // --- No active contracts ---
     if (lowerQuery.includes('no active contract') || lowerQuery.includes('no contract') ||
@@ -924,6 +927,74 @@ export class NlqFilterService {
       }
     }
 
+    // --- Crop year filter: "crop year 2026", "CY2025", "2026 crop year" ---
+    const cropYearMatch = lowerQuery.match(/(?:crop\s*year\s*|cy\s*)(\d{4})|(\d{4})\s*crop\s*year/i);
+    if (cropYearMatch) {
+      const year = parseInt(cropYearMatch[1] || cropYearMatch[2]);
+      if (!isNaN(year)) {
+        result = result.filter(c =>
+          getCustomerContracts(c).some(ct => ct.cropYear === year)
+        );
+      }
+    }
+
+    // --- Open balance / unshipped bushels threshold ---
+    // "open balance over 5000 bushels", "more than 10,000 unshipped bushels", "remaining bushels over 2000"
+    const openBalOverMatch = lowerQuery.match(/(?:open\s*balance|unshipped\s*bushels?|remaining\s*bushels?)\s*(?:over|above|more than|greater than|exceeding|at least)\s*([\d,]+)/i);
+    const openBalOverMatch2 = lowerQuery.match(/(?:more than|over|above)\s*([\d,]+)\s*(?:bushels?|bu)\s*(?:open|unshipped|remaining)/i);
+    const openBalThreshold = openBalOverMatch?.[1] || openBalOverMatch2?.[1];
+    if (openBalThreshold) {
+      const minBal = this.parseQuantity(openBalThreshold);
+      result = result.filter(c => {
+        const total = getCustomerContracts(c).reduce((sum, ct) => sum + (ct.openBalanceQuantity || 0), 0);
+        return total >= minBal;
+      });
+    }
+
+    // "has open balance", "with unshipped bushels" (boolean — any open balance > 0)
+    const hasOpenBal = /(?:has|have|with)\s+(?:an?\s+)?(?:open\s*balance|unshipped\s*bushels?|remaining\s*bushels?)/i.test(lowerQuery);
+    const noOpenBal = /(?:no|without|zero)\s+(?:open\s*balance|unshipped\s*bushels?|remaining\s*bushels?)/i.test(lowerQuery);
+    if (hasOpenBal && !noOpenBal && !openBalThreshold) {
+      result = result.filter(c =>
+        getCustomerContracts(c).some(ct => (ct.openBalanceQuantity || 0) > 0)
+      );
+    }
+    if (noOpenBal) {
+      result = result.filter(c =>
+        !getCustomerContracts(c).some(ct => (ct.openBalanceQuantity || 0) > 0)
+      );
+    }
+
+    // --- Contract booked date: "booked this year", "contracted since January", "booked in 2025" ---
+    const bookedThisYearMatch = /(?:booked|contracted)\s*(?:this\s+year|in\s+\d{4})/i.test(lowerQuery);
+    if (bookedThisYearMatch) {
+      const yearMatch = lowerQuery.match(/(?:booked|contracted)\s*in\s*(\d{4})/i);
+      const year = yearMatch ? parseInt(yearMatch[1]) : new Date().getFullYear();
+      result = result.filter(c =>
+        getCustomerContracts(c).some(ct => {
+          if (!ct.contractDate) return false;
+          const d = this.parseDate(ct.contractDate);
+          return d && d.getFullYear() === year;
+        })
+      );
+    }
+
+    // "booked since [date]", "contracted after [month]"
+    const bookedSinceMatch = lowerQuery.match(/(?:booked|contracted)\s*since\s+(january|february|march|april|may|june|july|august|september|october|november|december)/i);
+    if (bookedSinceMatch) {
+      const monthNames = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+      const monthIdx = monthNames.indexOf(bookedSinceMatch[1].toLowerCase());
+      if (monthIdx >= 0) {
+        const cutoff = new Date(new Date().getFullYear(), monthIdx, 1);
+        result = result.filter(c =>
+          getCustomerContracts(c).some(ct => {
+            const d = this.parseDate(ct.contractDate);
+            return d && d >= cutoff;
+          })
+        );
+      }
+    }
+
     return result;
   }
 
@@ -942,7 +1013,7 @@ export class NlqFilterService {
     }
 
     const getCustomerTickets = (c: Customer): Ticket[] =>
-      ticketsByCustomer.get(c.sourceCustomerId ?? '') || [];
+      c.sourceCustomerId ? ticketsByCustomer.get(c.sourceCustomerId) ?? [] : [];
 
     // --- Has deliveries ---
     if (/(?:has|have|with)\s+(?:deliveries|tickets|delivery)/.test(lowerQuery) ||

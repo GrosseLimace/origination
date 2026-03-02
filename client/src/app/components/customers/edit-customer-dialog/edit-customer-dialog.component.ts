@@ -47,15 +47,16 @@ import { ApiService } from '../../../services/api.service';
                   </label>
                   <div class="relative">
                     <input
-                      type="number"
+                      type="text"
+                      inputmode="numeric"
                       [(ngModel)]="editAcres"
-                      placeholder="e.g., 1200"
+                      placeholder="e.g., 1,200"
                       (focus)="clearZeroOnFocus('editAcres')"
-                      (blur)="restoreZeroOnBlur('editAcres')"
+                      (blur)="normalizeNumericOnBlur('editAcres')"
                       class="w-full h-10 px-3 pr-8 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
-                    @if (editAcres) {
-                      <button type="button" (click)="editAcres = null" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
+                    @if (editAcres && editAcres !== '0') {
+                      <button type="button" (click)="editAcres = ''" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
                       </button>
                     }
@@ -71,15 +72,16 @@ import { ApiService } from '../../../services/api.service';
                   </label>
                   <div class="relative">
                     <input
-                      type="number"
+                      type="text"
+                      inputmode="numeric"
                       [(ngModel)]="editBinCapacity"
-                      placeholder="e.g., 45000"
+                      placeholder="e.g., 45,000"
                       (focus)="clearZeroOnFocus('editBinCapacity')"
-                      (blur)="restoreZeroOnBlur('editBinCapacity')"
+                      (blur)="normalizeNumericOnBlur('editBinCapacity')"
                       class="w-full h-10 px-3 pr-8 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
-                    @if (editBinCapacity) {
-                      <button type="button" (click)="editBinCapacity = null" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
+                    @if (editBinCapacity && editBinCapacity !== '0') {
+                      <button type="button" (click)="editBinCapacity = ''" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
                       </button>
                     }
@@ -343,8 +345,8 @@ export class EditCustomerDialogComponent implements OnChanges {
     eSignEnabled: boolean;
   }>();
 
-  editAcres: number | null = null;
-  editBinCapacity: number | null = null;
+  editAcres: string = '';
+  editBinCapacity: string = '';
   editCommodities: string[] = [];
   private ticketCommoditySet = new Set<string>();
   editLinkedProducerIds: string[] = [];
@@ -386,8 +388,8 @@ export class EditCustomerDialogComponent implements OnChanges {
 
     // When isOpen becomes true, initialize the form from the customer
     if (this.isOpen && this.customer && !this.initialized) {
-      this.editAcres = this.customer.totalAcres || 0;
-      this.editBinCapacity = this.customer.binCapacity || 0;
+      this.editAcres = String(this.customer.totalAcres || 0);
+      this.editBinCapacity = String(this.customer.binCapacity || 0);
       const ticketCommodities = [...new Set(
         this.tickets.map(t => t.productCode || '').filter(Boolean)
       )];
@@ -454,8 +456,8 @@ export class EditCustomerDialogComponent implements OnChanges {
     const commoditiesChanged = this.editCommodities.length !== this.originalCommodities.length
       || this.editCommodities.some(c => !this.originalCommodities.includes(c));
 
-    return (this.editAcres || 0) !== this.originalAcres
-      || (this.editBinCapacity || 0) !== this.originalBinCapacity
+    return this.parseNumericInput(this.editAcres) !== this.originalAcres
+      || this.parseNumericInput(this.editBinCapacity) !== this.originalBinCapacity
       || commoditiesChanged
       || this.editESignEnabled !== this.originalESignEnabled
       || this.editPrimaryContact !== this.originalPrimaryContact
@@ -509,15 +511,20 @@ export class EditCustomerDialogComponent implements OnChanges {
   }
 
   clearZeroOnFocus(field: 'editAcres' | 'editBinCapacity'): void {
-    if (this[field] === 0) {
-      this[field] = null;
+    if (this[field] === '0') {
+      this[field] = '';
     }
   }
 
-  restoreZeroOnBlur(field: 'editAcres' | 'editBinCapacity'): void {
-    if (this[field] === null || this[field] === undefined) {
-      this[field] = 0;
-    }
+  normalizeNumericOnBlur(field: 'editAcres' | 'editBinCapacity'): void {
+    const num = this.parseNumericInput(this[field]);
+    this[field] = String(num);
+  }
+
+  private parseNumericInput(value: string): number {
+    const digits = value.replace(/[^0-9]/g, '');
+    const num = parseInt(digits, 10);
+    return isNaN(num) ? 0 : num;
   }
 
   clearCommoditySearch(): void {
@@ -619,8 +626,8 @@ export class EditCustomerDialogComponent implements OnChanges {
 
   onCancel(): void {
     // Reset all fields back to original values
-    this.editAcres = this.originalAcres || null;
-    this.editBinCapacity = this.originalBinCapacity || null;
+    this.editAcres = String(this.originalAcres || 0);
+    this.editBinCapacity = String(this.originalBinCapacity || 0);
     this.editCommodities = [...this.originalCommodities];
     this.editLinkedProducerIds = [...this.originalLinkedProducerIds];
     this.removedIncomingIds = [];
@@ -642,8 +649,8 @@ export class EditCustomerDialogComponent implements OnChanges {
       // always re-derived fresh from current tickets, so they should never be persisted.
       this.save.emit({
         customerId: this.customer.id,
-        acres: this.editAcres || 0,
-        binCapacity: this.editBinCapacity || 0,
+        acres: this.parseNumericInput(this.editAcres),
+        binCapacity: this.parseNumericInput(this.editBinCapacity),
         commodities: this.editCommodities.filter(c => !this.isTicketCommodity(c)),
         primaryContact: this.editPrimaryContact,
         linkedProducerIds: this.editLinkedProducerIds,

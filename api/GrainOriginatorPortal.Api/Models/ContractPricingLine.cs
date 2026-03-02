@@ -8,7 +8,7 @@ namespace GrainOriginatorPortal.Api.Models;
 public class ContractPricingLine
 {
     // Identifiers
-    public int PriceSequence { get; set; }
+    public decimal? PriceSequence { get; set; }
     public string ContractId { get; set; } = string.Empty;   // PrefixType+PrefixCode+ContractNo+Suffix (links to Contract.SourceContractId)
     public string DisplayId { get; set; } = string.Empty;
 
@@ -48,7 +48,7 @@ public class ContractPricingLine
     public string? LocationCode { get; set; }
 
     // Key fields
-    public int SequenceNumber { get; set; }
+    public decimal? SequenceNumber { get; set; }
     public string? CustomerId { get; set; }
     public string? PrefixType { get; set; }
     public string? PrefixCode { get; set; }

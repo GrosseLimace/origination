@@ -385,21 +385,6 @@ export class TicketsTableComponent implements OnChanges {
     return this.currentSortDirection === 'desc' ? sorted.reverse() : sorted;
   }
 
-  get displayedTickets(): Ticket[] {
-    const q = this.searchQuery.trim().toLowerCase();
-    if (!q) return this.sortedTickets;
-    const terms = this.expandWithAliases(q);
-    return this.sortedTickets.filter(t =>
-      terms.some(term =>
-        t.ticketNumber.toLowerCase().includes(term) ||
-        (t.date || '').toLowerCase().includes(term) ||
-        (t.productCode || '').toLowerCase().includes(term) ||
-        (t.ctrmContractNumber || '').toLowerCase().includes(term) ||
-        (t.organizationCode || '').toLowerCase().includes(term)
-      )
-    );
-  }
-
   private expandWithAliases(q: string): string[] {
     const aliases: { [key: string]: string[] } = {
       'avg':       ['avg', 'average'],

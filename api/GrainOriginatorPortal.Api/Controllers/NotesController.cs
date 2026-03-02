@@ -37,7 +37,7 @@ public class NotesController : ControllerBase
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("database permissions"))
         {
-            return StatusCode(503, new { error = ex.Message });
+            return StatusCode(503, new { error = "Service temporarily unavailable" });
         }
     }
 

@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef, effect, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -164,28 +164,15 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
         </app-card-content>
       </app-card>
 
-      <!-- Unrecognized Query Message -->
-      @if (queryUnrecognized && queryText.trim()) {
-        <app-card>
-          <app-card-content class="!p-6">
-            <div class="flex items-start gap-3">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-yellow-500 flex-shrink-0 mt-0.5">
-                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
-                <path d="M12 9v4"/><path d="M12 17h.01"/>
-              </svg>
-              <div>
-                <p class="font-medium text-gray-900 dark:text-white">Couldn't understand that query</p>
-                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Try rephrasing using keywords like acres, contacted, contracts, deliveries, planting, storage, email, phone, or moisture. For example:</p>
-                <ul class="mt-2 space-y-1">
-                  <li class="text-sm text-gray-500 dark:text-gray-400">• "Customers with more than 500 acres"</li>
-                  <li class="text-sm text-gray-500 dark:text-gray-400">• "Growers who delivered corn this year"</li>
-                  <li class="text-sm text-gray-500 dark:text-gray-400">• "Producers with overdue contracts"</li>
-                  <li class="text-sm text-gray-500 dark:text-gray-400">• "Farmers planting soybeans in 2026"</li>
-                </ul>
-              </div>
-            </div>
-          </app-card-content>
-        </app-card>
+      <!-- Unrecognized Query Warning (non-blocking — results still shown below) -->
+      @if (queryUnrecognized && hasGenerated && queryText.trim()) {
+        <div class="flex items-start gap-3 px-4 py-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5">
+            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+            <path d="M12 9v4"/><path d="M12 17h.01"/>
+          </svg>
+          <p class="text-sm text-yellow-800 dark:text-yellow-300">Query not recognized — no customers matched. Try using keywords like <strong>acres</strong>, <strong>contracted</strong>, <strong>delivered</strong>, <strong>planting</strong>, <strong>storage</strong>, or <strong>contacted</strong>.</p>
+        </div>
       }
 
       <!-- Results Section (only shown after generating and when query has text) -->
@@ -233,8 +220,13 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
                   <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
                   <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
                 </svg>
-                <h3 class="text-gray-500 dark:text-gray-400 mb-2">No Customers Found</h3>
-                <p class="text-sm text-gray-400 dark:text-gray-500 mt-1">No customers matched your criteria. Try broadening your query or adjusting the filters.</p>
+                @if (queryUnrecognized) {
+                  <h3 class="text-gray-500 dark:text-gray-400 mb-2">Query Not Recognized</h3>
+                  <p class="text-sm text-gray-400 dark:text-gray-500 mt-1">Rephrase using keywords like <strong>acres</strong>, <strong>contracted</strong>, <strong>delivered</strong>, <strong>planting</strong>, <strong>storage</strong>, or <strong>contacted</strong>.</p>
+                } @else {
+                  <h3 class="text-gray-500 dark:text-gray-400 mb-2">No Customers Found</h3>
+                  <p class="text-sm text-gray-400 dark:text-gray-500 mt-1">No customers matched your criteria. Try broadening your query or adjusting the filters.</p>
+                }
                 <button
                   type="button"
                   (click)="queryText = ''; hasGenerated = false; filteredCustomers = []"
@@ -380,6 +372,20 @@ export class BuildListComponent implements OnInit, OnDestroy {
   private cdr = inject(ChangeDetectorRef);
   private destroy$ = new Subject<void>();
 
+  // Trade units captured at init — used to detect changes in ngOnDestroy
+  private initTradeUnits: string[] = [];
+  private initialized = false;
+
+  // effect() runs in the injection context (class field initializer).
+  // The initial run fires during construction (initialized = false → skipped).
+  // Every subsequent run means TUs changed while the component is alive.
+  private _tuEffect = effect(() => {
+    this.appState.selectedTradeUnits(); // establish reactive dependency
+    if (this.initialized) {
+      untracked(() => this.clearQuery());
+    }
+  }, { allowSignalWrites: true });
+
   customers: Customer[] = [];
   contracts: Contract[] = [];
   tickets: Ticket[] = [];
@@ -421,19 +427,31 @@ export class BuildListComponent implements OnInit, OnDestroy {
 
 
   ngOnInit(): void {
+    this.initTradeUnits = this.appState.selectedTradeUnits().slice();
+    this.initialized = true;
     this.loadData();
   }
 
   ngOnDestroy(): void {
-    // Persist UI state so it survives navigation back to this page
-    this.appState.setBuildListState({
-      queryText: this.queryText,
-      filteredCustomerIds: this.filteredCustomers.map(c => c.id),
-      hasGenerated: this.hasGenerated,
-      showMap: this.showMap,
-      detectedState: this.detectedState,
-      queryUnrecognized: this.queryUnrecognized
-    });
+    // If trade units changed while this component was alive, discard state entirely
+    // so re-mounting shows a blank query for the new selection.
+    const currentTus = this.appState.selectedTradeUnits();
+    const tradeUnitsChanged = currentTus.length !== this.initTradeUnits.length ||
+      currentTus.some(tu => !this.initTradeUnits.includes(tu));
+
+    if (tradeUnitsChanged) {
+      this.appState.clearBuildListState();
+    } else {
+      this.appState.setBuildListState({
+        queryText: this.queryText,
+        filteredCustomerIds: this.filteredCustomers.map(c => c.id),
+        hasGenerated: this.hasGenerated,
+        showMap: this.showMap,
+        detectedState: this.detectedState,
+        queryUnrecognized: this.queryUnrecognized,
+        tradeUnits: this.initTradeUnits
+      });
+    }
     this.destroy$.next();
     this.destroy$.complete();
   }
@@ -526,8 +544,12 @@ export class BuildListComponent implements OnInit, OnDestroy {
         if (changed) {
           this.customers = [...this.customers];
           this.appState.setCustomers(this.customers);
-          // Clear crops cache so it picks up farmer detail commodities
           this.customerCropsCache.clear();
+        }
+        // Re-apply the current query with the newly merged customer data
+        // (uses cached contracts/tickets/notes — no extra API calls needed here)
+        if (this.hasGenerated && this.queryText.trim()) {
+          this.applyNlqFilter();
         }
         this.loading = false;
         this.cdr.detectChanges();
@@ -542,6 +564,19 @@ export class BuildListComponent implements OnInit, OnDestroy {
   private restoreUIState(): void {
     const saved = this.appState.buildListState();
     if (!saved) return;
+
+    // If trade units changed since state was saved, clear everything —
+    // the user must re-enter and regenerate for the new selection.
+    const currentTus = this.appState.selectedTradeUnits();
+    const savedTus = saved.tradeUnits ?? [];
+    const tradeUnitsMatch = currentTus.length === savedTus.length &&
+      currentTus.every(tu => savedTus.includes(tu));
+
+    if (!tradeUnitsMatch) {
+      this.appState.clearBuildListState();
+      return;
+    }
+
     this.queryText = saved.queryText;
     this.hasGenerated = saved.hasGenerated;
     this.showMap = saved.showMap;
@@ -581,6 +616,7 @@ export class BuildListComponent implements OnInit, OnDestroy {
   }
 
   useExampleQuery(example: string): void {
+    if (this.loading) return;
     this.detectedState = null;
     this.hasGenerated = false;
     this.filteredCustomers = [];
@@ -593,6 +629,62 @@ export class BuildListComponent implements OnInit, OnDestroy {
     if (!this.queryText.trim()) return;
 
     this.isProcessing = true;
+    const tradeUnits = this.appState.selectedTradeUnits();
+    const tuParam = tradeUnits.length > 0 ? tradeUnits : undefined;
+
+    // Always fetch fresh data before filtering so the query sees the latest
+    // notes, contracts, tickets, ProducerDetails, and planting intentions.
+    forkJoin({
+      customers: this.apiService.getCustomers(tuParam),
+      contracts: this.apiService.getContracts(tuParam),
+      tickets: this.apiService.getTickets(tuParam),
+      plantingIntentions: this.apiService.getPlantingIntentions(),
+      notes: this.apiService.getNotes(),
+      storedGrain: this.apiService.getStoredGrain(),
+      producerDetails: this.apiService.getAllProducerDetails()
+    }).pipe(takeUntil(this.destroy$)).subscribe({
+      next: (data) => {
+        // Merge ProducerDetails into customer objects
+        const detailsMap = new Map(data.producerDetails.map(d => [d.customerId, d]));
+        this.customers = data.customers.map(customer => {
+          const pd = detailsMap.get(customer.id);
+          if (!pd) return customer;
+          return {
+            ...customer,
+            totalAcres: pd.totalAcres ?? customer.totalAcres,
+            binCapacity: pd.binCapacity ?? customer.binCapacity,
+            primaryContact: pd.primaryContact ?? customer.primaryContact,
+            commodities: pd.commodities ? pd.commodities.split(',').map((c: string) => c.trim()) : customer.commodities,
+            linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
+          };
+        });
+        this.contracts = data.contracts;
+        this.tickets = data.tickets;
+        this.notes = data.notes;
+        this.plantingIntentions = data.plantingIntentions;
+        this.storedGrain = data.storedGrain;
+
+        // Update appState cache so other pages see the fresh data too
+        this.appState.setCustomers(this.customers);
+        this.appState.setContracts(this.contracts);
+        this.appState.setTickets(this.tickets);
+        this.appState.setNotes(this.notes);
+        this.appState.setPlantingIntentions(this.plantingIntentions);
+        this.appState.setStoredGrain(this.storedGrain);
+
+        this.rebuildCaches();
+        this.applyNlqFilter();
+        this.isProcessing = false;
+      },
+      error: () => {
+        this.toastService.error('Failed to load data for query');
+        this.isProcessing = false;
+      }
+    });
+  }
+
+  /** Runs the NLQ filter against the current in-memory data and updates filteredCustomers. */
+  private applyNlqFilter(): void {
     const context: NlqFilterContext = {
       customers: this.customers,
       contracts: this.contracts,
@@ -602,19 +694,12 @@ export class BuildListComponent implements OnInit, OnDestroy {
       storedGrain: this.storedGrain
     };
     const result = this.nlqFilterService.parseAndFilter(this.queryText, context);
-    this.filteredCustomers = result.customers;
     this.detectedState = result.detectedState;
-
-    if (result.matchedPatterns.length === 0) {
-      this.queryUnrecognized = true;
-      this.hasGenerated = false;
-    } else {
-      this.queryUnrecognized = false;
-      this.hasGenerated = true;
-    }
-
+    this.hasGenerated = true;
+    this.queryUnrecognized = result.matchedPatterns.length === 0;
+    // When unrecognized, show 0 results rather than the confusing "all customers" default
+    this.filteredCustomers = this.queryUnrecognized ? [] : result.customers;
     this.rebuildCaches();
-    this.isProcessing = false;
   }
 
 
@@ -628,6 +713,7 @@ export class BuildListComponent implements OnInit, OnDestroy {
   }
 
   loadSavedList(list: SavedList): void {
+    if (this.loading) return;
     this.queryText = list.query;
     this.processQuery();
   }

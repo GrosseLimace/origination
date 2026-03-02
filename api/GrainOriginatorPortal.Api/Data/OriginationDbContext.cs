@@ -133,6 +133,10 @@ public class OriginationDbContext : DbContext
             entity.Property(e => e.DeliveryEnd).HasColumnName("FinalShipDate").HasColumnType("date").IsRequired(false);
             entity.Property(e => e.ClosedDate).HasColumnName("ClosedDate").HasColumnType("date").IsRequired(false);
 
+            // Crop year and open balance
+            entity.Property(e => e.CropYear).HasColumnName("CropYear").IsRequired(false);
+            entity.Property(e => e.OpenBalanceQuantity).HasColumnName("OpenBalanceQuantity").HasColumnType("decimal(18,6)").IsRequired(false);
+
             // Metadata
             entity.Property(e => e.IsActive).HasColumnName("IsActive").IsRequired();
             entity.Property(e => e.EffectiveStartDate).HasColumnName("EffectiveStartDate").IsRequired(false);

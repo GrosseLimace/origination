@@ -18,7 +18,7 @@ public class DashboardPlantingEstimatesController : ControllerBase
     [HttpGet]
     public ActionResult<List<DashboardPlantingEstimate>> Get([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear)
     {
-        if (string.IsNullOrWhiteSpace(tradeUnitKey) || plantingYear <= 0)
+        if (string.IsNullOrWhiteSpace(tradeUnitKey) || plantingYear < 2020 || plantingYear > DateTime.Now.Year + 5)
             return BadRequest("tradeUnitKey and plantingYear are required.");
         return Ok(_dataService.GetDashboardPlantingEstimates(tradeUnitKey, plantingYear));
     }
@@ -34,7 +34,7 @@ public class DashboardPlantingEstimatesController : ControllerBase
     [HttpGet("marketshares")]
     public ActionResult<List<DashboardMarketShare>> GetMarketShares([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear)
     {
-        if (string.IsNullOrWhiteSpace(tradeUnitKey) || plantingYear <= 0)
+        if (string.IsNullOrWhiteSpace(tradeUnitKey) || plantingYear < 2020 || plantingYear > DateTime.Now.Year + 5)
             return BadRequest("tradeUnitKey and plantingYear are required.");
         return Ok(_dataService.GetDashboardMarketShares(tradeUnitKey, plantingYear));
     }

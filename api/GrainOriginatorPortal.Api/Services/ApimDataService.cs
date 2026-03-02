@@ -147,6 +147,12 @@ public class ApimDataService : IDataService
         throw new NotImplementedException("TODO: Wire up APIM endpoint for GetPricingLines");
     }
 
+    public List<ContractPricingLine> GetPricingLinesByCustomer(string sourceCustomerId)
+    {
+        // TODO: Wire up APIM endpoint for GetPricingLinesByCustomer
+        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetPricingLinesByCustomer");
+    }
+
     // =========================================================================
     // Ticket Operations
     // =========================================================================

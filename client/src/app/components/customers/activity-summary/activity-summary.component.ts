@@ -149,8 +149,28 @@ export class ActivitySummaryComponent implements OnChanges {
     const activeVolume = activeContracts.reduce((sum, c) => sum + (c.quantity || 0), 0);
     const activeValue = activeContracts.reduce((sum, c) => sum + (c.totalValue || 0), 0);
 
+    // Determine current crop year from contracts (max = newest/upcoming crop year).
+    // CropYear is when the grain was grown, not when the contract was signed.
+    // Using max ensures we reference the newest crop, not old crop which may dominate by volume.
+    let currentCropYear: number | null = null;
+    for (const c of this.contracts) {
+      if (c.cropYear && (currentCropYear === null || c.cropYear > currentCropYear)) {
+        currentCropYear = c.cropYear;
+      }
+    }
+
+    // Open balance: sum openBalanceQuantity from active contracts for current crop year
+    const currentYearActiveContracts = currentCropYear
+      ? activeContracts.filter(c => c.cropYear === currentCropYear)
+      : activeContracts;
+    const totalOpenBalance = currentYearActiveContracts.reduce((sum, c) => sum + (c.openBalanceQuantity || 0), 0);
+
     if (activeContracts.length > 0) {
-      parts.push(`On the contract side, they currently have ${activeContracts.length} active contract${activeContracts.length !== 1 ? 's' : ''} totaling ${this.formatQuantity(activeVolume, 'bushels')} — worth ${this.formatCurrency(activeValue)}.`);
+      const cropYearStr = currentCropYear ? ` (CY${currentCropYear})` : '';
+      parts.push(`On the contract side, they currently have ${activeContracts.length} active contract${activeContracts.length !== 1 ? 's' : ''}${cropYearStr} totaling ${this.formatQuantity(activeVolume, 'bushels')} — worth ${this.formatCurrency(activeValue)}.`);
+      if (totalOpenBalance > 0) {
+        parts.push(`${this.formatQuantity(Math.round(totalOpenBalance), 'bushels')} remain unshipped.`);
+      }
     } else {
       parts.push(`All ${fulfilledContracts.length} contract${fulfilledContracts.length !== 1 ? 's have' : ' has'} been fulfilled.`);
     }
@@ -342,7 +362,9 @@ export class ActivitySummaryComponent implements OnChanges {
     });
 
     if (overdueContracts.length > 0) {
-      alerts.push(`${overdueContracts.length} contract${overdueContracts.length !== 1 ? 's have' : ' has'} passed the delivery deadline`);
+      const openBalance = overdueContracts.reduce((sum, c) => sum + (c.openBalanceQuantity || 0), 0);
+      const balanceStr = openBalance > 0 ? ` with ${this.formatQuantity(Math.round(openBalance), 'bushels')} still unshipped` : '';
+      alerts.push(`${overdueContracts.length} contract${overdueContracts.length !== 1 ? 's have' : ' has'} passed the delivery deadline${balanceStr}`);
     }
 
     const unsignedContracts = this.contracts.filter(c => c && c.signed === false);

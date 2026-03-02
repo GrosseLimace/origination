@@ -16,6 +16,9 @@ export interface Contract {
   unit: string;           // Usually "bushels"
   price: number;          // Price per bushel (calculated: totalValue / quantity)
   totalValue?: number;    // Total contract value from ODS
+  contractDate?: Date;    // Date the contract was booked
+  cropYear?: number;      // Grain crop year (e.g. 2025, 2026)
+  openBalanceQuantity?: number; // Remaining unshipped bushels
   deliveryStart: Date;
   deliveryEnd: Date;
   status: ContractStatus;

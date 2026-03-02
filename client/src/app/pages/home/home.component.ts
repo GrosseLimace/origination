@@ -1,13 +1,13 @@
 import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, NavigationEnd } from '@angular/router';
-import { Subject } from 'rxjs';
-import { takeUntil, filter } from 'rxjs/operators';
+import { Subject, forkJoin, of } from 'rxjs';
+import { takeUntil, filter, catchError } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
 import { AppStateService } from '../../services/app-state.service';
 import { ToastService } from '../../services/toast.service';
 import { NlqFilterService, NlqFilterContext } from '../../services/nlq-filter.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, ProducerDetails } from '../../models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate } from '../../models';
 import { CustomerListComponent } from '../../components/customers/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customers/customer-profile/customer-profile.component';
 import { CustomerNotesComponent } from '../../components/customers/customer-notes/customer-notes.component';
@@ -66,10 +66,12 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                 [selectedTradeUnits]="selectedTradeUnits"
                 [contracts]="customerContracts"
                 [tickets]="customerTickets"
+                [pricingLines]="customerPricingLines"
                 [plantingIntentions]="customerPlantingIntentions"
                 [storedGrain]="customerStoredGrain"
                 [notes]="customerNotes"
                 [yieldEstimateCrops]="yieldEstimateCrops"
+                [yieldEstimates]="yieldEstimates"
                 [allCustomerContracts]="allCustomerContracts"
                 [allCustomerTickets]="allCustomerTickets"
                 [allCustomerPlantingIntentions]="allCustomerPlantingIntentions"
@@ -166,6 +168,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   selectedTradeUnits: string[] = [];
   customerContracts: Contract[] = [];
   customerTickets: Ticket[] = [];
+  customerPricingLines: ContractPricingLine[] = [];
   customerNotes: Note[] = [];
   customerCodeMap: Map<number, string> = new Map();
   customerPlantingIntentions: PlantingIntention[] = [];
@@ -179,6 +182,7 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   // Yield estimate crop codes from dashboard (for planting intentions dropdown)
   yieldEstimateCrops: string[] = [];
+  yieldEstimates: DashboardPlantingEstimate[] = [];
 
   isMobile = false;
   loading = false;
@@ -446,21 +450,33 @@ export class HomeComponent implements OnInit, OnDestroy {
   private loadYieldEstimateCrops(): void {
     const key = [...this.selectedTradeUnits].sort().join(',');
     if (!key) {
+      this.yieldEstimates = [];
       this.yieldEstimateCrops = [];
       return;
     }
+    // Load estimates for both current and prior planting year — the dashboard's selected
+    // planting year may differ from the current calendar year (e.g. estimates saved for
+    // 2025 crop year while calendar is now 2026). Merge both; current year takes precedence
+    // for the same crop code so newer estimates win.
     const currentYear = new Date().getFullYear();
-    this.apiService.getDashboardPlantingEstimates(key, currentYear)
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: (data) => {
-          this.yieldEstimateCrops = data.map(e => e.crop);
-          this.cdr.detectChanges();
-        },
-        error: () => {
-          this.yieldEstimateCrops = [];
+    forkJoin([
+      this.apiService.getDashboardPlantingEstimates(key, currentYear).pipe(catchError(() => of([]))),
+      this.apiService.getDashboardPlantingEstimates(key, currentYear - 1).pipe(catchError(() => of([])))
+    ]).pipe(takeUntil(this.destroy$)).subscribe(([current, prior]) => {
+      // Merge: start with prior year, then overwrite/add with current year entries
+      const merged = [...prior];
+      for (const est of current) {
+        const idx = merged.findIndex(e => e.crop === est.crop);
+        if (idx >= 0) {
+          merged[idx] = est;
+        } else {
+          merged.push(est);
         }
-      });
+      }
+      this.yieldEstimates = merged;
+      this.yieldEstimateCrops = merged.map(e => e.crop);
+      this.cdr.detectChanges();
+    });
   }
 
   private enrichSavedLists(): void {
@@ -536,6 +552,15 @@ export class HomeComponent implements OnInit, OnDestroy {
   }
 
   private loadCustomerContractsAndTickets(customerId: number, sourceCustomerId?: string): void {
+    // Load pricing lines by customer (drives Price column in contracts table)
+    if (sourceCustomerId) {
+      this.customerPricingLines = [];
+      this.apiService.getPricingLinesByCustomer(sourceCustomerId).pipe(takeUntil(this.destroy$)).subscribe({
+        next: (lines) => { this.customerPricingLines = lines; },
+        error: () => { this.customerPricingLines = []; }
+      });
+    }
+
     // Load contracts by customer
     this.apiService.getContractsByCustomer(customerId).pipe(takeUntil(this.destroy$)).subscribe({
       next: (contracts) => {

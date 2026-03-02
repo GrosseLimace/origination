@@ -119,11 +119,9 @@ interface LastContactInfo {
             <select
               [(ngModel)]="selectedListId"
               (ngModelChange)="onSavedListChange()"
-              class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-              [class]="selectedListId ? 'text-gray-900 dark:text-white' : 'text-gray-400'"
+              class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
             >
-              <option value="" disabled [selected]="!selectedListId" class="text-gray-400">Saved Lists</option>
-              <option value="all" class="text-gray-900 dark:text-white">All Customers</option>
+              <option value="all">All Customers</option>
               @for (list of getVisibleSavedLists(); track list.id) {
                 <option [value]="list.id" class="text-gray-900 dark:text-white">{{ list.name }}{{ selectedListId === '' + list.id && (list.customerIds || []).length ? ' (' + (list.customerIds || []).length + ')' : '' }}</option>
               }
@@ -242,7 +240,7 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
   private searchSubject$ = new Subject<string>();
 
   searchQuery = '';
-  selectedListId = '';
+  selectedListId = 'all';
   selectedTradeUnits: string[] = [];
   tradeUnits: string[] = [];
   filteredCustomers: Customer[] = [];
@@ -257,8 +255,14 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
     // Restore state from service
     this.searchQuery = this.appStateService.searchQuery();
     this.selectedTradeUnits = this.appStateService.selectedTradeUnits();
+    this.selectedListId = this.appStateService.selectedSavedListId() || 'all';
 
-    this.applyFilters();
+    // Re-run NLQ to populate customerIds for the restored list selection
+    if (this.selectedListId !== 'all') {
+      this.onSavedListChange();
+    } else {
+      this.applyFilters();
+    }
 
     // Load trade units
     this.apiService.getTradeUnits().pipe(
@@ -359,6 +363,14 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
       this.rebuildLastContactCache();
     }
 
+    if (changes['savedLists'] && this.selectedListId !== 'all') {
+      const stillExists = this.savedLists.some(l => String(l.id) === this.selectedListId);
+      if (!stillExists) {
+        this.selectedListId = 'all';
+        this.appStateService.setSelectedSavedListId('all');
+      }
+    }
+
     if (changes['customers'] || changes['savedLists']) {
       this.applyFilters();
     }
@@ -453,6 +465,8 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
 
   /** Called when the user selects a saved list from the dropdown. Runs the NLQ query dynamically. */
   onSavedListChange(): void {
+    this.appStateService.setSelectedSavedListId(this.selectedListId);
+
     if (!this.selectedListId || this.selectedListId === 'all') {
       this.applyFilters();
       return;

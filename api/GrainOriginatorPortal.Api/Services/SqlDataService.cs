@@ -692,6 +692,23 @@ public class SqlDataService : IDataService
         }
     }
 
+    public List<ContractPricingLine> GetPricingLinesByCustomer(string sourceCustomerId)
+    {
+        try
+        {
+            return _context.ContractPricingLines
+                .Where(p => p.CustomerId == sourceCustomerId)
+                .OrderBy(p => p.ContractId)
+                .ThenBy(p => p.PriceSequence)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving pricing lines for customer {CustomerId}", sourceCustomerId);
+            throw;
+        }
+    }
+
     // =========================================================================
     // Ticket Operations - Loads from vw_CurrentTickets in ODS
     // NOTE: ~2 million tickets exist, so queries are carefully limited
@@ -1325,7 +1342,7 @@ public class SqlDataService : IDataService
         {
             var list = _appContext.SavedLists.FirstOrDefault(s => s.Id == listId);
             if (list == null) return;
-            list.IsActive = false;
+            _appContext.SavedLists.Remove(list);
             _appContext.SaveChanges();
         }
         catch (Exception ex)

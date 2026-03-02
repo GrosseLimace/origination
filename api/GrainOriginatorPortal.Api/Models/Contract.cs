@@ -41,6 +41,10 @@ public class Contract
     public DateTime? DeliveryEnd { get; set; } // Maps to FinalShipDate
     public DateTime? ClosedDate { get; set; }
 
+    // Crop year and open balance
+    public int? CropYear { get; set; } // Grain crop year (e.g. 2025, 2026)
+    public decimal? OpenBalanceQuantity { get; set; } // Remaining unshipped bushels
+
     // Status
     public ContractStatus Status { get; set; } = ContractStatus.Pending;
     public bool Signed { get; set; }

@@ -40,15 +40,6 @@ interface StateInfo {
           </svg>
           <h3 class="font-semibold text-gray-900 dark:text-white">Customer Locations</h3>
           <app-badge variant="secondary">{{ customers.length }} locations</app-badge>
-          @if (isGeocoding) {
-            <span class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-              <svg class="animate-spin h-3.5 w-3.5 text-green-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-              </svg>
-              Refining...
-            </span>
-          }
         </div>
         <div class="flex items-center gap-2">
           <button
@@ -66,7 +57,17 @@ interface StateInfo {
       <!-- Map Container -->
       <div class="relative">
         <div id="customer-map" style="height: 400px; width: 100%;"></div>
-
+        @if (isGeocoding) {
+          <div class="absolute inset-0 backdrop-blur-sm bg-white/40 dark:bg-gray-900/40 flex items-center justify-center" style="z-index: 1001;">
+            <div class="flex items-center gap-2.5 bg-white dark:bg-gray-800 rounded-lg px-4 py-2.5 shadow-lg border border-gray-200 dark:border-gray-700">
+              <svg class="animate-spin h-4 w-4 text-green-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+              </svg>
+              <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Refining locations...</span>
+            </div>
+          </div>
+        }
       </div>
 
       <!-- Legend -->
@@ -333,9 +334,10 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
 
     const popupContent = `
       <div style="min-width: 180px; font-family: inherit; padding: 2px 0;">
-        <div style="font-size: 14px; font-weight: 600; color: #111827; margin-bottom: 6px; line-height: 1.3;">
+        <div style="font-size: 14px; font-weight: 600; color: #111827; margin-bottom: 2px; line-height: 1.3;">
           ${customer.name}
         </div>
+        ${customer.sourceCustomerId ? `<div style="font-size: 11px; color: #9ca3af; margin-bottom: 6px; font-family: monospace;">${customer.sourceCustomerId}</div>` : ''}
         ${locationParts ? `
         <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 4px;">
           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">

@@ -41,4 +41,13 @@ public class ContractsController : ControllerBase
 
         return Ok(_dataService.GetPricingLines(sourceContractId));
     }
+
+    [HttpGet("pricing-lines/by-customer")]
+    public ActionResult<List<ContractPricingLine>> GetPricingLinesByCustomer([FromQuery] string sourceCustomerId)
+    {
+        if (string.IsNullOrWhiteSpace(sourceCustomerId))
+            return BadRequest("sourceCustomerId is required");
+
+        return Ok(_dataService.GetPricingLinesByCustomer(sourceCustomerId));
+    }
 }

@@ -20,6 +20,7 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR, FormsModule } from '@angular/f
       [placeholder]="placeholder"
       [disabled]="disabled"
       [class]="inputClass"
+      [attr.inputmode]="inputmode || null"
       [(ngModel)]="value"
       (ngModelChange)="onChange($event)"
       (blur)="onTouched()"
@@ -31,6 +32,7 @@ export class InputComponent implements ControlValueAccessor {
   @ViewChild('inputElement') inputElement!: ElementRef<HTMLInputElement>;
 
   @Input() type = 'text';
+  @Input() inputmode = '';
   @Input() placeholder = '';
   @Input() disabled = false;
   @Input() class = '';

@@ -93,6 +93,13 @@ export class ApiService {
     );
   }
 
+  /** Fetches all pricing lines for a customer's contracts by sourceCustomerId */
+  getPricingLinesByCustomer(sourceCustomerId: string): Observable<ContractPricingLine[]> {
+    return this.http.get<ContractPricingLine[]>(
+      `${this.baseUrl}/contracts/pricing-lines/by-customer?sourceCustomerId=${encodeURIComponent(sourceCustomerId)}`
+    );
+  }
+
   // ==========================================================================
   // Ticket Operations (Grain delivery tickets)
   // ==========================================================================

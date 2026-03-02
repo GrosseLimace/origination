@@ -1,4 +1,4 @@
-import { Component, Input } from '@angular/core';
+import { Component, Input, OnChanges, SimpleChanges, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '../../ui/table/table.component';
 import { Customer, StoredGrain } from '../../../models';
@@ -9,6 +9,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
 @Component({
   selector: 'app-stored-grain-table',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
     TableComponent,
@@ -44,7 +45,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
                   <div class="text-sm text-gray-500 dark:text-gray-400">{{ grain.bin }}</div>
                 </div>
                 <div class="text-sm font-medium text-red-600 dark:text-red-400">
-                  {{ calculateStorageCost(grain).totalCost | currency:'USD':'symbol':'1.2-2' }}
+                  {{ storageCostCache.get(grain.id)?.totalCost | currency:'USD':'symbol':'1.2-2' }}
                 </div>
               </div>
 
@@ -63,7 +64,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
                 </div>
                 <div>
                   <div class="text-xs text-gray-500 dark:text-gray-400">Time in Storage</div>
-                  <div class="text-sm text-gray-900 dark:text-white">{{ calculateStorageCost(grain).monthsStored.toFixed(1) }} mo</div>
+                  <div class="text-sm text-gray-900 dark:text-white">{{ (storageCostCache.get(grain.id)?.monthsStored ?? 0).toFixed(1) }} mo</div>
                 </div>
               </div>
             </div>
@@ -78,37 +79,73 @@ type SortDirection = 'none' | 'asc' | 'desc';
                 <app-table-head [sortable]="true" (click)="handleSort('crop')">
                   <span class="flex items-center gap-1">
                     Crop
-                    <span [innerHTML]="getSortIcon('crop')"></span>
+                    @if (currentSortColumn === 'crop' && currentSortDirection === 'asc') {
+                      <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                    } @else if (currentSortColumn === 'crop' && currentSortDirection === 'desc') {
+                      <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    } @else {
+                      <svg class="h-3 w-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
+                    }
                   </span>
                 </app-table-head>
                 <app-table-head [sortable]="true" (click)="handleSort('quantity')">
                   <span class="flex items-center gap-1">
                     Quantity (bu)
-                    <span [innerHTML]="getSortIcon('quantity')"></span>
+                    @if (currentSortColumn === 'quantity' && currentSortDirection === 'asc') {
+                      <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                    } @else if (currentSortColumn === 'quantity' && currentSortDirection === 'desc') {
+                      <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    } @else {
+                      <svg class="h-3 w-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
+                    }
                   </span>
                 </app-table-head>
                 <app-table-head [sortable]="true" (click)="handleSort('bin')">
                   <span class="flex items-center gap-1">
                     Bin
-                    <span [innerHTML]="getSortIcon('bin')"></span>
+                    @if (currentSortColumn === 'bin' && currentSortDirection === 'asc') {
+                      <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                    } @else if (currentSortColumn === 'bin' && currentSortDirection === 'desc') {
+                      <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    } @else {
+                      <svg class="h-3 w-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
+                    }
                   </span>
                 </app-table-head>
                 <app-table-head [sortable]="true" (click)="handleSort('storageRate')">
                   <span class="flex items-center gap-1">
                     Storage Rate
-                    <span [innerHTML]="getSortIcon('storageRate')"></span>
+                    @if (currentSortColumn === 'storageRate' && currentSortDirection === 'asc') {
+                      <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                    } @else if (currentSortColumn === 'storageRate' && currentSortDirection === 'desc') {
+                      <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    } @else {
+                      <svg class="h-3 w-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
+                    }
                   </span>
                 </app-table-head>
                 <app-table-head [sortable]="true" (click)="handleSort('startDate')">
                   <span class="flex items-center gap-1">
                     Start Date
-                    <span [innerHTML]="getSortIcon('startDate')"></span>
+                    @if (currentSortColumn === 'startDate' && currentSortDirection === 'asc') {
+                      <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                    } @else if (currentSortColumn === 'startDate' && currentSortDirection === 'desc') {
+                      <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    } @else {
+                      <svg class="h-3 w-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
+                    }
                   </span>
                 </app-table-head>
                 <app-table-head [sortable]="true" (click)="handleSort('accumulatedCost')">
                   <span class="flex items-center gap-1">
                     Accumulated Cost
-                    <span [innerHTML]="getSortIcon('accumulatedCost')"></span>
+                    @if (currentSortColumn === 'accumulatedCost' && currentSortDirection === 'asc') {
+                      <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                    } @else if (currentSortColumn === 'accumulatedCost' && currentSortDirection === 'desc') {
+                      <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    } @else {
+                      <svg class="h-3 w-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
+                    }
                   </span>
                 </app-table-head>
               </app-table-row>
@@ -137,7 +174,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
                   <app-table-cell>\${{ grain.storageRate.toFixed(3) }}/bu/mo</app-table-cell>
                   <app-table-cell>{{ grain.storageStartDate | date:'MMM d, yyyy' }}</app-table-cell>
                   <app-table-cell class="text-red-600 dark:text-red-400 font-medium">
-                    {{ calculateStorageCost(grain).totalCost | currency:'USD':'symbol':'1.2-2' }}
+                    {{ storageCostCache.get(grain.id)?.totalCost | currency:'USD':'symbol':'1.2-2' }}
                   </app-table-cell>
                 </app-table-row>
 
@@ -166,7 +203,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
                           <div class="space-y-6">
                             <div>
                               <p class="text-sm text-gray-500 dark:text-gray-400">Time in Storage</p>
-                              <p class="text-gray-900 dark:text-gray-100">{{ calculateStorageCost(grain).monthsStored.toFixed(1) }} months</p>
+                              <p class="text-gray-900 dark:text-gray-100">{{ (storageCostCache.get(grain.id)?.monthsStored ?? 0).toFixed(1) }} months</p>
                             </div>
                             <div>
                               <p class="text-sm text-gray-500 dark:text-gray-400">Total Bushels</p>
@@ -174,7 +211,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
                             </div>
                             <div>
                               <p class="text-sm text-gray-500 dark:text-gray-400">Total Cost to Date</p>
-                              <p class="text-red-600 dark:text-red-400 font-medium">{{ calculateStorageCost(grain).totalCost | currency:'USD':'symbol':'1.2-2' }}</p>
+                              <p class="text-red-600 dark:text-red-400 font-medium">{{ storageCostCache.get(grain.id)?.totalCost | currency:'USD':'symbol':'1.2-2' }}</p>
                             </div>
                           </div>
                         </div>
@@ -190,16 +227,38 @@ type SortDirection = 'none' | 'asc' | 'desc';
     </div>
   `
 })
-export class StoredGrainTableComponent {
+export class StoredGrainTableComponent implements OnChanges {
   @Input() storedGrain: StoredGrain[] = [];
   @Input() customer!: Customer;
 
   expandedRows = new Set<string>();
   currentSortColumn: SortColumn | null = null;
   currentSortDirection: SortDirection = 'none';
+  storageCostCache = new Map<string, { totalCost: number; monthsStored: number }>();
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['storedGrain']) {
+      this.rebuildCache();
+    }
+  }
+
+  private rebuildCache(): void {
+    this.storageCostCache.clear();
+    const now = new Date();
+    for (const grain of this.storedGrain) {
+      const startDate = new Date(grain.storageStartDate);
+      const monthsStored = (now.getFullYear() - startDate.getFullYear()) * 12
+                         + (now.getMonth() - startDate.getMonth())
+                         + (now.getDate() / 30);
+      const totalCost = monthsStored * grain.storageRate * grain.quantity;
+      this.storageCostCache.set(grain.id, { totalCost, monthsStored });
+    }
+  }
 
   get totalStorageCost(): number {
-    return this.storedGrain.reduce((sum, g) => sum + this.calculateStorageCost(g).totalCost, 0);
+    let sum = 0;
+    for (const val of this.storageCostCache.values()) sum += val.totalCost;
+    return sum;
   }
 
   get sortedGrain(): StoredGrain[] {
@@ -226,7 +285,7 @@ export class StoredGrainTableComponent {
           comparison = new Date(a.storageStartDate).getTime() - new Date(b.storageStartDate).getTime();
           break;
         case 'accumulatedCost':
-          comparison = this.calculateStorageCost(a).totalCost - this.calculateStorageCost(b).totalCost;
+          comparison = (this.storageCostCache.get(a.id)?.totalCost ?? 0) - (this.storageCostCache.get(b.id)?.totalCost ?? 0);
           break;
       }
       return this.currentSortDirection === 'desc' ? -comparison : comparison;
@@ -251,19 +310,6 @@ export class StoredGrainTableComponent {
     }
   }
 
-  getSortIcon(column: SortColumn): string {
-    if (this.currentSortColumn !== column) {
-      return '<svg class="h-3 w-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>';
-    }
-    if (this.currentSortDirection === 'asc') {
-      return '<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>';
-    }
-    if (this.currentSortDirection === 'desc') {
-      return '<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>';
-    }
-    return '<svg class="h-3 w-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>';
-  }
-
   toggleRow(id: string): void {
     if (this.expandedRows.has(id)) {
       this.expandedRows.delete(id);
@@ -274,15 +320,5 @@ export class StoredGrainTableComponent {
 
   isExpanded(id: string): boolean {
     return this.expandedRows.has(id);
-  }
-
-  calculateStorageCost(grain: StoredGrain): { totalCost: number; monthsStored: number } {
-    const now = new Date();
-    const startDate = new Date(grain.storageStartDate);
-    const monthsStored = (now.getFullYear() - startDate.getFullYear()) * 12
-                       + (now.getMonth() - startDate.getMonth())
-                       + (now.getDate() / 30);
-    const totalCost = monthsStored * grain.storageRate * grain.quantity;
-    return { totalCost, monthsStored };
   }
 }

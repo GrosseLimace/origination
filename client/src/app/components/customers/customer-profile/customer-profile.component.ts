@@ -9,7 +9,7 @@ import { ProducerInsightsComponent } from '../producer-insights/producer-insight
 import { AIGrowthForecastComponent } from '../ai-growth-forecast/ai-growth-forecast.component';
 import { ActivitySummaryComponent } from '../activity-summary/activity-summary.component';
 import { EditCustomerDialogComponent } from '../edit-customer-dialog/edit-customer-dialog.component';
-import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note } from '../../../models';
+import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, ContractPricingLine, DashboardPlantingEstimate } from '../../../models';
 
 @Component({
   selector: 'app-customer-profile',
@@ -278,7 +278,7 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note } from
         <div class="pb-8">
           @switch (activeTab) {
             @case ('contracts') {
-              <app-contracts-table [contracts]="contracts" [tickets]="tickets" [customer]="customer"></app-contracts-table>
+              <app-contracts-table [contracts]="contracts" [tickets]="tickets" [pricingLines]="pricingLines" [customer]="customer"></app-contracts-table>
             }
             @case ('tickets') {
               <app-tickets-table [tickets]="tickets" [contracts]="contracts" [customer]="customer"></app-tickets-table>
@@ -321,10 +321,12 @@ export class CustomerProfileComponent implements OnChanges {
   @Input() selectedTradeUnits: string[] = [];
   @Input() contracts: Contract[] = [];
   @Input() tickets: Ticket[] = [];
+  @Input() pricingLines: ContractPricingLine[] = [];
   @Input() plantingIntentions: PlantingIntention[] = [];
   @Input() storedGrain: StoredGrain[] = [];
   @Input() notes: Note[] = [];
   @Input() yieldEstimateCrops: string[] = [];
+  @Input() yieldEstimates: DashboardPlantingEstimate[] = [];
 
   // Unfiltered data for Activity Summary
   @Input() allCustomerContracts: Contract[] = [];
@@ -360,18 +362,31 @@ export class CustomerProfileComponent implements OnChanges {
 
   ngOnChanges(changes: SimpleChanges): void {
     // Recalculate cached values when relevant inputs change
-    if (changes['plantingIntentions']) {
-      this._totalProjectedYield = 0;
-    }
-
     if (changes['contracts']) {
       this._totalContracted = this.contracts
         .filter(c => c.status === 'Active' || c.status === 'Pending')
         .reduce((sum, c) => sum + c.quantity, 0);
     }
 
+    // Recalculate projected yield from planting intentions × dashboard yield estimates.
+    // Use the most recent planting year to match the Producer Insights pacing logic.
+    if (changes['plantingIntentions'] || changes['yieldEstimates']) {
+      let maxYear = 0;
+      for (const pi of this.plantingIntentions) {
+        if (pi.plantingYear > maxYear) maxYear = pi.plantingYear;
+      }
+      const intentionsForYear = maxYear > 0
+        ? this.plantingIntentions.filter(pi => pi.plantingYear === maxYear)
+        : this.plantingIntentions;
+
+      this._totalProjectedYield = intentionsForYear.reduce((sum, pi) => {
+        const est = this.yieldEstimates.find(ye => ye.crop === pi.crop);
+        return sum + pi.acres * (est?.yieldEstimate ?? 0);
+      }, 0);
+    }
+
     // Recalculate dependent values
-    if (changes['plantingIntentions'] || changes['contracts']) {
+    if (changes['plantingIntentions'] || changes['yieldEstimates'] || changes['contracts']) {
       this._marketSharePercentage = this._totalProjectedYield > 0
         ? (this._totalContracted / this._totalProjectedYield) * 100
         : 0;
@@ -478,6 +493,14 @@ export class CustomerProfileComponent implements OnChanges {
     return this._effectiveCommodities;
   }
 
+  private escapeHtml(str: string): string {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
   /** Opens a print dialog with formatted customer information */
   printCustomerInfo(): void {
     const activeContracts = this.contracts.filter(c => c.status === 'Active' || c.status === 'Pending');
@@ -487,7 +510,7 @@ export class CustomerProfileComponent implements OnChanges {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Customer Info - ${this.customer.name}</title>
+        <title>Customer Info - ${this.escapeHtml(this.customer.name)}</title>
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body { font-family: Arial, sans-serif; padding: 40px; color: #000; }
@@ -518,8 +541,8 @@ export class CustomerProfileComponent implements OnChanges {
       </head>
       <body>
         <div class="header">
-          <h1>${this.customer.name}</h1>
-          <div class="farm-name">${this.customer.farm}</div>
+          <h1>${this.escapeHtml(this.customer.name)}</h1>
+          <div class="farm-name">${this.escapeHtml(this.customer.farm ?? '')}</div>
           <div class="print-date">Printed: ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</div>
         </div>
 
@@ -529,18 +552,18 @@ export class CustomerProfileComponent implements OnChanges {
             <h3>Contact</h3>
             <div class="info-item">
               <div class="label">Location</div>
-              <div class="value">${this.getFormattedLocation()}</div>
+              <div class="value">${this.escapeHtml(this.getFormattedLocation())}</div>
             </div>
             ${this.getCustomerPhone() ? `
             <div class="info-item">
               <div class="label">Phone</div>
-              <div class="value">${this.getFormattedPhone()}</div>
+              <div class="value">${this.escapeHtml(this.getFormattedPhone())}</div>
             </div>
             ` : ''}
             ${this.getCustomerEmail() ? `
             <div class="info-item">
               <div class="label">Email</div>
-              <div class="value">${this.getCustomerEmail()}</div>
+              <div class="value">${this.escapeHtml(this.getCustomerEmail() ?? '')}</div>
             </div>
             ` : ''}
           </div>
@@ -596,12 +619,12 @@ export class CustomerProfileComponent implements OnChanges {
             <tbody>
               ${activeContracts.map(contract => `
               <tr>
-                <td>${contract.contractNumber}</td>
-                <td>${contract.commodityDescription || contract.commodityCode || ''}</td>
+                <td>${this.escapeHtml(contract.contractNumber)}</td>
+                <td>${this.escapeHtml(contract.commodityDescription || contract.commodityCode || '')}</td>
                 <td class="text-right">${contract.quantity.toLocaleString()} bu</td>
                 <td class="text-right">$${contract.price.toFixed(2)}</td>
-                <td>${this.formatDeliveryPeriod(contract.deliveryStart, contract.deliveryEnd)}</td>
-                <td><span class="status">${contract.status}</span></td>
+                <td>${this.escapeHtml(this.formatDeliveryPeriod(contract.deliveryStart, contract.deliveryEnd))}</td>
+                <td><span class="status">${this.escapeHtml(contract.status ?? '')}</span></td>
               </tr>
               `).join('')}
             </tbody>
