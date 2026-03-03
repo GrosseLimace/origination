@@ -50,5 +50,6 @@ public class Ticket
     public string? GradeCode { get; set; }
 
     // Status
+    public string? TicketStatusDescription { get; set; } // e.g. "Unload", "Final Settled", "P/A"
     public bool IsActive { get; set; }
 }

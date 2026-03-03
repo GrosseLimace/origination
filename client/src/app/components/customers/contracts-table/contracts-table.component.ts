@@ -57,7 +57,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
             </button>
           }
         </div>
-        <div class="max-h-[480px] overflow-y-auto overflow-x-auto overscroll-y-none">
+        <div class="max-h-[calc(100vh-20rem)] overflow-y-auto overflow-x-auto">
         <app-table>
           <app-table-header>
             <app-table-row>
@@ -415,6 +415,7 @@ export class ContractsTableComponent implements OnChanges {
   @Input() tickets: Ticket[] = [];
   @Input() pricingLines: ContractPricingLine[] = [];
   @Input() customer!: Customer;
+  @Input() openContractId: number | null = null;
 
   expandedRows = new Set<number>();
   expandedTicketSections = new Set<number>();
@@ -436,6 +437,10 @@ export class ContractsTableComponent implements OnChanges {
     if (changes['contracts']) {
       this.expandedRows.clear();
       this.pricingLinesMap.clear();
+    }
+    // Apply openContractId after clearing expandedRows so it always wins
+    if (this.openContractId != null && (changes['contracts'] || changes['openContractId'])) {
+      this.expandedRows.add(this.openContractId);
     }
     if (changes['pricingLines']) {
       this.pricingLinesMap.clear();

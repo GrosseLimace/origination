@@ -23,4 +23,5 @@ export interface Contract {
   deliveryEnd: Date;
   status: ContractStatus;
   signed: boolean;
+  customerConfirmStatus?: string; // ODS CustomerConfirmStatus (e.g. "Confirmed", "Pending", null)
 }

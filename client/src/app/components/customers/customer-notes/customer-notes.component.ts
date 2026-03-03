@@ -39,8 +39,30 @@ import { Customer, Note } from '../../../models';
           <p class="mt-4">No notes yet for this customer</p>
         </div>
       } @else {
+
+        <!-- Producer filter — only shown when linked customers exist -->
+        @if (linkedCustomers.length > 0) {
+          <select
+            [ngModel]="filterValue"
+            (ngModelChange)="onFilterChange($event)"
+            class="w-full text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+          >
+            <option value="">All notes</option>
+            <option [value]="customer.id.toString()">{{ getCustomerLabel(customer) }}</option>
+            @for (c of linkedCustomers; track c.id) {
+              <option [value]="c.id.toString()">{{ getCustomerLabel(c) }}</option>
+            }
+          </select>
+        }
+
+        <!-- Notes or filtered-empty state -->
+        @if (displayedNotes.length === 0) {
+          <div class="text-center py-6 text-sm text-gray-400 dark:text-gray-500">
+            No notes from this producer.
+          </div>
+        } @else {
         <div class="space-y-6">
-          @for (note of sortedNotesCache; track note.id) {
+          @for (note of displayedNotes; track note.id) {
             <div class="border rounded-lg p-4 relative" [ngClass]="getNoteClass(note)">
               <!-- Top right actions -->
               <div class="absolute top-3 right-3 flex items-center gap-2">
@@ -153,7 +175,8 @@ import { Customer, Note } from '../../../models';
             </div>
           }
         </div>
-      }
+        } <!-- end @else (displayedNotes not empty) -->
+      } <!-- end @else (notes not empty) -->
 
       <!-- Delete Confirmation Dialog -->
       @if (showDeleteConfirm && noteToDelete) {
@@ -187,6 +210,7 @@ export class CustomerNotesComponent implements OnChanges, OnDestroy {
   @Input() notes: Note[] = [];
   @Input() customer!: Customer;
   @Input() customerCodeMap: Map<number, string> = new Map();
+  @Input() linkedCustomers: Customer[] = [];
   @Output() addNote = new EventEmitter<string>();
   @Output() togglePin = new EventEmitter<Note>();
   @Output() editNote = new EventEmitter<{ noteId: number; content: string }>();
@@ -200,14 +224,22 @@ export class CustomerNotesComponent implements OnChanges, OnDestroy {
   editContent = '';
   showDeleteConfirm = false;
   noteToDelete: Note | null = null;
+  filterValue = ''; // '' = All; customer id as string when a producer is selected
 
   // Performance optimization: Cache sorted notes to avoid re-sorting on every change detection
   sortedNotesCache: Note[] = [];
+
+  get displayedNotes(): Note[] {
+    if (!this.filterValue) return this.sortedNotesCache;
+    const id = Number(this.filterValue);
+    return this.sortedNotesCache.filter(n => n.customerId === id);
+  }
 
   ngOnChanges(changes: SimpleChanges): void {
     // Only re-sort when notes input actually changes
     if (changes['notes']) {
       this.updateSortedNotesCache();
+      this.filterValue = ''; // Reset filter whenever the customer (and its notes) changes
       this.cdr.markForCheck();
     }
   }
@@ -286,6 +318,17 @@ export class CustomerNotesComponent implements OnChanges, OnDestroy {
 
     // Otherwise show full date
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  onFilterChange(val: string): void {
+    this.filterValue = val;
+    this.cdr.markForCheck();
+  }
+
+  getCustomerLabel(customer: Customer): string {
+    return customer.sourceCustomerId
+      ? `${customer.name} (${customer.sourceCustomerId})`
+      : customer.name;
   }
 
   submitNote() {

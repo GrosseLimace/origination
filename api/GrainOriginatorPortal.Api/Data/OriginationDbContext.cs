@@ -34,10 +34,10 @@ public class OriginationDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        // Configure Customer entity - Maps to ODS vw_CurrentCustomers view in base schema
+        // Configure Customer entity - Maps to originations.vw_CurrentCustomers (pre-filtered: PR, IsActive, no DUP/DO NOT USE/symbol names)
         modelBuilder.Entity<Customer>(entity =>
         {
-            entity.ToTable("vw_CurrentCustomers", schema: "base"); // View with filtered customers
+            entity.ToTable("vw_CurrentCustomers", schema: "originations");
             entity.HasKey(e => e.Id);
 
             // Map to vw_CurrentCustomers column names (PascalCase in base schema views)
@@ -137,6 +137,9 @@ public class OriginationDbContext : DbContext
             entity.Property(e => e.CropYear).HasColumnName("CropYear").IsRequired(false);
             entity.Property(e => e.OpenBalanceQuantity).HasColumnName("OpenBalanceQuantity").HasColumnType("decimal(18,6)").IsRequired(false);
 
+            // Customer confirmation status
+            entity.Property(e => e.CustomerConfirmStatus).HasColumnName("CustomerConfirmStatus").HasMaxLength(100).IsRequired(false);
+
             // Metadata
             entity.Property(e => e.IsActive).HasColumnName("IsActive").IsRequired();
             entity.Property(e => e.EffectiveStartDate).HasColumnName("EffectiveStartDate").IsRequired(false);
@@ -191,6 +194,7 @@ public class OriginationDbContext : DbContext
             entity.Property(e => e.AppliedDockQuantity).HasColumnName("AppliedNetQuantity");
 
             // Status
+            entity.Property(e => e.TicketStatusDescription).HasColumnName("TicketStatusDescription").HasMaxLength(100);
             entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true);
 
             // Quality measures - check if available in base.Ticket table

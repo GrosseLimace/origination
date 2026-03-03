@@ -300,8 +300,11 @@ export class ActivitySummaryComponent implements OnChanges {
   private generateEngagementSummary(): string {
     if (!this.notes || this.notes.length === 0) return '';
 
+    // Only consider notes that belong to this customer — not linked farms.
+    const ownNotes = this.customer ? this.notes.filter(n => n && n.customerId === this.customer.id) : this.notes;
+
     // Filter valid notes with dates
-    const validNotes = this.notes.filter(n => n && n.createdAt);
+    const validNotes = ownNotes.filter(n => n && n.createdAt);
     if (validNotes.length === 0) return '';
 
     // Last contact with error handling

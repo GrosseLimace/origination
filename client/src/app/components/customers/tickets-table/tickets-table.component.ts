@@ -68,7 +68,7 @@ interface TicketGroup {
             </button>
           }
         </div>
-        <div class="max-h-[480px] overflow-y-auto overflow-x-auto overscroll-y-none">
+        <div class="max-h-[calc(100vh-20rem)] overflow-y-auto overflow-x-auto">
         <app-table>
           <app-table-header>
             <app-table-row>

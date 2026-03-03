@@ -49,6 +49,9 @@ public class Contract
     public ContractStatus Status { get; set; } = ContractStatus.Pending;
     public bool Signed { get; set; }
 
+    // Customer confirmation status from ODS (e.g. "Confirmed", "Pending", null)
+    public string? CustomerConfirmStatus { get; set; }
+
     // ODS metadata fields
     public bool IsActive { get; set; }
     public DateTime? EffectiveStartDate { get; set; }

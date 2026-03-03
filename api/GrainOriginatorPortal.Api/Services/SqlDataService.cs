@@ -33,7 +33,7 @@ public class SqlDataService : IDataService
             var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
 
             // Build contract query with optional trade unit filter
-            var contractQuery = _context.Contracts.Where(c => c.IsActive && c.CtrmCustomerId != null);
+            var contractQuery = _context.Contracts.AsNoTracking().Where(c => c.IsActive && c.CtrmCustomerId != null);
             if (hasTradeUnitFilter)
             {
                 contractQuery = contractQuery.Where(c => c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit));
@@ -46,7 +46,7 @@ public class SqlDataService : IDataService
                 .ToList();
 
             // Build ticket query with optional organization code filter
-            var ticketQuery = _context.Tickets.Where(t => t.IsActive && t.CustomerId.HasValue);
+            var ticketQuery = _context.Tickets.AsNoTracking().Where(t => t.IsActive && t.CustomerId.HasValue);
             if (hasTradeUnitFilter)
             {
                 ticketQuery = ticketQuery.Where(t => t.OrganizationCode != null && tradeUnits!.Contains(t.OrganizationCode));
@@ -61,28 +61,21 @@ public class SqlDataService : IDataService
             var filterMsg = hasTradeUnitFilter ? $" (filtered by {tradeUnits!.Count} trade units: {string.Join(", ", tradeUnits)})" : "";
             _logger.LogInformation($"Found {customerIdsWithContracts.Count} customers with contracts, {customerIdsWithTickets.Count} customers with tickets{filterMsg}");
 
-            // Get customers who have BOTH contracts AND tickets
-            // Filter by IndustryCode1 = 'PR' (producer customers only)
-            // Exclude customers with names containing DUP or DO NOT USE
-            // Exclude customers with names starting with * or $
-            // When trade units are selected, show ALL customers; otherwise limit to 15
+            // originations.vw_CurrentCustomers is pre-filtered to active PR customers, excluding
+            // DUP / DO NOT USE / symbol-prefixed names — no redundant filters needed here.
+            // Include customers who have contracts OR tickets in the trade unit.
+            // When trade units are selected, return all matching customers; otherwise limit to 15.
             var customerQuery = _context.Customers
-                .Where(c => c.IsActive &&
-                           c.IndustryCode1 == "PR" &&
-                           customerIdsWithContracts.Contains(c.SourceCustomerId) &&
-                           customerIdsWithTickets.Contains(c.Id) &&
-                           !c.Name.Contains("DUP") &&
-                           !c.Name.Contains("DO NOT USE") &&
-                           !c.Name.StartsWith("*") &&
-                           !c.Name.StartsWith("$"))
-                .OrderBy(c => c.Name); // Alphabetical order by name (A-Z)
+                .AsNoTracking()
+                .Where(c => customerIdsWithContracts.Contains(c.SourceCustomerId) ||
+                            customerIdsWithTickets.Contains(c.Id))
+                .OrderBy(c => c.Name);
 
-            // Only limit to 15 when no trade units are selected
             var customers = hasTradeUnitFilter
                 ? customerQuery.ToList()
                 : customerQuery.Take(15).ToList();
 
-            _logger.LogInformation($"Returning {customers.Count} producer customers who have both contracts and tickets{filterMsg}");
+            _logger.LogInformation($"Returning {customers.Count} producer customers who have contracts or tickets{filterMsg}");
             return customers;
         }
         catch (Exception ex)
@@ -112,26 +105,22 @@ public class SqlDataService : IDataService
             if (hasTradeUnitFilter)
             {
                 customerIdsWithTradeUnitContracts = _context.Contracts
+                    .AsNoTracking()
                     .Where(c => c.IsActive && c.CtrmCustomerId != null && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
                     .Select(c => c.CtrmCustomerId!)
                     .Distinct()
                     .ToList();
 
                 customerIdsWithTradeUnitTickets = _context.Tickets
+                    .AsNoTracking()
                     .Where(t => t.IsActive && t.CustomerId.HasValue && t.OrganizationCode != null && tradeUnits!.Contains(t.OrganizationCode))
                     .Select(t => t.CustomerId!.Value)
                     .Distinct()
                     .ToList();
             }
 
-            // Start with base query filtering by producer customers
-            var query = _context.Customers
-                .Where(c => c.IsActive &&
-                           c.IndustryCode1 == "PR" &&
-                           !c.Name.Contains("DUP") &&
-                           !c.Name.Contains("DO NOT USE") &&
-                           !c.Name.StartsWith("*") &&
-                           !c.Name.StartsWith("$"));
+            // originations.vw_CurrentCustomers is pre-filtered — start with all customers in the view
+            var query = _context.Customers.AsNoTracking().AsQueryable();
 
             // Add trade unit filter if specified
             if (customerIdsWithTradeUnitContracts != null && customerIdsWithTradeUnitTickets != null)
@@ -253,6 +242,7 @@ public class SqlDataService : IDataService
         try
         {
             return _context.Customers
+                .AsNoTracking()
                 .FirstOrDefault(c => c.Id == id && c.IsActive);
         }
         catch (Exception ex)
@@ -338,6 +328,7 @@ public class SqlDataService : IDataService
     {
         // Get unique trade units from contracts
         var contractTradeUnits = _context.Contracts
+            .AsNoTracking()
             .Where(c => c.IsActive && !string.IsNullOrEmpty(c.TradeUnit))
             .Select(c => c.TradeUnit!)
             .Distinct()
@@ -345,6 +336,7 @@ public class SqlDataService : IDataService
 
         // Get unique organization codes from tickets
         var ticketOrgCodes = _context.Tickets
+            .AsNoTracking()
             .Where(t => t.IsActive && !string.IsNullOrEmpty(t.OrganizationCode))
             .Select(t => t.OrganizationCode!)
             .Distinct()
@@ -374,6 +366,7 @@ public class SqlDataService : IDataService
 
             // Pull all commodity data from contracts (Code, Name, Category)
             var contractCommodities = _context.Contracts
+                .AsNoTracking()
                 .Where(c => c.IsActive
                     && !string.IsNullOrEmpty(c.CommodityCode)
                     && !string.IsNullOrEmpty(c.CommodityDescription))
@@ -383,6 +376,7 @@ public class SqlDataService : IDataService
 
             // Pull all distinct product codes from tickets
             var ticketProductCodes = _context.Tickets
+                .AsNoTracking()
                 .Where(t => t.IsActive && !string.IsNullOrEmpty(t.ProductCode))
                 .Select(t => t.ProductCode!)
                 .Distinct()
@@ -462,6 +456,7 @@ public class SqlDataService : IDataService
         try
         {
             var groups = _appContext.TradeUnitGroups
+                .AsNoTracking()
                 .Where(g => g.IsActive)
                 .Include(g => g.TradeUnits.Where(tu => tu.IsActive))
                 .OrderBy(g => g.GroupName)
@@ -516,7 +511,7 @@ public class SqlDataService : IDataService
             var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
 
             // Build contract query with optional trade unit filter
-            var contractQuery = _context.Contracts.Where(c => c.IsActive && c.CtrmCustomerId != null);
+            var contractQuery = _context.Contracts.AsNoTracking().Where(c => c.IsActive && c.CtrmCustomerId != null);
             if (hasTradeUnitFilter)
             {
                 contractQuery = contractQuery.Where(c => c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit));
@@ -529,7 +524,7 @@ public class SqlDataService : IDataService
                 .ToList();
 
             // Build ticket query with optional organization code filter
-            var ticketQuery = _context.Tickets.Where(t => t.IsActive && t.CustomerId.HasValue);
+            var ticketQuery = _context.Tickets.AsNoTracking().Where(t => t.IsActive && t.CustomerId.HasValue);
             if (hasTradeUnitFilter)
             {
                 ticketQuery = ticketQuery.Where(t => t.OrganizationCode != null && tradeUnits!.Contains(t.OrganizationCode));
@@ -541,19 +536,12 @@ public class SqlDataService : IDataService
                 .Distinct()
                 .ToList();
 
-            // Get SourceCustomerIds for customers who have BOTH contracts AND tickets
-            // Filter by IndustryCode1 = 'PR' (producer customers only)
-            // When trade units are selected, get ALL customers; otherwise limit to 15
+            // originations.vw_CurrentCustomers is pre-filtered — no redundant filters needed.
             var customerQuery = _context.Customers
-                .Where(c => c.IsActive &&
-                           c.IndustryCode1 == "PR" &&
-                           customerIdsWithContracts.Contains(c.SourceCustomerId) &&
-                           customerIdsWithTickets.Contains(c.Id) &&
-                           !c.Name.Contains("DUP") &&
-                           !c.Name.Contains("DO NOT USE") &&
-                           !c.Name.StartsWith("*") &&
-                           !c.Name.StartsWith("$"))
-                .OrderBy(c => c.Name); // Alphabetical order by name (A-Z)
+                .AsNoTracking()
+                .Where(c => customerIdsWithContracts.Contains(c.SourceCustomerId) ||
+                            customerIdsWithTickets.Contains(c.Id))
+                .OrderBy(c => c.Name);
 
             var customerCtrmIds = hasTradeUnitFilter
                 ? customerQuery.Select(c => c.SourceCustomerId).ToList()
@@ -561,6 +549,7 @@ public class SqlDataService : IDataService
 
             // Get all contracts for those customers
             var contractsQuery = _context.Contracts
+                .AsNoTracking()
                 .Where(c => c.IsActive && c.CtrmCustomerId != null && customerCtrmIds.Contains(c.CtrmCustomerId));
 
             // Apply trade unit filter if specified
@@ -574,7 +563,7 @@ public class SqlDataService : IDataService
                 .ToList();
 
             var filterMsg = hasTradeUnitFilter ? $" (filtered by {tradeUnits!.Count} trade units)" : "";
-            _logger.LogInformation($"Loaded {contracts.Count} contracts for customers who have both contracts and tickets{filterMsg}");
+            _logger.LogInformation($"Loaded {contracts.Count} contracts for customers who have contracts or tickets{filterMsg}");
 
             // Calculate status and set defaults for fields not in ODS view
             var today = DateTime.Today;
@@ -629,7 +618,7 @@ public class SqlDataService : IDataService
         try
         {
             // Get the customer's SourceCustomerId for matching with contract.CtrmCustomerId
-            var customer = _context.Customers.FirstOrDefault(c => c.Id == customerId && c.IsActive);
+            var customer = _context.Customers.AsNoTracking().FirstOrDefault(c => c.Id == customerId && c.IsActive);
             if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
             {
                 _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
@@ -638,6 +627,7 @@ public class SqlDataService : IDataService
 
             // Match contracts using CtrmCustomerId = customer.SourceCustomerId (string matching)
             var contracts = _context.Contracts
+                .AsNoTracking()
                 .Where(c => c.IsActive && c.CtrmCustomerId == customer.SourceCustomerId)
                 .OrderByDescending(c => c.Id)
                 .ToList();
@@ -681,6 +671,7 @@ public class SqlDataService : IDataService
         try
         {
             return _context.ContractPricingLines
+                .AsNoTracking()
                 .Where(p => p.ContractId == sourceContractId)
                 .OrderBy(p => p.PriceSequence)
                 .ToList();
@@ -697,6 +688,7 @@ public class SqlDataService : IDataService
         try
         {
             return _context.ContractPricingLines
+                .AsNoTracking()
                 .Where(p => p.CustomerId == sourceCustomerId)
                 .OrderBy(p => p.ContractId)
                 .ThenBy(p => p.PriceSequence)
@@ -721,7 +713,7 @@ public class SqlDataService : IDataService
             var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
 
             // Build contract query with optional trade unit filter
-            var contractQuery = _context.Contracts.Where(c => c.IsActive && c.CtrmCustomerId != null);
+            var contractQuery = _context.Contracts.AsNoTracking().Where(c => c.IsActive && c.CtrmCustomerId != null);
             if (hasTradeUnitFilter)
             {
                 contractQuery = contractQuery.Where(c => c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit));
@@ -734,7 +726,7 @@ public class SqlDataService : IDataService
                 .ToList();
 
             // Build ticket query with optional organization code filter
-            var ticketQueryBase = _context.Tickets.Where(t => t.IsActive && t.CustomerCode != null);
+            var ticketQueryBase = _context.Tickets.AsNoTracking().Where(t => t.IsActive && t.CustomerCode != null);
             if (hasTradeUnitFilter)
             {
                 ticketQueryBase = ticketQueryBase.Where(t => t.OrganizationCode != null && tradeUnits!.Contains(t.OrganizationCode));
@@ -746,21 +738,13 @@ public class SqlDataService : IDataService
                 .Distinct()
                 .ToList();
 
-            // Get producer customers who have BOTH contracts AND tickets
-            // Filter by IndustryCode1 = 'PR' (producer customers only)
-            // Get their SourceCustomerIds for matching with tickets
-            // When trade units are selected, get ALL customers; otherwise limit to 15
+            // originations.vw_CurrentCustomers is pre-filtered — no redundant filters needed.
             var customerQuery = _context.Customers
-                .Where(c => c.IsActive &&
-                           c.IndustryCode1 == "PR" &&
-                           c.SourceCustomerId != null &&
-                           customerIdsWithContracts.Contains(c.SourceCustomerId) &&
-                           customerCodesWithTickets.Contains(c.SourceCustomerId) &&
-                           !c.Name.Contains("DUP") &&
-                           !c.Name.Contains("DO NOT USE") &&
-                           !c.Name.StartsWith("*") &&
-                           !c.Name.StartsWith("$"))
-                .OrderBy(c => c.Name); // Alphabetical order by name (A-Z)
+                .AsNoTracking()
+                .Where(c => c.SourceCustomerId != null &&
+                            (customerIdsWithContracts.Contains(c.SourceCustomerId) ||
+                             customerCodesWithTickets.Contains(c.SourceCustomerId)))
+                .OrderBy(c => c.Name);
 
             var producerCustomerCodes = hasTradeUnitFilter
                 ? customerQuery.Select(c => c.SourceCustomerId!).ToList()
@@ -768,10 +752,11 @@ public class SqlDataService : IDataService
 
             var filterMsg = hasTradeUnitFilter ? $" (filtered by {tradeUnits!.Count} trade units)" : "";
             var customerCountMsg = hasTradeUnitFilter ? $"all {producerCustomerCodes.Count} customers" : "top 15 customers";
-            _logger.LogInformation($"Loading tickets for {customerCountMsg} who have both contracts and tickets{filterMsg}");
+            _logger.LogInformation($"Loading tickets for {customerCountMsg} who have contracts or tickets{filterMsg}");
 
             // Load all tickets for those producer customers using string matching (CustomerCode = SourceCustomerId)
             var ticketsQuery = _context.Tickets
+                .AsNoTracking()
                 .Where(t => t.IsActive && t.CustomerCode != null && producerCustomerCodes.Contains(t.CustomerCode));
 
             // Apply trade unit filter if specified
@@ -787,6 +772,7 @@ public class SqlDataService : IDataService
             // Load quality data for these tickets
             var ticketIds = tickets.Select(t => t.Id).ToList();
             var qualityData = _context.TicketQualities
+                .AsNoTracking()
                 .Where(q => ticketIds.Contains(q.TicketId))
                 .ToDictionary(q => q.TicketId);
 
@@ -818,7 +804,7 @@ public class SqlDataService : IDataService
             var ticketsWithContractNumber = tickets.Count(t => !string.IsNullOrEmpty(t.CtrmContractNumber));
             var ticketsWithBoth = tickets.Count(t => t.ContractId.HasValue && !string.IsNullOrEmpty(t.CtrmContractNumber));
 
-            _logger.LogInformation($"Loaded {tickets.Count} tickets for top 25 customers who have both contracts and tickets");
+            _logger.LogInformation($"Loaded {tickets.Count} tickets for customers who have contracts or tickets{filterMsg}");
             _logger.LogInformation($"  - {ticketsWithContractId} tickets have ContractId");
             _logger.LogInformation($"  - {ticketsWithContractNumber} tickets have CtrmContractNumber");
             _logger.LogInformation($"  - {ticketsWithBoth} tickets have both");
@@ -843,7 +829,7 @@ public class SqlDataService : IDataService
         try
         {
             // Get the customer's SourceCustomerId for matching with ticket.CustomerCode
-            var customer = _context.Customers.FirstOrDefault(c => c.Id == customerId && c.IsActive);
+            var customer = _context.Customers.AsNoTracking().FirstOrDefault(c => c.Id == customerId && c.IsActive);
             if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
             {
                 _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
@@ -852,6 +838,7 @@ public class SqlDataService : IDataService
 
             // Match tickets using CustomerCode = customer.SourceCustomerId (string matching, like contracts)
             var tickets = _context.Tickets
+                .AsNoTracking()
                 .Where(t => t.IsActive && t.CustomerCode == customer.SourceCustomerId)
                 .OrderByDescending(t => t.Date)
                 .ToList();
@@ -859,6 +846,7 @@ public class SqlDataService : IDataService
             // Load quality data for these tickets
             var ticketIds = tickets.Select(t => t.Id).ToList();
             var qualityData = _context.TicketQualities
+                .AsNoTracking()
                 .Where(q => ticketIds.Contains(q.TicketId))
                 .ToDictionary(q => q.TicketId);
 
@@ -907,6 +895,7 @@ public class SqlDataService : IDataService
         try
         {
             return _appContext.PlantingIntentions
+                .AsNoTracking()
                 .OrderByDescending(p => p.PlantingYear)
                 .ThenBy(p => p.CustomerName)
                 .ToList();
@@ -928,6 +917,7 @@ public class SqlDataService : IDataService
         try
         {
             return _appContext.PlantingIntentions
+                .AsNoTracking()
                 .Where(p => p.CustomerId == customerId)
                 .OrderByDescending(p => p.PlantingYear)
                 .ThenBy(p => p.Crop)
@@ -1037,6 +1027,7 @@ public class SqlDataService : IDataService
             _logger.LogInformation("Attempting to retrieve notes from database");
 
             return _appContext.Notes
+                .AsNoTracking()
                 .OrderByDescending(n => n.CreatedOn)
                 .ToList();
         }
@@ -1057,6 +1048,7 @@ public class SqlDataService : IDataService
         try
         {
             return _appContext.Notes
+                .AsNoTracking()
                 .Where(n => n.CustomerId == customerId)
                 .OrderByDescending(n => n.CreatedOn)
                 .ToList();
@@ -1078,7 +1070,7 @@ public class SqlDataService : IDataService
         try
         {
             // Get customer info for denormalized fields
-            var customer = _context.Customers.FirstOrDefault(c => c.Id == customerId);
+            var customer = _context.Customers.AsNoTracking().FirstOrDefault(c => c.Id == customerId);
             if (customer == null)
             {
                 throw new InvalidOperationException($"Customer with ID {customerId} not found");
@@ -1185,7 +1177,7 @@ public class SqlDataService : IDataService
     {
         try
         {
-            return _appContext.ProducerDetails.FirstOrDefault(pd => pd.CustomerId == customerId);
+            return _appContext.ProducerDetails.AsNoTracking().FirstOrDefault(pd => pd.CustomerId == customerId);
         }
         catch (Exception ex)
         {
@@ -1198,7 +1190,7 @@ public class SqlDataService : IDataService
     {
         try
         {
-            return _appContext.ProducerDetails.ToList();
+            return _appContext.ProducerDetails.AsNoTracking().ToList();
         }
         catch (Exception ex)
         {
@@ -1302,6 +1294,7 @@ public class SqlDataService : IDataService
         try
         {
             return _appContext.SavedLists
+                .AsNoTracking()
                 .Where(s => s.IsActive)
                 .OrderByDescending(s => s.CreatedOn)
                 .ToList();
@@ -1359,6 +1352,7 @@ public class SqlDataService : IDataService
     public List<DashboardPlantingEstimate> GetDashboardPlantingEstimates(string tradeUnitKey, int plantingYear)
     {
         return _appContext.DashboardPlantingEstimates
+            .AsNoTracking()
             .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear)
             .OrderBy(e => e.Crop)
             .ToList();
@@ -1397,6 +1391,7 @@ public class SqlDataService : IDataService
     public List<DashboardMarketShare> GetDashboardMarketShares(string tradeUnitKey, int plantingYear)
     {
         return _appContext.DashboardMarketShares
+            .AsNoTracking()
             .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear)
             .OrderBy(e => e.CropCategory)
             .ToList();

@@ -1,6 +1,15 @@
 import { Injectable, signal, computed } from '@angular/core';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList } from '../models';
 
+export interface InsightsCacheEntry {
+  tradeUnitsKey: string; // sorted, comma-joined trade unit IDs — used to detect trade unit changes
+  customers: Customer[];
+  contracts: Contract[];
+  tickets: Ticket[];
+  notes: Note[];
+  loadedAt: Date;
+}
+
 export interface BuildListState {
   queryText: string;
   filteredCustomerIds: number[];
@@ -92,8 +101,30 @@ export class AppStateService {
     this.savedLists.set(savedLists);
   }
 
+  // Insights cache — keyed by trade unit so navigating back shows data instantly
+  insightsCache = signal<InsightsCacheEntry | null>(null);
+
+  setInsightsCache(entry: InsightsCacheEntry): void {
+    this.insightsCache.set(entry);
+  }
+
+  clearInsightsCache(): void {
+    this.insightsCache.set(null);
+  }
+
   // Geocode cache — plain Map (not a signal) so mutation is cheap and in-place
+  // Capped at 500 entries to prevent unbounded memory growth (LRU-style: evict oldest on overflow)
+  private readonly GEOCODE_CACHE_MAX = 500;
   mapGeocodeCache = new Map<string, { lat: number; lng: number }>();
+
+  setGeocodeCache(key: string, value: { lat: number; lng: number }): void {
+    if (this.mapGeocodeCache.size >= this.GEOCODE_CACHE_MAX) {
+      // Map iteration order is insertion order — delete the oldest entry
+      const firstKey = this.mapGeocodeCache.keys().next().value;
+      if (firstKey !== undefined) this.mapGeocodeCache.delete(firstKey);
+    }
+    this.mapGeocodeCache.set(key, value);
+  }
 
   clearMapGeocodeCache(): void {
     this.mapGeocodeCache.clear();
@@ -130,5 +161,6 @@ export class AppStateService {
     this.savedLists.set([]);
     this.buildListState.set(null);
     this.lastScrolledCustomerId.set(null);
+    this.insightsCache.set(null);
   }
 }

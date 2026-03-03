@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { Customer } from '../../models';
 import { BadgeComponent } from '../ui/badge/badge.component';
 import { AppStateService } from '../../services/app-state.service';
+import { environment } from '../../../environments/environment';
 import * as L from 'leaflet';
 
 // Fix Leaflet default marker icon paths when bundled via npm
@@ -298,7 +299,7 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
       if (!this.map) break;
 
       try {
-        const response = await fetch('http://localhost:5000/api/geocode/single', {
+        const response = await fetch(`${environment.apiBaseUrl}/geocode/single`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ key: cacheKey, city: addr.city, state: addr.state, zip: addr.zip })
@@ -308,7 +309,7 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
           const result: { key: string; lat: number | null; lng: number | null } = await response.json();
           if (result.lat != null && result.lng != null) {
             const coords = { lat: result.lat, lng: result.lng };
-            this.geocodeCache.set(cacheKey, coords);
+            this.appState.setGeocodeCache(cacheKey, coords);
             for (const customerId of customerIds) {
               const marker = markerMap.get(customerId);
               if (marker && this.map) {

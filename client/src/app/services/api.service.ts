@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
   Customer,
@@ -15,17 +15,17 @@ import {
   DashboardMarketShare,
   ContractPricingLine
 } from '../models';
+import { environment } from '../../environments/environment';
 
 /**
  * ApiService provides HTTP methods for communicating with the .NET Web API backend.
  * All methods return RxJS Observables for async data handling.
- * Base URL points to the local API server (http://localhost:5000/api).
  */
 @Injectable({
   providedIn: 'root'
 })
 export class ApiService {
-  private baseUrl = 'http://localhost:5000/api';
+  private baseUrl = environment.apiBaseUrl;
 
   constructor(private http: HttpClient) {}
 
@@ -35,18 +35,16 @@ export class ApiService {
 
   /** Fetches all customers in the system */
   getCustomers(tradeUnits?: string[]): Observable<Customer[]> {
-    const params = tradeUnits && tradeUnits.length > 0
-      ? '?' + tradeUnits.map(tu => `tradeUnits=${encodeURIComponent(tu)}`).join('&')
-      : '';
-    return this.http.get<Customer[]>(`${this.baseUrl}/customers${params}`);
+    let params = new HttpParams();
+    tradeUnits?.forEach(tu => params = params.append('tradeUnits', tu));
+    return this.http.get<Customer[]>(`${this.baseUrl}/customers`, { params });
   }
 
   /** Searches customers by name (max 15 results) */
   searchCustomers(searchTerm: string, tradeUnits?: string[]): Observable<Customer[]> {
-    const tradeUnitParams = tradeUnits && tradeUnits.length > 0
-      ? '&' + tradeUnits.map(tu => `tradeUnits=${encodeURIComponent(tu)}`).join('&')
-      : '';
-    return this.http.get<Customer[]>(`${this.baseUrl}/customers/search?searchTerm=${encodeURIComponent(searchTerm)}${tradeUnitParams}`);
+    let params = new HttpParams().set('searchTerm', searchTerm);
+    tradeUnits?.forEach(tu => params = params.append('tradeUnits', tu));
+    return this.http.get<Customer[]>(`${this.baseUrl}/customers/search`, { params });
   }
 
   /** Fetches all unique trade units / organization codes */
@@ -75,10 +73,9 @@ export class ApiService {
 
   /** Fetches all contracts in the system */
   getContracts(tradeUnits?: string[]): Observable<Contract[]> {
-    const params = tradeUnits && tradeUnits.length > 0
-      ? '?' + tradeUnits.map(tu => `tradeUnits=${encodeURIComponent(tu)}`).join('&')
-      : '';
-    return this.http.get<Contract[]>(`${this.baseUrl}/contracts${params}`);
+    let params = new HttpParams();
+    tradeUnits?.forEach(tu => params = params.append('tradeUnits', tu));
+    return this.http.get<Contract[]>(`${this.baseUrl}/contracts`, { params });
   }
 
   /** Fetches all contracts for a specific customer */
@@ -88,15 +85,17 @@ export class ApiService {
 
   /** Fetches pricing lines for a specific contract by its sourceContractId */
   getPricingLines(sourceContractId: string): Observable<ContractPricingLine[]> {
+    const params = new HttpParams().set('sourceContractId', sourceContractId);
     return this.http.get<ContractPricingLine[]>(
-      `${this.baseUrl}/contracts/pricing-lines?sourceContractId=${encodeURIComponent(sourceContractId)}`
+      `${this.baseUrl}/contracts/pricing-lines`, { params }
     );
   }
 
   /** Fetches all pricing lines for a customer's contracts by sourceCustomerId */
   getPricingLinesByCustomer(sourceCustomerId: string): Observable<ContractPricingLine[]> {
+    const params = new HttpParams().set('sourceCustomerId', sourceCustomerId);
     return this.http.get<ContractPricingLine[]>(
-      `${this.baseUrl}/contracts/pricing-lines/by-customer?sourceCustomerId=${encodeURIComponent(sourceCustomerId)}`
+      `${this.baseUrl}/contracts/pricing-lines/by-customer`, { params }
     );
   }
 
@@ -106,10 +105,9 @@ export class ApiService {
 
   /** Fetches all delivery tickets in the system */
   getTickets(tradeUnits?: string[]): Observable<Ticket[]> {
-    const params = tradeUnits && tradeUnits.length > 0
-      ? '?' + tradeUnits.map(tu => `tradeUnits=${encodeURIComponent(tu)}`).join('&')
-      : '';
-    return this.http.get<Ticket[]>(`${this.baseUrl}/tickets${params}`);
+    let params = new HttpParams();
+    tradeUnits?.forEach(tu => params = params.append('tradeUnits', tu));
+    return this.http.get<Ticket[]>(`${this.baseUrl}/tickets`, { params });
   }
 
   /** Fetches all delivery tickets for a specific customer */
@@ -165,9 +163,8 @@ export class ApiService {
 
   /** Gets saved dashboard planting estimates for a trade unit key + year */
   getDashboardPlantingEstimates(tradeUnitKey: string, plantingYear: number): Observable<DashboardPlantingEstimate[]> {
-    return this.http.get<DashboardPlantingEstimate[]>(
-      `${this.baseUrl}/dashboardplantingestimates?tradeUnitKey=${encodeURIComponent(tradeUnitKey)}&plantingYear=${plantingYear}`
-    );
+    const params = new HttpParams().set('tradeUnitKey', tradeUnitKey).set('plantingYear', plantingYear);
+    return this.http.get<DashboardPlantingEstimate[]>(`${this.baseUrl}/dashboardplantingestimates`, { params });
   }
 
   /** Upserts dashboard planting estimates (yield only) for a trade unit key + year */
@@ -177,9 +174,8 @@ export class ApiService {
 
   /** Gets saved dashboard market shares for a trade unit key + year */
   getDashboardMarketShares(tradeUnitKey: string, plantingYear: number): Observable<DashboardMarketShare[]> {
-    return this.http.get<DashboardMarketShare[]>(
-      `${this.baseUrl}/dashboardplantingestimates/marketshares?tradeUnitKey=${encodeURIComponent(tradeUnitKey)}&plantingYear=${plantingYear}`
-    );
+    const params = new HttpParams().set('tradeUnitKey', tradeUnitKey).set('plantingYear', plantingYear);
+    return this.http.get<DashboardMarketShare[]>(`${this.baseUrl}/dashboardplantingestimates/marketshares`, { params });
   }
 
   /** Upserts dashboard market shares for a trade unit key + year */

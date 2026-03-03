@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, inject, OnChanges, SimpleChanges, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
+import { Component, Input, Output, EventEmitter, inject, OnChanges, SimpleChanges, ChangeDetectorRef, ChangeDetectionStrategy, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ThemeService } from '../../../services/theme.service';
 import { ContractsTableComponent } from '../contracts-table/contracts-table.component';
@@ -6,10 +6,11 @@ import { TicketsTableComponent } from '../tickets-table/tickets-table.component'
 import { PlantingIntentionsTableComponent } from '../planting-intentions-table/planting-intentions-table.component';
 import { StoredGrainTableComponent } from '../stored-grain-table/stored-grain-table.component';
 import { ProducerInsightsComponent } from '../producer-insights/producer-insights.component';
+import { ContractPacingCardComponent } from '../contract-pacing-card/contract-pacing-card.component';
 import { AIGrowthForecastComponent } from '../ai-growth-forecast/ai-growth-forecast.component';
 import { ActivitySummaryComponent } from '../activity-summary/activity-summary.component';
 import { EditCustomerDialogComponent } from '../edit-customer-dialog/edit-customer-dialog.component';
-import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, ContractPricingLine, DashboardPlantingEstimate } from '../../../models';
+import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity } from '../../../models';
 
 @Component({
   selector: 'app-customer-profile',
@@ -22,6 +23,7 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, Contr
     PlantingIntentionsTableComponent,
     StoredGrainTableComponent,
     ProducerInsightsComponent,
+    ContractPacingCardComponent,
     AIGrowthForecastComponent,
     ActivitySummaryComponent,
     EditCustomerDialogComponent
@@ -199,26 +201,20 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, Contr
               </div>
             </div>
 
-            <!-- Contract Percentage -->
+            <!-- Contract Pace Percentage (Year-over-Year) -->
             <div>
-              <h3 class="text-xs sm:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-2.5">Contract Percentage</h3>
-              <div
-                class="border rounded-lg px-14 py-2.5 text-center inline-block min-w-[170px] relative group"
-                [class]="marketSharePercentage > 0 ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/30' : 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30'"
-              >
-                @if (marketSharePercentage === 0) {
-                  <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10 whitespace-nowrap">
-                    <div class="bg-gray-900 dark:bg-gray-700 text-white text-xs rounded px-2.5 py-1.5 shadow-lg">
-                      Add planting intentions to calculate contract percentage
-                    </div>
-                    <div class="w-2 h-2 bg-gray-900 dark:bg-gray-700 rotate-45 mx-auto -mt-1"></div>
-                  </div>
-                }
-                <div class="text-2xl sm:text-3xl font-bold" [class]="marketSharePercentage > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'">
-                  {{ marketSharePercentage | number:'1.0-0' }}%
+              <h3 class="text-xs sm:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-2.5">Contract Pace Percentage</h3>
+              @if (yoyCurrentYear === 0) {
+                <p class="text-xs text-gray-400 dark:text-gray-500 py-2">No contract data available.</p>
+              } @else {
+                <div class="rounded-lg border p-3 text-center cursor-pointer transition-opacity hover:opacity-80 select-none"
+                     [class]="pacingBoxClass"
+                     (click)="toggleProducerInsights()"
+                     title="Click to {{ showProducerInsights ? 'hide' : 'show' }} Contract Pacing details">
+                  <div class="text-3xl font-bold">{{ yoyThisPctDisplay }}</div>
+                  <div class="text-xs mt-1 opacity-60">{{ yoyCurrentYear - 1 }} vs {{ yoyCurrentYear }}</div>
                 </div>
-                <div class="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">{{ bushelsAvailable | number }} bu available</div>
-              </div>
+              }
             </div>
           </div>
 
@@ -235,6 +231,8 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, Contr
           [notes]="notes"
           [storedGrain]="storedGrain">
         </app-producer-insights>
+
+        <app-contract-pacing-card [contracts]="contracts"></app-contract-pacing-card>
 
         <!-- AI Growth Forecast -->
         <app-ai-growth-forecast
@@ -257,7 +255,7 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, Contr
       </app-activity-summary>
 
       <!-- Tabs Section - Below Summary -->
-      <div>
+      <div #tabsSection>
         <!-- Pill-style tab navigation -->
         <div class="w-full bg-gray-100 dark:bg-gray-800 rounded-full p-0.5 sm:p-1 mb-6">
           <div class="flex">
@@ -265,7 +263,7 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, Contr
               <button
                 type="button"
                 [class]="getTabClass(tab.id)"
-                (click)="activeTab = tab.id"
+                (click)="selectTab(tab.id)"
               >
                 <span class="hidden sm:inline">{{ tab.label }} ({{ tab.count }})</span>
                 <span class="sm:hidden">{{ tab.shortLabel }} ({{ tab.count }})</span>
@@ -278,12 +276,56 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, Contr
         <div class="pb-8">
           @switch (activeTab) {
             @case ('contracts') {
-              <app-contracts-table [contracts]="contracts" [tickets]="tickets" [pricingLines]="pricingLines" [customer]="customer"></app-contracts-table>
+              <app-contracts-table [contracts]="contracts" [tickets]="tickets" [pricingLines]="pricingLines" [customer]="customer" [openContractId]="openContractId"></app-contracts-table>
             }
             @case ('tickets') {
               <app-tickets-table [tickets]="tickets" [contracts]="contracts" [customer]="customer"></app-tickets-table>
             }
             @case ('planting') {
+              <!-- Contract Percentage Summary for this planting year -->
+              @if (isLoadingEstimates) {
+                <div class="mb-4 flex items-center gap-2 text-sm text-gray-400 dark:text-gray-500 px-1">
+                  <svg class="animate-spin h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.961 3 8.12l3-2.829z"></path>
+                  </svg>
+                  Calculating contract percentage...
+                </div>
+              } @else if (plantingIntentions.length > 0) {
+                <div class="mb-4 p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                  <div class="flex items-center justify-between gap-4 flex-wrap">
+                    <div class="flex items-start gap-6 flex-wrap">
+                      <div class="text-center min-w-[80px] relative group cursor-default">
+                        <div class="text-3xl font-bold" [class]="marketSharePercentage > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-gray-500'">{{ marketSharePercentage | number:'1.0-0' }}%</div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Contracted{{ contractYear > 0 ? ' (' + contractYear + ')' : '' }}</div>
+                        <!-- Hover tooltip -->
+                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10 w-64 pointer-events-none">
+                          <div class="bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg px-3 py-2 shadow-lg text-left space-y-1">
+                            <p class="text-gray-300">bu contracted / bu projected yield</p>
+                            <p class="text-gray-400">Projected yield = planting acres × yield estimate (set in the Trade Unit Dashboard).</p>
+                          </div>
+                          <div class="w-2 h-2 bg-gray-900 dark:bg-gray-700 rotate-45 mx-auto -mt-1"></div>
+                        </div>
+                      </div>
+                      <div class="border-l border-gray-200 dark:border-gray-700 pl-6 space-y-1 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+                        <div><span class="font-medium text-gray-700 dark:text-gray-300">{{ totalContracted | number }}</span> bu contracted</div>
+                        <div><span class="font-medium text-gray-700 dark:text-gray-300">{{ totalProjectedYield | number }}</span> bu projected yield</div>
+                        <div><span class="font-medium text-gray-700 dark:text-gray-300">{{ bushelsAvailable | number }}</span> bu available to contract</div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-green-600 text-white text-sm font-medium hover:bg-green-700 transition-colors shrink-0"
+                      (click)="openAddPlanting()"
+                    >
+                      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                      </svg>
+                      Add Planting Intention
+                    </button>
+                  </div>
+                </div>
+              }
               <app-planting-intentions-table
                 [plantingIntentions]="plantingIntentions"
                 [customer]="customer"
@@ -327,6 +369,8 @@ export class CustomerProfileComponent implements OnChanges {
   @Input() notes: Note[] = [];
   @Input() yieldEstimateCrops: string[] = [];
   @Input() yieldEstimates: DashboardPlantingEstimate[] = [];
+  @Input() commodities: Commodity[] = [];
+  @Input() isLoadingEstimates = false;
 
   // Unfiltered data for Activity Summary
   @Input() allCustomerContracts: Contract[] = [];
@@ -342,6 +386,10 @@ export class CustomerProfileComponent implements OnChanges {
   @Output() onSaveCustomer = new EventEmitter<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean }>();
   @Input() linkedCustomers: Customer[] = [];
   @Output() onSelectLinkedCustomer = new EventEmitter<number>();
+  @Input() openContractId: number | null = null;
+
+  @ViewChild(PlantingIntentionsTableComponent) private plantingTable?: PlantingIntentionsTableComponent;
+  @ViewChild('tabsSection') private tabsSectionRef?: ElementRef<HTMLElement>;
 
   private themeService = inject(ThemeService);
   private cdr = inject(ChangeDetectorRef);
@@ -351,42 +399,111 @@ export class CustomerProfileComponent implements OnChanges {
   showProducerInsights = false;
   showEditDialog = false;
 
+  selectTab(tabId: string): void {
+    this.activeTab = tabId;
+    // Scroll the tabs section into view so the user doesn't have to manually scroll down
+    const el = this.tabsSectionRef?.nativeElement;
+    if (el) {
+      const y = el.getBoundingClientRect().top + window.scrollY - 72; // 72px offset for sticky header
+      window.scrollTo({ top: y, behavior: 'smooth' });
+    }
+  }
+
   // Performance optimization: Cache computed values used in template
   private _totalProjectedYield = 0;
   private _totalContracted = 0;
   private _marketSharePercentage = 0;
   private _bushelsAvailable = 0;
+  private _contractYear = 0;
+  private _pacingDeliveryYear = 0;
+  private _pacingPct: number | null = null;
   private _tabs: any[] = [];
   private _unappliedTicketCount = 0;
   private _effectiveCommodities: string[] = [];
 
   ngOnChanges(changes: SimpleChanges): void {
-    // Recalculate cached values when relevant inputs change
-    if (changes['contracts']) {
-      this._totalContracted = this.contracts
-        .filter(c => c.status === 'Active' || c.status === 'Pending')
-        .reduce((sum, c) => sum + c.quantity, 0);
+    // When arriving from Insights with a specific contract, switch to contracts tab
+    if (changes['openContractId'] && this.openContractId != null) {
+      this.activeTab = 'contracts';
     }
 
-    // Recalculate projected yield from planting intentions × dashboard yield estimates.
-    // Use the most recent planting year to match the Producer Insights pacing logic.
-    if (changes['plantingIntentions'] || changes['yieldEstimates']) {
+    // Derive the contract year from the most recent planting intention year.
+    // All contract % calculations are scoped to this year.
+    if (changes['plantingIntentions']) {
       let maxYear = 0;
       for (const pi of this.plantingIntentions) {
         if (pi.plantingYear > maxYear) maxYear = pi.plantingYear;
       }
-      const intentionsForYear = maxYear > 0
-        ? this.plantingIntentions.filter(pi => pi.plantingYear === maxYear)
+      this._contractYear = maxYear;
+    }
+
+    // Recalculate total contracted bushels:
+    // Include Active, Pending, Fulfilled, and Overdue — exclude Cancelled.
+    // Scope to the planting intention year via cropYear on the contract.
+    if (changes['contracts'] || changes['plantingIntentions']) {
+      const year = this._contractYear;
+      this._totalContracted = this.contracts
+        .filter(c =>
+          c.status !== 'Cancelled' &&
+          (year === 0 || c.cropYear === year)
+        )
+        .reduce((sum, c) => sum + c.quantity, 0);
+    }
+
+    // Contract pacing: delivery-year YoY % change — purely contract-based, no planting intentions.
+    // Mirrors the logic in ContractPacingCardComponent.
+    if (changes['contracts']) {
+      let maxYear = 0;
+      for (const c of this.contracts) {
+        if (c.deliveryStart) {
+          const y = new Date(c.deliveryStart).getFullYear();
+          if (y > maxYear) maxYear = y;
+        }
+      }
+      this._pacingDeliveryYear = maxYear;
+
+      if (maxYear > 0) {
+        const priorYear = maxYear - 1;
+        const today = new Date();
+        const samePointLastYear = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
+
+        const thisYearBu = this.contracts
+          .filter(c => c.deliveryStart && new Date(c.deliveryStart).getFullYear() === maxYear)
+          .reduce((sum, c) => sum + c.quantity, 0);
+
+        const lastYearBu = this.contracts
+          .filter(c => {
+            if (!c.deliveryStart || new Date(c.deliveryStart).getFullYear() !== priorYear) return false;
+            if (!c.contractDate) return true;
+            return new Date(c.contractDate) <= samePointLastYear;
+          })
+          .reduce((sum, c) => sum + c.quantity, 0);
+
+        this._pacingPct = lastYearBu > 0 ? ((thisYearBu - lastYearBu) / lastYearBu) * 100 : null;
+      } else {
+        this._pacingPct = null;
+      }
+    }
+
+    // Recalculate projected yield from planting intentions × dashboard yield estimates.
+    // Yield estimates are keyed by "[type] [category]" (e.g. "Dryland CORN") — same
+    // composite key the dashboard uses when saving estimates.
+    if (changes['plantingIntentions'] || changes['yieldEstimates'] || changes['commodities']) {
+      const intentionsForYear = this._contractYear > 0
+        ? this.plantingIntentions.filter(pi => pi.plantingYear === this._contractYear)
         : this.plantingIntentions;
 
       this._totalProjectedYield = intentionsForYear.reduce((sum, pi) => {
-        const est = this.yieldEstimates.find(ye => ye.crop === pi.crop);
+        const commodity = this.commodities.find(c => c.code === pi.crop);
+        const category = commodity?.category || pi.crop;
+        const cropKey = [pi.type, category].filter(Boolean).join(' ');
+        const est = this.yieldEstimates.find(ye => ye.crop === cropKey);
         return sum + pi.acres * (est?.yieldEstimate ?? 0);
       }, 0);
     }
 
     // Recalculate dependent values
-    if (changes['plantingIntentions'] || changes['yieldEstimates'] || changes['contracts']) {
+    if (changes['plantingIntentions'] || changes['yieldEstimates'] || changes['commodities'] || changes['contracts']) {
       this._marketSharePercentage = this._totalProjectedYield > 0
         ? (this._totalContracted / this._totalProjectedYield) * 100
         : 0;
@@ -446,6 +563,10 @@ export class CustomerProfileComponent implements OnChanges {
     this.cdr.markForCheck();
   }
 
+  openAddPlanting(): void {
+    this.plantingTable?.openAddDialog();
+  }
+
   handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean }): void {
     this.onSaveCustomer.emit(data);
     this.closeEditDialog();
@@ -469,6 +590,10 @@ export class CustomerProfileComponent implements OnChanges {
     return `${baseClass} bg-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white`;
   }
 
+  get contractYear(): number {
+    return this._contractYear;
+  }
+
   get totalProjectedYield(): number {
     return this._totalProjectedYield;
   }
@@ -483,6 +608,31 @@ export class CustomerProfileComponent implements OnChanges {
 
   get bushelsAvailable(): number {
     return this._bushelsAvailable;
+  }
+
+  /** Most recent delivery year seen across all contracts. */
+  get yoyCurrentYear(): number { return this._pacingDeliveryYear; }
+
+  /** YoY pacing % as display string, e.g. "+15%" or "-8%" or "—" if no prior-year data. */
+  get yoyThisPctDisplay(): string {
+    if (this._pacingPct === null) return '—';
+    const sign = this._pacingPct >= 0 ? '+' : '';
+    return `${sign}${Math.round(this._pacingPct)}%`;
+  }
+
+  /** True when pacing is strictly ahead vs prior year. */
+  get yoyIsAhead(): boolean {
+    return this._pacingPct !== null && this._pacingPct > 0;
+  }
+
+  /** Box classes for the Contract Pace Percentage card: green/red/neutral. */
+  get pacingBoxClass(): string {
+    if (this._pacingPct === null || this._pacingPct === 0) {
+      return 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400';
+    }
+    return this._pacingPct > 0
+      ? 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800 text-green-700 dark:text-green-400'
+      : 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400';
   }
 
   get unappliedTicketCount(): number {

@@ -7,7 +7,7 @@ import { ApiService } from '../../services/api.service';
 import { AppStateService } from '../../services/app-state.service';
 import { ToastService } from '../../services/toast.service';
 import { NlqFilterService, NlqFilterContext } from '../../services/nlq-filter.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate } from '../../models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity } from '../../models';
 import { CustomerListComponent } from '../../components/customers/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customers/customer-profile/customer-profile.component';
 import { CustomerNotesComponent } from '../../components/customers/customer-notes/customer-notes.component';
@@ -43,7 +43,7 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
       </div>
 
       <!-- Profile and Notes Container - Optimized content display (78% on 2xl) -->
-      <div [class.hidden]="!selectedCustomer && isMobile" [class.lg:block]="true">
+      <div [class.hidden]="!selectedCustomer && isMobile" [class.lg:block]="true" class="pb-6 lg:min-h-[calc(100vh-6rem)]">
         <div class="xl:grid xl:grid-cols-[66.7%_33.3%] 2xl:grid-cols-[61.3%_38.7%] xl:gap-6 space-y-6 xl:space-y-0">
           <!-- Profile Section - Optimized for data visibility (61.3% on 2xl) -->
           <div class="space-y-6">
@@ -72,6 +72,8 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                 [notes]="customerNotes"
                 [yieldEstimateCrops]="yieldEstimateCrops"
                 [yieldEstimates]="yieldEstimates"
+                [commodities]="commodities"
+                [isLoadingEstimates]="isLoadingYieldData"
                 [allCustomerContracts]="allCustomerContracts"
                 [allCustomerTickets]="allCustomerTickets"
                 [allCustomerPlantingIntentions]="allCustomerPlantingIntentions"
@@ -83,7 +85,8 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                 (onAddNote)="addNote($event)"
                 (onTogglePin)="toggleNotePin($event)"
                 (onSaveCustomer)="handleSaveCustomer($event)"
-                (onSelectLinkedCustomer)="handleSelectLinkedCustomer($event)">
+                (onSelectLinkedCustomer)="handleSelectLinkedCustomer($event)"
+                [openContractId]="pendingContractId">
               </app-customer-profile>
             } @else {
               <!-- Empty state — shown on desktop when no customer is selected -->
@@ -125,6 +128,7 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
                     [notes]="customerNotes"
                     [customer]="selectedCustomer"
                     [customerCodeMap]="customerCodeMap"
+                    [linkedCustomers]="selectedCustomer ? getLinkedGroup(selectedCustomer) : []"
                     (addNote)="addNote($event)"
                     (togglePin)="toggleNotePin($event)"
                     (editNote)="editNote($event)"
@@ -165,6 +169,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   producerDetailsMap = new Map<number, ProducerDetails>();
 
   selectedCustomer: Customer | null = null;
+  pendingContractId: number | null = null;
   selectedTradeUnits: string[] = [];
   customerContracts: Contract[] = [];
   customerTickets: Ticket[] = [];
@@ -183,6 +188,8 @@ export class HomeComponent implements OnInit, OnDestroy {
   // Yield estimate crop codes from dashboard (for planting intentions dropdown)
   yieldEstimateCrops: string[] = [];
   yieldEstimates: DashboardPlantingEstimate[] = [];
+  commodities: Commodity[] = [];
+  isLoadingYieldData = false;
 
   isMobile = false;
   loading = false;
@@ -198,16 +205,22 @@ export class HomeComponent implements OnInit, OnDestroy {
     this.loadProducerDetails();
 
     // Only load data if trade units are selected AND we have no cached data yet.
-    // If customers were restored from AppStateService, skip the reload entirely —
+    // If customers were restored from AppStateService, skip the heavy reload —
     // data will only be refreshed when the user explicitly changes trade units.
     if (this.selectedTradeUnits.length > 0 && this.customers.length === 0) {
       this.loadAllData(this.selectedTradeUnits);
+    } else if (this.selectedTradeUnits.length > 0) {
+      // Customers came from cache — still refresh yield estimates and commodities
+      // so any changes saved on the Dashboard page are reflected immediately.
+      this.loadYieldData();
     }
 
-    // Handle customerId query param (from Build a List view customer link)
+    // Handle customerId and contractId query params (from Insights and Build a List)
     this.route.queryParams.pipe(takeUntil(this.destroy$)).subscribe(params => {
       const customerId = params['customerId'];
       if (customerId) {
+        const contractId = params['contractId'];
+        this.pendingContractId = contractId ? parseInt(contractId, 10) : null;
         this.selectCustomerById(customerId);
       }
     });
@@ -377,8 +390,8 @@ export class HomeComponent implements OnInit, OnDestroy {
       error: () => {}
     });
 
-    // Load yield estimate crop codes for planting intentions dropdown
-    this.loadYieldEstimateCrops();
+    // Load yield estimates and commodities together (tracked via isLoadingYieldData)
+    this.loadYieldData();
 
     this.apiService.getSavedLists().pipe(takeUntil(this.destroy$)).subscribe({
       next: (data) => {
@@ -447,35 +460,58 @@ export class HomeComponent implements OnInit, OnDestroy {
     }
   }
 
-  private loadYieldEstimateCrops(): void {
+  private loadYieldData(): void {
     const key = [...this.selectedTradeUnits].sort().join(',');
     if (!key) {
       this.yieldEstimates = [];
       this.yieldEstimateCrops = [];
+      this.commodities = [];
       return;
     }
-    // Load estimates for both current and prior planting year — the dashboard's selected
-    // planting year may differ from the current calendar year (e.g. estimates saved for
-    // 2025 crop year while calendar is now 2026). Merge both; current year takes precedence
-    // for the same crop code so newer estimates win.
+
+    // Set loading flag immediately (synchronously) so the spinner is visible
+    // the moment a customer profile renders — before either API call returns.
+    this.isLoadingYieldData = true;
+
+    // Track both calls; clear flag only when both complete so the percentage
+    // is never calculated with a partial dataset (estimates but no commodities,
+    // or commodities but no estimates).
+    let pending = 2;
+    const done = () => {
+      if (--pending === 0) {
+        this.isLoadingYieldData = false;
+        this.cdr.detectChanges();
+      }
+    };
+
+    // ── Yield estimates (current + prior year merged) ─────────────────────────
     const currentYear = new Date().getFullYear();
     forkJoin([
       this.apiService.getDashboardPlantingEstimates(key, currentYear).pipe(catchError(() => of([]))),
       this.apiService.getDashboardPlantingEstimates(key, currentYear - 1).pipe(catchError(() => of([])))
-    ]).pipe(takeUntil(this.destroy$)).subscribe(([current, prior]) => {
-      // Merge: start with prior year, then overwrite/add with current year entries
-      const merged = [...prior];
-      for (const est of current) {
-        const idx = merged.findIndex(e => e.crop === est.crop);
-        if (idx >= 0) {
-          merged[idx] = est;
-        } else {
-          merged.push(est);
+    ]).pipe(takeUntil(this.destroy$)).subscribe({
+      next: ([current, prior]) => {
+        // Merge: start with prior year, then overwrite/add with current year entries
+        const merged = [...prior];
+        for (const est of current) {
+          const idx = merged.findIndex(e => e.crop === est.crop);
+          if (idx >= 0) {
+            merged[idx] = est;
+          } else {
+            merged.push(est);
+          }
         }
-      }
-      this.yieldEstimates = merged;
-      this.yieldEstimateCrops = merged.map(e => e.crop);
-      this.cdr.detectChanges();
+        this.yieldEstimates = merged;
+        this.yieldEstimateCrops = merged.map(e => e.crop);
+        done();
+      },
+      error: () => done()
+    });
+
+    // ── Commodities (needed for crop-code → category mapping) ─────────────────
+    this.apiService.getCommodities().pipe(takeUntil(this.destroy$)).subscribe({
+      next: (data) => { this.commodities = data; done(); },
+      error: () => done()
     });
   }
 

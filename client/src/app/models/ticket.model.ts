@@ -33,5 +33,6 @@ export interface Ticket {
   gradeCode?: string;
 
   // Status
+  ticketStatusDescription?: string; // e.g. "Unload", "Final Settled", "P/A", "Force-Matched Unload"
   isActive: boolean;
 }

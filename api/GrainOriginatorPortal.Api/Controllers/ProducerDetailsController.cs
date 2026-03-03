@@ -1,6 +1,7 @@
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -9,10 +10,12 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class ProducerDetailsController : ControllerBase
 {
     private readonly IDataService _dataService;
+    private readonly ILogger<ProducerDetailsController> _logger;
 
-    public ProducerDetailsController(IDataService dataService)
+    public ProducerDetailsController(IDataService dataService, ILogger<ProducerDetailsController> logger)
     {
         _dataService = dataService;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -25,8 +28,8 @@ public class ProducerDetailsController : ControllerBase
     public ActionResult<ProducerDetails> GetByCustomer(long customerId)
     {
         var details = _dataService.GetProducerDetails(customerId);
-        if (details == null) return NotFound();
-        return Ok(details);
+        // Return empty record rather than 404 — absence of saved details is normal for new customers
+        return Ok(details ?? new ProducerDetails { CustomerId = customerId });
     }
 
     [HttpPut("customer/{customerId:long}")]
@@ -46,8 +49,9 @@ public class ProducerDetailsController : ControllerBase
             );
             return Ok(details);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Error saving producer details for customer {CustomerId}", customerId);
             return StatusCode(500, new { error = "Failed to save producer details" });
         }
     }

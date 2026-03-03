@@ -54,16 +54,6 @@ type SortDirection = 'none' | 'asc' | 'desc';
           </div>
         </div>
       } @else {
-        <!-- Add Button -->
-        <div class="flex justify-end mb-4">
-          <app-button variant="default" (onClick)="openAddDialog()">
-            <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-            </svg>
-            Add Planting Intention
-          </app-button>
-        </div>
-
         <!-- Mobile Card View -->
         <div class="md:hidden space-y-3">
           @for (intention of sortedIntentions; track intention.id; let i = $index) {
@@ -271,18 +261,28 @@ type SortDirection = 'none' | 'asc' | 'desc';
 
             <div class="space-y-2">
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Crop</label>
-              <select
-                [(ngModel)]="addForm.crop"
-                (ngModelChange)="onAddCropChange($event)"
-                class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
-              >
-                <option value="" disabled>Select a crop...</option>
-                @for (commodity of availableCrops; track commodity.id) {
-                  <option [value]="commodity.code">{{ commodity.name }} ({{ commodity.code }})</option>
+              @if (isLoadingCommodities) {
+                <div class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 flex items-center gap-2 text-sm text-gray-400 dark:text-gray-500">
+                  <svg class="animate-spin h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.961 3 8.12l3-2.829z"></path>
+                  </svg>
+                  Loading crops...
+                </div>
+              } @else {
+                <select
+                  [(ngModel)]="addForm.crop"
+                  (ngModelChange)="onAddCropChange($event)"
+                  class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="" disabled>Select a crop...</option>
+                  @for (commodity of availableCrops; track commodity.id) {
+                    <option [value]="commodity.code">{{ commodity.name }} ({{ commodity.code }})</option>
+                  }
+                </select>
+                @if (availableCrops.length === 0) {
+                  <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">No crops available for this customer.</p>
                 }
-              </select>
-              @if (availableCrops.length === 0) {
-                <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">No crops configured. Add crop yield estimates in the Trade Unit Dashboard first.</p>
               }
             </div>
 
@@ -337,16 +337,29 @@ type SortDirection = 'none' | 'asc' | 'desc';
 
             <div class="space-y-2">
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Crop</label>
-              <select
-                [(ngModel)]="editForm.crop"
-                (ngModelChange)="onEditCropChange($event)"
-                class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
-              >
-                <option value="" disabled>Select a crop...</option>
-                @for (commodity of availableCrops; track commodity.id) {
-                  <option [value]="commodity.code">{{ commodity.name }} ({{ commodity.code }})</option>
+              @if (isLoadingCommodities) {
+                <div class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 flex items-center gap-2 text-sm text-gray-400 dark:text-gray-500">
+                  <svg class="animate-spin h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.961 3 8.12l3-2.829z"></path>
+                  </svg>
+                  Loading crops...
+                </div>
+              } @else {
+                <select
+                  [(ngModel)]="editForm.crop"
+                  (ngModelChange)="onEditCropChange($event)"
+                  class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="" disabled>Select a crop...</option>
+                  @for (commodity of availableCrops; track commodity.id) {
+                    <option [value]="commodity.code">{{ commodity.name }} ({{ commodity.code }})</option>
+                  }
+                </select>
+                @if (availableCrops.length === 0) {
+                  <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">No crops available for this customer.</p>
                 }
-              </select>
+              }
             </div>
 
             <div class="space-y-2">
@@ -430,18 +443,21 @@ export class PlantingIntentionsTableComponent implements OnInit, OnDestroy {
   @Output() delete = new EventEmitter<number>();
 
   allCommodities: Commodity[] = [];
+  isLoadingCommodities = false;
 
   get availableCrops(): Commodity[] {
-    // Prefer crops from dashboard yield estimates if available
-    if (this.yieldEstimateCrops.length > 0) {
-      return this.allCommodities.filter(c => this.yieldEstimateCrops.includes(c.code));
-    }
     if (this.customerCommodityCodes.length === 0) return this.allCommodities;
-    return this.allCommodities.filter(c => this.customerCommodityCodes.includes(c.code));
+    const keys = this.customerCommodityCodes.map(s => s.toLowerCase());
+    const matched = this.allCommodities.filter(c =>
+      keys.includes(c.code.toLowerCase()) ||
+      (c.name && keys.includes(c.name.toLowerCase())) ||
+      (c.category && keys.includes(c.category.toLowerCase()))
+    );
+    return matched.length > 0 ? matched : this.allCommodities;
   }
 
   get showNoCropsMessage(): boolean {
-    return this.yieldEstimateCrops.length === 0 && this.customerCommodityCodes.length === 0 && this.allCommodities.length > 0;
+    return this.customerCommodityCodes.length === 0 && this.allCommodities.length > 0;
   }
 
   ngOnInit(): void {
@@ -591,9 +607,14 @@ export class PlantingIntentionsTableComponent implements OnInit, OnDestroy {
   // ── Commodity dropdown ───────────────────────────────────────────────────────
 
   private loadCommodities(): void {
-    if (this.allCommodities.length > 0) return;
+    if (this.allCommodities.length > 0 || this.isLoadingCommodities) return;
+    this.isLoadingCommodities = true;
     this.apiService.getCommodities().subscribe({
-      next: (commodities) => { this.allCommodities = commodities; }
+      next: (commodities) => {
+        this.allCommodities = commodities;
+        this.isLoadingCommodities = false;
+      },
+      error: () => { this.isLoadingCommodities = false; }
     });
   }
 
@@ -659,15 +680,37 @@ export class PlantingIntentionsTableComponent implements OnInit, OnDestroy {
 
   submitAdd(): void {
     if (this.isAddFormValid()) {
-      const data = {
-        crop: this.addForm.crop,
-        type: this.addForm.type || undefined,
-        description: this.addForm.description || undefined,
-        acres: this.parseIntInput(this.addForm.acres),
-        plantingYear: this.parseIntInput(this.addForm.plantingYear),
-        tradeUnit: this.addForm.tradeUnit
-      };
-      this.add.emit(data);
+      const newAcres = this.parseIntInput(this.addForm.acres);
+      const newYear = this.parseIntInput(this.addForm.plantingYear);
+      const newType = this.addForm.type || undefined;
+      const newCrop = this.addForm.crop;
+
+      // If a row already exists for this type+crop+year, accumulate acres into it
+      const existing = this.plantingIntentions.find(pi =>
+        pi.crop === newCrop &&
+        (pi.type || undefined) === newType &&
+        pi.plantingYear === newYear
+      );
+
+      if (existing) {
+        this.edit.emit({
+          intentionId: existing.id,
+          crop: existing.crop,
+          type: existing.type || undefined,
+          description: existing.description || undefined,
+          acres: existing.acres + newAcres,
+          plantingYear: existing.plantingYear
+        });
+      } else {
+        this.add.emit({
+          crop: newCrop,
+          type: newType,
+          description: this.addForm.description || undefined,
+          acres: newAcres,
+          plantingYear: newYear,
+          tradeUnit: this.addForm.tradeUnit
+        });
+      }
       this.closeAddDialog();
     }
   }

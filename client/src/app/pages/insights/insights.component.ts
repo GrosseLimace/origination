@@ -1,41 +1,82 @@
 import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Subject, forkJoin } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
-import { AppStateService } from '../../services/app-state.service';
+import { AppStateService, InsightsCacheEntry } from '../../services/app-state.service';
 import { ToastService } from '../../services/toast.service';
 import { Customer, Contract, Ticket, Note } from '../../models';
 import { CardComponent } from '../../components/ui/card/card.component';
 import { BadgeComponent } from '../../components/ui/badge/badge.component';
 
-type InsightCategory = 'UnconfirmedContracts' | 'SpotLoads' | 'UnshippedBushels' | 'OutstandingDrafts';
+type InsightCategory = 'UnconfirmedContracts' | 'SpotLoads' | 'UnshippedBushels';
 type InsightPriority = 'Urgent' | 'Warning' | 'Info';
+type InsightTagStyle = 'default' | 'commodity' | 'quantity' | 'warning' | 'alert';
+
+interface InsightTag {
+  label: string;
+  style: InsightTagStyle;
+}
 
 interface Insight {
   customer: Customer;
   category: InsightCategory;
   priority: InsightPriority;
   message: string;
+  tags?: InsightTag[];
+  contractId?: number;
+  searchTerms?: string[]; // Extra searchable values not shown in chips (e.g. individual ticket numbers)
+}
+
+interface CustomerGroup {
+  customer: Customer;
+  items: Insight[];
 }
 
 @Component({
   selector: 'app-insights',
   standalone: true,
-  imports: [CommonModule, CardComponent, BadgeComponent],
+  imports: [CommonModule, FormsModule, CardComponent, BadgeComponent],
   template: `
     <div class="space-y-6">
       <!-- Header -->
-      <div>
-        <h2 class="text-2xl font-semibold text-gray-900 dark:text-white">Actionable Insights</h2>
-        <p class="text-gray-500 dark:text-gray-400">
-          @if (selectedTradeUnits.length > 0) {
-            Prioritized recommendations for <span class="font-medium text-gray-700 dark:text-gray-300">{{ selectedTradeUnits.join(', ') }}</span>
-          } @else {
-            Prioritized recommendations for your territory
-          }
-        </p>
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <h2 class="text-2xl font-semibold text-gray-900 dark:text-white">Actionable Insights</h2>
+          <p class="text-gray-500 dark:text-gray-400">
+            @if (selectedTradeUnits.length > 0) {
+              Prioritized recommendations for <span class="font-medium text-gray-700 dark:text-gray-300">{{ selectedTradeUnits.join(', ') }}</span>
+            } @else {
+              Prioritized recommendations for your territory
+            }
+          </p>
+        </div>
+        @if (loadedAt && !isLoading) {
+          <div class="flex items-center gap-2 flex-shrink-0">
+            @if (isBackgroundRefreshing) {
+              <span class="inline-flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">
+                <svg class="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.961 3 8.12l3-2.829z"></path>
+                </svg>
+                Checking...
+              </span>
+            }
+            <button
+              type="button"
+              (click)="refresh()"
+              [disabled]="isBackgroundRefreshing"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-sm text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <svg class="w-3.5 h-3.5" [class.animate-spin]="isBackgroundRefreshing" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+              Updated {{ loadedAt | date:'h:mm a' }}
+            </button>
+          </div>
+        }
       </div>
 
       <!-- No trade unit selected -->
@@ -50,156 +91,197 @@ interface Insight {
           </div>
         </div>
 
-      <!-- Loading -->
+      <!-- Loading skeletons -->
       } @else if (isLoading) {
-        <div class="flex min-h-[60vh] items-center justify-center">
-          <div class="text-center">
-            <div class="inline-block animate-spin rounded-full h-16 w-16 border-4 border-gray-300 dark:border-gray-600 border-t-green-600 dark:border-t-green-500 mb-4"></div>
-            <p class="text-gray-500 dark:text-gray-400 font-medium text-lg">Loading insights data...</p>
-          </div>
-        </div>
+        @for (skeletonCategory of skeletonCategories; track skeletonCategory.color) {
+          <app-card class="overflow-hidden">
+            <!-- Skeleton header -->
+            <div [class]="skeletonCategory.headerClass" class="p-4">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <!-- Icon placeholder -->
+                  <div class="w-6 h-6 rounded animate-pulse" [class]="skeletonCategory.pulseClass"></div>
+                  <div>
+                    <div class="h-4 w-40 rounded animate-pulse mb-1.5" [class]="skeletonCategory.pulseClass"></div>
+                    <div class="h-3 w-24 rounded animate-pulse" [class]="skeletonCategory.pulseSubClass"></div>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <!-- Spinning loader in place of badge -->
+                  <div class="w-6 h-6 rounded-full border-2 animate-spin" [class]="skeletonCategory.spinnerClass"></div>
+                  <div class="w-4 h-4 rounded animate-pulse" [class]="skeletonCategory.pulseClass"></div>
+                </div>
+              </div>
+            </div>
+          </app-card>
+        }
 
       } @else {
 
-        <!-- Insights by Category -->
+        <!-- Global customer search -->
+        <div class="flex items-center gap-2.5 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
+          <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+          </svg>
+          <input
+            type="text"
+            [(ngModel)]="globalSearch"
+            placeholder="Filter all categories by customer..."
+            class="flex-1 py-0.5 text-sm bg-transparent focus:outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+          />
+          @if (globalSearch) {
+            <button (click)="globalSearch = ''" class="p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          }
+        </div>
+
+        <!-- Category cards -->
         @for (category of categories; track category) {
           <app-card class="overflow-hidden">
-              <div
-                [class]="getCategoryHeaderClass(category)"
-                class="p-4 cursor-pointer"
-                (click)="toggleCategory(category)">
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-3">
-                    <!-- Category icon -->
-                    @switch (category) {
-                      @case ('UnconfirmedContracts') {
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="getCategoryIconClass(category)">
-                          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
-                          <polyline points="14 2 14 8 20 8"/>
-                          <line x1="16" x2="8" y1="13" y2="13"/>
-                          <line x1="16" x2="8" y1="17" y2="17"/>
-                          <line x1="10" x2="8" y1="9" y2="9"/>
-                        </svg>
-                      }
-                      @case ('SpotLoads') {
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="getCategoryIconClass(category)">
-                          <path d="M5 17H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v3"/>
-                          <rect width="13" height="9" x="9" y="11" rx="1"/>
-                          <circle cx="12" cy="20" r="1"/>
-                          <circle cx="20" cy="20" r="1"/>
-                        </svg>
-                      }
-                      @case ('UnshippedBushels') {
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="getCategoryIconClass(category)">
-                          <circle cx="12" cy="12" r="10"/>
-                          <polyline points="12 6 12 12 16 14"/>
-                        </svg>
-                      }
-                      @case ('OutstandingDrafts') {
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="getCategoryIconClass(category)">
-                          <rect width="20" height="14" x="2" y="5" rx="2"/>
-                          <line x1="2" x2="22" y1="10" y2="10"/>
-                        </svg>
-                      }
-                    }
-                    <div>
-                      <h3 [class]="'font-semibold ' + getCategoryTitleClass(category)">{{ getCategoryTitle(category) }}</h3>
-                      <p [class]="'text-sm ' + getCategorySubtitleClass(category)">
-                        @if (category === 'OutstandingDrafts') {
-                          Integration pending
-                        } @else {
-                          {{ getInsightsByCategory(category).length }} items
-                        }
-                      </p>
-                    </div>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    @if (category !== 'OutstandingDrafts') {
-                      <app-badge [class]="getCategoryBadgeClass(category)">{{ getInsightsByCategory(category).length }}</app-badge>
-                    }
-                    @if (expandedCategories.has(category)) {
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="getCategoryIconClass(category)">
-                        <path d="m18 15-6-6-6 6"/>
-                      </svg>
-                    } @else {
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="getCategoryIconClass(category)">
-                        <path d="m6 9 6 6 6-6"/>
+
+            <!-- Category header (click to expand/collapse) -->
+            <div [class]="getCategoryHeaderClass(category)" class="p-4 cursor-pointer select-none" (click)="toggleCategory(category)">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <!-- Icon -->
+                  @switch (category) {
+                    @case ('UnconfirmedContracts') {
+                      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="getCategoryIconClass(category)">
+                        <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <line x1="16" x2="8" y1="13" y2="13"/>
+                        <line x1="16" x2="8" y1="17" y2="17"/>
+                        <line x1="10" x2="8" y1="9" y2="9"/>
                       </svg>
                     }
+                    @case ('SpotLoads') {
+                      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="getCategoryIconClass(category)">
+                        <path d="M5 17H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v3"/>
+                        <rect width="13" height="9" x="9" y="11" rx="1"/>
+                        <circle cx="12" cy="20" r="1"/>
+                        <circle cx="20" cy="20" r="1"/>
+                      </svg>
+                    }
+                    @case ('UnshippedBushels') {
+                      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="getCategoryIconClass(category)">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polyline points="12 6 12 12 16 14"/>
+                      </svg>
+                    }
+                  }
+                  <div>
+                    <h3 [class]="'font-semibold ' + getCategoryTitleClass(category)">{{ getCategoryTitle(category) }}</h3>
+                    <p [class]="'text-sm ' + getCategorySubtitleClass(category)">
+                      {{ getCustomerGroups(category).length }} customer{{ getCustomerGroups(category).length !== 1 ? 's' : '' }}
+                    </p>
                   </div>
                 </div>
+                <div class="flex items-center gap-2">
+                  <app-badge [class]="getCategoryBadgeClass(category)">{{ getCustomerGroups(category).length }}</app-badge>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="getCategoryIconClass(category)">
+                    @if (expandedCategories.has(category)) {
+                      <path d="m18 15-6-6-6 6"/>
+                    } @else {
+                      <path d="m6 9 6 6 6-6"/>
+                    }
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <!-- Expanded content -->
+            @if (expandedCategories.has(category)) {
+
+              <!-- Search bar -->
+              <div class="flex items-center gap-2 px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60">
+                <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+                </svg>
+                <input
+                  type="text"
+                  [(ngModel)]="categorySearch[category]"
+                  [placeholder]="getCategorySearchPlaceholder(category)"
+                  class="flex-1 py-1 text-sm bg-transparent focus:outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                  (click)="$event.stopPropagation()"
+                />
+                @if (categorySearch[category]) {
+                  <button (click)="categorySearch[category] = ''; $event.stopPropagation()" class="p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </button>
+                }
               </div>
 
-              @if (expandedCategories.has(category)) {
-                @if (category === 'OutstandingDrafts') {
-                  <!-- Placeholder for Outstanding Drafts -->
-                  <div class="p-8 text-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-3 text-blue-300 dark:text-blue-600">
-                      <rect width="20" height="14" x="2" y="5" rx="2"/>
-                      <line x1="2" x2="22" y1="10" y2="10"/>
-                    </svg>
-                    <p class="text-gray-500 dark:text-gray-400 font-medium">Draft data integration pending</p>
-                    <p class="text-sm text-gray-400 dark:text-gray-500 mt-1">Connect the drafts data source to populate this section.</p>
-                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-2">Fields: Customer ID, Customer Name, Date of Draft, Draft ID, Amount</p>
-                  </div>
-                } @else if (getInsightsByCategory(category).length === 0) {
-                  <div class="p-6 text-center text-sm text-gray-400 dark:text-gray-500">No items to report.</div>
-                } @else {
-                  <div class="divide-y divide-gray-200 dark:divide-gray-700">
-                    @for (insight of getInsightsByCategory(category); track insight.customer.id + insight.message) {
-                      <div
-                        class="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors"
-                        (click)="selectCustomer(insight.customer)">
-                        <div class="flex items-start justify-between">
-                          <div class="flex items-start gap-3">
-                            <div [class]="getPriorityBadgeClass(insight.priority) + ' p-1 rounded'">
-                              @switch (insight.priority) {
-                                @case ('Urgent') {
-                                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <circle cx="12" cy="12" r="10"/>
-                                    <line x1="12" x2="12" y1="8" y2="12"/>
-                                    <line x1="12" x2="12.01" y1="16" y2="16"/>
-                                  </svg>
-                                }
-                                @case ('Warning') {
-                                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
-                                    <line x1="12" x2="12" y1="9" y2="13"/>
-                                    <line x1="12" x2="12.01" y1="17" y2="17"/>
-                                  </svg>
-                                }
-                                @default {
-                                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <circle cx="12" cy="12" r="10"/>
-                                    <path d="M12 16v-4"/>
-                                    <path d="M12 8h.01"/>
-                                  </svg>
-                                }
-                              }
-                            </div>
-                            <div>
-                              <div class="font-medium text-gray-900 dark:text-white">
-                                {{ insight.customer.name }}
-                              </div>
-                              <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                                {{ insight.message }}
-                              </p>
-                              <div class="flex items-center gap-2 mt-2">
-                                <app-badge variant="secondary">{{ insight.customer.farm }}</app-badge>
-                                <span class="text-xs text-gray-400">{{ insight.customer.location }}</span>
-                              </div>
-                            </div>
-                          </div>
-                          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400 flex-shrink-0">
+              <!-- Customer list -->
+              @if (getCustomerGroups(category).length === 0) {
+                <div class="p-6 text-center text-sm text-gray-400 dark:text-gray-500">
+                  {{ categorySearch[category] ? 'No customers match your search.' : 'No items to report.' }}
+                </div>
+              } @else {
+                <div class="divide-y divide-gray-200 dark:divide-gray-700">
+                  @for (group of getCustomerGroups(category); track group.customer.id) {
+
+                    <!-- Customer row -->
+                    <div
+                      class="px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors select-none"
+                      (click)="toggleCustomerGroup(category, group.customer.id)">
+                      <div class="flex items-center justify-between gap-3">
+                        <div class="min-w-0 flex-1 flex items-center gap-2 flex-wrap">
+                          <span class="font-semibold text-sm text-gray-900 dark:text-white leading-tight">{{ group.customer.name }}</span>
+                          @if (group.customer.sourceCustomerId) {
+                            <span class="text-xs text-gray-400 dark:text-gray-500 font-mono">{{ group.customer.sourceCustomerId }}</span>
+                          }
+                        </div>
+                        <div class="flex items-center gap-2 flex-shrink-0">
+                          <span class="inline-flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold" [class]="getCategoryCountClass(category)">
+                            {{ group.items.length }}
+                          </span>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400 dark:text-gray-500 transition-transform" [class.rotate-90]="isCustomerExpanded(category, group.customer.id)">
                             <path d="m9 18 6-6-6-6"/>
                           </svg>
                         </div>
                       </div>
+                    </div>
+
+                    <!-- Expanded: individual items -->
+                    @if (isCustomerExpanded(category, group.customer.id)) {
+                      @for (insight of group.items; track insight.message) {
+                        <div
+                          class="pl-6 pr-4 py-2.5 bg-gray-50/80 dark:bg-gray-800/40 border-t border-gray-100 dark:border-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700/30 cursor-pointer transition-colors"
+                          (click)="selectInsight(insight); $event.stopPropagation()">
+                          <div class="flex items-center gap-2.5">
+                            <div class="flex-shrink-0 w-1 self-stretch min-h-[1.5rem] rounded-full" [class]="getPriorityBarClass(insight.priority)"></div>
+                            <div class="min-w-0 flex-1">
+                              @if (insight.tags && insight.tags.length > 0) {
+                                <div class="flex flex-wrap gap-1.5">
+                                  @for (tag of insight.tags; track tag.label) {
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" [class]="getTagClass(tag.style)">
+                                      {{ tag.label }}
+                                    </span>
+                                  }
+                                </div>
+                              } @else {
+                                <p class="text-sm text-gray-600 dark:text-gray-400">{{ insight.message }}</p>
+                              }
+                            </div>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-300 dark:text-gray-600 flex-shrink-0">
+                              <path d="m9 18 6-6-6-6"/>
+                            </svg>
+                          </div>
+                        </div>
+                      }
                     }
-                  </div>
-                }
+
+                  }
+                </div>
               }
-            </app-card>
+            }
+
+          </app-card>
         }
 
       }
@@ -218,10 +300,39 @@ export class InsightsComponent implements OnInit, OnDestroy {
   tickets: Ticket[] = [];
   notes: Note[] = [];
   isLoading = false;
+  isBackgroundRefreshing = false;
+  loadedAt: Date | null = null;
 
   allInsights: Insight[] = [];
   expandedCategories = new Set<InsightCategory>();
-  categories: InsightCategory[] = ['UnconfirmedContracts', 'SpotLoads', 'UnshippedBushels', 'OutstandingDrafts'];
+  expandedCustomers = new Set<string>();
+  categorySearch: { [key: string]: string } = {};
+  globalSearch = '';
+  categories: InsightCategory[] = ['UnconfirmedContracts', 'SpotLoads', 'UnshippedBushels'];
+
+  skeletonCategories = [
+    {
+      color: 'amber',
+      headerClass: 'bg-amber-50 dark:bg-amber-900/20 border-b border-amber-100 dark:border-amber-800',
+      pulseClass: 'bg-amber-200 dark:bg-amber-800',
+      pulseSubClass: 'bg-amber-100 dark:bg-amber-900',
+      spinnerClass: 'border-amber-200 dark:border-amber-800 border-t-amber-500 dark:border-t-amber-400',
+    },
+    {
+      color: 'orange',
+      headerClass: 'bg-orange-50 dark:bg-orange-900/20 border-b border-orange-100 dark:border-orange-800',
+      pulseClass: 'bg-orange-200 dark:bg-orange-800',
+      pulseSubClass: 'bg-orange-100 dark:bg-orange-900',
+      spinnerClass: 'border-orange-200 dark:border-orange-800 border-t-orange-500 dark:border-t-orange-400',
+    },
+    {
+      color: 'red',
+      headerClass: 'bg-red-50 dark:bg-red-900/20 border-b border-red-100 dark:border-red-800',
+      pulseClass: 'bg-red-200 dark:bg-red-800',
+      pulseSubClass: 'bg-red-100 dark:bg-red-900',
+      spinnerClass: 'border-red-200 dark:border-red-800 border-t-red-500 dark:border-t-red-400',
+    },
+  ];
 
   get selectedTradeUnits(): string[] {
     return this.appState.selectedTradeUnits();
@@ -229,18 +340,25 @@ export class InsightsComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     if (this.selectedTradeUnits.length === 0) return;
-
-    // Use AppStateService cache if already populated
-    if (this.appState.customers().length > 0 && this.appState.tickets().length > 0) {
-      this.customers = this.appState.customers();
-      this.contracts = this.appState.contracts();
-      this.tickets = this.appState.tickets();
-      this.notes = this.appState.notes();
+    const tradeUnitsKey = [...this.selectedTradeUnits].sort().join(',');
+    const cached = this.appState.insightsCache();
+    if (cached && cached.tradeUnitsKey === tradeUnitsKey) {
+      // Cache hit — display immediately, then silently check for updates in the background
+      this.customers = cached.customers;
+      this.contracts = cached.contracts;
+      this.tickets = cached.tickets;
+      this.notes = cached.notes;
+      this.loadedAt = cached.loadedAt;
       this.generateInsights();
-      return;
+      this.loadData(true);
+    } else {
+      // Cache miss or different trade unit — full load with skeleton spinner
+      this.loadData(false);
     }
+  }
 
-    this.loadData();
+  refresh(): void {
+    this.loadData(false);
   }
 
   ngOnDestroy(): void {
@@ -248,9 +366,15 @@ export class InsightsComponent implements OnInit, OnDestroy {
     this.destroy$.complete();
   }
 
-  private loadData(): void {
+  private loadData(isBackgroundRefresh = false): void {
     const tradeUnits = this.selectedTradeUnits;
-    this.isLoading = true;
+    const tradeUnitsKey = [...tradeUnits].sort().join(',');
+
+    if (isBackgroundRefresh) {
+      this.isBackgroundRefreshing = true;
+    } else {
+      this.isLoading = true;
+    }
 
     forkJoin({
       customers: this.apiService.getCustomers(tradeUnits),
@@ -259,16 +383,34 @@ export class InsightsComponent implements OnInit, OnDestroy {
       notes: this.apiService.getNotes()
     }).pipe(takeUntil(this.destroy$)).subscribe({
       next: (data) => {
-        this.customers = data.customers;
-        this.contracts = data.contracts;
-        this.tickets = data.tickets;
-        this.notes = data.notes;
+        const loadedAt = new Date();
+        const cached = this.appState.insightsCache();
+        const hasChanges = !cached ||
+          cached.customers.length !== data.customers.length ||
+          cached.contracts.length !== data.contracts.length ||
+          cached.tickets.length !== data.tickets.length ||
+          cached.notes.length !== data.notes.length;
+
+        this.appState.setInsightsCache({ tradeUnitsKey, ...data, loadedAt });
+
+        if (!isBackgroundRefresh || hasChanges) {
+          this.customers = data.customers;
+          this.contracts = data.contracts;
+          this.tickets = data.tickets;
+          this.notes = data.notes;
+          this.loadedAt = loadedAt;
+          this.generateInsights();
+        }
+
         this.isLoading = false;
-        this.generateInsights();
+        this.isBackgroundRefreshing = false;
       },
       error: () => {
         this.isLoading = false;
-        this.toastService.error('Failed to load insights data');
+        this.isBackgroundRefreshing = false;
+        if (!isBackgroundRefresh) {
+          this.toastService.error('Failed to load insights data');
+        }
       }
     });
   }
@@ -279,115 +421,132 @@ export class InsightsComponent implements OnInit, OnDestroy {
     const insights: Insight[] = [];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
-    // Today's date as a string for matching against ticket.date (stored as string in ODS).
-    // The ODS TicketBlDate format may vary — verify against live data and adjust if needed.
-    const todayStr = today.toISOString().split('T')[0]; // "YYYY-MM-DD"
+    // todayStr used for comparing ticket dates (stored as strings in ODS) and note dates.
+    // ticket.date maps to TicketBlDate in ODS, stored as "YYYY-MM-DD" string — direct comparison is safe.
+    const todayStr = today.toLocaleDateString('en-CA'); // YYYY-MM-DD
 
     for (const customer of this.customers) {
-      const customerContracts = this.contracts.filter(c => c.customerId === customer.id);
-      const customerNotes = this.notes.filter(n => n.customerId === customer.id);
+      const customerContracts = this.contracts.filter(c => c.ctrmCustomerId === customer.sourceCustomerId);
+      const customerTickets = this.tickets.filter(t => t.customerCode === customer.sourceCustomerId);
 
       // --- 1. Unconfirmed Contracts ---
-      // Contracts that have not been signed and are not yet fulfilled or cancelled.
+      // Contracts where CustomerConfirmStatus is not 'Confirmed', excluding Fulfilled/Cancelled.
+      // TODO: Verify exact ODS values for CustomerConfirmStatus against live data.
       for (const contract of customerContracts) {
-        if (!contract.signed && contract.status !== 'Fulfilled' && contract.status !== 'Cancelled') {
-          const commodity = contract.commodityDescription || contract.commodityCode || 'Unknown commodity';
+        const confirmStatus = (contract.customerConfirmStatus || '').trim();
+        const isConfirmed = confirmStatus.toLowerCase() === 'confirmed';
+        if (!isConfirmed && contract.status !== 'Fulfilled' && contract.status !== 'Cancelled') {
+          const desc = contract.commodityDescription?.trim();
+          const code = contract.commodityCode?.trim();
+          const commodity = desc && code ? `${desc} (${code})` : desc || code || 'Unknown commodity';
+          const qty = contract.quantity ? Math.round(contract.quantity).toLocaleString() : '?';
+          const statusLabel = confirmStatus || 'No status';
           insights.push({
             customer,
             category: 'UnconfirmedContracts',
             priority: 'Urgent',
-            message: `Contract ${contract.contractNumber} (${commodity}) is awaiting confirmation.`
+            message: `Contract ${contract.contractNumber} (${commodity}, ${qty} bu) — ${statusLabel}.`,
+            contractId: contract.id,
+            tags: [
+              { label: contract.sourceContractId || contract.contractNumber, style: 'default' },
+              { label: commodity, style: 'commodity' },
+              { label: `${qty} bu`, style: 'quantity' },
+              { label: statusLabel, style: 'warning' },
+            ]
           });
         }
       }
 
       // --- 2. Spot Loads — Delivered Today, No Contact ---
-      // A spot load is a ticket with no associated contract (ctrmContractNumber is blank).
-      // Alert fires when such a ticket was delivered today and customer has no note from today.
-      //
-      // TODO: Verify ticket.date format against live ODS data. The TicketBlDate field is stored
-      // as a string in ODS. The comparison below uses "YYYY-MM-DD" — adjust if the format differs.
-      const customerTickets = this.tickets.filter(
-        t => t.customerCode === customer.sourceCustomerId
+      // Unload tickets (grain received, not yet settled) delivered today with no customer contact.
+      // TicketStatusDescription = "Unload" identifies unsettled inbound deliveries.
+      // ticket.date maps to TicketBlDate in ODS, stored as "YYYY-MM-DD" string — direct comparison is safe.
+      const todayTickets = customerTickets.filter(t =>
+        t.date === todayStr && t.ticketStatusDescription === 'Unload'
       );
 
-      const spotTicketsToday = customerTickets.filter(t => {
-        const isSpot = !t.ctrmContractNumber || t.ctrmContractNumber.trim() === '';
-        // Normalize ticket date string to compare — handles both "YYYY-MM-DD" and date-time strings
-        const ticketDay = t.date ? t.date.split('T')[0] : '';
-        return isSpot && ticketDay === todayStr;
-      });
-
-      if (spotTicketsToday.length > 0) {
-        const hasContactToday = customerNotes.some(n => {
-          const noteDay = new Date(n.createdAt);
-          noteDay.setHours(0, 0, 0, 0);
-          return noteDay.getTime() === today.getTime();
+      if (todayTickets.length > 0) {
+        const contactedToday = this.notes.some(n => {
+          try {
+            return n.customerId === customer.id &&
+                   new Date(n.createdAt).toLocaleDateString('en-CA') === todayStr;
+          } catch {
+            return false;
+          }
         });
 
-        if (!hasContactToday) {
-          for (const ticket of spotTicketsToday) {
-            // netWeight is in pounds; approximate bushels at 60 lbs/bu as a general estimate.
-            // TODO: Use commodity-specific conversion (corn ≈ 56, soybeans/wheat ≈ 60 lbs/bu).
-            const approxBushels = ticket.netWeight ? Math.round(ticket.netWeight / 60) : null;
-            const bushelsStr = approxBushels != null ? ` (~${approxBushels.toLocaleString()} bu)` : '';
+        if (!contactedToday) {
+          // One insight per ticket so the user can see and select individual tickets.
+          for (const ticket of todayTickets) {
+            const bu = ticket.unloadQuantity ? Math.round(ticket.unloadQuantity) : null;
             insights.push({
               customer,
               category: 'SpotLoads',
               priority: 'Urgent',
-              message: `Spot load ticket ${ticket.ticketNumber}${bushelsStr} arrived today with no contact recorded.`
+              message: `Ticket #${ticket.ticketNumber}${ticket.productCode ? ' — ' + ticket.productCode : ''}${bu ? ', ' + bu.toLocaleString() + ' bu' : ''}`,
+              tags: [
+                { label: `#${ticket.ticketNumber}`, style: 'default' },
+                ...(ticket.productCode ? [{ label: ticket.productCode, style: 'commodity' as InsightTagStyle }] : []),
+                ...(bu ? [{ label: `${bu.toLocaleString()} bu`, style: 'quantity' as InsightTagStyle }] : []),
+                { label: 'Unload', style: 'warning' },
+              ],
+              searchTerms: [ticket.ticketNumber, ticket.productCode].filter(Boolean) as string[]
             });
           }
         }
       }
 
       // --- 3. Unshipped Bushels Past Delivery Date ---
-      // Contracts where the delivery window has closed but status is still Active or Overdue,
-      // indicating there are likely unshipped bushels remaining (open balance).
+      // Contracts past their delivery end date that are still Active or Overdue.
       //
-      // TODO: Refine remaining bushels calculation. Ideally:
-      //   remaining = contract.quantity - sum(ticket.appliedDockQuantity / LBS_PER_BU)
-      //   for tickets where ticket.ctrmContractNumber === contract.sourceContractId.
-      //   Requires commodity-specific lbs-per-bushel lookup. For now, the full contract
-      //   quantity is shown as the at-risk amount.
+      // TODO: Refine remaining bushels calculation using ticket appliedDockQuantity vs contract quantity.
       for (const contract of customerContracts) {
         const deliveryEnd = new Date(contract.deliveryEnd);
         const isPastDue = deliveryEnd < today;
         const isOpen = contract.status === 'Active' || contract.status === 'Overdue';
 
         if (isPastDue && isOpen) {
-          const commodity = contract.commodityDescription || contract.commodityCode || 'Unknown commodity';
-          const qty = contract.quantity?.toLocaleString() ?? '?';
+          const desc = contract.commodityDescription?.trim();
+          const code = contract.commodityCode?.trim();
+          const commodity = desc && code ? `${desc} (${code})` : desc || code || 'Unknown commodity';
+          const qty = contract.quantity ? Math.round(contract.quantity).toLocaleString() : '?';
+          const daysOverdue = Math.floor((today.getTime() - deliveryEnd.getTime()) / (1000 * 60 * 60 * 24));
           insights.push({
             customer,
             category: 'UnshippedBushels',
             priority: 'Warning',
-            message: `Contract ${contract.contractNumber} (${commodity}, ${qty} bu) is past its delivery end date with an open balance.`
+            message: `Contract ${contract.contractNumber} (${commodity}, ${qty} bu) is past its delivery end date.`,
+            contractId: contract.id,
+            tags: [
+              { label: contract.sourceContractId || contract.contractNumber, style: 'default' },
+              { label: commodity, style: 'commodity' },
+              { label: `${qty} bu`, style: 'quantity' },
+              { label: `${daysOverdue}d overdue`, style: 'alert' },
+            ]
           });
         }
       }
     }
 
-    // Sort by priority then category order
+    // Sort by priority
     const priorityOrder: Record<InsightPriority, number> = { 'Urgent': 0, 'Warning': 1, 'Info': 2 };
-    const categoryOrder: Record<InsightCategory, number> = {
-      'UnconfirmedContracts': 0,
-      'SpotLoads': 1,
-      'UnshippedBushels': 2,
-      'OutstandingDrafts': 3
-    };
+    this.allInsights = insights.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
 
-    this.allInsights = insights.sort((a, b) => {
-      const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
-      if (priorityDiff !== 0) return priorityDiff;
-      return categoryOrder[a.category] - categoryOrder[b.category];
-    });
+    // Reset all search/expand state when insights are regenerated
+    this.expandedCustomers.clear();
+    this.categorySearch = {};
+    this.globalSearch = '';
   }
+
+  // ── Category accordion ──────────────────────────────────────────────────────
 
   toggleCategory(category: InsightCategory): void {
     if (this.expandedCategories.has(category)) {
       this.expandedCategories.delete(category);
+      this.expandedCustomers.forEach(key => {
+        if (key.startsWith(category + ':')) this.expandedCustomers.delete(key);
+      });
+      delete this.categorySearch[category];
     } else {
       this.expandedCategories.add(category);
     }
@@ -397,76 +556,153 @@ export class InsightsComponent implements OnInit, OnDestroy {
     return this.allInsights.filter(i => i.category === category);
   }
 
-  selectCustomer(customer: Customer): void {
-    this.router.navigate(['/'], { queryParams: { customerId: customer.id } });
+  getCustomerGroups(category: InsightCategory): CustomerGroup[] {
+    const categoryInsights = this.getInsightsByCategory(category);
+    const search = (this.categorySearch[category] || '').toLowerCase().trim();
+
+    const grouped = new Map<number, CustomerGroup>();
+    for (const insight of categoryInsights) {
+      if (!grouped.has(insight.customer.id)) {
+        grouped.set(insight.customer.id, { customer: insight.customer, items: [] });
+      }
+      grouped.get(insight.customer.id)!.items.push(insight);
+    }
+
+    let result = Array.from(grouped.values());
+
+    // Global search filters by customer name/code across all categories
+    const global = this.globalSearch.toLowerCase().trim();
+    if (global) {
+      result = result.filter(g =>
+        g.customer.name.toLowerCase().includes(global) ||
+        (g.customer.sourceCustomerId || '').toLowerCase().includes(global)
+      );
+    }
+
+    // Category search filters by customer, tags (contract #, commodity, code), or searchTerms (ticket #)
+    if (search) {
+      result = result.filter(g =>
+        g.customer.name.toLowerCase().includes(search) ||
+        (g.customer.sourceCustomerId || '').toLowerCase().includes(search) ||
+        g.items.some(item =>
+          item.tags?.some(tag => tag.label.toLowerCase().includes(search)) ||
+          item.searchTerms?.some(term => term.toLowerCase().includes(search))
+        )
+      );
+    }
+    return result;
   }
 
-  getPriorityBadgeClass(priority: InsightPriority): string {
+  // ── Customer accordion ──────────────────────────────────────────────────────
+
+  toggleCustomerGroup(category: InsightCategory, customerId: number): void {
+    const key = `${category}:${customerId}`;
+    if (this.expandedCustomers.has(key)) {
+      this.expandedCustomers.delete(key);
+    } else {
+      this.expandedCustomers.add(key);
+    }
+  }
+
+  isCustomerExpanded(category: InsightCategory, customerId: number): boolean {
+    return this.expandedCustomers.has(`${category}:${customerId}`);
+  }
+
+  // ── Navigation ──────────────────────────────────────────────────────────────
+
+  selectInsight(insight: Insight): void {
+    const params: Record<string, string | number> = { customerId: insight.customer.id };
+    if (insight.contractId) params['contractId'] = insight.contractId;
+    this.router.navigate(['/'], { queryParams: params });
+  }
+
+  // ── Style helpers ───────────────────────────────────────────────────────────
+
+  getPriorityBarClass(priority: InsightPriority): string {
     switch (priority) {
-      case 'Urgent': return 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400';
-      case 'Warning': return 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400';
-      case 'Info': return 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400';
-      default: return 'bg-gray-100 text-gray-600 dark:bg-gray-900/30 dark:text-gray-400';
+      case 'Urgent': return 'bg-red-400 dark:bg-red-500';
+      case 'Warning': return 'bg-amber-400 dark:bg-amber-500';
+      default:        return 'bg-gray-300 dark:bg-gray-600';
+    }
+  }
+
+  getTagClass(style: InsightTagStyle): string {
+    switch (style) {
+      case 'commodity': return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400';
+      case 'quantity':  return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400';
+      case 'warning':   return 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400';
+      case 'alert':     return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400';
+      default:          return 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300';
+    }
+  }
+
+  getCategoryCountClass(category: InsightCategory): string {
+    switch (category) {
+      case 'UnconfirmedContracts': return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300';
+      case 'SpotLoads':            return 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300';
+      case 'UnshippedBushels':     return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300';
+      default:                     return 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
     }
   }
 
   getCategoryHeaderClass(category: InsightCategory): string {
     switch (category) {
       case 'UnconfirmedContracts': return 'bg-amber-50 dark:bg-amber-900/20 border-b border-amber-100 dark:border-amber-800';
-      case 'SpotLoads': return 'bg-orange-50 dark:bg-orange-900/20 border-b border-orange-100 dark:border-orange-800';
-      case 'UnshippedBushels': return 'bg-red-50 dark:bg-red-900/20 border-b border-red-100 dark:border-red-800';
-      case 'OutstandingDrafts': return 'bg-blue-50 dark:bg-blue-900/20 border-b border-blue-100 dark:border-blue-800';
-      default: return 'bg-gray-50 dark:bg-gray-900/20 border-b border-gray-100 dark:border-gray-800';
+      case 'SpotLoads':            return 'bg-orange-50 dark:bg-orange-900/20 border-b border-orange-100 dark:border-orange-800';
+      case 'UnshippedBushels':     return 'bg-red-50 dark:bg-red-900/20 border-b border-red-100 dark:border-red-800';
+      default:                     return 'bg-gray-50 dark:bg-gray-900/20 border-b border-gray-100 dark:border-gray-800';
     }
   }
 
   getCategoryIconClass(category: InsightCategory): string {
     switch (category) {
       case 'UnconfirmedContracts': return 'text-amber-600 dark:text-amber-400';
-      case 'SpotLoads': return 'text-orange-600 dark:text-orange-400';
-      case 'UnshippedBushels': return 'text-red-600 dark:text-red-400';
-      case 'OutstandingDrafts': return 'text-blue-600 dark:text-blue-400';
-      default: return 'text-gray-600 dark:text-gray-400';
+      case 'SpotLoads':            return 'text-orange-600 dark:text-orange-400';
+      case 'UnshippedBushels':     return 'text-red-600 dark:text-red-400';
+      default:                     return 'text-gray-600 dark:text-gray-400';
     }
   }
 
   getCategoryTitle(category: InsightCategory): string {
     switch (category) {
       case 'UnconfirmedContracts': return 'Unconfirmed Contracts';
-      case 'SpotLoads': return 'Spot Loads — Delivered Today, No Contact';
-      case 'UnshippedBushels': return 'Unshipped Bushels Past Delivery Date';
-      case 'OutstandingDrafts': return 'Outstanding Drafts';
-      default: return 'Other';
+      case 'SpotLoads':            return 'Spot Loads — Delivered Today, No Contact';
+      case 'UnshippedBushels':     return 'Unshipped Bushels Past Delivery Date';
+      default:                     return 'Other';
     }
   }
 
   getCategoryTitleClass(category: InsightCategory): string {
     switch (category) {
       case 'UnconfirmedContracts': return 'text-amber-900 dark:text-amber-100';
-      case 'SpotLoads': return 'text-orange-900 dark:text-orange-100';
-      case 'UnshippedBushels': return 'text-red-900 dark:text-red-100';
-      case 'OutstandingDrafts': return 'text-blue-900 dark:text-blue-100';
-      default: return 'text-gray-900 dark:text-gray-100';
+      case 'SpotLoads':            return 'text-orange-900 dark:text-orange-100';
+      case 'UnshippedBushels':     return 'text-red-900 dark:text-red-100';
+      default:                     return 'text-gray-900 dark:text-gray-100';
     }
   }
 
   getCategorySubtitleClass(category: InsightCategory): string {
     switch (category) {
       case 'UnconfirmedContracts': return 'text-amber-600 dark:text-amber-400';
-      case 'SpotLoads': return 'text-orange-600 dark:text-orange-400';
-      case 'UnshippedBushels': return 'text-red-600 dark:text-red-400';
-      case 'OutstandingDrafts': return 'text-blue-600 dark:text-blue-400';
-      default: return 'text-gray-600 dark:text-gray-400';
+      case 'SpotLoads':            return 'text-orange-600 dark:text-orange-400';
+      case 'UnshippedBushels':     return 'text-red-600 dark:text-red-400';
+      default:                     return 'text-gray-600 dark:text-gray-400';
+    }
+  }
+
+  getCategorySearchPlaceholder(category: InsightCategory): string {
+    switch (category) {
+      case 'SpotLoads': return 'Search by customer, code, or ticket #...';
+      default:          return 'Search by customer, contract, or commodity...';
     }
   }
 
   getCategoryBadgeClass(category: InsightCategory): string {
     switch (category) {
       case 'UnconfirmedContracts': return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300';
-      case 'SpotLoads': return 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300';
-      case 'UnshippedBushels': return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300';
-      case 'OutstandingDrafts': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300';
-      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900/40 dark:text-gray-300';
+      case 'SpotLoads':            return 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300';
+      case 'UnshippedBushels':     return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300';
+      default:                     return 'bg-gray-100 text-gray-800 dark:bg-gray-900/40 dark:text-gray-300';
     }
   }
 }
