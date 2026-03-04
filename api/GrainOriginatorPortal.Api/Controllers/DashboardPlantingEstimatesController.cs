@@ -46,5 +46,28 @@ public class DashboardPlantingEstimatesController : ControllerBase
         _dataService.UpsertDashboardMarketShares(shares, "system");
         return Ok();
     }
+
+    [HttpGet("actualharvest")]
+    public ActionResult<List<DashboardActualHarvest>> GetActualHarvest([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear)
+    {
+        if (string.IsNullOrWhiteSpace(tradeUnitKey) || plantingYear < 2020 || plantingYear > DateTime.Now.Year + 5)
+            return BadRequest("tradeUnitKey and plantingYear are required.");
+        return Ok(_dataService.GetDashboardActualHarvest(tradeUnitKey, plantingYear));
+    }
+
+    [HttpPost("actualharvest/upsert")]
+    public ActionResult UpsertActualHarvest([FromBody] List<UpsertDashboardActualHarvestRequest> items)
+    {
+        if (items == null || items.Count == 0) return BadRequest("No harvest items provided.");
+        _dataService.UpsertDashboardActualHarvest(items, "system");
+        return Ok();
+    }
+
+    [HttpDelete("actualharvest/{id:int}")]
+    public ActionResult DeleteActualHarvest(int id)
+    {
+        _dataService.DeleteDashboardActualHarvest(id);
+        return Ok();
+    }
 }
 

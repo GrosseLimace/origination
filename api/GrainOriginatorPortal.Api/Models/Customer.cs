@@ -44,6 +44,7 @@ public class Customer
     public List<string> LinkedProducerIds { get; set; } = new();
 
     public bool ESignEnabled { get; set; }
+    public string? ScoularViewRecipients { get; set; }  // Comma-separated "Name | email/phone", populated from dbo.eSignEnrollment
     public Coordinates? Coordinates { get; set; }
 
     // ODS metadata fields

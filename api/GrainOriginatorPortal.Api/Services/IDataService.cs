@@ -64,6 +64,11 @@ public interface IDataService
     List<DashboardMarketShare> GetDashboardMarketShares(string tradeUnitKey, int plantingYear);
     void UpsertDashboardMarketShares(List<UpsertDashboardMarketShareRequest> shares, string username);
 
+    // Dashboard Actual Harvest Operations
+    List<DashboardActualHarvest> GetDashboardActualHarvest(string tradeUnitKey, int plantingYear);
+    void UpsertDashboardActualHarvest(List<UpsertDashboardActualHarvestRequest> items, string username);
+    void DeleteDashboardActualHarvest(int id);
+
     // Commodity Operations
     List<Commodity> GetCommodities();
 
@@ -73,6 +78,6 @@ public interface IDataService
 
     // Saved List Operations
     List<SavedList> GetSavedLists();
-    SavedList SaveList(string name, string query, string? tradeUnits);
+    SavedList SaveList(string name, string query, string? tradeUnits, string? filters = null);
     void DeleteList(int listId);
 }

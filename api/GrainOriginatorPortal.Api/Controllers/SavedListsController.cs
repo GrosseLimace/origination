@@ -25,7 +25,7 @@ public class SavedListsController : ControllerBase
     [HttpPost]
     public ActionResult<SavedList> Create([FromBody] CreateSavedListRequest request)
     {
-        var savedList = _dataService.SaveList(request.Name, request.Query, request.TradeUnits);
+        var savedList = _dataService.SaveList(request.Name, request.Query, request.TradeUnits, request.Filters);
         return Created($"/api/savedlists/{savedList.Id}", savedList);
     }
 
@@ -49,4 +49,6 @@ public class CreateSavedListRequest
 
     [StringLength(500)]
     public string? TradeUnits { get; set; } // Comma-separated trade unit keys
+
+    public string? Filters { get; set; }    // JSON-serialized RefinementFilters (nullable)
 }

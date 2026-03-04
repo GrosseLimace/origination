@@ -40,18 +40,36 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, Contr
               <div class="flex items-center gap-2 min-w-0">
                 <h1 class="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 dark:text-white leading-tight truncate min-w-0">{{ customer.name }}</h1>
                 @if (customer.eSignEnabled) {
-                  <span class="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 border border-green-200 dark:border-green-800">
+                  <button
+                    type="button"
+                    (click)="showESignRecipients = !showESignRecipients"
+                    class="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 border border-green-200 dark:border-green-800 hover:bg-green-200 dark:hover:bg-green-900/60 transition-colors cursor-pointer"
+                  >
                     <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
                     </svg>
-                    eSign Enabled
-                  </span>
+                    eSign Enrolled
+                  </button>
                 } @else {
                   <span class="shrink-0 inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 border border-gray-200 dark:border-gray-600">
                     No eSign
                   </span>
                 }
               </div>
+              @if (customer.eSignEnabled && showESignRecipients && customer.scoularViewRecipients) {
+                <div class="mt-2">
+                  <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">ScoularView Recipients</p>
+                  <div class="flex flex-wrap gap-1.5">
+                    @for (recipient of customer.scoularViewRecipients.split(','); track recipient) {
+                      @if (recipient.trim()) {
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                          {{ recipient.trim() }}
+                        </span>
+                      }
+                    }
+                  </div>
+                </div>
+              }
               @if (customer.sourceCustomerId) {
                 <p class="text-sm text-gray-400 dark:text-gray-500 mt-0.5">{{ customer.sourceCustomerId }}</p>
               }
@@ -397,6 +415,7 @@ export class CustomerProfileComponent implements OnChanges {
   // Local state - plain booleans like Blazor
   activeTab = 'contracts';
   showProducerInsights = false;
+  showESignRecipients = false;
   showEditDialog = false;
 
   selectTab(tabId: string): void {
@@ -425,6 +444,11 @@ export class CustomerProfileComponent implements OnChanges {
     // When arriving from Insights with a specific contract, switch to contracts tab
     if (changes['openContractId'] && this.openContractId != null) {
       this.activeTab = 'contracts';
+    }
+
+    // Reset eSign recipients panel when switching customers
+    if (changes['customer']) {
+      this.showESignRecipients = false;
     }
 
     // Derive the contract year from the most recent planting intention year.

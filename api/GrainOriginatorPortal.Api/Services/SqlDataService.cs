@@ -75,6 +75,7 @@ public class SqlDataService : IDataService
                 ? customerQuery.ToList()
                 : customerQuery.Take(15).ToList();
 
+            EnrichCustomersWithESign(customers);
             _logger.LogInformation($"Returning {customers.Count} producer customers who have contracts or tickets{filterMsg}");
             return customers;
         }
@@ -156,6 +157,7 @@ public class SqlDataService : IDataService
                 ? scoredResults.Select(x => x.Customer).ToList()
                 : scoredResults.Take(15).Select(x => x.Customer).ToList();
 
+            EnrichCustomersWithESign(scoredCustomers);
             _logger.LogInformation($"Search for '{searchTerm}' returned {scoredCustomers.Count} producer customers (ranked by relevance)");
             return scoredCustomers;
         }
@@ -163,6 +165,36 @@ public class SqlDataService : IDataService
         {
             _logger.LogError(ex, "Error searching customers for term: {SearchTerm}", searchTerm);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Looks up eSign enrollment records for the given customers and populates
+    /// ESignEnabled and ScoularViewRecipients from dbo.eSignEnrollment.
+    /// </summary>
+    private void EnrichCustomersWithESign(List<Customer> customers)
+    {
+        if (customers.Count == 0) return;
+
+        var codes = customers
+            .Where(c => c.SourceCustomerId != null)
+            .Select(c => c.SourceCustomerId!)
+            .Distinct()
+            .ToList();
+
+        var enrollments = _appContext.ESignEnrollments
+            .AsNoTracking()
+            .Where(e => codes.Contains(e.CustomerCode))
+            .ToDictionary(e => e.CustomerCode, e => e);
+
+        foreach (var customer in customers)
+        {
+            if (customer.SourceCustomerId != null &&
+                enrollments.TryGetValue(customer.SourceCustomerId, out var enrollment))
+            {
+                customer.ESignEnabled = enrollment.ESignEnabled;
+                customer.ScoularViewRecipients = enrollment.ScoularViewRecipients;
+            }
         }
     }
 
@@ -1306,7 +1338,7 @@ public class SqlDataService : IDataService
         }
     }
 
-    public SavedList SaveList(string name, string query, string? tradeUnits)
+    public SavedList SaveList(string name, string query, string? tradeUnits, string? filters = null)
     {
         try
         {
@@ -1315,6 +1347,7 @@ public class SqlDataService : IDataService
                 Name = name,
                 Query = query,
                 TradeUnits = tradeUnits,
+                Filters = filters,
                 CreatedBy = "System",
                 CreatedOn = DateTime.UtcNow
             };
@@ -1366,7 +1399,12 @@ public class SqlDataService : IDataService
                 .FirstOrDefault(e => e.TradeUnitKey == req.TradeUnitKey
                                   && e.Crop == req.Crop
                                   && e.PlantingYear == req.PlantingYear);
-            if (existing != null)
+            if (req.YieldEstimate == null)
+            {
+                if (existing != null)
+                    _appContext.DashboardPlantingEstimates.Remove(existing);
+            }
+            else if (existing != null)
             {
                 existing.YieldEstimate = req.YieldEstimate;
                 existing.ModifiedOn = DateTime.UtcNow;
@@ -1405,7 +1443,12 @@ public class SqlDataService : IDataService
                 .FirstOrDefault(e => e.TradeUnitKey == req.TradeUnitKey
                                   && e.CropCategory == req.CropCategory
                                   && e.PlantingYear == req.PlantingYear);
-            if (existing != null)
+            if (req.MarketSharePct == null)
+            {
+                if (existing != null)
+                    _appContext.DashboardMarketShares.Remove(existing);
+            }
+            else if (existing != null)
             {
                 existing.MarketSharePct = req.MarketSharePct;
                 existing.ModifiedOn = DateTime.UtcNow;
@@ -1425,5 +1468,55 @@ public class SqlDataService : IDataService
             }
         }
         _appContext.SaveChanges();
+    }
+
+    // Dashboard Actual Harvest Operations
+    public List<DashboardActualHarvest> GetDashboardActualHarvest(string tradeUnitKey, int plantingYear)
+    {
+        return _appContext.DashboardActualHarvests
+            .AsNoTracking()
+            .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear)
+            .OrderBy(e => e.CropCategory)
+            .ToList();
+    }
+
+    public void UpsertDashboardActualHarvest(List<UpsertDashboardActualHarvestRequest> items, string username)
+    {
+        foreach (var req in items)
+        {
+            var existing = _appContext.DashboardActualHarvests
+                .FirstOrDefault(e => e.TradeUnitKey == req.TradeUnitKey
+                                  && e.CropCategory == req.CropCategory
+                                  && e.PlantingYear == req.PlantingYear);
+            if (existing != null)
+            {
+                existing.Bushels = req.Bushels;
+                existing.ModifiedOn = DateTime.UtcNow;
+                existing.ModifiedBy = username;
+            }
+            else
+            {
+                _appContext.DashboardActualHarvests.Add(new DashboardActualHarvest
+                {
+                    TradeUnitKey = req.TradeUnitKey,
+                    CropCategory = req.CropCategory,
+                    PlantingYear = req.PlantingYear,
+                    Bushels = req.Bushels,
+                    CreatedOn = DateTime.UtcNow,
+                    CreatedBy = username
+                });
+            }
+        }
+        _appContext.SaveChanges();
+    }
+
+    public void DeleteDashboardActualHarvest(int id)
+    {
+        var entity = _appContext.DashboardActualHarvests.Find(id);
+        if (entity != null)
+        {
+            _appContext.DashboardActualHarvests.Remove(entity);
+            _appContext.SaveChanges();
+        }
     }
 }

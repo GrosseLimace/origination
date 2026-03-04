@@ -10,6 +10,7 @@ public class SavedList
     public string Name { get; set; } = string.Empty;
     public string Query { get; set; } = string.Empty;
     public string? TradeUnits { get; set; } // Comma-separated trade unit keys (e.g. "TU1,TU2")
+    public string? Filters { get; set; }   // JSON-serialized RefinementFilters (nullable)
     public string CreatedBy { get; set; } = string.Empty;
     public DateTime CreatedOn { get; set; }
     public bool IsActive { get; set; } = true;

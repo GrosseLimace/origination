@@ -315,7 +315,7 @@ public class ApimDataService : IDataService
         throw new NotImplementedException("TODO: Wire up APIM endpoint for GetSavedLists");
     }
 
-    public SavedList SaveList(string name, string query, string? tradeUnits)
+    public SavedList SaveList(string name, string query, string? tradeUnits, string? filters = null)
     {
         throw new NotImplementedException("TODO: Wire up APIM endpoint for SaveList");
     }
@@ -339,4 +339,14 @@ public class ApimDataService : IDataService
 
     public void UpsertDashboardMarketShares(List<UpsertDashboardMarketShareRequest> shares, string username)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for UpsertDashboardMarketShares");
+
+    // Dashboard Actual Harvest Operations
+    public List<DashboardActualHarvest> GetDashboardActualHarvest(string tradeUnitKey, int plantingYear)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetDashboardActualHarvest");
+
+    public void UpsertDashboardActualHarvest(List<UpsertDashboardActualHarvestRequest> items, string username)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for UpsertDashboardActualHarvest");
+
+    public void DeleteDashboardActualHarvest(int id)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for DeleteDashboardActualHarvest");
 }

@@ -8,7 +8,7 @@ import { ApiService } from '../../services/api.service';
 import { AppStateService, BuildListState } from '../../services/app-state.service';
 import { ToastService } from '../../services/toast.service';
 import { NlqFilterService, NlqFilterContext } from '../../services/nlq-filter.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, ProducerDetails } from '../../models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, ProducerDetails, RefinementFilters } from '../../models';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '../../components/ui/card/card.component';
 import { ButtonComponent } from '../../components/ui/button/button.component';
 import { BadgeComponent } from '../../components/ui/badge/badge.component';
@@ -183,9 +183,17 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
               <div>
                 <app-card-title>Results</app-card-title>
                 <app-card-description>
-                  Found {{ filteredCustomers.length }} customer(s) matching your criteria
-                  @if (detectedState) {
-                    <span> in {{ getStateDisplayName(detectedState) }}</span>
+                  @if (activeRefinementCount > 0) {
+                    Showing {{ displayedCustomers.length }} of {{ filteredCustomers.length }} customer(s)
+                    @if (detectedState) {
+                      <span> in {{ getStateDisplayName(detectedState) }}</span>
+                    }
+                    <span> ({{ activeRefinementCount }} filter{{ activeRefinementCount === 1 ? '' : 's' }} applied)</span>
+                  } @else {
+                    Found {{ filteredCustomers.length }} customer(s) matching your criteria
+                    @if (detectedState) {
+                      <span> in {{ getStateDisplayName(detectedState) }}</span>
+                    }
                   }
                 </app-card-description>
               </div>
@@ -201,6 +209,15 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
                       Show on Map
                     </app-button>
                   }
+                  <app-button variant="outline" (onClick)="showRefinePanel = !showRefinePanel">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2">
+                      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                    </svg>
+                    Refine Filters
+                    @if (activeRefinementCount > 0) {
+                      <span class="ml-1.5 inline-flex items-center justify-center w-4 h-4 text-xs font-bold rounded-full bg-gray-600 dark:bg-gray-400 text-white dark:text-gray-900">{{ activeRefinementCount }}</span>
+                    }
+                  </app-button>
                   <app-button variant="outline" (onClick)="openSaveDialog()">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2">
                       <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
@@ -212,6 +229,108 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
             </div>
           </app-card-header>
           <app-card-content>
+            <!-- Refine Filters Panel -->
+            @if (showRefinePanel) {
+              <div class="mb-6 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-5 space-y-5">
+                <!-- Panel header -->
+                <div class="flex items-center justify-between">
+                  <h4 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Refine Filters</h4>
+                  @if (activeRefinementCount > 0) {
+                    <button type="button" (click)="clearRefinements()" class="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:underline">Clear All</button>
+                  }
+                </div>
+
+                <!-- Row 1: Contracts + Contact History -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5">
+                  <!-- Contracts -->
+                  <div class="space-y-2.5">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Contracts</p>
+                    <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                      <input type="checkbox" [(ngModel)]="pendingRefinements.noActiveContracts" class="rounded border-gray-300 dark:border-gray-600 text-green-600 focus:ring-green-500">
+                      No active contracts
+                    </label>
+                    <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                      <input type="checkbox" [(ngModel)]="pendingRefinements.hasUnsignedContracts" class="rounded border-gray-300 dark:border-gray-600 text-green-600 focus:ring-green-500">
+                      Has unsigned contracts
+                    </label>
+                    <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                      <input type="checkbox" [(ngModel)]="pendingRefinements.hasNegativePacing" class="rounded border-gray-300 dark:border-gray-600 text-green-600 focus:ring-green-500">
+                      Negative contract pacing %
+                    </label>
+                  </div>
+
+                  <!-- Contact History -->
+                  <div class="space-y-2.5">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Contact History</p>
+                    <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                      <input type="checkbox" [(ngModel)]="pendingRefinements.neverContacted" class="rounded border-gray-300 dark:border-gray-600 text-green-600 focus:ring-green-500">
+                      Never contacted
+                    </label>
+                    <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                      <span class="shrink-0">Not contacted in last</span>
+                      <input
+                        type="number"
+                        min="1"
+                        [(ngModel)]="notContactedDaysInput"
+                        (ngModelChange)="applyNotContactedDays()"
+                        placeholder="30"
+                        class="w-16 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-green-500"
+                      >
+                      <span>days</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Crops -->
+                @if (availableCrops.length > 0) {
+                  <div class="space-y-2.5 pt-1 border-t border-gray-200 dark:border-gray-700">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 pt-3">Crops</p>
+                    <div class="flex flex-wrap gap-2">
+                      @for (crop of availableCrops; track crop) {
+                        <button
+                          type="button"
+                          (click)="togglePendingCrop(crop)"
+                          [class]="isCropSelected(crop)
+                            ? 'bg-green-600 text-white border-green-600 dark:bg-green-600 dark:border-green-600'
+                            : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'"
+                          class="px-3 py-1 rounded-full border text-sm font-medium transition-colors"
+                        >{{ crop }}</button>
+                      }
+                    </div>
+                  </div>
+                }
+
+                <!-- Location / States -->
+                @if (availableStates.length > 0) {
+                  <div class="space-y-2.5 pt-1 border-t border-gray-200 dark:border-gray-700">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 pt-3">Location</p>
+                    <div class="flex flex-wrap gap-2">
+                      @for (state of availableStates; track state) {
+                        <button
+                          type="button"
+                          (click)="togglePendingState(state)"
+                          [class]="isStateSelected(state)
+                            ? 'bg-green-600 text-white border-green-600 dark:bg-green-600 dark:border-green-600'
+                            : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'"
+                          class="px-3 py-1 rounded-full border text-sm font-medium transition-colors"
+                        >{{ getStateDisplayName(state) || state }}</button>
+                      }
+                    </div>
+                  </div>
+                }
+
+                <!-- Footer: count + Apply button -->
+                <div class="flex items-center justify-between pt-3 border-t border-gray-200 dark:border-gray-700">
+                  <p class="text-xs text-gray-400 dark:text-gray-500">
+                    @if (activeRefinementCount > 0) {
+                      Showing {{ displayedCustomers.length }} of {{ filteredCustomers.length }} producers
+                    }
+                  </p>
+                  <app-button (onClick)="applyFilters()">Apply Filters</app-button>
+                </div>
+              </div>
+            }
+
             @if (filteredCustomers.length === 0) {
               <div class="text-center py-8">
                 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 text-gray-300 dark:text-gray-600">
@@ -235,9 +354,18 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
                   Clear query
                 </button>
               </div>
+            } @else if (displayedCustomers.length === 0) {
+              <div class="text-center py-8">
+                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 text-gray-300 dark:text-gray-600">
+                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                </svg>
+                <h3 class="text-gray-500 dark:text-gray-400 mb-2">No Customers After Refinement</h3>
+                <p class="text-sm text-gray-400 dark:text-gray-500 mt-1">No customers match the active refinement filters. Try relaxing some filters.</p>
+                <button type="button" (click)="clearRefinements()" class="mt-3 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 underline">Clear refinements</button>
+              </div>
             } @else {
               <div class="divide-y divide-gray-200 dark:divide-gray-700">
-                @for (customer of filteredCustomers; track customer.id) {
+                @for (customer of displayedCustomers; track customer.id) {
                   <div
                     class="py-4 flex items-start justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 -mx-6 px-6 cursor-pointer transition-colors"
                     (click)="selectCustomer(customer)"
@@ -308,7 +436,15 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
               @for (list of savedLists; track list.id) {
                 <div class="flex items-center justify-between gap-4 p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                   <button type="button" (click)="loadSavedList(list)" class="flex-1 text-left min-w-0">
-                    <div class="font-medium text-gray-900 dark:text-white truncate">{{ list.name }}</div>
+                    <div class="flex items-center gap-2">
+                      <span class="font-medium text-gray-900 dark:text-white truncate">{{ list.name }}</span>
+                      @if (list.filters && hasAnyRefinement(list.filters)) {
+                        <span class="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                          Refined
+                        </span>
+                      }
+                    </div>
                     <div class="text-xs text-gray-500 dark:text-gray-400 truncate">"{{ list.query }}"</div>
                   </button>
                   <button type="button" (click)="deleteList(list.id)" class="text-red-500 hover:text-red-600 bg-transparent border-0 p-0 flex-shrink-0">
@@ -398,6 +534,84 @@ export class BuildListComponent implements OnInit, OnDestroy {
     return this.appState.selectedTradeUnits().length > 0;
   }
 
+  get activeRefinementCount(): number {
+    const r = this.appliedRefinements;
+    return [
+      r.noActiveContracts,
+      r.hasUnsignedContracts,
+      r.hasNegativePacing,
+      r.neverContacted,
+      r.notContactedDays != null && r.notContactedDays > 0,
+      r.crops && r.crops.length > 0,
+      r.states && r.states.length > 0
+    ].filter(Boolean).length;
+  }
+
+  get displayedCustomers(): Customer[] {
+    let list = this.filteredCustomers;
+    const r = this.appliedRefinements;
+
+    if (r.noActiveContracts) {
+      list = list.filter(c => !this.contracts.some(ct =>
+        ct.ctrmCustomerId === c.sourceCustomerId &&
+        (ct.status === 'Active' || ct.status === 'Pending' || ct.status === 'Overdue')
+      ));
+    }
+    if (r.hasUnsignedContracts) {
+      list = list.filter(c => this.contracts.some(ct =>
+        ct.ctrmCustomerId === c.sourceCustomerId && ct.signed === false
+      ));
+    }
+    if (r.hasNegativePacing) {
+      list = list.filter(c => {
+        const pacing = this.getCustomerPacing(c);
+        return pacing !== null && pacing < 0;
+      });
+    }
+    if (r.neverContacted) {
+      list = list.filter(c => !this.notes.some(n => n.customerId === c.id));
+    } else if (r.notContactedDays != null && r.notContactedDays > 0) {
+      const threshold = new Date();
+      threshold.setDate(threshold.getDate() - r.notContactedDays);
+      list = list.filter(c => {
+        const lastNote = this.notes
+          .filter(n => n.customerId === c.id)
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+        return !lastNote || new Date(lastNote.createdAt) < threshold;
+      });
+    }
+    if (r.crops && r.crops.length > 0) {
+      list = list.filter(c => (c.commodities ?? []).some(crop => r.crops!.includes(crop.trim())));
+    }
+    if (r.states && r.states.length > 0) {
+      list = list.filter(c => {
+        const state = c.extendedStateProvince || c.stateProvince;
+        return !!state && r.states!.includes(state);
+      });
+    }
+    return list;
+  }
+
+  get availableCrops(): string[] {
+    const crops = new Set<string>();
+    for (const c of this.filteredCustomers) {
+      for (const crop of (c.commodities ?? [])) {
+        if (crop.trim()) crops.add(crop.trim());
+      }
+    }
+    return [...crops].sort();
+  }
+
+  get availableStates(): string[] {
+    const states = new Set<string>();
+    for (const c of this.filteredCustomers) {
+      const s = c.extendedStateProvince || c.stateProvince;
+      if (s) states.add(s);
+    }
+    const list = [...states].sort();
+    return list.length > 1 ? list : [];
+  }
+
   queryText = '';
   filteredCustomers: Customer[] = [];
   showSaveDialog = false;
@@ -410,6 +624,10 @@ export class BuildListComponent implements OnInit, OnDestroy {
   loading = false;
   detectedState: string | null = null;
   queryUnrecognized = false;
+  showRefinePanel = false;
+  pendingRefinements: RefinementFilters = {};
+  appliedRefinements: RefinementFilters = {};
+  notContactedDaysInput = '';
 
   private lastContactCache = new Map<number, { text: string; colorClass: string }>();
   private customerCropsCache = new Map<number, string[]>();
@@ -593,7 +811,7 @@ export class BuildListComponent implements OnInit, OnDestroy {
   }
 
   getMapCustomers(): Customer[] {
-    return this.hasGenerated ? this.filteredCustomers : this.customers;
+    return this.hasGenerated ? this.displayedCustomers : this.customers;
   }
 
   clearQuery(): void {
@@ -603,6 +821,10 @@ export class BuildListComponent implements OnInit, OnDestroy {
     this.detectedState = null;
     this.queryUnrecognized = false;
     this.showMap = false;
+    this.showRefinePanel = false;
+    this.pendingRefinements = {};
+    this.appliedRefinements = {};
+    this.notContactedDaysInput = '';
     this.appState.clearBuildListState();
   }
 
@@ -715,7 +937,90 @@ export class BuildListComponent implements OnInit, OnDestroy {
   loadSavedList(list: SavedList): void {
     if (this.loading) return;
     this.queryText = list.query;
+    this.pendingRefinements = list.filters ? { ...list.filters } : {};
+    this.appliedRefinements = { ...this.pendingRefinements };
+    this.notContactedDaysInput = this.appliedRefinements.notContactedDays != null
+      ? this.appliedRefinements.notContactedDays.toString()
+      : '';
+    // Open the panel automatically so the user can see the active filters
+    if (this.hasAnyRefinement(this.appliedRefinements)) {
+      this.showRefinePanel = true;
+    }
     this.processQuery();
+  }
+
+  clearRefinements(): void {
+    this.pendingRefinements = {};
+    this.appliedRefinements = {};
+    this.notContactedDaysInput = '';
+  }
+
+  applyNotContactedDays(): void {
+    const days = parseInt(this.notContactedDaysInput, 10);
+    this.pendingRefinements = { ...this.pendingRefinements, notContactedDays: isNaN(days) || days <= 0 ? null : days };
+  }
+
+  applyFilters(): void {
+    this.appliedRefinements = { ...this.pendingRefinements };
+  }
+
+  togglePendingCrop(crop: string): void {
+    const current = this.pendingRefinements.crops ?? [];
+    const updated = current.includes(crop) ? current.filter(c => c !== crop) : [...current, crop];
+    this.pendingRefinements = { ...this.pendingRefinements, crops: updated.length > 0 ? updated : undefined };
+  }
+
+  togglePendingState(state: string): void {
+    const current = this.pendingRefinements.states ?? [];
+    const updated = current.includes(state) ? current.filter(s => s !== state) : [...current, state];
+    this.pendingRefinements = { ...this.pendingRefinements, states: updated.length > 0 ? updated : undefined };
+  }
+
+  isCropSelected(crop: string): boolean {
+    return !!(this.pendingRefinements.crops?.includes(crop));
+  }
+
+  isStateSelected(state: string): boolean {
+    return !!(this.pendingRefinements.states?.includes(state));
+  }
+
+  private getCustomerPacing(customer: Customer): number | null {
+    const customerContracts = this.contracts.filter(ct => ct.ctrmCustomerId === customer.sourceCustomerId);
+    if (customerContracts.length === 0) return null;
+    // Use delivery year to match what the pacing card and customer profile display
+    let maxYear = 0;
+    for (const c of customerContracts) {
+      if (c.deliveryStart) {
+        const y = new Date(c.deliveryStart).getFullYear();
+        if (y > maxYear) maxYear = y;
+      }
+    }
+    if (maxYear === 0) return null;
+    const today = new Date();
+    const samePointLastYear = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
+    const thisYearBu = customerContracts
+      .filter(c => c.deliveryStart && new Date(c.deliveryStart).getFullYear() === maxYear)
+      .reduce((sum, c) => sum + (c.quantity ?? 0), 0);
+    const lastYearBu = customerContracts
+      .filter(c => {
+        if (!c.deliveryStart || new Date(c.deliveryStart).getFullYear() !== maxYear - 1) return false;
+        if (!c.contractDate) return true;
+        return new Date(c.contractDate) <= samePointLastYear;
+      })
+      .reduce((sum, c) => sum + (c.quantity ?? 0), 0);
+    return lastYearBu > 0 ? ((thisYearBu - lastYearBu) / lastYearBu) * 100 : null;
+  }
+
+  hasAnyRefinement(filters: RefinementFilters): boolean {
+    return !!(
+      filters.noActiveContracts ||
+      filters.hasUnsignedContracts ||
+      filters.hasNegativePacing ||
+      filters.neverContacted ||
+      (filters.notContactedDays != null && filters.notContactedDays > 0) ||
+      (filters.crops && filters.crops.length > 0) ||
+      (filters.states && filters.states.length > 0)
+    );
   }
 
   openSaveDialog(): void {
@@ -734,16 +1039,21 @@ export class BuildListComponent implements OnInit, OnDestroy {
     this.apiService.createSavedList({
       name: this.newListName,
       query: this.queryText,
-      tradeUnits: tradeUnits.length > 0 ? tradeUnits.join(',') : undefined
+      tradeUnits: tradeUnits.length > 0 ? tradeUnits.join(',') : undefined,
+      filters: this.activeRefinementCount > 0 ? { ...this.appliedRefinements } : undefined
     }).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
-        this.toastService.success(`List "${this.newListName}" saved with ${this.filteredCustomers.length} customers`);
+        this.toastService.success(`List "${this.newListName}" saved with ${this.displayedCustomers.length} customers`);
         this.newListName = '';
         this.showSaveDialog = false;
         this.queryText = '';
         this.hasGenerated = false;
         this.filteredCustomers = [];
         this.detectedState = null;
+        this.showRefinePanel = false;
+        this.pendingRefinements = {};
+        this.appliedRefinements = {};
+        this.notContactedDaysInput = '';
         this.refreshSavedLists();
       },
       error: () => {

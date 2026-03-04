@@ -525,10 +525,13 @@ export class HomeComponent implements OnInit, OnDestroy {
       plantingIntentions: this.plantingIntentions,
       storedGrain: this.storedGrain
     };
-    this.savedLists = this.savedLists.map(list => ({
-      ...list,
-      customerIds: this.nlqFilterService.parseAndFilter(list.query, context).customers.map(c => c.id)
-    }));
+    this.savedLists = this.savedLists.map(list => {
+      const nlqCustomers = this.nlqFilterService.parseAndFilter(list.query, context).customers;
+      const refined = list.filters
+        ? this.nlqFilterService.applyRefinementFilters(nlqCustomers, list.filters, this.contracts, this.notes)
+        : nlqCustomers;
+      return { ...list, customerIds: refined.map(c => c.id) };
+    });
   }
 
   handleTradeUnitChange(tradeUnits: string[]): void {

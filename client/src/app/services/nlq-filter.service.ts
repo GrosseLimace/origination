@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Customer, Contract, Ticket, Note, PlantingIntention, StoredGrain } from '../models';
+import { Customer, Contract, Ticket, Note, PlantingIntention, StoredGrain, RefinementFilters } from '../models';
 
 export interface NlqFilterContext {
   customers: Customer[];
@@ -124,6 +124,78 @@ export class NlqFilterService {
 
   getStateDisplayName(state: string): string {
     return this.stateNames[state.toLowerCase()] || state.charAt(0).toUpperCase() + state.slice(1);
+  }
+
+  /** Applies structured refinement filters on top of an already-NLQ-filtered customer list. */
+  applyRefinementFilters(
+    customers: Customer[],
+    filters: RefinementFilters,
+    contracts: Contract[],
+    notes: Note[]
+  ): Customer[] {
+    let list = customers;
+
+    if (filters.noActiveContracts) {
+      list = list.filter(c => !contracts.some(ct =>
+        ct.ctrmCustomerId === c.sourceCustomerId &&
+        (ct.status === 'Active' || ct.status === 'Pending' || ct.status === 'Overdue')
+      ));
+    }
+    if (filters.hasUnsignedContracts) {
+      list = list.filter(c => contracts.some(ct =>
+        ct.ctrmCustomerId === c.sourceCustomerId && ct.signed === false
+      ));
+    }
+    if (filters.hasNegativePacing) {
+      const today = new Date();
+      const samePointLastYear = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
+      list = list.filter(c => {
+        const customerContracts = contracts.filter(ct => ct.ctrmCustomerId === c.sourceCustomerId);
+        if (customerContracts.length === 0) return false;
+        // Determine most recent delivery year
+        let maxYear = 0;
+        for (const ct of customerContracts) {
+          if (ct.deliveryStart) {
+            const y = new Date(ct.deliveryStart).getFullYear();
+            if (y > maxYear) maxYear = y;
+          }
+        }
+        if (maxYear === 0) return false;
+        const thisYearBu = customerContracts
+          .filter(ct => ct.deliveryStart && new Date(ct.deliveryStart).getFullYear() === maxYear)
+          .reduce((s, ct) => s + (ct.quantity ?? 0), 0);
+        const lastYearBu = customerContracts
+          .filter(ct => {
+            if (!ct.deliveryStart || new Date(ct.deliveryStart).getFullYear() !== maxYear - 1) return false;
+            if (!ct.contractDate) return true;
+            return new Date(ct.contractDate) <= samePointLastYear;
+          })
+          .reduce((s, ct) => s + (ct.quantity ?? 0), 0);
+        if (lastYearBu === 0) return false;
+        return ((thisYearBu - lastYearBu) / lastYearBu) * 100 < 0;
+      });
+    }
+    if (filters.neverContacted) {
+      list = list.filter(c => !notes.some(n => n.customerId === c.id));
+    } else if (filters.notContactedDays != null && filters.notContactedDays > 0) {
+      const threshold = new Date();
+      threshold.setDate(threshold.getDate() - filters.notContactedDays);
+      list = list.filter(c => {
+        const lastNote = notes.filter(n => n.customerId === c.id)
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+        return !lastNote || new Date(lastNote.createdAt) < threshold;
+      });
+    }
+    if (filters.crops && filters.crops.length > 0) {
+      list = list.filter(c => (c.commodities ?? []).some(crop => filters.crops!.includes(crop.trim())));
+    }
+    if (filters.states && filters.states.length > 0) {
+      list = list.filter(c => {
+        const state = c.extendedStateProvince || c.stateProvince;
+        return !!state && filters.states!.includes(state);
+      });
+    }
+    return list;
   }
 
   private getStateAbbreviation(state: string): string {

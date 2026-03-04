@@ -26,6 +26,7 @@ export interface Customer {
   totalAcres: number;
   linkedProducerIds: string[];
   eSignEnabled: boolean;
+  scoularViewRecipients?: string;  // Comma-separated "Name | email/phone", from dbo.eSignEnrollment
   coordinates?: Coordinates;
 
   // CustomerDetails fields (populated from app DB / ProducerDetails table)

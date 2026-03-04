@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import {
   Customer,
   Contract,
@@ -13,7 +14,9 @@ import {
   ProducerDetails,
   DashboardPlantingEstimate,
   DashboardMarketShare,
-  ContractPricingLine
+  DashboardActualHarvest,
+  ContractPricingLine,
+  RefinementFilters
 } from '../models';
 import { environment } from '../../environments/environment';
 
@@ -183,6 +186,22 @@ export class ApiService {
     return this.http.post<void>(`${this.baseUrl}/dashboardplantingestimates/marketshares/upsert`, shares);
   }
 
+  /** Fetches actual prev-year harvest handle rows for a trade unit key + year */
+  getDashboardActualHarvest(tradeUnitKey: string, plantingYear: number): Observable<DashboardActualHarvest[]> {
+    const params = new HttpParams().set('tradeUnitKey', tradeUnitKey).set('plantingYear', plantingYear);
+    return this.http.get<DashboardActualHarvest[]>(`${this.baseUrl}/dashboardplantingestimates/actualharvest`, { params });
+  }
+
+  /** Upserts actual harvest rows for a trade unit key + year */
+  upsertDashboardActualHarvest(items: { tradeUnitKey: string; cropCategory: string; plantingYear: number; bushels: number }[]): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/dashboardplantingestimates/actualharvest/upsert`, items);
+  }
+
+  /** Deletes a single actual harvest row by id */
+  deleteDashboardActualHarvest(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/dashboardplantingestimates/actualharvest/${id}`);
+  }
+
   // ==========================================================================
   // Note Operations (Customer contact notes)
   // ==========================================================================
@@ -268,14 +287,23 @@ export class ApiService {
   // Saved List Operations (Customer query lists)
   // ==========================================================================
 
-  /** Fetches all saved customer lists */
+  /** Fetches all saved customer lists — deserializes the Filters JSON string to an object */
   getSavedLists(): Observable<SavedList[]> {
-    return this.http.get<SavedList[]>(`${this.baseUrl}/savedlists`);
+    return this.http.get<any[]>(`${this.baseUrl}/savedlists`).pipe(
+      map(lists => lists.map(l => ({
+        ...l,
+        filters: l.filters ? JSON.parse(l.filters) as RefinementFilters : undefined
+      })))
+    );
   }
 
-  /** Creates a new saved list (stores only the query prompt, not customer IDs) */
-  createSavedList(data: { name: string; query: string; tradeUnits?: string }): Observable<SavedList> {
-    return this.http.post<SavedList>(`${this.baseUrl}/savedlists`, data);
+  /** Creates a new saved list (stores only the query prompt + optional filters, not customer IDs) */
+  createSavedList(data: { name: string; query: string; tradeUnits?: string; filters?: RefinementFilters }): Observable<SavedList> {
+    const payload = {
+      ...data,
+      filters: data.filters && Object.keys(data.filters).length > 0 ? JSON.stringify(data.filters) : null
+    };
+    return this.http.post<SavedList>(`${this.baseUrl}/savedlists`, payload);
   }
 
   /** Deletes a saved list by ID */

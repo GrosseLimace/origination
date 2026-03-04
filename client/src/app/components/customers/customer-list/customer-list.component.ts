@@ -113,8 +113,8 @@ interface LastContactInfo {
           </div>
         </div>
 
-        <!-- Saved Lists Filter -->
-        @if (getVisibleSavedLists().length > 0) {
+        <!-- Saved Lists Filter — only shown after customers have loaded -->
+        @if (!loading && getVisibleSavedLists().length > 0) {
           <div class="py-2 border-b border-gray-200 dark:border-gray-700 px-4">
             <select
               [(ngModel)]="selectedListId"
@@ -130,7 +130,7 @@ interface LastContactInfo {
         }
 
         <!-- Customer List -->
-        <div #scrollContainer class="divide-y divide-gray-200 dark:divide-gray-700 overflow-y-auto" [style.max-height]="getVisibleSavedLists().length > 0 ? 'calc(100vh - 21rem)' : 'calc(100vh - 16rem)'"
+        <div #scrollContainer class="divide-y divide-gray-200 dark:divide-gray-700 overflow-y-auto" [style.max-height]="!loading && getVisibleSavedLists().length > 0 ? 'calc(100vh - 21rem)' : 'calc(100vh - 16rem)'"
         >
           @if (loading && selectedTradeUnits.length > 0) {
             <div class="p-8 text-center">
@@ -488,9 +488,12 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
       storedGrain: this.appStateService.storedGrain()
     };
 
-    // Run the NLQ query and populate customerIds on the saved list
-    const result = this.nlqFilterService.parseAndFilter(savedList.query, context);
-    savedList.customerIds = result.customers.map(c => c.id);
+    // Run the NLQ query, then apply refinement filters, and populate customerIds
+    const nlqCustomers = this.nlqFilterService.parseAndFilter(savedList.query, context).customers;
+    const refined = savedList.filters
+      ? this.nlqFilterService.applyRefinementFilters(nlqCustomers, savedList.filters, this.appStateService.contracts(), this.appStateService.notes())
+      : nlqCustomers;
+    savedList.customerIds = refined.map(c => c.id);
 
     this.applyFilters();
   }
