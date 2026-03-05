@@ -310,7 +310,8 @@ export class ApiService {
       map(lists => lists.map(l => ({
         ...l,
         filters: l.filters ? JSON.parse(l.filters) as RefinementFilters : undefined
-      })))
+      }))),
+      catchError(this.handleError('Load saved lists', []))
     );
   }
 
