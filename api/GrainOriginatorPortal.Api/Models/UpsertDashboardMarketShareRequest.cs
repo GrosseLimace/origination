@@ -1,0 +1,17 @@
+namespace GrainOriginatorPortal.Api.Models;
+
+public class UpsertDashboardMarketShareRequest
+{
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.StringLength(500)]
+    public string TradeUnitKey { get; set; } = string.Empty;
+
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.StringLength(100)]
+    public string CropCategory { get; set; } = string.Empty;
+
+    [System.ComponentModel.DataAnnotations.Range(2020, 2100)]
+    public int PlantingYear { get; set; }
+
+    public decimal? MarketSharePct { get; set; }
+}
