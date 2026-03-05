@@ -116,7 +116,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAngular", policy =>
     {
-        var origins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+        var origins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>()
             ?? new[] { "http://localhost:4200" };
         policy.WithOrigins(origins)
               .WithHeaders("Content-Type", "Authorization")

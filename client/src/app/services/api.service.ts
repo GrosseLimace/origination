@@ -29,7 +29,7 @@ import { environment } from '../../environments/environment';
   providedIn: 'root'
 })
 export class ApiService {
-  private baseUrl = environment.apiBaseUrl;
+  private baseUrl = environment.apiUrl;
   private toastService = inject(ToastService);
 
   constructor(private http: HttpClient) {}

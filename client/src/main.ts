@@ -1,45 +1,52 @@
 import { bootstrapApplication } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
-import { provideHttpClient, withInterceptors } from '@angular/common/http';
-import { importProvidersFrom } from '@angular/core';
-import { MsalModule, MsalInterceptor, MsalGuard } from '@azure/msal-angular';
-import { PublicClientApplication, InteractionType } from '@azure/msal-browser';
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
+import {
+  MsalInterceptor,
+  MsalGuard,
+  MsalBroadcastService,
+  MsalService,
+  MSAL_GUARD_CONFIG,
+  MSAL_INSTANCE,
+  MSAL_INTERCEPTOR_CONFIG,
+} from '@azure/msal-angular';
+import { PublicClientApplication, InteractionType, BrowserCacheLocation } from '@azure/msal-browser';
 import { HTTP_INTERCEPTORS } from '@angular/common/http';
 import { AppComponent } from './app/app.component';
 import { routes } from './app/app.routes';
 import { environment } from './environments/environment';
 
-const msalInstance = new PublicClientApplication({
-  auth: {
-    clientId: environment.msalConfig.clientId,
-    authority: `https://login.microsoftonline.com/${environment.msalConfig.tenantId}`,
-    redirectUri: environment.msalConfig.redirectUri,
-  },
-  cache: {
-    cacheLocation: 'sessionStorage',
-  }
-});
-
 bootstrapApplication(AppComponent, {
   providers: [
     provideRouter(routes),
-    provideHttpClient(),
-    importProvidersFrom(
-      MsalModule.forRoot(
-        msalInstance,
-        {
-          interactionType: InteractionType.Redirect,
-          authRequest: { scopes: [environment.msalConfig.apiScope] }
+    provideHttpClient(withInterceptorsFromDi()),
+    {
+      provide: MSAL_INSTANCE,
+      useFactory: () => new PublicClientApplication({
+        auth: {
+          ...environment.msalConfig.auth,
         },
-        {
-          interactionType: InteractionType.Redirect,
-          protectedResourceMap: new Map([
-            [environment.apiBaseUrl + '/*', [environment.msalConfig.apiScope]]
-          ])
-        }
-      )
-    ),
+        cache: {
+          cacheLocation: BrowserCacheLocation.LocalStorage,
+        },
+      }),
+    },
+    {
+      provide: MSAL_GUARD_CONFIG,
+      useValue: { interactionType: InteractionType.Redirect },
+    },
+    {
+      provide: MSAL_INTERCEPTOR_CONFIG,
+      useValue: {
+        interactionType: InteractionType.Redirect,
+        protectedResourceMap: new Map([
+          [environment.apiConfig.uri, environment.apiConfig.scopes],
+        ]),
+      },
+    },
     { provide: HTTP_INTERCEPTORS, useClass: MsalInterceptor, multi: true },
+    MsalService,
     MsalGuard,
-  ]
+    MsalBroadcastService,
+  ],
 }).catch((err) => console.error(err));
