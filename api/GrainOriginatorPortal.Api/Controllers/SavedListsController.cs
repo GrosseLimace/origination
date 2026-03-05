@@ -29,6 +29,14 @@ public class SavedListsController : ControllerBase
         return Created($"/api/savedlists/{savedList.Id}", savedList);
     }
 
+    [HttpPut("{id}")]
+    public ActionResult<SavedList> Update(int id, [FromBody] CreateSavedListRequest request)
+    {
+        var updated = _dataService.UpdateList(id, request.Name, request.Query, request.TradeUnits, request.Filters);
+        if (updated == null) return NotFound();
+        return Ok(updated);
+    }
+
     [HttpDelete("{id}")]
     public ActionResult Delete(int id)
     {

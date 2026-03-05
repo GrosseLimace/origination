@@ -79,5 +79,6 @@ public interface IDataService
     // Saved List Operations
     List<SavedList> GetSavedLists();
     SavedList SaveList(string name, string query, string? tradeUnits, string? filters = null);
+    SavedList? UpdateList(int listId, string name, string query, string? tradeUnits, string? filters = null);
     void DeleteList(int listId);
 }

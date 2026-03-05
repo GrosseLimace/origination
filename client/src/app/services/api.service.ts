@@ -306,6 +306,15 @@ export class ApiService {
     return this.http.post<SavedList>(`${this.baseUrl}/savedlists`, payload);
   }
 
+  /** Updates an existing saved list by ID */
+  updateSavedList(id: number, data: { name: string; query: string; tradeUnits?: string; filters?: RefinementFilters }): Observable<SavedList> {
+    const payload = {
+      ...data,
+      filters: data.filters && Object.keys(data.filters).length > 0 ? JSON.stringify(data.filters) : null
+    };
+    return this.http.put<SavedList>(`${this.baseUrl}/savedlists/${id}`, payload);
+  }
+
   /** Deletes a saved list by ID */
   deleteSavedList(id: number): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/savedlists/${id}`);

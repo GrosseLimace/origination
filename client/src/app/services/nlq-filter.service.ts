@@ -265,6 +265,12 @@ export class NlqFilterService {
     if (lowerQuery.includes('no active contract') || lowerQuery.includes('no contract') ||
         lowerQuery.includes('without contract')) matched.push('no_contract');
     if (lowerQuery.includes('unsigned contract') || lowerQuery.includes('not signed')) matched.push('unsigned_contract');
+    if (lowerQuery.includes('pacing') || lowerQuery.includes('contract pace') || lowerQuery.includes('contract pacing')) {
+      matched.push(
+        (lowerQuery.includes('negative') || lowerQuery.includes('behind') || lowerQuery.includes('below') || lowerQuery.includes('slower'))
+          ? 'negative_pacing' : 'positive_pacing'
+      );
+    }
     if (lowerQuery.includes('fulfilled contract') || lowerQuery.includes('completed contract')) matched.push('contract_status_fulfilled');
     if (lowerQuery.includes('cancelled contract') || lowerQuery.includes('canceled contract')) matched.push('contract_status_cancelled');
     if (lowerQuery.includes('overdue contract') || lowerQuery.includes('past due contract') ||
@@ -1065,6 +1071,42 @@ export class NlqFilterService {
           })
         );
       }
+    }
+
+    // --- Contract pacing ---
+    const hasPacingQuery = lowerQuery.includes('pacing') || lowerQuery.includes('contract pace') || lowerQuery.includes('contract pacing');
+    if (hasPacingQuery) {
+      const isNegative = lowerQuery.includes('negative') || lowerQuery.includes('behind') ||
+                         lowerQuery.includes('below') || lowerQuery.includes('slower');
+      const today = new Date();
+      const samePointLastYear = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
+      result = result.filter(c => {
+        const cContracts = getCustomerContracts(c);
+        if (cContracts.length === 0) return false;
+        let maxYear = 0;
+        for (const ct of cContracts) {
+          if (ct.deliveryStart) {
+            const y = new Date(ct.deliveryStart).getFullYear();
+            if (y > maxYear) maxYear = y;
+          }
+        }
+        if (maxYear === 0) return false;
+        const thisYearBu = cContracts
+          .filter(ct => ct.deliveryStart && new Date(ct.deliveryStart).getFullYear() === maxYear)
+          .reduce((s, ct) => s + (ct.quantity ?? 0), 0);
+        // Only count prior-year contracts booked on or before this calendar date last year
+        // (same-point-last-year comparison, matching the pacing card logic).
+        const lastYearBu = cContracts
+          .filter(ct => {
+            if (!ct.deliveryStart || new Date(ct.deliveryStart).getFullYear() !== maxYear - 1) return false;
+            if (!ct.contractDate) return true;
+            return new Date(ct.contractDate) <= samePointLastYear;
+          })
+          .reduce((s, ct) => s + (ct.quantity ?? 0), 0);
+        if (lastYearBu === 0) return false;
+        const pacing = ((thisYearBu - lastYearBu) / lastYearBu) * 100;
+        return isNegative ? pacing < 0 : pacing >= 0;
+      });
     }
 
     return result;

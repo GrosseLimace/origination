@@ -27,6 +27,7 @@ export interface Customer {
   linkedProducerIds: string[];
   eSignEnabled: boolean;
   scoularViewRecipients?: string;  // Comma-separated "Name | email/phone", from dbo.eSignEnrollment
+  guild?: string;                  // Guild name, from dbo.eSignEnrollment
   coordinates?: Coordinates;
 
   // CustomerDetails fields (populated from app DB / ProducerDetails table)

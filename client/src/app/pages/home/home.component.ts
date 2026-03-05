@@ -603,14 +603,16 @@ export class HomeComponent implements OnInit, OnDestroy {
     // Load contracts by customer
     this.apiService.getContractsByCustomer(customerId).pipe(takeUntil(this.destroy$)).subscribe({
       next: (contracts) => {
-        // Add any new contracts to our array (avoid duplicates)
+        // Add any new contracts to our local array (avoid duplicates) for profile display.
+        // Do NOT write back to appState — per-customer loads have no trade-unit filter and
+        // would pollute the shared cache, causing Build a List pacing filters to see
+        // cross-trade-unit contracts and produce inconsistent results.
         contracts.forEach(contract => {
           if (!this.contracts.some(existing => existing.id === contract.id)) {
             this.contracts.push(contract);
           }
         });
         this.contracts = [...this.contracts]; // Trigger change detection
-        this.appState.setContracts(this.contracts); // Persist so navigation restore includes these contracts
         this.loadCustomerData(customerId);
         this.cdr.detectChanges();
       },
@@ -620,14 +622,14 @@ export class HomeComponent implements OnInit, OnDestroy {
     // Load tickets by customer
     this.apiService.getTicketsByCustomer(customerId).pipe(takeUntil(this.destroy$)).subscribe({
       next: (tickets) => {
-        // Add any new tickets to our array (avoid duplicates)
+        // Add any new tickets to our local array (avoid duplicates) for profile display.
+        // Do NOT write back to appState — same reason as contracts above.
         tickets.forEach(ticket => {
           if (!this.tickets.some(existing => existing.id === ticket.id)) {
             this.tickets.push(ticket);
           }
         });
         this.tickets = [...this.tickets]; // Trigger change detection
-        this.appState.setTickets(this.tickets); // Persist so navigation restore includes these tickets
         this.loadCustomerData(customerId);
 
         // Silently persist any newly-discovered ticket commodities to ProducerDetails

@@ -194,6 +194,7 @@ public class SqlDataService : IDataService
             {
                 customer.ESignEnabled = enrollment.ESignEnabled;
                 customer.ScoularViewRecipients = enrollment.ScoularViewRecipients;
+                customer.Guild = enrollment.Guild;
             }
         }
     }
@@ -579,16 +580,12 @@ public class SqlDataService : IDataService
                 ? customerQuery.Select(c => c.SourceCustomerId).ToList()
                 : customerQuery.Take(15).Select(c => c.SourceCustomerId).ToList();
 
-            // Get all contracts for those customers
+            // Get all contracts for those customers — intentionally NOT filtering by trade unit here
+            // so that prior-year contracts (needed for pacing calculations) are included even if
+            // they carry a different TradeUnit value than the current selection.
             var contractsQuery = _context.Contracts
                 .AsNoTracking()
                 .Where(c => c.IsActive && c.CtrmCustomerId != null && customerCtrmIds.Contains(c.CtrmCustomerId));
-
-            // Apply trade unit filter if specified
-            if (hasTradeUnitFilter)
-            {
-                contractsQuery = contractsQuery.Where(c => c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit));
-            }
 
             var contracts = contractsQuery
                 .OrderByDescending(c => c.Id)
@@ -1358,6 +1355,26 @@ public class SqlDataService : IDataService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error saving list");
+            throw;
+        }
+    }
+
+    public SavedList? UpdateList(int listId, string name, string query, string? tradeUnits, string? filters = null)
+    {
+        try
+        {
+            var list = _appContext.SavedLists.FirstOrDefault(s => s.Id == listId);
+            if (list == null) return null;
+            list.Name = name;
+            list.Query = query;
+            list.TradeUnits = tradeUnits;
+            list.Filters = filters;
+            _appContext.SaveChanges();
+            return list;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating saved list {ListId}", listId);
             throw;
         }
     }

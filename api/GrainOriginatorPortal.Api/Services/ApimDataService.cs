@@ -320,6 +320,11 @@ public class ApimDataService : IDataService
         throw new NotImplementedException("TODO: Wire up APIM endpoint for SaveList");
     }
 
+    public SavedList? UpdateList(int listId, string name, string query, string? tradeUnits, string? filters = null)
+    {
+        throw new NotImplementedException("TODO: Wire up APIM endpoint for UpdateList");
+    }
+
     public void DeleteList(int listId)
     {
         // TODO: Replace with actual APIM endpoint path

@@ -56,18 +56,30 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, Contr
                   </span>
                 }
               </div>
-              @if (customer.eSignEnabled && showESignRecipients && customer.scoularViewRecipients) {
-                <div class="mt-2">
-                  <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">ScoularView Recipients</p>
-                  <div class="flex flex-wrap gap-1.5">
-                    @for (recipient of customer.scoularViewRecipients.split(','); track recipient) {
-                      @if (recipient.trim()) {
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                          {{ recipient.trim() }}
-                        </span>
-                      }
-                    }
-                  </div>
+              @if (customer.eSignEnabled && showESignRecipients) {
+                <div class="mt-2 space-y-2">
+                  @if (customer.guild) {
+                    <div>
+                      <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">Guild</p>
+                      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                        {{ customer.guild }}
+                      </span>
+                    </div>
+                  }
+                  @if (customer.scoularViewRecipients) {
+                    <div>
+                      <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">ScoularView Recipients</p>
+                      <div class="flex flex-wrap gap-1.5">
+                        @for (recipient of customer.scoularViewRecipients.split(','); track recipient) {
+                          @if (recipient.trim()) {
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                              {{ recipient.trim() }}
+                            </span>
+                          }
+                        }
+                      </div>
+                    </div>
+                  }
                 </div>
               }
               @if (customer.sourceCustomerId) {
@@ -757,6 +769,12 @@ export class CustomerProfileComponent implements OnChanges {
               <div class="label">eSign Status</div>
               <div class="value">${this.customer.eSignEnabled ? 'Enabled' : 'Not Enrolled'}</div>
             </div>
+            ${this.customer.guild ? `
+            <div class="info-item">
+              <div class="label">Guild</div>
+              <div class="value">${this.customer.guild}</div>
+            </div>
+            ` : ''}
           </div>
         </div>
 

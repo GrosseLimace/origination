@@ -184,13 +184,13 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
                 <app-card-title>Results</app-card-title>
                 <app-card-description>
                   @if (activeRefinementCount > 0) {
-                    Showing {{ displayedCustomers.length }} of {{ filteredCustomers.length }} customer(s)
+                    Showing {{ displayedCustomers.length }} of {{ customers.length }} customer(s)
                     @if (detectedState) {
                       <span> in {{ getStateDisplayName(detectedState) }}</span>
                     }
                     <span> ({{ activeRefinementCount }} filter{{ activeRefinementCount === 1 ? '' : 's' }} applied)</span>
                   } @else {
-                    Found {{ filteredCustomers.length }} customer(s) matching your criteria
+                    Found {{ filteredCustomers.length }} of {{ customers.length }} customer(s) matching your criteria
                     @if (detectedState) {
                       <span> in {{ getStateDisplayName(detectedState) }}</span>
                     }
@@ -323,7 +323,7 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
                 <div class="flex items-center justify-between pt-3 border-t border-gray-200 dark:border-gray-700">
                   <p class="text-xs text-gray-400 dark:text-gray-500">
                     @if (activeRefinementCount > 0) {
-                      Showing {{ displayedCustomers.length }} of {{ filteredCustomers.length }} producers
+                      Showing {{ displayedCustomers.length }} of {{ customers.length }} producers
                     }
                   </p>
                   <app-button (onClick)="applyFilters()">Apply Filters</app-button>
@@ -463,11 +463,11 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
         </app-card-content>
       </app-card>
 
-      <!-- Save List Dialog -->
+      <!-- Save / Update List Dialog -->
       <app-dialog [isOpen]="showSaveDialog" (close)="closeSaveDialog()" size="sm">
         <app-dialog-header>
-          <app-dialog-title>Save List</app-dialog-title>
-          <app-dialog-description>Give this list a name so you can easily access it later</app-dialog-description>
+          <app-dialog-title>{{ activeSavedList ? 'Update List' : 'Save List' }}</app-dialog-title>
+          <app-dialog-description>{{ activeSavedList ? 'Update the name or keep it the same' : 'Give this list a name so you can easily access it later' }}</app-dialog-description>
         </app-dialog-header>
         <app-dialog-content>
           <div class="space-y-2">
@@ -481,7 +481,7 @@ import { CustomerMapComponent } from '../../components/map/customer-map.componen
         </app-dialog-content>
         <app-dialog-footer>
           <app-button variant="outline" (onClick)="closeSaveDialog()">Cancel</app-button>
-          <app-button (onClick)="saveList()" [disabled]="!newListName.trim()">Save List</app-button>
+          <app-button (onClick)="saveList()" [disabled]="!newListName.trim()">{{ activeSavedList ? 'Update List' : 'Save List' }}</app-button>
         </app-dialog-footer>
       </app-dialog>
 
@@ -615,6 +615,7 @@ export class BuildListComponent implements OnInit, OnDestroy {
   queryText = '';
   filteredCustomers: Customer[] = [];
   showSaveDialog = false;
+  activeSavedList: SavedList | null = null;
   showDeleteDialog = false;
   deleteListId: number | null = null;
   newListName = '';
@@ -847,11 +848,11 @@ export class BuildListComponent implements OnInit, OnDestroy {
     this.processQuery();
   }
 
-  processQuery(): void {
+  processQuery(overrideTradeUnits?: string[]): void {
     if (!this.queryText.trim()) return;
 
     this.isProcessing = true;
-    const tradeUnits = this.appState.selectedTradeUnits();
+    const tradeUnits = overrideTradeUnits ?? this.appState.selectedTradeUnits();
     const tuParam = tradeUnits.length > 0 ? tradeUnits : undefined;
 
     // Always fetch fresh data before filtering so the query sees the latest
@@ -919,8 +920,32 @@ export class BuildListComponent implements OnInit, OnDestroy {
     this.detectedState = result.detectedState;
     this.hasGenerated = true;
     this.queryUnrecognized = result.matchedPatterns.length === 0;
-    // When unrecognized, show 0 results rather than the confusing "all customers" default
-    this.filteredCustomers = this.queryUnrecognized ? [] : result.customers;
+
+    if (this.queryUnrecognized) {
+      // Unrecognized query: if other refinements are active use all customers as the
+      // base; otherwise show 0 (avoid dumping all customers on a meaningless query).
+      this.filteredCustomers = this.hasAnyRefinement(this.appliedRefinements)
+        ? result.customers
+        : [];
+    } else {
+      this.filteredCustomers = result.customers;
+    }
+
+    // If the query mentions pacing, apply direction filtering here at the component level
+    // using getCustomerPacing() so the result is definitive regardless of NLQ internals.
+    const lq = this.queryText.toLowerCase();
+    if (lq.includes('pacing') || lq.includes('contract pace')) {
+      const isNegative = lq.includes('negative') || lq.includes('behind') || lq.includes('below') || lq.includes('slower');
+      const isPositive = lq.includes('positive') || lq.includes('ahead') || lq.includes('above') || lq.includes('faster');
+      if (isNegative || isPositive) {
+        this.filteredCustomers = this.filteredCustomers.filter(c => {
+          const pacing = this.getCustomerPacing(c);
+          if (pacing === null) return false;
+          return isNegative ? pacing < 0 : pacing >= 0;
+        });
+      }
+    }
+
     this.rebuildCaches();
   }
 
@@ -936,6 +961,7 @@ export class BuildListComponent implements OnInit, OnDestroy {
 
   loadSavedList(list: SavedList): void {
     if (this.loading) return;
+    this.activeSavedList = list;
     this.queryText = list.query;
     this.pendingRefinements = list.filters ? { ...list.filters } : {};
     this.appliedRefinements = { ...this.pendingRefinements };
@@ -946,7 +972,17 @@ export class BuildListComponent implements OnInit, OnDestroy {
     if (this.hasAnyRefinement(this.appliedRefinements)) {
       this.showRefinePanel = true;
     }
-    this.processQuery();
+    // Clear stale results before fetching so no intermediate render fires with the
+    // enriched cache that home page customer visits leave in appState.contracts.
+    this.filteredCustomers = [];
+    this.hasGenerated = false;
+    // Always use the trade units saved with the list, not the current UI selection.
+    // This ensures the results are deterministic regardless of what trade units are
+    // currently selected in the header — the list was built against specific trade units.
+    const savedTradeUnits = list.tradeUnits
+      ? list.tradeUnits.split(',').map(t => t.trim()).filter(Boolean)
+      : [];
+    this.processQuery(savedTradeUnits);
   }
 
   clearRefinements(): void {
@@ -962,6 +998,11 @@ export class BuildListComponent implements OnInit, OnDestroy {
 
   applyFilters(): void {
     this.appliedRefinements = { ...this.pendingRefinements };
+    // Re-run the NLQ filter so hasNegativePacing (and any other refinement that
+    // affects the base customer set) uses the correct set of customers.
+    if (this.hasGenerated) {
+      this.applyNlqFilter();
+    }
   }
 
   togglePendingCrop(crop: string): void {
@@ -987,7 +1028,6 @@ export class BuildListComponent implements OnInit, OnDestroy {
   private getCustomerPacing(customer: Customer): number | null {
     const customerContracts = this.contracts.filter(ct => ct.ctrmCustomerId === customer.sourceCustomerId);
     if (customerContracts.length === 0) return null;
-    // Use delivery year to match what the pacing card and customer profile display
     let maxYear = 0;
     for (const c of customerContracts) {
       if (c.deliveryStart) {
@@ -996,6 +1036,8 @@ export class BuildListComponent implements OnInit, OnDestroy {
       }
     }
     if (maxYear === 0) return null;
+    // Same-point-last-year cutoff: only count prior-year contracts that were
+    // booked on or before this calendar date last year (apples-to-apples comparison).
     const today = new Date();
     const samePointLastYear = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
     const thisYearBu = customerContracts
@@ -1008,7 +1050,8 @@ export class BuildListComponent implements OnInit, OnDestroy {
         return new Date(c.contractDate) <= samePointLastYear;
       })
       .reduce((sum, c) => sum + (c.quantity ?? 0), 0);
-    return lastYearBu > 0 ? ((thisYearBu - lastYearBu) / lastYearBu) * 100 : null;
+    if (lastYearBu === 0) return null;
+    return ((thisYearBu - lastYearBu) / lastYearBu) * 100;
   }
 
   hasAnyRefinement(filters: RefinementFilters): boolean {
@@ -1025,7 +1068,7 @@ export class BuildListComponent implements OnInit, OnDestroy {
 
   openSaveDialog(): void {
     this.showSaveDialog = true;
-    this.newListName = '';
+    this.newListName = this.activeSavedList?.name ?? '';
   }
 
   closeSaveDialog(): void {
@@ -1036,16 +1079,23 @@ export class BuildListComponent implements OnInit, OnDestroy {
     if (!this.newListName.trim() || this.filteredCustomers.length === 0) return;
 
     const tradeUnits = this.appState.selectedTradeUnits();
-    this.apiService.createSavedList({
+    const payload = {
       name: this.newListName,
       query: this.queryText,
       tradeUnits: tradeUnits.length > 0 ? tradeUnits.join(',') : undefined,
       filters: this.activeRefinementCount > 0 ? { ...this.appliedRefinements } : undefined
-    }).pipe(takeUntil(this.destroy$)).subscribe({
+    };
+
+    const request$ = this.activeSavedList
+      ? this.apiService.updateSavedList(this.activeSavedList.id, payload)
+      : this.apiService.createSavedList(payload);
+
+    request$.pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
         this.toastService.success(`List "${this.newListName}" saved with ${this.displayedCustomers.length} customers`);
         this.newListName = '';
         this.showSaveDialog = false;
+        this.activeSavedList = null;
         this.queryText = '';
         this.hasGenerated = false;
         this.filteredCustomers = [];
@@ -1080,6 +1130,9 @@ export class BuildListComponent implements OnInit, OnDestroy {
     // Remove from local array immediately for instant UI feedback
     this.savedLists = this.savedLists.filter(l => l.id !== listId);
     this.appState.setSavedLists(this.savedLists);
+    if (this.activeSavedList?.id === listId) {
+      this.activeSavedList = null;
+    }
 
     this.apiService.deleteSavedList(listId).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {

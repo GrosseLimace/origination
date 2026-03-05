@@ -31,7 +31,10 @@ public class GeocodeController : ControllerBase
     {
         if (request == null) return Ok(new GeocodeResult());
 
-        var cacheKey = $"{request.City?.ToLower()},{request.State?.ToLower()},{request.Zip?.ToLower()}".Trim(',');
+        var streetPart = string.IsNullOrWhiteSpace(request.Street) ? "" : request.Street.ToLower().Trim();
+        var cacheKey = string.IsNullOrEmpty(streetPart)
+            ? $"{request.City?.ToLower()},{request.State?.ToLower()},{request.Zip?.ToLower()}".Trim(',')
+            : $"{streetPart},{request.City?.ToLower()},{request.State?.ToLower()},{request.Zip?.ToLower()}".Trim(',');
 
         if (_cache.TryGetValue(cacheKey, out var cached))
         {
@@ -47,6 +50,7 @@ public class GeocodeController : ControllerBase
                 await Task.Delay(1100 - (int)elapsed.TotalMilliseconds);
 
             var queryParams = new List<string> { "country=US", "format=json", "limit=1" };
+            if (!string.IsNullOrWhiteSpace(request.Street)) queryParams.Add($"street={Uri.EscapeDataString(request.Street)}");
             if (!string.IsNullOrWhiteSpace(request.City)) queryParams.Add($"city={Uri.EscapeDataString(request.City)}");
             if (!string.IsNullOrWhiteSpace(request.State)) queryParams.Add($"state={Uri.EscapeDataString(request.State)}");
             if (!string.IsNullOrWhiteSpace(request.Zip)) queryParams.Add($"postalcode={Uri.EscapeDataString(request.Zip)}");
@@ -101,7 +105,10 @@ public class GeocodeController : ControllerBase
 
         foreach (var req in requests)
         {
-            var cacheKey = $"{req.City?.ToLower()},{req.State?.ToLower()},{req.Zip?.ToLower()}".Trim(',');
+            var streetPart = string.IsNullOrWhiteSpace(req.Street) ? "" : req.Street.ToLower().Trim();
+            var cacheKey = string.IsNullOrEmpty(streetPart)
+                ? $"{req.City?.ToLower()},{req.State?.ToLower()},{req.Zip?.ToLower()}".Trim(',')
+                : $"{streetPart},{req.City?.ToLower()},{req.State?.ToLower()},{req.Zip?.ToLower()}".Trim(',');
 
             // Check in-memory cache first
             if (_cache.TryGetValue(cacheKey, out var cached))
@@ -119,6 +126,7 @@ public class GeocodeController : ControllerBase
             try
             {
                 var queryParams = new List<string> { "country=US", "format=json", "limit=1" };
+                if (!string.IsNullOrWhiteSpace(req.Street)) queryParams.Add($"street={Uri.EscapeDataString(req.Street)}");
                 if (!string.IsNullOrWhiteSpace(req.City)) queryParams.Add($"city={Uri.EscapeDataString(req.City)}");
                 if (!string.IsNullOrWhiteSpace(req.State)) queryParams.Add($"state={Uri.EscapeDataString(req.State)}");
                 if (!string.IsNullOrWhiteSpace(req.Zip)) queryParams.Add($"postalcode={Uri.EscapeDataString(req.Zip)}");
@@ -172,6 +180,7 @@ public class GeocodeController : ControllerBase
 public class GeocodeRequest
 {
     public string Key { get; set; } = string.Empty;
+    public string? Street { get; set; }
     public string? City { get; set; }
     public string? State { get; set; }
     public string? Zip { get; set; }
