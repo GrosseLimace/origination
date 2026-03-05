@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Collections.Concurrent;
 using System.Text.Json;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class GeocodeController : ControllerBase
@@ -26,6 +28,11 @@ public class GeocodeController : ControllerBase
     /// Geocode a single address via Nominatim (server-side, no CORS issues).
     /// Rate-limited to 1 request/sec to respect Nominatim usage policy.
     /// </summary>
+    /// <remarks>
+    /// TODO: Nominatim calls an external internet endpoint (nominatim.openstreetmap.org).
+    /// The Azure App Service has no outbound internet access — this will fail in deployed environments.
+    /// Replace with an internally approved geocoding solution before deploying to QA/Prod.
+    /// </remarks>
     [HttpPost("single")]
     public async Task<ActionResult<GeocodeResult>> SingleGeocode([FromBody] GeocodeRequest request)
     {

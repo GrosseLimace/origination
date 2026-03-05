@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Identity.Web;
 using GrainOriginatorPortal.Api.Data;
 using GrainOriginatorPortal.Api.Services;
 
@@ -21,6 +22,13 @@ builder.Services.AddControllers()
 
 // Enable OpenAPI/Swagger for API documentation (available at /openapi/v1.json)
 builder.Services.AddOpenApi();
+
+// Configure Azure AD authentication — validates bearer tokens issued by the Scoular tenant.
+// ClientId and Audience are intentionally blank here; they are injected via Azure App Service
+// environment variables (AzureAd__ClientId, AzureAd__Audience) in deployed environments.
+// For local development, set them in appsettings.Development.json or user secrets.
+builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration);
+builder.Services.AddAuthorization();
 
 // Configure Entity Framework Core with SQL Server and Managed Identity
 // - Uses connection string from appsettings.json or Azure App Settings
@@ -102,14 +110,15 @@ builder.Services.AddScoped<IDataService, SqlDataService>();
 // Uncomment to use mock data instead of database:
 // builder.Services.AddSingleton<IDataService, MockDataService>();
 
-// Configure CORS to allow requests from the Angular development server.
-// This is required because the Angular app runs on a different port (4200/4202)
-// than the API (5000), which would otherwise be blocked by browser security.
+// Configure CORS — allowed origins come from configuration so they can be overridden
+// per environment via Azure App Service settings without code changes.
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAngular", policy =>
     {
-        policy.WithOrigins("http://localhost:4200", "http://localhost:4201", "http://localhost:4202")
+        var origins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+            ?? new[] { "http://localhost:4200" };
+        policy.WithOrigins(origins)
               .WithHeaders("Content-Type", "Authorization")
               .WithMethods("GET", "POST", "PUT", "DELETE");
     });
@@ -160,6 +169,20 @@ app.UseCors("AllowAngular");
 
 // Redirect HTTP requests to HTTPS for security
 app.UseHttpsRedirection();
+
+// Add standard security response headers
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
+    context.Response.Headers.Append("X-Frame-Options", "DENY");
+    context.Response.Headers.Append("X-XSS-Protection", "1; mode=block");
+    context.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
+    await next();
+});
+
+// Authentication and authorization middleware — must come after UseCors and UseHttpsRedirection
+app.UseAuthentication();
+app.UseAuthorization();
 
 // Map controller routes (e.g., /api/customers, /api/contracts, etc.)
 app.MapControllers();
