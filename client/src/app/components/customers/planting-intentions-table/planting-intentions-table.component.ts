@@ -1,4 +1,5 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, inject } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, DestroyRef, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '../../ui/table/table.component';
@@ -432,6 +433,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
 })
 export class PlantingIntentionsTableComponent implements OnInit, OnDestroy {
   private apiService = inject(ApiService);
+  private destroyRef = inject(DestroyRef);
 
   @Input() plantingIntentions: PlantingIntention[] = [];
   @Input() customer!: Customer;
@@ -609,7 +611,7 @@ export class PlantingIntentionsTableComponent implements OnInit, OnDestroy {
   private loadCommodities(): void {
     if (this.allCommodities.length > 0 || this.isLoadingCommodities) return;
     this.isLoadingCommodities = true;
-    this.apiService.getCommodities().subscribe({
+    this.apiService.getCommodities().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (commodities) => {
         this.allCommodities = commodities;
         this.isLoadingCommodities = false;

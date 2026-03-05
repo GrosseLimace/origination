@@ -1,4 +1,5 @@
-import { Component, Input, Output, EventEmitter, OnChanges, SimpleChanges, ChangeDetectorRef, inject } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnChanges, SimpleChanges, ChangeDetectorRef, DestroyRef, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { switchMap } from 'rxjs/operators';
@@ -326,6 +327,7 @@ import { ApiService } from '../../../services/api.service';
 export class EditCustomerDialogComponent implements OnChanges {
   private cdr = inject(ChangeDetectorRef);
   private apiService = inject(ApiService);
+  private destroyRef = inject(DestroyRef);
 
   @Input() isOpen = false;
   @Input() customer: Customer | null = null;
@@ -412,7 +414,7 @@ export class EditCustomerDialogComponent implements OnChanges {
       // Load commodity lookup table
       if (this.allCommodities.length === 0 && !this.isLoadingCommodities) {
         this.isLoadingCommodities = true;
-        this.apiService.getCommodities().subscribe({
+        this.apiService.getCommodities().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
           next: (commodities) => {
             this.allCommodities = commodities;
             this.isLoadingCommodities = false;
@@ -541,7 +543,8 @@ export class EditCustomerDialogComponent implements OnChanges {
   private loadAllProducersForSearch(): void {
     this.isLoadingProducers = true;
     this.apiService.getTradeUnits().pipe(
-      switchMap(tradeUnits => this.apiService.getCustomers(tradeUnits))
+      switchMap(tradeUnits => this.apiService.getCustomers(tradeUnits)),
+      takeUntilDestroyed(this.destroyRef)
     ).subscribe({
       next: (customers) => {
         this.allProducersForSearch = customers;

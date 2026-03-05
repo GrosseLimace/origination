@@ -402,7 +402,7 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
         zip: addr.zip
       }));
 
-      const response = await fetch(`${environment.apiBaseUrl}/geocode/batch`, {
+      const response = await fetch(`${environment.apiUrl}/geocode/batch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requests)

@@ -114,13 +114,37 @@ npm start         # Dev server with hot reload
 npm run build     # Production build
 ```
 
-## Mock Data
-
-The API uses `MockDataService` which provides sample data for development. To connect to a real database:
-
-1. Implement `IDataService` with Entity Framework Core or another data access method
-2. Register the new service in `Program.cs`
-
 ## License
 
 MIT
+
+---
+
+## Software Bill of Materials (SBOM)
+Last Updated: 2026-03-05
+
+### Backend Dependencies (.NET / C#)
+| Package | Version | License | Purpose |
+|---------|---------|---------|---------|
+| Azure.Identity | 1.17.1 | MIT | Azure credential/identity support |
+| Microsoft.AspNetCore.OpenApi | 10.0.1 | MIT | OpenAPI/Swagger endpoint |
+| Microsoft.Data.SqlClient | 6.1.4 | MIT | SQL Server data access driver |
+| Microsoft.EntityFrameworkCore.Design | 10.0.1 | MIT | EF Core tooling (design-time only) |
+| Microsoft.EntityFrameworkCore.SqlServer | 10.0.1 | MIT | EF Core SQL Server provider |
+| Microsoft.Identity.Web | 4.5.0 | MIT | Azure AD JWT bearer authentication |
+
+### Frontend Dependencies (Angular / TypeScript)
+| Package | Version | License | Purpose |
+|---------|---------|---------|---------|
+| @angular/animations | ^19.0.0 | MIT | Angular animation support |
+| @angular/common | ^19.0.0 | MIT | Common Angular utilities and HTTP client |
+| @angular/core | ^19.0.0 | MIT | Angular core framework |
+| @angular/forms | ^19.0.0 | MIT | Reactive and template-driven forms |
+| @angular/platform-browser | ^19.0.0 | MIT | Browser platform support |
+| @angular/router | ^19.0.0 | MIT | Client-side routing |
+| @azure/msal-angular | ^5.1.1 | MIT | MSAL Angular integration and interceptor |
+| @azure/msal-browser | ^5.4.0 | MIT | Azure AD browser authentication (PKCE) |
+| leaflet | ^1.9.4 | BSD-2-Clause | Interactive map rendering |
+| rxjs | ~7.8.0 | Apache-2.0 | Reactive programming / observables |
+| tslib | ^2.3.0 | 0BSD | TypeScript runtime helpers |
+| zone.js | ~0.15.0 | MIT | Angular change detection |

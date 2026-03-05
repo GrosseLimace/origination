@@ -1,19 +1,23 @@
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.ComponentModel.DataAnnotations;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class SavedListsController : ControllerBase
 {
     private readonly IDataService _dataService;
+    private readonly ILogger<SavedListsController> _logger;
 
-    public SavedListsController(IDataService dataService)
+    public SavedListsController(IDataService dataService, ILogger<SavedListsController> logger)
     {
         _dataService = dataService;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -40,8 +44,16 @@ public class SavedListsController : ControllerBase
     [HttpDelete("{id}")]
     public ActionResult Delete(int id)
     {
-        _dataService.DeleteList(id);
-        return NoContent();
+        try
+        {
+            _dataService.DeleteList(id);
+            return NoContent();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting saved list {Id}", id);
+            return StatusCode(500, new { error = "An unexpected error occurred." });
+        }
     }
 }
 

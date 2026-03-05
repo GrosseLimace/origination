@@ -1,18 +1,22 @@
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class NotesController : ControllerBase
 {
     private readonly IDataService _dataService;
+    private readonly ILogger<NotesController> _logger;
 
-    public NotesController(IDataService dataService)
+    public NotesController(IDataService dataService, ILogger<NotesController> logger)
     {
         _dataService = dataService;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -66,8 +70,16 @@ public class NotesController : ControllerBase
     [HttpDelete("{id:long}")]
     public ActionResult Delete(long id)
     {
-        _dataService.DeleteNote(id);
-        return Ok();
+        try
+        {
+            _dataService.DeleteNote(id);
+            return NoContent();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting note {Id}", id);
+            return StatusCode(500, new { error = "An unexpected error occurred." });
+        }
     }
 }
 

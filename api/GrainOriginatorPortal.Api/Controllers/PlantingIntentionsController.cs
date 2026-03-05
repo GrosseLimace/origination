@@ -1,18 +1,22 @@
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class PlantingIntentionsController : ControllerBase
 {
     private readonly IDataService _dataService;
+    private readonly ILogger<PlantingIntentionsController> _logger;
 
-    public PlantingIntentionsController(IDataService dataService)
+    public PlantingIntentionsController(IDataService dataService, ILogger<PlantingIntentionsController> logger)
     {
         _dataService = dataService;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -62,8 +66,16 @@ public class PlantingIntentionsController : ControllerBase
     [HttpDelete("{id}")]
     public ActionResult Delete(int id)
     {
-        _dataService.DeletePlantingIntention(id);
-        return Ok();
+        try
+        {
+            _dataService.DeletePlantingIntention(id);
+            return NoContent();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting planting intention {Id}", id);
+            return StatusCode(500, new { error = "An unexpected error occurred." });
+        }
     }
 }
 
