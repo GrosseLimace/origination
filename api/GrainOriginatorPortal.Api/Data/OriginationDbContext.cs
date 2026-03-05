@@ -77,6 +77,7 @@ public class OriginationDbContext : DbContext
             entity.Ignore(e => e.TotalAcres);
             entity.Ignore(e => e.ESignEnabled);
             entity.Ignore(e => e.ScoularViewRecipients);
+            entity.Ignore(e => e.Guild);
             entity.Ignore(e => e.Coordinates);
             entity.Ignore(e => e.FarmIds);
             entity.Ignore(e => e.LinkedProducerIds);

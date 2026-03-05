@@ -11,10 +11,20 @@ import {
   MSAL_INTERCEPTOR_CONFIG,
 } from '@azure/msal-angular';
 import { PublicClientApplication, InteractionType, BrowserCacheLocation } from '@azure/msal-browser';
+import { APP_INITIALIZER } from '@angular/core';
 import { HTTP_INTERCEPTORS } from '@angular/common/http';
 import { AppComponent } from './app/app.component';
 import { routes } from './app/app.routes';
 import { environment } from './environments/environment';
+
+const msalInstance = new PublicClientApplication({
+  auth: {
+    ...environment.msalConfig.auth,
+  },
+  cache: {
+    cacheLocation: BrowserCacheLocation.LocalStorage,
+  },
+});
 
 bootstrapApplication(AppComponent, {
   providers: [
@@ -22,14 +32,13 @@ bootstrapApplication(AppComponent, {
     provideHttpClient(withInterceptorsFromDi()),
     {
       provide: MSAL_INSTANCE,
-      useFactory: () => new PublicClientApplication({
-        auth: {
-          ...environment.msalConfig.auth,
-        },
-        cache: {
-          cacheLocation: BrowserCacheLocation.LocalStorage,
-        },
-      }),
+      useValue: msalInstance,
+    },
+    {
+      provide: APP_INITIALIZER,
+      useFactory: (msalService: MsalService) => () => msalService.instance.initialize(),
+      deps: [MsalService],
+      multi: true,
     },
     {
       provide: MSAL_GUARD_CONFIG,

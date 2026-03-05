@@ -11,6 +11,6 @@ export const environment = {
   },
   apiConfig: {
     scopes: ['api://00078a10-3f3f-4d17-9350-fe90401125ae/Origination.Application.Dev'],
-    uri: 'http://localhost:5000/api'
+    uri: 'http://localhost:5000/api/*'
   }
 };
