@@ -44,7 +44,7 @@ interface CustomerGroup {
       <!-- Header -->
       <div class="flex items-start justify-between gap-4">
         <div>
-          <h2 class="text-2xl font-semibold text-gray-900 dark:text-white">Actionable Insights</h2>
+          <p class="text-lg font-semibold text-gray-900 dark:text-white">Actionable Insights</p>
           <p class="text-gray-500 dark:text-gray-400">
             @if (selectedTradeUnits.length > 0) {
               Prioritized recommendations for <span class="font-medium text-gray-700 dark:text-gray-300">{{ selectedTradeUnits.join(', ') }}</span>
@@ -173,7 +173,7 @@ interface CustomerGroup {
                     }
                   }
                   <div>
-                    <h3 [class]="'font-semibold ' + getCategoryTitleClass(category)">{{ getCategoryTitle(category) }}</h3>
+                    <p [class]="'text-sm font-semibold ' + getCategoryTitleClass(category)">{{ getCategoryTitle(category) }}</p>
                     <p [class]="'text-sm ' + getCategorySubtitleClass(category)">
                       {{ getCustomerGroups(category).length }} customer{{ getCustomerGroups(category).length !== 1 ? 's' : '' }}
                     </p>
@@ -408,7 +408,9 @@ export class InsightsComponent implements OnInit, OnDestroy {
       error: () => {
         this.isLoading = false;
         this.isBackgroundRefreshing = false;
-        if (!isBackgroundRefresh) {
+        if (isBackgroundRefresh) {
+          this.toastService.show('Could not refresh insights — showing cached data', 'warning');
+        } else {
           this.toastService.error('Failed to load insights data');
         }
       }
@@ -431,7 +433,8 @@ export class InsightsComponent implements OnInit, OnDestroy {
 
       // --- 1. Unconfirmed Contracts ---
       // Contracts where CustomerConfirmStatus is not 'Confirmed', excluding Fulfilled/Cancelled.
-      // TODO: Verify exact ODS values for CustomerConfirmStatus against live data.
+      // Uses case-insensitive match on 'confirmed' — verify against live ODS data during Dev testing
+      // to confirm the exact string values returned for confirmed vs unconfirmed contracts.
       for (const contract of customerContracts) {
         const confirmStatus = (contract.customerConfirmStatus || '').trim();
         const isConfirmed = confirmStatus.toLowerCase() === 'confirmed';
@@ -498,8 +501,8 @@ export class InsightsComponent implements OnInit, OnDestroy {
 
       // --- 3. Unshipped Bushels Past Delivery Date ---
       // Contracts past their delivery end date that are still Active or Overdue.
-      //
-      // TODO: Refine remaining bushels calculation using ticket appliedDockQuantity vs contract quantity.
+      // Currently shows full contract quantity as unshipped — a future enhancement would subtract
+      // applied ticket quantities (AppliedNetQuantity) to show true remaining bushels.
       for (const contract of customerContracts) {
         const deliveryEnd = new Date(contract.deliveryEnd);
         const isPastDue = deliveryEnd < today;

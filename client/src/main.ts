@@ -22,7 +22,7 @@ const msalInstance = new PublicClientApplication({
     ...environment.msalConfig.auth,
   },
   cache: {
-    cacheLocation: BrowserCacheLocation.LocalStorage,
+    cacheLocation: BrowserCacheLocation.SessionStorage,
   },
 });
 
@@ -42,7 +42,10 @@ bootstrapApplication(AppComponent, {
     },
     {
       provide: MSAL_GUARD_CONFIG,
-      useValue: { interactionType: InteractionType.Redirect },
+      useValue: {
+        interactionType: InteractionType.Redirect,
+        authRequest: { scopes: environment.apiConfig.scopes },
+      },
     },
     {
       provide: MSAL_INTERCEPTOR_CONFIG,

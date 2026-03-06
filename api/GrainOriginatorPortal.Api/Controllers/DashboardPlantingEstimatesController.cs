@@ -18,58 +18,69 @@ public class DashboardPlantingEstimatesController : ControllerBase
     }
 
     [HttpGet]
-    public ActionResult<List<DashboardPlantingEstimate>> Get([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear)
+    public async Task<ActionResult<List<DashboardPlantingEstimate>>> Get([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear)
     {
         if (string.IsNullOrWhiteSpace(tradeUnitKey) || plantingYear < 2020 || plantingYear > DateTime.Now.Year + 5)
             return BadRequest("tradeUnitKey and plantingYear are required.");
-        return Ok(_dataService.GetDashboardPlantingEstimates(tradeUnitKey, plantingYear));
+        return Ok(await _dataService.GetDashboardPlantingEstimates(tradeUnitKey, plantingYear));
     }
 
     [HttpPost("upsert")]
-    public ActionResult Upsert([FromBody] List<UpsertDashboardEstimateRequest> estimates)
+    public async Task<ActionResult> Upsert([FromBody] List<UpsertDashboardEstimateRequest> estimates)
     {
         if (estimates == null || estimates.Count == 0) return BadRequest("No estimates provided.");
-        _dataService.UpsertDashboardPlantingEstimates(estimates, "system");
-        return Ok();
+        var username = User.FindFirst("name")?.Value ?? User.Identity?.Name ?? "Unknown";
+        await _dataService.UpsertDashboardPlantingEstimates(estimates, username);
+        return NoContent();
     }
 
     [HttpGet("marketshares")]
-    public ActionResult<List<DashboardMarketShare>> GetMarketShares([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear)
+    public async Task<ActionResult<List<DashboardMarketShare>>> GetMarketShares([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear)
     {
         if (string.IsNullOrWhiteSpace(tradeUnitKey) || plantingYear < 2020 || plantingYear > DateTime.Now.Year + 5)
             return BadRequest("tradeUnitKey and plantingYear are required.");
-        return Ok(_dataService.GetDashboardMarketShares(tradeUnitKey, plantingYear));
+        return Ok(await _dataService.GetDashboardMarketShares(tradeUnitKey, plantingYear));
     }
 
     [HttpPost("marketshares/upsert")]
-    public ActionResult UpsertMarketShares([FromBody] List<UpsertDashboardMarketShareRequest> shares)
+    public async Task<ActionResult> UpsertMarketShares([FromBody] List<UpsertDashboardMarketShareRequest> shares)
     {
         if (shares == null || shares.Count == 0) return BadRequest("No market shares provided.");
-        _dataService.UpsertDashboardMarketShares(shares, "system");
-        return Ok();
+        var username = User.FindFirst("name")?.Value ?? User.Identity?.Name ?? "Unknown";
+        await _dataService.UpsertDashboardMarketShares(shares, username);
+        return NoContent();
     }
 
     [HttpGet("actualharvest")]
-    public ActionResult<List<DashboardActualHarvest>> GetActualHarvest([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear)
+    public async Task<ActionResult<List<DashboardActualHarvest>>> GetActualHarvest([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear)
     {
         if (string.IsNullOrWhiteSpace(tradeUnitKey) || plantingYear < 2020 || plantingYear > DateTime.Now.Year + 5)
             return BadRequest("tradeUnitKey and plantingYear are required.");
-        return Ok(_dataService.GetDashboardActualHarvest(tradeUnitKey, plantingYear));
+        return Ok(await _dataService.GetDashboardActualHarvest(tradeUnitKey, plantingYear));
     }
 
     [HttpPost("actualharvest/upsert")]
-    public ActionResult UpsertActualHarvest([FromBody] List<UpsertDashboardActualHarvestRequest> items)
+    public async Task<ActionResult> UpsertActualHarvest([FromBody] List<UpsertDashboardActualHarvestRequest> items)
     {
         if (items == null || items.Count == 0) return BadRequest("No harvest items provided.");
-        _dataService.UpsertDashboardActualHarvest(items, "system");
-        return Ok();
+        var username = User.FindFirst("name")?.Value ?? User.Identity?.Name ?? "Unknown";
+        await _dataService.UpsertDashboardActualHarvest(items, username);
+        return NoContent();
     }
 
     [HttpDelete("actualharvest/{id:int}")]
-    public ActionResult DeleteActualHarvest(int id)
+    public async Task<ActionResult> DeleteActualHarvest(int id)
     {
-        _dataService.DeleteDashboardActualHarvest(id);
-        return Ok();
+        try
+        {
+            await _dataService.DeleteDashboardActualHarvest(id);
+            return NoContent();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting actual harvest record {Id}", id);
+            return StatusCode(500, new { error = "An error occurred while deleting the harvest record." });
+        }
     }
 }
 

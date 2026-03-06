@@ -1,9 +1,12 @@
-import { Component, inject } from '@angular/core';
+import { Component, HostListener, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
+import { HttpClient } from '@angular/common/http';
 import { ThemeService } from '../../../services/theme.service';
 import { AppStateService } from '../../../services/app-state.service';
 import { ButtonComponent } from '../../ui/button/button.component';
+import { MsalService } from '@azure/msal-angular';
+import { environment } from '../../../../environments/environment';
 
 @Component({
   selector: 'app-header',
@@ -12,7 +15,7 @@ import { ButtonComponent } from '../../ui/button/button.component';
   host: { class: 'block sticky top-0 z-50' },
   template: `
     <header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-      <div class="max-w-[1920px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <div class="max-w-[2000px] w-full mx-auto pl-4 sm:pl-6 lg:pl-8 xl:pl-10 2xl:pl-12 pr-3 sm:pr-4 lg:pr-6 py-4">
         <!-- Mobile Layout (with hamburger menu) -->
         <div class="flex items-center justify-between lg:hidden">
           <div class="flex items-center gap-3">
@@ -28,43 +31,66 @@ import { ButtonComponent } from '../../ui/button/button.component';
                 <line x1="4" x2="20" y1="18" y2="18"/>
               </svg>
             </button>
-            <!-- Wheat Icon -->
-            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600 dark:text-green-500 flex-shrink-0">
-              <path d="M2 22 16 8"/>
-              <path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
-              <path d="M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
-              <path d="M11.47 4.53 13 3l1.53 1.53a3.5 3.5 0 0 1 0 4.94L13 11l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
-              <path d="M20 2h2v2a4 4 0 0 1-4 4h-2V6a4 4 0 0 1 4-4Z"/>
-              <path d="M11.47 17.47 13 19l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L5 19l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
-              <path d="M15.47 13.47 17 15l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L9 15l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
-              <path d="M19.47 9.47 21 11l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L13 11l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
-            </svg>
-            <div>
-              <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Grain Originator Portal</h1>
-              <p class="text-sm text-gray-500 dark:text-gray-400 hidden sm:block">Customer & Contract Management</p>
+            <!-- Scoular Logo -->
+            <div class="flex flex-col items-start gap-0.5">
+              <img src="assets/images/scoular-logo-light.webp" alt="Scoular" class="h-10 flex-shrink-0 hidden dark:block">
+              <img src="assets/images/scoular-logo-dark.webp" alt="Scoular" class="h-10 flex-shrink-0 dark:hidden">
+              <div class="flex items-center gap-2 self-center">
+                <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 tracking-widest uppercase leading-none whitespace-nowrap">Origination</p>
+                @if (envName) {
+                  <span class="px-2 py-0.5 text-xs font-bold rounded-full leading-none whitespace-nowrap"
+                    [class]="envName === 'Dev' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'">
+                    {{ envName }}
+                  </span>
+                }
+              </div>
             </div>
           </div>
-          <div class="flex items-center gap-2">
-            <!-- Theme toggle -->
-            <app-button variant="outline" size="icon" (onClick)="themeService.toggleTheme()" class="hidden sm:inline-flex">
-              @if (themeService.isDarkMode()) {
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
-                </svg>
-              } @else {
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="4"/>
-                  <path d="M12 2v2"/>
-                  <path d="M12 20v2"/>
-                  <path d="m4.93 4.93 1.41 1.41"/>
-                  <path d="m17.66 17.66 1.41 1.41"/>
-                  <path d="M2 12h2"/>
-                  <path d="M20 12h2"/>
-                  <path d="m6.34 17.66-1.41 1.41"/>
-                  <path d="m19.07 4.93-1.41 1.41"/>
-                </svg>
+          <div class="flex items-center gap-1.5">
+            <!-- Profile -->
+            <div class="relative" (click)="$event.stopPropagation()">
+              <button type="button" (click)="toggleProfileMenu()" [title]="getAccountName()" class="flex items-center justify-center w-11 h-11 rounded-full bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors overflow-hidden">
+                @if (profilePhotoUrl) {
+                  <img [src]="profilePhotoUrl" alt="" class="w-full h-full object-cover">
+                } @else {
+                  <span class="text-sm font-semibold text-white select-none">{{ getInitials() }}</span>
+                }
+              </button>
+              @if (profileMenuOpen) {
+                <div class="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-50 overflow-hidden">
+                  <!-- Top bar: company + sign out -->
+                  <div class="flex items-center justify-between px-5 py-3 bg-gray-50 dark:bg-gray-900/40 border-b border-gray-200 dark:border-gray-700">
+                    <span class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">The Scoular Company</span>
+                    <button type="button" (click)="signOut()" class="ml-3 flex-shrink-0 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">Sign out</button>
+                  </div>
+                  <!-- Profile row: photo left, info right -->
+                  <div class="flex items-center gap-4 px-5 py-5 border-b border-gray-200 dark:border-gray-700">
+                    <div class="w-20 h-20 rounded-full bg-green-600 overflow-hidden flex-shrink-0 ring-2 ring-green-200 dark:ring-green-800">
+                      @if (profilePhotoUrl) {
+                        <img [src]="profilePhotoUrl" alt="" class="w-full h-full object-cover">
+                      } @else {
+                        <span class="w-full h-full flex items-center justify-center text-xl font-semibold text-white select-none">{{ getInitials() }}</span>
+                      }
+                    </div>
+                    <div class="min-w-0 flex-1">
+                      <p class="text-sm font-semibold text-gray-900 dark:text-white truncate">{{ getAccountName() }}</p>
+                      <p class="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">{{ getEmail() }}</p>
+                    </div>
+                  </div>
+                  <div class="py-1">
+                    <button type="button" (click)="themeService.toggleTheme(); closeProfileMenu()" class="w-full flex items-center gap-3 px-5 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                      @if (themeService.isDarkMode()) {
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+                        Light Mode
+                      } @else {
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+                        Dark Mode
+                      }
+                    </button>
+                  </div>
+                </div>
               }
-            </app-button>
+            </div>
           </div>
         </div>
 
@@ -73,19 +99,19 @@ import { ButtonComponent } from '../../ui/button/button.component';
           <!-- Simple row layout for lg screens -->
           <div class="xl:hidden flex items-center justify-between">
             <div class="flex items-center gap-3">
-              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600 dark:text-green-500 flex-shrink-0">
-                <path d="M2 22 16 8"/>
-                <path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
-                <path d="M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
-                <path d="M11.47 4.53 13 3l1.53 1.53a3.5 3.5 0 0 1 0 4.94L13 11l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
-                <path d="M20 2h2v2a4 4 0 0 1-4 4h-2V6a4 4 0 0 1 4-4Z"/>
-                <path d="M11.47 17.47 13 19l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L5 19l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
-                <path d="M15.47 13.47 17 15l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L9 15l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
-                <path d="M19.47 9.47 21 11l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L13 11l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
-              </svg>
-              <div>
-                <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Grain Originator Portal</h1>
-                <p class="text-sm text-gray-500 dark:text-gray-400">Customer & Contract Management</p>
+              <!-- Scoular Logo -->
+              <div class="flex flex-col items-start gap-0.5">
+                <img src="assets/images/scoular-logo-light.webp" alt="Scoular" class="h-10 flex-shrink-0 hidden dark:block">
+                <img src="assets/images/scoular-logo-dark.webp" alt="Scoular" class="h-10 flex-shrink-0 dark:hidden">
+                <div class="flex items-center gap-2 self-center">
+                  <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 tracking-widest uppercase leading-none whitespace-nowrap">Origination</p>
+                  @if (envName) {
+                    <span class="px-2 py-0.5 text-xs font-bold rounded-full leading-none whitespace-nowrap"
+                      [class]="envName === 'Dev' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'">
+                      {{ envName }}
+                    </span>
+                  }
+                </div>
               </div>
             </div>
             <div class="flex items-center gap-2">
@@ -104,7 +130,7 @@ import { ButtonComponent } from '../../ui/button/button.component';
                     <line x1="6" x2="6" y1="20" y2="14"/>
                   }
                 </svg>
-                <span>{{ isActive('/dashboard') ? 'Back to Customers' : 'Dashboard' }}</span>
+                <span>{{ isActive('/dashboard') ? 'Back to Customers' : 'Planting Intentions Dashboard' }}</span>
               </app-button>
 
               <app-button
@@ -143,44 +169,50 @@ import { ButtonComponent } from '../../ui/button/button.component';
                 <span>{{ isActive('/insights') ? 'Back to Customers' : 'Actionable Insights' }}</span>
               </app-button>
 
-              <app-button
-                [variant]="isActive('/bid-sheet') ? 'default' : 'outline'"
-                (onClick)="navigate('/bid-sheet')"
-                class="gap-2"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  @if (isActive('/bid-sheet')) {
-                    <path d="m12 19-7-7 7-7"/>
-                    <path d="M19 12H5"/>
+              <!-- Profile -->
+              <div class="relative" (click)="$event.stopPropagation()">
+                <button type="button" (click)="toggleProfileMenu()" [title]="getAccountName()" class="flex items-center justify-center w-11 h-11 rounded-full bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors overflow-hidden">
+                  @if (profilePhotoUrl) {
+                    <img [src]="profilePhotoUrl" alt="" class="w-full h-full object-cover">
                   } @else {
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                    <polyline points="14 2 14 8 20 8"/>
-                    <line x1="12" x2="12" y1="18" y2="12"/>
-                    <line x1="9" x2="15" y1="15" y2="15"/>
+                    <span class="text-sm font-semibold text-white select-none">{{ getInitials() }}</span>
                   }
-                </svg>
-                <span>{{ isActive('/bid-sheet') ? 'Back to Customers' : 'Bid Sheet' }}</span>
-              </app-button>
-
-              <app-button variant="outline" size="icon" (onClick)="themeService.toggleTheme()">
-                @if (themeService.isDarkMode()) {
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
-                  </svg>
-                } @else {
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="4"/>
-                    <path d="M12 2v2"/>
-                    <path d="M12 20v2"/>
-                    <path d="m4.93 4.93 1.41 1.41"/>
-                    <path d="m17.66 17.66 1.41 1.41"/>
-                    <path d="M2 12h2"/>
-                    <path d="M20 12h2"/>
-                    <path d="m6.34 17.66-1.41 1.41"/>
-                    <path d="m19.07 4.93-1.41 1.41"/>
-                  </svg>
+                </button>
+                @if (profileMenuOpen) {
+                  <div class="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-50 overflow-hidden">
+                    <!-- Top bar: company + sign out -->
+                    <div class="flex items-center justify-between px-5 py-3 bg-gray-50 dark:bg-gray-900/40 border-b border-gray-200 dark:border-gray-700">
+                      <span class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">The Scoular Company</span>
+                      <button type="button" (click)="signOut()" class="ml-3 flex-shrink-0 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">Sign out</button>
+                    </div>
+                    <!-- Profile row: photo left, info right -->
+                    <div class="flex items-center gap-4 px-5 py-5 border-b border-gray-200 dark:border-gray-700">
+                      <div class="w-20 h-20 rounded-full bg-green-600 overflow-hidden flex-shrink-0 ring-2 ring-green-200 dark:ring-green-800">
+                        @if (profilePhotoUrl) {
+                          <img [src]="profilePhotoUrl" alt="" class="w-full h-full object-cover">
+                        } @else {
+                          <span class="w-full h-full flex items-center justify-center text-xl font-semibold text-white select-none">{{ getInitials() }}</span>
+                        }
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <p class="text-base font-semibold text-gray-900 dark:text-white truncate">{{ getAccountName() }}</p>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 truncate mt-0.5">{{ getEmail() }}</p>
+                      </div>
+                    </div>
+                    <div class="py-1">
+                      <button type="button" (click)="themeService.toggleTheme(); closeProfileMenu()" class="w-full flex items-center gap-3 px-5 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        @if (themeService.isDarkMode()) {
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+                          Light Mode
+                        } @else {
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+                          Dark Mode
+                        }
+                      </button>
+                    </div>
+                  </div>
                 }
-              </app-button>
+              </div>
             </div>
           </div>
 
@@ -188,19 +220,19 @@ import { ButtonComponent } from '../../ui/button/button.component';
           <div class="hidden xl:grid xl:grid-cols-12 xl:gap-6">
             <!-- Left: Logo/Title (4 cols - aligned with customer list) -->
             <div class="xl:col-span-4 flex items-center gap-3">
-              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600 dark:text-green-500 flex-shrink-0">
-                <path d="M2 22 16 8"/>
-                <path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
-                <path d="M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
-                <path d="M11.47 4.53 13 3l1.53 1.53a3.5 3.5 0 0 1 0 4.94L13 11l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
-                <path d="M20 2h2v2a4 4 0 0 1-4 4h-2V6a4 4 0 0 1 4-4Z"/>
-                <path d="M11.47 17.47 13 19l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L5 19l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
-                <path d="M15.47 13.47 17 15l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L9 15l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
-                <path d="M19.47 9.47 21 11l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L13 11l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
-              </svg>
-              <div class="min-w-0 flex-1">
-                <h1 class="text-xl xl:text-2xl font-semibold text-gray-900 dark:text-white whitespace-nowrap">Grain Originator Portal</h1>
-                <p class="text-xs xl:text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">Customer & Contract Management</p>
+              <!-- Scoular Logo -->
+              <div class="flex flex-col items-start gap-0.5">
+                <img src="assets/images/scoular-logo-light.webp" alt="Scoular" class="h-10 flex-shrink-0 hidden dark:block">
+                <img src="assets/images/scoular-logo-dark.webp" alt="Scoular" class="h-10 flex-shrink-0 dark:hidden">
+                <div class="flex items-center gap-2 self-center">
+                  <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 tracking-widest uppercase leading-none whitespace-nowrap">Origination</p>
+                  @if (envName) {
+                    <span class="px-2 py-0.5 text-xs font-bold rounded-full leading-none whitespace-nowrap"
+                      [class]="envName === 'Dev' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'">
+                      {{ envName }}
+                    </span>
+                  }
+                </div>
               </div>
             </div>
 
@@ -221,7 +253,7 @@ import { ButtonComponent } from '../../ui/button/button.component';
                     <line x1="6" x2="6" y1="20" y2="14"/>
                   }
                 </svg>
-                <span>{{ isActive('/dashboard') ? 'Back to Customers' : 'Dashboard' }}</span>
+                <span>{{ isActive('/dashboard') ? 'Back to Customers' : 'Planting Intentions Dashboard' }}</span>
               </app-button>
 
               <app-button
@@ -260,45 +292,50 @@ import { ButtonComponent } from '../../ui/button/button.component';
                 <span>{{ isActive('/insights') ? 'Back to Customers' : 'Actionable Insights' }}</span>
               </app-button>
 
-              <app-button
-                [variant]="isActive('/bid-sheet') ? 'default' : 'outline'"
-                (onClick)="navigate('/bid-sheet')"
-                class="gap-2"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  @if (isActive('/bid-sheet')) {
-                    <path d="m12 19-7-7 7-7"/>
-                    <path d="M19 12H5"/>
+              <!-- Profile -->
+              <div class="relative" (click)="$event.stopPropagation()">
+                <button type="button" (click)="toggleProfileMenu()" [title]="getAccountName()" class="flex items-center justify-center w-11 h-11 rounded-full bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors overflow-hidden">
+                  @if (profilePhotoUrl) {
+                    <img [src]="profilePhotoUrl" alt="" class="w-full h-full object-cover">
                   } @else {
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                    <polyline points="14 2 14 8 20 8"/>
-                    <line x1="12" x2="12" y1="18" y2="12"/>
-                    <line x1="9" x2="15" y1="15" y2="15"/>
+                    <span class="text-sm font-semibold text-white select-none">{{ getInitials() }}</span>
                   }
-                </svg>
-                <span>{{ isActive('/bid-sheet') ? 'Back to Customers' : 'Bid Sheet' }}</span>
-              </app-button>
-
-              <!-- Theme toggle - at the far right -->
-              <app-button variant="outline" size="icon" (onClick)="themeService.toggleTheme()">
-                @if (themeService.isDarkMode()) {
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
-                  </svg>
-                } @else {
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="4"/>
-                    <path d="M12 2v2"/>
-                    <path d="M12 20v2"/>
-                    <path d="m4.93 4.93 1.41 1.41"/>
-                    <path d="m17.66 17.66 1.41 1.41"/>
-                    <path d="M2 12h2"/>
-                    <path d="M20 12h2"/>
-                    <path d="m6.34 17.66-1.41 1.41"/>
-                    <path d="m19.07 4.93-1.41 1.41"/>
-                  </svg>
+                </button>
+                @if (profileMenuOpen) {
+                  <div class="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-50 overflow-hidden">
+                    <!-- Top bar: company + sign out -->
+                    <div class="flex items-center justify-between px-5 py-3 bg-gray-50 dark:bg-gray-900/40 border-b border-gray-200 dark:border-gray-700">
+                      <span class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">The Scoular Company</span>
+                      <button type="button" (click)="signOut()" class="ml-3 flex-shrink-0 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">Sign out</button>
+                    </div>
+                    <!-- Profile row: photo left, info right -->
+                    <div class="flex items-center gap-4 px-5 py-5 border-b border-gray-200 dark:border-gray-700">
+                      <div class="w-20 h-20 rounded-full bg-green-600 overflow-hidden flex-shrink-0 ring-2 ring-green-200 dark:ring-green-800">
+                        @if (profilePhotoUrl) {
+                          <img [src]="profilePhotoUrl" alt="" class="w-full h-full object-cover">
+                        } @else {
+                          <span class="w-full h-full flex items-center justify-center text-xl font-semibold text-white select-none">{{ getInitials() }}</span>
+                        }
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <p class="text-base font-semibold text-gray-900 dark:text-white truncate">{{ getAccountName() }}</p>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 truncate mt-0.5">{{ getEmail() }}</p>
+                      </div>
+                    </div>
+                    <div class="py-1">
+                      <button type="button" (click)="themeService.toggleTheme(); closeProfileMenu()" class="w-full flex items-center gap-3 px-5 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        @if (themeService.isDarkMode()) {
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+                          Light Mode
+                        } @else {
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+                          Dark Mode
+                        }
+                      </button>
+                    </div>
+                  </div>
                 }
-              </app-button>
+              </div>
             </div>
           </div>
         </div>
@@ -312,13 +349,10 @@ import { ButtonComponent } from '../../ui/button/button.component';
         <div class="flex flex-col h-full">
           <!-- Header -->
           <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-            <div class="flex items-center gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600">
-                <path d="M2 22 16 8"/>
-                <path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
-                <path d="M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
-              </svg>
-              <span class="font-semibold text-gray-900 dark:text-white">Menu</span>
+            <div class="flex flex-col items-start gap-0.5">
+              <img src="assets/images/scoular-logo-light.webp" alt="Scoular" class="h-6 flex-shrink-0 hidden dark:block">
+              <img src="assets/images/scoular-logo-dark.webp" alt="Scoular" class="h-6 flex-shrink-0 dark:hidden">
+              <p class="text-[10px] font-semibold text-gray-500 dark:text-gray-400 tracking-widest uppercase leading-none whitespace-nowrap self-center">Origination</p>
             </div>
             <button type="button" class="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" (click)="closeMobileMenu()">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -345,7 +379,7 @@ import { ButtonComponent } from '../../ui/button/button.component';
                 <line x1="12" x2="12" y1="20" y2="4"/>
                 <line x1="6" x2="6" y1="20" y2="14"/>
               </svg>
-              <span>Dashboard</span>
+              <span>Planting Intentions</span>
             </button>
 
             <button type="button" [class]="getMobileNavClass('/insights')" (click)="mobileNavigate('/insights')">
@@ -366,53 +400,111 @@ import { ButtonComponent } from '../../ui/button/button.component';
               <span>Build a List</span>
             </button>
 
-            <button type="button" [class]="getMobileNavClass('/bid-sheet')" (click)="mobileNavigate('/bid-sheet')">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                <polyline points="14 2 14 8 20 8"/>
-                <line x1="12" x2="12" y1="18" y2="12"/>
-                <line x1="9" x2="15" y1="15" y2="15"/>
-              </svg>
-              <span>Bid Sheet</span>
-            </button>
-
           </nav>
 
           <!-- Footer -->
-          <div class="p-4 border-t border-gray-200 dark:border-gray-700">
-            <button type="button" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" (click)="toggleThemeAndClose()">
-              @if (themeService.isDarkMode()) {
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="4"/>
-                  <path d="M12 2v2"/>
-                  <path d="M12 20v2"/>
-                  <path d="m4.93 4.93 1.41 1.41"/>
-                  <path d="m17.66 17.66 1.41 1.41"/>
-                  <path d="M2 12h2"/>
-                  <path d="M20 12h2"/>
-                  <path d="m6.34 17.66-1.41 1.41"/>
-                  <path d="m19.07 4.93-1.41 1.41"/>
-                </svg>
-                <span>Light Mode</span>
-              } @else {
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
-                </svg>
-                <span>Dark Mode</span>
-              }
-            </button>
+          <div class="border-t border-gray-200 dark:border-gray-700">
+            <!-- User info -->
+            <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+              <div class="flex items-center justify-center w-9 h-9 rounded-full bg-green-600 flex-shrink-0 overflow-hidden">
+                @if (profilePhotoUrl) {
+                  <img [src]="profilePhotoUrl" alt="" class="w-full h-full object-cover">
+                } @else {
+                  <span class="text-sm font-semibold text-white select-none">{{ getInitials() }}</span>
+                }
+              </div>
+              <div class="min-w-0">
+                <p class="text-sm font-semibold text-gray-900 dark:text-white truncate">{{ getAccountName() }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ getEmail() }}</p>
+              </div>
+            </div>
+            <div class="p-2 space-y-1">
+              <button type="button" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" (click)="toggleThemeAndClose()">
+                @if (themeService.isDarkMode()) {
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+                  <span>Light Mode</span>
+                } @else {
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+                  <span>Dark Mode</span>
+                }
+              </button>
+              <button type="button" (click)="signOut()" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+                <span>Sign Out</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
     }
   `
 })
-export class HeaderComponent {
+export class HeaderComponent implements OnInit, OnDestroy {
   themeService = inject(ThemeService);
   appState = inject(AppStateService);
   private router = inject(Router);
+  private msalService = inject(MsalService);
+  private http = inject(HttpClient);
+
+  readonly envName = environment.envName;
 
   mobileMenuOpen = false;
+  profileMenuOpen = false;
+  profilePhotoUrl: string | null = null;
+
+  ngOnInit(): void {
+    this.http.get('https://graph.microsoft.com/v1.0/me/photo/$value', { responseType: 'blob' }).subscribe({
+      next: (blob) => { this.profilePhotoUrl = URL.createObjectURL(blob); },
+      error: () => { /* No photo — initials shown */ }
+    });
+  }
+
+  ngOnDestroy(): void {
+    if (this.profilePhotoUrl) {
+      URL.revokeObjectURL(this.profilePhotoUrl);
+    }
+  }
+
+  @HostListener('document:click')
+  onDocumentClick(): void {
+    if (this.profileMenuOpen) {
+      this.profileMenuOpen = false;
+    }
+  }
+
+  toggleProfileMenu(): void {
+    this.profileMenuOpen = !this.profileMenuOpen;
+  }
+
+  closeProfileMenu(): void {
+    this.profileMenuOpen = false;
+  }
+
+  getAccountName(): string {
+    return this.msalService.instance.getActiveAccount()?.name ?? 'User';
+  }
+
+  getEmail(): string {
+    const username = this.msalService.instance.getActiveAccount()?.username ?? '';
+    if (username && !username.includes('@')) {
+      return `${username}@scoular.com`;
+    }
+    return username;
+  }
+
+  getInitials(): string {
+    const name = this.getAccountName();
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
+  }
+
+  signOut(): void {
+    this.profileMenuOpen = false;
+    this.msalService.logoutRedirect();
+  }
 
   isActive(path: string): boolean {
     return this.router.url === path || this.router.url.startsWith(path + '?');

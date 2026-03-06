@@ -12,16 +12,19 @@ public class DiagnosticsController : ControllerBase
 {
     private readonly OriginationDbContext _context;
     private readonly ILogger<DiagnosticsController> _logger;
+    private readonly IWebHostEnvironment _env;
 
-    public DiagnosticsController(OriginationDbContext context, ILogger<DiagnosticsController> logger)
+    public DiagnosticsController(OriginationDbContext context, ILogger<DiagnosticsController> logger, IWebHostEnvironment env)
     {
         _context = context;
         _logger = logger;
+        _env = env;
     }
 
     [HttpGet("tables")]
     public async Task<IActionResult> GetTables()
     {
+        if (!_env.IsDevelopment()) return NotFound();
         try
         {
             // Query the system tables to see what user tables exist
@@ -51,6 +54,7 @@ public class DiagnosticsController : ControllerBase
     [HttpGet("tableschema/{tableName}")]
     public async Task<IActionResult> GetTableWithSchema(string tableName)
     {
+        if (!_env.IsDevelopment()) return NotFound();
         try
         {
             var result = await _context.Database.SqlQueryRaw<TableSchemaInfo>(
@@ -72,6 +76,7 @@ public class DiagnosticsController : ControllerBase
     [HttpGet("schema/{tableName}")]
     public async Task<IActionResult> GetTableSchema(string tableName)
     {
+        if (!_env.IsDevelopment()) return NotFound();
         try
         {
             var columns = await _context.Database.SqlQueryRaw<ColumnInfo>(

@@ -30,6 +30,7 @@ export class AppStateService {
   // Selection state
   selectedCustomer = signal<Customer | null>(null);
   selectedTradeUnits = signal<string[]>([]);
+  selectedGroupNames = signal<string[]>([]);
 
   // Scroll state — tracks last customer scrolled to in the list so re-navigation doesn't re-scroll
   lastScrolledCustomerId = signal<number | null>(null);
@@ -62,6 +63,10 @@ export class AppStateService {
 
   setTradeUnits(tradeUnits: string[]): void {
     this.selectedTradeUnits.set(tradeUnits);
+  }
+
+  setSelectedGroupNames(names: string[]): void {
+    this.selectedGroupNames.set(names);
   }
 
   setSearchQuery(query: string): void {
@@ -150,6 +155,7 @@ export class AppStateService {
   clearAll(): void {
     this.selectedCustomer.set(null);
     this.selectedTradeUnits.set([]);
+    this.selectedGroupNames.set([]);
     this.searchQuery.set('');
     this.selectedSavedListId.set('');
     this.customers.set([]);
