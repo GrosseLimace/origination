@@ -14,69 +14,66 @@ public class SqlDataService : IDataService
     private readonly OriginationDbContext _context;
     private readonly ApplicationDbContext _appContext;
     private readonly ILogger<SqlDataService> _logger;
+    private readonly IHttpContextAccessor _httpContextAccessor;
 
-    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger)
+    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor)
     {
         _context = context;
         _appContext = appContext;
         _logger = logger;
+        _httpContextAccessor = httpContextAccessor;
+    }
+
+    private string GetCurrentUser()
+    {
+        var user = _httpContextAccessor.HttpContext?.User;
+        return user?.FindFirst("name")?.Value
+            ?? user?.FindFirst("preferred_username")?.Value
+            ?? user?.FindFirst("upn")?.Value
+            ?? user?.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name")?.Value
+            ?? user?.Identity?.Name
+            ?? "Unknown";
     }
 
     // =========================================================================
     // Customer Operations
     // =========================================================================
 
-    public List<Customer> GetCustomers(List<string>? tradeUnits = null)
+    public async Task<List<Customer>> GetCustomers(List<string>? tradeUnits = null)
     {
         try
         {
             var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
-
-            // Build contract query with optional trade unit filter
-            var contractQuery = _context.Contracts.AsNoTracking().Where(c => c.IsActive && c.CtrmCustomerId != null);
-            if (hasTradeUnitFilter)
-            {
-                contractQuery = contractQuery.Where(c => c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit));
-            }
-
-            // Get customer IDs that have contracts (via CtrmCustomerId -> SourceCustomerId)
-            var customerIdsWithContracts = contractQuery
-                .Select(c => c.CtrmCustomerId)
-                .Distinct()
-                .ToList();
-
-            // Build ticket query with optional organization code filter
-            var ticketQuery = _context.Tickets.AsNoTracking().Where(t => t.IsActive && t.CustomerId.HasValue);
-            if (hasTradeUnitFilter)
-            {
-                ticketQuery = ticketQuery.Where(t => t.OrganizationCode != null && tradeUnits!.Contains(t.OrganizationCode));
-            }
-
-            // Get customer IDs that have tickets (via CustomerId)
-            var customerIdsWithTickets = ticketQuery
-                .Select(t => t.CustomerId!.Value)
-                .Distinct()
-                .ToList();
-
             var filterMsg = hasTradeUnitFilter ? $" (filtered by {tradeUnits!.Count} trade units: {string.Join(", ", tradeUnits)})" : "";
-            _logger.LogInformation($"Found {customerIdsWithContracts.Count} customers with contracts, {customerIdsWithTickets.Count} customers with tickets{filterMsg}");
 
-            // originations.vw_CurrentCustomers is pre-filtered to active PR customers, excluding
-            // DUP / DO NOT USE / symbol-prefixed names — no redundant filters needed here.
-            // Include customers who have contracts OR tickets in the trade unit.
-            // When trade units are selected, return all matching customers; otherwise limit to 15.
-            var customerQuery = _context.Customers
-                .AsNoTracking()
-                .Where(c => customerIdsWithContracts.Contains(c.SourceCustomerId) ||
-                            customerIdsWithTickets.Contains(c.Id))
-                .OrderBy(c => c.Name);
+            List<Customer> customers;
 
-            var customers = hasTradeUnitFilter
-                ? customerQuery.ToList()
-                : customerQuery.Take(15).ToList();
+            if (hasTradeUnitFilter)
+            {
+                // Single view query — originations.vw_CustomerTradeUnits already joins contracts + tickets
+                var rows = await _context.CustomerTradeUnits
+                    .AsNoTracking()
+                    .Where(c => c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
+                    .ToListAsync();
 
-            EnrichCustomersWithESign(customers);
-            _logger.LogInformation($"Returning {customers.Count} producer customers who have contracts or tickets{filterMsg}");
+                customers = rows
+                    .GroupBy(r => r.CustomerId)
+                    .Select(g => g.First().ToCustomer())
+                    .OrderBy(c => c.Name)
+                    .ToList();
+            }
+            else
+            {
+                // No filter — return top 15 from customers view directly
+                customers = await _context.Customers
+                    .AsNoTracking()
+                    .OrderBy(c => c.Name)
+                    .Take(15)
+                    .ToListAsync();
+            }
+
+            await EnrichCustomersWithESign(customers);
+            _logger.LogInformation("Returning {CustomerCount} producer customers who have contracts or tickets{Filter}", customers.Count, filterMsg);
             return customers;
         }
         catch (Exception ex)
@@ -86,7 +83,7 @@ public class SqlDataService : IDataService
         }
     }
 
-    public List<Customer> SearchCustomers(string searchTerm, List<string>? tradeUnits = null)
+    public async Task<List<Customer>> SearchCustomers(string searchTerm, List<string>? tradeUnits = null)
     {
         try
         {
@@ -105,19 +102,19 @@ public class SqlDataService : IDataService
 
             if (hasTradeUnitFilter)
             {
-                customerIdsWithTradeUnitContracts = _context.Contracts
+                customerIdsWithTradeUnitContracts = await _context.Contracts
                     .AsNoTracking()
                     .Where(c => c.IsActive && c.CtrmCustomerId != null && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
                     .Select(c => c.CtrmCustomerId!)
                     .Distinct()
-                    .ToList();
+                    .ToListAsync();
 
-                customerIdsWithTradeUnitTickets = _context.Tickets
+                customerIdsWithTradeUnitTickets = await _context.Tickets
                     .AsNoTracking()
                     .Where(t => t.IsActive && t.CustomerId.HasValue && t.OrganizationCode != null && tradeUnits!.Contains(t.OrganizationCode))
                     .Select(t => t.CustomerId!.Value)
                     .Distinct()
-                    .ToList();
+                    .ToListAsync();
             }
 
             // originations.vw_CurrentCustomers is pre-filtered — start with all customers in the view
@@ -139,9 +136,9 @@ public class SqlDataService : IDataService
 
             // Get candidates (without ordering in SQL - we'll order by relevance in memory)
             // When trade units are selected, get more candidates; otherwise limit to 100
-            var candidates = query
+            var candidates = await query
                 .Take(hasTradeUnitFilter ? 1000 : 100)
-                .ToList();
+                .ToListAsync();
 
             // Score each customer by relevance
             var scoredResults = candidates.Select(c => new
@@ -157,8 +154,8 @@ public class SqlDataService : IDataService
                 ? scoredResults.Select(x => x.Customer).ToList()
                 : scoredResults.Take(15).Select(x => x.Customer).ToList();
 
-            EnrichCustomersWithESign(scoredCustomers);
-            _logger.LogInformation($"Search for '{searchTerm}' returned {scoredCustomers.Count} producer customers (ranked by relevance)");
+            await EnrichCustomersWithESign(scoredCustomers);
+            _logger.LogInformation("Search for {SearchTerm} returned {CustomerCount} producer customers (ranked by relevance)", searchTerm, scoredCustomers.Count);
             return scoredCustomers;
         }
         catch (Exception ex)
@@ -172,7 +169,7 @@ public class SqlDataService : IDataService
     /// Looks up eSign enrollment records for the given customers and populates
     /// ESignEnabled and ScoularViewRecipients from dbo.eSignEnrollment.
     /// </summary>
-    private void EnrichCustomersWithESign(List<Customer> customers)
+    private async Task EnrichCustomersWithESign(List<Customer> customers)
     {
         if (customers.Count == 0) return;
 
@@ -182,9 +179,10 @@ public class SqlDataService : IDataService
             .Distinct()
             .ToList();
 
-        var enrollments = _appContext.ESignEnrollments
+        var enrollments = (await _appContext.ESignEnrollments
             .AsNoTracking()
             .Where(e => codes.Contains(e.CustomerCode))
+            .ToListAsync())
             .ToDictionary(e => e.CustomerCode, e => e);
 
         foreach (var customer in customers)
@@ -270,13 +268,13 @@ public class SqlDataService : IDataService
         return score;
     }
 
-    public Customer? GetCustomerById(long id)
+    public async Task<Customer?> GetCustomerById(long id)
     {
         try
         {
-            return _context.Customers
+            return await _context.Customers
                 .AsNoTracking()
-                .FirstOrDefault(c => c.Id == id && c.IsActive);
+                .FirstOrDefaultAsync(c => c.Id == id && c.IsActive);
         }
         catch (Exception ex)
         {
@@ -285,11 +283,11 @@ public class SqlDataService : IDataService
         }
     }
 
-    public void UpdateCustomer(long customerId, string location, string phone, string email, List<string> farmIds, List<string> linkedProducerIds)
+    public async Task UpdateCustomer(long customerId, string location, string phone, string email, List<string> farmIds, List<string> linkedProducerIds)
     {
         try
         {
-            var customer = _context.Customers.FirstOrDefault(c => c.Id == customerId && c.IsActive);
+            var customer = await _context.Customers.FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive);
             if (customer == null)
             {
                 _logger.LogWarning("Customer {CustomerId} not found for update", customerId);
@@ -309,7 +307,7 @@ public class SqlDataService : IDataService
             //     .Sum(f => f.Acres);
             customer.TotalAcres = 0;
 
-            _context.SaveChanges();
+            await _context.SaveChangesAsync();
             _logger.LogInformation("Updated customer {CustomerId}", customerId);
         }
         catch (Exception ex)
@@ -323,15 +321,15 @@ public class SqlDataService : IDataService
     // Trade Unit Operations
     // =========================================================================
 
-    public List<string> GetTradeUnits()
+    public async Task<List<string>> GetTradeUnits()
     {
         try
         {
-            var cachedTradeUnits = _appContext.TradeUnits
+            var cachedTradeUnits = await _appContext.TradeUnits
                 .Where(tu => tu.IsActive)
                 .Select(tu => tu.Code)
                 .OrderBy(c => c)
-                .ToList();
+                .ToListAsync();
 
             if (cachedTradeUnits.Count > 0)
             {
@@ -341,13 +339,13 @@ public class SqlDataService : IDataService
 
             // Table is empty - one-time population from ODS
             _logger.LogInformation("dbo.TradeUnits is empty - performing one-time population from ODS");
-            var tradeUnitsFromOds = GetTradeUnitsFromViews();
+            var tradeUnitsFromOds = await GetTradeUnitsFromViews();
 
             foreach (var code in tradeUnitsFromOds)
             {
                 _appContext.TradeUnits.Add(new TradeUnit { Code = code, IsActive = true });
             }
-            _appContext.SaveChanges();
+            await _appContext.SaveChangesAsync();
             return tradeUnitsFromOds;
         }
         catch (Exception ex)
@@ -357,63 +355,61 @@ public class SqlDataService : IDataService
         }
     }
 
-    private List<string> GetTradeUnitsFromViews()
+    private async Task<List<string>> GetTradeUnitsFromViews()
     {
         // Get unique trade units from contracts
-        var contractTradeUnits = _context.Contracts
+        var contractTradeUnits = await _context.Contracts
             .AsNoTracking()
             .Where(c => c.IsActive && !string.IsNullOrEmpty(c.TradeUnit))
             .Select(c => c.TradeUnit!)
             .Distinct()
-            .ToList();
+            .ToListAsync();
 
         // Get unique organization codes from tickets
-        var ticketOrgCodes = _context.Tickets
+        var ticketOrgCodes = await _context.Tickets
             .AsNoTracking()
             .Where(t => t.IsActive && !string.IsNullOrEmpty(t.OrganizationCode))
             .Select(t => t.OrganizationCode!)
             .Distinct()
-            .ToList();
+            .ToListAsync();
 
         // Combine and return unique sorted list
-        var allTradeUnits = contractTradeUnits
+        return contractTradeUnits
             .Union(ticketOrgCodes)
             .OrderBy(tu => tu)
             .ToList();
-
-        return allTradeUnits;
     }
 
     // =========================================================================
     // Commodity Operations
     // =========================================================================
 
-    public List<Commodity> GetCommodities()
+    public async Task<List<Commodity>> GetCommodities()
     {
         try
         {
             var existingCodes = new HashSet<string>(
-                _appContext.Commodities.Where(c => c.IsActive).Select(c => c.Code),
+                await _appContext.Commodities.Where(c => c.IsActive).Select(c => c.Code).ToListAsync(),
                 StringComparer.OrdinalIgnoreCase
             );
 
             // Pull all commodity data from contracts (Code, Name, Category)
-            var contractCommodities = _context.Contracts
+            var contractCommodities = await _context.Contracts
                 .AsNoTracking()
                 .Where(c => c.IsActive
                     && !string.IsNullOrEmpty(c.CommodityCode)
                     && !string.IsNullOrEmpty(c.CommodityDescription))
                 .Select(c => new { c.CommodityCode, c.CommodityDescription, c.CommodityGroup })
                 .Distinct()
-                .ToList();
+                .ToListAsync();
 
             // Pull all distinct product codes from tickets
-            var ticketProductCodes = _context.Tickets
+            var ticketProductCodes = await _context.Tickets
                 .AsNoTracking()
                 .Where(t => t.IsActive && !string.IsNullOrEmpty(t.ProductCode))
                 .Select(t => t.ProductCode!)
                 .Distinct()
-                .ToList();
+                .ToListAsync();
 
             // Build lookup from contracts for description and category
             var contractLookup = contractCommodities
@@ -458,7 +454,7 @@ public class SqlDataService : IDataService
             }
 
             // Backfill Category for any commodities missing it
-            var allCommodities = _appContext.Commodities.Where(c => c.IsActive).ToList();
+            var allCommodities = await _appContext.Commodities.Where(c => c.IsActive).ToListAsync();
             foreach (var commodity in allCommodities.Where(c => string.IsNullOrEmpty(c.Category)))
             {
                 if (contractLookup.TryGetValue(commodity.Code, out var match)
@@ -471,7 +467,7 @@ public class SqlDataService : IDataService
 
             if (changed)
             {
-                _appContext.SaveChanges();
+                await _appContext.SaveChangesAsync();
                 _logger.LogInformation("Synced commodities from ODS - now {Count} total", allCommodities.Count);
             }
 
@@ -484,16 +480,16 @@ public class SqlDataService : IDataService
         }
     }
 
-    public List<TradeUnitGroup> GetTradeUnitGroups()
+    public async Task<List<TradeUnitGroup>> GetTradeUnitGroups()
     {
         try
         {
-            var groups = _appContext.TradeUnitGroups
+            var groups = await _appContext.TradeUnitGroups
                 .AsNoTracking()
                 .Where(g => g.IsActive)
                 .Include(g => g.TradeUnits.Where(tu => tu.IsActive))
                 .OrderBy(g => g.GroupName)
-                .ToList();
+                .ToListAsync();
 
             _logger.LogInformation("Returning {Count} trade unit groups", groups.Count);
             return groups;
@@ -509,25 +505,25 @@ public class SqlDataService : IDataService
     // Farm Operations - DISABLED: Farms table doesn't exist in ODS
     // =========================================================================
 
-    public List<Farm> GetFarms()
+    public Task<List<Farm>> GetFarms()
     {
         _logger.LogWarning("Farms table doesn't exist in ODS - returning empty list");
-        return new List<Farm>();
+        return Task.FromResult(new List<Farm>());
     }
 
-    public List<Farm> GetFarmsByCustomer(long customerId)
+    public Task<List<Farm>> GetFarmsByCustomer(long customerId)
     {
         _logger.LogWarning("Farms table doesn't exist in ODS - returning empty list for customer {CustomerId}", customerId);
-        return new List<Farm>();
+        return Task.FromResult(new List<Farm>());
     }
 
-    public Farm? GetFarmById(string id)
+    public Task<Farm?> GetFarmById(string id)
     {
         _logger.LogWarning("Farms table doesn't exist in ODS - returning null for farm {FarmId}", id);
-        return null;
+        return Task.FromResult<Farm?>(null);
     }
 
-    public string CreateFarm(string name, string location, int acres)
+    public Task<string> CreateFarm(string name, string location, int acres)
     {
         _logger.LogWarning("Farms table doesn't exist in ODS - cannot create farm {FarmName}", name);
         throw new NotImplementedException("Farm creation is not supported - Farms table doesn't exist in ODS");
@@ -537,62 +533,56 @@ public class SqlDataService : IDataService
     // Contract Operations
     // =========================================================================
 
-    public List<Contract> GetContracts(List<string>? tradeUnits = null)
+    public async Task<List<Contract>> GetContracts(List<string>? tradeUnits = null)
     {
         try
         {
             var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
 
-            // Build contract query with optional trade unit filter
-            var contractQuery = _context.Contracts.AsNoTracking().Where(c => c.IsActive && c.CtrmCustomerId != null);
+            List<string?> customerCtrmIds;
             if (hasTradeUnitFilter)
             {
-                contractQuery = contractQuery.Where(c => c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit));
+                // Single view query — originations.vw_CustomerTradeUnits already joins contracts + tickets
+                customerCtrmIds = await _context.CustomerTradeUnits
+                    .AsNoTracking()
+                    .Where(c => c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
+                    .Select(c => c.SourceCustomerId)
+                    .Distinct()
+                    .ToListAsync();
             }
-
-            // Get customer IDs that have contracts (via CtrmCustomerId -> SourceCustomerId)
-            var customerIdsWithContracts = contractQuery
-                .Select(c => c.CtrmCustomerId)
-                .Distinct()
-                .ToList();
-
-            // Build ticket query with optional organization code filter
-            var ticketQuery = _context.Tickets.AsNoTracking().Where(t => t.IsActive && t.CustomerId.HasValue);
-            if (hasTradeUnitFilter)
+            else
             {
-                ticketQuery = ticketQuery.Where(t => t.OrganizationCode != null && tradeUnits!.Contains(t.OrganizationCode));
+                // No filter — original approach for top 15 customers
+                var idsWithContracts = await _context.Contracts.AsNoTracking()
+                    .Where(c => c.IsActive && c.CtrmCustomerId != null)
+                    .Select(c => c.CtrmCustomerId)
+                    .Distinct()
+                    .ToListAsync();
+                var idsWithTickets = await _context.Tickets.AsNoTracking()
+                    .Where(t => t.IsActive && t.CustomerId.HasValue)
+                    .Select(t => t.CustomerId!.Value)
+                    .Distinct()
+                    .ToListAsync();
+                customerCtrmIds = await _context.Customers
+                    .AsNoTracking()
+                    .Where(c => idsWithContracts.Contains(c.SourceCustomerId) || idsWithTickets.Contains(c.Id))
+                    .OrderBy(c => c.Name)
+                    .Take(15)
+                    .Select(c => c.SourceCustomerId)
+                    .ToListAsync();
             }
-
-            // Get customer IDs that have tickets (via CustomerId)
-            var customerIdsWithTickets = ticketQuery
-                .Select(t => t.CustomerId!.Value)
-                .Distinct()
-                .ToList();
-
-            // originations.vw_CurrentCustomers is pre-filtered — no redundant filters needed.
-            var customerQuery = _context.Customers
-                .AsNoTracking()
-                .Where(c => customerIdsWithContracts.Contains(c.SourceCustomerId) ||
-                            customerIdsWithTickets.Contains(c.Id))
-                .OrderBy(c => c.Name);
-
-            var customerCtrmIds = hasTradeUnitFilter
-                ? customerQuery.Select(c => c.SourceCustomerId).ToList()
-                : customerQuery.Take(15).Select(c => c.SourceCustomerId).ToList();
 
             // Get all contracts for those customers — intentionally NOT filtering by trade unit here
             // so that prior-year contracts (needed for pacing calculations) are included even if
             // they carry a different TradeUnit value than the current selection.
-            var contractsQuery = _context.Contracts
+            var contracts = await _context.Contracts
                 .AsNoTracking()
-                .Where(c => c.IsActive && c.CtrmCustomerId != null && customerCtrmIds.Contains(c.CtrmCustomerId));
-
-            var contracts = contractsQuery
+                .Where(c => c.IsActive && c.CtrmCustomerId != null && customerCtrmIds.Contains(c.CtrmCustomerId))
                 .OrderByDescending(c => c.Id)
-                .ToList();
+                .ToListAsync();
 
             var filterMsg = hasTradeUnitFilter ? $" (filtered by {tradeUnits!.Count} trade units)" : "";
-            _logger.LogInformation($"Loaded {contracts.Count} contracts for customers who have contracts or tickets{filterMsg}");
+            _logger.LogInformation("Loaded {ContractCount} contracts for customers who have contracts or tickets{Filter}", contracts.Count, filterMsg);
 
             // Calculate status and set defaults for fields not in ODS view
             var today = DateTime.Today;
@@ -642,12 +632,12 @@ public class SqlDataService : IDataService
         return ContractStatus.Pending;
     }
 
-    public List<Contract> GetContractsByCustomer(long customerId)
+    public async Task<List<Contract>> GetContractsByCustomer(long customerId)
     {
         try
         {
             // Get the customer's SourceCustomerId for matching with contract.CtrmCustomerId
-            var customer = _context.Customers.AsNoTracking().FirstOrDefault(c => c.Id == customerId && c.IsActive);
+            var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive);
             if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
             {
                 _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
@@ -655,11 +645,11 @@ public class SqlDataService : IDataService
             }
 
             // Match contracts using CtrmCustomerId = customer.SourceCustomerId (string matching)
-            var contracts = _context.Contracts
+            var contracts = await _context.Contracts
                 .AsNoTracking()
                 .Where(c => c.IsActive && c.CtrmCustomerId == customer.SourceCustomerId)
                 .OrderByDescending(c => c.Id)
-                .ToList();
+                .ToListAsync();
 
             // Calculate status and set defaults for fields not in ODS view
             var today = DateTime.Today;
@@ -669,7 +659,7 @@ public class SqlDataService : IDataService
                 contract.Signed = true; // Default to signed since ODS doesn't have this field
             }
 
-            _logger.LogInformation($"Found {contracts.Count} contracts for customer {customerId} (SourceCustomerId: {customer.SourceCustomerId})");
+            _logger.LogInformation("Found {ContractCount} contracts for customer {CustomerId} (SourceCustomerId: {SourceCustomerId})", contracts.Count, customerId, customer.SourceCustomerId);
             return contracts;
         }
         catch (Exception ex)
@@ -679,31 +669,21 @@ public class SqlDataService : IDataService
         }
     }
 
-    public List<Contract> GetContractsByFarm(string farmId)
+    public Task<List<Contract>> GetContractsByFarm(string farmId)
     {
-        try
-        {
-            // Note: FarmId is not mapped in the current DbContext configuration
-            // Returning empty list until proper mapping is established
-            _logger.LogWarning("Contract.FarmId is not mapped - returning empty list for farm {FarmId}", farmId);
-            return new List<Contract>();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving contracts for farm {FarmId}", farmId);
-            throw;
-        }
+        _logger.LogWarning("Contract.FarmId is not mapped - returning empty list for farm {FarmId}", farmId);
+        return Task.FromResult(new List<Contract>());
     }
 
-    public List<ContractPricingLine> GetPricingLines(string sourceContractId)
+    public async Task<List<ContractPricingLine>> GetPricingLines(string sourceContractId)
     {
         try
         {
-            return _context.ContractPricingLines
+            return await _context.ContractPricingLines
                 .AsNoTracking()
                 .Where(p => p.ContractId == sourceContractId)
                 .OrderBy(p => p.PriceSequence)
-                .ToList();
+                .ToListAsync();
         }
         catch (Exception ex)
         {
@@ -712,16 +692,16 @@ public class SqlDataService : IDataService
         }
     }
 
-    public List<ContractPricingLine> GetPricingLinesByCustomer(string sourceCustomerId)
+    public async Task<List<ContractPricingLine>> GetPricingLinesByCustomer(string sourceCustomerId)
     {
         try
         {
-            return _context.ContractPricingLines
+            return await _context.ContractPricingLines
                 .AsNoTracking()
                 .Where(p => p.CustomerId == sourceCustomerId)
                 .OrderBy(p => p.ContractId)
                 .ThenBy(p => p.PriceSequence)
-                .ToList();
+                .ToListAsync();
         }
         catch (Exception ex)
         {
@@ -735,75 +715,70 @@ public class SqlDataService : IDataService
     // NOTE: ~2 million tickets exist, so queries are carefully limited
     // =========================================================================
 
-    public List<Ticket> GetTickets(List<string>? tradeUnits = null)
+    public async Task<List<Ticket>> GetTickets(List<string>? tradeUnits = null)
     {
         try
         {
             var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
 
-            // Build contract query with optional trade unit filter
-            var contractQuery = _context.Contracts.AsNoTracking().Where(c => c.IsActive && c.CtrmCustomerId != null);
+            List<string> producerCustomerCodes;
             if (hasTradeUnitFilter)
             {
-                contractQuery = contractQuery.Where(c => c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit));
+                // Single view query — originations.vw_CustomerTradeUnits already joins contracts + tickets
+                producerCustomerCodes = (await _context.CustomerTradeUnits
+                    .AsNoTracking()
+                    .Where(c => c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
+                    .Select(c => c.SourceCustomerId)
+                    .Distinct()
+                    .ToListAsync())
+                    .Where(id => id != null)
+                    .Select(id => id!)
+                    .ToList();
             }
-
-            // Get customer IDs that have contracts (via CtrmCustomerId -> SourceCustomerId)
-            var customerIdsWithContracts = contractQuery
-                .Select(c => c.CtrmCustomerId)
-                .Distinct()
-                .ToList();
-
-            // Build ticket query with optional organization code filter
-            var ticketQueryBase = _context.Tickets.AsNoTracking().Where(t => t.IsActive && t.CustomerCode != null);
-            if (hasTradeUnitFilter)
+            else
             {
-                ticketQueryBase = ticketQueryBase.Where(t => t.OrganizationCode != null && tradeUnits!.Contains(t.OrganizationCode));
+                // No filter — original approach for top 15 customers
+                var idsWithContracts = await _context.Contracts.AsNoTracking()
+                    .Where(c => c.IsActive && c.CtrmCustomerId != null)
+                    .Select(c => c.CtrmCustomerId!)
+                    .Distinct()
+                    .ToListAsync();
+                var codesWithTickets = await _context.Tickets.AsNoTracking()
+                    .Where(t => t.IsActive && t.CustomerCode != null)
+                    .Select(t => t.CustomerCode!)
+                    .Distinct()
+                    .ToListAsync();
+                producerCustomerCodes = await _context.Customers
+                    .AsNoTracking()
+                    .Where(c => c.SourceCustomerId != null &&
+                                (idsWithContracts.Contains(c.SourceCustomerId) ||
+                                 codesWithTickets.Contains(c.SourceCustomerId)))
+                    .OrderBy(c => c.Name)
+                    .Take(15)
+                    .Select(c => c.SourceCustomerId!)
+                    .ToListAsync();
             }
-
-            // Get customer codes that have tickets (via CustomerCode)
-            var customerCodesWithTickets = ticketQueryBase
-                .Select(t => t.CustomerCode!)
-                .Distinct()
-                .ToList();
-
-            // originations.vw_CurrentCustomers is pre-filtered — no redundant filters needed.
-            var customerQuery = _context.Customers
-                .AsNoTracking()
-                .Where(c => c.SourceCustomerId != null &&
-                            (customerIdsWithContracts.Contains(c.SourceCustomerId) ||
-                             customerCodesWithTickets.Contains(c.SourceCustomerId)))
-                .OrderBy(c => c.Name);
-
-            var producerCustomerCodes = hasTradeUnitFilter
-                ? customerQuery.Select(c => c.SourceCustomerId!).ToList()
-                : customerQuery.Take(15).Select(c => c.SourceCustomerId!).ToList();
 
             var filterMsg = hasTradeUnitFilter ? $" (filtered by {tradeUnits!.Count} trade units)" : "";
             var customerCountMsg = hasTradeUnitFilter ? $"all {producerCustomerCodes.Count} customers" : "top 15 customers";
-            _logger.LogInformation($"Loading tickets for {customerCountMsg} who have contracts or tickets{filterMsg}");
+            _logger.LogInformation("Loading tickets for {CustomerCount} who have contracts or tickets{Filter}", customerCountMsg, filterMsg);
 
-            // Load all tickets for those producer customers using string matching (CustomerCode = SourceCustomerId)
             var ticketsQuery = _context.Tickets
                 .AsNoTracking()
                 .Where(t => t.IsActive && t.CustomerCode != null && producerCustomerCodes.Contains(t.CustomerCode));
-
-            // Apply trade unit filter if specified
             if (hasTradeUnitFilter)
-            {
                 ticketsQuery = ticketsQuery.Where(t => t.OrganizationCode != null && tradeUnits!.Contains(t.OrganizationCode));
-            }
 
-            var tickets = ticketsQuery
-                .OrderByDescending(t => t.Date)
+            var tickets = (await ticketsQuery.ToListAsync())
+                .OrderByDescending(t => t.ParsedDate)
                 .ToList();
 
             // Load quality data for these tickets
             var ticketIds = tickets.Select(t => t.Id).ToList();
-            var qualityData = _context.TicketQualities
+            var qualityData = await _context.TicketQualities
                 .AsNoTracking()
                 .Where(q => ticketIds.Contains(q.TicketId))
-                .ToDictionary(q => q.TicketId);
+                .ToDictionaryAsync(q => q.TicketId);
 
             // Populate moisture and quality data on tickets
             var ticketsWithProtein = 0;
@@ -826,39 +801,44 @@ public class SqlDataService : IDataService
                     wheatTickets++;
             }
 
-            _logger.LogInformation($"Quality data: {ticketsWithProtein} tickets have protein data, {wheatTickets} wheat tickets found");
+            _logger.LogInformation("Quality data: {ProteinTickets} tickets have protein data, {WheatTickets} wheat tickets found", ticketsWithProtein, wheatTickets);
 
             // Log diagnostic info about ticket-contract relationships
             var ticketsWithContractId = tickets.Count(t => t.ContractId.HasValue);
             var ticketsWithContractNumber = tickets.Count(t => !string.IsNullOrEmpty(t.CtrmContractNumber));
             var ticketsWithBoth = tickets.Count(t => t.ContractId.HasValue && !string.IsNullOrEmpty(t.CtrmContractNumber));
 
-            _logger.LogInformation($"Loaded {tickets.Count} tickets for customers who have contracts or tickets{filterMsg}");
-            _logger.LogInformation($"  - {ticketsWithContractId} tickets have ContractId");
-            _logger.LogInformation($"  - {ticketsWithContractNumber} tickets have CtrmContractNumber");
-            _logger.LogInformation($"  - {ticketsWithBoth} tickets have both");
+            _logger.LogInformation("Loaded {TicketCount} tickets for customers who have contracts or tickets{Filter}", tickets.Count, filterMsg);
+            _logger.LogInformation("  - {WithContractId} tickets have ContractId", ticketsWithContractId);
+            _logger.LogInformation("  - {WithContractNumber} tickets have CtrmContractNumber", ticketsWithContractNumber);
+            _logger.LogInformation("  - {WithBoth} tickets have both", ticketsWithBoth);
 
             // Log first few tickets for debugging
             foreach (var ticket in tickets.Take(3))
             {
-                _logger.LogInformation($"Sample Ticket #{ticket.TicketNumber}: ContractId={ticket.ContractId}, CtrmContractNumber={ticket.CtrmContractNumber}, CustomerId={ticket.CustomerId}");
+                _logger.LogInformation("Sample Ticket #{TicketNumber}: ContractId={ContractId}, CtrmContractNumber={CtrmContractNumber}, CustomerId={CustomerId}", ticket.TicketNumber, ticket.ContractId, ticket.CtrmContractNumber, ticket.CustomerId);
             }
 
             return tickets;
         }
+        catch (SqlException ex) when (ex.Number == 208)
+        {
+            _logger.LogWarning("Tickets table not accessible. Returning empty list.");
+            return new List<Ticket>();
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving tickets");
-            return new List<Ticket>(); // Return empty on error rather than failing
+            throw;
         }
     }
 
-    public List<Ticket> GetTicketsByCustomer(long customerId)
+    public async Task<List<Ticket>> GetTicketsByCustomer(long customerId)
     {
         try
         {
             // Get the customer's SourceCustomerId for matching with ticket.CustomerCode
-            var customer = _context.Customers.AsNoTracking().FirstOrDefault(c => c.Id == customerId && c.IsActive);
+            var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive);
             if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
             {
                 _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
@@ -866,17 +846,19 @@ public class SqlDataService : IDataService
             }
 
             // Match tickets using CustomerCode = customer.SourceCustomerId (string matching, like contracts)
-            var tickets = _context.Tickets
+            var tickets = (await _context.Tickets
                 .AsNoTracking()
                 .Where(t => t.IsActive && t.CustomerCode == customer.SourceCustomerId)
-                .OrderByDescending(t => t.Date)
+                .ToListAsync())
+                .OrderByDescending(t => t.ParsedDate)
                 .ToList();
 
             // Load quality data for these tickets
             var ticketIds = tickets.Select(t => t.Id).ToList();
-            var qualityData = _context.TicketQualities
+            var qualityData = (await _context.TicketQualities
                 .AsNoTracking()
                 .Where(q => ticketIds.Contains(q.TicketId))
+                .ToListAsync())
                 .ToDictionary(q => q.TicketId);
 
             // Populate moisture and quality data on tickets
@@ -890,44 +872,40 @@ public class SqlDataService : IDataService
                 }
             }
 
-            _logger.LogInformation($"Found {tickets.Count} tickets for customer {customerId} (SourceCustomerId: {customer.SourceCustomerId})");
+            _logger.LogInformation("Found {TicketCount} tickets for customer {CustomerId} (SourceCustomerId: {SourceCustomerId})", tickets.Count, customerId, customer.SourceCustomerId);
             return tickets;
+        }
+        catch (SqlException ex) when (ex.Number == 208)
+        {
+            _logger.LogWarning("Tickets table not accessible for customer {CustomerId}. Returning empty list.", customerId);
+            return new List<Ticket>();
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving tickets for customer {CustomerId}", customerId);
-            return new List<Ticket>(); // Return empty on error
+            throw;
         }
     }
 
-    public List<Ticket> GetTicketsByFarm(string farmId)
+    public Task<List<Ticket>> GetTicketsByFarm(string farmId)
     {
-        try
-        {
-            // Note: FarmId is not in ODS tickets view - cannot filter by farm
-            _logger.LogWarning("Ticket.FarmId is not mapped in ODS - returning empty list for farm {FarmId}", farmId);
-            return new List<Ticket>();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving tickets for farm {FarmId}", farmId);
-            return new List<Ticket>();
-        }
+        _logger.LogWarning("Ticket.FarmId is not mapped in ODS - returning empty list for farm {FarmId}", farmId);
+        return Task.FromResult(new List<Ticket>());
     }
 
     // =========================================================================
     // Planting Intention Operations - Uses dbo.ProducerPlantingIntentions table
     // =========================================================================
 
-    public List<PlantingIntention> GetPlantingIntentions()
+    public async Task<List<PlantingIntention>> GetPlantingIntentions()
     {
         try
         {
-            return _appContext.PlantingIntentions
+            return await _appContext.PlantingIntentions
                 .AsNoTracking()
                 .OrderByDescending(p => p.PlantingYear)
                 .ThenBy(p => p.CustomerName)
-                .ToList();
+                .ToListAsync();
         }
         catch (SqlException ex) when (ex.Number == 208)
         {
@@ -941,16 +919,16 @@ public class SqlDataService : IDataService
         }
     }
 
-    public List<PlantingIntention> GetPlantingIntentionsByCustomer(int customerId)
+    public async Task<List<PlantingIntention>> GetPlantingIntentionsByCustomer(long customerId)
     {
         try
         {
-            return _appContext.PlantingIntentions
+            return await _appContext.PlantingIntentions
                 .AsNoTracking()
                 .Where(p => p.CustomerId == customerId)
                 .OrderByDescending(p => p.PlantingYear)
                 .ThenBy(p => p.Crop)
-                .ToList();
+                .ToListAsync();
         }
         catch (SqlException ex) when (ex.Number == 208)
         {
@@ -964,7 +942,7 @@ public class SqlDataService : IDataService
         }
     }
 
-    public PlantingIntention AddPlantingIntention(int customerId, string customerName, string customerCode, string tradeUnit, string crop, string? type, string? description, int acres, int plantingYear)
+    public async Task<PlantingIntention> AddPlantingIntention(long customerId, string customerName, string customerCode, string tradeUnit, string crop, string? type, string? description, int acres, int plantingYear)
     {
         try
         {
@@ -979,12 +957,12 @@ public class SqlDataService : IDataService
                 Description = description,
                 Acres = acres,
                 PlantingYear = plantingYear,
-                CreatedBy = "System", // TODO: Get from authenticated user
-                CreatedOn = DateTime.Now
+                CreatedBy = GetCurrentUser(),
+                CreatedOn = DateTime.UtcNow
             };
 
             _appContext.PlantingIntentions.Add(intention);
-            _appContext.SaveChanges();
+            await _appContext.SaveChangesAsync();
 
             _logger.LogInformation("Created planting intention {Id} for customer {CustomerId}", intention.Id, customerId);
             return intention;
@@ -996,11 +974,11 @@ public class SqlDataService : IDataService
         }
     }
 
-    public PlantingIntention? UpdatePlantingIntention(int intentionId, string crop, string? type, string? description, int acres, int plantingYear)
+    public async Task<PlantingIntention?> UpdatePlantingIntention(int intentionId, string crop, string? type, string? description, int acres, int plantingYear)
     {
         try
         {
-            var intention = _appContext.PlantingIntentions.FirstOrDefault(p => p.Id == intentionId);
+            var intention = await _appContext.PlantingIntentions.FirstOrDefaultAsync(p => p.Id == intentionId);
             if (intention == null)
             {
                 return null;
@@ -1011,10 +989,10 @@ public class SqlDataService : IDataService
             intention.Description = description;
             intention.Acres = acres;
             intention.PlantingYear = plantingYear;
-            intention.ModifiedBy = "System"; // TODO: Get from authenticated user
-            intention.ModifiedOn = DateTime.Now;
+            intention.ModifiedBy = GetCurrentUser();
+            intention.ModifiedOn = DateTime.UtcNow;
 
-            _appContext.SaveChanges();
+            await _appContext.SaveChangesAsync();
 
             _logger.LogInformation("Updated planting intention {Id}", intentionId);
             return intention;
@@ -1026,15 +1004,15 @@ public class SqlDataService : IDataService
         }
     }
 
-    public void DeletePlantingIntention(int intentionId)
+    public async Task DeletePlantingIntention(int intentionId)
     {
         try
         {
-            var intention = _appContext.PlantingIntentions.FirstOrDefault(p => p.Id == intentionId);
+            var intention = await _appContext.PlantingIntentions.FirstOrDefaultAsync(p => p.Id == intentionId);
             if (intention != null)
             {
                 _appContext.PlantingIntentions.Remove(intention);
-                _appContext.SaveChanges();
+                await _appContext.SaveChangesAsync();
                 _logger.LogInformation("Deleted planting intention {Id}", intentionId);
             }
         }
@@ -1049,16 +1027,16 @@ public class SqlDataService : IDataService
     // Note Operations - Uses dbo.Notes table in Origination database
     // =========================================================================
 
-    public List<Note> GetNotes()
+    public async Task<List<Note>> GetNotes()
     {
         try
         {
             _logger.LogInformation("Attempting to retrieve notes from database");
 
-            return _appContext.Notes
+            return await _appContext.Notes
                 .AsNoTracking()
                 .OrderByDescending(n => n.CreatedOn)
-                .ToList();
+                .ToListAsync();
         }
         catch (SqlException ex) when (ex.Number == 208) // Invalid object name
         {
@@ -1072,15 +1050,15 @@ public class SqlDataService : IDataService
         }
     }
 
-    public List<Note> GetNotesByCustomer(long customerId)
+    public async Task<List<Note>> GetNotesByCustomer(long customerId)
     {
         try
         {
-            return _appContext.Notes
+            return await _appContext.Notes
                 .AsNoTracking()
                 .Where(n => n.CustomerId == customerId)
                 .OrderByDescending(n => n.CreatedOn)
-                .ToList();
+                .ToListAsync();
         }
         catch (SqlException ex) when (ex.Number == 208) // Invalid object name
         {
@@ -1094,12 +1072,12 @@ public class SqlDataService : IDataService
         }
     }
 
-    public Note AddNote(long customerId, string content, string? tradeUnit = null)
+    public async Task<Note> AddNote(long customerId, string content, string? tradeUnit = null)
     {
         try
         {
             // Get customer info for denormalized fields
-            var customer = _context.Customers.AsNoTracking().FirstOrDefault(c => c.Id == customerId);
+            var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId);
             if (customer == null)
             {
                 throw new InvalidOperationException($"Customer with ID {customerId} not found");
@@ -1111,12 +1089,12 @@ public class SqlDataService : IDataService
                 CustomerName = customer.Name,
                 TradeUnit = tradeUnit,
                 Description = content,
-                CreatedBy = "System", // TODO: Get from authenticated user
+                CreatedBy = GetCurrentUser(),
                 CreatedOn = DateTime.UtcNow
             };
 
             _appContext.Notes.Add(note);
-            _appContext.SaveChanges();
+            await _appContext.SaveChangesAsync();
 
             _logger.LogInformation("Created note {NoteId} for customer {CustomerId}", note.Id, customerId);
             return note;
@@ -1128,18 +1106,18 @@ public class SqlDataService : IDataService
         }
     }
 
-    public Note? ToggleNotePin(long noteId)
+    public async Task<Note?> ToggleNotePin(long noteId)
     {
         try
         {
-            var note = _appContext.Notes.FirstOrDefault(n => n.Id == noteId);
+            var note = await _appContext.Notes.FirstOrDefaultAsync(n => n.Id == noteId);
             if (note == null)
             {
                 return null;
             }
 
             note.IsPinned = !note.IsPinned;
-            _appContext.SaveChanges();
+            await _appContext.SaveChangesAsync();
 
             _logger.LogInformation("Toggled pin for note {NoteId} - IsPinned is now {IsPinned}", noteId, note.IsPinned);
             return note;
@@ -1151,20 +1129,20 @@ public class SqlDataService : IDataService
         }
     }
 
-    public Note? UpdateNote(long noteId, string content)
+    public async Task<Note?> UpdateNote(long noteId, string content)
     {
         try
         {
-            var note = _appContext.Notes.FirstOrDefault(n => n.Id == noteId);
+            var note = await _appContext.Notes.FirstOrDefaultAsync(n => n.Id == noteId);
             if (note == null)
             {
                 return null;
             }
 
             note.Description = content;
-            note.ModifiedBy = "System"; // TODO: Get from authenticated user
+            note.ModifiedBy = GetCurrentUser();
             note.ModifiedOn = DateTime.UtcNow;
-            _appContext.SaveChanges();
+            await _appContext.SaveChangesAsync();
 
             _logger.LogInformation("Updated note {NoteId}", noteId);
             return note;
@@ -1176,18 +1154,18 @@ public class SqlDataService : IDataService
         }
     }
 
-    public void DeleteNote(long noteId)
+    public async Task DeleteNote(long noteId)
     {
         try
         {
-            var note = _appContext.Notes.FirstOrDefault(n => n.Id == noteId);
+            var note = await _appContext.Notes.FirstOrDefaultAsync(n => n.Id == noteId);
             if (note == null)
             {
                 return;
             }
 
             _appContext.Notes.Remove(note);
-            _appContext.SaveChanges();
+            await _appContext.SaveChangesAsync();
 
             _logger.LogInformation("Deleted note {NoteId}", noteId);
         }
@@ -1202,11 +1180,11 @@ public class SqlDataService : IDataService
     // Producer Details Operations - Uses dbo.ProducerDetails table in Origination database
     // =========================================================================
 
-    public ProducerDetails? GetProducerDetails(long customerId)
+    public async Task<ProducerDetails?> GetProducerDetails(long customerId)
     {
         try
         {
-            return _appContext.ProducerDetails.AsNoTracking().FirstOrDefault(pd => pd.CustomerId == customerId);
+            return await _appContext.ProducerDetails.AsNoTracking().FirstOrDefaultAsync(pd => pd.CustomerId == customerId);
         }
         catch (Exception ex)
         {
@@ -1215,11 +1193,11 @@ public class SqlDataService : IDataService
         }
     }
 
-    public List<ProducerDetails> GetAllProducerDetails()
+    public async Task<List<ProducerDetails>> GetAllProducerDetails()
     {
         try
         {
-            return _appContext.ProducerDetails.AsNoTracking().ToList();
+            return await _appContext.ProducerDetails.AsNoTracking().ToListAsync();
         }
         catch (Exception ex)
         {
@@ -1228,11 +1206,11 @@ public class SqlDataService : IDataService
         }
     }
 
-    public ProducerDetails UpsertProducerDetails(long customerId, string? sourceCustomerId, string customerName, decimal? totalAcres, decimal? binCapacity, string? primaryContact, string? commodities, string? linkedProducerIds = null)
+    public async Task<ProducerDetails> UpsertProducerDetails(long customerId, string? sourceCustomerId, string customerName, decimal? totalAcres, decimal? binCapacity, string? primaryContact, string? commodities, string? linkedProducerIds = null)
     {
         try
         {
-            var existing = _appContext.ProducerDetails.FirstOrDefault(pd => pd.CustomerId == customerId);
+            var existing = await _appContext.ProducerDetails.FirstOrDefaultAsync(pd => pd.CustomerId == customerId);
 
             if (existing != null)
             {
@@ -1243,10 +1221,10 @@ public class SqlDataService : IDataService
                 existing.PrimaryContact = primaryContact;
                 existing.Commodities = commodities;
                 existing.LinkedProducerIds = linkedProducerIds;
-                existing.ModifiedBy = "system";
+                existing.ModifiedBy = GetCurrentUser();
                 existing.ModifiedOn = DateTime.UtcNow;
 
-                _appContext.SaveChanges();
+                await _appContext.SaveChangesAsync();
                 _logger.LogInformation("Updated ProducerDetails for customer {CustomerId}", customerId);
                 return existing;
             }
@@ -1262,12 +1240,12 @@ public class SqlDataService : IDataService
                     PrimaryContact = primaryContact,
                     Commodities = commodities,
                     LinkedProducerIds = linkedProducerIds,
-                    CreatedBy = "system",
+                    CreatedBy = GetCurrentUser(),
                     CreatedOn = DateTime.UtcNow
                 };
 
                 _appContext.ProducerDetails.Add(details);
-                _appContext.SaveChanges();
+                await _appContext.SaveChangesAsync();
                 _logger.LogInformation("Created ProducerDetails for customer {CustomerId}", customerId);
                 return details;
             }
@@ -1279,15 +1257,15 @@ public class SqlDataService : IDataService
         }
     }
 
-    public void DeleteProducerDetails(long customerId)
+    public async Task DeleteProducerDetails(long customerId)
     {
         try
         {
-            var existing = _appContext.ProducerDetails.FirstOrDefault(pd => pd.CustomerId == customerId);
+            var existing = await _appContext.ProducerDetails.FirstOrDefaultAsync(pd => pd.CustomerId == customerId);
             if (existing != null)
             {
                 _appContext.ProducerDetails.Remove(existing);
-                _appContext.SaveChanges();
+                await _appContext.SaveChangesAsync();
                 _logger.LogInformation("Deleted ProducerDetails for customer {CustomerId}", customerId);
             }
         }
@@ -1302,31 +1280,31 @@ public class SqlDataService : IDataService
     // Storage Operations - DISABLED: Table doesn't exist in ODS
     // =========================================================================
 
-    public List<StoredGrain> GetStoredGrain()
+    public Task<List<StoredGrain>> GetStoredGrain()
     {
         _logger.LogWarning("StoredGrain table doesn't exist in ODS - returning empty list");
-        return new List<StoredGrain>();
+        return Task.FromResult(new List<StoredGrain>());
     }
 
-    public List<StoredGrain> GetStoredGrainByCustomer(long customerId)
+    public Task<List<StoredGrain>> GetStoredGrainByCustomer(long customerId)
     {
         _logger.LogWarning("StoredGrain table doesn't exist in ODS - returning empty list");
-        return new List<StoredGrain>();
+        return Task.FromResult(new List<StoredGrain>());
     }
 
     // =========================================================================
     // Saved List Operations
     // =========================================================================
 
-    public List<SavedList> GetSavedLists()
+    public async Task<List<SavedList>> GetSavedLists()
     {
         try
         {
-            return _appContext.SavedLists
+            return await _appContext.SavedLists
                 .AsNoTracking()
                 .Where(s => s.IsActive)
                 .OrderByDescending(s => s.CreatedOn)
-                .ToList();
+                .ToListAsync();
         }
         catch (Exception ex)
         {
@@ -1335,7 +1313,7 @@ public class SqlDataService : IDataService
         }
     }
 
-    public SavedList SaveList(string name, string query, string? tradeUnits, string? filters = null)
+    public async Task<SavedList> SaveList(string name, string query, string? tradeUnits, string? filters = null)
     {
         try
         {
@@ -1345,11 +1323,11 @@ public class SqlDataService : IDataService
                 Query = query,
                 TradeUnits = tradeUnits,
                 Filters = filters,
-                CreatedBy = "System",
+                CreatedBy = GetCurrentUser(),
                 CreatedOn = DateTime.UtcNow
             };
             _appContext.SavedLists.Add(savedList);
-            _appContext.SaveChanges();
+            await _appContext.SaveChangesAsync();
             return savedList;
         }
         catch (Exception ex)
@@ -1359,17 +1337,17 @@ public class SqlDataService : IDataService
         }
     }
 
-    public SavedList? UpdateList(int listId, string name, string query, string? tradeUnits, string? filters = null)
+    public async Task<SavedList?> UpdateList(int listId, string name, string query, string? tradeUnits, string? filters = null)
     {
         try
         {
-            var list = _appContext.SavedLists.FirstOrDefault(s => s.Id == listId);
+            var list = await _appContext.SavedLists.FirstOrDefaultAsync(s => s.Id == listId);
             if (list == null) return null;
             list.Name = name;
             list.Query = query;
             list.TradeUnits = tradeUnits;
             list.Filters = filters;
-            _appContext.SaveChanges();
+            await _appContext.SaveChangesAsync();
             return list;
         }
         catch (Exception ex)
@@ -1379,14 +1357,14 @@ public class SqlDataService : IDataService
         }
     }
 
-    public void DeleteList(int listId)
+    public async Task DeleteList(int listId)
     {
         try
         {
-            var list = _appContext.SavedLists.FirstOrDefault(s => s.Id == listId);
+            var list = await _appContext.SavedLists.FirstOrDefaultAsync(s => s.Id == listId);
             if (list == null) return;
             _appContext.SavedLists.Remove(list);
-            _appContext.SaveChanges();
+            await _appContext.SaveChangesAsync();
         }
         catch (Exception ex)
         {
@@ -1399,21 +1377,21 @@ public class SqlDataService : IDataService
     // Dashboard Planting Estimate Operations
     // =========================================================================
 
-    public List<DashboardPlantingEstimate> GetDashboardPlantingEstimates(string tradeUnitKey, int plantingYear)
+    public async Task<List<DashboardPlantingEstimate>> GetDashboardPlantingEstimates(string tradeUnitKey, int plantingYear)
     {
-        return _appContext.DashboardPlantingEstimates
+        return await _appContext.DashboardPlantingEstimates
             .AsNoTracking()
             .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear)
             .OrderBy(e => e.Crop)
-            .ToList();
+            .ToListAsync();
     }
 
-    public void UpsertDashboardPlantingEstimates(List<UpsertDashboardEstimateRequest> estimates, string username)
+    public async Task UpsertDashboardPlantingEstimates(List<UpsertDashboardEstimateRequest> estimates, string username)
     {
         foreach (var req in estimates)
         {
-            var existing = _appContext.DashboardPlantingEstimates
-                .FirstOrDefault(e => e.TradeUnitKey == req.TradeUnitKey
+            var existing = await _appContext.DashboardPlantingEstimates
+                .FirstOrDefaultAsync(e => e.TradeUnitKey == req.TradeUnitKey
                                   && e.Crop == req.Crop
                                   && e.PlantingYear == req.PlantingYear);
             if (req.YieldEstimate == null)
@@ -1440,24 +1418,24 @@ public class SqlDataService : IDataService
                 });
             }
         }
-        _appContext.SaveChanges();
+        await _appContext.SaveChangesAsync();
     }
 
-    public List<DashboardMarketShare> GetDashboardMarketShares(string tradeUnitKey, int plantingYear)
+    public async Task<List<DashboardMarketShare>> GetDashboardMarketShares(string tradeUnitKey, int plantingYear)
     {
-        return _appContext.DashboardMarketShares
+        return await _appContext.DashboardMarketShares
             .AsNoTracking()
             .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear)
             .OrderBy(e => e.CropCategory)
-            .ToList();
+            .ToListAsync();
     }
 
-    public void UpsertDashboardMarketShares(List<UpsertDashboardMarketShareRequest> shares, string username)
+    public async Task UpsertDashboardMarketShares(List<UpsertDashboardMarketShareRequest> shares, string username)
     {
         foreach (var req in shares)
         {
-            var existing = _appContext.DashboardMarketShares
-                .FirstOrDefault(e => e.TradeUnitKey == req.TradeUnitKey
+            var existing = await _appContext.DashboardMarketShares
+                .FirstOrDefaultAsync(e => e.TradeUnitKey == req.TradeUnitKey
                                   && e.CropCategory == req.CropCategory
                                   && e.PlantingYear == req.PlantingYear);
             if (req.MarketSharePct == null)
@@ -1484,25 +1462,25 @@ public class SqlDataService : IDataService
                 });
             }
         }
-        _appContext.SaveChanges();
+        await _appContext.SaveChangesAsync();
     }
 
     // Dashboard Actual Harvest Operations
-    public List<DashboardActualHarvest> GetDashboardActualHarvest(string tradeUnitKey, int plantingYear)
+    public async Task<List<DashboardActualHarvest>> GetDashboardActualHarvest(string tradeUnitKey, int plantingYear)
     {
-        return _appContext.DashboardActualHarvests
+        return await _appContext.DashboardActualHarvests
             .AsNoTracking()
             .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear)
             .OrderBy(e => e.CropCategory)
-            .ToList();
+            .ToListAsync();
     }
 
-    public void UpsertDashboardActualHarvest(List<UpsertDashboardActualHarvestRequest> items, string username)
+    public async Task UpsertDashboardActualHarvest(List<UpsertDashboardActualHarvestRequest> items, string username)
     {
         foreach (var req in items)
         {
-            var existing = _appContext.DashboardActualHarvests
-                .FirstOrDefault(e => e.TradeUnitKey == req.TradeUnitKey
+            var existing = await _appContext.DashboardActualHarvests
+                .FirstOrDefaultAsync(e => e.TradeUnitKey == req.TradeUnitKey
                                   && e.CropCategory == req.CropCategory
                                   && e.PlantingYear == req.PlantingYear);
             if (existing != null)
@@ -1524,16 +1502,16 @@ public class SqlDataService : IDataService
                 });
             }
         }
-        _appContext.SaveChanges();
+        await _appContext.SaveChangesAsync();
     }
 
-    public void DeleteDashboardActualHarvest(int id)
+    public async Task DeleteDashboardActualHarvest(int id)
     {
-        var entity = _appContext.DashboardActualHarvests.Find(id);
+        var entity = await _appContext.DashboardActualHarvests.FindAsync(id);
         if (entity != null)
         {
             _appContext.DashboardActualHarvests.Remove(entity);
-            _appContext.SaveChanges();
+            await _appContext.SaveChangesAsync();
         }
     }
 }

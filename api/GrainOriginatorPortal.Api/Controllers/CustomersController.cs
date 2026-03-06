@@ -2,6 +2,7 @@ using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -11,61 +12,68 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class CustomersController : ControllerBase
 {
     private readonly IDataService _dataService;
+    private readonly ILogger<CustomersController> _logger;
 
-    public CustomersController(IDataService dataService)
+    public CustomersController(IDataService dataService, ILogger<CustomersController> logger)
     {
         _dataService = dataService;
+        _logger = logger;
     }
 
     [HttpGet]
-    public ActionResult<List<Customer>> GetAll([FromQuery] List<string>? tradeUnits = null)
+    public async Task<ActionResult<List<Customer>>> GetAll([FromQuery] List<string>? tradeUnits = null)
     {
-        return Ok(_dataService.GetCustomers(tradeUnits));
+        return Ok(await _dataService.GetCustomers(tradeUnits));
     }
 
     [HttpGet("search")]
-    public ActionResult<List<Customer>> Search([FromQuery] string searchTerm, [FromQuery] List<string>? tradeUnits = null)
+    public async Task<ActionResult<List<Customer>>> Search([FromQuery] string searchTerm, [FromQuery] List<string>? tradeUnits = null)
     {
         if (string.IsNullOrWhiteSpace(searchTerm))
         {
-            return Ok(_dataService.GetCustomers(tradeUnits));
+            return Ok(await _dataService.GetCustomers(tradeUnits));
         }
-        return Ok(_dataService.SearchCustomers(searchTerm, tradeUnits));
+        return Ok(await _dataService.SearchCustomers(searchTerm, tradeUnits));
     }
 
     [HttpGet("trade-units")]
-    public ActionResult<List<string>> GetTradeUnits()
+    public async Task<ActionResult<List<string>>> GetTradeUnits()
     {
-        return Ok(_dataService.GetTradeUnits());
+        return Ok(await _dataService.GetTradeUnits());
     }
 
     [HttpGet("{id:long}")]
-    public ActionResult<Customer> GetById(long id)
+    public async Task<ActionResult<Customer>> GetById(long id)
     {
-        var customer = _dataService.GetCustomerById(id);
+        var customer = await _dataService.GetCustomerById(id);
         if (customer == null) return NotFound();
         return Ok(customer);
     }
 
     [HttpPut("{id:long}")]
-    public ActionResult<Customer> Update(long id, [FromBody] Customer request)
+    public async Task<ActionResult<Customer>> Update(long id, [FromBody] UpdateCustomerRequest request)
     {
-        var customer = _dataService.GetCustomerById(id);
-        if (customer == null) return NotFound();
+        try
+        {
+            var customer = await _dataService.GetCustomerById(id);
+            if (customer == null) return NotFound();
 
-        // Update using the data service method (this ensures changes persist)
-        _dataService.UpdateCustomer(
-            id,
-            request.Location ?? string.Empty,
-            request.Phone ?? string.Empty,
-            request.Email ?? string.Empty,
-            request.FarmIds,
-            request.LinkedProducerIds ?? new List<string>()
-        );
+            await _dataService.UpdateCustomer(
+                id,
+                request.Location ?? string.Empty,
+                request.Phone ?? string.Empty,
+                request.Email ?? string.Empty,
+                request.FarmIds,
+                request.LinkedProducerIds ?? new List<string>()
+            );
 
-        // Get the updated customer to return
-        var updatedCustomer = _dataService.GetCustomerById(id);
-
-        return Ok(updatedCustomer);
+            var updatedCustomer = await _dataService.GetCustomerById(id);
+            return Ok(updatedCustomer);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating customer {CustomerId}", id);
+            return StatusCode(500, new { error = "An error occurred while updating the customer." });
+        }
     }
 }

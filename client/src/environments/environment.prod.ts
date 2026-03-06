@@ -11,6 +11,6 @@ export const environment = {
   },
   apiConfig: {
     scopes: ['api://e1458bcd-7212-4ea0-a836-7e08d03b5bbf/Origination.Application.Prod'],
-    uri: '/api'
+    uri: '/api/*'
   }
 };

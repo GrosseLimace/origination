@@ -21,25 +21,25 @@ public class ProducerDetailsController : ControllerBase
     }
 
     [HttpGet]
-    public ActionResult<List<ProducerDetails>> GetAll()
+    public async Task<ActionResult<List<ProducerDetails>>> GetAll()
     {
-        return Ok(_dataService.GetAllProducerDetails());
+        return Ok(await _dataService.GetAllProducerDetails());
     }
 
     [HttpGet("customer/{customerId:long}")]
-    public ActionResult<ProducerDetails> GetByCustomer(long customerId)
+    public async Task<ActionResult<ProducerDetails>> GetByCustomer(long customerId)
     {
-        var details = _dataService.GetProducerDetails(customerId);
+        var details = await _dataService.GetProducerDetails(customerId);
         // Return empty record rather than 404 — absence of saved details is normal for new customers
         return Ok(details ?? new ProducerDetails { CustomerId = customerId });
     }
 
     [HttpPut("customer/{customerId:long}")]
-    public ActionResult<ProducerDetails> Upsert(long customerId, [FromBody] UpsertProducerDetailsRequest request)
+    public async Task<ActionResult<ProducerDetails>> Upsert(long customerId, [FromBody] UpsertProducerDetailsRequest request)
     {
         try
         {
-            var details = _dataService.UpsertProducerDetails(
+            var details = await _dataService.UpsertProducerDetails(
                 customerId,
                 request.SourceCustomerId,
                 request.CustomerName,
@@ -59,23 +59,23 @@ public class ProducerDetailsController : ControllerBase
     }
 
     [HttpDelete("customer/{customerId:long}")]
-    public ActionResult Delete(long customerId)
+    public async Task<ActionResult> Delete(long customerId)
     {
-        _dataService.DeleteProducerDetails(customerId);
-        return Ok();
+        await _dataService.DeleteProducerDetails(customerId);
+        return NoContent();
     }
 }
 
 public class UpsertProducerDetailsRequest
 {
-    public string? SourceCustomerId { get; set; }
+    [System.ComponentModel.DataAnnotations.StringLength(50)]  public string? SourceCustomerId { get; set; }
 
     [System.ComponentModel.DataAnnotations.Required]
-    public string CustomerName { get; set; } = string.Empty;
+    [System.ComponentModel.DataAnnotations.StringLength(255)] public string CustomerName { get; set; } = string.Empty;
 
-    public decimal? TotalAcres { get; set; }
-    public decimal? BinCapacity { get; set; }
-    public string? PrimaryContact { get; set; }
-    public string? Commodities { get; set; }
-    public string? LinkedProducerIds { get; set; }
+    [System.ComponentModel.DataAnnotations.Range(0, 999999)]  public decimal? TotalAcres { get; set; }
+    [System.ComponentModel.DataAnnotations.Range(0, 999999)]  public decimal? BinCapacity { get; set; }
+    [System.ComponentModel.DataAnnotations.StringLength(200)] public string? PrimaryContact { get; set; }
+    [System.ComponentModel.DataAnnotations.StringLength(500)] public string? Commodities { get; set; }
+    [System.ComponentModel.DataAnnotations.StringLength(500)] public string? LinkedProducerIds { get; set; }
 }

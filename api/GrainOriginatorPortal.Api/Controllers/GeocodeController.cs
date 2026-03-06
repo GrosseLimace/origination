@@ -174,8 +174,9 @@ public class GeocodeController : ControllerBase
                 // Respect Nominatim rate limit: 1 req/sec
                 await Task.Delay(1100);
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogWarning(ex, "Geocode failed for key {Key}", req.Key);
                 results.Add(new GeocodeResult { Key = req.Key });
             }
         }
@@ -187,10 +188,10 @@ public class GeocodeController : ControllerBase
 public class GeocodeRequest
 {
     public string Key { get; set; } = string.Empty;
-    public string? Street { get; set; }
-    public string? City { get; set; }
-    public string? State { get; set; }
-    public string? Zip { get; set; }
+    [System.ComponentModel.DataAnnotations.StringLength(200)] public string? Street { get; set; }
+    [System.ComponentModel.DataAnnotations.StringLength(100)] public string? City { get; set; }
+    [System.ComponentModel.DataAnnotations.StringLength(50)]  public string? State { get; set; }
+    [System.ComponentModel.DataAnnotations.StringLength(10)]  public string? Zip { get; set; }
 }
 
 public class GeocodeResult
