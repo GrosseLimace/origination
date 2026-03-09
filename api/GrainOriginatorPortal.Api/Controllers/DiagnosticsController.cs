@@ -34,7 +34,7 @@ public class DiagnosticsController : ControllerBase
     [HttpGet("connections")]
     public async Task<IActionResult> CheckConnections()
     {
-        if (!_env.IsDevelopment()) return NotFound();
+        if (_env.IsProduction()) return NotFound();
 
         static async Task<object> TestDb(DbContext db, string name, string testSql)
         {
@@ -75,7 +75,7 @@ public class DiagnosticsController : ControllerBase
     [HttpGet("tables")]
     public async Task<IActionResult> GetTables()
     {
-        if (!_env.IsDevelopment()) return NotFound();
+        if (_env.IsProduction()) return NotFound();
         try
         {
             // Query the system tables to see what user tables exist
@@ -105,7 +105,7 @@ public class DiagnosticsController : ControllerBase
     [HttpGet("tableschema/{tableName}")]
     public async Task<IActionResult> GetTableWithSchema(string tableName)
     {
-        if (!_env.IsDevelopment()) return NotFound();
+        if (_env.IsProduction()) return NotFound();
         try
         {
             var result = await _context.Database.SqlQueryRaw<TableSchemaInfo>(
@@ -127,7 +127,7 @@ public class DiagnosticsController : ControllerBase
     [HttpGet("schema/{tableName}")]
     public async Task<IActionResult> GetTableSchema(string tableName)
     {
-        if (!_env.IsDevelopment()) return NotFound();
+        if (_env.IsProduction()) return NotFound();
         try
         {
             var columns = await _context.Database.SqlQueryRaw<ColumnInfo>(
