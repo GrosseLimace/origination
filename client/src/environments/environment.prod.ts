@@ -1,5 +1,6 @@
 export const environment = {
   production: true,
+  envName: '',
   apiUrl: '/api',
   msalConfig: {
     auth: {

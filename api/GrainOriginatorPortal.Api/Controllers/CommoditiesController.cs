@@ -18,8 +18,8 @@ public class CommoditiesController : ControllerBase
     }
 
     [HttpGet]
-    public ActionResult<List<Commodity>> GetAll()
+    public async Task<ActionResult<List<Commodity>>> GetAll()
     {
-        return Ok(_dataService.GetCommodities());
+        return Ok(await _dataService.GetCommodities());
     }
 }

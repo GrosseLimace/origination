@@ -18,20 +18,20 @@ public class TicketsController : ControllerBase
     }
 
     [HttpGet]
-    public ActionResult<List<Ticket>> GetAll([FromQuery] List<string>? tradeUnits = null)
+    public async Task<ActionResult<List<Ticket>>> GetAll([FromQuery] List<string>? tradeUnits = null)
     {
-        return Ok(_dataService.GetTickets(tradeUnits));
+        return Ok(await _dataService.GetTickets(tradeUnits));
     }
 
     [HttpGet("customer/{customerId:long}")]
-    public ActionResult<List<Ticket>> GetByCustomer(long customerId)
+    public async Task<ActionResult<List<Ticket>>> GetByCustomer(long customerId)
     {
-        return Ok(_dataService.GetTicketsByCustomer(customerId));
+        return Ok(await _dataService.GetTicketsByCustomer(customerId));
     }
 
     [HttpGet("farm/{farmId}")]
-    public ActionResult<List<Ticket>> GetByFarm(string farmId)
+    public async Task<ActionResult<List<Ticket>>> GetByFarm(string farmId)
     {
-        return Ok(_dataService.GetTicketsByFarm(farmId));
+        return Ok(await _dataService.GetTicketsByFarm(farmId));
     }
 }
