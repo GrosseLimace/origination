@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using GrainOriginatorPortal.Api.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.SqlClient;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -11,14 +12,64 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class DiagnosticsController : ControllerBase
 {
     private readonly OriginationDbContext _context;
+    private readonly ApplicationDbContext _appContext;
+    private readonly EntitlementsDbContext _entContext;
     private readonly ILogger<DiagnosticsController> _logger;
     private readonly IWebHostEnvironment _env;
 
-    public DiagnosticsController(OriginationDbContext context, ILogger<DiagnosticsController> logger, IWebHostEnvironment env)
+    public DiagnosticsController(
+        OriginationDbContext context,
+        ApplicationDbContext appContext,
+        EntitlementsDbContext entContext,
+        ILogger<DiagnosticsController> logger,
+        IWebHostEnvironment env)
     {
         _context = context;
+        _appContext = appContext;
+        _entContext = entContext;
         _logger = logger;
         _env = env;
+    }
+
+    [HttpGet("connections")]
+    public async Task<IActionResult> CheckConnections()
+    {
+        if (!_env.IsDevelopment()) return NotFound();
+
+        static async Task<object> TestDb(DbContext db, string name, string testSql)
+        {
+            try
+            {
+                await db.Database.OpenConnectionAsync();
+                var conn = db.Database.GetDbConnection();
+                var dbName = conn.Database;
+                string? result = null;
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = testSql;
+                var raw = await cmd.ExecuteScalarAsync();
+                result = raw?.ToString();
+                return new { name, status = "OK", database = dbName, result };
+            }
+            catch (SqlException ex)
+            {
+                return new { name, status = "FAILED", errorNumber = ex.Number, errorState = ex.State, message = ex.Message };
+            }
+            catch (Exception ex)
+            {
+                return new { name, status = "FAILED", errorNumber = (int?)null, errorState = (byte?)null, message = ex.Message };
+            }
+        }
+
+        var results = await Task.WhenAll(
+            TestDb(_context, "ODS (DefaultConnection)",
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_SCHEMA='originations' AND TABLE_NAME='vw_CurrentCustomers'"),
+            TestDb(_appContext, "Origination (OriginationConnection)",
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='ProducerDetails'"),
+            TestDb(_entContext, "Entitlements (EntitlementsConnection)",
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE='BASE TABLE'")
+        );
+
+        return Ok(results);
     }
 
     [HttpGet("tables")]
