@@ -161,8 +161,17 @@ app.UseCors("AllowAngular");
 // Redirect HTTP requests to HTTPS for security
 app.UseHttpsRedirection();
 
+// Serve Angular SPA from wwwroot
+// UseDefaultFiles maps "/" to "/index.html"
+// UseStaticFiles serves JS/CSS/assets
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 // Map controller routes (e.g., /api/customers, /api/contracts, etc.)
 app.MapControllers();
+
+// Fallback to index.html for Angular client-side routing (deep links)
+app.MapFallbackToFile("index.html");
 
 // Start the application
 app.Run();
