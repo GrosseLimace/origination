@@ -11,10 +11,12 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class UserTradeUnitsController : ControllerBase
 {
     private readonly EntitlementsDbContext _entitlementsDb;
+    private readonly ILogger<UserTradeUnitsController> _logger;
 
-    public UserTradeUnitsController(EntitlementsDbContext entitlementsDb)
+    public UserTradeUnitsController(EntitlementsDbContext entitlementsDb, ILogger<UserTradeUnitsController> logger)
     {
         _entitlementsDb = entitlementsDb;
+        _logger = logger;
     }
 
     /// <summary>
@@ -36,21 +38,29 @@ public class UserTradeUnitsController : ControllerBase
         if (string.IsNullOrWhiteSpace(userId))
             return Unauthorized("Unable to determine user identity from token.");
 
-        var rows = await _entitlementsDb.UserTradeUnitAccess
-            .Where(u => u.UserId == userId)
-            .Select(u => new { u.GroupName, u.TradeUnitCode })
-            .Distinct()
-            .ToListAsync();
+        try
+        {
+            var rows = await _entitlementsDb.UserTradeUnitAccess
+                .Where(u => u.UserId == userId)
+                .Select(u => new { u.GroupName, u.TradeUnitCode })
+                .Distinct()
+                .ToListAsync();
 
-        var result = rows
-            .GroupBy(u => u.GroupName ?? "Default")
-            .OrderBy(g => g.Key)
-            .Select(g => new
-            {
-                groupName = g.Key,
-                tradeUnitCodes = g.Select(u => u.TradeUnitCode).Distinct().OrderBy(c => c).ToList()
-            });
+            var result = rows
+                .GroupBy(u => u.GroupName ?? "Default")
+                .OrderBy(g => g.Key)
+                .Select(g => new
+                {
+                    groupName = g.Key,
+                    tradeUnitCodes = g.Select(u => u.TradeUnitCode).Distinct().OrderBy(c => c).ToList()
+                });
 
-        return Ok(result);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to query Entitlements database for user {UserId} — returning empty trade unit list", userId);
+            return Ok(Array.Empty<object>());
+        }
     }
 }
