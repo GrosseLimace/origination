@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Collections.Concurrent;
 using System.Text.Json;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class GeocodeController : ControllerBase
@@ -26,6 +28,11 @@ public class GeocodeController : ControllerBase
     /// Geocode a single address via Nominatim (server-side, no CORS issues).
     /// Rate-limited to 1 request/sec to respect Nominatim usage policy.
     /// </summary>
+    /// <remarks>
+    /// TODO: Nominatim calls an external internet endpoint (nominatim.openstreetmap.org).
+    /// The Azure App Service has no outbound internet access — this will fail in deployed environments.
+    /// Replace with an internally approved geocoding solution before deploying to QA/Prod.
+    /// </remarks>
     [HttpPost("single")]
     public async Task<ActionResult<GeocodeResult>> SingleGeocode([FromBody] GeocodeRequest request)
     {
@@ -167,8 +174,9 @@ public class GeocodeController : ControllerBase
                 // Respect Nominatim rate limit: 1 req/sec
                 await Task.Delay(1100);
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogWarning(ex, "Geocode failed for key {Key}", req.Key);
                 results.Add(new GeocodeResult { Key = req.Key });
             }
         }
@@ -180,10 +188,10 @@ public class GeocodeController : ControllerBase
 public class GeocodeRequest
 {
     public string Key { get; set; } = string.Empty;
-    public string? Street { get; set; }
-    public string? City { get; set; }
-    public string? State { get; set; }
-    public string? Zip { get; set; }
+    [System.ComponentModel.DataAnnotations.StringLength(200)] public string? Street { get; set; }
+    [System.ComponentModel.DataAnnotations.StringLength(100)] public string? City { get; set; }
+    [System.ComponentModel.DataAnnotations.StringLength(50)]  public string? State { get; set; }
+    [System.ComponentModel.DataAnnotations.StringLength(10)]  public string? Zip { get; set; }
 }
 
 public class GeocodeResult

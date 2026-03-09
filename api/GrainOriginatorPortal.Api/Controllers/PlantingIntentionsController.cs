@@ -1,53 +1,65 @@
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class PlantingIntentionsController : ControllerBase
 {
     private readonly IDataService _dataService;
+    private readonly ILogger<PlantingIntentionsController> _logger;
 
-    public PlantingIntentionsController(IDataService dataService)
+    public PlantingIntentionsController(IDataService dataService, ILogger<PlantingIntentionsController> logger)
     {
         _dataService = dataService;
+        _logger = logger;
     }
 
     [HttpGet]
-    public ActionResult<List<PlantingIntention>> GetAll()
+    public async Task<ActionResult<List<PlantingIntention>>> GetAll()
     {
-        return Ok(_dataService.GetPlantingIntentions());
+        return Ok(await _dataService.GetPlantingIntentions());
     }
 
-    [HttpGet("customer/{customerId}")]
-    public ActionResult<List<PlantingIntention>> GetByCustomer(int customerId)
+    [HttpGet("customer/{customerId:long}")]
+    public async Task<ActionResult<List<PlantingIntention>>> GetByCustomer(long customerId)
     {
-        return Ok(_dataService.GetPlantingIntentionsByCustomer(customerId));
+        return Ok(await _dataService.GetPlantingIntentionsByCustomer(customerId));
     }
 
     [HttpPost]
-    public ActionResult Create([FromBody] CreatePlantingIntentionRequest request)
+    public async Task<ActionResult> Create([FromBody] CreatePlantingIntentionRequest request)
     {
-        var newIntention = _dataService.AddPlantingIntention(
-            request.CustomerId,
-            request.CustomerName,
-            request.CustomerCode,
-            request.TradeUnit,
-            request.Crop,
-            request.Type,
-            request.Description,
-            request.Acres,
-            request.PlantingYear
-        );
-        return Ok(newIntention);
+        try
+        {
+            var newIntention = await _dataService.AddPlantingIntention(
+                request.CustomerId,
+                request.CustomerName,
+                request.CustomerCode,
+                request.TradeUnit,
+                request.Crop,
+                request.Type,
+                request.Description,
+                request.Acres,
+                request.PlantingYear
+            );
+            return Ok(newIntention);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating planting intention for customer {CustomerId}", request.CustomerId);
+            return StatusCode(500, new { error = "An unexpected error occurred." });
+        }
     }
 
     [HttpPut("{id}")]
-    public ActionResult Update(int id, [FromBody] UpdatePlantingIntentionRequest request)
+    public async Task<ActionResult> Update(int id, [FromBody] UpdatePlantingIntentionRequest request)
     {
-        var updatedIntention = _dataService.UpdatePlantingIntention(
+        var updatedIntention = await _dataService.UpdatePlantingIntention(
             id,
             request.Crop,
             request.Type,
@@ -60,17 +72,25 @@ public class PlantingIntentionsController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    public ActionResult Delete(int id)
+    public async Task<ActionResult> Delete(int id)
     {
-        _dataService.DeletePlantingIntention(id);
-        return Ok();
+        try
+        {
+            await _dataService.DeletePlantingIntention(id);
+            return NoContent();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting planting intention {Id}", id);
+            return StatusCode(500, new { error = "An unexpected error occurred." });
+        }
     }
 }
 
 public class CreatePlantingIntentionRequest
 {
     [System.ComponentModel.DataAnnotations.Required]
-    public int CustomerId { get; set; }
+    public long CustomerId { get; set; }
 
     [System.ComponentModel.DataAnnotations.Required]
     [System.ComponentModel.DataAnnotations.StringLength(255)]

@@ -1,5 +1,7 @@
 import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, OnChanges, SimpleChanges, AfterViewInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
 import { Customer } from '../../models';
 import { BadgeComponent } from '../ui/badge/badge.component';
 import { AppStateService } from '../../services/app-state.service';
@@ -85,6 +87,7 @@ interface StateInfo {
 })
 export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, AfterViewInit {
   private appState = inject(AppStateService);
+  private http = inject(HttpClient);
 
   @Input() customers: Customer[] = [];
   @Input() focusedState: string | null = null;
@@ -402,14 +405,13 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
         zip: addr.zip
       }));
 
-      const response = await fetch(`${environment.apiBaseUrl}/geocode/batch`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requests)
-      });
+      const results = await firstValueFrom(
+        this.http.post<Array<{ key: string; lat: number | null; lng: number | null }>>(
+          `${environment.apiUrl}/geocode/batch`, requests
+        )
+      );
 
-      if (response.ok && this.map) {
-        const results: Array<{ key: string; lat: number | null; lng: number | null }> = await response.json();
+      if (results && this.map) {
         for (const result of results) {
           if (result.lat != null && result.lng != null) {
             const coords = { lat: result.lat, lng: result.lng };
@@ -474,6 +476,14 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
     return result;
   }
 
+  private escapeHtml(str: string): string {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
   private buildMarker(customer: Customer, coords: { lat: number; lng: number }): any {
     const addr = this.resolveAddress(customer);
     const locationParts = [addr.city, addr.state].filter(Boolean).join(', ');
@@ -481,20 +491,26 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
       ? customer.phone
       : (customer.email || '');
 
+    const eName = this.escapeHtml(customer.name);
+    const eId = this.escapeHtml(customer.sourceCustomerId ?? '');
+    const eLocation = this.escapeHtml(locationParts);
+    const eContact = this.escapeHtml(contactLine);
+    const eCustomerId = this.escapeHtml(String(customer.id));
+
     const popupContent = `
       <div style="min-width: 180px; font-family: inherit; padding: 2px 0;">
         <div style="font-size: 14px; font-weight: 600; color: #111827; margin-bottom: 2px; line-height: 1.3;">
-          ${customer.name}
+          ${eName}
         </div>
-        ${customer.sourceCustomerId ? `<div style="font-size: 11px; color: #9ca3af; margin-bottom: 6px; font-family: monospace;">${customer.sourceCustomerId}</div>` : ''}
-        ${locationParts ? `
+        ${eId ? `<div style="font-size: 11px; color: #9ca3af; margin-bottom: 6px; font-family: monospace;">${eId}</div>` : ''}
+        ${eLocation ? `
         <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 4px;">
           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
             <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
           </svg>
-          <span style="font-size: 12px; color: #6b7280;">${locationParts}</span>
+          <span style="font-size: 12px; color: #6b7280;">${eLocation}</span>
         </div>` : ''}
-        ${contactLine ? `
+        ${eContact ? `
         <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 4px;">
           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
             ${customer.phone
@@ -502,10 +518,10 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
               : `<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m2 7 8.97 5.7a1.94 1.94 0 0 0 2.06 0L22 7"/>`
             }
           </svg>
-          <span style="font-size: 12px; color: #6b7280;">${contactLine}</span>
+          <span style="font-size: 12px; color: #6b7280;">${eContact}</span>
         </div>` : ''}
         <div style="border-top: 1px solid #f3f4f6; margin-top: 8px; padding-top: 8px;">
-          <a href="#" class="view-customer-link" data-customer-id="${customer.id}"
+          <a href="#" class="view-customer-link" data-customer-id="${eCustomerId}"
              style="font-size: 12px; color: #16a34a; font-weight: 500; text-decoration: none; display: flex; align-items: center; gap: 4px;">
             View Customer
             <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>

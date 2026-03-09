@@ -30,59 +30,97 @@ interface LastContactInfo {
           <!-- Title Row -->
           <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Customers</h3>
 
-          <!-- Trade Unit Dropdown -->
-          <div class="relative">
-            <button
-              (click)="toggleTradeUnitDropdown(); $event.stopPropagation()"
-              type="button"
-              class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500 flex items-center gap-2 justify-between transition-colors"
-            >
-              <div class="flex items-center gap-2 min-w-0 flex-1">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0 text-gray-400">
-                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
-                </svg>
-                <span class="truncate">{{ getTradeUnitButtonText() }}</span>
-              </div>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0 transition-transform" [class.rotate-180]="isTradeUnitDropdownOpen">
-                <path d="m6 9 6 6 6-6"/>
-              </svg>
-            </button>
-            @if (isTradeUnitDropdownOpen) {
-              <div
-                (click)="$event.stopPropagation()"
-                class="absolute left-0 right-0 mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg z-50"
+          <!-- Loading state -->
+          @if (groupsLoading) {
+            <div class="h-9 flex items-center gap-2 px-3 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700 text-sm text-gray-400">
+              <div class="w-4 h-4 rounded-full border-2 border-gray-300 border-t-green-500 animate-spin flex-shrink-0"></div>
+              Loading groups...
+            </div>
+          }
+
+          <!-- Group Dropdown — only shown when user belongs to multiple groups -->
+          @if (!groupsLoading && userGroups.length > 1) {
+            <div class="relative">
+              <button
+                #groupBtn
+                (click)="toggleGroupDropdown(); $event.stopPropagation()"
+                type="button"
+                class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500 flex items-center gap-2 justify-between transition-colors"
               >
-                <div class="max-h-[350px] overflow-y-auto p-2 space-y-1">
-                  @for (unit of tradeUnits; track unit) {
-                    <label class="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-600 rounded cursor-pointer transition-colors">
-                      <input
-                        type="checkbox"
-                        [checked]="isTradeUnitSelected(unit)"
-                        (change)="toggleTradeUnit(unit)"
-                        class="rounded border-gray-300 text-green-600 focus:ring-green-500"
-                      />
-                      <span class="text-sm text-gray-900 dark:text-white">{{ unit }}</span>
-                    </label>
+                <span class="truncate">{{ getGroupButtonText() }}</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0 transition-transform" [class.rotate-180]="isGroupDropdownOpen">
+                  <path d="m6 9 6 6 6-6"/>
+                </svg>
+              </button>
+              @if (isGroupDropdownOpen) {
+                <div (click)="$event.stopPropagation()" [style]="groupDropdownStyle" class="fixed bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg overflow-y-auto">
+                  <div class="p-2 space-y-0.5">
+                    @for (g of userGroups; track g.groupName) {
+                      <label class="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-600 rounded cursor-pointer transition-colors">
+                        <input
+                          type="checkbox"
+                          [checked]="isGroupSelected(g.groupName)"
+                          (change)="toggleGroupSelection(g.groupName)"
+                          class="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                        />
+                        <span class="text-sm text-gray-900 dark:text-white">{{ g.groupName }}</span>
+                      </label>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          }
+
+          <!-- Trade Unit Dropdown — populated from selected groups (or all units when single group) -->
+          @if (!groupsLoading && availableTradeUnits.length > 0) {
+            <div class="relative">
+              <button
+                #tradeUnitBtn
+                (click)="toggleTradeUnitDropdown(); $event.stopPropagation()"
+                type="button"
+                class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500 flex items-center gap-2 justify-between transition-colors"
+              >
+                <div class="flex items-center gap-2 min-w-0 flex-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0 text-gray-400">
+                    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                  </svg>
+                  <span class="truncate">{{ getTradeUnitButtonText() }}</span>
+                </div>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0 transition-transform" [class.rotate-180]="isTradeUnitDropdownOpen">
+                  <path d="m6 9 6 6 6-6"/>
+                </svg>
+              </button>
+              @if (isTradeUnitDropdownOpen) {
+                <div (click)="$event.stopPropagation()" [style]="tradeUnitDropdownStyle" class="fixed bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg overflow-y-auto">
+                  <div class="p-2 space-y-0.5">
+                    @for (unit of availableTradeUnits; track unit) {
+                      <label class="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-600 rounded cursor-pointer transition-colors">
+                        <input
+                          type="checkbox"
+                          [checked]="isTradeUnitSelected(unit)"
+                          (change)="toggleTradeUnit(unit)"
+                          class="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                        />
+                        <span class="text-sm text-gray-900 dark:text-white">{{ unit }}</span>
+                      </label>
+                    }
+                  </div>
+                  @if (selectedTradeUnits.length > 0) {
+                    <div class="border-t border-gray-200 dark:border-gray-600 p-2">
+                      <button (click)="clearAllTradeUnits()" type="button" class="w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-md transition-colors flex items-center justify-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M18 6L6 18"/>
+                          <path d="M6 6l12 12"/>
+                        </svg>
+                        Clear All
+                      </button>
+                    </div>
                   }
                 </div>
-                @if (selectedTradeUnits.length > 0) {
-                  <div class="border-t border-gray-200 dark:border-gray-600 p-2">
-                    <button
-                      (click)="clearAllTradeUnits()"
-                      type="button"
-                      class="w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-md transition-colors flex items-center justify-center gap-2"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M18 6L6 18"/>
-                        <path d="M6 6l12 12"/>
-                      </svg>
-                      Clear All
-                    </button>
-                  </div>
-                }
-              </div>
-            }
-          </div>
+              }
+            </div>
+          }
 
           <!-- Search Box -->
           <div class="relative">
@@ -130,7 +168,7 @@ interface LastContactInfo {
         }
 
         <!-- Customer List -->
-        <div #scrollContainer class="divide-y divide-gray-200 dark:divide-gray-700 overflow-y-auto" [style.max-height]="!loading && getVisibleSavedLists().length > 0 ? 'calc(100vh - 21rem)' : 'calc(100vh - 16rem)'"
+        <div #scrollContainer class="divide-y divide-gray-200 dark:divide-gray-700 overflow-y-auto" [style.max-height]="listMaxHeight"
         >
           @if (loading && selectedTradeUnits.length > 0) {
             <div class="p-8 text-center">
@@ -146,8 +184,8 @@ interface LastContactInfo {
                 <path d="M3 9h18"/>
                 <path d="M3 15h18"/>
               </svg>
-              <p class="font-medium">Select Trade Units</p>
-              <p class="text-sm mt-2">Choose one or more trade units from the dropdown above to view customers, or use the search box to search all trade units</p>
+              <p class="font-medium">Select a Trade Unit</p>
+              <p class="text-sm mt-2">Choose a group, then select a trade unit to view customers</p>
             </div>
           } @else if (filteredCustomers.length === 0) {
             <div class="p-8 text-center text-gray-500">
@@ -168,7 +206,7 @@ interface LastContactInfo {
               >
                 <!-- Row 1: Name and Acres -->
                 <div class="flex items-center justify-between gap-2">
-                  <h3 class="font-medium text-gray-900 dark:text-white truncate flex-1 min-w-0">{{ customer.name }}</h3>
+                  <p class="text-sm font-semibold text-gray-900 dark:text-white truncate flex-1 min-w-0">{{ customer.name }}</p>
                   <app-badge variant="secondary" class="flex-shrink-0 whitespace-nowrap">{{ customer.totalAcres | number }} acres</app-badge>
                 </div>
                 @if (customer.sourceCustomerId) {
@@ -222,6 +260,11 @@ interface LastContactInfo {
 })
 export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, OnDestroy {
   @ViewChild('scrollContainer') scrollContainer!: ElementRef<HTMLElement>;
+  @ViewChild('groupBtn') groupBtn!: ElementRef<HTMLButtonElement>;
+  @ViewChild('tradeUnitBtn') tradeUnitBtn!: ElementRef<HTMLButtonElement>;
+
+  groupDropdownStyle: Record<string, string> = {};
+  tradeUnitDropdownStyle: Record<string, string> = {};
 
   @Input() customers: Customer[] = [];
   @Input() selectedCustomer: Customer | null = null;
@@ -241,10 +284,37 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
 
   searchQuery = '';
   selectedListId = 'all';
+  userGroups: { groupName: string; tradeUnitCodes: string[] }[] = [];
+  selectedGroupNames: string[] = [];
   selectedTradeUnits: string[] = [];
-  tradeUnits: string[] = [];
-  filteredCustomers: Customer[] = [];
+  isGroupDropdownOpen = false;
   isTradeUnitDropdownOpen = false;
+  groupsLoading = true;
+  filteredCustomers: Customer[] = [];
+
+  get availableTradeUnits(): string[] {
+    if (this.userGroups.length <= 1) {
+      // Single group — all its trade units are available
+      return this.userGroups[0]?.tradeUnitCodes ?? [];
+    }
+    // Multiple groups — only show trade units from selected groups
+    if (this.selectedGroupNames.length === 0) return [];
+    const units = new Set<string>();
+    for (const group of this.userGroups) {
+      if (this.selectedGroupNames.includes(group.groupName)) {
+        group.tradeUnitCodes.forEach(u => units.add(u));
+      }
+    }
+    return [...units].sort();
+  }
+
+  get listMaxHeight(): string {
+    const hasSavedLists = !this.loading && this.getVisibleSavedLists().length > 0;
+    const hasGroupDropdown = !this.groupsLoading && this.userGroups.length > 1;
+    let offset = hasSavedLists ? 21 : 16;
+    if (hasGroupDropdown) offset += 3;
+    return `calc(100vh - ${offset}rem)`;
+  }
 
   // Performance optimization: Cache last contact info to avoid repeated filtering/sorting
   lastContactCache = new Map<number, LastContactInfo>();
@@ -254,7 +324,7 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
 
     // Restore state from service
     this.searchQuery = this.appStateService.searchQuery();
-    this.selectedTradeUnits = this.appStateService.selectedTradeUnits();
+    this.selectedTradeUnits = [...this.appStateService.selectedTradeUnits()];
     this.selectedListId = this.appStateService.selectedSavedListId() || 'all';
 
     // Re-run NLQ to populate customerIds for the restored list selection
@@ -264,15 +334,31 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
       this.applyFilters();
     }
 
-    // Load trade units
-    this.apiService.getTradeUnits().pipe(
+    // Load trade unit groups assigned to this user from the Entitlements database.
+    // Restore previous group/unit selection from state if available.
+    this.apiService.getUserTradeUnits().pipe(
       takeUntil(this.destroy$)
     ).subscribe({
-      next: (units) => {
-        this.tradeUnits = units;
+      next: (groups) => {
+        this.userGroups = groups;
+        this.groupsLoading = false;
+        // Restore previous group selection from app state
+        const previousGroups = this.appStateService.selectedGroupNames();
+        if (previousGroups.length > 0) {
+          this.selectedGroupNames = previousGroups.filter(g =>
+            groups.some(group => group.groupName === g)
+          );
+        }
+        // Restore previous trade unit selection from app state
+        const previousUnits = this.appStateService.selectedTradeUnits();
+        if (previousUnits.length > 0) {
+          this.selectedTradeUnits = previousUnits.filter(u =>
+            groups.some(g => g.tradeUnitCodes.includes(u))
+          );
+        }
         this.cdr.markForCheck();
       },
-      error: () => {}
+      error: () => { this.groupsLoading = false; this.cdr.markForCheck(); }
     });
 
     // Set up search debouncing
@@ -285,12 +371,70 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
     });
   }
 
-  toggleTradeUnitDropdown(): void {
-    this.isTradeUnitDropdownOpen = !this.isTradeUnitDropdownOpen;
+  // ---- Group dropdown ----
+
+  private computeDropdownStyle(btn: HTMLButtonElement, maxH: number): Record<string, string> {
+    const rect = btn.getBoundingClientRect();
+    const footer = document.querySelector('app-footer');
+    const bottomBoundary = footer
+      ? Math.min(footer.getBoundingClientRect().top, window.innerHeight)
+      : window.innerHeight;
+    const available = bottomBoundary - rect.bottom - 8;
+    return {
+      position: 'fixed',
+      top: `${rect.bottom + 4}px`,
+      left: `${rect.left}px`,
+      width: `${rect.width}px`,
+      maxHeight: `${Math.min(maxH, Math.max(available, 80))}px`,
+      zIndex: '9999',
+    };
   }
 
-  closeDropdown(): void {
-    this.isTradeUnitDropdownOpen = false;
+  toggleGroupDropdown(): void {
+    this.isGroupDropdownOpen = !this.isGroupDropdownOpen;
+    if (this.isGroupDropdownOpen) {
+      this.isTradeUnitDropdownOpen = false;
+      this.groupDropdownStyle = this.computeDropdownStyle(this.groupBtn.nativeElement, 200);
+    }
+  }
+
+  isGroupSelected(groupName: string): boolean {
+    return this.selectedGroupNames.includes(groupName);
+  }
+
+  toggleGroupSelection(groupName: string): void {
+    const index = this.selectedGroupNames.indexOf(groupName);
+    if (index > -1) {
+      this.selectedGroupNames.splice(index, 1);
+    } else {
+      this.selectedGroupNames.push(groupName);
+    }
+    // Remove any selected trade units that are no longer in an available group
+    this.selectedTradeUnits = this.selectedTradeUnits.filter(u =>
+      this.availableTradeUnits.includes(u)
+    );
+    this.appStateService.setSelectedGroupNames([...this.selectedGroupNames]);
+    this.onTradeUnitsChange();
+  }
+
+  getGroupButtonText(): string {
+    if (this.selectedGroupNames.length === 0) return 'Select a Group';
+    if (this.selectedGroupNames.length === 1) return this.selectedGroupNames[0];
+    return `${this.selectedGroupNames.length} groups selected`;
+  }
+
+  // ---- Trade unit dropdown ----
+
+  toggleTradeUnitDropdown(): void {
+    this.isTradeUnitDropdownOpen = !this.isTradeUnitDropdownOpen;
+    if (this.isTradeUnitDropdownOpen) {
+      this.isGroupDropdownOpen = false;
+      this.tradeUnitDropdownStyle = this.computeDropdownStyle(this.tradeUnitBtn.nativeElement, 300);
+    }
+  }
+
+  isTradeUnitSelected(unit: string): boolean {
+    return this.selectedTradeUnits.includes(unit);
   }
 
   toggleTradeUnit(unit: string): void {
@@ -306,35 +450,26 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
   clearAllTradeUnits(): void {
     this.selectedTradeUnits = [];
     this.onTradeUnitsChange();
-    // Keep dropdown open so user can make new selections
-  }
-
-  isTradeUnitSelected(unit: string): boolean {
-    return this.selectedTradeUnits.includes(unit);
   }
 
   getTradeUnitButtonText(): string {
-    if (this.selectedTradeUnits.length === 0) {
-      return 'Select Trade Units';
-    } else if (this.selectedTradeUnits.length === 1) {
-      return this.selectedTradeUnits[0];
-    } else {
-      return `${this.selectedTradeUnits.length} trade units selected`;
+    if (this.selectedTradeUnits.length === 0) return 'Select Trade Units';
+    if (this.selectedTradeUnits.length === 1) return this.selectedTradeUnits[0];
+    return `${this.selectedTradeUnits.length} trade units selected`;
+  }
+
+  @HostListener('document:click')
+  onDocumentClick(): void {
+    if (this.isGroupDropdownOpen || this.isTradeUnitDropdownOpen) {
+      this.isGroupDropdownOpen = false;
+      this.isTradeUnitDropdownOpen = false;
+      this.cdr.markForCheck();
     }
   }
 
   onTradeUnitsChange(): void {
-    // Emit the array of selected trade units
+    this.appStateService.setTradeUnits(this.selectedTradeUnits);
     this.tradeUnitChange.emit(this.selectedTradeUnits);
-  }
-
-  @HostListener('document:click', ['$event'])
-  onDocumentClick(event: MouseEvent): void {
-    // Close dropdown when clicking outside
-    if (this.isTradeUnitDropdownOpen) {
-      this.closeDropdown();
-      this.cdr.markForCheck();
-    }
   }
 
   ngAfterViewInit(): void {

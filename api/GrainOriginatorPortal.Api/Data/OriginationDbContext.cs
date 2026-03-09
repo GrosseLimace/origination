@@ -17,6 +17,7 @@ public class OriginationDbContext : DbContext
     // DbSet properties for each entity
     // Customer, Contract, and Ticket exist in ODS (base schema)
     public DbSet<Customer> Customers => Set<Customer>();
+    public DbSet<CustomerTradeUnit> CustomerTradeUnits => Set<CustomerTradeUnit>();
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<Ticket> Tickets => Set<Ticket>();
     public DbSet<TicketQuality> TicketQualities => Set<TicketQuality>();
@@ -77,12 +78,20 @@ public class OriginationDbContext : DbContext
             entity.Ignore(e => e.TotalAcres);
             entity.Ignore(e => e.ESignEnabled);
             entity.Ignore(e => e.ScoularViewRecipients);
+            entity.Ignore(e => e.Guild);
             entity.Ignore(e => e.Coordinates);
             entity.Ignore(e => e.FarmIds);
             entity.Ignore(e => e.LinkedProducerIds);
 
             // Indexes for common queries
             entity.HasIndex(e => e.Name);
+        });
+
+        // Configure CustomerTradeUnit — maps to originations.vw_CustomerTradeUnits (no key — view only)
+        modelBuilder.Entity<CustomerTradeUnit>(entity =>
+        {
+            entity.ToView("vw_CustomerTradeUnits", schema: "originations");
+            entity.HasNoKey();
         });
 
         // Configure Farm entity - DISABLED: Table doesn't exist in ODS

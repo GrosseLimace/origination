@@ -1,9 +1,11 @@
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class ContractsController : ControllerBase
@@ -16,38 +18,38 @@ public class ContractsController : ControllerBase
     }
 
     [HttpGet]
-    public ActionResult<List<Contract>> GetAll([FromQuery] List<string>? tradeUnits = null)
+    public async Task<ActionResult<List<Contract>>> GetAll([FromQuery] List<string>? tradeUnits = null)
     {
-        return Ok(_dataService.GetContracts(tradeUnits));
+        return Ok(await _dataService.GetContracts(tradeUnits));
     }
 
     [HttpGet("customer/{customerId:long}")]
-    public ActionResult<List<Contract>> GetByCustomer(long customerId)
+    public async Task<ActionResult<List<Contract>>> GetByCustomer(long customerId)
     {
-        return Ok(_dataService.GetContractsByCustomer(customerId));
+        return Ok(await _dataService.GetContractsByCustomer(customerId));
     }
 
     [HttpGet("farm/{farmId}")]
-    public ActionResult<List<Contract>> GetByFarm(string farmId)
+    public async Task<ActionResult<List<Contract>>> GetByFarm(string farmId)
     {
-        return Ok(_dataService.GetContractsByFarm(farmId));
+        return Ok(await _dataService.GetContractsByFarm(farmId));
     }
 
     [HttpGet("pricing-lines")]
-    public ActionResult<List<ContractPricingLine>> GetPricingLines([FromQuery] string sourceContractId)
+    public async Task<ActionResult<List<ContractPricingLine>>> GetPricingLines([FromQuery] string sourceContractId)
     {
         if (string.IsNullOrWhiteSpace(sourceContractId))
             return BadRequest("sourceContractId is required");
 
-        return Ok(_dataService.GetPricingLines(sourceContractId));
+        return Ok(await _dataService.GetPricingLines(sourceContractId));
     }
 
     [HttpGet("pricing-lines/by-customer")]
-    public ActionResult<List<ContractPricingLine>> GetPricingLinesByCustomer([FromQuery] string sourceCustomerId)
+    public async Task<ActionResult<List<ContractPricingLine>>> GetPricingLinesByCustomer([FromQuery] string sourceCustomerId)
     {
         if (string.IsNullOrWhiteSpace(sourceCustomerId))
             return BadRequest("sourceCustomerId is required");
 
-        return Ok(_dataService.GetPricingLinesByCustomer(sourceCustomerId));
+        return Ok(await _dataService.GetPricingLinesByCustomer(sourceCustomerId));
     }
 }

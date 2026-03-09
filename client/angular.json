@@ -17,7 +17,10 @@
         "build": {
           "builder": "@angular-devkit/build-angular:application",
           "options": {
-            "outputPath": "dist/grain-originator-portal",
+            "outputPath": {
+              "base": "../api/GrainOriginatorPortal.Api/wwwroot",
+              "browser": ""
+            },
             "index": "src/index.html",
             "browser": "src/main.ts",
             "polyfills": ["zone.js"],
@@ -55,6 +58,18 @@
               ],
               "outputHashing": "all"
             },
+            "dev": {
+              "fileReplacements": [
+                {
+                  "replace": "src/environments/environment.ts",
+                  "with": "src/environments/environment.dev.ts"
+                }
+              ],
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true,
+              "outputHashing": "all"
+            },
             "development": {
               "optimization": false,
               "extractLicenses": false,
@@ -62,6 +77,21 @@
             }
           },
           "defaultConfiguration": "production"
+        },
+        "test": {
+          "builder": "@angular-devkit/build-angular:karma",
+          "options": {
+            "polyfills": ["zone.js", "zone.js/testing"],
+            "tsConfig": "tsconfig.spec.json",
+            "inlineStyleLanguage": "scss",
+            "assets": ["src/favicon.ico", "src/assets"],
+            "styles": [
+              "node_modules/leaflet/dist/leaflet.css",
+              "src/styles.scss"
+            ],
+            "scripts": [],
+            "codeCoverage": true
+          }
         },
         "serve": {
           "builder": "@angular-devkit/build-angular:dev-server",

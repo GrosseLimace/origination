@@ -1,0 +1,128 @@
+name: Deploy Origination
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'developer-docs/**'
+      - 'style-guides/**'
+      - '*.md'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options: [dev, qa, prod]
+
+jobs:
+  build:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+
+      - name: Install Angular dependencies
+        run: npm ci
+        working-directory: client
+
+      - name: Build Angular (dev configuration)
+        run: npx ng build --configuration dev
+        working-directory: client
+
+      - name: Build and Publish
+        run: dotnet publish api/GrainOriginatorPortal.Api -c Release -o ./publish
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app
+          path: ./publish
+
+  deploy-dev:
+    needs: build
+    runs-on: self-hosted
+    environment: dev
+    if: github.event_name == 'push' || github.event.inputs.environment == 'dev'
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: app
+          path: ./publish
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_NONPROD }}
+
+      - name: Deploy to Dev
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: app-origination-dev-eus
+          package: ./publish
+
+  deploy-qa:
+    needs: deploy-dev
+    runs-on: self-hosted
+    environment: qa
+    if: github.event.inputs.environment == 'qa'
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: app
+          path: ./publish
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_NONPROD }}
+
+      - name: Deploy to QA
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: app-origination-qa-eus
+          package: ./publish
+
+  deploy-prod:
+    needs: deploy-qa
+    runs-on: self-hosted
+    environment: prod
+    if: github.event.inputs.environment == 'prod'
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: app
+          path: ./publish
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_PROD }}
+
+      - name: Deploy to Prod
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: app-origination-eus
+          package: ./publish

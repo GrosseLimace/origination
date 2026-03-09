@@ -3,9 +3,59 @@
 @tailwind utilities;
 
 /* Base styles */
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Open Sans', system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  line-height: 1.5; /* 24px */
+  font-weight: 400;
   @apply bg-gray-50 text-gray-900;
+}
+
+/* Scoular Typescale */
+h1 {
+  font-size: 64px;
+  font-weight: 700;
+  line-height: 72px;
+  letter-spacing: 0;
+}
+
+h2 {
+  font-size: 36px;
+  font-weight: 700;
+  line-height: 48px;
+  letter-spacing: 0;
+}
+
+h3 {
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 40px;
+  letter-spacing: 0;
+}
+
+h4 {
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 26px;
+  letter-spacing: 0;
+}
+
+h5 {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 24px;
+  letter-spacing: 0.08em; /* 80 in design tool units */
+}
+
+h6 {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 20px;
+  letter-spacing: 0;
 }
 
 .dark body {

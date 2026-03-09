@@ -1,9 +1,11 @@
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class StoredGrainController : ControllerBase
@@ -16,14 +18,14 @@ public class StoredGrainController : ControllerBase
     }
 
     [HttpGet]
-    public ActionResult<List<StoredGrain>> GetAll()
+    public async Task<ActionResult<List<StoredGrain>>> GetAll()
     {
-        return Ok(_dataService.GetStoredGrain());
+        return Ok(await _dataService.GetStoredGrain());
     }
 
     [HttpGet("customer/{customerId:long}")]
-    public ActionResult<List<StoredGrain>> GetByCustomer(long customerId)
+    public async Task<ActionResult<List<StoredGrain>>> GetByCustomer(long customerId)
     {
-        return Ok(_dataService.GetStoredGrainByCustomer(customerId));
+        return Ok(await _dataService.GetStoredGrainByCustomer(customerId));
     }
 }

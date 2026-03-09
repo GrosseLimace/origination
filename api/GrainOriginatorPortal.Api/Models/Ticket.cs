@@ -34,6 +34,9 @@ public class Ticket
     public string? Date { get; set; } // Maps to TicketBlDate (stored as string in DB)
     public DateTime? FinalSettledDate { get; set; } // Stored as DateTime in DB
 
+    // Computed — used for chronological sorting since Date is stored as a string
+    public DateTime? ParsedDate => DateTime.TryParse(Date, out var d) ? d : null;
+
     // Quantities (various types in ODS)
     public decimal? UnloadQuantity { get; set; }
     public decimal? LoadoutQuantity { get; set; }

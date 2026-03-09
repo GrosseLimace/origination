@@ -1,9 +1,11 @@
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class FarmsController : ControllerBase
@@ -16,29 +18,29 @@ public class FarmsController : ControllerBase
     }
 
     [HttpGet]
-    public ActionResult<List<Farm>> GetAll()
+    public async Task<ActionResult<List<Farm>>> GetAll()
     {
-        return Ok(_dataService.GetFarms());
+        return Ok(await _dataService.GetFarms());
     }
 
     [HttpGet("{id}")]
-    public ActionResult<Farm> GetById(string id)
+    public async Task<ActionResult<Farm>> GetById(string id)
     {
-        var farm = _dataService.GetFarmById(id);
+        var farm = await _dataService.GetFarmById(id);
         if (farm == null) return NotFound();
         return Ok(farm);
     }
 
     [HttpGet("customer/{customerId:long}")]
-    public ActionResult<List<Farm>> GetByCustomer(long customerId)
+    public async Task<ActionResult<List<Farm>>> GetByCustomer(long customerId)
     {
-        return Ok(_dataService.GetFarmsByCustomer(customerId));
+        return Ok(await _dataService.GetFarmsByCustomer(customerId));
     }
 
     [HttpPost]
-    public ActionResult<string> Create([FromBody] CreateFarmRequest request)
+    public async Task<ActionResult<string>> Create([FromBody] CreateFarmRequest request)
     {
-        var id = _dataService.CreateFarm(request.Name, request.Location, request.Acres);
+        var id = await _dataService.CreateFarm(request.Name, request.Location, request.Acres);
         return CreatedAtAction(nameof(GetById), new { id }, id);
     }
 }

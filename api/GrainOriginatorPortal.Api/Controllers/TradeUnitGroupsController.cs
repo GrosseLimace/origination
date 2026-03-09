@@ -1,9 +1,11 @@
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class TradeUnitGroupsController : ControllerBase
@@ -16,8 +18,8 @@ public class TradeUnitGroupsController : ControllerBase
     }
 
     [HttpGet]
-    public ActionResult<List<TradeUnitGroup>> GetAll()
+    public async Task<ActionResult<List<TradeUnitGroup>>> GetAll()
     {
-        return Ok(_dataService.GetTradeUnitGroups());
+        return Ok(await _dataService.GetTradeUnitGroups());
     }
 }

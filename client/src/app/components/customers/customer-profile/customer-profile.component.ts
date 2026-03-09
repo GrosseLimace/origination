@@ -772,7 +772,7 @@ export class CustomerProfileComponent implements OnChanges {
             ${this.customer.guild ? `
             <div class="info-item">
               <div class="label">Guild</div>
-              <div class="value">${this.customer.guild}</div>
+              <div class="value">${this.escapeHtml(this.customer.guild)}</div>
             </div>
             ` : ''}
           </div>

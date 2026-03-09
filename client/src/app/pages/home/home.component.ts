@@ -157,6 +157,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   // Loading state to prevent concurrent data loads
   private isLoading = false;
   private isFirstLoad = true;
+  private customerSelectInterval?: ReturnType<typeof setInterval>;
 
   customers: Customer[] = [];
   contracts: Contract[] = [];
@@ -283,6 +284,7 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     window.removeEventListener('resize', this.resizeHandler);
+    if (this.customerSelectInterval) clearInterval(this.customerSelectInterval);
     this.destroy$.next();
     this.destroy$.complete();
   }
@@ -300,15 +302,22 @@ export class HomeComponent implements OnInit, OnDestroy {
       this.handleSelectCustomer(customer);
     } else {
       // Wait for customers to load, then select
-      const checkInterval = setInterval(() => {
+      this.customerSelectInterval = setInterval(() => {
         const c = this.customers.find(cust => cust.id === customerIdNum);
         if (c) {
-          clearInterval(checkInterval);
+          clearInterval(this.customerSelectInterval);
+          this.customerSelectInterval = undefined;
           this.handleSelectCustomer(c);
         }
       }, 100);
       // Clear interval after 5 seconds to avoid infinite loop
-      setTimeout(() => clearInterval(checkInterval), 5000);
+      setTimeout(() => {
+        if (this.customerSelectInterval) {
+          clearInterval(this.customerSelectInterval);
+          this.customerSelectInterval = undefined;
+          this.toastService.error('Customer not found. It may not be in the current trade unit selection.');
+        }
+      }, 5000);
     }
   }
 
@@ -351,7 +360,7 @@ export class HomeComponent implements OnInit, OnDestroy {
         this.contracts = [...data, ...fkExtras];
         this.appState.setContracts(this.contracts);
       },
-      error: () => {}
+      error: () => { this.toastService.error('Failed to load contracts. Some data may be missing.'); }
     });
 
     this.apiService.getTickets(tradeUnits).pipe(takeUntil(this.destroy$)).subscribe({
@@ -363,7 +372,7 @@ export class HomeComponent implements OnInit, OnDestroy {
         this.tickets = [...data, ...fkExtras];
         this.appState.setTickets(this.tickets);
       },
-      error: () => {}
+      error: () => { this.toastService.error('Failed to load tickets. Some data may be missing.'); }
     });
 
     this.apiService.getPlantingIntentions().pipe(takeUntil(this.destroy$)).subscribe({
@@ -371,7 +380,7 @@ export class HomeComponent implements OnInit, OnDestroy {
         this.plantingIntentions = data;
         this.appState.setPlantingIntentions(data);
       },
-      error: () => {}
+      error: () => { this.toastService.error('Failed to load planting intentions.'); }
     });
 
     this.apiService.getNotes().pipe(takeUntil(this.destroy$)).subscribe({
@@ -379,7 +388,7 @@ export class HomeComponent implements OnInit, OnDestroy {
         this.notes = data;
         this.appState.setNotes(data);
       },
-      error: () => {}
+      error: () => { this.toastService.error('Failed to load notes.'); }
     });
 
     this.apiService.getStoredGrain().pipe(takeUntil(this.destroy$)).subscribe({
@@ -438,7 +447,7 @@ export class HomeComponent implements OnInit, OnDestroy {
           totalAcres: pd.totalAcres ?? customer.totalAcres,
           binCapacity: pd.binCapacity ?? customer.binCapacity,
           primaryContact: pd.primaryContact ?? customer.primaryContact,
-          commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
+          commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()).filter(Boolean) : customer.commodities,
           linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
         };
       }
@@ -651,8 +660,9 @@ export class HomeComponent implements OnInit, OnDestroy {
     }
 
     // Contracts and tickets use customer-based string matching
-    this.allCustomerContracts = [...this.contracts.filter(c => c.ctrmCustomerId === currentCustomer.sourceCustomerId)];
-    this.allCustomerTickets = [...this.tickets.filter(t => t.customerCode === currentCustomer.sourceCustomerId)];
+    const sourceId = currentCustomer.sourceCustomerId;
+    this.allCustomerContracts = sourceId ? [...this.contracts.filter(c => c.ctrmCustomerId === sourceId)] : [];
+    this.allCustomerTickets = sourceId ? [...this.tickets.filter(t => t.customerCode === sourceId)] : [];
     this.customerContracts = [...this.allCustomerContracts];
     this.customerTickets = [...this.allCustomerTickets];
 
@@ -691,7 +701,7 @@ export class HomeComponent implements OnInit, OnDestroy {
       primaryContact: existingPd?.primaryContact ?? null,
       commodities: merged.join(','),
       linkedProducerIds: existingPd?.linkedProducerIds ?? null
-    }).subscribe({
+    }).pipe(takeUntil(this.destroy$)).subscribe({
       next: (pd) => {
         this.producerDetailsMap.set(pd.customerId, pd);
         const updatedCustomer = { ...customer, commodities: merged };
@@ -762,7 +772,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     }
 
     // Save producer details to ProducerDetails table (the only persistent store needed)
-    this.apiService.saveProducerDetails(data.customerId, savePayload).subscribe({
+    this.apiService.saveProducerDetails(data.customerId, savePayload).pipe(takeUntil(this.destroy$)).subscribe({
       next: (pd) => {
         this.producerDetailsMap.set(pd.customerId, pd);
         this.toastService.success('Customer updated successfully');
@@ -790,7 +800,7 @@ export class HomeComponent implements OnInit, OnDestroy {
         primaryContact: existingPd?.primaryContact ?? null,
         commodities: existingPd?.commodities ?? null,
         linkedProducerIds: updatedLinkedIds.length > 0 ? updatedLinkedIds.join(',') : null
-      }).subscribe({
+      }).pipe(takeUntil(this.destroy$)).subscribe({
         next: (pd) => {
           this.producerDetailsMap.set(pd.customerId, pd);
           // Update the linked customer locally so getLinkedGroup & getProducersLinkingToMe reflect the change
@@ -825,7 +835,7 @@ export class HomeComponent implements OnInit, OnDestroy {
           primaryContact: data.primaryContact,
           commodities: linkedPd?.commodities ?? null,
           linkedProducerIds: linkedPd?.linkedProducerIds ?? null
-        }).subscribe({
+        }).pipe(takeUntil(this.destroy$)).subscribe({
           next: (pd) => {
             this.producerDetailsMap.set(pd.customerId, pd);
             // Reflect the new primary contact on the local customer object
@@ -923,7 +933,7 @@ export class HomeComponent implements OnInit, OnDestroy {
       plantingYear: data.plantingYear
     };
 
-    this.apiService.createPlantingIntention(apiData).subscribe({
+    this.apiService.createPlantingIntention(apiData).pipe(takeUntil(this.destroy$)).subscribe({
       next: (intention) => {
         // Add to global list
         this.plantingIntentions = [...this.plantingIntentions, intention];
@@ -951,7 +961,7 @@ export class HomeComponent implements OnInit, OnDestroy {
       description: data.description,
       acres: data.acres,
       plantingYear: data.plantingYear
-    }).subscribe({
+    }).pipe(takeUntil(this.destroy$)).subscribe({
       next: (updatedIntention) => {
         // Update in global list
         this.plantingIntentions = this.plantingIntentions.map(p =>
@@ -979,7 +989,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   }
 
   deletePlantingIntention(intentionId: number): void {
-    this.apiService.deletePlantingIntention(intentionId).subscribe({
+    this.apiService.deletePlantingIntention(intentionId).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
         // Remove from global list
         this.plantingIntentions = this.plantingIntentions.filter(p => p.id !== intentionId);
@@ -1004,7 +1014,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     if (!this.selectedCustomer) return;
 
     const tradeUnit = this.selectedTradeUnits.length === 1 ? this.selectedTradeUnits[0] : undefined;
-    this.apiService.createNote(this.selectedCustomer.id, content, tradeUnit).subscribe({
+    this.apiService.createNote(this.selectedCustomer.id, content, tradeUnit).pipe(takeUntil(this.destroy$)).subscribe({
       next: (note) => {
         this.notes = [...this.notes, note];
         this.appState.setNotes(this.notes);
@@ -1018,7 +1028,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   }
 
   toggleNotePin(note: Note): void {
-    this.apiService.toggleNotePin(note.id).subscribe({
+    this.apiService.toggleNotePin(note.id).pipe(takeUntil(this.destroy$)).subscribe({
       next: (updated) => {
         const index = this.notes.findIndex(n => n.id === updated.id);
         if (index >= 0) {
@@ -1040,7 +1050,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   }
 
   editNote(data: { noteId: number; content: string }): void {
-    this.apiService.updateNote(data.noteId, data.content).subscribe({
+    this.apiService.updateNote(data.noteId, data.content).pipe(takeUntil(this.destroy$)).subscribe({
       next: (updated) => {
         // Update in global list
         const index = this.notes.findIndex(n => n.id === updated.id);
@@ -1065,7 +1075,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   }
 
   deleteNote(noteId: number): void {
-    this.apiService.deleteNote(noteId).subscribe({
+    this.apiService.deleteNote(noteId).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
         // Remove from global list
         this.notes = this.notes.filter(n => n.id !== noteId);

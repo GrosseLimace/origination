@@ -36,13 +36,18 @@ export class CustomerMapComponent implements AfterViewInit, OnDestroy, OnChanges
 
   private map: any;
   private markers: any[] = [];
+  private destroyed = false;
   loading = signal(true);
+
+  // Static promise ensures Leaflet is loaded only once across all instances
+  private static leafletLoadPromise: Promise<void> | null = null;
 
   ngAfterViewInit() {
     this.initMap();
   }
 
   ngOnDestroy() {
+    this.destroyed = true;
     // Clean up map instance to prevent memory leaks
     if (this.map) {
       this.map.remove();
@@ -75,6 +80,9 @@ export class CustomerMapComponent implements AfterViewInit, OnDestroy, OnChanges
       await this.loadLeaflet();
     }
 
+    // Guard: component may have been destroyed while awaiting Leaflet load
+    if (this.destroyed) return;
+
     // Initialize map centered on the US grain belt (Kansas)
     this.map = L.map('customer-map').setView([41.5, -93.0], 5);
 
@@ -89,16 +97,13 @@ export class CustomerMapComponent implements AfterViewInit, OnDestroy, OnChanges
 
   /**
    * Dynamically loads Leaflet CSS and JavaScript from CDN.
-   * Returns a promise that resolves when loading is complete.
+   * Uses a static promise so concurrent instances share a single load attempt.
    */
-  private async loadLeaflet(): Promise<void> {
-    return new Promise((resolve) => {
-      // Check if already loaded
-      if (typeof L !== 'undefined') {
-        resolve();
-        return;
-      }
+  private loadLeaflet(): Promise<void> {
+    if (typeof L !== 'undefined') return Promise.resolve();
+    if (CustomerMapComponent.leafletLoadPromise) return CustomerMapComponent.leafletLoadPromise;
 
+    CustomerMapComponent.leafletLoadPromise = new Promise((resolve) => {
       // Load Leaflet CSS
       const link = document.createElement('link');
       link.rel = 'stylesheet';
@@ -111,6 +116,8 @@ export class CustomerMapComponent implements AfterViewInit, OnDestroy, OnChanges
       script.onload = () => resolve();
       document.head.appendChild(script);
     });
+
+    return CustomerMapComponent.leafletLoadPromise;
   }
 
   /**
@@ -148,9 +155,9 @@ export class CustomerMapComponent implements AfterViewInit, OnDestroy, OnChanges
         // Add popup with customer details
         marker.bindPopup(`
           <div class="p-2">
-            <h3 class="font-bold">${customer.name}</h3>
-            <p class="text-sm text-gray-600">${customer.farm}</p>
-            <p class="text-sm text-gray-600">${customer.location}</p>
+            <h3 class="font-bold">${this.escapeHtml(customer.name)}</h3>
+            <p class="text-sm text-gray-600">${this.escapeHtml(customer.farm ?? '')}</p>
+            <p class="text-sm text-gray-600">${this.escapeHtml(customer.location ?? '')}</p>
             <p class="text-sm mt-1">${customer.totalAcres.toLocaleString()} acres</p>
           </div>
         `);
@@ -169,5 +176,13 @@ export class CustomerMapComponent implements AfterViewInit, OnDestroy, OnChanges
       const group = L.featureGroup(this.markers);
       this.map.fitBounds(group.getBounds().pad(0.1));
     }
+  }
+
+  private escapeHtml(str: string): string {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 }
