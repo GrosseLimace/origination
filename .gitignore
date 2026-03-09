@@ -11,3 +11,4 @@ client/.angular/
 # Temp files
 tmpclaude-*-cwd
 client/tmpclaude-*-cwd
+api/GrainOriginatorPortal.Api/wwwroot/
