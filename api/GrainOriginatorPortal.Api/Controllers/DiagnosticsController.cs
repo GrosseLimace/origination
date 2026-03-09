@@ -6,7 +6,7 @@ using Microsoft.Data.SqlClient;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
-[Authorize]
+[AllowAnonymous]
 [ApiController]
 [Route("api/[controller]")]
 public class DiagnosticsController : ControllerBase
