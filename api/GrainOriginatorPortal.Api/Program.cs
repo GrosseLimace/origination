@@ -276,8 +276,15 @@ app.Use(async (context, next) =>
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Serve Angular static files (JS, CSS, assets) from wwwroot
+app.UseStaticFiles();
+
 // Map controller routes (e.g., /api/customers, /api/contracts, etc.)
 app.MapControllers();
+
+// SPA fallback — return index.html for any route not matched by a controller
+// This enables Angular client-side routing (/dashboard, /build-list, etc.)
+app.MapFallbackToFile("index.html");
 
 // Start the application
 app.Run();
