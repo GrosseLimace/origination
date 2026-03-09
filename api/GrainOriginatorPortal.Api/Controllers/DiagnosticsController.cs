@@ -63,7 +63,7 @@ public class DiagnosticsController : ControllerBase
         var results = await Task.WhenAll(
             TestDb(_context, "ODS (ODSConnection)",
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_SCHEMA='originations' AND TABLE_NAME='vw_CurrentCustomers'"),
-            TestDb(_appContext, "Origination (OriginationConnection)",
+            TestDb(_appContext, "Origination (DefaultConnection)",
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='ProducerDetails'"),
             TestDb(_entContext, "Entitlements (EntitlementsConnection)",
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE='BASE TABLE'")

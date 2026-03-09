@@ -79,7 +79,7 @@ builder.Services.AddDbContext<OriginationDbContext>(options =>
 // (Notes, and eventually TradeUnits once that table is created)
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
 {
-    var connectionString = builder.Configuration.GetConnectionString("OriginationConnection");
+    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
     options.UseSqlServer(connectionString, sqlOptions =>
     {
