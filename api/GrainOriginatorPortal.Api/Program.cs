@@ -53,7 +53,7 @@ builder.Services.AddHttpContextAccessor();
 // - Retry logic handles transient network failures (5 attempts, 30 second max delay)
 builder.Services.AddDbContext<OriginationDbContext>(options =>
 {
-    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+    var connectionString = builder.Configuration.GetConnectionString("ODSConnection");
 
     options.UseSqlServer(connectionString, sqlOptions =>
     {
