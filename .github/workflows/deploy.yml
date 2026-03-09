@@ -34,11 +34,6 @@ jobs:
         run: npx ng build --configuration dev
         working-directory: client
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
       - name: Build and Publish
         run: dotnet publish api/GrainOriginatorPortal.Api -c Release -o ./publish
 
