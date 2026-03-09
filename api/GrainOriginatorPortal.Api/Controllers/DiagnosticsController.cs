@@ -60,18 +60,21 @@ public class DiagnosticsController : ControllerBase
             }
         }
 
-        var results = await Task.WhenAll(
-            TestDb(_context, "ODS - vw_CurrentCustomers",
-                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_SCHEMA='originations' AND TABLE_NAME='vw_CurrentCustomers'"),
-            TestDb(_context, "ODS - vw_ContractPricing",
-                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_SCHEMA='originations' AND TABLE_NAME='vw_ContractPricing'"),
+        // ODS tests must run sequentially — DbContext is not thread-safe
+        var odsCustomers = await TestDb(_context, "ODS - vw_CurrentCustomers",
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_SCHEMA='originations' AND TABLE_NAME='vw_CurrentCustomers'");
+        var odsPricing = await TestDb(_context, "ODS - vw_ContractPricing",
+            "SELECT TOP 1 customer_id FROM originations.vw_ContractPricing");
+
+        // Other contexts can run in parallel
+        var otherResults = await Task.WhenAll(
             TestDb(_appContext, "Origination (DefaultConnection)",
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='ProducerDetails'"),
             TestDb(_entContext, "Entitlements (EntitlementsConnection)",
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE='BASE TABLE'")
         );
 
-        return Ok(results);
+        return Ok(new object[] { odsCustomers, odsPricing }.Concat(otherResults));
     }
 
     [HttpGet("tables")]
