@@ -72,6 +72,11 @@ export class ApiService {
     return this.http.get<string[]>(`${this.baseUrl}/customers/trade-units`).pipe(catchError(this.handleError('Load trade units', [])));
   }
 
+  /** Fetches the trade units assigned to the current user, grouped by Azure AD group name */
+  getUserTradeUnits(): Observable<{ groupName: string; tradeUnitCodes: string[] }[]> {
+    return this.http.get<{ groupName: string; tradeUnitCodes: string[] }[]>(`${this.baseUrl}/usertradeunits`).pipe(catchError(this.handleError('Load user trade units', [])));
+  }
+
   /** Fetches all trade unit groups with their member trade units */
   getTradeUnitGroups(): Observable<{ id: number; groupName: string; tradeUnits: { tradeUnitCode: string }[] }[]> {
     return this.http.get<{ id: number; groupName: string; tradeUnits: { tradeUnitCode: string }[] }[]>(`${this.baseUrl}/tradeunitgroups`).pipe(catchError(this.handleError('Load trade unit groups', [])));

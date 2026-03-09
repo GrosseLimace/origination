@@ -20,23 +20,23 @@ public class NotesController : ControllerBase
     }
 
     [HttpGet]
-    public ActionResult<List<Note>> GetAll()
+    public async Task<ActionResult<List<Note>>> GetAll()
     {
-        return Ok(_dataService.GetNotes());
+        return Ok(await _dataService.GetNotes());
     }
 
     [HttpGet("customer/{customerId:long}")]
-    public ActionResult<List<Note>> GetByCustomer(long customerId)
+    public async Task<ActionResult<List<Note>>> GetByCustomer(long customerId)
     {
-        return Ok(_dataService.GetNotesByCustomer(customerId));
+        return Ok(await _dataService.GetNotesByCustomer(customerId));
     }
 
     [HttpPost]
-    public ActionResult<Note> Create([FromBody] CreateNoteRequest request)
+    public async Task<ActionResult<Note>> Create([FromBody] CreateNoteRequest request)
     {
         try
         {
-            var note = _dataService.AddNote(request.CustomerId, request.Content, request.TradeUnit);
+            var note = await _dataService.AddNote(request.CustomerId, request.Content, request.TradeUnit);
             return Created($"/api/notes/{note.Id}", note);
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("database permissions"))
@@ -46,9 +46,9 @@ public class NotesController : ControllerBase
     }
 
     [HttpPut("{id:long}/toggle-pin")]
-    public ActionResult<Note> TogglePin(long id)
+    public async Task<ActionResult<Note>> TogglePin(long id)
     {
-        var note = _dataService.ToggleNotePin(id);
+        var note = await _dataService.ToggleNotePin(id);
         if (note == null)
         {
             return NotFound();
@@ -57,9 +57,9 @@ public class NotesController : ControllerBase
     }
 
     [HttpPut("{id:long}")]
-    public ActionResult<Note> Update(long id, [FromBody] UpdateNoteRequest request)
+    public async Task<ActionResult<Note>> Update(long id, [FromBody] UpdateNoteRequest request)
     {
-        var note = _dataService.UpdateNote(id, request.Content);
+        var note = await _dataService.UpdateNote(id, request.Content);
         if (note == null)
         {
             return NotFound();
@@ -68,11 +68,11 @@ public class NotesController : ControllerBase
     }
 
     [HttpDelete("{id:long}")]
-    public ActionResult Delete(long id)
+    public async Task<ActionResult> Delete(long id)
     {
         try
         {
-            _dataService.DeleteNote(id);
+            await _dataService.DeleteNote(id);
             return NoContent();
         }
         catch (Exception ex)

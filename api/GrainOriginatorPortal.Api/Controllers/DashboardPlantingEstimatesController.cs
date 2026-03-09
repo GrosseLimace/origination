@@ -11,10 +11,12 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class DashboardPlantingEstimatesController : ControllerBase
 {
     private readonly IDataService _dataService;
+    private readonly ILogger<DashboardPlantingEstimatesController> _logger;
 
-    public DashboardPlantingEstimatesController(IDataService dataService)
+    public DashboardPlantingEstimatesController(IDataService dataService, ILogger<DashboardPlantingEstimatesController> logger)
     {
         _dataService = dataService;
+        _logger = logger;
     }
 
     [HttpGet]

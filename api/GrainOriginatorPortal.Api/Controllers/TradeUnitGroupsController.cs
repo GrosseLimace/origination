@@ -18,8 +18,8 @@ public class TradeUnitGroupsController : ControllerBase
     }
 
     [HttpGet]
-    public ActionResult<List<TradeUnitGroup>> GetAll()
+    public async Task<ActionResult<List<TradeUnitGroup>>> GetAll()
     {
-        return Ok(_dataService.GetTradeUnitGroups());
+        return Ok(await _dataService.GetTradeUnitGroups());
     }
 }

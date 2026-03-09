@@ -176,6 +176,8 @@ export class CustomerMapComponent implements AfterViewInit, OnDestroy, OnChanges
       const group = L.featureGroup(this.markers);
       this.map.fitBounds(group.getBounds().pad(0.1));
     }
+  }
+
   private escapeHtml(str: string): string {
     return str
       .replace(/&/g, '&amp;')
