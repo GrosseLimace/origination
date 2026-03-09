@@ -1,4 +1,4 @@
-import { Component, Input, inject } from '@angular/core';
+import { Component, inject, input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ThemeService } from '../../../services/theme.service';
 import { Contract } from '../../../models';
@@ -8,109 +8,10 @@ import { Contract } from '../../../models';
   standalone: true,
   imports: [CommonModule],
   host: { class: 'block' },
-  template: `
-    <div class="rounded-xl overflow-hidden" [style]="gradientStyle">
-      <div class="p-6">
-        <!-- Header -->
-        <div class="flex items-center gap-3 mb-5">
-          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-white">
-            <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
-            <polyline points="16 7 22 7 22 13"/>
-          </svg>
-          <h3 class="text-xl font-semibold text-white">Contract Pacing</h3>
-          @if (pacingPercentChange !== null) {
-            <span class="ml-auto inline-flex items-center gap-0.5 px-2.5 py-1 rounded-full text-sm font-bold"
-              [style]="getPacingBadgeStyle(pacingPercentChange)">
-              {{ pacingPercentChange >= 0 ? '▲' : '▼' }}&nbsp;{{ pacingPercentChange | number:'1.0-0' }}% vs last year
-            </span>
-          }
-        </div>
-
-        <!-- Summary stat row -->
-        <div class="grid grid-cols-3 gap-4 mb-4">
-          <div class="rounded-xl p-4" [style]="cardStyle">
-            <div [style]="labelStyle">{{ currentDeliveryYear - 1 }}</div>
-            <div class="text-2xl text-white mt-1">{{ totalBushelsLastYear > 0 ? (totalBushelsLastYear | number:'1.0-0') : '—' }}</div>
-            <div [style]="sublabelStyle">at same point last year</div>
-          </div>
-          <div class="rounded-xl p-4" [style]="cardStyle">
-            <div [style]="labelStyle">{{ currentDeliveryYear }}</div>
-            <div class="text-2xl text-white mt-1">{{ totalBushelsThisYear | number:'1.0-0' }}</div>
-            <div [style]="sublabelStyle">bushels contracted</div>
-          </div>
-          <div class="rounded-xl p-4" [style]="cardStyle">
-            <div [style]="labelStyle">Net Change</div>
-            <div class="text-2xl text-white mt-1">
-              @if (pacingPercentChange !== null) {
-                {{ pacingPercentChange >= 0 ? '+' : '' }}{{ pacingPercentChange | number:'1.0-0' }}%
-              } @else {
-                —
-              }
-            </div>
-            <div [style]="sublabelStyle">year-over-year</div>
-          </div>
-        </div>
-
-        <!-- Commodity breakdown -->
-        @if (pacingByCommodity.length > 0) {
-          <div>
-            <div class="mb-3" style="height: 1px; background: rgba(148, 163, 184, 0.15);"></div>
-            <div class="flex items-center gap-4 mb-3">
-              <span class="flex-1" [style]="colHeaderStyle">Commodity</span>
-              <span class="w-28 text-right" [style]="colHeaderStyle">{{ currentDeliveryYear - 1 }} (bu)</span>
-              <span class="w-28 text-right" [style]="colHeaderStyle">{{ currentDeliveryYear }} (bu)</span>
-              <span class="w-20 text-right" [style]="colHeaderStyle">Change</span>
-            </div>
-            <div class="space-y-2.5">
-              @for (row of pacingByCommodity; track row.commodity) {
-                <div class="flex items-center gap-4">
-                  <span class="flex-1 text-white text-sm font-medium">{{ row.commodity }}</span>
-                  <span class="w-28 text-right text-sm tabular-nums font-medium" [style]="sublabelStyle">
-                    {{ row.lastYear > 0 ? (row.lastYear | number:'1.0-0') : '—' }}
-                  </span>
-                  <span class="w-28 text-right text-sm tabular-nums font-bold text-white">
-                    {{ row.thisYear | number:'1.0-0' }}
-                  </span>
-                  <div class="w-20 text-right">
-                    @if (row.pct !== null) {
-                      <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-bold"
-                        [style]="getPacingBadgeStyle(row.pct)">
-                        {{ row.pct >= 0 ? '▲' : '▼' }}&nbsp;{{ row.pct | number:'1.0-0' }}%
-                      </span>
-                    } @else {
-                      <span class="inline-flex px-2 py-0.5 rounded text-xs font-bold"
-                        style="background: rgba(148,163,184,0.15); color: #cbd5e1;">new</span>
-                    }
-                  </div>
-                </div>
-              }
-            </div>
-            <!-- Total row -->
-            <div class="mt-4 pt-3 flex items-center gap-4" style="border-top: 1px solid rgba(148,163,184,0.2);">
-              <span class="flex-1" [style]="colHeaderStyle">Total Bushels</span>
-              <span class="w-28 text-right text-sm tabular-nums font-semibold" [style]="sublabelStyle">
-                {{ totalBushelsLastYear > 0 ? (totalBushelsLastYear | number:'1.0-0') : '—' }}
-              </span>
-              <span class="w-28 text-right text-sm tabular-nums font-bold text-white">
-                {{ totalBushelsThisYear | number:'1.0-0' }}
-              </span>
-              <div class="w-20 text-right">
-                @if (pacingPercentChange !== null) {
-                  <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-bold"
-                    [style]="getPacingBadgeStyle(pacingPercentChange)">
-                    {{ pacingPercentChange >= 0 ? '▲' : '▼' }}&nbsp;{{ pacingPercentChange | number:'1.0-0' }}%
-                  </span>
-                }
-              </div>
-            </div>
-          </div>
-        }
-      </div>
-    </div>
-  `
+  templateUrl: './contract-pacing-card.component.html'
 })
 export class ContractPacingCardComponent {
-  @Input() contracts: Contract[] = [];
+  public contracts = input<Contract[]>([]);
 
   private themeService = inject(ThemeService);
 
@@ -151,7 +52,7 @@ export class ContractPacingCardComponent {
   /** Most recent delivery year seen across all contracts. */
   get currentDeliveryYear(): number {
     let max = 0;
-    for (const c of this.contracts) {
+    for (const c of this.contracts()) {
       if (c.deliveryStart) {
         const y = new Date(c.deliveryStart).getFullYear();
         if (y > max) max = y;
@@ -160,22 +61,22 @@ export class ContractPacingCardComponent {
     return max > 0 ? max : new Date().getFullYear();
   }
 
-  private get samePointLastYear(): Date {
+  private get _samePointLastYear(): Date {
     const today = new Date();
     return new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
   }
 
-  private get contractsThisYear(): Contract[] {
+  private get _contractsThisYear(): Contract[] {
     const year = this.currentDeliveryYear;
-    return this.contracts.filter(c =>
+    return this.contracts().filter(c =>
       c.deliveryStart && new Date(c.deliveryStart).getFullYear() === year
     );
   }
 
-  private get contractsLastYear(): Contract[] {
+  private get _contractsLastYear(): Contract[] {
     const priorYear = this.currentDeliveryYear - 1;
-    const cutoff = this.samePointLastYear;
-    return this.contracts.filter(c => {
+    const cutoff = this._samePointLastYear;
+    return this.contracts().filter(c => {
       if (!c.deliveryStart || new Date(c.deliveryStart).getFullYear() !== priorYear) return false;
       if (!c.contractDate) return true;
       return new Date(c.contractDate) <= cutoff;
@@ -183,11 +84,11 @@ export class ContractPacingCardComponent {
   }
 
   get totalBushelsThisYear(): number {
-    return this.contractsThisYear.reduce((sum, c) => sum + c.quantity, 0);
+    return this._contractsThisYear.reduce((sum, c) => sum + c.quantity, 0);
   }
 
   get totalBushelsLastYear(): number {
-    return this.contractsLastYear.reduce((sum, c) => sum + c.quantity, 0);
+    return this._contractsLastYear.reduce((sum, c) => sum + c.quantity, 0);
   }
 
   get pacingPercentChange(): number | null {
@@ -202,11 +103,11 @@ export class ContractPacingCardComponent {
       if (!rowMap.has(commodity)) rowMap.set(commodity, { thisYear: 0, lastYear: 0 });
       return rowMap.get(commodity)!;
     };
-    for (const c of this.contractsThisYear) {
+    for (const c of this._contractsThisYear) {
       const commodity = label(c);
       if (commodity) ensureRow(commodity).thisYear += c.quantity;
     }
-    for (const c of this.contractsLastYear) {
+    for (const c of this._contractsLastYear) {
       const commodity = label(c);
       if (commodity) ensureRow(commodity).lastYear += c.quantity;
     }

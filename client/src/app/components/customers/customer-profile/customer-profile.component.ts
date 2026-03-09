@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, inject, OnChanges, SimpleChanges, ChangeDetectorRef, ChangeDetectionStrategy, ViewChild, ElementRef } from '@angular/core';
+import { Component, input, output, inject, effect, ChangeDetectionStrategy, ViewChild, ElementRef, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ThemeService } from '../../../services/theme.service';
 import { ContractsTableComponent } from '../contracts-table/contracts-table.component';
@@ -28,410 +28,164 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, Contr
     ActivitySummaryComponent,
     EditCustomerDialogComponent
   ],
-  template: `
-    <div class="space-y-8">
-      <!-- Header Card -->
-      <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
-        <div class="p-4 sm:p-6">
-          <!-- Top: Name block + action buttons -->
-          <div class="flex items-start justify-between gap-3 mb-4">
-            <div class="min-w-0">
-              <!-- Name + eSign badge on same line -->
-              <div class="flex items-center gap-2 min-w-0">
-                <h1 class="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 dark:text-white leading-tight truncate min-w-0">{{ customer.name }}</h1>
-                @if (customer.eSignEnabled) {
-                  <button
-                    type="button"
-                    (click)="showESignRecipients = !showESignRecipients"
-                    class="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 border border-green-200 dark:border-green-800 hover:bg-green-200 dark:hover:bg-green-900/60 transition-colors cursor-pointer"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
-                    </svg>
-                    eSign Enrolled
-                  </button>
-                } @else {
-                  <span class="shrink-0 inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 border border-gray-200 dark:border-gray-600">
-                    No eSign
-                  </span>
-                }
-              </div>
-              @if (customer.eSignEnabled && showESignRecipients) {
-                <div class="mt-2 space-y-2">
-                  @if (customer.guild) {
-                    <div>
-                      <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">Guild</p>
-                      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                        {{ customer.guild }}
-                      </span>
-                    </div>
-                  }
-                  @if (customer.scoularViewRecipients) {
-                    <div>
-                      <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">ScoularView Recipients</p>
-                      <div class="flex flex-wrap gap-1.5">
-                        @for (recipient of customer.scoularViewRecipients.split(','); track recipient) {
-                          @if (recipient.trim()) {
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                              {{ recipient.trim() }}
-                            </span>
-                          }
-                        }
-                      </div>
-                    </div>
-                  }
-                </div>
-              }
-              @if (customer.sourceCustomerId) {
-                <p class="text-sm text-gray-400 dark:text-gray-500 mt-0.5">{{ customer.sourceCustomerId }}</p>
-              }
-              @if (customer.farm) {
-                <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{{ customer.farm }}</p>
-              }
-              <div class="flex items-center gap-2 mt-2 flex-wrap">
-                <button
-                  type="button"
-                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs sm:text-sm font-medium transition-colors"
-                  [class]="showProducerInsights ? 'bg-green-600 text-white border-green-600' : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'"
-                  (click)="toggleProducerInsights()"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="18" x2="18" y1="20" y2="10"/>
-                    <line x1="12" x2="12" y1="20" y2="4"/>
-                    <line x1="6" x2="6" y1="20" y2="14"/>
-                  </svg>
-                  Producer Insights
-                </button>
-                @if (linkedCustomers.length > 0) {
-                  <select
-                    class="h-9 w-auto max-w-xs px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500"
-                    [value]="customer.id"
-                    (change)="onSelectLinkedCustomer.emit(+$any($event.target).value)"
-                  >
-                    <option [value]="customer.id">{{ customer.name }}{{ customer.sourceCustomerId ? ' (' + customer.sourceCustomerId + ')' : '' }}</option>
-                    @for (linked of linkedCustomers; track linked.id) {
-                      <option [value]="linked.id">{{ linked.name }}{{ linked.sourceCustomerId ? ' (' + linked.sourceCustomerId + ')' : '' }}</option>
-                    }
-                  </select>
-                }
-              </div>
-            </div>
-
-            <!-- Action buttons -->
-            <div class="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-colors"
-                (click)="printCustomerInfo()"
-                title="Print"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="6 9 6 2 18 2 18 9"/>
-                  <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-                  <rect width="12" height="8" x="6" y="14"/>
-                </svg>
-                <span class="hidden sm:inline">Print</span>
-              </button>
-              <button
-                type="button"
-                class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-colors"
-                (click)="openEditDialog()"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
-                </svg>
-                Edit
-              </button>
-            </div>
-          </div>
-
-          <!-- Divider -->
-          <div class="border-t border-gray-100 dark:border-gray-700 mb-4"></div>
-
-          <!-- Details: Contact + Farm Details + Contract Percentage -->
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-4">
-            <!-- Contact -->
-            <div>
-              <h3 class="text-xs sm:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-2.5">Contact</h3>
-              <div class="space-y-2 text-xs sm:text-sm">
-                @if (customer.primaryContact) {
-                  <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
-                    </svg>
-                    <span>{{ customer.primaryContact }}</span>
-                  </div>
-                }
-                <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
-                  </svg>
-                  <span>{{ getFormattedLocation() }}</span>
-                </div>
-                @if (getCustomerPhone()) {
-                  <a [href]="'tel:' + getCustomerPhone()" class="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
-                    </svg>
-                    <span>{{ getFormattedPhone() }}</span>
-                  </a>
-                }
-                @if (getCustomerEmail()) {
-                  <a [href]="'mailto:' + getCustomerEmail()" class="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
-                    </svg>
-                    <span class="truncate">{{ getCustomerEmail() }}</span>
-                  </a>
-                }
-              </div>
-            </div>
-
-            <!-- Farm Details -->
-            <div>
-              <h3 class="text-xs sm:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-2.5">Farm Details</h3>
-              <div class="space-y-2 text-xs sm:text-sm">
-                <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="m10 11 11 .9a1 1 0 0 1 .8 1.1l-.665 4.158a1 1 0 0 1-.988.842H20"/>
-                    <path d="M16 18h-5"/><path d="M18 5a1 1 0 0 0-1 1v5.573"/>
-                    <path d="M3 4h8.129a1 1 0 0 1 .99.863L13 11.246"/>
-                    <path d="M4 11V4"/><path d="M7 15h.01"/><path d="M8 10.1V4"/>
-                    <circle cx="18" cy="18" r="2"/><circle cx="7" cy="15" r="5"/>
-                  </svg>
-                  <span>{{ (customer.totalAcres || 0) | number }} acres</span>
-                </div>
-                <div class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/>
-                  </svg>
-                  <span>{{ (customer.binCapacity || 0) | number }} bu capacity</span>
-                </div>
-                <div class="flex items-start gap-2 text-gray-600 dark:text-gray-400">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 mt-0.5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M2 22 16 8"/>
-                    <path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
-                    <path d="M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
-                    <path d="M11.47 4.53 13 3l1.53 1.53a3.5 3.5 0 0 1 0 4.94L13 11l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
-                    <path d="M20 2h2v2a4 4 0 0 1-4 4h-2V6a4 4 0 0 1 4-4Z"/>
-                    <path d="M11.47 17.47 13 19l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L5 19l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
-                    <path d="M15.47 13.47 17 15l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L9 15l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
-                    <path d="M19.47 9.47 21 11l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L13 11l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
-                  </svg>
-                  @if (getEffectiveCommodities().length > 0) {
-                    <div class="flex flex-wrap gap-1">
-                      @for (commodity of getEffectiveCommodities(); track commodity) {
-                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">{{ commodity }}</span>
-                      }
-                    </div>
-                  } @else {
-                    <span>No commodities</span>
-                  }
-                </div>
-              </div>
-            </div>
-
-            <!-- Contract Pace Percentage (Year-over-Year) -->
-            <div>
-              <h3 class="text-xs sm:text-sm font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-2.5">Contract Pace Percentage</h3>
-              @if (yoyCurrentYear === 0) {
-                <p class="text-xs text-gray-400 dark:text-gray-500 py-2">No contract data available.</p>
-              } @else {
-                <div class="rounded-lg border p-3 text-center cursor-pointer transition-opacity hover:opacity-80 select-none"
-                     [class]="pacingBoxClass"
-                     (click)="toggleProducerInsights()"
-                     title="Click to {{ showProducerInsights ? 'hide' : 'show' }} Contract Pacing details">
-                  <div class="text-3xl font-bold">{{ yoyThisPctDisplay }}</div>
-                  <div class="text-xs mt-1 opacity-60">{{ yoyCurrentYear - 1 }} vs {{ yoyCurrentYear }}</div>
-                </div>
-              }
-            </div>
-          </div>
-
-        </div>
-      </div>
-
-      <!-- Producer Insights Panel (hidden by default, shows when button clicked) -->
-      @if (showProducerInsights) {
-        <app-producer-insights
-          [customer]="customer"
-          [contracts]="contracts"
-          [tickets]="tickets"
-          [plantingIntentions]="plantingIntentions"
-          [notes]="notes"
-          [storedGrain]="storedGrain">
-        </app-producer-insights>
-
-        <app-contract-pacing-card [contracts]="contracts"></app-contract-pacing-card>
-
-        <!-- AI Growth Forecast -->
-        <app-ai-growth-forecast
-          [customer]="customer"
-          [contracts]="contracts"
-          [plantingIntentions]="plantingIntentions"
-          [notes]="notes">
-        </app-ai-growth-forecast>
-      }
-
-      <!-- Activity Summary - Always visible -->
-      <app-activity-summary
-        [customer]="customer"
-        [contracts]="allCustomerContracts"
-        [tickets]="allCustomerTickets"
-        [plantingIntentions]="allCustomerPlantingIntentions"
-        [notes]="notes"
-        [storedGrain]="allCustomerStoredGrain"
-        [allCustomers]="allCustomers">
-      </app-activity-summary>
-
-      <!-- Tabs Section - Below Summary -->
-      <div #tabsSection>
-        <!-- Pill-style tab navigation -->
-        <div class="w-full bg-gray-100 dark:bg-gray-800 rounded-full p-0.5 sm:p-1 mb-6">
-          <div class="flex">
-            @for (tab of tabs; track tab.id) {
-              <button
-                type="button"
-                [class]="getTabClass(tab.id)"
-                (click)="selectTab(tab.id)"
-              >
-                <span class="hidden sm:inline">{{ tab.label }} ({{ tab.count }})</span>
-                <span class="sm:hidden">{{ tab.shortLabel }} ({{ tab.count }})</span>
-              </button>
-            }
-          </div>
-        </div>
-
-        <!-- Tab Content -->
-        <div class="pb-8">
-          @switch (activeTab) {
-            @case ('contracts') {
-              <app-contracts-table [contracts]="contracts" [tickets]="tickets" [pricingLines]="pricingLines" [customer]="customer" [openContractId]="openContractId"></app-contracts-table>
-            }
-            @case ('tickets') {
-              <app-tickets-table [tickets]="tickets" [contracts]="contracts" [customer]="customer"></app-tickets-table>
-            }
-            @case ('planting') {
-              <!-- Contract Percentage Summary for this planting year -->
-              @if (isLoadingEstimates) {
-                <div class="mb-4 flex items-center gap-2 text-sm text-gray-400 dark:text-gray-500 px-1">
-                  <svg class="animate-spin h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.961 3 8.12l3-2.829z"></path>
-                  </svg>
-                  Calculating contract percentage...
-                </div>
-              } @else if (plantingIntentions.length > 0) {
-                <div class="mb-4 p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-                  <div class="flex items-center justify-between gap-4 flex-wrap">
-                    <div class="flex items-start gap-6 flex-wrap">
-                      <div class="text-center min-w-[80px] relative group cursor-default">
-                        <div class="text-3xl font-bold" [class]="marketSharePercentage > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-gray-500'">{{ marketSharePercentage | number:'1.0-0' }}%</div>
-                        <div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Contracted{{ contractYear > 0 ? ' (' + contractYear + ')' : '' }}</div>
-                        <!-- Hover tooltip -->
-                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10 w-64 pointer-events-none">
-                          <div class="bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg px-3 py-2 shadow-lg text-left space-y-1">
-                            <p class="text-gray-300">bu contracted / bu projected yield</p>
-                            <p class="text-gray-400">Projected yield = planting acres × yield estimate (set in the Trade Unit Dashboard).</p>
-                          </div>
-                          <div class="w-2 h-2 bg-gray-900 dark:bg-gray-700 rotate-45 mx-auto -mt-1"></div>
-                        </div>
-                      </div>
-                      <div class="border-l border-gray-200 dark:border-gray-700 pl-6 space-y-1 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
-                        <div><span class="font-medium text-gray-700 dark:text-gray-300">{{ totalContracted | number }}</span> bu contracted</div>
-                        <div><span class="font-medium text-gray-700 dark:text-gray-300">{{ totalProjectedYield | number }}</span> bu projected yield</div>
-                        <div><span class="font-medium text-gray-700 dark:text-gray-300">{{ bushelsAvailable | number }}</span> bu available to contract</div>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-green-600 text-white text-sm font-medium hover:bg-green-700 transition-colors shrink-0"
-                      (click)="openAddPlanting()"
-                    >
-                      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                      </svg>
-                      Add Planting Intention
-                    </button>
-                  </div>
-                </div>
-              }
-              <app-planting-intentions-table
-                [plantingIntentions]="plantingIntentions"
-                [customer]="customer"
-                [tradeUnits]="selectedTradeUnits"
-                [customerCommodityCodes]="getEffectiveCommodities()"
-                [yieldEstimateCrops]="yieldEstimateCrops"
-                (add)="onAddPlanting.emit($event)"
-                (edit)="onEditPlanting.emit($event)"
-                (delete)="onDeletePlanting.emit($event)">
-              </app-planting-intentions-table>
-            }
-            @case ('storage') {
-              <app-stored-grain-table [storedGrain]="storedGrain" [customer]="customer"></app-stored-grain-table>
-            }
-          }
-        </div>
-      </div>
-    </div>
-
-    <!-- Edit Customer Dialog - managed locally like Blazor -->
-    <app-edit-customer-dialog
-      [isOpen]="showEditDialog"
-      [customer]="customer"
-      [tickets]="tickets"
-      [allCustomers]="allCustomers"
-      [selectedTradeUnits]="selectedTradeUnits"
-      (close)="closeEditDialog()"
-      (save)="handleSaveCustomer($event)">
-    </app-edit-customer-dialog>
-  `
+  templateUrl: './customer-profile.component.html'
 })
-export class CustomerProfileComponent implements OnChanges {
-  @Input() customer!: Customer;
-  @Input() allCustomers: Customer[] = [];
-  @Input() selectedTradeUnits: string[] = [];
-  @Input() contracts: Contract[] = [];
-  @Input() tickets: Ticket[] = [];
-  @Input() pricingLines: ContractPricingLine[] = [];
-  @Input() plantingIntentions: PlantingIntention[] = [];
-  @Input() storedGrain: StoredGrain[] = [];
-  @Input() notes: Note[] = [];
-  @Input() yieldEstimateCrops: string[] = [];
-  @Input() yieldEstimates: DashboardPlantingEstimate[] = [];
-  @Input() commodities: Commodity[] = [];
-  @Input() isLoadingEstimates = false;
+export class CustomerProfileComponent {
+  public customer = input.required<Customer>();
+  public allCustomers = input<Customer[]>([]);
+  public selectedTradeUnits = input<string[]>([]);
+  public contracts = input<Contract[]>([]);
+  public tickets = input<Ticket[]>([]);
+  public pricingLines = input<ContractPricingLine[]>([]);
+  public plantingIntentions = input<PlantingIntention[]>([]);
+  public storedGrain = input<StoredGrain[]>([]);
+  public notes = input<Note[]>([]);
+  public yieldEstimateCrops = input<string[]>([]);
+  public yieldEstimates = input<DashboardPlantingEstimate[]>([]);
+  public commodities = input<Commodity[]>([]);
+  public isLoadingEstimates = input(false);
 
   // Unfiltered data for Activity Summary
-  @Input() allCustomerContracts: Contract[] = [];
-  @Input() allCustomerTickets: Ticket[] = [];
-  @Input() allCustomerPlantingIntentions: PlantingIntention[] = [];
-  @Input() allCustomerStoredGrain: StoredGrain[] = [];
+  public allCustomerContracts = input<Contract[]>([]);
+  public allCustomerTickets = input<Ticket[]>([]);
+  public allCustomerPlantingIntentions = input<PlantingIntention[]>([]);
+  public allCustomerStoredGrain = input<StoredGrain[]>([]);
 
-  @Output() onAddPlanting = new EventEmitter<{crop: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
-  @Output() onEditPlanting = new EventEmitter<{intentionId: number, crop: string, type?: string, description?: string, acres: number, plantingYear: number}>();
-  @Output() onDeletePlanting = new EventEmitter<number>();
-  @Output() onAddNote = new EventEmitter<string>();
-  @Output() onTogglePin = new EventEmitter<Note>();
-  @Output() onSaveCustomer = new EventEmitter<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean }>();
-  @Input() linkedCustomers: Customer[] = [];
-  @Output() onSelectLinkedCustomer = new EventEmitter<number>();
-  @Input() openContractId: number | null = null;
+  public onAddPlanting = output<{crop: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
+  public onEditPlanting = output<{intentionId: number, crop: string, type?: string, description?: string, acres: number, plantingYear: number}>();
+  public onDeletePlanting = output<number>();
+  public onAddNote = output<string>();
+  public onTogglePin = output<Note>();
+  public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean }>();
+  public linkedCustomers = input<Customer[]>([]);
+  public onSelectLinkedCustomer = output<number>();
+  public openContractId = input<number | null>(null);
 
   @ViewChild(PlantingIntentionsTableComponent) private plantingTable?: PlantingIntentionsTableComponent;
   @ViewChild('tabsSection') private tabsSectionRef?: ElementRef<HTMLElement>;
 
-  private themeService = inject(ThemeService);
-  private cdr = inject(ChangeDetectorRef);
+  private readonly themeService = inject(ThemeService);
 
-  // Local state - plain booleans like Blazor
-  activeTab = 'contracts';
-  showProducerInsights = false;
-  showESignRecipients = false;
-  showEditDialog = false;
+  // Local state - signals
+  activeTab = signal('contracts');
+  showProducerInsights = signal(false);
+  showESignRecipients = signal(false);
+  showEditDialog = signal(false);
+
+  constructor() {
+    effect(() => {
+      // When arriving from Insights with a specific contract, switch to contracts tab
+      const openContractId = this.openContractId();
+      if (openContractId != null) {
+        this.activeTab.set('contracts');
+      }
+    });
+
+    effect(() => {
+      // Reset eSign recipients panel when switching customers
+      const _customer = this.customer();
+      this.showESignRecipients.set(false);
+    });
+
+    effect(() => {
+      // Derive the contract year from the most recent planting intention year.
+      const plantingIntentions = this.plantingIntentions();
+      let maxYear = 0;
+      for (const pi of plantingIntentions) {
+        if (pi.plantingYear > maxYear) maxYear = pi.plantingYear;
+      }
+      this._contractYear = maxYear;
+
+      // Recalculate total contracted bushels scoped to the planting intention year
+      const contracts = this.contracts();
+      const year = this._contractYear;
+      this._totalContracted = contracts
+        .filter(c => c.status !== 'Cancelled' && (year === 0 || c.cropYear === year))
+        .reduce((sum, c) => sum + c.quantity, 0);
+
+      // Recalculate projected yield
+      const intentionsForYear = year > 0
+        ? plantingIntentions.filter(pi => pi.plantingYear === year)
+        : plantingIntentions;
+      const commodities = this.commodities();
+      const yieldEstimates = this.yieldEstimates();
+      this._totalProjectedYield = intentionsForYear.reduce((sum, pi) => {
+        const commodity = commodities.find(c => c.code === pi.crop);
+        const category = commodity?.category || pi.crop;
+        const cropKey = [pi.type, category].filter(Boolean).join(' ');
+        const est = yieldEstimates.find(ye => ye.crop === cropKey);
+        return sum + pi.acres * (est?.yieldEstimate ?? 0);
+      }, 0);
+
+      this._marketSharePercentage = this._totalProjectedYield > 0
+        ? (this._totalContracted / this._totalProjectedYield) * 100
+        : 0;
+      this._bushelsAvailable = Math.max(0, this._totalProjectedYield - this._totalContracted);
+    });
+
+    effect(() => {
+      // Contract pacing: delivery-year YoY % change
+      const contracts = this.contracts();
+      let maxYear = 0;
+      for (const c of contracts) {
+        if (c.deliveryStart) {
+          const y = new Date(c.deliveryStart).getFullYear();
+          if (y > maxYear) maxYear = y;
+        }
+      }
+      this._pacingDeliveryYear = maxYear;
+
+      if (maxYear > 0) {
+        const priorYear = maxYear - 1;
+        const today = new Date();
+        const samePointLastYear = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
+        const thisYearBu = contracts
+          .filter(c => c.deliveryStart && new Date(c.deliveryStart).getFullYear() === maxYear)
+          .reduce((sum, c) => sum + c.quantity, 0);
+        const lastYearBu = contracts
+          .filter(c => {
+            if (!c.deliveryStart || new Date(c.deliveryStart).getFullYear() !== priorYear) return false;
+            if (!c.contractDate) return true;
+            return new Date(c.contractDate) <= samePointLastYear;
+          })
+          .reduce((sum, c) => sum + c.quantity, 0);
+        this._pacingPct = lastYearBu > 0 ? ((thisYearBu - lastYearBu) / lastYearBu) * 100 : null;
+      } else {
+        this._pacingPct = null;
+      }
+
+      // Update unapplied ticket count
+      const tickets = this.tickets();
+      const appliedContractIds = new Set(
+        contracts.map(c => c.sourceContractId).filter((id): id is string => !!id)
+      );
+      this._unappliedTicketCount = tickets.filter(t =>
+        !t.ctrmContractNumber || !appliedContractIds.has(t.ctrmContractNumber.trim())
+      ).length;
+
+      // Update tabs cache
+      this._tabs = [
+        { id: 'contracts', label: 'Contracts', shortLabel: 'Cont', count: contracts.length },
+        { id: 'tickets', label: 'Unapplied Tickets', shortLabel: 'Tick', count: this._unappliedTicketCount },
+        { id: 'planting', label: 'Planting', shortLabel: 'Plan', count: this.plantingIntentions().length },
+        { id: 'storage', label: 'Storage', shortLabel: 'Stor', count: this.storedGrain().length }
+      ];
+    });
+
+    effect(() => {
+      // Rebuild effective commodities from tickets + user-added
+      const tickets = this.tickets();
+      const customer = this.customer();
+      const ticketCommodities = [...new Set(
+        tickets.map(t => t.productCode || '').filter(Boolean)
+      )];
+      const userCommodities = customer?.commodities || [];
+      this._effectiveCommodities = [...new Set([...ticketCommodities, ...userCommodities])].sort();
+    });
+  }
 
   selectTab(tabId: string): void {
-    this.activeTab = tabId;
+    this.activeTab.set(tabId);
     // Scroll the tabs section into view so the user doesn't have to manually scroll down
     const el = this.tabsSectionRef?.nativeElement;
     if (el) {
@@ -452,151 +206,16 @@ export class CustomerProfileComponent implements OnChanges {
   private _unappliedTicketCount = 0;
   private _effectiveCommodities: string[] = [];
 
-  ngOnChanges(changes: SimpleChanges): void {
-    // When arriving from Insights with a specific contract, switch to contracts tab
-    if (changes['openContractId'] && this.openContractId != null) {
-      this.activeTab = 'contracts';
-    }
-
-    // Reset eSign recipients panel when switching customers
-    if (changes['customer']) {
-      this.showESignRecipients = false;
-    }
-
-    // Derive the contract year from the most recent planting intention year.
-    // All contract % calculations are scoped to this year.
-    if (changes['plantingIntentions']) {
-      let maxYear = 0;
-      for (const pi of this.plantingIntentions) {
-        if (pi.plantingYear > maxYear) maxYear = pi.plantingYear;
-      }
-      this._contractYear = maxYear;
-    }
-
-    // Recalculate total contracted bushels:
-    // Include Active, Pending, Fulfilled, and Overdue — exclude Cancelled.
-    // Scope to the planting intention year via cropYear on the contract.
-    if (changes['contracts'] || changes['plantingIntentions']) {
-      const year = this._contractYear;
-      this._totalContracted = this.contracts
-        .filter(c =>
-          c.status !== 'Cancelled' &&
-          (year === 0 || c.cropYear === year)
-        )
-        .reduce((sum, c) => sum + c.quantity, 0);
-    }
-
-    // Contract pacing: delivery-year YoY % change — purely contract-based, no planting intentions.
-    // Mirrors the logic in ContractPacingCardComponent.
-    if (changes['contracts']) {
-      let maxYear = 0;
-      for (const c of this.contracts) {
-        if (c.deliveryStart) {
-          const y = new Date(c.deliveryStart).getFullYear();
-          if (y > maxYear) maxYear = y;
-        }
-      }
-      this._pacingDeliveryYear = maxYear;
-
-      if (maxYear > 0) {
-        const priorYear = maxYear - 1;
-        const today = new Date();
-        const samePointLastYear = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
-
-        const thisYearBu = this.contracts
-          .filter(c => c.deliveryStart && new Date(c.deliveryStart).getFullYear() === maxYear)
-          .reduce((sum, c) => sum + c.quantity, 0);
-
-        const lastYearBu = this.contracts
-          .filter(c => {
-            if (!c.deliveryStart || new Date(c.deliveryStart).getFullYear() !== priorYear) return false;
-            if (!c.contractDate) return true;
-            return new Date(c.contractDate) <= samePointLastYear;
-          })
-          .reduce((sum, c) => sum + c.quantity, 0);
-
-        this._pacingPct = lastYearBu > 0 ? ((thisYearBu - lastYearBu) / lastYearBu) * 100 : null;
-      } else {
-        this._pacingPct = null;
-      }
-    }
-
-    // Recalculate projected yield from planting intentions × dashboard yield estimates.
-    // Yield estimates are keyed by "[type] [category]" (e.g. "Dryland CORN") — same
-    // composite key the dashboard uses when saving estimates.
-    if (changes['plantingIntentions'] || changes['yieldEstimates'] || changes['commodities']) {
-      const intentionsForYear = this._contractYear > 0
-        ? this.plantingIntentions.filter(pi => pi.plantingYear === this._contractYear)
-        : this.plantingIntentions;
-
-      this._totalProjectedYield = intentionsForYear.reduce((sum, pi) => {
-        const commodity = this.commodities.find(c => c.code === pi.crop);
-        const category = commodity?.category || pi.crop;
-        const cropKey = [pi.type, category].filter(Boolean).join(' ');
-        const est = this.yieldEstimates.find(ye => ye.crop === cropKey);
-        return sum + pi.acres * (est?.yieldEstimate ?? 0);
-      }, 0);
-    }
-
-    // Recalculate dependent values
-    if (changes['plantingIntentions'] || changes['yieldEstimates'] || changes['commodities'] || changes['contracts']) {
-      this._marketSharePercentage = this._totalProjectedYield > 0
-        ? (this._totalContracted / this._totalProjectedYield) * 100
-        : 0;
-      this._bushelsAvailable = Math.max(0, this._totalProjectedYield - this._totalContracted);
-    }
-
-    // Update unapplied ticket count
-    if (changes['contracts'] || changes['tickets']) {
-      const appliedContractIds = new Set(
-        this.contracts
-          .map(c => c.sourceContractId)
-          .filter((id): id is string => !!id)
-      );
-      this._unappliedTicketCount = this.tickets.filter(t =>
-        !t.ctrmContractNumber || !appliedContractIds.has(t.ctrmContractNumber.trim())
-      ).length;
-    }
-
-    // Update tabs cache
-    if (changes['contracts'] || changes['tickets'] || changes['plantingIntentions'] || changes['storedGrain']) {
-      this._tabs = [
-        { id: 'contracts', label: 'Contracts', shortLabel: 'Cont', count: this.contracts.length },
-        { id: 'tickets', label: 'Unapplied Tickets', shortLabel: 'Tick', count: this.unappliedTicketCount },
-        { id: 'planting', label: 'Planting', shortLabel: 'Plan', count: this.plantingIntentions.length },
-        { id: 'storage', label: 'Storage', shortLabel: 'Stor', count: this.storedGrain.length }
-      ];
-    }
-
-    // Rebuild effective commodities from tickets + user-added
-    if (changes['customer'] || changes['tickets']) {
-      const ticketCommodities = [...new Set(
-        this.tickets
-          .map(t => t.productCode || '')
-          .filter(Boolean)
-      )];
-      const userCommodities = this.customer?.commodities || [];
-      this._effectiveCommodities = [...new Set([...ticketCommodities, ...userCommodities])].sort();
-    }
-
-    if (changes['customer'] || changes['contracts'] || changes['notes']) {
-      this.cdr.markForCheck();
-    }
-  }
-
   toggleProducerInsights(): void {
-    this.showProducerInsights = !this.showProducerInsights;
-    this.cdr.markForCheck();
+    this.showProducerInsights.update(v => !v);
   }
 
   openEditDialog(): void {
-    this.showEditDialog = true;
-    this.cdr.markForCheck();
+    this.showEditDialog.set(true);
   }
 
   closeEditDialog(): void {
-    this.showEditDialog = false;
-    this.cdr.markForCheck();
+    this.showEditDialog.set(false);
   }
 
   openAddPlanting(): void {
@@ -617,7 +236,7 @@ export class CustomerProfileComponent implements OnChanges {
   }
 
   getTabClass(tabId: string): string {
-    const isActive = this.activeTab === tabId;
+    const isActive = this.activeTab() === tabId;
     const baseClass = 'flex-1 text-center px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium rounded-full transition-all duration-200 border-0 outline-none';
 
     if (isActive) {
@@ -679,7 +298,7 @@ export class CustomerProfileComponent implements OnChanges {
     return this._effectiveCommodities;
   }
 
-  private escapeHtml(str: string): string {
+  private _escapeHtml(str: string): string {
     return str
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -689,14 +308,14 @@ export class CustomerProfileComponent implements OnChanges {
 
   /** Opens a print dialog with formatted customer information */
   printCustomerInfo(): void {
-    const activeContracts = this.contracts.filter(c => c.status === 'Active' || c.status === 'Pending');
+    const activeContracts = this.contracts().filter(c => c.status === 'Active' || c.status === 'Pending');
     const contractValue = activeContracts.reduce((sum, c) => sum + (c.quantity * c.price), 0);
 
     const printContent = `
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Customer Info - ${this.escapeHtml(this.customer.name)}</title>
+        <title>Customer Info - ${this._escapeHtml(this.customer().name)}</title>
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body { font-family: Arial, sans-serif; padding: 40px; color: #000; }
@@ -727,8 +346,8 @@ export class CustomerProfileComponent implements OnChanges {
       </head>
       <body>
         <div class="header">
-          <h1>${this.escapeHtml(this.customer.name)}</h1>
-          <div class="farm-name">${this.escapeHtml(this.customer.farm ?? '')}</div>
+          <h1>${this._escapeHtml(this.customer().name)}</h1>
+          <div class="farm-name">${this._escapeHtml(this.customer().farm ?? '')}</div>
           <div class="print-date">Printed: ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</div>
         </div>
 
@@ -738,18 +357,18 @@ export class CustomerProfileComponent implements OnChanges {
             <h3>Contact</h3>
             <div class="info-item">
               <div class="label">Location</div>
-              <div class="value">${this.escapeHtml(this.getFormattedLocation())}</div>
+              <div class="value">${this._escapeHtml(this.getFormattedLocation())}</div>
             </div>
             ${this.getCustomerPhone() ? `
             <div class="info-item">
               <div class="label">Phone</div>
-              <div class="value">${this.escapeHtml(this.getFormattedPhone())}</div>
+              <div class="value">${this._escapeHtml(this.getFormattedPhone())}</div>
             </div>
             ` : ''}
             ${this.getCustomerEmail() ? `
             <div class="info-item">
               <div class="label">Email</div>
-              <div class="value">${this.escapeHtml(this.getCustomerEmail() ?? '')}</div>
+              <div class="value">${this._escapeHtml(this.getCustomerEmail() ?? '')}</div>
             </div>
             ` : ''}
           </div>
@@ -757,22 +376,22 @@ export class CustomerProfileComponent implements OnChanges {
             <h3>Farm Details</h3>
             <div class="info-item">
               <div class="label">Total Acres</div>
-              <div class="value">${(this.customer.totalAcres || 0).toLocaleString()} acres</div>
+              <div class="value">${(this.customer().totalAcres || 0).toLocaleString()} acres</div>
             </div>
-            ${(this.customer.binCapacity || 0) > 0 ? `
+            ${(this.customer().binCapacity || 0) > 0 ? `
             <div class="info-item">
               <div class="label">Bin Capacity</div>
-              <div class="value">${(this.customer.binCapacity || 0).toLocaleString()} bushels</div>
+              <div class="value">${(this.customer().binCapacity || 0).toLocaleString()} bushels</div>
             </div>
             ` : ''}
             <div class="info-item">
               <div class="label">eSign Status</div>
-              <div class="value">${this.customer.eSignEnabled ? 'Enabled' : 'Not Enrolled'}</div>
+              <div class="value">${this.customer().eSignEnabled ? 'Enabled' : 'Not Enrolled'}</div>
             </div>
-            ${this.customer.guild ? `
+            ${this.customer().guild ? `
             <div class="info-item">
               <div class="label">Guild</div>
-              <div class="value">${this.customer.guild}</div>
+              <div class="value">${this.customer().guild}</div>
             </div>
             ` : ''}
           </div>
@@ -811,12 +430,12 @@ export class CustomerProfileComponent implements OnChanges {
             <tbody>
               ${activeContracts.map(contract => `
               <tr>
-                <td>${this.escapeHtml(contract.contractNumber)}</td>
-                <td>${this.escapeHtml(contract.commodityDescription || contract.commodityCode || '')}</td>
+                <td>${this._escapeHtml(contract.contractNumber)}</td>
+                <td>${this._escapeHtml(contract.commodityDescription || contract.commodityCode || '')}</td>
                 <td class="text-right">${contract.quantity.toLocaleString()} bu</td>
                 <td class="text-right">$${contract.price.toFixed(2)}</td>
-                <td>${this.escapeHtml(this.formatDeliveryPeriod(contract.deliveryStart, contract.deliveryEnd))}</td>
-                <td><span class="status">${this.escapeHtml(contract.status ?? '')}</span></td>
+                <td>${this._escapeHtml(this._formatDeliveryPeriod(contract.deliveryStart, contract.deliveryEnd))}</td>
+                <td><span class="status">${this._escapeHtml(contract.status ?? '')}</span></td>
               </tr>
               `).join('')}
             </tbody>
@@ -838,7 +457,7 @@ export class CustomerProfileComponent implements OnChanges {
   }
 
   /** Formats delivery period for print display */
-  private formatDeliveryPeriod(start: Date, end: Date): string {
+  private _formatDeliveryPeriod(start: Date, end: Date): string {
     const startDate = new Date(start);
     const endDate = new Date(end);
     const startMonth = startDate.toLocaleDateString('en-US', { month: 'short' });
@@ -847,23 +466,26 @@ export class CustomerProfileComponent implements OnChanges {
   }
 
   getFormattedLocation(): string {
-    if (!this.customer.location && !this.customer.stateProvince) {
+    const c = this.customer();
+    if (!c.location && !c.stateProvince) {
       return '';
     }
-    if (this.customer.location && this.customer.stateProvince) {
-      return `${this.customer.location}, ${this.customer.stateProvince}`;
+    if (c.location && c.stateProvince) {
+      return `${c.location}, ${c.stateProvince}`;
     }
-    return this.customer.location || this.customer.stateProvince || '';
+    return c.location || c.stateProvince || '';
   }
 
   getCustomerPhone(): string {
+    const c = this.customer();
     // Use primary phone, fallback to extended phone if primary is empty
-    return this.customer.phone || this.customer.extendedPrimaryPhone || '';
+    return c.phone || c.extendedPrimaryPhone || '';
   }
 
   getCustomerEmail(): string {
+    const c = this.customer();
     // Use primary email, fallback to supplemental email if primary is empty
-    return this.customer.email || this.customer.supplementalEmail || '';
+    return c.email || c.supplementalEmail || '';
   }
 
   getFormattedPhone(): string {

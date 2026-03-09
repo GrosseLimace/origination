@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, OnChanges, SimpleChanges, AfterViewInit, inject } from '@angular/core';
+import { Component, DestroyRef, inject, input, output, effect, afterNextRender } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Customer } from '../../models';
 import { BadgeComponent } from '../ui/badge/badge.component';
@@ -29,84 +29,33 @@ interface StateInfo {
   selector: 'app-customer-map',
   standalone: true,
   imports: [CommonModule, BadgeComponent],
-  template: `
-    <div class="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800 relative" style="z-index: 0;">
-      <!-- Header -->
-      <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600">
-            <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/>
-            <line x1="9" x2="9" y1="3" y2="18"/>
-            <line x1="15" x2="15" y1="6" y2="21"/>
-          </svg>
-          <h3 class="font-semibold text-gray-900 dark:text-white">Customer Locations</h3>
-          <app-badge variant="secondary">{{ customers.length }} locations</app-badge>
-        </div>
-        <div class="flex items-center gap-2">
-          <button
-            type="button"
-            class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
-            (click)="closeMap()"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      <!-- Geocoding progress bar — visible while refining locations, does not block the map -->
-      <div class="h-1 bg-gray-100 dark:bg-gray-700 overflow-hidden">
-        @if (isGeocoding) {
-          <div class="h-full bg-green-500 animate-pulse w-full"></div>
-        }
-      </div>
-
-      <!-- Map Container -->
-      <div class="relative">
-        <div id="customer-map" style="height: 400px; width: 100%;"></div>
-      </div>
-
-      <!-- Legend -->
-      <div class="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-        <div class="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400 flex-wrap">
-          <div class="flex items-center gap-2">
-            <div class="w-3 h-3 rounded-full bg-green-500"></div>
-            <span>Customer Location</span>
-          </div>
-          @if (focusedState) {
-            <span class="text-gray-300 dark:text-gray-600">|</span>
-            <span class="text-green-600 dark:text-green-400">Focused on: {{ getDisplayName(focusedState) }}</span>
-          }
-        </div>
-      </div>
-    </div>
-  `
+  templateUrl: './customer-map.component.html'
 })
-export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, AfterViewInit {
-  private appState = inject(AppStateService);
+export class CustomerMapComponent {
+  private readonly appState = inject(AppStateService);
+  private readonly destroyRef = inject(DestroyRef);
 
-  @Input() customers: Customer[] = [];
-  @Input() focusedState: string | null = null;
-  @Input() centerLat: number | null = null;
-  @Input() centerLng: number | null = null;
-  @Input() zoomLevel: number | null = null;
-  @Output() close = new EventEmitter<void>();
-  @Output() selectCustomer = new EventEmitter<Customer>();
+  public customers = input<Customer[]>([]);
+  public focusedState = input<string | null>(null);
+  public centerLat = input<number | null>(null);
+  public centerLng = input<number | null>(null);
+  public zoomLevel = input<number | null>(null);
+  public close = output<void>();
+  public selectCustomer = output<Customer>();
 
   isGeocoding = false;
 
-  private map: any = null;
-  private markers: any[] = [];
-  private isMapInitialized = false;
+  private _map: any = null;
+  private _markers: any[] = [];
+  private _isMapInitialized = false;
 
   // Use shared cache from AppStateService so geocoded coords persist across navigation
-  private get geocodeCache(): Map<string, { lat: number; lng: number }> {
+  private get _geocodeCache(): Map<string, { lat: number; lng: number }> {
     return this.appState.mapGeocodeCache;
   }
 
   /** Maps state abbreviations to their full names for Nominatim geocoding requests. */
-  private readonly stateAbbrevToFull: { [abbr: string]: string } = {
+  private readonly _stateAbbrevToFull: { [abbr: string]: string } = {
     'al': 'Alabama', 'ak': 'Alaska', 'az': 'Arizona', 'ar': 'Arkansas', 'ca': 'California',
     'co': 'Colorado', 'ct': 'Connecticut', 'de': 'Delaware', 'fl': 'Florida', 'ga': 'Georgia',
     'hi': 'Hawaii', 'id': 'Idaho', 'il': 'Illinois', 'in': 'Indiana', 'ia': 'Iowa',
@@ -121,12 +70,12 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
   };
 
   /** Expands a state abbreviation to its full name; returns value unchanged if already full. */
-  private expandState(state: string): string {
+  private _expandState(state: string): string {
     const lower = state.toLowerCase().trim();
-    return this.stateAbbrevToFull[lower] ?? state;
+    return this._stateAbbrevToFull[lower] ?? state;
   }
 
-  private stateInfo: { [key: string]: StateInfo } = {
+  private _stateInfo: { [key: string]: StateInfo } = {
     // Midwest / core grain belt
     'ia': { lat: 41.8780, lng: -93.0977, zoom: 7, displayName: 'Iowa' },
     'iowa': { lat: 41.8780, lng: -93.0977, zoom: 7, displayName: 'Iowa' },
@@ -211,44 +160,44 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
     'maryland': { lat: 39.0458, lng: -76.6413, zoom: 8, displayName: 'Maryland' },
   };
 
-  ngOnInit(): void {}
+  constructor() {
+    afterNextRender(() => this._initializeMap());
+    this.destroyRef.onDestroy(() => this._destroyMap());
 
-  ngAfterViewInit(): void {
-    setTimeout(() => this.initializeMap(), 100);
+    // Only refresh when actual customer IDs or focusedState change.
+    // The parent may pass a new array reference each CD cycle, so compare IDs.
+    let prevCustomerIds = new Set<number>();
+    let prevFocusedState: string | null = null;
+
+    effect(() => {
+      const customers = this.customers();
+      const focusedState = this.focusedState();
+
+      if (!this._isMapInitialized) {
+        prevCustomerIds = new Set(customers.map(c => c.id));
+        prevFocusedState = focusedState;
+        return;
+      }
+
+      const focusedChanged = focusedState !== prevFocusedState;
+      const customersChanged = this._customerIdsChangedFromSet(prevCustomerIds, customers);
+
+      if (focusedChanged || customersChanged) {
+        this._refreshMap();
+      }
+
+      prevCustomerIds = new Set(customers.map(c => c.id));
+      prevFocusedState = focusedState;
+    });
   }
 
-  ngOnChanges(changes: SimpleChanges): void {
-    if (!this.isMapInitialized) return;
-
-    const focusedChanged = !!changes['focusedState'] &&
-      changes['focusedState'].currentValue !== changes['focusedState'].previousValue;
-
-    // Only refresh when actual customer IDs change — not just array reference.
-    // The parent binds [customers]="getMapCustomers()" which returns a new array every
-    // change-detection cycle, so we must compare IDs to avoid constant refreshMap() calls
-    // that snap the view back and prevent the user from panning.
-    const customersChanged = !!changes['customers'] &&
-      this.customerIdsChanged(changes['customers'].previousValue, changes['customers'].currentValue);
-
-    if (focusedChanged || customersChanged) {
-      this.refreshMap();
-    }
-  }
-
-  private customerIdsChanged(prev: Customer[] | undefined, curr: Customer[] | undefined): boolean {
-    const p = prev ?? [];
-    const c = curr ?? [];
-    if (p.length !== c.length) return true;
-    const prevIds = new Set(p.map(x => x.id));
-    return c.some(x => !prevIds.has(x.id));
-  }
-
-  ngOnDestroy(): void {
-    this.destroyMap();
+  private _customerIdsChangedFromSet(prevIds: Set<number>, curr: Customer[]): boolean {
+    if (prevIds.size !== curr.length) return true;
+    return curr.some(x => !prevIds.has(x.id));
   }
 
   getDisplayName(state: string): string {
-    const info = this.stateInfo[state.toLowerCase()];
+    const info = this._stateInfo[state.toLowerCase()];
     if (info) return info.displayName;
     return state.charAt(0).toUpperCase() + state.slice(1);
   }
@@ -257,17 +206,17 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
     this.close.emit();
   }
 
-  private initializeMap(): void {
-    if (this.isMapInitialized) return;
+  private _initializeMap(): void {
+    if (this._isMapInitialized) return;
 
     try {
-      let centerLat = this.centerLat ?? 41.8780;
-      let centerLng = this.centerLng ?? -93.0977;
-      let zoom = this.zoomLevel ?? 5;
+      let centerLat = this.centerLat() ?? 41.8780;
+      let centerLng = this.centerLng() ?? -93.0977;
+      let zoom = this.zoomLevel() ?? 5;
 
-      if (this.focusedState) {
-        const stateLower = this.focusedState.toLowerCase();
-        const info = this.stateInfo[stateLower];
+      if (this.focusedState()) {
+        const stateLower = this.focusedState()!.toLowerCase();
+        const info = this._stateInfo[stateLower];
         if (info) {
           centerLat = info.lat;
           centerLng = info.lng;
@@ -275,49 +224,49 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
         }
       }
 
-      this.map = L.map('customer-map').setView([centerLat, centerLng], zoom);
+      this._map = L.map('customer-map').setView([centerLat, centerLng], zoom);
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-      }).addTo(this.map);
+      }).addTo(this._map);
 
-      this.isMapInitialized = true;
-      this.addMarkers();
+      this._isMapInitialized = true;
+      this._addMarkers();
     } catch (error) {
       // map init failed silently
     }
   }
 
-  private refreshMap(): void {
-    if (!this.isMapInitialized || !this.map) return;
+  private _refreshMap(): void {
+    if (!this._isMapInitialized || !this._map) return;
 
     try {
-      this.clearMarkers();
-      this.addMarkers();
+      this._clearMarkers();
+      this._addMarkers();
 
-      if (this.focusedState) {
-        const stateLower = this.focusedState.toLowerCase();
-        const info = this.stateInfo[stateLower];
+      if (this.focusedState()) {
+        const stateLower = this.focusedState()!.toLowerCase();
+        const info = this._stateInfo[stateLower];
         if (info) {
-          this.map.setView([info.lat, info.lng], info.zoom);
+          this._map.setView([info.lat, info.lng], info.zoom);
         }
-      } else if (this.customers.length > 1) {
-        this.fitBounds();
+      } else if (this.customers().length > 1) {
+        this._fitBounds();
       }
     } catch (error) {
       // map refresh failed silently
     }
   }
 
-  private addMarkers(): void {
-    if (!this.map) return;
-    this.initializeMarkersWithGeocoding();
+  private _addMarkers(): void {
+    if (!this._map) return;
+    this._initializeMarkersWithGeocoding();
   }
 
   /**
    * Resolves the best address for a customer using Extended fields with Merchandising fallback.
    */
-  private resolveAddress(customer: Customer): { street: string; city: string; state: string; zip: string; county: string } {
+  private _resolveAddress(customer: Customer): { street: string; city: string; state: string; zip: string; county: string } {
     const street = customer.extendedAddressLine1
       || customer.extendedAddressLine2
       || customer.extendedAddressLine3
@@ -335,55 +284,55 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
    * Builds a geocode cache key from resolved address parts.
    * Includes street when available for street-level precision; falls back to city+state+zip.
    */
-  private geocodeCacheKey(addr: { street: string; city: string; state: string; zip: string }): string {
+  private _geocodeCacheKey(addr: { street: string; city: string; state: string; zip: string }): string {
     const parts = [addr.street, addr.city, addr.state, addr.zip]
       .map(p => p.toLowerCase().trim())
       .filter(Boolean);
     return parts.join(',');
   }
 
-  private async initializeMarkersWithGeocoding(): Promise<void> {
+  private async _initializeMarkersWithGeocoding(): Promise<void> {
     const markerMap = new Map<number, any>(); // customerId → leaflet marker
     const customerCoords = new Map<number, { lat: number; lng: number }>(); // tracks latest coords per customer
 
     // ── Phase 1: Collect initial coords (cached or state-based fallback) ──
-    for (const customer of this.customers) {
-      if (!this.map) return;
-      const addr = this.resolveAddress(customer);
-      const cacheKey = this.geocodeCacheKey(addr);
-      const coords = this.geocodeCache.has(cacheKey)
-        ? this.geocodeCache.get(cacheKey)!
-        : this.getCoordinatesForCustomer(customer);
+    for (const customer of this.customers()) {
+      if (!this._map) return;
+      const addr = this._resolveAddress(customer);
+      const cacheKey = this._geocodeCacheKey(addr);
+      const coords = this._geocodeCache.has(cacheKey)
+        ? this._geocodeCache.get(cacheKey)!
+        : this._getCoordinatesForCustomer(customer);
       customerCoords.set(customer.id, coords);
     }
 
     // Apply jitter so same-location pins don't stack on top of each other
-    const jittered = this.computeJitteredCoords(customerCoords);
+    const jittered = this._computeJitteredCoords(customerCoords);
 
-    for (const customer of this.customers) {
-      if (!this.map) return;
-      const marker = this.buildMarker(customer, jittered.get(customer.id)!);
+    for (const customer of this.customers()) {
+      if (!this._map) return;
+      const marker = this._buildMarker(customer, jittered.get(customer.id)!);
       markerMap.set(customer.id, marker);
-      this.markers.push(marker);
+      this._markers.push(marker);
     }
 
     // Fit bounds right away so the map is usable immediately
-    if (this.customers.length > 1 && !this.focusedState && this.map) {
-      this.fitBounds();
+    if (this.customers().length > 1 && !this.focusedState() && this._map) {
+      this._fitBounds();
     }
 
     // ── Phase 2: Geocode unique addresses in the background, update markers ──
     const addressGroups = new Map<string, { addr: { street: string; city: string; state: string; zip: string }; customerIds: number[] }>();
-    for (const customer of this.customers) {
-      const addr = this.resolveAddress(customer);
+    for (const customer of this.customers()) {
+      const addr = this._resolveAddress(customer);
       if (!addr.city && !addr.state && !addr.zip) continue;
-      const key = this.geocodeCacheKey(addr);
+      const key = this._geocodeCacheKey(addr);
       if (!addressGroups.has(key)) addressGroups.set(key, { addr, customerIds: [] });
       addressGroups.get(key)!.customerIds.push(customer.id);
     }
 
     // Only geocode locations not already resolved in cache
-    const toGeocode = [...addressGroups.entries()].filter(([key]) => !this.geocodeCache.has(key));
+    const toGeocode = [...addressGroups.entries()].filter(([key]) => !this._geocodeCache.has(key));
 
     if (toGeocode.length === 0) return;
 
@@ -398,7 +347,7 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
         key,
         street: addr.street || undefined,
         city: addr.city,
-        state: this.expandState(addr.state),
+        state: this._expandState(addr.state),
         zip: addr.zip
       }));
 
@@ -408,7 +357,7 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
         body: JSON.stringify(requests)
       });
 
-      if (response.ok && this.map) {
+      if (response.ok && this._map) {
         const results: Array<{ key: string; lat: number | null; lng: number | null }> = await response.json();
         for (const result of results) {
           if (result.lat != null && result.lng != null) {
@@ -424,8 +373,8 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
         }
 
         // Re-apply jitter with the final geocoded positions and move markers
-        if (this.map) {
-          const updatedJittered = this.computeJitteredCoords(customerCoords);
+        if (this._map) {
+          const updatedJittered = this._computeJitteredCoords(customerCoords);
           for (const [customerId, coords] of updatedJittered) {
             const marker = markerMap.get(customerId);
             if (marker) marker.setLatLng([coords.lat, coords.lng]);
@@ -444,7 +393,7 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
    * spread them evenly around a small circle so each pin is individually visible.
    * Customers with unique coordinates are returned unchanged.
    */
-  private computeJitteredCoords(
+  private _computeJitteredCoords(
     customerCoords: Map<number, { lat: number; lng: number }>
   ): Map<number, { lat: number; lng: number }> {
     // Group customer IDs by their coordinates, rounded to 6 decimal places (~0.1 m).
@@ -474,8 +423,8 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
     return result;
   }
 
-  private buildMarker(customer: Customer, coords: { lat: number; lng: number }): any {
-    const addr = this.resolveAddress(customer);
+  private _buildMarker(customer: Customer, coords: { lat: number; lng: number }): any {
+    const addr = this._resolveAddress(customer);
     const locationParts = [addr.city, addr.state].filter(Boolean).join(', ');
     const contactLine = customer.phone
       ? customer.phone
@@ -515,7 +464,7 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
     `;
 
     const marker = L.marker([coords.lat, coords.lng])
-      .addTo(this.map)
+      .addTo(this._map)
       .bindPopup(popupContent, { closeButton: false, offset: [0, -5] });
 
     // Track close timer so hover into popup can cancel it
@@ -555,16 +504,16 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
     return marker;
   }
 
-  private getCoordinatesForCustomer(customer: Customer): { lat: number; lng: number } {
-    const addr = this.resolveAddress(customer);
+  private _getCoordinatesForCustomer(customer: Customer): { lat: number; lng: number } {
+    const addr = this._resolveAddress(customer);
     const stateStr = addr.state.toLowerCase().trim();
 
     // Try the state as-is first, then try the expanded full name (handles both "sc" and "south carolina")
-    const info = this.stateInfo[stateStr]
-      ?? this.stateInfo[this.expandState(stateStr).toLowerCase()];
+    const info = this._stateInfo[stateStr]
+      ?? this._stateInfo[this._expandState(stateStr).toLowerCase()];
 
     if (info) {
-      const hash = this.hashCode(customer.id);
+      const hash = this._hashCode(customer.id);
       const latOffset = ((hash % 1000) / 1000 - 0.5) * 1.5;
       const lngOffset = (((hash >> 10) % 1000) / 1000 - 0.5) * 1.5;
       return {
@@ -574,14 +523,14 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
     }
 
     // True fallback: geographic center of the contiguous US
-    const hash = this.hashCode(customer.id);
+    const hash = this._hashCode(customer.id);
     return {
       lat: 39.8283 + ((hash % 1000) / 1000 - 0.5) * 3,
       lng: -98.5795 + (((hash >> 10) % 1000) / 1000 - 0.5) * 3
     };
   }
 
-  private hashCode(value: string | number): number {
+  private _hashCode(value: string | number): number {
     const str = value.toString();
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
@@ -592,26 +541,26 @@ export class CustomerMapComponent implements OnInit, OnDestroy, OnChanges, After
     return Math.abs(hash);
   }
 
-  private clearMarkers(): void {
-    for (const marker of this.markers) {
+  private _clearMarkers(): void {
+    for (const marker of this._markers) {
       marker.remove();
     }
-    this.markers = [];
+    this._markers = [];
   }
 
-  private fitBounds(): void {
-    if (!this.map || this.markers.length === 0) return;
+  private _fitBounds(): void {
+    if (!this._map || this._markers.length === 0) return;
 
-    const group = L.featureGroup(this.markers);
-    this.map.fitBounds(group.getBounds().pad(0.1));
+    const group = L.featureGroup(this._markers);
+    this._map.fitBounds(group.getBounds().pad(0.1));
   }
 
-  private destroyMap(): void {
-    if (this.map) {
-      this.map.remove();
-      this.map = null;
-      this.markers = [];
-      this.isMapInitialized = false;
+  private _destroyMap(): void {
+    if (this._map) {
+      this._map.remove();
+      this._map = null;
+      this._markers = [];
+      this._isMapInitialized = false;
     }
   }
 }

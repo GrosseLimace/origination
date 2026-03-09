@@ -25,122 +25,7 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
     CardHeaderComponent,
     CardTitleComponent
   ],
-  template: `
-    <div class="grid grid-cols-1 lg:grid-cols-[33.3%_66.7%] xl:grid-cols-[25%_75%] 2xl:grid-cols-[22%_78%] gap-4 lg:gap-6">
-      <!-- Customer List - Precisely sized for optimal space usage (22% on 2xl) -->
-      <div class="lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)]" [class.hidden]="selectedCustomer() && isMobile()" [class.lg:block]="true">
-        <app-customer-list
-          [customers]="customers()"
-          [selectedCustomer]="selectedCustomer()"
-          [savedLists]="savedLists()"
-          [notes]="notes()"
-          [loading]="loading()"
-          [producerDetailsMap]="producerDetailsMap()"
-          (selectCustomer)="handleSelectCustomer($event)"
-          (tradeUnitChange)="handleTradeUnitChange($event)"
-        />
-      </div>
-
-      <!-- Profile and Notes Container - Optimized content display (78% on 2xl) -->
-      <div [class.hidden]="!selectedCustomer() && isMobile()" [class.lg:block]="true" class="pb-6 lg:min-h-[calc(100vh-6rem)]">
-        <div class="xl:grid xl:grid-cols-[66.7%_33.3%] 2xl:grid-cols-[61.3%_38.7%] xl:gap-6 space-y-6 xl:space-y-0">
-          <!-- Profile Section - Optimized for data visibility (61.3% on 2xl) -->
-          <div class="space-y-6">
-            @if (selectedCustomer(); as customer) {
-              <!-- Back button on mobile -->
-              <button
-                class="lg:hidden flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-4"
-                (click)="selectedCustomer.set(null)"
-              >
-                <svg class="h-5 w-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-                </svg>
-                Back to Customers
-              </button>
-
-              <!-- Profile -->
-              <app-customer-profile
-                [customer]="customer"
-                [allCustomers]="customers()"
-                [selectedTradeUnits]="selectedTradeUnits()"
-                [contracts]="customerContracts()"
-                [tickets]="customerTickets()"
-                [pricingLines]="customerPricingLines()"
-                [plantingIntentions]="customerPlantingIntentions()"
-                [storedGrain]="customerStoredGrain()"
-                [notes]="customerNotes()"
-                [yieldEstimateCrops]="yieldEstimateCrops()"
-                [yieldEstimates]="yieldEstimates()"
-                [commodities]="commodities()"
-                [isLoadingEstimates]="isLoadingYieldData()"
-                [allCustomerContracts]="allCustomerContracts()"
-                [allCustomerTickets]="allCustomerTickets()"
-                [allCustomerPlantingIntentions]="allCustomerPlantingIntentions()"
-                [allCustomerStoredGrain]="allCustomerStoredGrain()"
-                (onAddPlanting)="addPlantingIntention($event)"
-                (onEditPlanting)="editPlantingIntention($event)"
-                (onDeletePlanting)="deletePlantingIntention($event)"
-                [linkedCustomers]="getLinkedGroup(customer)"
-                (onAddNote)="addNote($event)"
-                (onTogglePin)="toggleNotePin($event)"
-                (onSaveCustomer)="handleSaveCustomer($event)"
-                (onSelectLinkedCustomer)="handleSelectLinkedCustomer($event)"
-                [openContractId]="pendingContractId()">
-              </app-customer-profile>
-            } @else {
-              <!-- Empty state — shown on desktop when no customer is selected -->
-              <div class="hidden lg:block rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-                <div class="p-8 text-center text-gray-500 dark:text-gray-400">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 opacity-40">
-                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
-                    <circle cx="9" cy="7" r="4"/>
-                    <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                  </svg>
-                  <p class="font-medium text-gray-700 dark:text-gray-300">Select a Customer</p>
-                  <p class="text-sm mt-1">Choose a customer from the list to view their profile, contracts, tickets, and notes.</p>
-                </div>
-              </div>
-            }
-          </div>
-
-          <!-- Notes Column - Below profile until xl, then right sidebar, sticky on xl+ (38.7% on 2xl) -->
-          @if (selectedCustomer(); as customer) {
-            <div class="xl:sticky xl:top-20 xl:self-start xl:max-h-[calc(100vh-6rem)] xl:overflow-auto">
-              <app-card>
-                <app-card-header>
-                  <div class="flex items-center justify-between">
-                    <app-card-title>Notes</app-card-title>
-                    <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/>
-                        <line x1="16" x2="16" y1="2" y2="6"/>
-                        <line x1="8" x2="8" y1="2" y2="6"/>
-                        <line x1="3" x2="21" y1="10" y2="10"/>
-                      </svg>
-                      <span class="hidden sm:inline">Last contacted: {{ getLastContactedDate() }}</span>
-                    </div>
-                  </div>
-                </app-card-header>
-                <app-card-content>
-                  <app-customer-notes
-                    [notes]="customerNotes()"
-                    [customer]="customer"
-                    [customerCodeMap]="customerCodeMap()"
-                    [linkedCustomers]="getLinkedGroup(customer)"
-                    (addNote)="addNote($event)"
-                    (togglePin)="toggleNotePin($event)"
-                    (editNote)="editNote($event)"
-                    (deleteNote)="deleteNote($event)">
-                  </app-customer-notes>
-                </app-card-content>
-              </app-card>
-            </div>
-          }
-        </div>
-      </div>
-    </div>
-  `
+  templateUrl: './home.component.html'
 })
 export class HomeComponent {
   private readonly apiService = inject(ApiService);
@@ -151,7 +36,7 @@ export class HomeComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
-  private readonly resizeHandler = () => this.checkMobile();
+  private readonly _resizeHandler = () => this._checkMobile();
   private _isLoading = false;
   private _isFirstLoad = true;
 
@@ -192,17 +77,17 @@ export class HomeComponent {
   private _pendingProducerDetails: ProducerDetails[] | null = null;
 
   constructor() {
-    this.checkMobile();
-    window.addEventListener('resize', this.resizeHandler);
-    this.destroyRef.onDestroy(() => window.removeEventListener('resize', this.resizeHandler));
+    this._checkMobile();
+    window.addEventListener('resize', this._resizeHandler);
+    this.destroyRef.onDestroy(() => window.removeEventListener('resize', this._resizeHandler));
 
-    this.restoreStateFromService();
-    this.loadProducerDetails();
+    this._restoreStateFromService();
+    this._loadProducerDetails();
 
     if (this.selectedTradeUnits().length > 0 && this.customers().length === 0) {
-      this.loadAllData(this.selectedTradeUnits());
+      this._loadAllData(this.selectedTradeUnits());
     } else if (this.selectedTradeUnits().length > 0) {
-      this.loadYieldData();
+      this._loadYieldData();
     }
 
     this.route.queryParams.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
@@ -210,7 +95,7 @@ export class HomeComponent {
       if (customerId) {
         const contractId = params['contractId'];
         this.pendingContractId.set(contractId ? parseInt(contractId, 10) : null);
-        this.selectCustomerById(customerId);
+        this._selectCustomerById(customerId);
       }
     });
 
@@ -227,12 +112,12 @@ export class HomeComponent {
                           event.url === '/' ||
                           event.url.startsWith('/?');
       if (isHomeRoute && this.selectedTradeUnits().length > 0 && this.customers().length === 0) {
-        this.loadAllData(this.selectedTradeUnits());
+        this._loadAllData(this.selectedTradeUnits());
       }
     });
   }
 
-  private restoreStateFromService(): void {
+  private _restoreStateFromService(): void {
     this.selectedTradeUnits.set(this.appState.selectedTradeUnits());
 
     const stateCustomers = this.appState.customers();
@@ -244,21 +129,21 @@ export class HomeComponent {
       this.notes.set(this.appState.notes());
       this.storedGrain.set(this.appState.storedGrain());
       this.savedLists.set(this.appState.savedLists());
-      this.enrichSavedLists();
+      this._enrichSavedLists();
 
       const stateSelectedCustomer = this.appState.selectedCustomer();
       if (stateSelectedCustomer) {
         this.selectedCustomer.set(stateSelectedCustomer);
-        this.loadCustomerData(stateSelectedCustomer.id);
+        this._loadCustomerData(stateSelectedCustomer.id);
       }
     }
   }
 
-  private checkMobile(): void {
+  private _checkMobile(): void {
     this.isMobile.set(window.innerWidth < 1024);
   }
 
-  private selectCustomerById(customerId: string): void {
+  private _selectCustomerById(customerId: string): void {
     const customerIdNum = parseInt(customerId, 10);
     const customer = this.customers().find(c => c.id === customerIdNum);
     if (customer) {
@@ -275,7 +160,7 @@ export class HomeComponent {
     }
   }
 
-  private loadAllData(tradeUnits?: string[]): void {
+  private _loadAllData(tradeUnits?: string[]): void {
     if (this._isLoading) return;
     this._isLoading = true;
     this.loading.set(true);
@@ -286,14 +171,14 @@ export class HomeComponent {
         this.appState.setCustomers(data);
         this.loading.set(false);
         this._isLoading = false;
-        this.enrichSavedLists();
+        this._enrichSavedLists();
 
         const pdMap = this.producerDetailsMap();
         if (this._pendingProducerDetails) {
-          this.mergeProducerDetails(this._pendingProducerDetails);
+          this._mergeProducerDetails(this._pendingProducerDetails);
           this._pendingProducerDetails = null;
         } else if (pdMap.size > 0) {
-          this.mergeProducerDetails(Array.from(pdMap.values()));
+          this._mergeProducerDetails(Array.from(pdMap.values()));
         }
       },
       error: () => {
@@ -346,19 +231,19 @@ export class HomeComponent {
       error: () => {}
     });
 
-    this.loadYieldData();
+    this._loadYieldData();
 
     this.apiService.getSavedLists().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this.savedLists.set(data);
         this.appState.setSavedLists(data);
-        this.enrichSavedLists();
+        this._enrichSavedLists();
       },
       error: () => {}
     });
   }
 
-  private loadProducerDetails(): void {
+  private _loadProducerDetails(): void {
     this.apiService.getAllProducerDetails().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (details) => {
         const map = new Map(this.producerDetailsMap());
@@ -366,7 +251,7 @@ export class HomeComponent {
         this.producerDetailsMap.set(map);
 
         if (this.customers().length > 0) {
-          this.mergeProducerDetails(details);
+          this._mergeProducerDetails(details);
         } else {
           this._pendingProducerDetails = details;
         }
@@ -375,7 +260,7 @@ export class HomeComponent {
     });
   }
 
-  private mergeProducerDetails(details: ProducerDetails[]): void {
+  private _mergeProducerDetails(details: ProducerDetails[]): void {
     if (details.length === 0) return;
     const map = new Map(this.producerDetailsMap());
     details.forEach(d => map.set(d.customerId, d));
@@ -410,7 +295,7 @@ export class HomeComponent {
     }
   }
 
-  private loadYieldData(): void {
+  private _loadYieldData(): void {
     const key = [...this.selectedTradeUnits()].sort().join(',');
     if (!key) {
       this.yieldEstimates.set([]);
@@ -447,7 +332,7 @@ export class HomeComponent {
     });
   }
 
-  private enrichSavedLists(): void {
+  private _enrichSavedLists(): void {
     if (!this.savedLists().length || !this.customers().length) return;
     const context: NlqFilterContext = {
       customers: this.customers(),
@@ -472,7 +357,7 @@ export class HomeComponent {
     this.selectedCustomer.set(null);
     this.appState.selectCustomer(null);
     if (tradeUnits && tradeUnits.length > 0) {
-      this.loadAllData(tradeUnits);
+      this._loadAllData(tradeUnits);
     }
   }
 
@@ -510,11 +395,11 @@ export class HomeComponent {
 
     this.selectedCustomer.set(customer);
     this.appState.selectCustomer(customer);
-    this.loadCustomerContractsAndTickets(customer.id, customer.sourceCustomerId);
-    this.loadCustomerData(customer.id);
+    this._loadCustomerContractsAndTickets(customer.id, customer.sourceCustomerId);
+    this._loadCustomerData(customer.id);
   }
 
-  private loadCustomerContractsAndTickets(customerId: number, sourceCustomerId?: string): void {
+  private _loadCustomerContractsAndTickets(customerId: number, sourceCustomerId?: string): void {
     if (sourceCustomerId) {
       this.customerPricingLines.set([]);
       this.apiService.getPricingLinesByCustomer(sourceCustomerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -529,7 +414,7 @@ export class HomeComponent {
         const merged = [...existing];
         contracts.forEach(c => { if (!merged.some(e => e.id === c.id)) merged.push(c); });
         this.contracts.set(merged);
-        this.loadCustomerData(customerId);
+        this._loadCustomerData(customerId);
       },
       error: () => {}
     });
@@ -540,16 +425,16 @@ export class HomeComponent {
         const merged = [...existing];
         tickets.forEach(t => { if (!merged.some(e => e.id === t.id)) merged.push(t); });
         this.tickets.set(merged);
-        this.loadCustomerData(customerId);
+        this._loadCustomerData(customerId);
 
         const customer = this.customers().find(c => c.id === customerId) || this.selectedCustomer();
-        if (customer) this.autoSaveCommodities(customer, tickets);
+        if (customer) this._autoSaveCommodities(customer, tickets);
       },
       error: () => {}
     });
   }
 
-  private loadCustomerData(customerId: number, customer?: Customer): void {
+  private _loadCustomerData(customerId: number, customer?: Customer): void {
     const currentCustomer = customer || this.selectedCustomer();
     if (!currentCustomer) return;
 
@@ -577,7 +462,7 @@ export class HomeComponent {
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())]);
   }
 
-  private autoSaveCommodities(customer: Customer, customerTickets: Ticket[]): void {
+  private _autoSaveCommodities(customer: Customer, customerTickets: Ticket[]): void {
     const ticketCommodities = [...new Set(customerTickets.map(t => t.productCode || '').filter(Boolean))];
     if (ticketCommodities.length === 0) return;
 
@@ -744,7 +629,7 @@ export class HomeComponent {
     this.selectedCustomer.set(updated);
     this.appState.setCustomers(this.customers());
     this.appState.selectCustomer(updated);
-    this.loadCustomerData(updated.id, updated);
+    this._loadCustomerData(updated.id, updated);
   }
 
   getLinkedGroup(customer: Customer): Customer[] {
@@ -762,7 +647,7 @@ export class HomeComponent {
     const customer = this.customers().find(c => c.id === customerId);
     if (!customer || customer.id === this.selectedCustomer()?.id) return;
     this.selectedCustomer.set(customer);
-    this.loadCustomerContractsAndTickets(customer.id);
+    this._loadCustomerContractsAndTickets(customer.id);
   }
 
   getLastContactedDate(): string {

@@ -1,11 +1,10 @@
-import { Component, Input, forwardRef } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, input, signal, forwardRef } from '@angular/core';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR, FormsModule } from '@angular/forms';
 
 @Component({
   selector: 'app-textarea',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [FormsModule],
   providers: [
     {
       provide: NG_VALUE_ACCESSOR,
@@ -15,9 +14,9 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR, FormsModule } from '@angular/f
   ],
   template: `
     <textarea
-      [placeholder]="placeholder"
-      [disabled]="disabled"
-      [rows]="rows"
+      [placeholder]="placeholder()"
+      [disabled]="disabled()"
+      [rows]="rows()"
       [class]="textareaClass"
       [(ngModel)]="value"
       (ngModelChange)="onChange($event)"
@@ -26,32 +25,33 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR, FormsModule } from '@angular/f
   `
 })
 export class TextareaComponent implements ControlValueAccessor {
-  @Input() placeholder = '';
-  @Input() disabled = false;
-  @Input() rows = 3;
-  @Input() class = '';
+  public placeholder = input<string>('');
+  public rows = input<number>(3);
+  public class = input<string>('');
 
-  value = '';
-  onChange: (value: string) => void = () => {};
-  onTouched: () => void = () => {};
+  public disabled = signal<boolean>(false);
 
-  get textareaClass(): string {
-    return `flex w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50 resize-none ${this.class}`;
+  public value = '';
+  public onChange: (value: string) => void = () => {};
+  public onTouched: () => void = () => {};
+
+  public get textareaClass(): string {
+    return ['scoular-form-textarea', this.class()].filter(Boolean).join(' ');
   }
 
-  writeValue(value: string): void {
+  public writeValue(value: string): void {
     this.value = value || '';
   }
 
-  registerOnChange(fn: (value: string) => void): void {
+  public registerOnChange(fn: (value: string) => void): void {
     this.onChange = fn;
   }
 
-  registerOnTouched(fn: () => void): void {
+  public registerOnTouched(fn: () => void): void {
     this.onTouched = fn;
   }
 
-  setDisabledState(isDisabled: boolean): void {
-    this.disabled = isDisabled;
+  public setDisabledState(isDisabled: boolean): void {
+    this.disabled.set(isDisabled);
   }
 }

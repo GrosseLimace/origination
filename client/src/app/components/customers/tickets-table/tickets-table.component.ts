@@ -1,4 +1,4 @@
-import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
+import { Component, input, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '../../ui/table/table.component';
@@ -31,242 +31,12 @@ interface TicketGroup {
     TableHeadComponent,
     TableCellComponent
   ],
-  template: `
-    <div class="w-full">
-      @if (unappliedTickets.length === 0) {
-        <div class="text-center py-8 text-gray-500 dark:text-gray-400">
-          <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
-          </svg>
-          <p class="mt-2">No unapplied delivery tickets found for this customer</p>
-        </div>
-      } @else {
-        <!-- Search toolbar -->
-        <div class="flex items-center border-b border-gray-100 dark:border-gray-800 px-3 py-1.5">
-          @if (showSearch) {
-            <div class="flex items-center w-full gap-2">
-              <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
-              </svg>
-              <input
-                type="text"
-                [(ngModel)]="searchQuery"
-                placeholder="Search by ticket #, date, crop, or 'avg'..."
-                class="flex-1 py-1 text-sm bg-transparent focus:outline-none text-gray-900 dark:text-white placeholder-gray-400"
-              />
-              <button (click)="clearSearch()" title="Clear search" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
-            </div>
-          } @else {
-            <button (click)="showSearch = true" title="Search tickets" class="ml-auto p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
-              </svg>
-            </button>
-          }
-        </div>
-        <div class="max-h-[calc(100vh-20rem)] overflow-y-auto overflow-x-auto">
-        <app-table>
-          <app-table-header>
-            <app-table-row>
-              <app-table-head [sortable]="true" (click)="handleSort('id')">
-                <span class="flex items-center justify-center gap-1">
-                  Ticket Number
-                  <span [class]="getSortIconClass('id')">
-                    @if (currentSortColumn === 'id' && currentSortDirection === 'asc') {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                      </svg>
-                    } @else if (currentSortColumn === 'id' && currentSortDirection === 'desc') {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                      </svg>
-                    } @else {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
-                      </svg>
-                    }
-                  </span>
-                </span>
-              </app-table-head>
-              <app-table-head [sortable]="true" (click)="handleSort('date')">
-                <span class="flex items-center justify-center gap-1">
-                  Date
-                  <span [class]="getSortIconClass('date')">
-                    @if (currentSortColumn === 'date' && currentSortDirection === 'asc') {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                      </svg>
-                    } @else if (currentSortColumn === 'date' && currentSortDirection === 'desc') {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                      </svg>
-                    } @else {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
-                      </svg>
-                    }
-                  </span>
-                </span>
-              </app-table-head>
-              <app-table-head [sortable]="true" (click)="handleSort('crop')">
-                <span class="flex items-center justify-center gap-1">
-                  Crop
-                  <span [class]="getSortIconClass('crop')">
-                    @if (currentSortColumn === 'crop' && currentSortDirection === 'asc') {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                      </svg>
-                    } @else if (currentSortColumn === 'crop' && currentSortDirection === 'desc') {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                      </svg>
-                    } @else {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
-                      </svg>
-                    }
-                  </span>
-                </span>
-              </app-table-head>
-              <app-table-head [sortable]="true" (click)="handleSort('appliedDockQuantity')">
-                <span class="flex items-center justify-center gap-1">
-                  Net Weight (lbs)
-                  <span [class]="getSortIconClass('appliedDockQuantity')">
-                    @if (currentSortColumn === 'appliedDockQuantity' && currentSortDirection === 'asc') {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                      </svg>
-                    } @else if (currentSortColumn === 'appliedDockQuantity' && currentSortDirection === 'desc') {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                      </svg>
-                    } @else {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
-                      </svg>
-                    }
-                  </span>
-                </span>
-              </app-table-head>
-              <app-table-head [sortable]="true" (click)="handleSort('moisture')">
-                <span class="flex items-center justify-center gap-1">
-                  Moisture %
-                  <span [class]="getSortIconClass('moisture')">
-                    @if (currentSortColumn === 'moisture' && currentSortDirection === 'asc') {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                      </svg>
-                    } @else if (currentSortColumn === 'moisture' && currentSortDirection === 'desc') {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                      </svg>
-                    } @else {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
-                      </svg>
-                    }
-                  </span>
-                </span>
-              </app-table-head>
-              @if (hasWheatTickets) {
-                <app-table-head [sortable]="true" (click)="handleSort('protein')">
-                  <span class="flex items-center justify-center gap-1">
-                    Protein %
-                    <span [class]="getSortIconClass('protein')">
-                      @if (currentSortColumn === 'protein' && currentSortDirection === 'asc') {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                        </svg>
-                      } @else if (currentSortColumn === 'protein' && currentSortDirection === 'desc') {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                        </svg>
-                      } @else {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
-                        </svg>
-                      }
-                    </span>
-                  </span>
-                </app-table-head>
-              }
-            </app-table-row>
-          </app-table-header>
-          <app-table-body>
-            @for (group of ticketGroups; track group.productCode) {
-              @for (ticket of group.tickets; track ticket.id) {
-                <app-table-row>
-                  <app-table-cell class="text-center">{{ ticket.ticketNumber }}</app-table-cell>
-                  <app-table-cell class="text-center">{{ ticket.date | date:'MMM d, yyyy' }}</app-table-cell>
-                  <app-table-cell class="text-center">{{ ticket.productCode }}</app-table-cell>
-                  <app-table-cell class="text-center">{{ ticket.appliedDockQuantity | number }}</app-table-cell>
-                  <app-table-cell class="text-center">{{ ticket.moisture | number:'1.1-1' }}%</app-table-cell>
-                  @if (hasWheatTickets) {
-                    <app-table-cell class="text-center">
-                      @if (ticket.proteinPercent !== null && ticket.proteinPercent !== undefined) {
-                        {{ ticket.proteinPercent | number:'1.1-1' }}%
-                      } @else {
-                        -
-                      }
-                    </app-table-cell>
-                  }
-                </app-table-row>
-              }
-              <!-- Commodity average row -->
-              <app-table-row [class]="'border-t-2 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800/80'">
-                <app-table-cell class="text-center">
-                  <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Avg</span>
-                  <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">({{ group.ticketCount }})</span>
-                </app-table-cell>
-                <app-table-cell class="text-center">
-                  @if (group.avgDate) {
-                    <span class="font-bold text-gray-800 dark:text-gray-100">{{ group.avgDate | date:'MMM d, yyyy' }}</span>
-                  } @else {
-                    <span class="font-bold text-gray-800 dark:text-gray-100">—</span>
-                  }
-                </app-table-cell>
-                <app-table-cell class="text-center">
-                  <span class="text-sm font-medium text-gray-900 dark:text-gray-100">{{ group.productCode }}</span>
-                </app-table-cell>
-                <app-table-cell class="text-center">
-                  <span class="font-bold text-gray-800 dark:text-gray-100">{{ group.avgNetWeight | number:'1.0-0' }}</span>
-                </app-table-cell>
-                <app-table-cell class="text-center">
-                  <span class="font-bold text-gray-800 dark:text-gray-100">{{ group.avgMoisture | number:'1.1-1' }}%</span>
-                </app-table-cell>
-                @if (hasWheatTickets) {
-                  <app-table-cell class="text-center">
-                    <span class="font-bold text-gray-800 dark:text-gray-100">
-                      @if (group.avgProtein !== null) {
-                        {{ group.avgProtein | number:'1.1-1' }}%
-                      } @else {
-                        —
-                      }
-                    </span>
-                  </app-table-cell>
-                }
-              </app-table-row>
-            }
-          </app-table-body>
-        </app-table>
-        </div>
-        @if (ticketGroups.length === 0 && searchQuery.trim()) {
-          <div class="text-center py-8 text-sm text-gray-500 dark:text-gray-400">
-            No tickets match "<span class="font-medium text-gray-700 dark:text-gray-300">{{ searchQuery }}</span>"
-          </div>
-        }
-      }
-    </div>
-  `
+  templateUrl: './tickets-table.component.html'
 })
-export class TicketsTableComponent implements OnChanges {
-  @Input() tickets: Ticket[] = [];
-  @Input() contracts: Contract[] = [];
-  @Input() customer!: Customer;
+export class TicketsTableComponent {
+  public tickets = input<Ticket[]>([]);
+  public contracts = input<Contract[]>([]);
+  public customer = input.required<Customer>();
 
   currentSortColumn: SortColumn | null = null;
   currentSortDirection: SortDirection = 'none';
@@ -275,18 +45,24 @@ export class TicketsTableComponent implements OnChanges {
   showSearch = false;
   searchQuery = '';
 
-  ngOnChanges(changes: SimpleChanges): void {
-    if (changes['customer'] && !changes['customer'].firstChange) {
-      this.currentSortColumn = null;
-      this.currentSortDirection = 'none';
-      this.cropSortActive = false;
-      this.cropRotation = 0;
-      this.searchQuery = '';
-      this.showSearch = false;
-    }
+  private _previousCustomerId: number | null = null;
+
+  constructor() {
+    effect(() => {
+      const cust = this.customer();
+      if (this._previousCustomerId !== null && this._previousCustomerId !== cust.id) {
+        this.currentSortColumn = null;
+        this.currentSortDirection = 'none';
+        this.cropSortActive = false;
+        this.cropRotation = 0;
+        this.searchQuery = '';
+        this.showSearch = false;
+      }
+      this._previousCustomerId = cust.id;
+    });
   }
 
-  private get uniqueCropCount(): number {
+  private get _uniqueCropCount(): number {
     return new Set(this.unappliedTickets.map(t => t.productCode || 'Unknown')).size;
   }
 
@@ -297,18 +73,18 @@ export class TicketsTableComponent implements OnChanges {
 
   get unappliedTickets(): Ticket[] {
     const appliedContractIds = new Set(
-      this.contracts
+      this.contracts()
         .map(c => c.sourceContractId)
         .filter((id): id is string => !!id)
     );
-    return this.tickets.filter(t =>
+    return this.tickets().filter(t =>
       !t.ctrmContractNumber || !appliedContractIds.has(t.ctrmContractNumber.trim())
     );
   }
 
   get ticketGroups(): TicketGroup[] {
     const q = this.searchQuery.trim().toLowerCase();
-    const terms = q ? this.expandWithAliases(q) : [];
+    const terms = q ? this._expandWithAliases(q) : [];
     const avgOnly = terms.some(t => t === 'avg' || t === 'average');
 
     const groupMap = new Map<string, Ticket[]>();
@@ -338,7 +114,7 @@ export class TicketsTableComponent implements OnChanges {
       if (!avgOnly && filtered.length === 0) continue;
 
       const ticketsForAvg = avgOnly ? allTickets : filtered;
-      const sorted = avgOnly ? [] : this.sortTicketList(filtered);
+      const sorted = avgOnly ? [] : this._sortTicketList(filtered);
       const validMoisture = ticketsForAvg.filter(t => typeof t.moisture === 'number' && t.moisture > 0);
       const validProtein = ticketsForAvg.filter(t => typeof t.proteinPercent === 'number' && t.proteinPercent > 0);
       const validDateMs = ticketsForAvg
@@ -369,7 +145,7 @@ export class TicketsTableComponent implements OnChanges {
     return groups;
   }
 
-  private sortTicketList(tickets: Ticket[]): Ticket[] {
+  private _sortTicketList(tickets: Ticket[]): Ticket[] {
     if (!this.currentSortColumn || this.currentSortDirection === 'none') return tickets;
     const sorted = [...tickets].sort((a, b) => {
       let comparison = 0;
@@ -385,7 +161,7 @@ export class TicketsTableComponent implements OnChanges {
     return this.currentSortDirection === 'desc' ? sorted.reverse() : sorted;
   }
 
-  private expandWithAliases(q: string): string[] {
+  private _expandWithAliases(q: string): string[] {
     const aliases: { [key: string]: string[] } = {
       'avg':       ['avg', 'average'],
       'average':   ['avg', 'average'],
@@ -414,7 +190,7 @@ export class TicketsTableComponent implements OnChanges {
 
   get hasWheatTickets(): boolean {
     // Check if any contract has wheat as commodity group or description
-    const hasWheat = this.contracts.some(c => this.isWheatCommodity(c.commodityGroup, c.commodityDescription));
+    const hasWheat = this.contracts().some(c => this.isWheatCommodity(c.commodityGroup, c.commodityDescription));
 
     return hasWheat;
   }
@@ -431,14 +207,14 @@ export class TicketsTableComponent implements OnChanges {
 
     // Try matching by contractId (FK) first
     if (ticket.contractId) {
-      const contract = this.contracts.find(c => c.id === ticket.contractId);
+      const contract = this.contracts().find(c => c.id === ticket.contractId);
       if (contract) matchingContracts.push(contract);
     }
 
     // Also check legacy string matching: ticket.ctrmContractNumber === contract.sourceContractId
     // This can match multiple contracts if a ticket is split across them
     if (ticket.ctrmContractNumber) {
-      const stringMatches = this.contracts.filter(c => c.sourceContractId === ticket.ctrmContractNumber);
+      const stringMatches = this.contracts().filter(c => c.sourceContractId === ticket.ctrmContractNumber);
       stringMatches.forEach(contract => {
         // Avoid duplicates (in case both FK and string match point to same contract)
         if (!matchingContracts.some(c => c.id === contract.id)) {
@@ -499,7 +275,7 @@ export class TicketsTableComponent implements OnChanges {
         this.cropRotation = 0;
       } else {
         this.cropRotation++;
-        if (this.cropRotation >= this.uniqueCropCount) {
+        if (this.cropRotation >= this._uniqueCropCount) {
           this.cropSortActive = false;
           this.cropRotation = 0;
         }

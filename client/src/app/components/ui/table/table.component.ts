@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 @Component({
@@ -98,21 +98,21 @@ export class TableBodyComponent {}
   `
 })
 export class TableRowComponent {
-  @Input() clickable = false;
-  @Input() highlighted = false;
-  @Input() class = '';
-  @Output() rowClick = new EventEmitter<void>();
+  public clickable = input<boolean>(false);
+  public highlighted = input<boolean>(false);
+  public class = input<string>('');
+  public rowClick = output<void>();
 
   getRowClasses(): string {
     let classes = 'border-b border-gray-100 dark:border-gray-800 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50';
-    if (this.clickable) {
+    if (this.clickable()) {
       classes += ' cursor-pointer';
     }
-    if (this.highlighted) {
+    if (this.highlighted()) {
       classes += ' bg-red-50 dark:bg-red-950/20';
     }
-    if (this.class) {
-      classes += ' ' + this.class;
+    if (this.class()) {
+      classes += ' ' + this.class();
     }
     return classes;
   }
@@ -126,19 +126,19 @@ export class TableRowComponent {
   template: `
     <th
       class="h-12 px-4 text-left align-middle font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap"
-      [class.cursor-pointer]="sortable"
-      [class.select-none]="sortable"
-      [class.hover:bg-gray-50]="sortable"
-      [class.dark:hover:bg-gray-800]="sortable"
-      [style.min-width]="minWidth"
+      [class.cursor-pointer]="sortable()"
+      [class.select-none]="sortable()"
+      [class.hover:bg-gray-50]="sortable()"
+      [class.dark:hover:bg-gray-800]="sortable()"
+      [style.min-width]="minWidth()"
     >
       <ng-content></ng-content>
     </th>
   `
 })
 export class TableHeadComponent {
-  @Input() sortable = false;
-  @Input() minWidth?: string;
+  public sortable = input<boolean>(false);
+  public minWidth = input<string | undefined>(undefined);
 }
 
 @Component({
@@ -149,14 +149,14 @@ export class TableHeadComponent {
   template: `
     <td
       class="p-4 align-middle text-gray-900 dark:text-gray-100 whitespace-nowrap"
-      [attr.colspan]="colspan"
-      [style.min-width]="minWidth"
+      [attr.colspan]="colspan()"
+      [style.min-width]="minWidth()"
     >
       <ng-content></ng-content>
     </td>
   `
 })
 export class TableCellComponent {
-  @Input() colspan?: number;
-  @Input() minWidth?: string;
+  public colspan = input<number | undefined>(undefined);
+  public minWidth = input<string | undefined>(undefined);
 }

@@ -1,0 +1,12 @@
+
+    <div class="relative w-full h-full min-h-[400px] rounded-lg overflow-hidden">
+      <!-- Map container - Leaflet will render here -->
+      <div id="customer-map" class="w-full h-full"></div>
+
+      <!-- Loading spinner shown while Leaflet initializes -->
+      @if (loading()) {
+        <div class="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-800">
+          <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
+        </div>
+      }
+    </div>

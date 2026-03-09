@@ -1,0 +1,305 @@
+
+    @if (isOpen() && customer()) {
+      <app-dialog [isOpen]="true" (close)="onCancel()">
+        <app-dialog-header>
+          <app-dialog-title>Edit Producer Details</app-dialog-title>
+          <app-dialog-description>Update farm details and manage associations for {{ customer()!.name }}</app-dialog-description>
+        </app-dialog-header>
+
+        <app-dialog-content>
+          <div class="space-y-6">
+            <!-- Producer Details Section -->
+            <div class="space-y-4">
+              <h4 class="font-medium text-gray-900 dark:text-white">Farm Details</h4>
+
+              <div class="grid grid-cols-2 gap-4">
+                <div class="space-y-2">
+                  <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="m10 11 11 .9a1 1 0 0 1 .8 1.1l-.665 4.158a1 1 0 0 1-.988.842H20"/>
+                      <path d="M16 18h-5"/><path d="M18 5a1 1 0 0 0-1 1v5.573"/>
+                      <path d="M3 4h8.129a1 1 0 0 1 .99.863L13 11.246"/>
+                      <path d="M4 11V4"/><path d="M7 15h.01"/><path d="M8 10.1V4"/>
+                      <circle cx="18" cy="18" r="2"/><circle cx="7" cy="15" r="5"/>
+                    </svg>
+                    Acres
+                  </label>
+                  <div class="relative">
+                    <input
+                      type="text"
+                      inputmode="numeric"
+                      [(ngModel)]="editAcres"
+                      placeholder="e.g., 1,200"
+                      (focus)="clearZeroOnFocus('editAcres')"
+                      (blur)="normalizeNumericOnBlur('editAcres')"
+                      class="w-full h-10 px-3 pr-8 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    />
+                    @if (editAcres && editAcres !== '0') {
+                      <button type="button" (click)="editAcres = ''" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                      </button>
+                    }
+                  </div>
+                </div>
+
+                <div class="space-y-2">
+                  <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/>
+                    </svg>
+                    Bin Capacity (bu)
+                  </label>
+                  <div class="relative">
+                    <input
+                      type="text"
+                      inputmode="numeric"
+                      [(ngModel)]="editBinCapacity"
+                      placeholder="e.g., 45,000"
+                      (focus)="clearZeroOnFocus('editBinCapacity')"
+                      (blur)="normalizeNumericOnBlur('editBinCapacity')"
+                      class="w-full h-10 px-3 pr-8 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    />
+                    @if (editBinCapacity && editBinCapacity !== '0') {
+                      <button type="button" (click)="editBinCapacity = ''" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                      </button>
+                    }
+                  </div>
+                </div>
+              </div>
+
+              <!-- Primary Contact -->
+              <div class="space-y-2">
+                <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                  </svg>
+                  Primary Contact
+                </label>
+                <div class="relative">
+                  <input
+                    type="text"
+                    [ngModel]="editPrimaryContact()"
+                    (ngModelChange)="editPrimaryContact.set($event)"
+                    placeholder="e.g., John Smith"
+                    class="w-full h-10 px-3 pr-8 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  />
+                  @if (editPrimaryContact()) {
+                    <button type="button" (click)="editPrimaryContact.set('')" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                    </button>
+                  }
+                </div>
+              </div>
+
+              <!-- Commodities -->
+              <div class="space-y-2">
+                <label class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M2 22 16 8"/>
+                    <path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
+                    <path d="M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
+                    <path d="M11.47 4.53 13 3l1.53 1.53a3.5 3.5 0 0 1 0 4.94L13 11l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
+                    <path d="M20 2h2v2a4 4 0 0 1-4 4h-2V6a4 4 0 0 1 4-4Z"/>
+                    <path d="M11.47 17.47 13 19l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L5 19l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
+                    <path d="M15.47 13.47 17 15l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L9 15l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
+                    <path d="M19.47 9.47 21 11l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L13 11l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/>
+                  </svg>
+                  Commodities
+                </label>
+                @if (editCommodities().length > 0) {
+                  <div class="flex flex-wrap gap-1.5 mb-2">
+                    @for (commodity of editCommodities(); track commodity) {
+                      @if (isTicketCommodity(commodity)) {
+                        <!-- Ticket-derived: read-only, no remove -->
+                        <span class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-sm font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300" title="From tickets">
+                          {{ commodity }}
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="opacity-40">
+                            <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                          </svg>
+                        </span>
+                      } @else {
+                        <!-- User-added: removable -->
+                        <span class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-sm font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+                          {{ commodity }}
+                          <button type="button" (click)="removeCommodity(commodity)" class="hover:text-amber-600 dark:hover:text-amber-200 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="M18 6L6 18"/><path d="M6 6l12 12"/>
+                            </svg>
+                          </button>
+                        </span>
+                      }
+                    }
+                  </div>
+                }
+                <div class="relative">
+                  <div class="relative">
+                    <input
+                      type="text"
+                      [ngModel]="newCommodity()"
+                      (ngModelChange)="newCommodity.set($event)"
+                      placeholder="Add commodities"
+                      (input)="onCommoditySearch()"
+                      (keydown.enter)="selectFirstSuggestion()"
+                      (focus)="showSuggestions.set(true)"
+                      (blur)="hideSuggestionsDelayed()"
+                      class="w-full h-10 px-3 pr-8 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    />
+                    @if (newCommodity()) {
+                      <button type="button" (mousedown)="clearCommoditySearch()" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                      </button>
+                    }
+                  </div>
+                  @if (newCommodity().trim() && isLoadingCommodities()) {
+                    <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg px-3 py-2 text-sm text-gray-400 dark:text-gray-500">
+                      Loading commodities...
+                    </div>
+                  }
+                  @if (showSuggestions() && filteredCommodities().length > 0) {
+                    <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                      @for (commodity of filteredCommodities(); track commodity.id) {
+                        <button
+                          type="button"
+                          class="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white transition-colors"
+                          (mousedown)="selectCommodity(commodity)"
+                        >
+                          <span class="font-medium">{{ commodity.name }}</span>
+                          <span class="text-gray-400 dark:text-gray-500 ml-1.5">({{ commodity.code }})</span>
+                        </button>
+                      }
+                    </div>
+                  }
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Separator -->
+            <div class="border-t border-gray-200 dark:border-gray-700"></div>
+
+            <!-- Link Producers Section -->
+            <div class="space-y-4">
+              <h4 class="font-medium text-gray-900 dark:text-white">Link Producers</h4>
+
+              <!-- Outgoing Links: always visible so they can be removed without a Primary Contact -->
+              @if (editLinkedProducerIds().length > 0) {
+                <div class="space-y-2">
+                  <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Linked To:</div>
+                  @for (producerId of editLinkedProducerIds(); track producerId) {
+                    @if (getProducerById(producerId); as producer) {
+                      <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
+                        <div>
+                          <div class="font-medium text-gray-900 dark:text-white">{{ producer.name }}</div>
+                          <div class="text-xs text-gray-500 dark:text-gray-400">{{ producer.sourceCustomerId || producer.location }}</div>
+                        </div>
+                        <button
+                          type="button"
+                          class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 h-8 w-8"
+                          (click)="removeLinkedProducer(producerId)"
+                          title="Unlink"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/>
+                          </svg>
+                        </button>
+                      </div>
+                    }
+                  }
+                </div>
+              }
+
+              <!-- Incoming Links: always visible so they can be removed without a Primary Contact -->
+              @if (getProducersLinkingToMe().length > 0) {
+                <div class="space-y-2">
+                  <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Linked From:</div>
+                  @for (producer of getProducersLinkingToMe(); track producer.id) {
+                    <div class="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <div>
+                        <div class="font-medium text-gray-900 dark:text-white">{{ producer.name }}</div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400">{{ producer.sourceCustomerId || producer.location }}</div>
+                      </div>
+                      <button
+                        type="button"
+                        class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 h-8 w-8"
+                        (click)="removeIncomingLink(producer.sourceCustomerId || producer.id.toString())"
+                        title="Unlink from {{ producer.name }}"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/>
+                        </svg>
+                      </button>
+                    </div>
+                  }
+                </div>
+              }
+
+              <!-- Search to add — requires Primary Contact -->
+              @if (!editPrimaryContact().trim()) {
+                <p class="text-sm text-amber-600 dark:text-amber-400">A Primary Contact is required to link additional producers.</p>
+              } @else {
+                <div class="space-y-2">
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Search to Link Producer</label>
+                  <div class="relative">
+                    <input
+                      type="text"
+                      [ngModel]="newProducerSearch()"
+                      (ngModelChange)="newProducerSearch.set($event)"
+                      placeholder="Search by name, ID, or customer code..."
+                      (input)="onProducerSearch()"
+                      (focus)="showProducerSuggestions.set(true)"
+                      (blur)="hideProducerSuggestionsDelayed()"
+                      class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    />
+                    @if (newProducerSearch()) {
+                      <button type="button" (mousedown)="newProducerSearch.set(''); filteredProducers.set([]); showProducerSuggestions.set(false)" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                      </button>
+                    }
+                    @if (newProducerSearch().trim() && isLoadingProducers()) {
+                      <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg px-3 py-2 text-sm text-gray-400 dark:text-gray-500">
+                        Loading producers...
+                      </div>
+                    }
+                    @if (showProducerSuggestions() && filteredProducers().length > 0) {
+                      <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                        @for (producer of filteredProducers(); track producer.id) {
+                          <button
+                            type="button"
+                            class="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white transition-colors"
+                            (mousedown)="selectProducer(producer)"
+                          >
+                            <span class="font-medium">{{ producer.name }}</span>
+                            @if (producer.sourceCustomerId) {
+                              <span class="text-gray-400 dark:text-gray-500 ml-1.5">{{ producer.sourceCustomerId }}</span>
+                            }
+                          </button>
+                        }
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+        </app-dialog-content>
+
+        <app-dialog-footer>
+          <button
+            type="button"
+            class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-gray-300 dark:border-gray-600 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100 h-10 px-4 py-2"
+            (click)="onCancel()"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-green-600 text-white hover:bg-green-700 h-10 px-4 py-2"
+            [disabled]="!hasChanges()"
+            (click)="onSave()"
+          >
+            Save Changes
+          </button>
+        </app-dialog-footer>
+      </app-dialog>
+    }

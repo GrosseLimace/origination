@@ -1,4 +1,4 @@
-import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
+import { Component, input, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain } from '../../../models';
 
@@ -7,49 +7,44 @@ import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain } from
   standalone: true,
   imports: [CommonModule],
   host: { class: 'block' },
-  template: `
-    <div class="rounded-xl border border-green-200 dark:border-green-800 overflow-hidden">
-      <div class="bg-green-50 dark:bg-green-900/20 p-6">
-        <div class="flex items-center gap-2 mb-4">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600 dark:text-green-400">
-            <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
-            <path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/>
-          </svg>
-          <h3 class="font-semibold text-lg text-green-600 dark:text-green-400">Activity Summary</h3>
-        </div>
-        <p class="text-gray-700 dark:text-gray-300 text-sm leading-relaxed">
-          {{ summaryText }}
-        </p>
-      </div>
-    </div>
-  `
+  templateUrl: './activity-summary.component.html'
 })
-export class ActivitySummaryComponent implements OnChanges {
-  @Input() customer!: Customer;
-  @Input() contracts: Contract[] = [];
-  @Input() tickets: Ticket[] = [];
-  @Input() plantingIntentions: PlantingIntention[] = [];
-  @Input() notes: Note[] = [];
-  @Input() storedGrain: StoredGrain[] = [];
-  @Input() allCustomers: Customer[] = [];
+export class ActivitySummaryComponent {
+  public customer = input.required<Customer>();
+  public contracts = input<Contract[]>([]);
+  public tickets = input<Ticket[]>([]);
+  public plantingIntentions = input<PlantingIntention[]>([]);
+  public notes = input<Note[]>([]);
+  public storedGrain = input<StoredGrain[]>([]);
+  public allCustomers = input<Customer[]>([]);
 
   summaryText = '';
 
-  ngOnChanges(changes: SimpleChanges): void {
-    this.summaryText = this.generateSummaryParagraph();
+  constructor() {
+    effect(() => {
+      // Read all inputs to register reactive dependencies
+      const _customer = this.customer();
+      const _contracts = this.contracts();
+      const _tickets = this.tickets();
+      const _plantingIntentions = this.plantingIntentions();
+      const _notes = this.notes();
+      const _storedGrain = this.storedGrain();
+      const _allCustomers = this.allCustomers();
+      this.summaryText = this._generateSummaryParagraph();
+    });
   }
 
-  private generateSummaryParagraph(): string {
+  private _generateSummaryParagraph(): string {
     try {
       const paragraphs: string[] = [];
 
-      paragraphs.push(this.generateCustomerIntro());
-      paragraphs.push(this.generateContractSummary());
-      paragraphs.push(this.generatePlantingOverview());
-      paragraphs.push(this.generateStorageSummary());
-      paragraphs.push(this.generateDeliverySummary());
-      paragraphs.push(this.generateEngagementSummary());
-      paragraphs.push(this.generateActionItems());
+      paragraphs.push(this._generateCustomerIntro());
+      paragraphs.push(this._generateContractSummary());
+      paragraphs.push(this._generatePlantingOverview());
+      paragraphs.push(this._generateStorageSummary());
+      paragraphs.push(this._generateDeliverySummary());
+      paragraphs.push(this._generateEngagementSummary());
+      paragraphs.push(this._generateActionItems());
 
       const filtered = paragraphs.filter(s => s && s.length > 0);
 
@@ -63,16 +58,16 @@ export class ActivitySummaryComponent implements OnChanges {
     }
   }
 
-  private generateCustomerIntro(): string {
-    if (!this.customer) return '';
+  private _generateCustomerIntro(): string {
+    if (!this.customer()) return '';
 
-    const name = this.customer.name || 'This customer';
-    const acres = this.customer.totalAcres || 0;
-    const binCapacity = this.customer.binCapacity || 0;
-    const farm = this.customer.farm || '';
-    const primaryContact = this.customer.primaryContact || '';
-    const commodities = this.customer.commodities || [];
-    const linkedGroup = this.getLinkedGroup();
+    const name = this.customer().name || 'This customer';
+    const acres = this.customer().totalAcres || 0;
+    const binCapacity = this.customer().binCapacity || 0;
+    const farm = this.customer().farm || '';
+    const primaryContact = this.customer().primaryContact || '';
+    const commodities = this.customer().commodities || [];
+    const linkedGroup = this._getLinkedGroup();
 
     const commStr = commodities.length === 1
       ? commodities[0]
@@ -85,9 +80,9 @@ export class ActivitySummaryComponent implements OnChanges {
     // Opening sentence — who they are
     let opening = name;
     if (acres > 0 && farm && farm !== 'Unknown Farm') {
-      opening += ` operates ${this.formatQuantity(acres, 'acres')} at ${farm}`;
+      opening += ` operates ${this._formatQuantity(acres, 'acres')} at ${farm}`;
     } else if (acres > 0) {
-      opening += ` operates ${this.formatQuantity(acres, 'acres')}`;
+      opening += ` operates ${this._formatQuantity(acres, 'acres')}`;
     } else if (farm && farm !== 'Unknown Farm') {
       opening += ` farms at ${farm}`;
     }
@@ -97,7 +92,7 @@ export class ActivitySummaryComponent implements OnChanges {
     // Contact + bin capacity
     const details: string[] = [];
     if (primaryContact) details.push(`primary contact is ${primaryContact}`);
-    if (binCapacity > 0) details.push(`${this.formatQuantity(binCapacity, 'bushels')} of on-farm bin capacity`);
+    if (binCapacity > 0) details.push(`${this._formatQuantity(binCapacity, 'bushels')} of on-farm bin capacity`);
     if (details.length > 0) {
       parts.push(details.map((d, i) => i === 0 ? d.charAt(0).toUpperCase() + d.slice(1) : d).join(', ') + '.');
     }
@@ -113,29 +108,29 @@ export class ActivitySummaryComponent implements OnChanges {
     return parts.join(' ');
   }
 
-  private getLinkedGroup(): Customer[] {
-    if (!this.customer || !this.allCustomers) return [];
-    const mySourceId = this.customer.sourceCustomerId || '';
-    const outgoing = (this.customer.linkedProducerIds || [])
-      .map(id => this.allCustomers.find(c => c.sourceCustomerId === id))
+  private _getLinkedGroup(): Customer[] {
+    if (!this.customer() || !this.allCustomers()) return [];
+    const mySourceId = this.customer().sourceCustomerId || '';
+    const outgoing = (this.customer().linkedProducerIds || [])
+      .map(id => this.allCustomers().find(c => c.sourceCustomerId === id))
       .filter((c): c is Customer => !!c);
-    const incoming = this.allCustomers.filter(c =>
+    const incoming = this.allCustomers().filter(c =>
       mySourceId && (c.linkedProducerIds || []).includes(mySourceId)
     );
     return [...new Map([...outgoing, ...incoming].map(c => [c.id, c])).values()]
-      .filter(c => c.id !== this.customer.id);
+      .filter(c => c.id !== this.customer().id);
   }
 
-  private generateContractSummary(): string {
-    if (!this.contracts || this.contracts.length === 0) return '';
+  private _generateContractSummary(): string {
+    if (!this.contracts() || this.contracts().length === 0) return '';
 
     const now = new Date();
-    const activeContracts = this.contracts.filter(c => c && c.status === 'Active');
-    const pendingContracts = this.contracts.filter(c => c && c.status === 'Pending');
-    const fulfilledContracts = this.contracts.filter(c => c && c.status === 'Fulfilled');
-    const unsignedContracts = this.contracts.filter(c => c && c.signed === false);
+    const activeContracts = this.contracts().filter(c => c && c.status === 'Active');
+    const pendingContracts = this.contracts().filter(c => c && c.status === 'Pending');
+    const fulfilledContracts = this.contracts().filter(c => c && c.status === 'Fulfilled');
+    const unsignedContracts = this.contracts().filter(c => c && c.signed === false);
 
-    const overdueContracts = this.contracts.filter(c => {
+    const overdueContracts = this.contracts().filter(c => {
       if (!c || !c.deliveryEnd) return false;
       try {
         const endDate = new Date(c.deliveryEnd);
@@ -153,7 +148,7 @@ export class ActivitySummaryComponent implements OnChanges {
     // CropYear is when the grain was grown, not when the contract was signed.
     // Using max ensures we reference the newest crop, not old crop which may dominate by volume.
     let currentCropYear: number | null = null;
-    for (const c of this.contracts) {
+    for (const c of this.contracts()) {
       if (c.cropYear && (currentCropYear === null || c.cropYear > currentCropYear)) {
         currentCropYear = c.cropYear;
       }
@@ -167,9 +162,9 @@ export class ActivitySummaryComponent implements OnChanges {
 
     if (activeContracts.length > 0) {
       const cropYearStr = currentCropYear ? ` (CY${currentCropYear})` : '';
-      parts.push(`On the contract side, they currently have ${activeContracts.length} active contract${activeContracts.length !== 1 ? 's' : ''}${cropYearStr} totaling ${this.formatQuantity(activeVolume, 'bushels')} — worth ${this.formatCurrency(activeValue)}.`);
+      parts.push(`On the contract side, they currently have ${activeContracts.length} active contract${activeContracts.length !== 1 ? 's' : ''}${cropYearStr} totaling ${this._formatQuantity(activeVolume, 'bushels')} — worth ${this._formatCurrency(activeValue)}.`);
       if (totalOpenBalance > 0) {
-        parts.push(`${this.formatQuantity(Math.round(totalOpenBalance), 'bushels')} remain unshipped.`);
+        parts.push(`${this._formatQuantity(Math.round(totalOpenBalance), 'bushels')} remain unshipped.`);
       }
     } else {
       parts.push(`All ${fulfilledContracts.length} contract${fulfilledContracts.length !== 1 ? 's have' : ' has'} been fulfilled.`);
@@ -187,11 +182,11 @@ export class ActivitySummaryComponent implements OnChanges {
     return parts.join(' ');
   }
 
-  private generatePlantingOverview(): string {
-    if (!this.plantingIntentions || this.plantingIntentions.length === 0) return '';
+  private _generatePlantingOverview(): string {
+    if (!this.plantingIntentions() || this.plantingIntentions().length === 0) return '';
 
     // Group by crop with null safety
-    const cropGroups = this.plantingIntentions.reduce((acc, p) => {
+    const cropGroups = this.plantingIntentions().reduce((acc, p) => {
       if (!p || !p.crop) return acc; // Skip invalid entries
 
       const crop = p.crop;
@@ -211,26 +206,26 @@ export class ActivitySummaryComponent implements OnChanges {
 
     if (cropEntries.length === 1) {
       const [crop, data] = cropEntries[0];
-      crops = `${this.formatQuantity(data.acres, 'acres')} of ${crop}`;
+      crops = `${this._formatQuantity(data.acres, 'acres')} of ${crop}`;
     } else if (cropEntries.length === 2) {
-      crops = cropEntries.map(([crop, data]) => `${this.formatQuantity(data.acres, 'acres')} of ${crop}`).join(' and ');
+      crops = cropEntries.map(([crop, data]) => `${this._formatQuantity(data.acres, 'acres')} of ${crop}`).join(' and ');
     } else {
       const lastCrop = cropEntries[cropEntries.length - 1];
       const otherCrops = cropEntries.slice(0, -1);
-      crops = otherCrops.map(([crop, data]) => `${this.formatQuantity(data.acres, 'acres')} of ${crop}`).join(', ') +
-              `, and ${this.formatQuantity(lastCrop[1].acres, 'acres')} of ${lastCrop[0]}`;
+      crops = otherCrops.map(([crop, data]) => `${this._formatQuantity(data.acres, 'acres')} of ${crop}`).join(', ') +
+              `, and ${this._formatQuantity(lastCrop[1].acres, 'acres')} of ${lastCrop[0]}`;
     }
 
     return `Planting intentions on file: ${crops}.`;
   }
 
-  private generateStorageSummary(): string {
-    if (!this.storedGrain || this.storedGrain.length === 0) return '';
+  private _generateStorageSummary(): string {
+    if (!this.storedGrain() || this.storedGrain().length === 0) return '';
 
-    const totalStored = this.storedGrain.reduce((sum, s) => sum + (s?.quantity || 0), 0);
+    const totalStored = this.storedGrain().reduce((sum, s) => sum + (s?.quantity || 0), 0);
 
     // Average storage duration with date validation
-    const validGrain = this.storedGrain.filter(s => s && s.storageStartDate);
+    const validGrain = this.storedGrain().filter(s => s && s.storageStartDate);
     if (validGrain.length === 0) return '';
 
     const avgDays = validGrain.reduce((sum, s) => {
@@ -238,24 +233,24 @@ export class ActivitySummaryComponent implements OnChanges {
         const startDate = new Date(s.storageStartDate);
         // Validate date is valid and not in the future
         if (isNaN(startDate.getTime()) || startDate > new Date()) return sum;
-        const days = this.calculateDaysBetween(startDate, new Date());
+        const days = this._calculateDaysBetween(startDate, new Date());
         return sum + Math.max(0, days); // Ensure non-negative
       } catch {
         return sum;
       }
     }, 0) / validGrain.length;
 
-    return `Currently holding ${this.formatQuantity(totalStored, 'bushels')} in on-farm storage, averaging ${Math.floor(avgDays)} days in.`;
+    return `Currently holding ${this._formatQuantity(totalStored, 'bushels')} in on-farm storage, averaging ${Math.floor(avgDays)} days in.`;
   }
 
-  private generateDeliverySummary(): string {
-    if (!this.tickets || this.tickets.length === 0) return '';
+  private _generateDeliverySummary(): string {
+    if (!this.tickets() || this.tickets().length === 0) return '';
 
-    const totalTickets = this.tickets.length;
+    const totalTickets = this.tickets().length;
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 
-    const recentTickets = this.tickets.filter(t => {
+    const recentTickets = this.tickets().filter(t => {
       if (!t || !t.date) return false;
       try {
         const ticketDate = new Date(t.date);
@@ -265,7 +260,7 @@ export class ActivitySummaryComponent implements OnChanges {
       }
     });
 
-    const last90Days = this.tickets.filter(t => {
+    const last90Days = this.tickets().filter(t => {
       if (!t || !t.date) return false;
       try {
         const ticketDate = new Date(t.date);
@@ -278,7 +273,7 @@ export class ActivitySummaryComponent implements OnChanges {
     if (recentTickets.length > 0) {
       const totalDelivered = recentTickets.reduce((sum, t) => sum + (t.netWeight || 0), 0);
       const parts: string[] = [];
-      parts.push(`${recentTickets.length} delivery ticket${recentTickets.length !== 1 ? 's' : ''} in the last 30 days totaling ${this.formatQuantity(totalDelivered, 'lbs')}.`);
+      parts.push(`${recentTickets.length} delivery ticket${recentTickets.length !== 1 ? 's' : ''} in the last 30 days totaling ${this._formatQuantity(totalDelivered, 'lbs')}.`);
 
       const ticketsWithMoisture = recentTickets.filter(t => typeof t.moisture === 'number' && !isNaN(t.moisture) && t.moisture > 0);
       const ticketsWithTestWeight = recentTickets.filter(t => typeof t.testWeight === 'number' && !isNaN(t.testWeight) && t.testWeight > 0);
@@ -291,17 +286,17 @@ export class ActivitySummaryComponent implements OnChanges {
       return parts.join(' ');
     } else if (last90Days.length > 0) {
       const total90Days = last90Days.reduce((sum, t) => sum + (t.netWeight || 0), 0);
-      return `${last90Days.length} deliver${last90Days.length !== 1 ? 'ies' : 'y'} in the past 90 days (${this.formatQuantity(total90Days, 'lbs')}), none in the last 30 days.`;
+      return `${last90Days.length} deliver${last90Days.length !== 1 ? 'ies' : 'y'} in the past 90 days (${this._formatQuantity(total90Days, 'lbs')}), none in the last 30 days.`;
     } else {
       return `${totalTickets} delivery ticket${totalTickets !== 1 ? 's' : ''} on record, no activity in the past 90 days.`;
     }
   }
 
-  private generateEngagementSummary(): string {
-    if (!this.notes || this.notes.length === 0) return '';
+  private _generateEngagementSummary(): string {
+    if (!this.notes() || this.notes().length === 0) return '';
 
     // Only consider notes that belong to this customer — not linked farms.
-    const ownNotes = this.customer ? this.notes.filter(n => n && n.customerId === this.customer.id) : this.notes;
+    const ownNotes = this.customer() ? this.notes().filter(n => n && n.customerId === this.customer().id) : this.notes();
 
     // Filter valid notes with dates
     const validNotes = ownNotes.filter(n => n && n.createdAt);
@@ -326,7 +321,7 @@ export class ActivitySummaryComponent implements OnChanges {
       const lastDate = new Date(raw);
       if (isNaN(lastDate.getTime())) return '';
 
-      const daysSince = this.calculateDaysBetween(lastDate, new Date());
+      const daysSince = this._calculateDaysBetween(lastDate, new Date());
       const createdBy = lastNote.createdBy || 'Unknown';
 
       if (daysSince === 0) {
@@ -345,14 +340,14 @@ export class ActivitySummaryComponent implements OnChanges {
     }
   }
 
-  private generateActionItems(): string {
-    if (!this.contracts || this.contracts.length === 0) return '';
+  private _generateActionItems(): string {
+    if (!this.contracts() || this.contracts().length === 0) return '';
 
     const now = new Date();
     const alerts: string[] = [];
 
     // Check for overdue contracts with date validation
-    const overdueContracts = this.contracts.filter(c => {
+    const overdueContracts = this.contracts().filter(c => {
       if (!c || !c.deliveryEnd) return false;
       try {
         const endDate = new Date(c.deliveryEnd);
@@ -366,16 +361,16 @@ export class ActivitySummaryComponent implements OnChanges {
 
     if (overdueContracts.length > 0) {
       const openBalance = overdueContracts.reduce((sum, c) => sum + (c.openBalanceQuantity || 0), 0);
-      const balanceStr = openBalance > 0 ? ` with ${this.formatQuantity(Math.round(openBalance), 'bushels')} still unshipped` : '';
+      const balanceStr = openBalance > 0 ? ` with ${this._formatQuantity(Math.round(openBalance), 'bushels')} still unshipped` : '';
       alerts.push(`${overdueContracts.length} contract${overdueContracts.length !== 1 ? 's have' : ' has'} passed the delivery deadline${balanceStr}`);
     }
 
-    const unsignedContracts = this.contracts.filter(c => c && c.signed === false);
+    const unsignedContracts = this.contracts().filter(c => c && c.signed === false);
     if (unsignedContracts.length > 0) {
       alerts.push(`${unsignedContracts.length} contract${unsignedContracts.length !== 1 ? 's are' : ' is'} still unsigned`);
     }
 
-    const upcomingDeliveries = this.contracts
+    const upcomingDeliveries = this.contracts()
       .filter(c => {
         if (!c || !c.deliveryEnd || c.status !== 'Active') return false;
         try {
@@ -388,7 +383,7 @@ export class ActivitySummaryComponent implements OnChanges {
     if (upcomingDeliveries.length > 0) {
       const nextContract = upcomingDeliveries[0];
       try {
-        const daysRemaining = this.calculateDaysBetween(now, new Date(nextContract.deliveryEnd));
+        const daysRemaining = this._calculateDaysBetween(now, new Date(nextContract.deliveryEnd));
         if (daysRemaining <= 30 && daysRemaining >= 0) {
           const crop = nextContract.commodityCode || nextContract.commodityDescription || 'grain';
           if (daysRemaining <= 7) {
@@ -409,7 +404,7 @@ export class ActivitySummaryComponent implements OnChanges {
 
   // Helper utility methods
 
-  private formatCurrency(value: number): string {
+  private _formatCurrency(value: number): string {
     // Handle null, undefined, NaN, and Infinity
     if (value == null || isNaN(value) || !isFinite(value)) {
       return '$0.00';
@@ -417,7 +412,7 @@ export class ActivitySummaryComponent implements OnChanges {
     return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
 
-  private formatQuantity(value: number, unit: string): string {
+  private _formatQuantity(value: number, unit: string): string {
     // Handle null, undefined, NaN, and Infinity
     if (value == null || isNaN(value) || !isFinite(value)) {
       return `0 ${unit}`;
@@ -425,7 +420,7 @@ export class ActivitySummaryComponent implements OnChanges {
     return `${value.toLocaleString('en-US')} ${unit}`;
   }
 
-  private calculateDaysBetween(start: Date, end: Date): number {
+  private _calculateDaysBetween(start: Date, end: Date): number {
     // Validate dates
     if (!start || !end || isNaN(start.getTime()) || isNaN(end.getTime())) {
       return 0;

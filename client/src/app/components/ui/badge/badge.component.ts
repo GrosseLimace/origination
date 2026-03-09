@@ -1,4 +1,4 @@
-import { Component, Input } from '@angular/core';
+import { Component, input } from '@angular/core';
 
 @Component({
   selector: 'app-badge',
@@ -10,23 +10,22 @@ import { Component, Input } from '@angular/core';
   `
 })
 export class BadgeComponent {
-  @Input() variant: 'default' | 'secondary' | 'success' | 'warning' | 'destructive' | 'danger' | 'outline' | 'primary' = 'default';
-  @Input() class = '';
+  public variant = input<'default' | 'secondary' | 'success' | 'warning' | 'destructive' | 'danger' | 'outline' | 'primary'>('default');
+  public class = input<string>('');
 
-  getClasses(): string {
-    const baseClasses = 'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors';
-
-    const variantClasses: Record<string, string> = {
-      default: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300',
-      secondary: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300',
-      success: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300',
-      warning: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300',
-      destructive: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300',
-      danger: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300',
-      outline: 'border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300',
-      primary: 'bg-green-600 text-white dark:bg-green-500'
+  public getClasses(): string {
+    const variantMap: Record<string, string> = {
+      default:     'scoular-badge-success',
+      primary:     'scoular-badge-success',
+      success:     'scoular-badge-success',
+      secondary:   'scoular-badge-neutral',
+      warning:     'scoular-badge-warning',
+      destructive: 'scoular-badge-error',
+      danger:      'scoular-badge-error',
+      outline:     'scoular-badge-outline'
     };
 
-    return `${baseClasses} ${variantClasses[this.variant]} ${this.class}`;
+    return ['scoular-badge', variantMap[this.variant()], this.class()]
+      .filter(Boolean).join(' ');
   }
 }

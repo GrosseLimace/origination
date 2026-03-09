@@ -1,4 +1,4 @@
-import { Component, Input, inject } from '@angular/core';
+import { Component, inject, input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ThemeService } from '../../../services/theme.service';
 import { Customer, Contract, PlantingIntention, Note } from '../../../models';
@@ -8,83 +8,13 @@ import { Customer, Contract, PlantingIntention, Note } from '../../../models';
   standalone: true,
   imports: [CommonModule],
   host: { class: 'block' },
-  template: `
-    <div class="rounded-xl border overflow-hidden" [style]="containerStyle">
-      <!-- Header with gradient background -->
-      <div class="p-5" [style]="headerStyle">
-        <div class="flex items-start justify-between">
-          <div class="flex items-start gap-3">
-            <div class="p-2 rounded-lg" [style]="iconBgStyle">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [style]="iconColorStyle">
-                <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
-                <path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/>
-              </svg>
-            </div>
-            <div>
-              <h3 class="text-lg font-semibold" [style]="titleStyle">AI Growth Forecast</h3>
-              <p class="text-sm" [style]="subtitleColorStyle">Revenue opportunity analysis and strategic recommendations</p>
-            </div>
-          </div>
-          <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium" [style]="badgeStatusStyle">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [style]="badgeIconStyle">
-              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
-              <line x1="12" x2="12" y1="9" y2="13"/>
-              <line x1="12" x2="12.01" y1="17" y2="17"/>
-            </svg>
-            {{ statusLabel }}
-          </span>
-        </div>
-      </div>
-
-      <!-- Body -->
-      <div class="p-6 space-y-6" [style]="bodyStyle">
-        <!-- Market Analysis Section -->
-        <div>
-          <div class="flex items-center gap-2 mb-4">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #2563eb;">
-              <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
-              <polyline points="16 7 22 7 22 13"/>
-            </svg>
-            <h4 class="font-semibold" [style]="sectionTitleStyle">Market Analysis</h4>
-          </div>
-          <div>
-            @for (item of marketAnalysisItems; track item) {
-              <div class="flex items-start gap-3 p-3 rounded-lg" [style]="marketItemStyle">
-                <div class="w-2 h-2 rounded-full mt-1.5 flex-shrink-0 bg-blue-500"></div>
-                <p class="text-sm" [style]="itemTextStyle">{{ item }}</p>
-              </div>
-            }
-          </div>
-        </div>
-
-        <!-- Action Items Section -->
-        <div>
-          <div class="flex items-center gap-2 mb-4">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #16a34a;">
-              <circle cx="12" cy="12" r="10"/>
-              <circle cx="12" cy="12" r="6"/>
-              <circle cx="12" cy="12" r="2"/>
-            </svg>
-            <h4 class="font-semibold" [style]="sectionTitleStyle">Action Items</h4>
-          </div>
-          <div>
-            @for (item of actionItems; track item) {
-              <div class="flex items-start gap-3 p-3 rounded-lg" [style]="actionItemStyle">
-                <div class="w-2 h-2 rounded-full mt-1.5 flex-shrink-0 bg-green-500"></div>
-                <p class="text-sm" [style]="itemTextStyle">{{ item }}</p>
-              </div>
-            }
-          </div>
-        </div>
-      </div>
-    </div>
-  `
+  templateUrl: './ai-growth-forecast.component.html'
 })
 export class AIGrowthForecastComponent {
-  @Input() customer!: Customer;
-  @Input() contracts: Contract[] = [];
-  @Input() plantingIntentions: PlantingIntention[] = [];
-  @Input() notes: Note[] = [];
+  public customer = input.required<Customer>();
+  public contracts = input<Contract[]>([]);
+  public plantingIntentions = input<PlantingIntention[]>([]);
+  public notes = input<Note[]>([]);
 
   private themeService = inject(ThemeService);
 
@@ -183,15 +113,15 @@ export class AIGrowthForecastComponent {
   }
 
   get statusLabel(): string {
-    const daysSinceContact = this.getDaysSinceLastContact();
+    const daysSinceContact = this._getDaysSinceLastContact();
     if (daysSinceContact > 90) return 'Needs Attention';
     if (daysSinceContact > 30) return 'Monitor';
     return 'On Track';
   }
 
-  private getDaysSinceLastContact(): number {
-    if (this.notes.length === 0) return 999;
-    const sorted = [...this.notes].sort((a, b) =>
+  private _getDaysSinceLastContact(): number {
+    if (this.notes().length === 0) return 999;
+    const sorted = [...this.notes()].sort((a, b) =>
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
     const lastNote = sorted[0];
@@ -206,7 +136,7 @@ export class AIGrowthForecastComponent {
 
     // Market share analysis
     const totalProjected = 0;
-    const totalContracted = this.contracts
+    const totalContracted = this.contracts()
       .filter(c => c.status === 'Active' || c.status === 'Pending')
       .reduce((sum, c) => sum + c.quantity, 0);
 
@@ -222,7 +152,7 @@ export class AIGrowthForecastComponent {
     }
 
     // Engagement analysis
-    const daysSinceContact = this.getDaysSinceLastContact();
+    const daysSinceContact = this._getDaysSinceLastContact();
     if (daysSinceContact > 90) {
       items.push(`No recent engagement in the past ${daysSinceContact} days — relationship may be at risk.`);
     } else if (daysSinceContact > 30) {
@@ -237,30 +167,30 @@ export class AIGrowthForecastComponent {
   get actionItems(): string[] {
     const items: string[] = [];
 
-    const daysSinceContact = this.getDaysSinceLastContact();
+    const daysSinceContact = this._getDaysSinceLastContact();
     if (daysSinceContact > 30) {
       items.push('PRIORITY: Schedule immediate contact to maintain relationship strength.');
     }
 
     // Revenue opportunity
     const totalProjected = 0;
-    const totalContracted = this.contracts
+    const totalContracted = this.contracts()
       .filter(c => c.status === 'Active' || c.status === 'Pending')
       .reduce((sum, c) => sum + c.quantity, 0);
     const uncontracted = totalProjected - totalContracted;
 
     if (uncontracted > 0) {
-      const avgPrice = this.contracts.length > 0
-        ? this.contracts.reduce((sum, c) => sum + c.price, 0) / this.contracts.length
+      const avgPrice = this.contracts().length > 0
+        ? this.contracts().reduce((sum, c) => sum + c.price, 0) / this.contracts().length
         : 5.00;
       const revenueOpportunity = uncontracted * avgPrice;
-      items.push(`Revenue opportunity: ${this.formatCurrency(revenueOpportunity)} in uncontracted bushels at average pricing.`);
+      items.push(`Revenue opportunity: ${this._formatCurrency(revenueOpportunity)} in uncontracted bushels at average pricing.`);
     }
 
     // Contract renewals
     const now = new Date();
     const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    const expiringContracts = this.contracts.filter(c =>
+    const expiringContracts = this.contracts().filter(c =>
       new Date(c.deliveryEnd) <= thirtyDaysFromNow && c.status === 'Active'
     ).length;
 
@@ -275,7 +205,7 @@ export class AIGrowthForecastComponent {
     return items;
   }
 
-  private formatCurrency(amount: number): string {
+  private _formatCurrency(amount: number): string {
     if (amount >= 1000000) {
       return `$${(amount / 1000000).toFixed(1)}M`;
     }

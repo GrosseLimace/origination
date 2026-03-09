@@ -1,12 +1,71 @@
+// 1. Angular core
+import { APP_INITIALIZER, provideZonelessChangeDetection } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
+
+// 2. Angular router/http
 import { provideRouter } from '@angular/router';
-import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClient, withInterceptorsFromDi, HTTP_INTERCEPTORS } from '@angular/common/http';
+
+// 3. Third-party (MSAL)
+import {
+  MsalInterceptor,
+  MsalGuard,
+  MsalBroadcastService,
+  MsalService,
+  MSAL_GUARD_CONFIG,
+  MSAL_INSTANCE,
+  MSAL_INTERCEPTOR_CONFIG,
+} from '@azure/msal-angular';
+import { PublicClientApplication, InteractionType, BrowserCacheLocation } from '@azure/msal-browser';
+
+// 4. App
 import { AppComponent } from './app/app.component';
 import { routes } from './app/app.routes';
+import { environment } from './environments/environment';
+
+const msalInstance = new PublicClientApplication({
+  auth: {
+    ...environment.msalConfig.auth,
+  },
+  cache: {
+    cacheLocation: BrowserCacheLocation.SessionStorage,
+  },
+});
 
 bootstrapApplication(AppComponent, {
   providers: [
+    provideZonelessChangeDetection(),
     provideRouter(routes),
-    provideHttpClient()
-  ]
+    provideHttpClient(withInterceptorsFromDi()),
+    {
+      provide: MSAL_INSTANCE,
+      useValue: msalInstance,
+    },
+    {
+      provide: APP_INITIALIZER,
+      useFactory: (msalService: MsalService) => () => msalService.instance.initialize(),
+      deps: [MsalService],
+      multi: true,
+    },
+    {
+      provide: MSAL_GUARD_CONFIG,
+      useValue: {
+        interactionType: InteractionType.Redirect,
+        authRequest: { scopes: environment.apiConfig.scopes },
+      },
+    },
+    {
+      provide: MSAL_INTERCEPTOR_CONFIG,
+      useValue: {
+        interactionType: InteractionType.Redirect,
+        protectedResourceMap: new Map([
+          [environment.apiConfig.uri, environment.apiConfig.scopes],
+        ]),
+      },
+    },
+    { provide: HTTP_INTERCEPTORS, useClass: MsalInterceptor, multi: true },
+    MsalService,
+    MsalGuard,
+    MsalBroadcastService,
+  ],
 }).catch((err) => console.error(err));

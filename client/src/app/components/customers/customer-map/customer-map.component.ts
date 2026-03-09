@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, AfterViewInit, OnDestroy, OnChanges, signal } from '@angular/core';
+import { Component, input, output, effect, signal, DestroyRef, inject, afterNextRender } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Customer } from '../../../models';
 
@@ -14,84 +14,80 @@ declare var L: any;
   selector: 'app-customer-map',
   standalone: true,
   imports: [CommonModule],
-  template: `
-    <div class="relative w-full h-full min-h-[400px] rounded-lg overflow-hidden">
-      <!-- Map container - Leaflet will render here -->
-      <div id="customer-map" class="w-full h-full"></div>
-
-      <!-- Loading spinner shown while Leaflet initializes -->
-      @if (loading()) {
-        <div class="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-800">
-          <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
-        </div>
-      }
-    </div>
-  `
+  templateUrl: './customer-map.component.html'
 })
-export class CustomerMapComponent implements AfterViewInit, OnDestroy, OnChanges {
-  @Input() customers: Customer[] = [];
-  @Input() selectedCustomer: Customer | null = null;
-  @Input() height = '400px';
-  @Output() customerClick = new EventEmitter<Customer>();
+export class CustomerMapComponent {
+  public customers = input<Customer[]>([]);
+  public selectedCustomer = input<Customer | null>(null);
+  public height = input('400px');
+  public customerClick = output<Customer>();
 
-  private map: any;
-  private markers: any[] = [];
+  private _map: any;
+  private _markers: any[] = [];
+  private _destroyed = false;
   loading = signal(true);
 
-  ngAfterViewInit() {
-    this.initMap();
-  }
+  private destroyRef = inject(DestroyRef);
 
-  ngOnDestroy() {
-    // Clean up map instance to prevent memory leaks
-    if (this.map) {
-      this.map.remove();
-    }
-  }
+  constructor() {
+    // Initialize map after first render
+    afterNextRender(() => this._initMap());
 
-  /**
-   * Responds to input changes to update markers and map view.
-   */
-  ngOnChanges() {
-    if (this.map) {
-      this.addMarkers();
+    // React to input changes once map is initialized
+    effect(() => {
+      const _customers = this.customers();
+      const _selectedCustomer = this.selectedCustomer();
 
-      // Center on selected customer if one is selected
-      if (this.selectedCustomer?.coordinates) {
-        this.map.setView(
-          [this.selectedCustomer.coordinates.lat, this.selectedCustomer.coordinates.lng],
-          10
-        );
+      if (this._map) {
+        this._addMarkers();
+
+        // Center on selected customer if one is selected
+        if (_selectedCustomer?.coordinates) {
+          this._map.setView(
+            [_selectedCustomer.coordinates.lat, _selectedCustomer.coordinates.lng],
+            10
+          );
+        }
       }
-    }
+    });
+
+    this.destroyRef.onDestroy(() => {
+      this._destroyed = true;
+      // Clean up map instance to prevent memory leaks
+      if (this._map) {
+        this._map.remove();
+      }
+    });
   }
 
   /**
    * Initializes the Leaflet map after loading the library.
    */
-  private async initMap() {
+  private async _initMap() {
     // Load Leaflet dynamically from CDN if not already present
     if (typeof L === 'undefined') {
-      await this.loadLeaflet();
+      await this._loadLeaflet();
     }
 
+    if (this._destroyed) return;
+
     // Initialize map centered on the US grain belt (Kansas)
-    this.map = L.map('customer-map').setView([41.5, -93.0], 5);
+    this._map = L.map('customer-map').setView([41.5, -93.0], 5);
 
     // Add OpenStreetMap tile layer
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(this.map);
+    }).addTo(this._map);
 
     this.loading.set(false);
-    this.addMarkers();
+    this._addMarkers();
   }
 
   /**
    * Dynamically loads Leaflet CSS and JavaScript from CDN.
    * Returns a promise that resolves when loading is complete.
    */
-  private async loadLeaflet(): Promise<void> {
+  private async _loadLeaflet(): Promise<void> {
     return new Promise((resolve) => {
       // Check if already loaded
       if (typeof L !== 'undefined') {
@@ -117,15 +113,15 @@ export class CustomerMapComponent implements AfterViewInit, OnDestroy, OnChanges
    * Creates map markers for all customers with coordinates.
    * Highlights the selected customer with a different style.
    */
-  private addMarkers() {
+  private _addMarkers() {
     // Clear existing markers before adding new ones
-    this.markers.forEach(m => m.remove());
-    this.markers = [];
+    this._markers.forEach(m => m.remove());
+    this._markers = [];
 
     // Add markers for customers with coordinates
-    this.customers.forEach(customer => {
+    this.customers().forEach(customer => {
       if (customer.coordinates) {
-        const isSelected = this.selectedCustomer?.id === customer.id;
+        const isSelected = this.selectedCustomer()?.id === customer.id;
 
         // Create custom div icon with customer initial
         const icon = L.divIcon({
@@ -143,7 +139,7 @@ export class CustomerMapComponent implements AfterViewInit, OnDestroy, OnChanges
         const marker = L.marker(
           [customer.coordinates.lat, customer.coordinates.lng],
           { icon }
-        ).addTo(this.map);
+        ).addTo(this._map);
 
         // Add popup with customer details
         marker.bindPopup(`
@@ -160,14 +156,14 @@ export class CustomerMapComponent implements AfterViewInit, OnDestroy, OnChanges
           this.customerClick.emit(customer);
         });
 
-        this.markers.push(marker);
+        this._markers.push(marker);
       }
     });
 
     // Fit map bounds to show all markers with padding
-    if (this.markers.length > 0) {
-      const group = L.featureGroup(this.markers);
-      this.map.fitBounds(group.getBounds().pad(0.1));
+    if (this._markers.length > 0) {
+      const group = L.featureGroup(this._markers);
+      this._map.fitBounds(group.getBounds().pad(0.1));
     }
   }
 }

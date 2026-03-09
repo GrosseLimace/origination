@@ -1,8 +1,9 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnChanges, OnDestroy, AfterViewInit, SimpleChanges, ChangeDetectorRef, ChangeDetectionStrategy, inject, HostListener, ViewChild, ElementRef } from '@angular/core';
+import { Component, input, output, effect, inject, ChangeDetectionStrategy, HostListener, ViewChild, ElementRef, DestroyRef, afterNextRender, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject } from 'rxjs';
-import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
+import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { Customer, SavedList, Note, ProducerDetails } from '../../../models';
 import { ApiService } from '../../../services/api.service';
 import { AppStateService } from '../../../services/app-state.service';
@@ -22,243 +23,46 @@ interface LastContactInfo {
   imports: [CommonModule, FormsModule, CardComponent, CardContentComponent, BadgeComponent],
   host: { class: 'block w-full' },
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-    <app-card>
-      <app-card-content class="p-0">
-        <!-- Header with Title and Filters -->
-        <div class="px-4 pt-4 pb-3 border-b border-gray-200 dark:border-gray-700 space-y-3">
-          <!-- Title Row -->
-          <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Customers</h3>
-
-          <!-- Trade Unit Dropdown -->
-          <div class="relative">
-            <button
-              (click)="toggleTradeUnitDropdown(); $event.stopPropagation()"
-              type="button"
-              class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500 flex items-center gap-2 justify-between transition-colors"
-            >
-              <div class="flex items-center gap-2 min-w-0 flex-1">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0 text-gray-400">
-                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
-                </svg>
-                <span class="truncate">{{ getTradeUnitButtonText() }}</span>
-              </div>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0 transition-transform" [class.rotate-180]="isTradeUnitDropdownOpen">
-                <path d="m6 9 6 6 6-6"/>
-              </svg>
-            </button>
-            @if (isTradeUnitDropdownOpen) {
-              <div
-                (click)="$event.stopPropagation()"
-                class="absolute left-0 right-0 mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg z-50"
-              >
-                <div class="max-h-[350px] overflow-y-auto p-2 space-y-1">
-                  @for (unit of tradeUnits; track unit) {
-                    <label class="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-600 rounded cursor-pointer transition-colors">
-                      <input
-                        type="checkbox"
-                        [checked]="isTradeUnitSelected(unit)"
-                        (change)="toggleTradeUnit(unit)"
-                        class="rounded border-gray-300 text-green-600 focus:ring-green-500"
-                      />
-                      <span class="text-sm text-gray-900 dark:text-white">{{ unit }}</span>
-                    </label>
-                  }
-                </div>
-                @if (selectedTradeUnits.length > 0) {
-                  <div class="border-t border-gray-200 dark:border-gray-600 p-2">
-                    <button
-                      (click)="clearAllTradeUnits()"
-                      type="button"
-                      class="w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-md transition-colors flex items-center justify-center gap-2"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M18 6L6 18"/>
-                        <path d="M6 6l12 12"/>
-                      </svg>
-                      Clear All
-                    </button>
-                  </div>
-                }
-              </div>
-            }
-          </div>
-
-          <!-- Search Box -->
-          <div class="relative">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-              <circle cx="11" cy="11" r="8"/>
-              <path d="m21 21-4.3-4.3"/>
-            </svg>
-            <input
-              type="text"
-              [(ngModel)]="searchQuery"
-              (ngModelChange)="applyFilters()"
-              placeholder="Search customers..."
-              class="w-full h-9 pl-10 pr-10 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
-            />
-            @if (searchQuery) {
-              <button
-                (click)="clearSearch()"
-                type="button"
-                class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
-                aria-label="Clear search"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M18 6L6 18"/>
-                  <path d="M6 6l12 12"/>
-                </svg>
-              </button>
-            }
-          </div>
-        </div>
-
-        <!-- Saved Lists Filter — only shown after customers have loaded -->
-        @if (!loading && getVisibleSavedLists().length > 0) {
-          <div class="py-2 border-b border-gray-200 dark:border-gray-700 px-4">
-            <select
-              [(ngModel)]="selectedListId"
-              (ngModelChange)="onSavedListChange()"
-              class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
-            >
-              <option value="all">All Customers</option>
-              @for (list of getVisibleSavedLists(); track list.id) {
-                <option [value]="list.id" class="text-gray-900 dark:text-white">{{ list.name }}{{ selectedListId === '' + list.id && (list.customerIds || []).length ? ' (' + (list.customerIds || []).length + ')' : '' }}</option>
-              }
-            </select>
-          </div>
-        }
-
-        <!-- Customer List -->
-        <div #scrollContainer class="divide-y divide-gray-200 dark:divide-gray-700 overflow-y-auto" [style.max-height]="!loading && getVisibleSavedLists().length > 0 ? 'calc(100vh - 21rem)' : 'calc(100vh - 16rem)'"
-        >
-          @if (loading && selectedTradeUnits.length > 0) {
-            <div class="p-8 text-center">
-              <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-300 dark:border-gray-600 border-t-green-600 dark:border-t-green-500 mb-4"></div>
-              <p class="text-gray-500 dark:text-gray-400 font-medium">Loading customers...</p>
-            </div>
-          } @else if (selectedTradeUnits.length === 0 && !searchQuery) {
-            <div class="p-8 text-center text-gray-500">
-              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 opacity-50">
-                <path d="M3 3h18v18H3z"/>
-                <path d="M9 3v18"/>
-                <path d="M15 3v18"/>
-                <path d="M3 9h18"/>
-                <path d="M3 15h18"/>
-              </svg>
-              <p class="font-medium">Select Trade Units</p>
-              <p class="text-sm mt-2">Choose one or more trade units from the dropdown above to view customers, or use the search box to search all trade units</p>
-            </div>
-          } @else if (filteredCustomers.length === 0) {
-            <div class="p-8 text-center text-gray-500">
-              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 opacity-50">
-                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
-                <circle cx="9" cy="7" r="4"/>
-                <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
-                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-              </svg>
-              <p>No customers found</p>
-            </div>
-          } @else {
-            @for (customer of filteredCustomers; track customer.id) {
-              <div
-                [id]="'customer-item-' + customer.id"
-                (click)="selectCustomer.emit(customer)"
-                [class]="getCustomerItemClass(customer)"
-              >
-                <!-- Row 1: Name and Acres -->
-                <div class="flex items-center justify-between gap-2">
-                  <h3 class="font-medium text-gray-900 dark:text-white truncate flex-1 min-w-0">{{ customer.name }}</h3>
-                  <app-badge variant="secondary" class="flex-shrink-0 whitespace-nowrap">{{ customer.totalAcres | number }} acres</app-badge>
-                </div>
-                @if (customer.sourceCustomerId) {
-                  <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{{ customer.sourceCustomerId }}</p>
-                }
-
-                <!-- Details - fixed height container -->
-                <div class="space-y-1 mt-1.5 min-h-[88px]">
-                  <p class="text-sm text-gray-600 dark:text-gray-400 truncate">{{ customer.farm }}</p>
-                  <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
-                      <circle cx="12" cy="10" r="3"/>
-                    </svg>
-                    <span class="truncate">{{ getFormattedLocation(customer) }}</span>
-                  </div>
-                  @if (customer.phone) {
-                    <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
-                      </svg>
-                      <span>{{ getFormattedPhone(customer.phone) }}</span>
-                    </div>
-                  }
-                  @if (customer.email) {
-                    <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <rect width="20" height="16" x="2" y="4" rx="2"/>
-                        <path d="m2 7 8.97 5.7a1.94 1.94 0 0 0 2.06 0L22 7"/>
-                      </svg>
-                      <span class="truncate">{{ customer.email }}</span>
-                    </div>
-                  }
-                  <div class="flex items-center gap-2 text-sm" [class]="lastContactCache.get(customer.id)?.cssClass || 'text-red-500'">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/>
-                      <line x1="16" x2="16" y1="2" y2="6"/>
-                      <line x1="8" x2="8" y1="2" y2="6"/>
-                      <line x1="3" x2="21" y1="10" y2="10"/>
-                    </svg>
-                    <span>{{ lastContactCache.get(customer.id)?.text || 'Never contacted' }}</span>
-                  </div>
-                </div>
-              </div>
-            }
-          }
-        </div>
-      </app-card-content>
-    </app-card>
-  `
+  templateUrl: './customer-list.component.html'
 })
-export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, OnDestroy {
+export class CustomerListComponent {
   @ViewChild('scrollContainer') scrollContainer!: ElementRef<HTMLElement>;
 
-  @Input() customers: Customer[] = [];
-  @Input() selectedCustomer: Customer | null = null;
-  @Input() savedLists: SavedList[] = [];
-  @Input() notes: Note[] = [];
-  @Input() loading: boolean = false;
-  @Input() producerDetailsMap = new Map<number, ProducerDetails>();
-  @Output() selectCustomer = new EventEmitter<Customer>();
-  @Output() tradeUnitChange = new EventEmitter<string[]>();
+  public customers = input<Customer[]>([]);
+  public selectedCustomer = input<Customer | null>(null);
+  public savedLists = input<SavedList[]>([]);
+  public notes = input<Note[]>([]);
+  public loading = input(false);
+  public producerDetailsMap = input(new Map<number, ProducerDetails>());
+  public selectCustomer = output<Customer>();
+  public tradeUnitChange = output<string[]>();
 
-  private cdr = inject(ChangeDetectorRef);
-  private apiService = inject(ApiService);
-  private appStateService = inject(AppStateService);
-  private nlqFilterService = inject(NlqFilterService);
-  private destroy$ = new Subject<void>();
-  private searchSubject$ = new Subject<string>();
+  private readonly apiService = inject(ApiService);
+  private readonly appStateService = inject(AppStateService);
+  private readonly nlqFilterService = inject(NlqFilterService);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly _searchSubject$ = new Subject<string>();
 
-  searchQuery = '';
-  selectedListId = 'all';
-  selectedTradeUnits: string[] = [];
-  tradeUnits: string[] = [];
-  filteredCustomers: Customer[] = [];
-  isTradeUnitDropdownOpen = false;
+  searchQuery = signal('');
+  selectedListId = signal('all');
+  selectedTradeUnits = signal<string[]>([]);
+  tradeUnits = signal<string[]>([]);
+  filteredCustomers = signal<Customer[]>([]);
+  isTradeUnitDropdownOpen = signal(false);
 
   // Performance optimization: Cache last contact info to avoid repeated filtering/sorting
   lastContactCache = new Map<number, LastContactInfo>();
 
-  ngOnInit(): void {
-    this.rebuildLastContactCache();
+  constructor() {
+    this._rebuildLastContactCache();
 
     // Restore state from service
-    this.searchQuery = this.appStateService.searchQuery();
-    this.selectedTradeUnits = this.appStateService.selectedTradeUnits();
-    this.selectedListId = this.appStateService.selectedSavedListId() || 'all';
+    this.searchQuery.set(this.appStateService.searchQuery());
+    this.selectedTradeUnits.set(this.appStateService.selectedTradeUnits());
+    this.selectedListId.set(this.appStateService.selectedSavedListId() || 'all');
 
     // Re-run NLQ to populate customerIds for the restored list selection
-    if (this.selectedListId !== 'all') {
+    if (this.selectedListId() !== 'all') {
       this.onSavedListChange();
     } else {
       this.applyFilters();
@@ -266,140 +70,136 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
 
     // Load trade units
     this.apiService.getTradeUnits().pipe(
-      takeUntil(this.destroy$)
+      takeUntilDestroyed(this.destroyRef)
     ).subscribe({
       next: (units) => {
-        this.tradeUnits = units;
-        this.cdr.markForCheck();
+        this.tradeUnits.set(units);
       },
       error: () => {}
     });
 
     // Set up search debouncing
-    this.searchSubject$.pipe(
-      debounceTime(150), // Wait 150ms after user stops typing
+    this._searchSubject$.pipe(
+      debounceTime(150),
       distinctUntilChanged(),
-      takeUntil(this.destroy$)
+      takeUntilDestroyed(this.destroyRef)
     ).subscribe(searchTerm => {
-      this.performSearch(searchTerm);
+      this._performSearch(searchTerm);
     });
+
+    // Scroll to last selected customer after first render
+    afterNextRender(() => {
+      const lastId = this.appStateService.lastScrolledCustomerId();
+      if (lastId !== null) {
+        const el = this.scrollContainer?.nativeElement
+          ?.querySelector<HTMLElement>(`#customer-item-${lastId}`);
+        if (el) {
+          this._scrollItemIntoView(el, 'auto');
+        }
+      }
+    });
+
+    // React to customers/notes input changes
+    effect(() => {
+      this.customers();
+      this.notes();
+      this._rebuildLastContactCache();
+    });
+
+    // React to savedLists changes — validate selectedListId and reapply filters
+    effect(() => {
+      const savedLists = this.savedLists();
+      if (this.selectedListId() !== 'all') {
+        const stillExists = savedLists.some(l => String(l.id) === this.selectedListId());
+        if (!stillExists) {
+          this.selectedListId.set('all');
+          this.appStateService.setSelectedSavedListId('all');
+        }
+      }
+      this.applyFilters();
+    }, { allowSignalWrites: true });
+
+    // React to customers changing — reapply filters
+    effect(() => {
+      this.customers();
+      this.applyFilters();
+    });
+
+    // React to selectedCustomer changes — scroll into view
+    effect(() => {
+      const selectedCustomer = this.selectedCustomer();
+      if (selectedCustomer) {
+        const newId = selectedCustomer.id;
+        if (newId !== this.appStateService.lastScrolledCustomerId()) {
+          this.appStateService.setLastScrolledCustomerId(newId);
+          setTimeout(() => {
+            const el = this.scrollContainer?.nativeElement
+              ?.querySelector<HTMLElement>(`#customer-item-${newId}`);
+            if (el) {
+              this._scrollItemIntoView(el, 'smooth');
+            }
+          }, 50);
+        }
+      }
+    }, { allowSignalWrites: true });
   }
 
   toggleTradeUnitDropdown(): void {
-    this.isTradeUnitDropdownOpen = !this.isTradeUnitDropdownOpen;
+    this.isTradeUnitDropdownOpen.update(v => !v);
   }
 
   closeDropdown(): void {
-    this.isTradeUnitDropdownOpen = false;
+    this.isTradeUnitDropdownOpen.set(false);
   }
 
   toggleTradeUnit(unit: string): void {
-    const index = this.selectedTradeUnits.indexOf(unit);
-    if (index > -1) {
-      this.selectedTradeUnits.splice(index, 1);
-    } else {
-      this.selectedTradeUnits.push(unit);
-    }
+    this.selectedTradeUnits.update(units => {
+      const index = units.indexOf(unit);
+      if (index > -1) {
+        return units.filter((_, i) => i !== index);
+      } else {
+        return [...units, unit];
+      }
+    });
     this.onTradeUnitsChange();
   }
 
   clearAllTradeUnits(): void {
-    this.selectedTradeUnits = [];
+    this.selectedTradeUnits.set([]);
     this.onTradeUnitsChange();
     // Keep dropdown open so user can make new selections
   }
 
   isTradeUnitSelected(unit: string): boolean {
-    return this.selectedTradeUnits.includes(unit);
+    return this.selectedTradeUnits().includes(unit);
   }
 
   getTradeUnitButtonText(): string {
-    if (this.selectedTradeUnits.length === 0) {
+    if (this.selectedTradeUnits().length === 0) {
       return 'Select Trade Units';
-    } else if (this.selectedTradeUnits.length === 1) {
-      return this.selectedTradeUnits[0];
+    } else if (this.selectedTradeUnits().length === 1) {
+      return this.selectedTradeUnits()[0];
     } else {
-      return `${this.selectedTradeUnits.length} trade units selected`;
+      return `${this.selectedTradeUnits().length} trade units selected`;
     }
   }
 
   onTradeUnitsChange(): void {
     // Emit the array of selected trade units
-    this.tradeUnitChange.emit(this.selectedTradeUnits);
+    this.tradeUnitChange.emit(this.selectedTradeUnits());
   }
 
   @HostListener('document:click', ['$event'])
   onDocumentClick(event: MouseEvent): void {
     // Close dropdown when clicking outside
-    if (this.isTradeUnitDropdownOpen) {
+    if (this.isTradeUnitDropdownOpen()) {
       this.closeDropdown();
-      this.cdr.markForCheck();
     }
   }
 
-  ngAfterViewInit(): void {
-    // When this component is recreated after navigation (scroll position is lost),
-    // scroll back to the last selected customer so they're still visible.
-    const lastId = this.appStateService.lastScrolledCustomerId();
-    if (lastId !== null) {
-      setTimeout(() => {
-        const el = this.scrollContainer?.nativeElement
-          ?.querySelector<HTMLElement>(`#customer-item-${lastId}`);
-        if (el) {
-          this.scrollItemIntoView(el, 'auto');
-        }
-      }, 50);
-    }
-  }
-
-  ngOnDestroy(): void {
-    this.destroy$.next();
-    this.destroy$.complete();
-  }
-
-  ngOnChanges(changes: SimpleChanges): void {
-    // Rebuild cache when notes or customers change (customers may load after notes)
-    if (changes['notes'] || changes['customers']) {
-      this.rebuildLastContactCache();
-    }
-
-    if (changes['savedLists'] && this.selectedListId !== 'all') {
-      const stillExists = this.savedLists.some(l => String(l.id) === this.selectedListId);
-      if (!stillExists) {
-        this.selectedListId = 'all';
-        this.appStateService.setSelectedSavedListId('all');
-      }
-    }
-
-    if (changes['customers'] || changes['savedLists']) {
-      this.applyFilters();
-    }
-
-    // Force UI update when selected customer changes
-    if (changes['selectedCustomer'] || changes['notes']) {
-      this.cdr.markForCheck();
-    }
-
-    // Scroll the selected customer into view only when the ID actually changes.
-    // lastScrolledCustomerId lives in AppStateService so it survives navigation —
-    // coming back to the same screen with the same customer will not re-scroll.
-    if (changes['selectedCustomer'] && this.selectedCustomer) {
-      const newId = this.selectedCustomer.id;
-      if (newId !== this.appStateService.lastScrolledCustomerId()) {
-        this.appStateService.setLastScrolledCustomerId(newId);
-        setTimeout(() => {
-          const el = this.scrollContainer?.nativeElement
-            ?.querySelector<HTMLElement>(`#customer-item-${newId}`);
-          if (el) {
-            this.scrollItemIntoView(el, 'smooth');
-          }
-        }, 50);
-      }
-    }
-  }
 
   /** Scroll a customer item into view within the list container only — never scrolls the document. */
-  private scrollItemIntoView(el: HTMLElement, behavior: ScrollBehavior): void {
+  private _scrollItemIntoView(el: HTMLElement, behavior: ScrollBehavior): void {
     const container = this.scrollContainer?.nativeElement;
     if (!container) return;
     const containerTop = container.getBoundingClientRect().top;
@@ -410,19 +210,19 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
   }
 
   applyFilters(): void {
-    const searchTerm = this.searchQuery.trim().toLowerCase();
+    const searchTerm = this.searchQuery().trim().toLowerCase();
 
     // Save search query to state service
-    this.appStateService.setSearchQuery(this.searchQuery);
+    this.appStateService.setSearchQuery(this.searchQuery());
 
     // If there's a search term but no trade units selected, use API search to search all trade units
-    if (searchTerm && this.selectedTradeUnits.length === 0) {
-      this.searchSubject$.next(searchTerm);
+    if (searchTerm && this.selectedTradeUnits().length === 0) {
+      this._searchSubject$.next(searchTerm);
       return;
     }
 
     // Client-side filtering (instant) when we have customers loaded
-    let result = [...this.customers];
+    let result = [...this.customers()];
 
     // Apply search filter (client-side - much faster!)
     if (searchTerm) {
@@ -442,37 +242,36 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
     }
 
     // Apply saved list filter (skip for "all" which means show all customers)
-    if (this.selectedListId && this.selectedListId !== 'all') {
-      const savedList = this.savedLists.find(l => String(l.id) === this.selectedListId);
+    if (this.selectedListId() && this.selectedListId() !== 'all') {
+      const savedList = this.savedLists().find(l => String(l.id) === this.selectedListId());
       if (savedList && savedList.customerIds?.length) {
         result = result.filter(c => savedList.customerIds!.includes(c.id));
       }
     }
 
-    this.filteredCustomers = result;
-    this.cdr.markForCheck();
+    this.filteredCustomers.set(result);
   }
 
   /** Returns saved lists whose trade units overlap with the currently selected trade units. */
   getVisibleSavedLists(): SavedList[] {
-    if (this.selectedTradeUnits.length === 0) return this.savedLists;
-    return this.savedLists.filter(list => {
+    if (this.selectedTradeUnits().length === 0) return this.savedLists();
+    return this.savedLists().filter(list => {
       if (!list.tradeUnits) return true; // Legacy lists without trade units show everywhere
       const listUnits = list.tradeUnits.split(',').map(u => u.trim());
-      return listUnits.some(u => this.selectedTradeUnits.includes(u));
+      return listUnits.some(u => this.selectedTradeUnits().includes(u));
     });
   }
 
   /** Called when the user selects a saved list from the dropdown. Runs the NLQ query dynamically. */
   onSavedListChange(): void {
-    this.appStateService.setSelectedSavedListId(this.selectedListId);
+    this.appStateService.setSelectedSavedListId(this.selectedListId());
 
-    if (!this.selectedListId || this.selectedListId === 'all') {
+    if (!this.selectedListId() || this.selectedListId() === 'all') {
       this.applyFilters();
       return;
     }
 
-    const savedList = this.savedLists.find(l => String(l.id) === this.selectedListId);
+    const savedList = this.savedLists().find(l => String(l.id) === this.selectedListId());
     if (!savedList) {
       this.applyFilters();
       return;
@@ -480,7 +279,7 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
 
     // Build NLQ context from AppStateService cache
     const context: NlqFilterContext = {
-      customers: this.customers,
+      customers: this.customers(),
       contracts: this.appStateService.contracts(),
       tickets: this.appStateService.tickets(),
       notes: this.appStateService.notes(),
@@ -499,21 +298,21 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
   }
 
   clearSearch(): void {
-    this.searchQuery = '';
+    this.searchQuery.set('');
     this.appStateService.setSearchQuery('');
     this.applyFilters();
   }
 
-  private performSearch(searchTerm: string): void {
+  private _performSearch(searchTerm: string): void {
     // Pass selectedTradeUnits to search - if no trade units selected, searches all trade units
-    const tradeUnits = this.selectedTradeUnits.length > 0 ? this.selectedTradeUnits : undefined;
+    const tradeUnits = this.selectedTradeUnits().length > 0 ? this.selectedTradeUnits() : undefined;
     this.apiService.searchCustomers(searchTerm, tradeUnits).pipe(
-      takeUntil(this.destroy$)
+      takeUntilDestroyed(this.destroyRef)
     ).subscribe({
       next: (customers) => {
         // Merge producer details into search results (ODS doesn't return these fields)
         let result = customers.map(c => {
-          const pd = this.producerDetailsMap.get(c.id);
+          const pd = this.producerDetailsMap().get(c.id);
           if (pd) {
             return {
               ...c,
@@ -527,19 +326,19 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
         });
 
         // Apply saved list filter to search results if needed
-        if (this.selectedListId) {
-          const savedList = this.savedLists.find(l => String(l.id) === this.selectedListId);
+        if (this.selectedListId()) {
+          const savedList = this.savedLists().find(l => String(l.id) === this.selectedListId());
           if (savedList) {
             result = result.filter(c => (savedList.customerIds || []).includes(c.id));
           }
         }
-        this.filteredCustomers = result;
-        this.cdr.markForCheck();
+        this.filteredCustomers.set(result);
+
       },
       error: () => {
         // Fall back to showing initial customers on error
-        this.filteredCustomers = [...this.customers];
-        this.cdr.markForCheck();
+        this.filteredCustomers.set([...this.customers()]);
+
       }
     });
   }
@@ -551,12 +350,12 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
    * Complexity: O(m + n) where m = notes count, n = customers count
    * Previously: O(n * m) on EVERY change detection cycle
    */
-  private rebuildLastContactCache(): void {
+  private _rebuildLastContactCache(): void {
     this.lastContactCache.clear();
 
     // Group notes by customer ID - single pass through notes O(m)
     const notesByCustomer = new Map<number, Note[]>();
-    for (const note of this.notes) {
+    for (const note of this.notes()) {
       if (!notesByCustomer.has(note.customerId)) {
         notesByCustomer.set(note.customerId, []);
       }
@@ -564,7 +363,7 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
     }
 
     // Calculate last contact for each customer - single pass O(n)
-    for (const customer of this.customers) {
+    for (const customer of this.customers()) {
       const customerNotes = notesByCustomer.get(customer.id) || [];
 
       if (customerNotes.length === 0) {
@@ -596,14 +395,14 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
         text = years === 1 ? '1 year ago' : `${years} years ago`;
       }
 
-      const cssClass = this.getLastContactClass(daysAgo);
+      const cssClass = this._getLastContactClass(daysAgo);
 
       this.lastContactCache.set(customer.id, { text, daysAgo, cssClass });
     }
   }
 
   getCustomerItemClass(customer: Customer): string {
-    const isSelected = this.selectedCustomer?.id === customer.id;
+    const isSelected = this.selectedCustomer()?.id === customer.id;
     const baseClass = 'p-4 cursor-pointer transition-colors';
     const stateClass = isSelected
       ? 'bg-green-50 dark:bg-green-900/30'
@@ -611,7 +410,7 @@ export class CustomerListComponent implements OnInit, AfterViewInit, OnChanges, 
     return `${baseClass} ${stateClass}`;
   }
 
-  private getLastContactClass(daysAgo: number): string {
+  private _getLastContactClass(daysAgo: number): string {
     if (daysAgo < 0) return 'text-red-500';
     if (daysAgo <= 7) return 'text-green-500';
     if (daysAgo <= 30) return 'text-yellow-500';

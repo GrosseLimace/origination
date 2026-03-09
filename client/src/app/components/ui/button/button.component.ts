@@ -1,12 +1,12 @@
-import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 
 @Component({
   selector: 'app-button',
   standalone: true,
   template: `
     <button
-      [type]="type"
-      [disabled]="disabled"
+      [type]="type()"
+      [disabled]="disabled()"
       [class]="getClasses()"
       (click)="onClick.emit($event)"
     >
@@ -15,32 +15,34 @@ import { Component, Input, Output, EventEmitter } from '@angular/core';
   `
 })
 export class ButtonComponent {
-  @Input() variant: 'default' | 'primary' | 'secondary' | 'outline' | 'ghost' | 'destructive' = 'default';
-  @Input() size: 'default' | 'sm' | 'lg' | 'icon' = 'default';
-  @Input() type: 'button' | 'submit' | 'reset' = 'button';
-  @Input() disabled = false;
-  @Input() class = '';
-  @Output() onClick = new EventEmitter<MouseEvent>();
+  public variant = input<'default' | 'primary' | 'secondary' | 'outline' | 'ghost' | 'destructive'>('default');
+  public size = input<'default' | 'sm' | 'lg' | 'icon'>('default');
+  public type = input<'button' | 'submit' | 'reset'>('button');
+  public disabled = input<boolean>(false);
+  public class = input<string>('');
+  public onClick = output<MouseEvent>();
 
-  getClasses(): string {
-    const baseClasses = 'inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 disabled:pointer-events-none disabled:opacity-50';
+  public getClasses(): string {
+    if (this.size() === 'icon') {
+      return ['scoular-btn-icon', this.class()].filter(Boolean).join(' ');
+    }
 
-    const variantClasses: Record<string, string> = {
-      default: 'bg-green-600 text-white hover:bg-green-700',
-      primary: 'bg-green-600 text-white hover:bg-green-700',
-      secondary: 'bg-gray-100 text-gray-900 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600',
-      outline: 'border border-gray-300 dark:border-gray-600 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100',
-      ghost: 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100',
-      destructive: 'bg-red-600 text-white hover:bg-red-700'
+    const variantMap: Record<string, string> = {
+      default:     'scoular-btn-primary',
+      primary:     'scoular-btn-primary',
+      secondary:   'scoular-btn-secondary',
+      outline:     'scoular-btn-outline',
+      ghost:       'scoular-btn-ghost',
+      destructive: 'scoular-btn-danger'
     };
 
-    const sizeClasses: Record<string, string> = {
-      default: 'h-10 px-4 py-2',
-      sm: 'h-8 px-3 text-sm',
-      lg: 'h-12 px-6 text-lg',
-      icon: 'h-10 w-10'
+    const sizeMap: Record<string, string> = {
+      default: '',
+      sm:      'scoular-btn-sm',
+      lg:      'scoular-btn-lg'
     };
 
-    return `${baseClasses} ${variantClasses[this.variant]} ${sizeClasses[this.size]} ${this.class}`;
+    return ['scoular-btn', variantMap[this.variant()], sizeMap[this.size()], this.class()]
+      .filter(Boolean).join(' ');
   }
 }
