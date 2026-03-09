@@ -75,7 +75,7 @@ jobs:
     needs: deploy-dev
     runs-on: self-hosted
     environment: qa
-    if: github.event_name == 'push' || github.event.inputs.environment == 'qa'
+    if: github.event.inputs.environment == 'qa'
     permissions:
       id-token: write
       contents: read
@@ -103,7 +103,7 @@ jobs:
     needs: deploy-qa
     runs-on: self-hosted
     environment: prod
-    if: github.event_name == 'push' || github.event.inputs.environment == 'prod'
+    if: github.event.inputs.environment == 'prod'
     permissions:
       id-token: write
       contents: read
