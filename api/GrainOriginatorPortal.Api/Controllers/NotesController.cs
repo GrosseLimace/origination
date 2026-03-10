@@ -1,3 +1,6 @@
+// Project namespaces
+using GrainOriginatorPortal.Api.Exceptions;
+
 namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
@@ -44,7 +47,11 @@ public class NotesController : ControllerBase
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("database permissions"))
         {
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = "Service temporarily unavailable" });
+            throw new InfrastructureException(
+                "Notes service is temporarily unavailable due to a permissions issue.",
+                "INFRASTRUCTURE_DATABASE_UNAVAILABLE",
+                ex,
+                StatusCodes.Status503ServiceUnavailable);
         }
     }
 

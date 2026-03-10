@@ -1,5 +1,10 @@
 // Microsoft namespaces
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Http.Resilience;
+
+// Polly namespaces
+using Polly;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Data;
@@ -13,7 +18,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Service Configuration
 // =============================================================================
 
-// Register global exception handler (maps exceptions to ProblemDetails responses)
+// Register global exception handler — returns ApiErrorResponse per error-handling-standards.md §2
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
 
@@ -123,6 +128,50 @@ builder.Services.AddCors(options =>
     });
 });
 
+// =============================================================================
+// HTTP CLIENTS
+// Nominatim geocoding client — BaseAddress set here so controllers use relative URLs.
+// Resilience pipeline: retry with exponential backoff + circuit breaker per §6.
+// =============================================================================
+builder.Services.AddHttpClient("nominatim", client =>
+{
+    client.BaseAddress = new Uri("https://nominatim.openstreetmap.org/");
+    client.DefaultRequestHeaders.Add("User-Agent", "GrainOriginatorPortal/1.0");
+    client.Timeout = TimeSpan.FromSeconds(10);
+})
+.AddResilienceHandler("nominatim", pipeline =>
+{
+    // Retry: up to 3 attempts with exponential backoff + jitter (§6.2)
+    pipeline.AddRetry(new HttpRetryStrategyOptions
+    {
+        MaxRetryAttempts = 3,
+        Delay = TimeSpan.FromMilliseconds(500),
+        BackoffType = DelayBackoffType.Exponential,
+        UseJitter = true,
+        MaxDelay = TimeSpan.FromSeconds(30),
+        // Only retry on transient network/timeout failures — not 4xx
+        ShouldHandle = args => ValueTask.FromResult(
+            args.Outcome.Exception is HttpRequestException ||
+            args.Outcome.Exception is TaskCanceledException)
+    });
+
+    // Circuit breaker: opens after 50% failure rate over 5+ requests in 30s window (§6.3)
+    pipeline.AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
+    {
+        FailureRatio = 0.5,
+        SamplingDuration = TimeSpan.FromSeconds(30),
+        MinimumThroughput = 5,
+        BreakDuration = TimeSpan.FromSeconds(30)
+    });
+});
+
+// =============================================================================
+// HEALTH CHECKS (§8 — /health/live and /health/ready)
+// =============================================================================
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<OriginationDbContext>("origination_db", tags: ["ready"])
+    .AddDbContextCheck<ApplicationDbContext>("application_db", tags: ["ready"]);
+
 var app = builder.Build();
 
 // =============================================================================
@@ -165,6 +214,9 @@ if (app.Environment.IsDevelopment())
 // Global exception handling — must be first in the middleware pipeline
 app.UseExceptionHandler();
 
+// Correlation ID — generate/propagate X-Correlation-Id on every request (§8)
+app.UseMiddleware<CorrelationIdMiddleware>();
+
 // Apply CORS policy to allow Angular frontend requests
 // MUST come before UseHttpsRedirection to handle preflight requests correctly
 app.UseCors("AllowAngular");
@@ -174,6 +226,27 @@ app.UseHttpsRedirection();
 
 // Map controller routes (e.g., /api/customers, /api/contracts, etc.)
 app.MapControllers();
+
+// =============================================================================
+// HEALTH CHECK ENDPOINTS (§8 — liveness + readiness probes)
+// /health/live  — process is running (no dependency checks)
+// /health/ready — process + DB connections are ready
+// =============================================================================
+app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = _ => false  // exclude all checks — liveness only verifies the process is up
+});
+
+app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResultStatusCodes =
+    {
+        [HealthStatus.Healthy]   = StatusCodes.Status200OK,
+        [HealthStatus.Degraded]  = StatusCodes.Status200OK,
+        [HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable
+    }
+});
 
 // Start the application
 app.Run();

@@ -7,8 +7,10 @@ using GrainOriginatorPortal.Api.Exceptions;
 namespace GrainOriginatorPortal.Api.Middleware;
 
 /// <summary>
-/// Catches all unhandled exceptions and returns a structured ProblemDetails JSON response.
-/// Registered via app.UseExceptionHandler() in Program.cs.
+/// Catches all unhandled exceptions and returns a structured <see cref="ApiErrorResponse"/>
+/// per error-handling-standards.md §2. Registered via app.UseExceptionHandler() in Program.cs.
+/// Log levels follow §4.2: Information for not-found, Warning for validation/business,
+/// Error for infrastructure, Critical for unexpected.
 /// </summary>
 public class GlobalExceptionHandler : IExceptionHandler
 {
@@ -26,43 +28,104 @@ public class GlobalExceptionHandler : IExceptionHandler
         Exception exception,
         CancellationToken cancellationToken)
     {
-        _logger.LogError(exception, "Unhandled exception: {Message}", exception.Message);
+        var traceId = httpContext.Items[CorrelationIdMiddleware.ItemsKey]?.ToString()
+            ?? httpContext.TraceIdentifier;
 
-        var (statusCode, response) = exception switch
+        var timestamp = DateTime.UtcNow.ToString("O");
+        var instance = httpContext.Request.Path.Value;
+
+        int statusCode;
+        ApiErrorResponse response;
+
+        switch (exception)
         {
-            NotFoundException notFound => (
-                StatusCodes.Status404NotFound,
-                new ProblemDetails
-                {
-                    Status = StatusCodes.Status404NotFound,
-                    Title = "Not Found",
-                    Detail = notFound.Message
-                }),
+            case NotFoundException notFound:
+                _logger.LogInformation(
+                    "Resource not found [{TraceId}]: {Message}",
+                    traceId, notFound.Message);
 
-            Exceptions.ValidationException validation => (
-                StatusCodes.Status400BadRequest,
-                (ProblemDetails)new ValidationProblemDetails(
-                    validation.Errors.ToDictionary(
-                        kvp => kvp.Key,
-                        kvp => kvp.Value))
-                {
-                    Status = StatusCodes.Status400BadRequest,
-                    Title = "Validation Error"
-                }),
+                statusCode = StatusCodes.Status404NotFound;
+                response = BuildError("RESOURCE_NOT_FOUND", notFound.Message, traceId, timestamp, instance);
+                break;
 
-            _ => (
-                StatusCodes.Status500InternalServerError,
-                new ProblemDetails
-                {
-                    Status = StatusCodes.Status500InternalServerError,
-                    Title = "Server Error",
-                    Detail = "An unexpected error occurred."
-                })
-        };
+            case Exceptions.ValidationException validation:
+                _logger.LogWarning(
+                    "Validation error [{TraceId}]: {FieldCount} field(s) failed",
+                    traceId, validation.Errors.Count);
+
+                var details = validation.Errors
+                    .SelectMany(kvp => kvp.Value.Select(msg => new ApiErrorDetail
+                    {
+                        Field = kvp.Key,
+                        Message = msg,
+                        Code = "VALIDATION_INVALID_FIELD"
+                    }))
+                    .ToList();
+
+                statusCode = StatusCodes.Status400BadRequest;
+                response = BuildError("VALIDATION_ERROR", "One or more fields failed validation.", traceId, timestamp, instance, details);
+                break;
+
+            case BusinessException business:
+                _logger.LogWarning(
+                    "Business rule violation [{TraceId}] [{ErrorCode}]: {Message}",
+                    traceId, business.ErrorCode, business.Message);
+
+                statusCode = business.HttpStatusCode;
+                response = BuildError(business.ErrorCode, business.Message, traceId, timestamp, instance);
+                break;
+
+            case InfrastructureException infra:
+                _logger.LogError(
+                    exception,
+                    "Infrastructure failure [{TraceId}] [{ErrorCode}]: {Message}",
+                    traceId, infra.ErrorCode, infra.Message);
+
+                statusCode = infra.HttpStatusCode;
+                response = BuildError(
+                    infra.ErrorCode,
+                    "A service dependency is unavailable. Please try again shortly.",
+                    traceId, timestamp, instance);
+                break;
+
+            default:
+                _logger.LogCritical(
+                    exception,
+                    "Unhandled exception [{TraceId}]: {Message}",
+                    traceId, exception.Message);
+
+                statusCode = StatusCodes.Status500InternalServerError;
+                response = BuildError(
+                    "INTERNAL_ERROR",
+                    $"Something went wrong on our end. If this persists, contact support. (Ref: {traceId})",
+                    traceId, timestamp, instance);
+                break;
+        }
 
         httpContext.Response.StatusCode = statusCode;
         await httpContext.Response.WriteAsJsonAsync(response, cancellationToken);
 
         return true;
     }
+
+    // -------------------------------------------------------------------------
+    private static ApiErrorResponse BuildError(
+        string code,
+        string message,
+        string traceId,
+        string timestamp,
+        string? instance,
+        IReadOnlyList<ApiErrorDetail>? details = null)
+        => new()
+        {
+            Error = new ApiErrorBody
+            {
+                Code = code,
+                Message = message,
+                Details = details,
+                TraceId = traceId,
+                Timestamp = timestamp,
+                Instance = instance
+            }
+        };
 }

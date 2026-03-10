@@ -6,12 +6,10 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class ProducerDetailsController : ControllerBase
 {
     private readonly IDataService _dataService;
-    private readonly ILogger<ProducerDetailsController> _logger;
 
-    public ProducerDetailsController(IDataService dataService, ILogger<ProducerDetailsController> logger)
+    public ProducerDetailsController(IDataService dataService)
     {
         _dataService = dataService;
-        _logger = logger;
     }
 
     // -------------------------------------------------------------------------
@@ -37,29 +35,20 @@ public class ProducerDetailsController : ControllerBase
     /// <summary>Creates or updates producer details for a customer.</summary>
     [HttpPut("customer/{customerId:long}")]
     [ProducesResponseType(typeof(ProducerDetails), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ProducerDetails>> Upsert(long customerId, [FromBody] UpsertProducerDetailsRequest request, CancellationToken cancellationToken = default)
     {
-        try
-        {
-            var details = await _dataService.UpsertProducerDetailsAsync(
-                customerId,
-                request.SourceCustomerId,
-                request.CustomerName,
-                request.TotalAcres,
-                request.BinCapacity,
-                request.PrimaryContact,
-                request.Commodities,
-                request.LinkedProducerIds,
-                cancellationToken
-            );
-            return Ok(details);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error saving producer details for customer {CustomerId}", customerId);
-            return StatusCode(StatusCodes.Status500InternalServerError, new { error = "Failed to save producer details" });
-        }
+        var details = await _dataService.UpsertProducerDetailsAsync(
+            customerId,
+            request.SourceCustomerId,
+            request.CustomerName,
+            request.TotalAcres,
+            request.BinCapacity,
+            request.PrimaryContact,
+            request.Commodities,
+            request.LinkedProducerIds,
+            cancellationToken
+        );
+        return Ok(details);
     }
 
     // -------------------------------------------------------------------------

@@ -6,7 +6,7 @@ namespace GrainOriginatorPortal.Api.Exceptions;
 public class NotFoundException : AppException
 {
     public NotFoundException(string entityName, object key)
-        : base($"{entityName} with key '{key}' was not found.", "NOT_FOUND")
+        : base($"{entityName} with key '{key}' was not found.", "RESOURCE_NOT_FOUND")
     {
         WithContext("EntityName", entityName);
         WithContext("Key", key);
