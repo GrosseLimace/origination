@@ -5,7 +5,7 @@ namespace GrainOriginatorPortal.Api.Models.Requests;
 public record CreatePlantingIntentionRequest
 {
     [Required]
-    public required int CustomerId { get; init; }
+    public required long CustomerId { get; init; }
 
     [Required]
     [StringLength(255)]

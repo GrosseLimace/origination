@@ -7,7 +7,7 @@ namespace GrainOriginatorPortal.Api.Models;
 public class PlantingIntention
 {
     public int Id { get; set; }
-    public int CustomerId { get; set; }
+    public long CustomerId { get; set; }
     public string CustomerName { get; set; } = string.Empty;
     public string CustomerCode { get; set; } = string.Empty;
     public string TradeUnit { get; set; } = string.Empty;
@@ -16,8 +16,8 @@ public class PlantingIntention
     public string? Type { get; set; }
     public string? Description { get; set; }
     public int Acres { get; set; }
-    public DateTime CreatedOn { get; set; }
+    public DateTime CreatedAt { get; set; }
     public string CreatedBy { get; set; } = string.Empty;
-    public DateTime? ModifiedOn { get; set; }
+    public DateTime? ModifiedAt { get; set; }
     public string? ModifiedBy { get; set; }
 }

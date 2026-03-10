@@ -17,7 +17,7 @@ public class ProducerDetails
     public string? Commodities { get; set; } // Comma-separated list (e.g. "Corn,Soybeans,Wheat")
     public string? LinkedProducerIds { get; set; } // Comma-separated customer IDs
     public string CreatedBy { get; set; } = string.Empty;
-    public DateTime CreatedOn { get; set; }
+    public DateTime CreatedAt { get; set; }
     public string? ModifiedBy { get; set; }
-    public DateTime? ModifiedOn { get; set; }
+    public DateTime? ModifiedAt { get; set; }
 }

@@ -1,5 +1,6 @@
 // Microsoft namespaces
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 // Third-party namespaces
 using Moq;
@@ -21,7 +22,7 @@ public class NotesControllerTests
     public NotesControllerTests()
     {
         _dataServiceMock = new Mock<IDataService>();
-        _sut = new NotesController(_dataServiceMock.Object);
+        _sut = new NotesController(_dataServiceMock.Object, new Mock<ILogger<NotesController>>().Object);
     }
 
     // -------------------------------------------------------------------------

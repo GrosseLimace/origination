@@ -30,6 +30,15 @@ public class SqlDataService : IDataService
         ?? _httpContextAccessor.HttpContext?.TraceIdentifier
         ?? "no-trace";
 
+    private string GetCurrentUser()
+    {
+        var user = _httpContextAccessor.HttpContext?.User;
+        return user?.FindFirst("preferred_username")?.Value
+            ?? user?.FindFirst("oid")?.Value
+            ?? user?.Identity?.Name
+            ?? "System";
+    }
+
     // =========================================================================
     // Customer Operations
     // =========================================================================
@@ -973,7 +982,7 @@ public class SqlDataService : IDataService
         }
     }
 
-    public async Task<List<PlantingIntention>> GetPlantingIntentionsByCustomerAsync(int customerId, CancellationToken cancellationToken = default)
+    public async Task<List<PlantingIntention>> GetPlantingIntentionsByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -997,7 +1006,7 @@ public class SqlDataService : IDataService
         }
     }
 
-    public async Task<PlantingIntention> AddPlantingIntentionAsync(int customerId, string customerName, string customerCode, string tradeUnit, string crop, string? type, string? description, int acres, int plantingYear, CancellationToken cancellationToken = default)
+    public async Task<PlantingIntention> AddPlantingIntentionAsync(long customerId, string customerName, string customerCode, string tradeUnit, string crop, string? type, string? description, int acres, int plantingYear, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -1012,8 +1021,8 @@ public class SqlDataService : IDataService
                 Description = description,
                 Acres = acres,
                 PlantingYear = plantingYear,
-                CreatedBy = "System", // TODO: Get from authenticated user
-                CreatedOn = DateTime.Now
+                CreatedBy = GetCurrentUser(),
+                CreatedAt = DateTime.UtcNow
             };
 
             _appContext.PlantingIntentions.Add(intention);
@@ -1045,8 +1054,8 @@ public class SqlDataService : IDataService
             intention.Description = description;
             intention.Acres = acres;
             intention.PlantingYear = plantingYear;
-            intention.ModifiedBy = "System"; // TODO: Get from authenticated user
-            intention.ModifiedOn = DateTime.Now;
+            intention.ModifiedBy = GetCurrentUser();
+            intention.ModifiedAt = DateTime.UtcNow;
 
             await _appContext.SaveChangesAsync(cancellationToken);
 
@@ -1093,7 +1102,7 @@ public class SqlDataService : IDataService
 
             return await _appContext.Notes
                 .AsNoTracking()
-                .OrderByDescending(n => n.CreatedOn)
+                .OrderByDescending(n => n.CreatedAt)
                 .ToListAsync(cancellationToken);
         }
         catch (SqlException ex) when (ex.Number == 208) // Invalid object name
@@ -1116,7 +1125,7 @@ public class SqlDataService : IDataService
             return await _appContext.Notes
                 .AsNoTracking()
                 .Where(n => n.CustomerId == customerId)
-                .OrderByDescending(n => n.CreatedOn)
+                .OrderByDescending(n => n.CreatedAt)
                 .ToListAsync(cancellationToken);
         }
         catch (SqlException ex) when (ex.Number == 208) // Invalid object name
@@ -1149,8 +1158,8 @@ public class SqlDataService : IDataService
                 CustomerName = customer.Name,
                 TradeUnit = tradeUnit,
                 Description = content,
-                CreatedBy = "System", // TODO: Get from authenticated user
-                CreatedOn = DateTime.UtcNow
+                CreatedBy = GetCurrentUser(),
+                CreatedAt = DateTime.UtcNow
             };
 
             _appContext.Notes.Add(note);
@@ -1202,8 +1211,8 @@ public class SqlDataService : IDataService
             }
 
             note.Description = content;
-            note.ModifiedBy = "System"; // TODO: Get from authenticated user
-            note.ModifiedOn = DateTime.UtcNow;
+            note.ModifiedBy = GetCurrentUser();
+            note.ModifiedAt = DateTime.UtcNow;
             await _appContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Updated note {NoteId}", noteId);
@@ -1286,8 +1295,8 @@ public class SqlDataService : IDataService
                 existing.PrimaryContact = primaryContact;
                 existing.Commodities = commodities;
                 existing.LinkedProducerIds = linkedProducerIds;
-                existing.ModifiedBy = "system";
-                existing.ModifiedOn = DateTime.UtcNow;
+                existing.ModifiedBy = GetCurrentUser();
+                existing.ModifiedAt = DateTime.UtcNow;
 
                 await _appContext.SaveChangesAsync(cancellationToken);
                 _logger.LogInformation("Updated ProducerDetails for customer {CustomerId}", customerId);
@@ -1305,8 +1314,8 @@ public class SqlDataService : IDataService
                     PrimaryContact = primaryContact,
                     Commodities = commodities,
                     LinkedProducerIds = linkedProducerIds,
-                    CreatedBy = "system",
-                    CreatedOn = DateTime.UtcNow
+                    CreatedBy = GetCurrentUser(),
+                    CreatedAt = DateTime.UtcNow
                 };
 
                 _appContext.ProducerDetails.Add(details);
@@ -1370,7 +1379,7 @@ public class SqlDataService : IDataService
             return await _appContext.SavedLists
                 .AsNoTracking()
                 .Where(s => s.IsActive)
-                .OrderByDescending(s => s.CreatedOn)
+                .OrderByDescending(s => s.CreatedAt)
                 .ToListAsync(cancellationToken);
         }
         catch (Exception ex)
@@ -1391,8 +1400,8 @@ public class SqlDataService : IDataService
                 Query = query,
                 TradeUnits = tradeUnits,
                 Filters = filters,
-                CreatedBy = "System",
-                CreatedOn = DateTime.UtcNow
+                CreatedBy = GetCurrentUser(),
+                CreatedAt = DateTime.UtcNow
             };
             _appContext.SavedLists.Add(savedList);
             await _appContext.SaveChangesAsync(cancellationToken);
@@ -1416,6 +1425,8 @@ public class SqlDataService : IDataService
             list.Query = query;
             list.TradeUnits = tradeUnits;
             list.Filters = filters;
+            list.ModifiedAt = DateTime.UtcNow;
+            list.ModifiedBy = GetCurrentUser();
             await _appContext.SaveChangesAsync(cancellationToken);
             return list;
         }
@@ -1459,37 +1470,47 @@ public class SqlDataService : IDataService
 
     public async Task UpsertDashboardPlantingEstimatesAsync(List<UpsertDashboardEstimateRequest> estimates, string username, CancellationToken cancellationToken = default)
     {
-        foreach (var req in estimates)
+        await using var transaction = await _appContext.Database.BeginTransactionAsync(cancellationToken);
+        try
         {
-            var existing = await _appContext.DashboardPlantingEstimates
-                .FirstOrDefaultAsync(e => e.TradeUnitKey == req.TradeUnitKey
-                                      && e.Crop == req.Crop
-                                      && e.PlantingYear == req.PlantingYear, cancellationToken);
-            if (req.YieldEstimate == null)
+            foreach (var req in estimates)
             {
-                if (existing != null)
-                    _appContext.DashboardPlantingEstimates.Remove(existing);
-            }
-            else if (existing != null)
-            {
-                existing.YieldEstimate = req.YieldEstimate;
-                existing.ModifiedOn = DateTime.UtcNow;
-                existing.ModifiedBy = username;
-            }
-            else
-            {
-                _appContext.DashboardPlantingEstimates.Add(new DashboardPlantingEstimate
+                var existing = await _appContext.DashboardPlantingEstimates
+                    .FirstOrDefaultAsync(e => e.TradeUnitKey == req.TradeUnitKey
+                                          && e.Crop == req.Crop
+                                          && e.PlantingYear == req.PlantingYear, cancellationToken);
+                if (req.YieldEstimate == null)
                 {
-                    TradeUnitKey = req.TradeUnitKey,
-                    Crop = req.Crop,
-                    PlantingYear = req.PlantingYear,
-                    YieldEstimate = req.YieldEstimate,
-                    CreatedOn = DateTime.UtcNow,
-                    CreatedBy = username
-                });
+                    if (existing != null)
+                        _appContext.DashboardPlantingEstimates.Remove(existing);
+                }
+                else if (existing != null)
+                {
+                    existing.YieldEstimate = req.YieldEstimate;
+                    existing.ModifiedAt = DateTime.UtcNow;
+                    existing.ModifiedBy = username;
+                }
+                else
+                {
+                    _appContext.DashboardPlantingEstimates.Add(new DashboardPlantingEstimate
+                    {
+                        TradeUnitKey = req.TradeUnitKey,
+                        Crop = req.Crop,
+                        PlantingYear = req.PlantingYear,
+                        YieldEstimate = req.YieldEstimate,
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedBy = username
+                    });
+                }
             }
+            await _appContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
-        await _appContext.SaveChangesAsync(cancellationToken);
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     public async Task<List<DashboardMarketShare>> GetDashboardMarketSharesAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default)
@@ -1503,37 +1524,47 @@ public class SqlDataService : IDataService
 
     public async Task UpsertDashboardMarketSharesAsync(List<UpsertDashboardMarketShareRequest> shares, string username, CancellationToken cancellationToken = default)
     {
-        foreach (var req in shares)
+        await using var transaction = await _appContext.Database.BeginTransactionAsync(cancellationToken);
+        try
         {
-            var existing = await _appContext.DashboardMarketShares
-                .FirstOrDefaultAsync(e => e.TradeUnitKey == req.TradeUnitKey
-                                      && e.CropCategory == req.CropCategory
-                                      && e.PlantingYear == req.PlantingYear, cancellationToken);
-            if (req.MarketSharePct == null)
+            foreach (var req in shares)
             {
-                if (existing != null)
-                    _appContext.DashboardMarketShares.Remove(existing);
-            }
-            else if (existing != null)
-            {
-                existing.MarketSharePct = req.MarketSharePct;
-                existing.ModifiedOn = DateTime.UtcNow;
-                existing.ModifiedBy = username;
-            }
-            else
-            {
-                _appContext.DashboardMarketShares.Add(new DashboardMarketShare
+                var existing = await _appContext.DashboardMarketShares
+                    .FirstOrDefaultAsync(e => e.TradeUnitKey == req.TradeUnitKey
+                                          && e.CropCategory == req.CropCategory
+                                          && e.PlantingYear == req.PlantingYear, cancellationToken);
+                if (req.MarketSharePct == null)
                 {
-                    TradeUnitKey = req.TradeUnitKey,
-                    CropCategory = req.CropCategory,
-                    PlantingYear = req.PlantingYear,
-                    MarketSharePct = req.MarketSharePct,
-                    CreatedOn = DateTime.UtcNow,
-                    CreatedBy = username
-                });
+                    if (existing != null)
+                        _appContext.DashboardMarketShares.Remove(existing);
+                }
+                else if (existing != null)
+                {
+                    existing.MarketSharePct = req.MarketSharePct;
+                    existing.ModifiedAt = DateTime.UtcNow;
+                    existing.ModifiedBy = username;
+                }
+                else
+                {
+                    _appContext.DashboardMarketShares.Add(new DashboardMarketShare
+                    {
+                        TradeUnitKey = req.TradeUnitKey,
+                        CropCategory = req.CropCategory,
+                        PlantingYear = req.PlantingYear,
+                        MarketSharePct = req.MarketSharePct,
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedBy = username
+                    });
+                }
             }
+            await _appContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
-        await _appContext.SaveChangesAsync(cancellationToken);
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     // Dashboard Actual Harvest Operations
@@ -1548,32 +1579,42 @@ public class SqlDataService : IDataService
 
     public async Task UpsertDashboardActualHarvestAsync(List<UpsertDashboardActualHarvestRequest> items, string username, CancellationToken cancellationToken = default)
     {
-        foreach (var req in items)
+        await using var transaction = await _appContext.Database.BeginTransactionAsync(cancellationToken);
+        try
         {
-            var existing = await _appContext.DashboardActualHarvests
-                .FirstOrDefaultAsync(e => e.TradeUnitKey == req.TradeUnitKey
-                                      && e.CropCategory == req.CropCategory
-                                      && e.PlantingYear == req.PlantingYear, cancellationToken);
-            if (existing != null)
+            foreach (var req in items)
             {
-                existing.Bushels = req.Bushels;
-                existing.ModifiedOn = DateTime.UtcNow;
-                existing.ModifiedBy = username;
-            }
-            else
-            {
-                _appContext.DashboardActualHarvests.Add(new DashboardActualHarvest
+                var existing = await _appContext.DashboardActualHarvests
+                    .FirstOrDefaultAsync(e => e.TradeUnitKey == req.TradeUnitKey
+                                          && e.CropCategory == req.CropCategory
+                                          && e.PlantingYear == req.PlantingYear, cancellationToken);
+                if (existing != null)
                 {
-                    TradeUnitKey = req.TradeUnitKey,
-                    CropCategory = req.CropCategory,
-                    PlantingYear = req.PlantingYear,
-                    Bushels = req.Bushels,
-                    CreatedOn = DateTime.UtcNow,
-                    CreatedBy = username
-                });
+                    existing.Bushels = req.Bushels;
+                    existing.ModifiedAt = DateTime.UtcNow;
+                    existing.ModifiedBy = username;
+                }
+                else
+                {
+                    _appContext.DashboardActualHarvests.Add(new DashboardActualHarvest
+                    {
+                        TradeUnitKey = req.TradeUnitKey,
+                        CropCategory = req.CropCategory,
+                        PlantingYear = req.PlantingYear,
+                        Bushels = req.Bushels,
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedBy = username
+                    });
+                }
             }
+            await _appContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
-        await _appContext.SaveChangesAsync(cancellationToken);
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     public async Task DeleteDashboardActualHarvestAsync(int id, CancellationToken cancellationToken = default)
