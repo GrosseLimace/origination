@@ -14,6 +14,7 @@ This document contains the configuration details for the Origination application
 - [Client Secret Management](#client-secret-management)
 - [Enterprise Applications](#enterprise-applications)
 - [GitHub Actions (Workload Identity)](#github-actions-workload-identity)
+- [App Roles (v2.14)](#app-roles-v214)
 - [Troubleshooting](#troubleshooting)
 - [References](#references)
 
@@ -74,15 +75,11 @@ User -> Origination SPA (Angular) -> Origination API (.NET Web API)
 - **Visible to users**: No (hidden from My Apps portal)
 - **Assignment required**: Yes
 
-**App Role:**
-- **Display Name**: Origination Application
-- **Value**: `Origination.Application`
-- **Allowed Member Types**: Users/Groups + Applications
-- **Description**: Access to Origination application services
+**App Roles:** Admin, User, and Origination.Application (see [App Roles (v2.14)](#app-roles-v214) for details)
 
 **Access Groups:**
-- `Origination App Dev Users` - End users for Dev environment
-- `Azure - Origination App - Developer Admins` - Admins with infrastructure access
+- `Origination App Dev Users` - End users for Dev environment (assigned **User** role)
+- `Azure - Origination App - Developer Admins` - Admins with infrastructure access (assigned **Admin** role)
 
 ### Origination - Dev (SPA)
 
@@ -139,15 +136,11 @@ User -> Origination SPA (Angular) -> Origination API (.NET Web API)
 - **Visible to users**: No (hidden from My Apps portal)
 - **Assignment required**: Yes
 
-**App Role:**
-- **Display Name**: Origination Application
-- **Value**: `Origination.Application`
-- **Allowed Member Types**: Users/Groups + Applications
-- **Description**: Access to Origination application services
+**App Roles:** Admin, User, and Origination.Application (see [App Roles (v2.14)](#app-roles-v214) for details)
 
 **Access Groups:**
-- `Origination App QA Users` - End users for QA environment
-- `Azure - Origination App - Developer Admins` - Admins with infrastructure access
+- `Origination App QA Users` - End users for QA environment (assigned **User** role)
+- `Azure - Origination App - Developer Admins` - Admins with infrastructure access (assigned **Admin** role)
 
 ### Origination - QA (SPA)
 
@@ -201,15 +194,11 @@ User -> Origination SPA (Angular) -> Origination API (.NET Web API)
 - **Visible to users**: No (hidden from My Apps portal)
 - **Assignment required**: Yes
 
-**App Role:**
-- **Display Name**: Origination Application
-- **Value**: `Origination.Application`
-- **Allowed Member Types**: Users/Groups + Applications
-- **Description**: Access to Origination application services
+**App Roles:** Admin, User, and Origination.Application (see [App Roles (v2.14)](#app-roles-v214) for details)
 
 **Access Groups:**
-- `Origination App Users` - End users for Production environment
-- `Azure - Origination App - Production Support` - Admins with infrastructure access
+- `Origination App Users` - End users for Production environment (assigned **User** role)
+- `Azure - Origination App - Production Support` - Admins with infrastructure access (assigned **Admin** role)
 
 ### Origination (Production SPA)
 
@@ -402,6 +391,84 @@ A separate app registration is used for GitHub Actions CI/CD deployments via OID
 | db_ddladmin | Origination |
 
 See `GITHUB-ACTIONS-CICD.md` for the full CI/CD developer guide.
+
+## App Roles (v2.14)
+
+Starting with template v2.14, each API app registration defines multiple app roles instead of a single `Origination.Application` role. App roles control what appears in the `roles` claim of JWT access tokens.
+
+### Convention-Based Defaults
+
+If no custom `appRoles` array is defined in `app-config.json`, the following three roles are created automatically:
+
+| Role Value | Display Name | Allowed Members | Purpose |
+|------------|-------------|-----------------|---------|
+| `Admin` | Admin | Users/Groups + Applications | Full administrative access |
+| `User` | User | Users/Groups + Applications | Standard user access |
+| `Origination.Application` | Origination Application | Applications only | Service-to-service (daemon) access |
+
+### Custom App Roles
+
+Define custom roles in `app-config.json` to override the convention defaults:
+
+```json
+{
+  "appRoles": [
+    { "value": "Admin", "displayName": "Admin", "description": "Full administrative access" },
+    { "value": "Reviewer", "displayName": "Reviewer", "description": "Review-only access" },
+    { "value": "User", "displayName": "User", "description": "Standard user access" }
+  ]
+}
+```
+
+When `appRoles` is provided, only the listed roles are created (plus `Origination.Application` for service-to-service access).
+
+### Group-to-Role Assignment
+
+Each Entra ID group is assigned to a specific app role on the API Enterprise Application. The role is determined by:
+
+1. **Explicit override**: The `appRole` property on the group's entry in `entraGroups` config
+2. **Naming convention** (default): Groups with "Admin" or "Production Support" in the name are assigned the **Admin** role; all others are assigned the **User** role
+
+| Group | Assigned Role | Reason |
+|-------|--------------|--------|
+| Azure - Origination App - Developer Admins | Admin | Name contains "Admin" |
+| Azure - Origination App - Production Support | Admin | Name contains "Production Support" |
+| Origination App Dev Users | User | Default |
+| Origination App QA Users | User | Default |
+| Origination App Users | User | Default |
+
+### JWT `roles` Claim
+
+Authenticated users receive a `roles` claim in their access token containing the role value(s) assigned to their group. Example decoded token payload:
+
+```json
+{
+  "roles": ["Admin"],
+  "name": "Jane Doe",
+  "preferred_username": "jdoe@scoular.com"
+}
+```
+
+Use `[Authorize(Roles = "Admin")]` in .NET or check the `roles` claim in Angular to enforce role-based access.
+
+### App Role Assignments for Service Principals
+
+The `appRoleAssignments` array in `app-config.json` assigns app roles to service principals (UAMIs, daemon apps) or additional groups beyond the 5 standard Entra groups:
+
+```json
+{
+  "appRoleAssignments": [
+    {
+      "principalDisplayName": "uami-myapp-dev-eus",
+      "principalId": "<object-id>",
+      "appRoleValue": "Origination.Application",
+      "environments": ["dev"]
+    }
+  ]
+}
+```
+
+Role GUIDs are resolved automatically by the `Sync-AppRoles` function, which preserves existing Azure AD GUIDs across deployments.
 
 ## Troubleshooting
 

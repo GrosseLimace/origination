@@ -95,6 +95,7 @@ See [APP-REGISTRATIONS.md](APP-REGISTRATIONS.md) for the specific Client IDs per
   - Dev: `api://00078a10-3f3f-4d17-9350-fe90401125ae/Origination.Application.Dev`
   - QA: `api://f3fcab2b-98c8-4622-86bd-c874d281b22a/Origination.Application.QA`
   - Prod: `api://e1458bcd-7212-4ea0-a836-7e08d03b5bbf/Origination.Application.Prod`
+- **App Roles**: JWT access tokens include a `roles` claim (e.g., `Admin` or `User`) based on group membership. Use `[Authorize(Roles = "Admin")]` in .NET to enforce role-based access. See [ENTRA-ID-GROUPS-GUIDE.md](ENTRA-ID-GROUPS-GUIDE.md) for group-to-role mapping details.
 
 See [APP-REGISTRATIONS.md](APP-REGISTRATIONS.md) for SPA client IDs, redirect URIs, and MSAL configuration examples.
 

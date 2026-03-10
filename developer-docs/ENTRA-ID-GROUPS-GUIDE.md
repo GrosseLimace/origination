@@ -10,13 +10,13 @@ Developers typically have two accounts:
 
 ## Groups at a Glance
 
-| Group | Object ID | Environments | Purpose | Access Package |
-|-------|-----------|-------------|---------|----------------|
-| Azure - Origination App - Developer Admins | `83f44135-230c-4b28-a633-009e57088080` | Dev, QA | Azure RBAC + app access (admin accounts) | Developer Access |
-| Azure - Origination App - Production Support | `5a0d1b24-2451-42a9-a709-a1e945068db8` | Prod | Azure RBAC + app access (admin accounts) | Production Support |
-| Origination App Dev Users | `0e4dd29c-b23c-4e11-a2a3-13e1be934c2b` | Dev | App access only (user accounts) | Developer Access |
-| Origination App QA Users | `8f0e0182-661e-4396-bda3-9fa43217f258` | QA | App access only (user accounts) | Developer Access |
-| Origination App Users | `0cb70d50-df9d-4a98-8385-65112e4a7f50` | Prod | App access only (user accounts) | Production Support |
+| Group | Object ID | Environments | Purpose | App Role | Access Package |
+|-------|-----------|-------------|---------|----------|----------------|
+| Azure - Origination App - Developer Admins | `83f44135-230c-4b28-a633-009e57088080` | Dev, QA | Azure RBAC + app access (admin accounts) | Admin | Developer Access |
+| Azure - Origination App - Production Support | `5a0d1b24-2451-42a9-a709-a1e945068db8` | Prod | Azure RBAC + app access (admin accounts) | Admin | Production Support |
+| Origination App Dev Users | `0e4dd29c-b23c-4e11-a2a3-13e1be934c2b` | Dev | App access only (user accounts) | User | Developer Access |
+| Origination App QA Users | `8f0e0182-661e-4396-bda3-9fa43217f258` | QA | App access only (user accounts) | User | Developer Access |
+| Origination App Users | `0cb70d50-df9d-4a98-8385-65112e4a7f50` | Prod | App access only (user accounts) | User | Production Support |
 | `azrscosqld01-Origination-db_datareader` | `bb60e7f4-944c-411a-bce0-b6c96ac1877d` | Dev | SQL db_datareader | Developer Access |
 | `azrscosqld01-Origination-db_datawriter` | `fe5f0af0-dcbe-4ad5-89a7-35dbcf08aea5` | Dev | SQL db_datawriter | Developer Access |
 | `azrscosqld01-Origination-db_ddladmin` | `8dfbea12-7c93-4251-a493-b369efc7972c` | Dev | SQL db_ddladmin | Developer Access |
@@ -152,7 +152,30 @@ Each environment has two app registrations (API and SPA) with corresponding Ente
 | QA | Origination API - QA | Origination - QA | Developer Admins, QA Users |
 | Prod | Origination API | Origination | Production Support, Prod Users |
 
-All assigned users receive the `Origination.Application` App Role, which is the same across all environments.
+Each group is assigned to a specific app role based on convention or explicit configuration. See [Group-to-Role Assignment](#group-to-role-assignment) below.
+
+## Group-to-Role Assignment
+
+Each Entra ID group is assigned to an app role on the API Enterprise Application. The assigned role determines the value in the JWT `roles` claim.
+
+**Convention (default):**
+- Groups with **"Admin"** or **"Production Support"** in the name are assigned the **Admin** role
+- All other groups are assigned the **User** role
+
+**Override:** Set the `appRole` property on a group's entry in the `entraGroups` section of `app-config.json` to assign a different role:
+
+```json
+{
+  "entraGroups": {
+    "devUsers": {
+      "displayName": "Origination App Dev Users",
+      "appRole": "Reviewer"
+    }
+  }
+}
+```
+
+When no `appRole` is specified, the naming convention applies automatically.
 
 ## Troubleshooting
 
