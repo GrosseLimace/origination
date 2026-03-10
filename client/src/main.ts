@@ -1,5 +1,5 @@
 // 1. Angular core
-import { APP_INITIALIZER, provideZonelessChangeDetection } from '@angular/core';
+import { APP_INITIALIZER, ErrorHandler, provideZonelessChangeDetection } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
 
 // 2. Angular router/http
@@ -22,6 +22,7 @@ import { PublicClientApplication, InteractionType, BrowserCacheLocation } from '
 import { AppComponent } from './app/app.component';
 import { routes } from './app/app.routes';
 import { environment } from './environments/environment';
+import { GlobalErrorHandler } from './app/core/handlers/global-error.handler';
 
 const msalInstance = new PublicClientApplication({
   auth: {
@@ -35,6 +36,7 @@ const msalInstance = new PublicClientApplication({
 bootstrapApplication(AppComponent, {
   providers: [
     provideZonelessChangeDetection(),
+    { provide: ErrorHandler, useClass: GlobalErrorHandler },
     provideRouter(routes),
     provideHttpClient(withInterceptorsFromDi()),
     {
