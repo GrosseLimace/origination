@@ -455,7 +455,7 @@ export class CustomerListComponent {
         this.lastContactCache.set(customer.id, {
           text: 'Never contacted',
           daysAgo: -1,
-          cssClass: 'text-scoular-red'
+          cssClass: 'text-red-500'
         });
         continue;
       }
@@ -496,10 +496,10 @@ export class CustomerListComponent {
   }
 
   private _getLastContactClass(daysAgo: number): string {
-    if (daysAgo < 0) return 'text-scoular-red';
-    if (daysAgo <= 7) return 'text-scoular-green';
+    if (daysAgo < 0) return 'text-red-500';
+    if (daysAgo <= 7) return 'text-green-500';
     if (daysAgo <= 30) return 'text-yellow-500';
-    return 'text-scoular-red';
+    return 'text-red-500';
   }
 
   getFormattedLocation(customer: Customer): string {

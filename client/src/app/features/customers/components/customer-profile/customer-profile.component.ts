@@ -286,8 +286,8 @@ export class CustomerProfileComponent {
       return 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400';
     }
     return this._pacingPct > 0
-      ? 'bg-scoular-green/5 dark:bg-scoular-green/20 border-green-200 dark:border-green-800 text-scoular-green-accessible dark:text-scoular-green'
-      : 'bg-scoular-red/5 dark:bg-scoular-red/20 border-red-200 dark:border-scoular-red-accessible text-scoular-red-accessible dark:text-scoular-red';
+      ? 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800 text-green-700 dark:text-green-400'
+      : 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400';
   }
 
   get unappliedTicketCount(): number {
