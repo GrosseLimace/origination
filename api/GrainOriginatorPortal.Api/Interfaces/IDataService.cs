@@ -1,6 +1,4 @@
-using GrainOriginatorPortal.Api.Models;
-
-namespace GrainOriginatorPortal.Api.Services;
+namespace GrainOriginatorPortal.Api.Interfaces;
 
 /// <summary>
 /// Interface defining data access operations for the Grain Originator Portal.

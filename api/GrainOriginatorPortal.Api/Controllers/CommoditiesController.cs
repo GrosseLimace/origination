@@ -1,11 +1,8 @@
-using GrainOriginatorPortal.Api.Models;
-using GrainOriginatorPortal.Api.Services;
-using Microsoft.AspNetCore.Mvc;
-
 namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Produces("application/json")]
 public class CommoditiesController : ControllerBase
 {
     private readonly IDataService _dataService;
@@ -15,7 +12,10 @@ public class CommoditiesController : ControllerBase
         _dataService = dataService;
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets all active commodities.</summary>
     [HttpGet]
+    [ProducesResponseType(typeof(List<Commodity>), StatusCodes.Status200OK)]
     public ActionResult<List<Commodity>> GetAll()
     {
         return Ok(_dataService.GetCommodities());

@@ -1,11 +1,15 @@
+// Microsoft namespaces
 using Microsoft.AspNetCore.Mvc;
-using GrainOriginatorPortal.Api.Data;
 using Microsoft.EntityFrameworkCore;
+
+// Project namespaces
+using GrainOriginatorPortal.Api.Data;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Produces("application/json")]
 public class DiagnosticsController : ControllerBase
 {
     private readonly OriginationDbContext _context;
@@ -17,12 +21,15 @@ public class DiagnosticsController : ControllerBase
         _logger = logger;
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Lists all user tables in the connected database.</summary>
     [HttpGet("tables")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetTables()
     {
         try
         {
-            // Query the system tables to see what user tables exist
             var result = await _context.Database.SqlQueryRaw<TableInfo>(
                 @"SELECT DB_NAME() as DatabaseName, TABLE_NAME as TableName
                   FROM INFORMATION_SCHEMA.TABLES
@@ -33,20 +40,20 @@ public class DiagnosticsController : ControllerBase
             var dbName = result.FirstOrDefault()?.DatabaseName ?? "Unknown";
             var tables = result.Select(t => t.TableName).ToList();
 
-            return Ok(new {
-                Database = dbName,
-                TableCount = tables.Count,
-                Tables = tables
-            });
+            return Ok(new { Database = dbName, TableCount = tables.Count, Tables = tables });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving table list");
-            return StatusCode(500, new { error = "An error occurred" });
+            return StatusCode(StatusCodes.Status500InternalServerError, new { error = "An error occurred" });
         }
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets schema/table info for a specific table name.</summary>
     [HttpGet("tableschema/{tableName}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetTableWithSchema(string tableName)
     {
         try
@@ -63,11 +70,15 @@ public class DiagnosticsController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving table schema for {TableName}", tableName);
-            return StatusCode(500, new { error = "An error occurred" });
+            return StatusCode(StatusCodes.Status500InternalServerError, new { error = "An error occurred" });
         }
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets column definitions for a specific table.</summary>
     [HttpGet("schema/{tableName}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetTableSchema(string tableName)
     {
         try
@@ -85,19 +96,16 @@ public class DiagnosticsController : ControllerBase
                 tableName
             ).ToListAsync();
 
-            return Ok(new {
-                TableName = tableName,
-                ColumnCount = columns.Count,
-                Columns = columns
-            });
+            return Ok(new { TableName = tableName, ColumnCount = columns.Count, Columns = columns });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving column schema for {TableName}", tableName);
-            return StatusCode(500, new { error = "An error occurred" });
+            return StatusCode(StatusCodes.Status500InternalServerError, new { error = "An error occurred" });
         }
     }
 
+    // -------------------------------------------------------------------------
     private class TableInfo
     {
         public string DatabaseName { get; set; } = "";

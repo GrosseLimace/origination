@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+// System namespaces
 using System.Collections.Concurrent;
 using System.Text.Json;
 
@@ -6,6 +6,7 @@ namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Produces("application/json")]
 public class GeocodeController : ControllerBase
 {
     private static readonly ConcurrentDictionary<string, double[]?> _cache = new();
@@ -26,7 +27,10 @@ public class GeocodeController : ControllerBase
     /// Geocode a single address via Nominatim (server-side, no CORS issues).
     /// Rate-limited to 1 request/sec to respect Nominatim usage policy.
     /// </summary>
+    // -------------------------------------------------------------------------
+    /// <summary>Geocodes a single address via Nominatim. Rate-limited to 1 req/sec.</summary>
     [HttpPost("single")]
+    [ProducesResponseType(typeof(GeocodeResult), StatusCodes.Status200OK)]
     public async Task<ActionResult<GeocodeResult>> SingleGeocode([FromBody] GeocodeRequest request)
     {
         if (request == null) return Ok(new GeocodeResult());
@@ -88,10 +92,10 @@ public class GeocodeController : ControllerBase
         return Ok(new GeocodeResult { Key = request.Key });
     }
 
-    /// <summary>
-    /// Batch geocode multiple addresses via Nominatim (server-side, no CORS issues).
-    /// </summary>
+    // -------------------------------------------------------------------------
+    /// <summary>Batch geocodes up to 50 addresses via Nominatim. Rate-limited to 1 req/sec per address.</summary>
     [HttpPost("batch")]
+    [ProducesResponseType(typeof(List<GeocodeResult>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<GeocodeResult>>> BatchGeocode([FromBody] List<GeocodeRequest> requests)
     {
         if (requests == null || requests.Count == 0)
@@ -177,18 +181,3 @@ public class GeocodeController : ControllerBase
     }
 }
 
-public class GeocodeRequest
-{
-    public string Key { get; set; } = string.Empty;
-    public string? Street { get; set; }
-    public string? City { get; set; }
-    public string? State { get; set; }
-    public string? Zip { get; set; }
-}
-
-public class GeocodeResult
-{
-    public string Key { get; set; } = string.Empty;
-    public double? Lat { get; set; }
-    public double? Lng { get; set; }
-}

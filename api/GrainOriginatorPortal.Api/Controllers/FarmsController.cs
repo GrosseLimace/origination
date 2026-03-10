@@ -1,11 +1,8 @@
-using GrainOriginatorPortal.Api.Models;
-using GrainOriginatorPortal.Api.Services;
-using Microsoft.AspNetCore.Mvc;
-
 namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Produces("application/json")]
 public class FarmsController : ControllerBase
 {
     private readonly IDataService _dataService;
@@ -15,44 +12,47 @@ public class FarmsController : ControllerBase
         _dataService = dataService;
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets all farms.</summary>
     [HttpGet]
+    [ProducesResponseType(typeof(List<Farm>), StatusCodes.Status200OK)]
     public ActionResult<List<Farm>> GetAll()
     {
         return Ok(_dataService.GetFarms());
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets a single farm by ID.</summary>
     [HttpGet("{id}")]
+    [ProducesResponseType(typeof(Farm), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public ActionResult<Farm> GetById(string id)
     {
         var farm = _dataService.GetFarmById(id);
-        if (farm == null) return NotFound();
+        if (farm == null)
+        {
+            return NotFound();
+        }
         return Ok(farm);
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets all farms for a specific customer.</summary>
     [HttpGet("customer/{customerId:long}")]
+    [ProducesResponseType(typeof(List<Farm>), StatusCodes.Status200OK)]
     public ActionResult<List<Farm>> GetByCustomer(long customerId)
     {
         return Ok(_dataService.GetFarmsByCustomer(customerId));
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Creates a new farm.</summary>
     [HttpPost]
+    [ProducesResponseType(typeof(string), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     public ActionResult<string> Create([FromBody] CreateFarmRequest request)
     {
         var id = _dataService.CreateFarm(request.Name, request.Location, request.Acres);
         return CreatedAtAction(nameof(GetById), new { id }, id);
     }
-}
-
-public class CreateFarmRequest
-{
-    [System.ComponentModel.DataAnnotations.Required]
-    [System.ComponentModel.DataAnnotations.StringLength(200)]
-    public string Name { get; set; } = string.Empty;
-
-    [System.ComponentModel.DataAnnotations.Required]
-    [System.ComponentModel.DataAnnotations.StringLength(200)]
-    public string Location { get; set; } = string.Empty;
-
-    [System.ComponentModel.DataAnnotations.Range(1, 100000)]
-    public int Acres { get; set; }
 }

@@ -1,11 +1,8 @@
-using GrainOriginatorPortal.Api.Models;
-using GrainOriginatorPortal.Api.Services;
-using Microsoft.AspNetCore.Mvc;
-
 namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Produces("application/json")]
 public class PlantingIntentionsController : ControllerBase
 {
     private readonly IDataService _dataService;
@@ -15,22 +12,32 @@ public class PlantingIntentionsController : ControllerBase
         _dataService = dataService;
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets all planting intentions.</summary>
     [HttpGet]
+    [ProducesResponseType(typeof(List<PlantingIntention>), StatusCodes.Status200OK)]
     public ActionResult<List<PlantingIntention>> GetAll()
     {
         return Ok(_dataService.GetPlantingIntentions());
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets all planting intentions for a specific customer.</summary>
     [HttpGet("customer/{customerId}")]
+    [ProducesResponseType(typeof(List<PlantingIntention>), StatusCodes.Status200OK)]
     public ActionResult<List<PlantingIntention>> GetByCustomer(int customerId)
     {
         return Ok(_dataService.GetPlantingIntentionsByCustomer(customerId));
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Creates a new planting intention for a customer.</summary>
     [HttpPost]
-    public ActionResult Create([FromBody] CreatePlantingIntentionRequest request)
+    [ProducesResponseType(typeof(PlantingIntention), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    public ActionResult<PlantingIntention> Create([FromBody] CreatePlantingIntentionRequest request)
     {
-        var newIntention = _dataService.AddPlantingIntention(
+        var intention = _dataService.AddPlantingIntention(
             request.CustomerId,
             request.CustomerName,
             request.CustomerCode,
@@ -41,13 +48,17 @@ public class PlantingIntentionsController : ControllerBase
             request.Acres,
             request.PlantingYear
         );
-        return Ok(newIntention);
+        return Ok(intention);
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Updates an existing planting intention.</summary>
     [HttpPut("{id}")]
-    public ActionResult Update(int id, [FromBody] UpdatePlantingIntentionRequest request)
+    [ProducesResponseType(typeof(PlantingIntention), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public ActionResult<PlantingIntention> Update(int id, [FromBody] UpdatePlantingIntentionRequest request)
     {
-        var updatedIntention = _dataService.UpdatePlantingIntention(
+        var updated = _dataService.UpdatePlantingIntention(
             id,
             request.Crop,
             request.Type,
@@ -55,67 +66,20 @@ public class PlantingIntentionsController : ControllerBase
             request.Acres,
             request.PlantingYear
         );
-        if (updatedIntention == null) return NotFound();
-        return Ok(updatedIntention);
+        if (updated == null)
+        {
+            return NotFound();
+        }
+        return Ok(updated);
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Deletes a planting intention by ID.</summary>
     [HttpDelete("{id}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
     public ActionResult Delete(int id)
     {
         _dataService.DeletePlantingIntention(id);
-        return Ok();
+        return NoContent();
     }
-}
-
-public class CreatePlantingIntentionRequest
-{
-    [System.ComponentModel.DataAnnotations.Required]
-    public int CustomerId { get; set; }
-
-    [System.ComponentModel.DataAnnotations.Required]
-    [System.ComponentModel.DataAnnotations.StringLength(255)]
-    public string CustomerName { get; set; } = string.Empty;
-
-    [System.ComponentModel.DataAnnotations.Required]
-    [System.ComponentModel.DataAnnotations.StringLength(50)]
-    public string CustomerCode { get; set; } = string.Empty;
-
-    [System.ComponentModel.DataAnnotations.Required]
-    [System.ComponentModel.DataAnnotations.StringLength(100)]
-    public string TradeUnit { get; set; } = string.Empty;
-
-    [System.ComponentModel.DataAnnotations.Required]
-    [System.ComponentModel.DataAnnotations.StringLength(100)]
-    public string Crop { get; set; } = string.Empty;
-
-    [System.ComponentModel.DataAnnotations.StringLength(100)]
-    public string? Type { get; set; }
-
-    [System.ComponentModel.DataAnnotations.StringLength(255)]
-    public string? Description { get; set; }
-
-    [System.ComponentModel.DataAnnotations.Range(1, 100000)]
-    public int Acres { get; set; }
-
-    [System.ComponentModel.DataAnnotations.Range(2020, 2100)]
-    public int PlantingYear { get; set; }
-}
-
-public class UpdatePlantingIntentionRequest
-{
-    [System.ComponentModel.DataAnnotations.Required]
-    [System.ComponentModel.DataAnnotations.StringLength(100)]
-    public string Crop { get; set; } = string.Empty;
-
-    [System.ComponentModel.DataAnnotations.StringLength(100)]
-    public string? Type { get; set; }
-
-    [System.ComponentModel.DataAnnotations.StringLength(255)]
-    public string? Description { get; set; }
-
-    [System.ComponentModel.DataAnnotations.Range(1, 100000)]
-    public int Acres { get; set; }
-
-    [System.ComponentModel.DataAnnotations.Range(2020, 2100)]
-    public int PlantingYear { get; set; }
 }

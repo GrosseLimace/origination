@@ -1,13 +1,21 @@
-using System.Text.Json.Serialization;
+// Microsoft namespaces
 using Microsoft.EntityFrameworkCore;
+
+// Project namespaces
 using GrainOriginatorPortal.Api.Data;
+using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Api.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // =============================================================================
 // Service Configuration
 // =============================================================================
+
+// Register global exception handler (maps exceptions to ProblemDetails responses)
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
 
 // Add MVC controllers for REST API endpoints
 // Configure JSON to serialize enums as strings instead of numbers
@@ -153,6 +161,9 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+
+// Global exception handling — must be first in the middleware pipeline
+app.UseExceptionHandler();
 
 // Apply CORS policy to allow Angular frontend requests
 // MUST come before UseHttpsRedirection to handle preflight requests correctly

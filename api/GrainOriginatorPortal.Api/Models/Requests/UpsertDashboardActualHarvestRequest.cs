@@ -1,4 +1,4 @@
-namespace GrainOriginatorPortal.Api.Models;
+namespace GrainOriginatorPortal.Api.Models.Requests;
 
 public class UpsertDashboardActualHarvestRequest
 {
