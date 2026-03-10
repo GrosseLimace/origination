@@ -26,7 +26,7 @@ public class SqlDataService : IDataService
     // Customer Operations
     // =========================================================================
 
-    public List<Customer> GetCustomers(List<string>? tradeUnits = null)
+    public async Task<List<Customer>> GetCustomersAsync(List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -40,10 +40,10 @@ public class SqlDataService : IDataService
             }
 
             // Get customer IDs that have contracts (via CtrmCustomerId -> SourceCustomerId)
-            var customerIdsWithContracts = contractQuery
+            var customerIdsWithContracts = await contractQuery
                 .Select(c => c.CtrmCustomerId)
                 .Distinct()
-                .ToList();
+                .ToListAsync(cancellationToken);
 
             // Build ticket query with optional organization code filter
             var ticketQuery = _context.Tickets.AsNoTracking().Where(t => t.IsActive && t.CustomerId.HasValue);
@@ -53,10 +53,10 @@ public class SqlDataService : IDataService
             }
 
             // Get customer IDs that have tickets (via CustomerId)
-            var customerIdsWithTickets = ticketQuery
+            var customerIdsWithTickets = await ticketQuery
                 .Select(t => t.CustomerId!.Value)
                 .Distinct()
-                .ToList();
+                .ToListAsync(cancellationToken);
 
             var filterMsg = hasTradeUnitFilter ? $" (filtered by {tradeUnits!.Count} trade units: {string.Join(", ", tradeUnits)})" : "";
             _logger.LogInformation($"Found {customerIdsWithContracts.Count} customers with contracts, {customerIdsWithTickets.Count} customers with tickets{filterMsg}");
@@ -72,10 +72,10 @@ public class SqlDataService : IDataService
                 .OrderBy(c => c.Name);
 
             var customers = hasTradeUnitFilter
-                ? customerQuery.ToList()
-                : customerQuery.Take(15).ToList();
+                ? await customerQuery.ToListAsync(cancellationToken)
+                : await customerQuery.Take(15).ToListAsync(cancellationToken);
 
-            EnrichCustomersWithESign(customers);
+            await EnrichCustomersWithESignAsync(customers, cancellationToken);
             _logger.LogInformation($"Returning {customers.Count} producer customers who have contracts or tickets{filterMsg}");
             return customers;
         }
@@ -86,7 +86,7 @@ public class SqlDataService : IDataService
         }
     }
 
-    public List<Customer> SearchCustomers(string searchTerm, List<string>? tradeUnits = null)
+    public async Task<List<Customer>> SearchCustomersAsync(string searchTerm, List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -105,19 +105,19 @@ public class SqlDataService : IDataService
 
             if (hasTradeUnitFilter)
             {
-                customerIdsWithTradeUnitContracts = _context.Contracts
+                customerIdsWithTradeUnitContracts = await _context.Contracts
                     .AsNoTracking()
                     .Where(c => c.IsActive && c.CtrmCustomerId != null && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
                     .Select(c => c.CtrmCustomerId!)
                     .Distinct()
-                    .ToList();
+                    .ToListAsync(cancellationToken);
 
-                customerIdsWithTradeUnitTickets = _context.Tickets
+                customerIdsWithTradeUnitTickets = await _context.Tickets
                     .AsNoTracking()
                     .Where(t => t.IsActive && t.CustomerId.HasValue && t.OrganizationCode != null && tradeUnits!.Contains(t.OrganizationCode))
                     .Select(t => t.CustomerId!.Value)
                     .Distinct()
-                    .ToList();
+                    .ToListAsync(cancellationToken);
             }
 
             // originations.vw_CurrentCustomers is pre-filtered — start with all customers in the view
@@ -139,9 +139,9 @@ public class SqlDataService : IDataService
 
             // Get candidates (without ordering in SQL - we'll order by relevance in memory)
             // When trade units are selected, get more candidates; otherwise limit to 100
-            var candidates = query
+            var candidates = await query
                 .Take(hasTradeUnitFilter ? 1000 : 100)
-                .ToList();
+                .ToListAsync(cancellationToken);
 
             // Score each customer by relevance
             var scoredResults = candidates.Select(c => new
@@ -157,7 +157,7 @@ public class SqlDataService : IDataService
                 ? scoredResults.Select(x => x.Customer).ToList()
                 : scoredResults.Take(15).Select(x => x.Customer).ToList();
 
-            EnrichCustomersWithESign(scoredCustomers);
+            await EnrichCustomersWithESignAsync(scoredCustomers, cancellationToken);
             _logger.LogInformation($"Search for '{searchTerm}' returned {scoredCustomers.Count} producer customers (ranked by relevance)");
             return scoredCustomers;
         }
@@ -172,7 +172,7 @@ public class SqlDataService : IDataService
     /// Looks up eSign enrollment records for the given customers and populates
     /// ESignEnabled and ScoularViewRecipients from dbo.eSignEnrollment.
     /// </summary>
-    private void EnrichCustomersWithESign(List<Customer> customers)
+    private async Task EnrichCustomersWithESignAsync(List<Customer> customers, CancellationToken cancellationToken = default)
     {
         if (customers.Count == 0) return;
 
@@ -182,10 +182,12 @@ public class SqlDataService : IDataService
             .Distinct()
             .ToList();
 
-        var enrollments = _appContext.ESignEnrollments
+        var enrollmentList = await _appContext.ESignEnrollments
             .AsNoTracking()
             .Where(e => codes.Contains(e.CustomerCode))
-            .ToDictionary(e => e.CustomerCode, e => e);
+            .ToListAsync(cancellationToken);
+
+        var enrollments = enrollmentList.ToDictionary(e => e.CustomerCode, e => e);
 
         foreach (var customer in customers)
         {
@@ -270,13 +272,13 @@ public class SqlDataService : IDataService
         return score;
     }
 
-    public Customer? GetCustomerById(long id)
+    public async Task<Customer?> GetCustomerByIdAsync(long id, CancellationToken cancellationToken = default)
     {
         try
         {
-            return _context.Customers
+            return await _context.Customers
                 .AsNoTracking()
-                .FirstOrDefault(c => c.Id == id && c.IsActive);
+                .FirstOrDefaultAsync(c => c.Id == id && c.IsActive, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -285,11 +287,11 @@ public class SqlDataService : IDataService
         }
     }
 
-    public void UpdateCustomer(long customerId, string location, string phone, string email, List<string> farmIds, List<string> linkedProducerIds)
+    public async Task UpdateCustomerAsync(long customerId, string location, string phone, string email, List<string> farmIds, List<string> linkedProducerIds, CancellationToken cancellationToken = default)
     {
         try
         {
-            var customer = _context.Customers.FirstOrDefault(c => c.Id == customerId && c.IsActive);
+            var customer = await _context.Customers.FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive, cancellationToken);
             if (customer == null)
             {
                 _logger.LogWarning("Customer {CustomerId} not found for update", customerId);
@@ -309,7 +311,7 @@ public class SqlDataService : IDataService
             //     .Sum(f => f.Acres);
             customer.TotalAcres = 0;
 
-            _context.SaveChanges();
+            await _context.SaveChangesAsync(cancellationToken);
             _logger.LogInformation("Updated customer {CustomerId}", customerId);
         }
         catch (Exception ex)
@@ -323,15 +325,15 @@ public class SqlDataService : IDataService
     // Trade Unit Operations
     // =========================================================================
 
-    public List<string> GetTradeUnits()
+    public async Task<List<string>> GetTradeUnitsAsync(CancellationToken cancellationToken = default)
     {
         try
         {
-            var cachedTradeUnits = _appContext.TradeUnits
+            var cachedTradeUnits = await _appContext.TradeUnits
                 .Where(tu => tu.IsActive)
                 .Select(tu => tu.Code)
                 .OrderBy(c => c)
-                .ToList();
+                .ToListAsync(cancellationToken);
 
             if (cachedTradeUnits.Count > 0)
             {
@@ -341,13 +343,13 @@ public class SqlDataService : IDataService
 
             // Table is empty - one-time population from ODS
             _logger.LogInformation("dbo.TradeUnits is empty - performing one-time population from ODS");
-            var tradeUnitsFromOds = GetTradeUnitsFromViews();
+            var tradeUnitsFromOds = await GetTradeUnitsFromViewsAsync(cancellationToken);
 
             foreach (var code in tradeUnitsFromOds)
             {
                 _appContext.TradeUnits.Add(new TradeUnit { Code = code, IsActive = true });
             }
-            _appContext.SaveChanges();
+            await _appContext.SaveChangesAsync(cancellationToken);
             return tradeUnitsFromOds;
         }
         catch (Exception ex)
@@ -357,23 +359,23 @@ public class SqlDataService : IDataService
         }
     }
 
-    private List<string> GetTradeUnitsFromViews()
+    private async Task<List<string>> GetTradeUnitsFromViewsAsync(CancellationToken cancellationToken = default)
     {
         // Get unique trade units from contracts
-        var contractTradeUnits = _context.Contracts
+        var contractTradeUnits = await _context.Contracts
             .AsNoTracking()
             .Where(c => c.IsActive && !string.IsNullOrEmpty(c.TradeUnit))
             .Select(c => c.TradeUnit!)
             .Distinct()
-            .ToList();
+            .ToListAsync(cancellationToken);
 
         // Get unique organization codes from tickets
-        var ticketOrgCodes = _context.Tickets
+        var ticketOrgCodes = await _context.Tickets
             .AsNoTracking()
             .Where(t => t.IsActive && !string.IsNullOrEmpty(t.OrganizationCode))
             .Select(t => t.OrganizationCode!)
             .Distinct()
-            .ToList();
+            .ToListAsync(cancellationToken);
 
         // Combine and return unique sorted list
         var allTradeUnits = contractTradeUnits
@@ -388,32 +390,34 @@ public class SqlDataService : IDataService
     // Commodity Operations
     // =========================================================================
 
-    public List<Commodity> GetCommodities()
+    public async Task<List<Commodity>> GetCommoditiesAsync(CancellationToken cancellationToken = default)
     {
         try
         {
-            var existingCodes = new HashSet<string>(
-                _appContext.Commodities.Where(c => c.IsActive).Select(c => c.Code),
-                StringComparer.OrdinalIgnoreCase
-            );
+            var existingCodesList = await _appContext.Commodities
+                .Where(c => c.IsActive)
+                .Select(c => c.Code)
+                .ToListAsync(cancellationToken);
+
+            var existingCodes = new HashSet<string>(existingCodesList, StringComparer.OrdinalIgnoreCase);
 
             // Pull all commodity data from contracts (Code, Name, Category)
-            var contractCommodities = _context.Contracts
+            var contractCommodities = await _context.Contracts
                 .AsNoTracking()
                 .Where(c => c.IsActive
                     && !string.IsNullOrEmpty(c.CommodityCode)
                     && !string.IsNullOrEmpty(c.CommodityDescription))
                 .Select(c => new { c.CommodityCode, c.CommodityDescription, c.CommodityGroup })
                 .Distinct()
-                .ToList();
+                .ToListAsync(cancellationToken);
 
             // Pull all distinct product codes from tickets
-            var ticketProductCodes = _context.Tickets
+            var ticketProductCodes = await _context.Tickets
                 .AsNoTracking()
                 .Where(t => t.IsActive && !string.IsNullOrEmpty(t.ProductCode))
                 .Select(t => t.ProductCode!)
                 .Distinct()
-                .ToList();
+                .ToListAsync(cancellationToken);
 
             // Build lookup from contracts for description and category
             var contractLookup = contractCommodities
@@ -458,7 +462,7 @@ public class SqlDataService : IDataService
             }
 
             // Backfill Category for any commodities missing it
-            var allCommodities = _appContext.Commodities.Where(c => c.IsActive).ToList();
+            var allCommodities = await _appContext.Commodities.Where(c => c.IsActive).ToListAsync(cancellationToken);
             foreach (var commodity in allCommodities.Where(c => string.IsNullOrEmpty(c.Category)))
             {
                 if (contractLookup.TryGetValue(commodity.Code, out var match)
@@ -471,7 +475,7 @@ public class SqlDataService : IDataService
 
             if (changed)
             {
-                _appContext.SaveChanges();
+                await _appContext.SaveChangesAsync(cancellationToken);
                 _logger.LogInformation("Synced commodities from ODS - now {Count} total", allCommodities.Count);
             }
 
@@ -484,16 +488,16 @@ public class SqlDataService : IDataService
         }
     }
 
-    public List<TradeUnitGroup> GetTradeUnitGroups()
+    public async Task<List<TradeUnitGroup>> GetTradeUnitGroupsAsync(CancellationToken cancellationToken = default)
     {
         try
         {
-            var groups = _appContext.TradeUnitGroups
+            var groups = await _appContext.TradeUnitGroups
                 .AsNoTracking()
                 .Where(g => g.IsActive)
                 .Include(g => g.TradeUnits.Where(tu => tu.IsActive))
                 .OrderBy(g => g.GroupName)
-                .ToList();
+                .ToListAsync(cancellationToken);
 
             _logger.LogInformation("Returning {Count} trade unit groups", groups.Count);
             return groups;
@@ -509,25 +513,25 @@ public class SqlDataService : IDataService
     // Farm Operations - DISABLED: Farms table doesn't exist in ODS
     // =========================================================================
 
-    public List<Farm> GetFarms()
+    public Task<List<Farm>> GetFarmsAsync(CancellationToken cancellationToken = default)
     {
         _logger.LogWarning("Farms table doesn't exist in ODS - returning empty list");
-        return new List<Farm>();
+        return Task.FromResult(new List<Farm>());
     }
 
-    public List<Farm> GetFarmsByCustomer(long customerId)
+    public Task<List<Farm>> GetFarmsByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
     {
         _logger.LogWarning("Farms table doesn't exist in ODS - returning empty list for customer {CustomerId}", customerId);
-        return new List<Farm>();
+        return Task.FromResult(new List<Farm>());
     }
 
-    public Farm? GetFarmById(string id)
+    public Task<Farm?> GetFarmByIdAsync(string id, CancellationToken cancellationToken = default)
     {
         _logger.LogWarning("Farms table doesn't exist in ODS - returning null for farm {FarmId}", id);
-        return null;
+        return Task.FromResult<Farm?>(null);
     }
 
-    public string CreateFarm(string name, string location, int acres)
+    public Task<string> CreateFarmAsync(string name, string location, int acres, CancellationToken cancellationToken = default)
     {
         _logger.LogWarning("Farms table doesn't exist in ODS - cannot create farm {FarmName}", name);
         throw new NotImplementedException("Farm creation is not supported - Farms table doesn't exist in ODS");
@@ -537,7 +541,7 @@ public class SqlDataService : IDataService
     // Contract Operations
     // =========================================================================
 
-    public List<Contract> GetContracts(List<string>? tradeUnits = null)
+    public async Task<List<Contract>> GetContractsAsync(List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -551,10 +555,10 @@ public class SqlDataService : IDataService
             }
 
             // Get customer IDs that have contracts (via CtrmCustomerId -> SourceCustomerId)
-            var customerIdsWithContracts = contractQuery
+            var customerIdsWithContracts = await contractQuery
                 .Select(c => c.CtrmCustomerId)
                 .Distinct()
-                .ToList();
+                .ToListAsync(cancellationToken);
 
             // Build ticket query with optional organization code filter
             var ticketQuery = _context.Tickets.AsNoTracking().Where(t => t.IsActive && t.CustomerId.HasValue);
@@ -564,10 +568,10 @@ public class SqlDataService : IDataService
             }
 
             // Get customer IDs that have tickets (via CustomerId)
-            var customerIdsWithTickets = ticketQuery
+            var customerIdsWithTickets = await ticketQuery
                 .Select(t => t.CustomerId!.Value)
                 .Distinct()
-                .ToList();
+                .ToListAsync(cancellationToken);
 
             // originations.vw_CurrentCustomers is pre-filtered — no redundant filters needed.
             var customerQuery = _context.Customers
@@ -577,8 +581,8 @@ public class SqlDataService : IDataService
                 .OrderBy(c => c.Name);
 
             var customerCtrmIds = hasTradeUnitFilter
-                ? customerQuery.Select(c => c.SourceCustomerId).ToList()
-                : customerQuery.Take(15).Select(c => c.SourceCustomerId).ToList();
+                ? await customerQuery.Select(c => c.SourceCustomerId).ToListAsync(cancellationToken)
+                : await customerQuery.Take(15).Select(c => c.SourceCustomerId).ToListAsync(cancellationToken);
 
             // Get all contracts for those customers — intentionally NOT filtering by trade unit here
             // so that prior-year contracts (needed for pacing calculations) are included even if
@@ -587,9 +591,9 @@ public class SqlDataService : IDataService
                 .AsNoTracking()
                 .Where(c => c.IsActive && c.CtrmCustomerId != null && customerCtrmIds.Contains(c.CtrmCustomerId));
 
-            var contracts = contractsQuery
+            var contracts = await contractsQuery
                 .OrderByDescending(c => c.Id)
-                .ToList();
+                .ToListAsync(cancellationToken);
 
             var filterMsg = hasTradeUnitFilter ? $" (filtered by {tradeUnits!.Count} trade units)" : "";
             _logger.LogInformation($"Loaded {contracts.Count} contracts for customers who have contracts or tickets{filterMsg}");
@@ -642,12 +646,12 @@ public class SqlDataService : IDataService
         return ContractStatus.Pending;
     }
 
-    public List<Contract> GetContractsByCustomer(long customerId)
+    public async Task<List<Contract>> GetContractsByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
     {
         try
         {
             // Get the customer's SourceCustomerId for matching with contract.CtrmCustomerId
-            var customer = _context.Customers.AsNoTracking().FirstOrDefault(c => c.Id == customerId && c.IsActive);
+            var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive, cancellationToken);
             if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
             {
                 _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
@@ -655,11 +659,11 @@ public class SqlDataService : IDataService
             }
 
             // Match contracts using CtrmCustomerId = customer.SourceCustomerId (string matching)
-            var contracts = _context.Contracts
+            var contracts = await _context.Contracts
                 .AsNoTracking()
                 .Where(c => c.IsActive && c.CtrmCustomerId == customer.SourceCustomerId)
                 .OrderByDescending(c => c.Id)
-                .ToList();
+                .ToListAsync(cancellationToken);
 
             // Calculate status and set defaults for fields not in ODS view
             var today = DateTime.Today;
@@ -679,7 +683,7 @@ public class SqlDataService : IDataService
         }
     }
 
-    public List<Contract> GetContractsByFarm(string farmId)
+    public async Task<List<Contract>> GetContractsByFarmAsync(string farmId, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -695,15 +699,15 @@ public class SqlDataService : IDataService
         }
     }
 
-    public List<ContractPricingLine> GetPricingLines(string sourceContractId)
+    public async Task<List<ContractPricingLine>> GetPricingLinesAsync(string sourceContractId, CancellationToken cancellationToken = default)
     {
         try
         {
-            return _context.ContractPricingLines
+            return await _context.ContractPricingLines
                 .AsNoTracking()
                 .Where(p => p.ContractId == sourceContractId)
                 .OrderBy(p => p.PriceSequence)
-                .ToList();
+                .ToListAsync(cancellationToken);
         }
         catch (Exception ex)
         {
@@ -712,16 +716,16 @@ public class SqlDataService : IDataService
         }
     }
 
-    public List<ContractPricingLine> GetPricingLinesByCustomer(string sourceCustomerId)
+    public async Task<List<ContractPricingLine>> GetPricingLinesByCustomerAsync(string sourceCustomerId, CancellationToken cancellationToken = default)
     {
         try
         {
-            return _context.ContractPricingLines
+            return await _context.ContractPricingLines
                 .AsNoTracking()
                 .Where(p => p.CustomerId == sourceCustomerId)
                 .OrderBy(p => p.ContractId)
                 .ThenBy(p => p.PriceSequence)
-                .ToList();
+                .ToListAsync(cancellationToken);
         }
         catch (Exception ex)
         {
@@ -735,7 +739,7 @@ public class SqlDataService : IDataService
     // NOTE: ~2 million tickets exist, so queries are carefully limited
     // =========================================================================
 
-    public List<Ticket> GetTickets(List<string>? tradeUnits = null)
+    public async Task<List<Ticket>> GetTicketsAsync(List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -749,10 +753,10 @@ public class SqlDataService : IDataService
             }
 
             // Get customer IDs that have contracts (via CtrmCustomerId -> SourceCustomerId)
-            var customerIdsWithContracts = contractQuery
+            var customerIdsWithContracts = await contractQuery
                 .Select(c => c.CtrmCustomerId)
                 .Distinct()
-                .ToList();
+                .ToListAsync(cancellationToken);
 
             // Build ticket query with optional organization code filter
             var ticketQueryBase = _context.Tickets.AsNoTracking().Where(t => t.IsActive && t.CustomerCode != null);
@@ -762,10 +766,10 @@ public class SqlDataService : IDataService
             }
 
             // Get customer codes that have tickets (via CustomerCode)
-            var customerCodesWithTickets = ticketQueryBase
+            var customerCodesWithTickets = await ticketQueryBase
                 .Select(t => t.CustomerCode!)
                 .Distinct()
-                .ToList();
+                .ToListAsync(cancellationToken);
 
             // originations.vw_CurrentCustomers is pre-filtered — no redundant filters needed.
             var customerQuery = _context.Customers
@@ -776,8 +780,8 @@ public class SqlDataService : IDataService
                 .OrderBy(c => c.Name);
 
             var producerCustomerCodes = hasTradeUnitFilter
-                ? customerQuery.Select(c => c.SourceCustomerId!).ToList()
-                : customerQuery.Take(15).Select(c => c.SourceCustomerId!).ToList();
+                ? await customerQuery.Select(c => c.SourceCustomerId!).ToListAsync(cancellationToken)
+                : await customerQuery.Take(15).Select(c => c.SourceCustomerId!).ToListAsync(cancellationToken);
 
             var filterMsg = hasTradeUnitFilter ? $" (filtered by {tradeUnits!.Count} trade units)" : "";
             var customerCountMsg = hasTradeUnitFilter ? $"all {producerCustomerCodes.Count} customers" : "top 15 customers";
@@ -794,16 +798,18 @@ public class SqlDataService : IDataService
                 ticketsQuery = ticketsQuery.Where(t => t.OrganizationCode != null && tradeUnits!.Contains(t.OrganizationCode));
             }
 
-            var tickets = ticketsQuery
+            var tickets = await ticketsQuery
                 .OrderByDescending(t => t.Date)
-                .ToList();
+                .ToListAsync(cancellationToken);
 
             // Load quality data for these tickets
             var ticketIds = tickets.Select(t => t.Id).ToList();
-            var qualityData = _context.TicketQualities
+            var qualityList = await _context.TicketQualities
                 .AsNoTracking()
                 .Where(q => ticketIds.Contains(q.TicketId))
-                .ToDictionary(q => q.TicketId);
+                .ToListAsync(cancellationToken);
+
+            var qualityData = qualityList.ToDictionary(q => q.TicketId);
 
             // Populate moisture and quality data on tickets
             var ticketsWithProtein = 0;
@@ -853,12 +859,12 @@ public class SqlDataService : IDataService
         }
     }
 
-    public List<Ticket> GetTicketsByCustomer(long customerId)
+    public async Task<List<Ticket>> GetTicketsByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
     {
         try
         {
             // Get the customer's SourceCustomerId for matching with ticket.CustomerCode
-            var customer = _context.Customers.AsNoTracking().FirstOrDefault(c => c.Id == customerId && c.IsActive);
+            var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive, cancellationToken);
             if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
             {
                 _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
@@ -866,18 +872,20 @@ public class SqlDataService : IDataService
             }
 
             // Match tickets using CustomerCode = customer.SourceCustomerId (string matching, like contracts)
-            var tickets = _context.Tickets
+            var tickets = await _context.Tickets
                 .AsNoTracking()
                 .Where(t => t.IsActive && t.CustomerCode == customer.SourceCustomerId)
                 .OrderByDescending(t => t.Date)
-                .ToList();
+                .ToListAsync(cancellationToken);
 
             // Load quality data for these tickets
             var ticketIds = tickets.Select(t => t.Id).ToList();
-            var qualityData = _context.TicketQualities
+            var qualityList = await _context.TicketQualities
                 .AsNoTracking()
                 .Where(q => ticketIds.Contains(q.TicketId))
-                .ToDictionary(q => q.TicketId);
+                .ToListAsync(cancellationToken);
+
+            var qualityData = qualityList.ToDictionary(q => q.TicketId);
 
             // Populate moisture and quality data on tickets
             foreach (var ticket in tickets)
@@ -900,7 +908,7 @@ public class SqlDataService : IDataService
         }
     }
 
-    public List<Ticket> GetTicketsByFarm(string farmId)
+    public async Task<List<Ticket>> GetTicketsByFarmAsync(string farmId, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -919,15 +927,15 @@ public class SqlDataService : IDataService
     // Planting Intention Operations - Uses dbo.ProducerPlantingIntentions table
     // =========================================================================
 
-    public List<PlantingIntention> GetPlantingIntentions()
+    public async Task<List<PlantingIntention>> GetPlantingIntentionsAsync(CancellationToken cancellationToken = default)
     {
         try
         {
-            return _appContext.PlantingIntentions
+            return await _appContext.PlantingIntentions
                 .AsNoTracking()
                 .OrderByDescending(p => p.PlantingYear)
                 .ThenBy(p => p.CustomerName)
-                .ToList();
+                .ToListAsync(cancellationToken);
         }
         catch (SqlException ex) when (ex.Number == 208)
         {
@@ -941,16 +949,16 @@ public class SqlDataService : IDataService
         }
     }
 
-    public List<PlantingIntention> GetPlantingIntentionsByCustomer(int customerId)
+    public async Task<List<PlantingIntention>> GetPlantingIntentionsByCustomerAsync(int customerId, CancellationToken cancellationToken = default)
     {
         try
         {
-            return _appContext.PlantingIntentions
+            return await _appContext.PlantingIntentions
                 .AsNoTracking()
                 .Where(p => p.CustomerId == customerId)
                 .OrderByDescending(p => p.PlantingYear)
                 .ThenBy(p => p.Crop)
-                .ToList();
+                .ToListAsync(cancellationToken);
         }
         catch (SqlException ex) when (ex.Number == 208)
         {
@@ -964,7 +972,7 @@ public class SqlDataService : IDataService
         }
     }
 
-    public PlantingIntention AddPlantingIntention(int customerId, string customerName, string customerCode, string tradeUnit, string crop, string? type, string? description, int acres, int plantingYear)
+    public async Task<PlantingIntention> AddPlantingIntentionAsync(int customerId, string customerName, string customerCode, string tradeUnit, string crop, string? type, string? description, int acres, int plantingYear, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -984,7 +992,7 @@ public class SqlDataService : IDataService
             };
 
             _appContext.PlantingIntentions.Add(intention);
-            _appContext.SaveChanges();
+            await _appContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Created planting intention {Id} for customer {CustomerId}", intention.Id, customerId);
             return intention;
@@ -996,11 +1004,11 @@ public class SqlDataService : IDataService
         }
     }
 
-    public PlantingIntention? UpdatePlantingIntention(int intentionId, string crop, string? type, string? description, int acres, int plantingYear)
+    public async Task<PlantingIntention?> UpdatePlantingIntentionAsync(int intentionId, string crop, string? type, string? description, int acres, int plantingYear, CancellationToken cancellationToken = default)
     {
         try
         {
-            var intention = _appContext.PlantingIntentions.FirstOrDefault(p => p.Id == intentionId);
+            var intention = await _appContext.PlantingIntentions.FirstOrDefaultAsync(p => p.Id == intentionId, cancellationToken);
             if (intention == null)
             {
                 return null;
@@ -1014,7 +1022,7 @@ public class SqlDataService : IDataService
             intention.ModifiedBy = "System"; // TODO: Get from authenticated user
             intention.ModifiedOn = DateTime.Now;
 
-            _appContext.SaveChanges();
+            await _appContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Updated planting intention {Id}", intentionId);
             return intention;
@@ -1026,15 +1034,15 @@ public class SqlDataService : IDataService
         }
     }
 
-    public void DeletePlantingIntention(int intentionId)
+    public async Task DeletePlantingIntentionAsync(int intentionId, CancellationToken cancellationToken = default)
     {
         try
         {
-            var intention = _appContext.PlantingIntentions.FirstOrDefault(p => p.Id == intentionId);
+            var intention = await _appContext.PlantingIntentions.FirstOrDefaultAsync(p => p.Id == intentionId, cancellationToken);
             if (intention != null)
             {
                 _appContext.PlantingIntentions.Remove(intention);
-                _appContext.SaveChanges();
+                await _appContext.SaveChangesAsync(cancellationToken);
                 _logger.LogInformation("Deleted planting intention {Id}", intentionId);
             }
         }
@@ -1049,16 +1057,16 @@ public class SqlDataService : IDataService
     // Note Operations - Uses dbo.Notes table in Origination database
     // =========================================================================
 
-    public List<Note> GetNotes()
+    public async Task<List<Note>> GetNotesAsync(CancellationToken cancellationToken = default)
     {
         try
         {
             _logger.LogInformation("Attempting to retrieve notes from database");
 
-            return _appContext.Notes
+            return await _appContext.Notes
                 .AsNoTracking()
                 .OrderByDescending(n => n.CreatedOn)
-                .ToList();
+                .ToListAsync(cancellationToken);
         }
         catch (SqlException ex) when (ex.Number == 208) // Invalid object name
         {
@@ -1072,15 +1080,15 @@ public class SqlDataService : IDataService
         }
     }
 
-    public List<Note> GetNotesByCustomer(long customerId)
+    public async Task<List<Note>> GetNotesByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
     {
         try
         {
-            return _appContext.Notes
+            return await _appContext.Notes
                 .AsNoTracking()
                 .Where(n => n.CustomerId == customerId)
                 .OrderByDescending(n => n.CreatedOn)
-                .ToList();
+                .ToListAsync(cancellationToken);
         }
         catch (SqlException ex) when (ex.Number == 208) // Invalid object name
         {
@@ -1094,12 +1102,12 @@ public class SqlDataService : IDataService
         }
     }
 
-    public Note AddNote(long customerId, string content, string? tradeUnit = null)
+    public async Task<Note> AddNoteAsync(long customerId, string content, string? tradeUnit = null, CancellationToken cancellationToken = default)
     {
         try
         {
             // Get customer info for denormalized fields
-            var customer = _context.Customers.AsNoTracking().FirstOrDefault(c => c.Id == customerId);
+            var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId, cancellationToken);
             if (customer == null)
             {
                 throw new InvalidOperationException($"Customer with ID {customerId} not found");
@@ -1116,7 +1124,7 @@ public class SqlDataService : IDataService
             };
 
             _appContext.Notes.Add(note);
-            _appContext.SaveChanges();
+            await _appContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Created note {NoteId} for customer {CustomerId}", note.Id, customerId);
             return note;
@@ -1128,18 +1136,18 @@ public class SqlDataService : IDataService
         }
     }
 
-    public Note? ToggleNotePin(long noteId)
+    public async Task<Note?> ToggleNotePinAsync(long noteId, CancellationToken cancellationToken = default)
     {
         try
         {
-            var note = _appContext.Notes.FirstOrDefault(n => n.Id == noteId);
+            var note = await _appContext.Notes.FirstOrDefaultAsync(n => n.Id == noteId, cancellationToken);
             if (note == null)
             {
                 return null;
             }
 
             note.IsPinned = !note.IsPinned;
-            _appContext.SaveChanges();
+            await _appContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Toggled pin for note {NoteId} - IsPinned is now {IsPinned}", noteId, note.IsPinned);
             return note;
@@ -1151,11 +1159,11 @@ public class SqlDataService : IDataService
         }
     }
 
-    public Note? UpdateNote(long noteId, string content)
+    public async Task<Note?> UpdateNoteAsync(long noteId, string content, CancellationToken cancellationToken = default)
     {
         try
         {
-            var note = _appContext.Notes.FirstOrDefault(n => n.Id == noteId);
+            var note = await _appContext.Notes.FirstOrDefaultAsync(n => n.Id == noteId, cancellationToken);
             if (note == null)
             {
                 return null;
@@ -1164,7 +1172,7 @@ public class SqlDataService : IDataService
             note.Description = content;
             note.ModifiedBy = "System"; // TODO: Get from authenticated user
             note.ModifiedOn = DateTime.UtcNow;
-            _appContext.SaveChanges();
+            await _appContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Updated note {NoteId}", noteId);
             return note;
@@ -1176,18 +1184,18 @@ public class SqlDataService : IDataService
         }
     }
 
-    public void DeleteNote(long noteId)
+    public async Task DeleteNoteAsync(long noteId, CancellationToken cancellationToken = default)
     {
         try
         {
-            var note = _appContext.Notes.FirstOrDefault(n => n.Id == noteId);
+            var note = await _appContext.Notes.FirstOrDefaultAsync(n => n.Id == noteId, cancellationToken);
             if (note == null)
             {
                 return;
             }
 
             _appContext.Notes.Remove(note);
-            _appContext.SaveChanges();
+            await _appContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Deleted note {NoteId}", noteId);
         }
@@ -1202,11 +1210,11 @@ public class SqlDataService : IDataService
     // Producer Details Operations - Uses dbo.ProducerDetails table in Origination database
     // =========================================================================
 
-    public ProducerDetails? GetProducerDetails(long customerId)
+    public async Task<ProducerDetails?> GetProducerDetailsAsync(long customerId, CancellationToken cancellationToken = default)
     {
         try
         {
-            return _appContext.ProducerDetails.AsNoTracking().FirstOrDefault(pd => pd.CustomerId == customerId);
+            return await _appContext.ProducerDetails.AsNoTracking().FirstOrDefaultAsync(pd => pd.CustomerId == customerId, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -1215,11 +1223,11 @@ public class SqlDataService : IDataService
         }
     }
 
-    public List<ProducerDetails> GetAllProducerDetails()
+    public async Task<List<ProducerDetails>> GetAllProducerDetailsAsync(CancellationToken cancellationToken = default)
     {
         try
         {
-            return _appContext.ProducerDetails.AsNoTracking().ToList();
+            return await _appContext.ProducerDetails.AsNoTracking().ToListAsync(cancellationToken);
         }
         catch (Exception ex)
         {
@@ -1228,11 +1236,11 @@ public class SqlDataService : IDataService
         }
     }
 
-    public ProducerDetails UpsertProducerDetails(long customerId, string? sourceCustomerId, string customerName, decimal? totalAcres, decimal? binCapacity, string? primaryContact, string? commodities, string? linkedProducerIds = null)
+    public async Task<ProducerDetails> UpsertProducerDetailsAsync(long customerId, string? sourceCustomerId, string customerName, decimal? totalAcres, decimal? binCapacity, string? primaryContact, string? commodities, string? linkedProducerIds = null, CancellationToken cancellationToken = default)
     {
         try
         {
-            var existing = _appContext.ProducerDetails.FirstOrDefault(pd => pd.CustomerId == customerId);
+            var existing = await _appContext.ProducerDetails.FirstOrDefaultAsync(pd => pd.CustomerId == customerId, cancellationToken);
 
             if (existing != null)
             {
@@ -1246,7 +1254,7 @@ public class SqlDataService : IDataService
                 existing.ModifiedBy = "system";
                 existing.ModifiedOn = DateTime.UtcNow;
 
-                _appContext.SaveChanges();
+                await _appContext.SaveChangesAsync(cancellationToken);
                 _logger.LogInformation("Updated ProducerDetails for customer {CustomerId}", customerId);
                 return existing;
             }
@@ -1267,7 +1275,7 @@ public class SqlDataService : IDataService
                 };
 
                 _appContext.ProducerDetails.Add(details);
-                _appContext.SaveChanges();
+                await _appContext.SaveChangesAsync(cancellationToken);
                 _logger.LogInformation("Created ProducerDetails for customer {CustomerId}", customerId);
                 return details;
             }
@@ -1279,15 +1287,15 @@ public class SqlDataService : IDataService
         }
     }
 
-    public void DeleteProducerDetails(long customerId)
+    public async Task DeleteProducerDetailsAsync(long customerId, CancellationToken cancellationToken = default)
     {
         try
         {
-            var existing = _appContext.ProducerDetails.FirstOrDefault(pd => pd.CustomerId == customerId);
+            var existing = await _appContext.ProducerDetails.FirstOrDefaultAsync(pd => pd.CustomerId == customerId, cancellationToken);
             if (existing != null)
             {
                 _appContext.ProducerDetails.Remove(existing);
-                _appContext.SaveChanges();
+                await _appContext.SaveChangesAsync(cancellationToken);
                 _logger.LogInformation("Deleted ProducerDetails for customer {CustomerId}", customerId);
             }
         }
@@ -1302,31 +1310,31 @@ public class SqlDataService : IDataService
     // Storage Operations - DISABLED: Table doesn't exist in ODS
     // =========================================================================
 
-    public List<StoredGrain> GetStoredGrain()
+    public Task<List<StoredGrain>> GetStoredGrainAsync(CancellationToken cancellationToken = default)
     {
         _logger.LogWarning("StoredGrain table doesn't exist in ODS - returning empty list");
-        return new List<StoredGrain>();
+        return Task.FromResult(new List<StoredGrain>());
     }
 
-    public List<StoredGrain> GetStoredGrainByCustomer(long customerId)
+    public Task<List<StoredGrain>> GetStoredGrainByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
     {
         _logger.LogWarning("StoredGrain table doesn't exist in ODS - returning empty list");
-        return new List<StoredGrain>();
+        return Task.FromResult(new List<StoredGrain>());
     }
 
     // =========================================================================
     // Saved List Operations
     // =========================================================================
 
-    public List<SavedList> GetSavedLists()
+    public async Task<List<SavedList>> GetSavedListsAsync(CancellationToken cancellationToken = default)
     {
         try
         {
-            return _appContext.SavedLists
+            return await _appContext.SavedLists
                 .AsNoTracking()
                 .Where(s => s.IsActive)
                 .OrderByDescending(s => s.CreatedOn)
-                .ToList();
+                .ToListAsync(cancellationToken);
         }
         catch (Exception ex)
         {
@@ -1335,7 +1343,7 @@ public class SqlDataService : IDataService
         }
     }
 
-    public SavedList SaveList(string name, string query, string? tradeUnits, string? filters = null)
+    public async Task<SavedList> SaveListAsync(string name, string query, string? tradeUnits, string? filters = null, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -1349,7 +1357,7 @@ public class SqlDataService : IDataService
                 CreatedOn = DateTime.UtcNow
             };
             _appContext.SavedLists.Add(savedList);
-            _appContext.SaveChanges();
+            await _appContext.SaveChangesAsync(cancellationToken);
             return savedList;
         }
         catch (Exception ex)
@@ -1359,17 +1367,17 @@ public class SqlDataService : IDataService
         }
     }
 
-    public SavedList? UpdateList(int listId, string name, string query, string? tradeUnits, string? filters = null)
+    public async Task<SavedList?> UpdateListAsync(int listId, string name, string query, string? tradeUnits, string? filters = null, CancellationToken cancellationToken = default)
     {
         try
         {
-            var list = _appContext.SavedLists.FirstOrDefault(s => s.Id == listId);
+            var list = await _appContext.SavedLists.FirstOrDefaultAsync(s => s.Id == listId, cancellationToken);
             if (list == null) return null;
             list.Name = name;
             list.Query = query;
             list.TradeUnits = tradeUnits;
             list.Filters = filters;
-            _appContext.SaveChanges();
+            await _appContext.SaveChangesAsync(cancellationToken);
             return list;
         }
         catch (Exception ex)
@@ -1379,14 +1387,14 @@ public class SqlDataService : IDataService
         }
     }
 
-    public void DeleteList(int listId)
+    public async Task DeleteListAsync(int listId, CancellationToken cancellationToken = default)
     {
         try
         {
-            var list = _appContext.SavedLists.FirstOrDefault(s => s.Id == listId);
+            var list = await _appContext.SavedLists.FirstOrDefaultAsync(s => s.Id == listId, cancellationToken);
             if (list == null) return;
             _appContext.SavedLists.Remove(list);
-            _appContext.SaveChanges();
+            await _appContext.SaveChangesAsync(cancellationToken);
         }
         catch (Exception ex)
         {
@@ -1399,23 +1407,23 @@ public class SqlDataService : IDataService
     // Dashboard Planting Estimate Operations
     // =========================================================================
 
-    public List<DashboardPlantingEstimate> GetDashboardPlantingEstimates(string tradeUnitKey, int plantingYear)
+    public async Task<List<DashboardPlantingEstimate>> GetDashboardPlantingEstimatesAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default)
     {
-        return _appContext.DashboardPlantingEstimates
+        return await _appContext.DashboardPlantingEstimates
             .AsNoTracking()
             .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear)
             .OrderBy(e => e.Crop)
-            .ToList();
+            .ToListAsync(cancellationToken);
     }
 
-    public void UpsertDashboardPlantingEstimates(List<UpsertDashboardEstimateRequest> estimates, string username)
+    public async Task UpsertDashboardPlantingEstimatesAsync(List<UpsertDashboardEstimateRequest> estimates, string username, CancellationToken cancellationToken = default)
     {
         foreach (var req in estimates)
         {
-            var existing = _appContext.DashboardPlantingEstimates
-                .FirstOrDefault(e => e.TradeUnitKey == req.TradeUnitKey
-                                  && e.Crop == req.Crop
-                                  && e.PlantingYear == req.PlantingYear);
+            var existing = await _appContext.DashboardPlantingEstimates
+                .FirstOrDefaultAsync(e => e.TradeUnitKey == req.TradeUnitKey
+                                      && e.Crop == req.Crop
+                                      && e.PlantingYear == req.PlantingYear, cancellationToken);
             if (req.YieldEstimate == null)
             {
                 if (existing != null)
@@ -1440,26 +1448,26 @@ public class SqlDataService : IDataService
                 });
             }
         }
-        _appContext.SaveChanges();
+        await _appContext.SaveChangesAsync(cancellationToken);
     }
 
-    public List<DashboardMarketShare> GetDashboardMarketShares(string tradeUnitKey, int plantingYear)
+    public async Task<List<DashboardMarketShare>> GetDashboardMarketSharesAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default)
     {
-        return _appContext.DashboardMarketShares
+        return await _appContext.DashboardMarketShares
             .AsNoTracking()
             .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear)
             .OrderBy(e => e.CropCategory)
-            .ToList();
+            .ToListAsync(cancellationToken);
     }
 
-    public void UpsertDashboardMarketShares(List<UpsertDashboardMarketShareRequest> shares, string username)
+    public async Task UpsertDashboardMarketSharesAsync(List<UpsertDashboardMarketShareRequest> shares, string username, CancellationToken cancellationToken = default)
     {
         foreach (var req in shares)
         {
-            var existing = _appContext.DashboardMarketShares
-                .FirstOrDefault(e => e.TradeUnitKey == req.TradeUnitKey
-                                  && e.CropCategory == req.CropCategory
-                                  && e.PlantingYear == req.PlantingYear);
+            var existing = await _appContext.DashboardMarketShares
+                .FirstOrDefaultAsync(e => e.TradeUnitKey == req.TradeUnitKey
+                                      && e.CropCategory == req.CropCategory
+                                      && e.PlantingYear == req.PlantingYear, cancellationToken);
             if (req.MarketSharePct == null)
             {
                 if (existing != null)
@@ -1484,27 +1492,27 @@ public class SqlDataService : IDataService
                 });
             }
         }
-        _appContext.SaveChanges();
+        await _appContext.SaveChangesAsync(cancellationToken);
     }
 
     // Dashboard Actual Harvest Operations
-    public List<DashboardActualHarvest> GetDashboardActualHarvest(string tradeUnitKey, int plantingYear)
+    public async Task<List<DashboardActualHarvest>> GetDashboardActualHarvestAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default)
     {
-        return _appContext.DashboardActualHarvests
+        return await _appContext.DashboardActualHarvests
             .AsNoTracking()
             .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear)
             .OrderBy(e => e.CropCategory)
-            .ToList();
+            .ToListAsync(cancellationToken);
     }
 
-    public void UpsertDashboardActualHarvest(List<UpsertDashboardActualHarvestRequest> items, string username)
+    public async Task UpsertDashboardActualHarvestAsync(List<UpsertDashboardActualHarvestRequest> items, string username, CancellationToken cancellationToken = default)
     {
         foreach (var req in items)
         {
-            var existing = _appContext.DashboardActualHarvests
-                .FirstOrDefault(e => e.TradeUnitKey == req.TradeUnitKey
-                                  && e.CropCategory == req.CropCategory
-                                  && e.PlantingYear == req.PlantingYear);
+            var existing = await _appContext.DashboardActualHarvests
+                .FirstOrDefaultAsync(e => e.TradeUnitKey == req.TradeUnitKey
+                                      && e.CropCategory == req.CropCategory
+                                      && e.PlantingYear == req.PlantingYear, cancellationToken);
             if (existing != null)
             {
                 existing.Bushels = req.Bushels;
@@ -1524,16 +1532,16 @@ public class SqlDataService : IDataService
                 });
             }
         }
-        _appContext.SaveChanges();
+        await _appContext.SaveChangesAsync(cancellationToken);
     }
 
-    public void DeleteDashboardActualHarvest(int id)
+    public async Task DeleteDashboardActualHarvestAsync(int id, CancellationToken cancellationToken = default)
     {
-        var entity = _appContext.DashboardActualHarvests.Find(id);
+        var entity = await _appContext.DashboardActualHarvests.FindAsync([id], cancellationToken);
         if (entity != null)
         {
             _appContext.DashboardActualHarvests.Remove(entity);
-            _appContext.SaveChanges();
+            await _appContext.SaveChangesAsync(cancellationToken);
         }
     }
 }

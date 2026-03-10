@@ -11,17 +11,20 @@ public interface IDataService
 
     /// <summary>Gets all customers, optionally filtered by trade unit.</summary>
     /// <param name="tradeUnits">Optional list of trade unit codes to filter by.</param>
-    List<Customer> GetCustomers(List<string>? tradeUnits = null);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<Customer>> GetCustomersAsync(List<string>? tradeUnits = null, CancellationToken cancellationToken = default);
 
     /// <summary>Searches customers by name or code, optionally filtered by trade unit.</summary>
     /// <param name="searchTerm">The term to search for.</param>
     /// <param name="tradeUnits">Optional list of trade unit codes to filter by.</param>
-    List<Customer> SearchCustomers(string searchTerm, List<string>? tradeUnits = null);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<Customer>> SearchCustomersAsync(string searchTerm, List<string>? tradeUnits = null, CancellationToken cancellationToken = default);
 
     /// <summary>Gets a single customer by their unique identifier.</summary>
     /// <param name="id">The customer's unique identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The customer if found; otherwise, null.</returns>
-    Customer? GetCustomerById(long id);
+    Task<Customer?> GetCustomerByIdAsync(long id, CancellationToken cancellationToken = default);
 
     /// <summary>Updates contact and relationship fields on an existing customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>
@@ -30,40 +33,47 @@ public interface IDataService
     /// <param name="email">The customer's email address.</param>
     /// <param name="farmIds">List of associated farm IDs.</param>
     /// <param name="linkedProducerIds">List of linked producer IDs.</param>
-    void UpdateCustomer(long customerId, string location, string phone, string email, List<string> farmIds, List<string> linkedProducerIds);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task UpdateCustomerAsync(long customerId, string location, string phone, string email, List<string> farmIds, List<string> linkedProducerIds, CancellationToken cancellationToken = default);
 
     // =========================================================================
     // Trade Unit Operations
     // =========================================================================
 
     /// <summary>Gets all distinct trade unit codes.</summary>
-    List<string> GetTradeUnits();
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<string>> GetTradeUnitsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Gets all trade unit groups with their associated trade units.</summary>
-    List<TradeUnitGroup> GetTradeUnitGroups();
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<TradeUnitGroup>> GetTradeUnitGroupsAsync(CancellationToken cancellationToken = default);
 
     // =========================================================================
     // Farm Operations
     // =========================================================================
 
     /// <summary>Gets all farms.</summary>
-    List<Farm> GetFarms();
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<Farm>> GetFarmsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Gets all farms associated with a specific customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>
-    List<Farm> GetFarmsByCustomer(long customerId);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<Farm>> GetFarmsByCustomerAsync(long customerId, CancellationToken cancellationToken = default);
 
     /// <summary>Gets a single farm by its identifier.</summary>
     /// <param name="id">The farm's string identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The farm if found; otherwise, null.</returns>
-    Farm? GetFarmById(string id);
+    Task<Farm?> GetFarmByIdAsync(string id, CancellationToken cancellationToken = default);
 
     /// <summary>Creates a new farm record.</summary>
     /// <param name="name">The farm name.</param>
     /// <param name="location">The farm location description.</param>
     /// <param name="acres">The total acreage.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The newly created farm's identifier.</returns>
-    string CreateFarm(string name, string location, int acres);
+    Task<string> CreateFarmAsync(string name, string location, int acres, CancellationToken cancellationToken = default);
 
     // =========================================================================
     // Contract Operations
@@ -71,23 +81,28 @@ public interface IDataService
 
     /// <summary>Gets all contracts, optionally filtered by trade unit.</summary>
     /// <param name="tradeUnits">Optional list of trade unit codes to filter by.</param>
-    List<Contract> GetContracts(List<string>? tradeUnits = null);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<Contract>> GetContractsAsync(List<string>? tradeUnits = null, CancellationToken cancellationToken = default);
 
     /// <summary>Gets all contracts for a specific customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>
-    List<Contract> GetContractsByCustomer(long customerId);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<Contract>> GetContractsByCustomerAsync(long customerId, CancellationToken cancellationToken = default);
 
     /// <summary>Gets all contracts associated with a specific farm.</summary>
     /// <param name="farmId">The farm's string identifier.</param>
-    List<Contract> GetContractsByFarm(string farmId);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<Contract>> GetContractsByFarmAsync(string farmId, CancellationToken cancellationToken = default);
 
     /// <summary>Gets all pricing lines for a specific contract.</summary>
     /// <param name="sourceContractId">The source system contract identifier.</param>
-    List<ContractPricingLine> GetPricingLines(string sourceContractId);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<ContractPricingLine>> GetPricingLinesAsync(string sourceContractId, CancellationToken cancellationToken = default);
 
     /// <summary>Gets all pricing lines for a specific customer across all contracts.</summary>
     /// <param name="sourceCustomerId">The source system customer identifier.</param>
-    List<ContractPricingLine> GetPricingLinesByCustomer(string sourceCustomerId);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<ContractPricingLine>> GetPricingLinesByCustomerAsync(string sourceCustomerId, CancellationToken cancellationToken = default);
 
     // =========================================================================
     // Ticket Operations
@@ -95,72 +110,86 @@ public interface IDataService
 
     /// <summary>Gets all tickets, optionally filtered by trade unit.</summary>
     /// <param name="tradeUnits">Optional list of trade unit codes to filter by.</param>
-    List<Ticket> GetTickets(List<string>? tradeUnits = null);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<Ticket>> GetTicketsAsync(List<string>? tradeUnits = null, CancellationToken cancellationToken = default);
 
     /// <summary>Gets all tickets for a specific customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>
-    List<Ticket> GetTicketsByCustomer(long customerId);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<Ticket>> GetTicketsByCustomerAsync(long customerId, CancellationToken cancellationToken = default);
 
     /// <summary>Gets all tickets associated with a specific farm.</summary>
     /// <param name="farmId">The farm's string identifier.</param>
-    List<Ticket> GetTicketsByFarm(string farmId);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<Ticket>> GetTicketsByFarmAsync(string farmId, CancellationToken cancellationToken = default);
 
     // =========================================================================
     // Planting Intention Operations
     // =========================================================================
 
     /// <summary>Gets all planting intentions across all customers.</summary>
-    List<PlantingIntention> GetPlantingIntentions();
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<PlantingIntention>> GetPlantingIntentionsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Gets all planting intentions for a specific customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>
-    List<PlantingIntention> GetPlantingIntentionsByCustomer(int customerId);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<PlantingIntention>> GetPlantingIntentionsByCustomerAsync(int customerId, CancellationToken cancellationToken = default);
 
     /// <summary>Creates a new planting intention.</summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The newly created planting intention.</returns>
-    PlantingIntention AddPlantingIntention(int customerId, string customerName, string customerCode, string tradeUnit, string crop, string? type, string? description, int acres, int plantingYear);
+    Task<PlantingIntention> AddPlantingIntentionAsync(int customerId, string customerName, string customerCode, string tradeUnit, string crop, string? type, string? description, int acres, int plantingYear, CancellationToken cancellationToken = default);
 
     /// <summary>Updates an existing planting intention.</summary>
     /// <param name="intentionId">The planting intention's unique identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The updated planting intention if found; otherwise, null.</returns>
-    PlantingIntention? UpdatePlantingIntention(int intentionId, string crop, string? type, string? description, int acres, int plantingYear);
+    Task<PlantingIntention?> UpdatePlantingIntentionAsync(int intentionId, string crop, string? type, string? description, int acres, int plantingYear, CancellationToken cancellationToken = default);
 
     /// <summary>Deletes a planting intention by its identifier.</summary>
     /// <param name="intentionId">The planting intention's unique identifier.</param>
-    void DeletePlantingIntention(int intentionId);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task DeletePlantingIntentionAsync(int intentionId, CancellationToken cancellationToken = default);
 
     // =========================================================================
     // Note Operations
     // =========================================================================
 
     /// <summary>Gets all notes across all customers.</summary>
-    List<Note> GetNotes();
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<Note>> GetNotesAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Gets all notes for a specific customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>
-    List<Note> GetNotesByCustomer(long customerId);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<Note>> GetNotesByCustomerAsync(long customerId, CancellationToken cancellationToken = default);
 
     /// <summary>Creates a new note for a customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>
     /// <param name="content">The note text content.</param>
     /// <param name="tradeUnit">Optional trade unit association.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The newly created note.</returns>
-    Note AddNote(long customerId, string content, string? tradeUnit = null);
+    Task<Note> AddNoteAsync(long customerId, string content, string? tradeUnit = null, CancellationToken cancellationToken = default);
 
     /// <summary>Toggles the pinned state of a note.</summary>
     /// <param name="noteId">The note's unique identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The updated note if found; otherwise, null.</returns>
-    Note? ToggleNotePin(long noteId);
+    Task<Note?> ToggleNotePinAsync(long noteId, CancellationToken cancellationToken = default);
 
     /// <summary>Updates the text content of an existing note.</summary>
     /// <param name="noteId">The note's unique identifier.</param>
     /// <param name="content">The new note text content.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The updated note if found; otherwise, null.</returns>
-    Note? UpdateNote(long noteId, string content);
+    Task<Note?> UpdateNoteAsync(long noteId, string content, CancellationToken cancellationToken = default);
 
     /// <summary>Deletes a note by its identifier.</summary>
     /// <param name="noteId">The note's unique identifier.</param>
-    void DeleteNote(long noteId);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task DeleteNoteAsync(long noteId, CancellationToken cancellationToken = default);
 
     // =========================================================================
     // Producer Details Operations
@@ -168,19 +197,23 @@ public interface IDataService
 
     /// <summary>Gets producer details for a specific customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The producer details if found; otherwise, null.</returns>
-    ProducerDetails? GetProducerDetails(long customerId);
+    Task<ProducerDetails?> GetProducerDetailsAsync(long customerId, CancellationToken cancellationToken = default);
 
     /// <summary>Gets producer details for all customers.</summary>
-    List<ProducerDetails> GetAllProducerDetails();
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<ProducerDetails>> GetAllProducerDetailsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Creates or updates producer details for a customer.</summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The created or updated producer details record.</returns>
-    ProducerDetails UpsertProducerDetails(long customerId, string? sourceCustomerId, string customerName, decimal? totalAcres, decimal? binCapacity, string? primaryContact, string? commodities, string? linkedProducerIds = null);
+    Task<ProducerDetails> UpsertProducerDetailsAsync(long customerId, string? sourceCustomerId, string customerName, decimal? totalAcres, decimal? binCapacity, string? primaryContact, string? commodities, string? linkedProducerIds = null, CancellationToken cancellationToken = default);
 
     /// <summary>Deletes producer details for a customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>
-    void DeleteProducerDetails(long customerId);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task DeleteProducerDetailsAsync(long customerId, CancellationToken cancellationToken = default);
 
     // =========================================================================
     // Dashboard Planting Estimate Operations
@@ -189,12 +222,14 @@ public interface IDataService
     /// <summary>Gets dashboard planting estimates for a trade unit and planting year.</summary>
     /// <param name="tradeUnitKey">The trade unit key to filter by.</param>
     /// <param name="plantingYear">The planting year to filter by.</param>
-    List<DashboardPlantingEstimate> GetDashboardPlantingEstimates(string tradeUnitKey, int plantingYear);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<DashboardPlantingEstimate>> GetDashboardPlantingEstimatesAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default);
 
     /// <summary>Bulk creates or updates dashboard planting estimates.</summary>
     /// <param name="estimates">The list of estimates to upsert.</param>
     /// <param name="username">The username performing the operation.</param>
-    void UpsertDashboardPlantingEstimates(List<UpsertDashboardEstimateRequest> estimates, string username);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task UpsertDashboardPlantingEstimatesAsync(List<UpsertDashboardEstimateRequest> estimates, string username, CancellationToken cancellationToken = default);
 
     // =========================================================================
     // Dashboard Market Share Operations
@@ -203,12 +238,14 @@ public interface IDataService
     /// <summary>Gets dashboard market share records for a trade unit and planting year.</summary>
     /// <param name="tradeUnitKey">The trade unit key to filter by.</param>
     /// <param name="plantingYear">The planting year to filter by.</param>
-    List<DashboardMarketShare> GetDashboardMarketShares(string tradeUnitKey, int plantingYear);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<DashboardMarketShare>> GetDashboardMarketSharesAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default);
 
     /// <summary>Bulk creates or updates dashboard market share records.</summary>
     /// <param name="shares">The list of market share records to upsert.</param>
     /// <param name="username">The username performing the operation.</param>
-    void UpsertDashboardMarketShares(List<UpsertDashboardMarketShareRequest> shares, string username);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task UpsertDashboardMarketSharesAsync(List<UpsertDashboardMarketShareRequest> shares, string username, CancellationToken cancellationToken = default);
 
     // =========================================================================
     // Dashboard Actual Harvest Operations
@@ -217,56 +254,66 @@ public interface IDataService
     /// <summary>Gets actual harvest records for a trade unit and planting year.</summary>
     /// <param name="tradeUnitKey">The trade unit key to filter by.</param>
     /// <param name="plantingYear">The planting year to filter by.</param>
-    List<DashboardActualHarvest> GetDashboardActualHarvest(string tradeUnitKey, int plantingYear);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<DashboardActualHarvest>> GetDashboardActualHarvestAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default);
 
     /// <summary>Bulk creates or updates actual harvest records.</summary>
     /// <param name="items">The list of harvest records to upsert.</param>
     /// <param name="username">The username performing the operation.</param>
-    void UpsertDashboardActualHarvest(List<UpsertDashboardActualHarvestRequest> items, string username);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task UpsertDashboardActualHarvestAsync(List<UpsertDashboardActualHarvestRequest> items, string username, CancellationToken cancellationToken = default);
 
     /// <summary>Deletes an actual harvest record by its identifier.</summary>
     /// <param name="id">The harvest record's unique identifier.</param>
-    void DeleteDashboardActualHarvest(int id);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task DeleteDashboardActualHarvestAsync(int id, CancellationToken cancellationToken = default);
 
     // =========================================================================
     // Commodity Operations
     // =========================================================================
 
     /// <summary>Gets all commodities.</summary>
-    List<Commodity> GetCommodities();
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<Commodity>> GetCommoditiesAsync(CancellationToken cancellationToken = default);
 
     // =========================================================================
     // Storage Operations
     // =========================================================================
 
     /// <summary>Gets all stored grain records.</summary>
-    List<StoredGrain> GetStoredGrain();
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<StoredGrain>> GetStoredGrainAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Gets stored grain records for a specific customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>
-    List<StoredGrain> GetStoredGrainByCustomer(long customerId);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<StoredGrain>> GetStoredGrainByCustomerAsync(long customerId, CancellationToken cancellationToken = default);
 
     // =========================================================================
     // Saved List Operations
     // =========================================================================
 
     /// <summary>Gets all saved lists.</summary>
-    List<SavedList> GetSavedLists();
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<SavedList>> GetSavedListsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Creates a new saved list.</summary>
     /// <param name="name">The display name of the list.</param>
     /// <param name="query">The NLQ query string.</param>
     /// <param name="tradeUnits">Optional comma-separated trade unit filter.</param>
     /// <param name="filters">Optional serialized filter state.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The newly created saved list.</returns>
-    SavedList SaveList(string name, string query, string? tradeUnits, string? filters = null);
+    Task<SavedList> SaveListAsync(string name, string query, string? tradeUnits, string? filters = null, CancellationToken cancellationToken = default);
 
     /// <summary>Updates an existing saved list.</summary>
     /// <param name="listId">The saved list's unique identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The updated saved list if found; otherwise, null.</returns>
-    SavedList? UpdateList(int listId, string name, string query, string? tradeUnits, string? filters = null);
+    Task<SavedList?> UpdateListAsync(int listId, string name, string query, string? tradeUnits, string? filters = null, CancellationToken cancellationToken = default);
 
     /// <summary>Deletes a saved list by its identifier.</summary>
     /// <param name="listId">The saved list's unique identifier.</param>
-    void DeleteList(int listId);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task DeleteListAsync(int listId, CancellationToken cancellationToken = default);
 }

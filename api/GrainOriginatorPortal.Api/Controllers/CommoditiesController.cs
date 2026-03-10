@@ -16,8 +16,8 @@ public class CommoditiesController : ControllerBase
     /// <summary>Gets all active commodities.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(List<Commodity>), StatusCodes.Status200OK)]
-    public ActionResult<List<Commodity>> GetAll()
+    public async Task<ActionResult<List<Commodity>>> GetAll(CancellationToken cancellationToken = default)
     {
-        return Ok(_dataService.GetCommodities());
+        return Ok(await _dataService.GetCommoditiesAsync(cancellationToken));
     }
 }

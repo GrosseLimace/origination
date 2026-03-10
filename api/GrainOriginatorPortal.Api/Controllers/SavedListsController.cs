@@ -16,9 +16,9 @@ public class SavedListsController : ControllerBase
     /// <summary>Gets all saved customer lists.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(List<SavedList>), StatusCodes.Status200OK)]
-    public ActionResult<List<SavedList>> GetAll()
+    public async Task<ActionResult<List<SavedList>>> GetAll(CancellationToken cancellationToken = default)
     {
-        return Ok(_dataService.GetSavedLists());
+        return Ok(await _dataService.GetSavedListsAsync(cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -26,9 +26,9 @@ public class SavedListsController : ControllerBase
     [HttpPost]
     [ProducesResponseType(typeof(SavedList), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
-    public ActionResult<SavedList> Create([FromBody] CreateSavedListRequest request)
+    public async Task<ActionResult<SavedList>> Create([FromBody] CreateSavedListRequest request, CancellationToken cancellationToken = default)
     {
-        var savedList = _dataService.SaveList(request.Name, request.Query, request.TradeUnits, request.Filters);
+        var savedList = await _dataService.SaveListAsync(request.Name, request.Query, request.TradeUnits, request.Filters, cancellationToken);
         return Created($"/api/savedlists/{savedList.Id}", savedList);
     }
 
@@ -37,9 +37,9 @@ public class SavedListsController : ControllerBase
     [HttpPut("{id}")]
     [ProducesResponseType(typeof(SavedList), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public ActionResult<SavedList> Update(int id, [FromBody] CreateSavedListRequest request)
+    public async Task<ActionResult<SavedList>> Update(int id, [FromBody] CreateSavedListRequest request, CancellationToken cancellationToken = default)
     {
-        var updated = _dataService.UpdateList(id, request.Name, request.Query, request.TradeUnits, request.Filters);
+        var updated = await _dataService.UpdateListAsync(id, request.Name, request.Query, request.TradeUnits, request.Filters, cancellationToken);
         if (updated == null)
         {
             return NotFound();
@@ -51,9 +51,9 @@ public class SavedListsController : ControllerBase
     /// <summary>Deletes a saved list by ID.</summary>
     [HttpDelete("{id}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public ActionResult Delete(int id)
+    public async Task<ActionResult> Delete(int id, CancellationToken cancellationToken = default)
     {
-        _dataService.DeleteList(id);
+        await _dataService.DeleteListAsync(id, cancellationToken);
         return NoContent();
     }
 }

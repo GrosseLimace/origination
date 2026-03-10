@@ -16,18 +16,18 @@ public class NotesController : ControllerBase
     /// <summary>Gets all notes.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(List<Note>), StatusCodes.Status200OK)]
-    public ActionResult<List<Note>> GetAll()
+    public async Task<ActionResult<List<Note>>> GetAll(CancellationToken cancellationToken = default)
     {
-        return Ok(_dataService.GetNotes());
+        return Ok(await _dataService.GetNotesAsync(cancellationToken));
     }
 
     // -------------------------------------------------------------------------
     /// <summary>Gets all notes for a specific customer.</summary>
     [HttpGet("customer/{customerId:long}")]
     [ProducesResponseType(typeof(List<Note>), StatusCodes.Status200OK)]
-    public ActionResult<List<Note>> GetByCustomer(long customerId)
+    public async Task<ActionResult<List<Note>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
-        return Ok(_dataService.GetNotesByCustomer(customerId));
+        return Ok(await _dataService.GetNotesByCustomerAsync(customerId, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -35,11 +35,11 @@ public class NotesController : ControllerBase
     [HttpPost]
     [ProducesResponseType(typeof(Note), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
-    public ActionResult<Note> Create([FromBody] CreateNoteRequest request)
+    public async Task<ActionResult<Note>> Create([FromBody] CreateNoteRequest request, CancellationToken cancellationToken = default)
     {
         try
         {
-            var note = _dataService.AddNote(request.CustomerId, request.Content, request.TradeUnit);
+            var note = await _dataService.AddNoteAsync(request.CustomerId, request.Content, request.TradeUnit, cancellationToken);
             return Created($"/api/notes/{note.Id}", note);
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("database permissions"))
@@ -53,9 +53,9 @@ public class NotesController : ControllerBase
     [HttpPut("{id:long}/toggle-pin")]
     [ProducesResponseType(typeof(Note), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public ActionResult<Note> TogglePin(long id)
+    public async Task<ActionResult<Note>> TogglePin(long id, CancellationToken cancellationToken = default)
     {
-        var note = _dataService.ToggleNotePin(id);
+        var note = await _dataService.ToggleNotePinAsync(id, cancellationToken);
         if (note == null)
         {
             return NotFound();
@@ -68,9 +68,9 @@ public class NotesController : ControllerBase
     [HttpPut("{id:long}")]
     [ProducesResponseType(typeof(Note), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public ActionResult<Note> Update(long id, [FromBody] UpdateNoteRequest request)
+    public async Task<ActionResult<Note>> Update(long id, [FromBody] UpdateNoteRequest request, CancellationToken cancellationToken = default)
     {
-        var note = _dataService.UpdateNote(id, request.Content);
+        var note = await _dataService.UpdateNoteAsync(id, request.Content, cancellationToken);
         if (note == null)
         {
             return NotFound();
@@ -82,9 +82,9 @@ public class NotesController : ControllerBase
     /// <summary>Deletes a note by ID.</summary>
     [HttpDelete("{id:long}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public ActionResult Delete(long id)
+    public async Task<ActionResult> Delete(long id, CancellationToken cancellationToken = default)
     {
-        _dataService.DeleteNote(id);
+        await _dataService.DeleteNoteAsync(id, cancellationToken);
         return NoContent();
     }
 }

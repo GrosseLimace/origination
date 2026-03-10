@@ -23,15 +23,11 @@ public class GeocodeController : ControllerBase
         _logger = logger;
     }
 
-    /// <summary>
-    /// Geocode a single address via Nominatim (server-side, no CORS issues).
-    /// Rate-limited to 1 request/sec to respect Nominatim usage policy.
-    /// </summary>
     // -------------------------------------------------------------------------
     /// <summary>Geocodes a single address via Nominatim. Rate-limited to 1 req/sec.</summary>
     [HttpPost("single")]
     [ProducesResponseType(typeof(GeocodeResult), StatusCodes.Status200OK)]
-    public async Task<ActionResult<GeocodeResult>> SingleGeocode([FromBody] GeocodeRequest request)
+    public async Task<ActionResult<GeocodeResult>> SingleGeocode([FromBody] GeocodeRequest request, CancellationToken cancellationToken = default)
     {
         if (request == null) return Ok(new GeocodeResult());
 
@@ -51,7 +47,7 @@ public class GeocodeController : ControllerBase
             // Enforce 1 request per second to Nominatim
             var elapsed = DateTime.UtcNow - _lastNominatimCall;
             if (elapsed.TotalMilliseconds < 1100)
-                await Task.Delay(1100 - (int)elapsed.TotalMilliseconds);
+                await Task.Delay(1100 - (int)elapsed.TotalMilliseconds, cancellationToken);
 
             var queryParams = new List<string> { "country=US", "format=json", "limit=1" };
             if (!string.IsNullOrWhiteSpace(request.Street)) queryParams.Add($"street={Uri.EscapeDataString(request.Street)}");
@@ -61,11 +57,11 @@ public class GeocodeController : ControllerBase
 
             var url = $"https://nominatim.openstreetmap.org/search?{string.Join("&", queryParams)}";
             _lastNominatimCall = DateTime.UtcNow;
-            var response = await _http.GetAsync(url);
+            var response = await _http.GetAsync(url, cancellationToken);
 
             if (response.IsSuccessStatusCode)
             {
-                var json = await response.Content.ReadAsStringAsync();
+                var json = await response.Content.ReadAsStringAsync(cancellationToken);
                 var data = JsonSerializer.Deserialize<JsonElement[]>(json);
                 if (data != null && data.Length > 0)
                 {
@@ -96,7 +92,7 @@ public class GeocodeController : ControllerBase
     /// <summary>Batch geocodes up to 50 addresses via Nominatim. Rate-limited to 1 req/sec per address.</summary>
     [HttpPost("batch")]
     [ProducesResponseType(typeof(List<GeocodeResult>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<GeocodeResult>>> BatchGeocode([FromBody] List<GeocodeRequest> requests)
+    public async Task<ActionResult<List<GeocodeResult>>> BatchGeocode([FromBody] List<GeocodeRequest> requests, CancellationToken cancellationToken = default)
     {
         if (requests == null || requests.Count == 0)
             return Ok(new List<GeocodeResult>());
@@ -136,19 +132,19 @@ public class GeocodeController : ControllerBase
                 if (!string.IsNullOrWhiteSpace(req.Zip)) queryParams.Add($"postalcode={Uri.EscapeDataString(req.Zip)}");
 
                 var url = $"https://nominatim.openstreetmap.org/search?{string.Join("&", queryParams)}";
-                var response = await _http.GetAsync(url);
+                var response = await _http.GetAsync(url, cancellationToken);
 
                 if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
                 {
                     // Rate limited — wait 2s and continue with remaining
-                    await Task.Delay(2000);
+                    await Task.Delay(2000, cancellationToken);
                     results.Add(new GeocodeResult { Key = req.Key });
                     continue;
                 }
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var json = await response.Content.ReadAsStringAsync();
+                    var json = await response.Content.ReadAsStringAsync(cancellationToken);
                     var data = JsonSerializer.Deserialize<JsonElement[]>(json);
                     if (data != null && data.Length > 0)
                     {
@@ -169,7 +165,7 @@ public class GeocodeController : ControllerBase
                 }
 
                 // Respect Nominatim rate limit: 1 req/sec
-                await Task.Delay(1100);
+                await Task.Delay(1100, cancellationToken);
             }
             catch
             {

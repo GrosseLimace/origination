@@ -16,9 +16,9 @@ public class FarmsController : ControllerBase
     /// <summary>Gets all farms.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(List<Farm>), StatusCodes.Status200OK)]
-    public ActionResult<List<Farm>> GetAll()
+    public async Task<ActionResult<List<Farm>>> GetAll(CancellationToken cancellationToken = default)
     {
-        return Ok(_dataService.GetFarms());
+        return Ok(await _dataService.GetFarmsAsync(cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -26,9 +26,9 @@ public class FarmsController : ControllerBase
     [HttpGet("{id}")]
     [ProducesResponseType(typeof(Farm), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public ActionResult<Farm> GetById(string id)
+    public async Task<ActionResult<Farm>> GetById(string id, CancellationToken cancellationToken = default)
     {
-        var farm = _dataService.GetFarmById(id);
+        var farm = await _dataService.GetFarmByIdAsync(id, cancellationToken);
         if (farm == null)
         {
             return NotFound();
@@ -40,9 +40,9 @@ public class FarmsController : ControllerBase
     /// <summary>Gets all farms for a specific customer.</summary>
     [HttpGet("customer/{customerId:long}")]
     [ProducesResponseType(typeof(List<Farm>), StatusCodes.Status200OK)]
-    public ActionResult<List<Farm>> GetByCustomer(long customerId)
+    public async Task<ActionResult<List<Farm>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
-        return Ok(_dataService.GetFarmsByCustomer(customerId));
+        return Ok(await _dataService.GetFarmsByCustomerAsync(customerId, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -50,9 +50,9 @@ public class FarmsController : ControllerBase
     [HttpPost]
     [ProducesResponseType(typeof(string), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
-    public ActionResult<string> Create([FromBody] CreateFarmRequest request)
+    public async Task<ActionResult<string>> Create([FromBody] CreateFarmRequest request, CancellationToken cancellationToken = default)
     {
-        var id = _dataService.CreateFarm(request.Name, request.Location, request.Acres);
+        var id = await _dataService.CreateFarmAsync(request.Name, request.Location, request.Acres, cancellationToken);
         return CreatedAtAction(nameof(GetById), new { id }, id);
     }
 }

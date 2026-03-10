@@ -18,18 +18,18 @@ public class ProducerDetailsController : ControllerBase
     /// <summary>Gets all producer details records.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(List<ProducerDetails>), StatusCodes.Status200OK)]
-    public ActionResult<List<ProducerDetails>> GetAll()
+    public async Task<ActionResult<List<ProducerDetails>>> GetAll(CancellationToken cancellationToken = default)
     {
-        return Ok(_dataService.GetAllProducerDetails());
+        return Ok(await _dataService.GetAllProducerDetailsAsync(cancellationToken));
     }
 
     // -------------------------------------------------------------------------
     /// <summary>Gets producer details for a specific customer. Returns an empty record if not yet saved.</summary>
     [HttpGet("customer/{customerId:long}")]
     [ProducesResponseType(typeof(ProducerDetails), StatusCodes.Status200OK)]
-    public ActionResult<ProducerDetails> GetByCustomer(long customerId)
+    public async Task<ActionResult<ProducerDetails>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
-        var details = _dataService.GetProducerDetails(customerId);
+        var details = await _dataService.GetProducerDetailsAsync(customerId, cancellationToken);
         return Ok(details ?? new ProducerDetails { CustomerId = customerId });
     }
 
@@ -38,11 +38,11 @@ public class ProducerDetailsController : ControllerBase
     [HttpPut("customer/{customerId:long}")]
     [ProducesResponseType(typeof(ProducerDetails), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public ActionResult<ProducerDetails> Upsert(long customerId, [FromBody] UpsertProducerDetailsRequest request)
+    public async Task<ActionResult<ProducerDetails>> Upsert(long customerId, [FromBody] UpsertProducerDetailsRequest request, CancellationToken cancellationToken = default)
     {
         try
         {
-            var details = _dataService.UpsertProducerDetails(
+            var details = await _dataService.UpsertProducerDetailsAsync(
                 customerId,
                 request.SourceCustomerId,
                 request.CustomerName,
@@ -50,7 +50,8 @@ public class ProducerDetailsController : ControllerBase
                 request.BinCapacity,
                 request.PrimaryContact,
                 request.Commodities,
-                request.LinkedProducerIds
+                request.LinkedProducerIds,
+                cancellationToken
             );
             return Ok(details);
         }
@@ -65,9 +66,9 @@ public class ProducerDetailsController : ControllerBase
     /// <summary>Deletes producer details for a customer.</summary>
     [HttpDelete("customer/{customerId:long}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public ActionResult Delete(long customerId)
+    public async Task<ActionResult> Delete(long customerId, CancellationToken cancellationToken = default)
     {
-        _dataService.DeleteProducerDetails(customerId);
+        await _dataService.DeleteProducerDetailsAsync(customerId, cancellationToken);
         return NoContent();
     }
 }

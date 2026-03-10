@@ -16,17 +16,17 @@ public class StoredGrainController : ControllerBase
     /// <summary>Gets all stored grain records.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(List<StoredGrain>), StatusCodes.Status200OK)]
-    public ActionResult<List<StoredGrain>> GetAll()
+    public async Task<ActionResult<List<StoredGrain>>> GetAll(CancellationToken cancellationToken = default)
     {
-        return Ok(_dataService.GetStoredGrain());
+        return Ok(await _dataService.GetStoredGrainAsync(cancellationToken));
     }
 
     // -------------------------------------------------------------------------
     /// <summary>Gets stored grain records for a specific customer.</summary>
     [HttpGet("customer/{customerId:long}")]
     [ProducesResponseType(typeof(List<StoredGrain>), StatusCodes.Status200OK)]
-    public ActionResult<List<StoredGrain>> GetByCustomer(long customerId)
+    public async Task<ActionResult<List<StoredGrain>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
-        return Ok(_dataService.GetStoredGrainByCustomer(customerId));
+        return Ok(await _dataService.GetStoredGrainByCustomerAsync(customerId, cancellationToken));
     }
 }

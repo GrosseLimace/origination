@@ -25,7 +25,7 @@ public class NotesControllerTests
 
     // -------------------------------------------------------------------------
     [Fact]
-    public void GetAll_ReturnsOkWithNotes()
+    public async Task GetAll_ReturnsOkWithNotes()
     {
         // Arrange
         var notes = new List<Note>
@@ -33,10 +33,10 @@ public class NotesControllerTests
             new Note { Id = 1, CustomerId = 10, Description = "Test note", IsPinned = false },
             new Note { Id = 2, CustomerId = 10, Description = "Pinned note", IsPinned = true }
         };
-        _dataServiceMock.Setup(s => s.GetNotes()).Returns(notes);
+        _dataServiceMock.Setup(s => s.GetNotesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(notes);
 
         // Act
-        var result = _sut.GetAll();
+        var result = await _sut.GetAll();
 
         // Assert
         var ok = Assert.IsType<OkObjectResult>(result.Result);
@@ -46,14 +46,14 @@ public class NotesControllerTests
 
     // -------------------------------------------------------------------------
     [Fact]
-    public void GetByCustomer_ReturnsOkWithCustomerNotes()
+    public async Task GetByCustomer_ReturnsOkWithCustomerNotes()
     {
         // Arrange
         var notes = new List<Note> { new Note { Id = 1, CustomerId = 42, Description = "Note" } };
-        _dataServiceMock.Setup(s => s.GetNotesByCustomer(42)).Returns(notes);
+        _dataServiceMock.Setup(s => s.GetNotesByCustomerAsync(42, It.IsAny<CancellationToken>())).ReturnsAsync(notes);
 
         // Act
-        var result = _sut.GetByCustomer(42);
+        var result = await _sut.GetByCustomer(42);
 
         // Assert
         var ok = Assert.IsType<OkObjectResult>(result.Result);
@@ -63,14 +63,14 @@ public class NotesControllerTests
 
     // -------------------------------------------------------------------------
     [Fact]
-    public void TogglePin_WhenNoteExists_ReturnsOk()
+    public async Task TogglePin_WhenNoteExists_ReturnsOk()
     {
         // Arrange
         var note = new Note { Id = 5, CustomerId = 1, IsPinned = true };
-        _dataServiceMock.Setup(s => s.ToggleNotePin(5)).Returns(note);
+        _dataServiceMock.Setup(s => s.ToggleNotePinAsync(5, It.IsAny<CancellationToken>())).ReturnsAsync(note);
 
         // Act
-        var result = _sut.TogglePin(5);
+        var result = await _sut.TogglePin(5);
 
         // Assert
         var ok = Assert.IsType<OkObjectResult>(result.Result);
@@ -79,13 +79,13 @@ public class NotesControllerTests
 
     // -------------------------------------------------------------------------
     [Fact]
-    public void TogglePin_WhenNoteNotFound_ReturnsNotFound()
+    public async Task TogglePin_WhenNoteNotFound_ReturnsNotFound()
     {
         // Arrange
-        _dataServiceMock.Setup(s => s.ToggleNotePin(99)).Returns((Note?)null);
+        _dataServiceMock.Setup(s => s.ToggleNotePinAsync(99, It.IsAny<CancellationToken>())).ReturnsAsync((Note?)null);
 
         // Act
-        var result = _sut.TogglePin(99);
+        var result = await _sut.TogglePin(99);
 
         // Assert
         Assert.IsType<NotFoundResult>(result.Result);
@@ -93,15 +93,15 @@ public class NotesControllerTests
 
     // -------------------------------------------------------------------------
     [Fact]
-    public void Update_WhenNoteExists_ReturnsOk()
+    public async Task Update_WhenNoteExists_ReturnsOk()
     {
         // Arrange
         var note = new Note { Id = 3, CustomerId = 1, Description = "Updated content" };
-        _dataServiceMock.Setup(s => s.UpdateNote(3, "Updated content")).Returns(note);
+        _dataServiceMock.Setup(s => s.UpdateNoteAsync(3, "Updated content", It.IsAny<CancellationToken>())).ReturnsAsync(note);
         var request = new UpdateNoteRequest { Content = "Updated content" };
 
         // Act
-        var result = _sut.Update(3, request);
+        var result = await _sut.Update(3, request);
 
         // Assert
         var ok = Assert.IsType<OkObjectResult>(result.Result);
@@ -110,14 +110,14 @@ public class NotesControllerTests
 
     // -------------------------------------------------------------------------
     [Fact]
-    public void Update_WhenNoteNotFound_ReturnsNotFound()
+    public async Task Update_WhenNoteNotFound_ReturnsNotFound()
     {
         // Arrange
-        _dataServiceMock.Setup(s => s.UpdateNote(99, It.IsAny<string>())).Returns((Note?)null);
+        _dataServiceMock.Setup(s => s.UpdateNoteAsync(99, It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((Note?)null);
         var request = new UpdateNoteRequest { Content = "Some content" };
 
         // Act
-        var result = _sut.Update(99, request);
+        var result = await _sut.Update(99, request);
 
         // Assert
         Assert.IsType<NotFoundResult>(result.Result);
@@ -125,16 +125,16 @@ public class NotesControllerTests
 
     // -------------------------------------------------------------------------
     [Fact]
-    public void Delete_CallsDeleteNote_ReturnsNoContent()
+    public async Task Delete_CallsDeleteNote_ReturnsNoContent()
     {
         // Arrange
-        _dataServiceMock.Setup(s => s.DeleteNote(7));
+        _dataServiceMock.Setup(s => s.DeleteNoteAsync(7, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         // Act
-        var result = _sut.Delete(7);
+        var result = await _sut.Delete(7);
 
         // Assert
         Assert.IsType<NoContentResult>(result);
-        _dataServiceMock.Verify(s => s.DeleteNote(7), Times.Once);
+        _dataServiceMock.Verify(s => s.DeleteNoteAsync(7, It.IsAny<CancellationToken>()), Times.Once);
     }
 }

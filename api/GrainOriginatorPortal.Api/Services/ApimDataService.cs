@@ -36,181 +36,94 @@ public class ApimDataService : IDataService
     // Customer Operations
     // =========================================================================
 
-    public List<Customer> GetCustomers(List<string>? tradeUnits = null)
-    {
-        // TODO: Replace with actual APIM endpoint path
-        // Example: GET /ods/customers?tradeUnits=UNIT1&tradeUnits=UNIT2
-        // var queryString = tradeUnits != null ? string.Join("&", tradeUnits.Select(tu => $"tradeUnits={tu}")) : "";
-        // var result = _httpClient.GetFromJsonAsync<List<Customer>>($"/ods/customers?{queryString}").Result;
-        // return result ?? new List<Customer>();
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetCustomers");
-    }
+    public Task<List<Customer>> GetCustomersAsync(List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetCustomers");
 
-    public List<Customer> SearchCustomers(string searchTerm, List<string>? tradeUnits = null)
-    {
-        // TODO: Replace with actual APIM endpoint path
-        // Example: GET /ods/customers/search?searchTerm=John&tradeUnits=UNIT1
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for SearchCustomers");
-    }
+    public Task<List<Customer>> SearchCustomersAsync(string searchTerm, List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for SearchCustomers");
 
-    public Customer? GetCustomerById(long id)
-    {
-        // TODO: Replace with actual APIM endpoint path
-        // Example: GET /ods/customers/{id}
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetCustomerById");
-    }
+    public Task<Customer?> GetCustomerByIdAsync(long id, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetCustomerById");
 
-    public void UpdateCustomer(long customerId, string location, string phone, string email, List<string> farmIds, List<string> linkedProducerIds)
-    {
-        // TODO: Replace with actual APIM endpoint path
-        // Example: PUT /ods/customers/{customerId}
-        // Note: APIM may not support writes to ODS - confirm with the APIM team
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for UpdateCustomer");
-    }
+    public Task UpdateCustomerAsync(long customerId, string location, string phone, string email, List<string> farmIds, List<string> linkedProducerIds, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for UpdateCustomer");
 
     // =========================================================================
     // Trade Unit Operations
     // =========================================================================
 
-    public List<string> GetTradeUnits()
-    {
-        // TODO: Replace with actual APIM endpoint path
-        // Example: GET /ods/tradeunits
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetTradeUnits");
-    }
+    public Task<List<string>> GetTradeUnitsAsync(CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetTradeUnits");
 
-    public List<TradeUnitGroup> GetTradeUnitGroups()
-    {
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetTradeUnitGroups");
-    }
+    public Task<List<TradeUnitGroup>> GetTradeUnitGroupsAsync(CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetTradeUnitGroups");
 
     // =========================================================================
     // Farm Operations
     // =========================================================================
 
-    public List<Farm> GetFarms()
-    {
-        // TODO: Replace with actual APIM endpoint path (if farms are exposed via APIM)
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetFarms");
-    }
+    public Task<List<Farm>> GetFarmsAsync(CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetFarms");
 
-    public List<Farm> GetFarmsByCustomer(long customerId)
-    {
-        // TODO: Replace with actual APIM endpoint path
-        // Example: GET /ods/customers/{customerId}/farms
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetFarmsByCustomer");
-    }
+    public Task<List<Farm>> GetFarmsByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetFarmsByCustomer");
 
-    public Farm? GetFarmById(string id)
-    {
-        // TODO: Replace with actual APIM endpoint path
-        // Example: GET /ods/farms/{id}
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetFarmById");
-    }
+    public Task<Farm?> GetFarmByIdAsync(string id, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetFarmById");
 
-    public string CreateFarm(string name, string location, int acres)
-    {
-        // TODO: Replace with actual APIM endpoint path
-        // Example: POST /ods/farms
-        // Note: APIM may not support writes to ODS - confirm with the APIM team
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for CreateFarm");
-    }
+    public Task<string> CreateFarmAsync(string name, string location, int acres, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for CreateFarm");
 
     // =========================================================================
     // Contract Operations
     // =========================================================================
 
-    public List<Contract> GetContracts(List<string>? tradeUnits = null)
-    {
-        // TODO: Replace with actual APIM endpoint path
-        // Example: GET /ods/contracts?tradeUnits=UNIT1&tradeUnits=UNIT2
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetContracts");
-    }
+    public Task<List<Contract>> GetContractsAsync(List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetContracts");
 
-    public List<Contract> GetContractsByCustomer(long customerId)
-    {
-        // TODO: Replace with actual APIM endpoint path
-        // Example: GET /ods/customers/{customerId}/contracts
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetContractsByCustomer");
-    }
+    public Task<List<Contract>> GetContractsByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetContractsByCustomer");
 
-    public List<Contract> GetContractsByFarm(string farmId)
-    {
-        // TODO: Replace with actual APIM endpoint path
-        // Example: GET /ods/farms/{farmId}/contracts
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetContractsByFarm");
-    }
+    public Task<List<Contract>> GetContractsByFarmAsync(string farmId, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetContractsByFarm");
 
-    public List<ContractPricingLine> GetPricingLines(string sourceContractId)
-    {
-        // TODO: Wire up APIM endpoint for GetPricingLines
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetPricingLines");
-    }
+    public Task<List<ContractPricingLine>> GetPricingLinesAsync(string sourceContractId, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetPricingLines");
 
-    public List<ContractPricingLine> GetPricingLinesByCustomer(string sourceCustomerId)
-    {
-        // TODO: Wire up APIM endpoint for GetPricingLinesByCustomer
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetPricingLinesByCustomer");
-    }
+    public Task<List<ContractPricingLine>> GetPricingLinesByCustomerAsync(string sourceCustomerId, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetPricingLinesByCustomer");
 
     // =========================================================================
     // Ticket Operations
     // =========================================================================
 
-    public List<Ticket> GetTickets(List<string>? tradeUnits = null)
-    {
-        // TODO: Replace with actual APIM endpoint path
-        // Example: GET /ods/tickets?tradeUnits=UNIT1&tradeUnits=UNIT2
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetTickets");
-    }
+    public Task<List<Ticket>> GetTicketsAsync(List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetTickets");
 
-    public List<Ticket> GetTicketsByCustomer(long customerId)
-    {
-        // TODO: Replace with actual APIM endpoint path
-        // Example: GET /ods/customers/{customerId}/tickets
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetTicketsByCustomer");
-    }
+    public Task<List<Ticket>> GetTicketsByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetTicketsByCustomer");
 
-    public List<Ticket> GetTicketsByFarm(string farmId)
-    {
-        // TODO: Replace with actual APIM endpoint path
-        // Example: GET /ods/farms/{farmId}/tickets
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetTicketsByFarm");
-    }
+    public Task<List<Ticket>> GetTicketsByFarmAsync(string farmId, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetTicketsByFarm");
 
     // =========================================================================
     // Planting Intention Operations
     // =========================================================================
 
-    public List<PlantingIntention> GetPlantingIntentions()
-    {
-        // TODO: Replace with actual APIM endpoint path
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetPlantingIntentions");
-    }
+    public Task<List<PlantingIntention>> GetPlantingIntentionsAsync(CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetPlantingIntentions");
 
-    public List<PlantingIntention> GetPlantingIntentionsByCustomer(int customerId)
-    {
-        // TODO: Replace with actual APIM endpoint path
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetPlantingIntentionsByCustomer");
-    }
+    public Task<List<PlantingIntention>> GetPlantingIntentionsByCustomerAsync(int customerId, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetPlantingIntentionsByCustomer");
 
-    public PlantingIntention AddPlantingIntention(int customerId, string customerName, string customerCode, string tradeUnit, string crop, string? type, string? description, int acres, int plantingYear)
-    {
-        // TODO: Replace with actual APIM endpoint path
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for AddPlantingIntention");
-    }
+    public Task<PlantingIntention> AddPlantingIntentionAsync(int customerId, string customerName, string customerCode, string tradeUnit, string crop, string? type, string? description, int acres, int plantingYear, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for AddPlantingIntention");
 
-    public PlantingIntention? UpdatePlantingIntention(int intentionId, string crop, string? type, string? description, int acres, int plantingYear)
-    {
-        // TODO: Replace with actual APIM endpoint path
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for UpdatePlantingIntention");
-    }
+    public Task<PlantingIntention?> UpdatePlantingIntentionAsync(int intentionId, string crop, string? type, string? description, int acres, int plantingYear, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for UpdatePlantingIntention");
 
-    public void DeletePlantingIntention(int intentionId)
-    {
-        // TODO: Replace with actual APIM endpoint path
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for DeletePlantingIntention");
-    }
+    public Task DeletePlantingIntentionAsync(int intentionId, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for DeletePlantingIntention");
 
     // =========================================================================
     // Note Operations
@@ -219,139 +132,103 @@ public class ApimDataService : IDataService
     // Confirm with the APIM team whether Notes will be exposed via APIM.
     // =========================================================================
 
-    public List<Note> GetNotes()
-    {
-        // TODO: Confirm if Notes will go through APIM or stay as direct SQL
-        // If via APIM: GET /originations/notes
-        // If direct SQL: keep using SqlDataService for notes only
-        throw new NotImplementedException("TODO: Confirm Notes approach with APIM team");
-    }
+    public Task<List<Note>> GetNotesAsync(CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Confirm Notes approach with APIM team");
 
-    public List<Note> GetNotesByCustomer(long customerId)
-    {
-        // TODO: Confirm if Notes will go through APIM or stay as direct SQL
-        throw new NotImplementedException("TODO: Confirm Notes approach with APIM team");
-    }
+    public Task<List<Note>> GetNotesByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Confirm Notes approach with APIM team");
 
-    public Note AddNote(long customerId, string content, string? tradeUnit = null)
-    {
-        // TODO: Confirm if Notes will go through APIM or stay as direct SQL
-        throw new NotImplementedException("TODO: Confirm Notes approach with APIM team");
-    }
+    public Task<Note> AddNoteAsync(long customerId, string content, string? tradeUnit = null, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Confirm Notes approach with APIM team");
 
-    public Note? ToggleNotePin(long noteId)
-    {
-        // TODO: Confirm if Notes will go through APIM or stay as direct SQL
-        throw new NotImplementedException("TODO: Confirm Notes approach with APIM team");
-    }
+    public Task<Note?> ToggleNotePinAsync(long noteId, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Confirm Notes approach with APIM team");
 
-    public Note? UpdateNote(long noteId, string content)
-    {
-        // TODO: Confirm if Notes will go through APIM or stay as direct SQL
-        throw new NotImplementedException("TODO: Confirm Notes approach with APIM team");
-    }
+    public Task<Note?> UpdateNoteAsync(long noteId, string content, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Confirm Notes approach with APIM team");
 
-    public void DeleteNote(long noteId)
-    {
-        // TODO: Confirm if Notes will go through APIM or stay as direct SQL
-        throw new NotImplementedException("TODO: Confirm Notes approach with APIM team");
-    }
+    public Task DeleteNoteAsync(long noteId, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Confirm Notes approach with APIM team");
 
     // =========================================================================
     // Producer Details Operations
     // =========================================================================
 
-    public ProducerDetails? GetProducerDetails(long customerId)
-    {
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetProducerDetails");
-    }
+    public Task<ProducerDetails?> GetProducerDetailsAsync(long customerId, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetProducerDetails");
 
-    public List<ProducerDetails> GetAllProducerDetails()
-    {
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetAllProducerDetails");
-    }
+    public Task<List<ProducerDetails>> GetAllProducerDetailsAsync(CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetAllProducerDetails");
 
-    public ProducerDetails UpsertProducerDetails(long customerId, string? sourceCustomerId, string customerName, decimal? totalAcres, decimal? binCapacity, string? primaryContact, string? commodities, string? linkedProducerIds = null)
-    {
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for UpsertProducerDetails");
-    }
+    public Task<ProducerDetails> UpsertProducerDetailsAsync(long customerId, string? sourceCustomerId, string customerName, decimal? totalAcres, decimal? binCapacity, string? primaryContact, string? commodities, string? linkedProducerIds = null, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for UpsertProducerDetails");
 
-    public void DeleteProducerDetails(long customerId)
-    {
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for DeleteProducerDetails");
-    }
+    public Task DeleteProducerDetailsAsync(long customerId, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for DeleteProducerDetails");
 
     // =========================================================================
     // Storage Operations
     // =========================================================================
 
-    public List<StoredGrain> GetStoredGrain()
-    {
-        // TODO: Replace with actual APIM endpoint path (if StoredGrain is exposed via APIM)
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetStoredGrain");
-    }
+    public Task<List<StoredGrain>> GetStoredGrainAsync(CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetStoredGrain");
 
-    public List<StoredGrain> GetStoredGrainByCustomer(long customerId)
-    {
-        // TODO: Replace with actual APIM endpoint path
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetStoredGrainByCustomer");
-    }
+    public Task<List<StoredGrain>> GetStoredGrainByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetStoredGrainByCustomer");
 
     // =========================================================================
     // Commodity Operations
     // =========================================================================
 
-    public List<Commodity> GetCommodities()
-    {
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetCommodities");
-    }
+    public Task<List<Commodity>> GetCommoditiesAsync(CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetCommodities");
 
     // =========================================================================
     // Saved List Operations
     // =========================================================================
 
-    public List<SavedList> GetSavedLists()
-    {
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for GetSavedLists");
-    }
+    public Task<List<SavedList>> GetSavedListsAsync(CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetSavedLists");
 
-    public SavedList SaveList(string name, string query, string? tradeUnits, string? filters = null)
-    {
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for SaveList");
-    }
+    public Task<SavedList> SaveListAsync(string name, string query, string? tradeUnits, string? filters = null, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for SaveList");
 
-    public SavedList? UpdateList(int listId, string name, string query, string? tradeUnits, string? filters = null)
-    {
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for UpdateList");
-    }
+    public Task<SavedList?> UpdateListAsync(int listId, string name, string query, string? tradeUnits, string? filters = null, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for UpdateList");
 
-    public void DeleteList(int listId)
-    {
-        // TODO: Replace with actual APIM endpoint path
-        throw new NotImplementedException("TODO: Wire up APIM endpoint for DeleteList");
-    }
+    public Task DeleteListAsync(int listId, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for DeleteList");
 
+    // =========================================================================
     // Dashboard Planting Estimate Operations
-    public List<DashboardPlantingEstimate> GetDashboardPlantingEstimates(string tradeUnitKey, int plantingYear)
+    // =========================================================================
+
+    public Task<List<DashboardPlantingEstimate>> GetDashboardPlantingEstimatesAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetDashboardPlantingEstimates");
 
-    public void UpsertDashboardPlantingEstimates(List<UpsertDashboardEstimateRequest> estimates, string username)
+    public Task UpsertDashboardPlantingEstimatesAsync(List<UpsertDashboardEstimateRequest> estimates, string username, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for UpsertDashboardPlantingEstimates");
 
+    // =========================================================================
     // Dashboard Market Share Operations
-    public List<DashboardMarketShare> GetDashboardMarketShares(string tradeUnitKey, int plantingYear)
+    // =========================================================================
+
+    public Task<List<DashboardMarketShare>> GetDashboardMarketSharesAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetDashboardMarketShares");
 
-    public void UpsertDashboardMarketShares(List<UpsertDashboardMarketShareRequest> shares, string username)
+    public Task UpsertDashboardMarketSharesAsync(List<UpsertDashboardMarketShareRequest> shares, string username, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for UpsertDashboardMarketShares");
 
+    // =========================================================================
     // Dashboard Actual Harvest Operations
-    public List<DashboardActualHarvest> GetDashboardActualHarvest(string tradeUnitKey, int plantingYear)
+    // =========================================================================
+
+    public Task<List<DashboardActualHarvest>> GetDashboardActualHarvestAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetDashboardActualHarvest");
 
-    public void UpsertDashboardActualHarvest(List<UpsertDashboardActualHarvestRequest> items, string username)
+    public Task UpsertDashboardActualHarvestAsync(List<UpsertDashboardActualHarvestRequest> items, string username, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for UpsertDashboardActualHarvest");
 
-    public void DeleteDashboardActualHarvest(int id)
+    public Task DeleteDashboardActualHarvestAsync(int id, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for DeleteDashboardActualHarvest");
 }

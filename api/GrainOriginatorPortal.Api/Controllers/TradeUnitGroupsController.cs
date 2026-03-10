@@ -16,8 +16,8 @@ public class TradeUnitGroupsController : ControllerBase
     /// <summary>Gets all trade unit groups with their member trade units.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(List<TradeUnitGroup>), StatusCodes.Status200OK)]
-    public ActionResult<List<TradeUnitGroup>> GetAll()
+    public async Task<ActionResult<List<TradeUnitGroup>>> GetAll(CancellationToken cancellationToken = default)
     {
-        return Ok(_dataService.GetTradeUnitGroups());
+        return Ok(await _dataService.GetTradeUnitGroupsAsync(cancellationToken));
     }
 }

@@ -26,7 +26,7 @@ public class DiagnosticsController : ControllerBase
     [HttpGet("tables")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> GetTables()
+    public async Task<IActionResult> GetTables(CancellationToken cancellationToken = default)
     {
         try
         {
@@ -35,7 +35,7 @@ public class DiagnosticsController : ControllerBase
                   FROM INFORMATION_SCHEMA.TABLES
                   WHERE TABLE_TYPE = 'BASE TABLE'
                   ORDER BY TABLE_NAME"
-            ).ToListAsync();
+            ).ToListAsync(cancellationToken);
 
             var dbName = result.FirstOrDefault()?.DatabaseName ?? "Unknown";
             var tables = result.Select(t => t.TableName).ToList();
@@ -54,7 +54,7 @@ public class DiagnosticsController : ControllerBase
     [HttpGet("tableschema/{tableName}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> GetTableWithSchema(string tableName)
+    public async Task<IActionResult> GetTableWithSchema(string tableName, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -63,7 +63,7 @@ public class DiagnosticsController : ControllerBase
                   FROM INFORMATION_SCHEMA.TABLES
                   WHERE TABLE_NAME = {0} AND TABLE_TYPE = 'BASE TABLE'",
                 tableName
-            ).ToListAsync();
+            ).ToListAsync(cancellationToken);
 
             return Ok(result);
         }
@@ -79,7 +79,7 @@ public class DiagnosticsController : ControllerBase
     [HttpGet("schema/{tableName}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> GetTableSchema(string tableName)
+    public async Task<IActionResult> GetTableSchema(string tableName, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -94,7 +94,7 @@ public class DiagnosticsController : ControllerBase
                   WHERE TABLE_NAME = {0}
                   ORDER BY ORDINAL_POSITION",
                 tableName
-            ).ToListAsync();
+            ).ToListAsync(cancellationToken);
 
             return Ok(new { TableName = tableName, ColumnCount = columns.Count, Columns = columns });
         }
@@ -106,24 +106,24 @@ public class DiagnosticsController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    private class TableInfo
+    private record TableInfo
     {
-        public string DatabaseName { get; set; } = "";
-        public string TableName { get; set; } = "";
+        public string DatabaseName { get; init; } = "";
+        public string TableName { get; init; } = "";
     }
 
-    private class TableSchemaInfo
+    private record TableSchemaInfo
     {
-        public string SchemaName { get; set; } = "";
-        public string TableName { get; set; } = "";
+        public string SchemaName { get; init; } = "";
+        public string TableName { get; init; } = "";
     }
 
-    private class ColumnInfo
+    private record ColumnInfo
     {
-        public string ColumnName { get; set; } = "";
-        public string DataType { get; set; } = "";
-        public string IsNullable { get; set; } = "";
-        public int? MaxLength { get; set; }
-        public string? DefaultValue { get; set; }
+        public string ColumnName { get; init; } = "";
+        public string DataType { get; init; } = "";
+        public string IsNullable { get; init; } = "";
+        public int? MaxLength { get; init; }
+        public string? DefaultValue { get; init; }
     }
 }

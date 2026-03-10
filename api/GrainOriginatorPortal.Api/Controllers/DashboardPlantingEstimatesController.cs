@@ -17,13 +17,13 @@ public class DashboardPlantingEstimatesController : ControllerBase
     [HttpGet]
     [ProducesResponseType(typeof(List<DashboardPlantingEstimate>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public ActionResult<List<DashboardPlantingEstimate>> Get([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear)
+    public async Task<ActionResult<List<DashboardPlantingEstimate>>> Get([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(tradeUnitKey) || plantingYear < 2020 || plantingYear > DateTime.Now.Year + 5)
         {
             return BadRequest("tradeUnitKey and plantingYear are required.");
         }
-        return Ok(_dataService.GetDashboardPlantingEstimates(tradeUnitKey, plantingYear));
+        return Ok(await _dataService.GetDashboardPlantingEstimatesAsync(tradeUnitKey, plantingYear, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -31,13 +31,13 @@ public class DashboardPlantingEstimatesController : ControllerBase
     [HttpPost("upsert")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public ActionResult Upsert([FromBody] List<UpsertDashboardEstimateRequest> estimates)
+    public async Task<ActionResult> Upsert([FromBody] List<UpsertDashboardEstimateRequest> estimates, CancellationToken cancellationToken = default)
     {
         if (estimates == null || estimates.Count == 0)
         {
             return BadRequest("No estimates provided.");
         }
-        _dataService.UpsertDashboardPlantingEstimates(estimates, "system");
+        await _dataService.UpsertDashboardPlantingEstimatesAsync(estimates, "system", cancellationToken);
         return NoContent();
     }
 
@@ -46,13 +46,13 @@ public class DashboardPlantingEstimatesController : ControllerBase
     [HttpGet("marketshares")]
     [ProducesResponseType(typeof(List<DashboardMarketShare>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public ActionResult<List<DashboardMarketShare>> GetMarketShares([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear)
+    public async Task<ActionResult<List<DashboardMarketShare>>> GetMarketShares([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(tradeUnitKey) || plantingYear < 2020 || plantingYear > DateTime.Now.Year + 5)
         {
             return BadRequest("tradeUnitKey and plantingYear are required.");
         }
-        return Ok(_dataService.GetDashboardMarketShares(tradeUnitKey, plantingYear));
+        return Ok(await _dataService.GetDashboardMarketSharesAsync(tradeUnitKey, plantingYear, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -60,13 +60,13 @@ public class DashboardPlantingEstimatesController : ControllerBase
     [HttpPost("marketshares/upsert")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public ActionResult UpsertMarketShares([FromBody] List<UpsertDashboardMarketShareRequest> shares)
+    public async Task<ActionResult> UpsertMarketShares([FromBody] List<UpsertDashboardMarketShareRequest> shares, CancellationToken cancellationToken = default)
     {
         if (shares == null || shares.Count == 0)
         {
             return BadRequest("No market shares provided.");
         }
-        _dataService.UpsertDashboardMarketShares(shares, "system");
+        await _dataService.UpsertDashboardMarketSharesAsync(shares, "system", cancellationToken);
         return NoContent();
     }
 
@@ -75,13 +75,13 @@ public class DashboardPlantingEstimatesController : ControllerBase
     [HttpGet("actualharvest")]
     [ProducesResponseType(typeof(List<DashboardActualHarvest>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public ActionResult<List<DashboardActualHarvest>> GetActualHarvest([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear)
+    public async Task<ActionResult<List<DashboardActualHarvest>>> GetActualHarvest([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(tradeUnitKey) || plantingYear < 2020 || plantingYear > DateTime.Now.Year + 5)
         {
             return BadRequest("tradeUnitKey and plantingYear are required.");
         }
-        return Ok(_dataService.GetDashboardActualHarvest(tradeUnitKey, plantingYear));
+        return Ok(await _dataService.GetDashboardActualHarvestAsync(tradeUnitKey, plantingYear, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -89,13 +89,13 @@ public class DashboardPlantingEstimatesController : ControllerBase
     [HttpPost("actualharvest/upsert")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public ActionResult UpsertActualHarvest([FromBody] List<UpsertDashboardActualHarvestRequest> items)
+    public async Task<ActionResult> UpsertActualHarvest([FromBody] List<UpsertDashboardActualHarvestRequest> items, CancellationToken cancellationToken = default)
     {
         if (items == null || items.Count == 0)
         {
             return BadRequest("No harvest items provided.");
         }
-        _dataService.UpsertDashboardActualHarvest(items, "system");
+        await _dataService.UpsertDashboardActualHarvestAsync(items, "system", cancellationToken);
         return NoContent();
     }
 
@@ -103,9 +103,9 @@ public class DashboardPlantingEstimatesController : ControllerBase
     /// <summary>Deletes a single actual harvest row by ID.</summary>
     [HttpDelete("actualharvest/{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public ActionResult DeleteActualHarvest(int id)
+    public async Task<ActionResult> DeleteActualHarvest(int id, CancellationToken cancellationToken = default)
     {
-        _dataService.DeleteDashboardActualHarvest(id);
+        await _dataService.DeleteDashboardActualHarvestAsync(id, cancellationToken);
         return NoContent();
     }
 }

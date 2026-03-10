@@ -16,18 +16,18 @@ public class PlantingIntentionsController : ControllerBase
     /// <summary>Gets all planting intentions.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(List<PlantingIntention>), StatusCodes.Status200OK)]
-    public ActionResult<List<PlantingIntention>> GetAll()
+    public async Task<ActionResult<List<PlantingIntention>>> GetAll(CancellationToken cancellationToken = default)
     {
-        return Ok(_dataService.GetPlantingIntentions());
+        return Ok(await _dataService.GetPlantingIntentionsAsync(cancellationToken));
     }
 
     // -------------------------------------------------------------------------
     /// <summary>Gets all planting intentions for a specific customer.</summary>
     [HttpGet("customer/{customerId}")]
     [ProducesResponseType(typeof(List<PlantingIntention>), StatusCodes.Status200OK)]
-    public ActionResult<List<PlantingIntention>> GetByCustomer(int customerId)
+    public async Task<ActionResult<List<PlantingIntention>>> GetByCustomer(int customerId, CancellationToken cancellationToken = default)
     {
-        return Ok(_dataService.GetPlantingIntentionsByCustomer(customerId));
+        return Ok(await _dataService.GetPlantingIntentionsByCustomerAsync(customerId, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -35,9 +35,9 @@ public class PlantingIntentionsController : ControllerBase
     [HttpPost]
     [ProducesResponseType(typeof(PlantingIntention), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
-    public ActionResult<PlantingIntention> Create([FromBody] CreatePlantingIntentionRequest request)
+    public async Task<ActionResult<PlantingIntention>> Create([FromBody] CreatePlantingIntentionRequest request, CancellationToken cancellationToken = default)
     {
-        var intention = _dataService.AddPlantingIntention(
+        var intention = await _dataService.AddPlantingIntentionAsync(
             request.CustomerId,
             request.CustomerName,
             request.CustomerCode,
@@ -46,7 +46,8 @@ public class PlantingIntentionsController : ControllerBase
             request.Type,
             request.Description,
             request.Acres,
-            request.PlantingYear
+            request.PlantingYear,
+            cancellationToken
         );
         return Ok(intention);
     }
@@ -56,15 +57,16 @@ public class PlantingIntentionsController : ControllerBase
     [HttpPut("{id}")]
     [ProducesResponseType(typeof(PlantingIntention), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public ActionResult<PlantingIntention> Update(int id, [FromBody] UpdatePlantingIntentionRequest request)
+    public async Task<ActionResult<PlantingIntention>> Update(int id, [FromBody] UpdatePlantingIntentionRequest request, CancellationToken cancellationToken = default)
     {
-        var updated = _dataService.UpdatePlantingIntention(
+        var updated = await _dataService.UpdatePlantingIntentionAsync(
             id,
             request.Crop,
             request.Type,
             request.Description,
             request.Acres,
-            request.PlantingYear
+            request.PlantingYear,
+            cancellationToken
         );
         if (updated == null)
         {
@@ -77,9 +79,9 @@ public class PlantingIntentionsController : ControllerBase
     /// <summary>Deletes a planting intention by ID.</summary>
     [HttpDelete("{id}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public ActionResult Delete(int id)
+    public async Task<ActionResult> Delete(int id, CancellationToken cancellationToken = default)
     {
-        _dataService.DeletePlantingIntention(id);
+        await _dataService.DeletePlantingIntentionAsync(id, cancellationToken);
         return NoContent();
     }
 }
