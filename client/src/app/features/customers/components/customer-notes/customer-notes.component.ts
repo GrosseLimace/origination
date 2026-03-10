@@ -1,0 +1,196 @@
+import { Component, input, output, effect, DestroyRef, inject, ChangeDetectionStrategy, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { Customer, Note } from '@models';
+
+@Component({
+  selector: 'app-customer-notes',
+  standalone: true,
+  imports: [CommonModule, FormsModule, ButtonComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  templateUrl: './customer-notes.component.html'
+})
+export class CustomerNotesComponent {
+  public notes = input<Note[]>([]);
+  public customer = input.required<Customer>();
+  public customerCodeMap = input<Map<number, string>>(new Map());
+  public linkedCustomers = input<Customer[]>([]);
+  public addNote = output<string>();
+  public togglePin = output<Note>();
+  public editNote = output<{ noteId: number; content: string }>();
+  public deleteNote = output<number>();
+
+  private readonly destroyRef = inject(DestroyRef);
+
+  newNote = signal('');
+  openMenuId = signal<number | null>(null);
+  editingNoteId = signal<number | null>(null);
+  editContent = signal('');
+  showDeleteConfirm = signal(false);
+  noteToDelete = signal<Note | null>(null);
+  filterValue = signal(''); // '' = All; customer id as string when a producer is selected
+
+  // Performance optimization: Cache sorted notes to avoid re-sorting on every change detection
+  sortedNotesCache = signal<Note[]>([]);
+
+  constructor() {
+    effect(() => {
+      const _notes = this.notes();
+      this._updateSortedNotesCache();
+      this.filterValue.set(''); // Reset filter whenever the customer (and its notes) changes
+    });
+
+    this.destroyRef.onDestroy(() => {
+      // Ensure body scroll is restored if component is destroyed while dialog is open
+      if (this.showDeleteConfirm()) {
+        document.body.style.overflow = '';
+      }
+    });
+  }
+
+  get displayedNotes(): Note[] {
+    if (!this.filterValue()) return this.sortedNotesCache();
+    const id = Number(this.filterValue());
+    return this.sortedNotesCache().filter(n => n.customerId === id);
+  }
+
+  /**
+   * Performance optimization: Sort notes once and cache the result.
+   * Only re-sort when notes input changes.
+   *
+   * Previously: sortedNotes getter sorted on EVERY change detection cycle
+   * Now: Sort only when notes actually change
+   */
+  private _updateSortedNotesCache(): void {
+    this.sortedNotesCache.set([...this.notes()].sort((a, b) => {
+      // Pinned notes first
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      // Then by date (newest first)
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    }));
+  }
+
+  getNoteClass(note: Note): { [key: string]: boolean } {
+    return {
+      'border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20': note.isPinned,
+      'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800': !note.isPinned
+    };
+  }
+
+  getInitials(name: string): string {
+    const parts = name.split(' ').filter(p => p.length > 0);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    if (parts.length === 1 && parts[0].length >= 2) {
+      return parts[0].substring(0, 2).toUpperCase();
+    }
+    return '??';
+  }
+
+  formatTimestamp(timestamp: string | Date): string {
+    // Treat bare ISO strings as UTC (API returns without Z suffix)
+    const raw = typeof timestamp === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(timestamp)
+      ? timestamp + 'Z' : timestamp;
+    const date = new Date(raw);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+    // Check if same day
+    if (diffDays < 1 && now.getDate() === date.getDate()) {
+      return `Today at ${timeStr}`;
+    }
+
+    // Check if yesterday
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (date.getDate() === yesterday.getDate() &&
+        date.getMonth() === yesterday.getMonth() &&
+        date.getFullYear() === yesterday.getFullYear()) {
+      return `Yesterday at ${timeStr}`;
+    }
+
+    // Within a week
+    if (diffDays < 7) {
+      return `${diffDays} days ago`;
+    }
+
+    // Otherwise show full date
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  onFilterChange(val: string): void {
+    this.filterValue.set(val);
+  }
+
+  getCustomerLabel(customer: Customer): string {
+    return customer.sourceCustomerId
+      ? `${customer.name} (${customer.sourceCustomerId})`
+      : customer.name;
+  }
+
+  submitNote() {
+    if (this.newNote().trim()) {
+      this.addNote.emit(this.newNote().trim());
+      this.newNote.set('');
+    }
+  }
+
+  toggleMenu(noteId: number, event: Event) {
+    event.stopPropagation();
+    this.openMenuId.update(id => id === noteId ? null : noteId);
+  }
+
+  closeMenu() {
+    this.openMenuId.set(null);
+  }
+
+  startEdit(note: Note) {
+    this.editingNoteId.set(note.id);
+    this.editContent.set(note.content);
+    this.openMenuId.set(null);
+  }
+
+  cancelEdit() {
+    this.editingNoteId.set(null);
+    this.editContent.set('');
+  }
+
+  saveEdit(note: Note) {
+    if (this.editContent().trim() && this.editContent() !== note.content) {
+      this.editNote.emit({ noteId: note.id, content: this.editContent().trim() });
+    }
+    this.editingNoteId.set(null);
+    this.editContent.set('');
+  }
+
+  confirmDelete(note: Note) {
+    this.noteToDelete.set(note);
+    this.showDeleteConfirm.set(true);
+    this.openMenuId.set(null);
+    // Prevent body scroll when dialog opens
+    document.body.style.overflow = 'hidden';
+  }
+
+  cancelDelete() {
+    this.noteToDelete.set(null);
+    this.showDeleteConfirm.set(false);
+    // Restore body scroll when dialog closes
+    document.body.style.overflow = '';
+  }
+
+  executeDelete() {
+    if (this.noteToDelete()) {
+      this.deleteNote.emit(this.noteToDelete()!.id);
+      this.noteToDelete.set(null);
+      this.showDeleteConfirm.set(false);
+      // Restore body scroll when dialog closes
+      document.body.style.overflow = '';
+    }
+  }
+}
