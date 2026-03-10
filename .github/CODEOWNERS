@@ -1,0 +1,19 @@
+# CODEOWNERS — Grain Originator Portal
+# All reviewers are members of the IT/origination team on scoular.ghe.com.
+# At least one team member must approve any PR touching the matched paths.
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default: origination team owns everything
+* @IT/origination
+
+# API (C# / ASP.NET Core)
+/api/ @IT/origination
+
+# Angular frontend
+/client/ @IT/origination
+
+# GitHub configuration and CI/CD pipelines
+/.github/ @IT/origination
+
+# Style guides and documentation
+/style-guides/ @IT/origination
