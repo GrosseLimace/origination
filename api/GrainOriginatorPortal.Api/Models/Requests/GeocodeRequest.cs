@@ -1,10 +1,10 @@
 namespace GrainOriginatorPortal.Api.Models.Requests;
 
-public class GeocodeRequest
+public record GeocodeRequest
 {
-    public string Key { get; set; } = string.Empty;
-    public string? Street { get; set; }
-    public string? City { get; set; }
-    public string? State { get; set; }
-    public string? Zip { get; set; }
+    public string Key { get; init; } = string.Empty;
+    public string? Street { get; init; }
+    public string? City { get; init; }
+    public string? State { get; init; }
+    public string? Zip { get; init; }
 }

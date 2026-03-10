@@ -2,21 +2,21 @@ using System.ComponentModel.DataAnnotations;
 
 namespace GrainOriginatorPortal.Api.Models.Requests;
 
-public class UpdatePlantingIntentionRequest
+public record UpdatePlantingIntentionRequest
 {
     [Required]
     [StringLength(100)]
-    public string Crop { get; set; } = string.Empty;
+    public required string Crop { get; init; }
 
     [StringLength(100)]
-    public string? Type { get; set; }
+    public string? Type { get; init; }
 
     [StringLength(255)]
-    public string? Description { get; set; }
+    public string? Description { get; init; }
 
     [Range(1, 100000)]
-    public int Acres { get; set; }
+    public int Acres { get; init; }
 
     [Range(2020, 2100)]
-    public int PlantingYear { get; set; }
+    public int PlantingYear { get; init; }
 }

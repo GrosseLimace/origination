@@ -2,18 +2,18 @@ using System.ComponentModel.DataAnnotations;
 
 namespace GrainOriginatorPortal.Api.Models.Requests;
 
-public class CreateSavedListRequest
+public record CreateSavedListRequest
 {
     [Required]
     [StringLength(100)]
-    public string Name { get; set; } = string.Empty;
+    public required string Name { get; init; }
 
     [Required]
     [StringLength(500)]
-    public string Query { get; set; } = string.Empty;
+    public required string Query { get; init; }
 
     [StringLength(500)]
-    public string? TradeUnits { get; set; }
+    public string? TradeUnits { get; init; }
 
-    public string? Filters { get; set; }
+    public string? Filters { get; init; }
 }

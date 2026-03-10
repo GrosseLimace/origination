@@ -2,14 +2,14 @@ using System.ComponentModel.DataAnnotations;
 
 namespace GrainOriginatorPortal.Api.Models.Requests;
 
-public class CreateNoteRequest
+public record CreateNoteRequest
 {
     [Required]
-    public long CustomerId { get; set; }
+    public required long CustomerId { get; init; }
 
     [Required]
     [StringLength(2000)]
-    public string Content { get; set; } = string.Empty;
+    public required string Content { get; init; }
 
-    public string? TradeUnit { get; set; }
+    public string? TradeUnit { get; init; }
 }

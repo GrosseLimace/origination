@@ -2,9 +2,9 @@ using System.ComponentModel.DataAnnotations;
 
 namespace GrainOriginatorPortal.Api.Models.Requests;
 
-public class UpdateNoteRequest
+public record UpdateNoteRequest
 {
     [Required]
     [StringLength(2000)]
-    public string Content { get; set; } = string.Empty;
+    public required string Content { get; init; }
 }
