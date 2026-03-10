@@ -6,25 +6,28 @@ import { Component, input, output, inject, DestroyRef, effect } from '@angular/c
   template: `
     @if (isOpen()) {
       <!-- Backdrop -->
-      <div class="scoular-modal-overlay" (click)="onBackdropClick()"></div>
+      <div class="fixed inset-0 bg-black/55 z-40" (click)="onBackdropClick()"></div>
 
-      <!-- Dialog content -->
-      <div
-        class="fixed left-1/2 top-1/2 z-50 w-full -translate-x-1/2 -translate-y-1/2 rounded-lg border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800 max-h-[calc(100vh-4rem)] overflow-y-auto"
-        [class]="sizeClass"
-      >
-        @if (showCloseButton()) {
-          <button
-            type="button"
-            class="scoular-btn-icon absolute top-4 right-4 z-10"
-            (click)="close.emit()"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
-            </svg>
-          </button>
-        }
-        <ng-content></ng-content>
+      <!-- Dialog wrapper -->
+      <div class="fixed inset-0 z-50 flex items-center justify-center py-8 px-4 overflow-y-auto" (click)="onBackdropClick()">
+        <div
+          class="relative w-full bg-white dark:bg-gray-800 rounded-lg shadow-xl max-h-[calc(100vh-4rem)] overflow-y-auto border border-gray-200 dark:border-gray-700"
+          [class]="sizeClass"
+          (click)="$event.stopPropagation()"
+        >
+          @if (showCloseButton()) {
+            <button
+              type="button"
+              class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 bg-transparent border-0 p-0 z-10"
+              (click)="close.emit()"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+              </svg>
+            </button>
+          }
+          <ng-content></ng-content>
+        </div>
       </div>
     }
   `
@@ -80,7 +83,7 @@ export class DialogHeaderComponent {}
   selector: 'app-dialog-title',
   standalone: true,
   template: `
-    <h2 class="scoular-modal-title">
+    <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
       <ng-content></ng-content>
     </h2>
   `
@@ -91,7 +94,7 @@ export class DialogTitleComponent {}
   selector: 'app-dialog-description',
   standalone: true,
   template: `
-    <p class="scoular-modal-body">
+    <p class="text-sm text-gray-500 dark:text-gray-400">
       <ng-content></ng-content>
     </p>
   `
@@ -113,7 +116,7 @@ export class DialogContentComponent {}
   selector: 'app-dialog-footer',
   standalone: true,
   template: `
-    <div class="scoular-modal-footer flex-col-reverse sm:flex-row">
+    <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 p-6 pt-4">
       <ng-content></ng-content>
     </div>
   `

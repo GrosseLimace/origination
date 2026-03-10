@@ -69,6 +69,12 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
+  /** Fetches trade unit groups assigned to the currently authenticated user from the Entitlements database */
+  getUserTradeUnits(): Observable<{ groupName: string; tradeUnitCodes: string[] }[]> {
+    return this.http.get<{ groupName: string; tradeUnitCodes: string[] }[]>(`${this.baseUrl}/usertradeunits`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
   /** Fetches a single customer by ID */
   getCustomerById(id: number): Observable<Customer> {
     return this.http.get<Customer>(`${this.baseUrl}/customers/${id}`)

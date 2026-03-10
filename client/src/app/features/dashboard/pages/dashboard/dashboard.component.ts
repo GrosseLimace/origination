@@ -9,13 +9,10 @@ import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, Commodity } from '@models';
-import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '@shared/components/card/card.component';
-
-
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent],
+  imports: [CommonModule, FormsModule],
   templateUrl: './dashboard.component.html'
 })
 export class DashboardComponent {
@@ -69,6 +66,27 @@ export class DashboardComponent {
   selectedPlantingYear = signal<number>(new Date().getFullYear());
 
   plantingIntentionsExpanded = signal(false);
+
+  // Tab / filter state
+  activeTab = signal<'byCrop' | 'topProducers' | 'harvestContracts'>('byCrop');
+  selectedCropFilter = signal('');
+
+  readonly tabs = [
+    { id: 'byCrop' as const, label: 'By Crop' },
+    { id: 'topProducers' as const, label: 'Top Producers' },
+    { id: 'harvestContracts' as const, label: 'Harvest & Contracts' },
+  ];
+
+  private readonly CHART_COLORS = [
+    { bar: 'bg-scoular-green', dot: 'bg-scoular-green', hex: '#00A36F' },
+    { bar: 'bg-blue-500', dot: 'bg-blue-500', hex: '#3b82f6' },
+    { bar: 'bg-amber-500', dot: 'bg-amber-500', hex: '#f59e0b' },
+    { bar: 'bg-purple-500', dot: 'bg-purple-500', hex: '#a855f7' },
+    { bar: 'bg-red-500', dot: 'bg-red-500', hex: '#ef4444' },
+    { bar: 'bg-teal-500', dot: 'bg-teal-500', hex: '#14b8a6' },
+    { bar: 'bg-orange-500', dot: 'bg-orange-500', hex: '#f97316' },
+    { bar: 'bg-indigo-500', dot: 'bg-indigo-500', hex: '#6366f1' },
+  ];
 
   // Edit mode flags
   yieldEditMode = signal(false);
@@ -138,6 +156,7 @@ export class DashboardComponent {
     } else {
       this.selectedDashboardTradeUnits.update(arr => [...arr, unit]);
     }
+    this.selectedCropFilter.set('');
     this._loadData();
   }
 
@@ -512,7 +531,7 @@ export class DashboardComponent {
     'bg-violet-100 dark:bg-violet-800/35',
     'bg-rose-100 dark:bg-rose-800/35',
     'bg-teal-100 dark:bg-teal-800/35',
-    'bg-scoular-yellow/10 dark:bg-scoular-yellow/35',
+    'bg-orange-100 dark:bg-orange-800/35',
     'bg-indigo-100 dark:bg-indigo-800/35',
   ];
 
@@ -644,5 +663,224 @@ export class DashboardComponent {
         this.toastService.error('Failed to add harvest row');
       }
     });
+  }
+
+  // =========================================================================
+  // Year navigation
+  // =========================================================================
+
+  prevYear(): void {
+    this.selectedPlantingYear.update(y => y - 1);
+    this.selectedCropFilter.set('');
+    this.onPlantingYearChange();
+  }
+
+  nextYear(): void {
+    this.selectedPlantingYear.update(y => y + 1);
+    this.selectedCropFilter.set('');
+    this.onPlantingYearChange();
+  }
+
+  goToSeasonTargets(): void {
+    this.activeTab.set('harvestContracts');
+  }
+
+  onCropFilterChange(): void {
+    // signal read triggers change detection in zoneless mode automatically
+  }
+
+  // =========================================================================
+  // New stat card / chart getters
+  // =========================================================================
+
+  get filteredIntentionsForYear(): PlantingIntention[] {
+    const selectedTUs = this.selectedDashboardTradeUnits();
+    return this.plantingIntentions().filter(p => {
+      if (+p.plantingYear !== +this.selectedPlantingYear()) return false;
+      if (selectedTUs.length > 0 && !selectedTUs.includes(p.tradeUnit)) return false;
+      if (this.selectedCropFilter()) {
+        const commodity = this.allCommodities().find(c => c.code === p.crop);
+        const category = commodity?.category || p.crop;
+        if (category !== this.selectedCropFilter()) return false;
+      }
+      return true;
+    });
+  }
+
+  get totalAcresForYear(): number {
+    return this.filteredIntentionsForYear.reduce((sum, p) => sum + p.acres, 0);
+  }
+
+  get acresTrend(): number | null {
+    const prevYear = this.selectedPlantingYear() - 1;
+    const selectedTUs = this.selectedDashboardTradeUnits();
+    const prevAcres = this.plantingIntentions()
+      .filter(p => +p.plantingYear === prevYear && (selectedTUs.length === 0 || selectedTUs.includes(p.tradeUnit)))
+      .reduce((sum, p) => sum + p.acres, 0);
+    if (prevAcres === 0) return null;
+    return ((this.totalAcresForYear - prevAcres) / prevAcres) * 100;
+  }
+
+  private get intentionProductionPairs(): { acres: number; yieldEst: number | null }[] {
+    return this.filteredIntentionsForYear.map(p => {
+      const commodity = this.allCommodities().find(c => c.code === p.crop);
+      const category = commodity?.category || p.crop;
+      const cropKey = [p.type, category].filter(Boolean).join(' ');
+      const saved = this.savedYieldEstimates().find(e => e.crop === cropKey);
+      return { acres: p.acres, yieldEst: saved?.yieldEstimate ?? null };
+    });
+  }
+
+  get projectedProductionFormatted(): string {
+    const total = this.intentionProductionPairs
+      .filter(p => p.yieldEst != null)
+      .reduce((sum, p) => sum + p.acres * p.yieldEst!, 0);
+    return this.formatK(Math.round(total));
+  }
+
+  get averageYield(): number {
+    const pairs = this.intentionProductionPairs.filter(p => p.yieldEst != null);
+    const totalAcres = pairs.reduce((sum, p) => sum + p.acres, 0);
+    const totalProd = pairs.reduce((sum, p) => sum + p.acres * p.yieldEst!, 0);
+    return totalAcres > 0 ? Math.round(totalProd / totalAcres) : 0;
+  }
+
+  get activeGrowers(): number {
+    return new Set(this.filteredIntentionsForYear.map(p => p.customerId)).size;
+  }
+
+  get availableCrops(): string[] {
+    const selectedTUs = this.selectedDashboardTradeUnits();
+    const forYear = this.plantingIntentions().filter(p => {
+      if (+p.plantingYear !== +this.selectedPlantingYear()) return false;
+      if (selectedTUs.length > 0 && !selectedTUs.includes(p.tradeUnit)) return false;
+      return true;
+    });
+    const crops = new Set<string>();
+    for (const p of forYear) {
+      const commodity = this.allCommodities().find(c => c.code === p.crop);
+      const category = commodity?.category || p.crop;
+      crops.add(category);
+    }
+    return [...crops].sort();
+  }
+
+  get cropBreakdown(): { name: string; acres: number; pct: number; barColor: string; dotColor: string; hex: string }[] {
+    const cropAcresMap = new Map<string, number>();
+    for (const p of this.filteredIntentionsForYear) {
+      const commodity = this.allCommodities().find(c => c.code === p.crop);
+      const category = commodity?.category || p.crop;
+      const key = this.selectedCropFilter()
+        ? [p.type, category].filter(Boolean).join(' ')
+        : category;
+      cropAcresMap.set(key, (cropAcresMap.get(key) || 0) + p.acres);
+    }
+    const total = [...cropAcresMap.values()].reduce((a, b) => a + b, 0);
+    return [...cropAcresMap.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, acres], i) => {
+        const color = this.CHART_COLORS[i % this.CHART_COLORS.length];
+        return {
+          name,
+          acres,
+          pct: total > 0 ? Math.round((acres / total) * 100) : 0,
+          barColor: color.bar,
+          dotColor: color.dot,
+          hex: color.hex
+        };
+      });
+  }
+
+  get maxCropAcres(): number {
+    return Math.max(...this.cropBreakdown.map(c => c.acres), 1);
+  }
+
+  get cropDistributionGradient(): string {
+    if (this.cropBreakdown.length === 0) return 'conic-gradient(#e5e7eb 0deg 360deg)';
+    let deg = 0;
+    const stops: string[] = [];
+    for (const c of this.cropBreakdown) {
+      const end = deg + (c.pct / 100) * 360;
+      stops.push(`${c.hex} ${deg}deg ${end}deg`);
+      deg = end;
+    }
+    if (deg < 360) stops.push(`${this.cropBreakdown[0].hex} ${deg}deg 360deg`);
+    return `conic-gradient(${stops.join(', ')})`;
+  }
+
+  get cropDetailsRows(): { name: string; acres: number; avgYield: number | null; production: number | null; growers: number; dotColor: string }[] {
+    return this.cropBreakdown.map(c => {
+      const matching = this.filteredIntentionsForYear.filter(p => {
+        const commodity = this.allCommodities().find(com => com.code === p.crop);
+        const category = commodity?.category || p.crop;
+        const key = this.selectedCropFilter()
+          ? [p.type, category].filter(Boolean).join(' ')
+          : category;
+        return key === c.name;
+      });
+      let totalProd = 0;
+      let totalAcresWeighted = 0;
+      for (const p of matching) {
+        const commodity = this.allCommodities().find(com => com.code === p.crop);
+        const category = commodity?.category || p.crop;
+        const cropKey = [p.type, category].filter(Boolean).join(' ');
+        const saved = this.savedYieldEstimates().find(e => e.crop === cropKey);
+        if (saved?.yieldEstimate != null) {
+          totalProd += p.acres * saved.yieldEstimate;
+          totalAcresWeighted += p.acres;
+        }
+      }
+      const avgYield = totalAcresWeighted > 0 ? Math.round(totalProd / totalAcresWeighted) : null;
+      const production = totalProd > 0 ? Math.round(totalProd) : null;
+      const growers = new Set(matching.map(p => p.customerId)).size;
+      return { name: c.name, acres: c.acres, avgYield, production, growers, dotColor: c.dotColor };
+    });
+  }
+
+  get topProducersRows(): { customerId: number; customerName: string; tradeUnit: string; acres: number; production: number | null; crops: string[] }[] {
+    const map = new Map<number, { customerName: string; tradeUnit: string; acres: number; production: number; cropSet: Set<string> }>();
+    for (const p of this.filteredIntentionsForYear) {
+      const commodity = this.allCommodities().find(c => c.code === p.crop);
+      const category = commodity?.category || p.crop;
+      const cropKey = [p.type, category].filter(Boolean).join(' ');
+      const saved = this.savedYieldEstimates().find(e => e.crop === cropKey);
+      const production = saved?.yieldEstimate != null ? p.acres * saved.yieldEstimate : 0;
+      const existing = map.get(p.customerId);
+      if (existing) {
+        existing.acres += p.acres;
+        existing.production += production;
+        existing.cropSet.add(category);
+      } else {
+        map.set(p.customerId, { customerName: p.customerName, tradeUnit: p.tradeUnit, acres: p.acres, production, cropSet: new Set([category]) });
+      }
+    }
+    return [...map.entries()]
+      .sort((a, b) => b[1].acres - a[1].acres)
+      .slice(0, 10)
+      .map(([customerId, v]) => ({
+        customerId,
+        customerName: v.customerName,
+        tradeUnit: v.tradeUnit,
+        acres: v.acres,
+        production: v.production > 0 ? Math.round(v.production) : null,
+        crops: [...v.cropSet].sort()
+      }));
+  }
+
+  // =========================================================================
+  // Formatting helpers
+  // =========================================================================
+
+  formatAcres(n: number): string {
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+    if (n >= 1_000) return Math.round(n / 1_000) + 'K';
+    return n.toString();
+  }
+
+  formatK(n: number): string {
+    if (n === 0) return '--';
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+    if (n >= 1_000) return Math.round(n / 1_000) + 'K';
+    return n.toString();
   }
 }

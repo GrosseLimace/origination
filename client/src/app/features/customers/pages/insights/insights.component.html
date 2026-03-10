@@ -133,7 +133,7 @@
                     }
                   }
                   <div>
-                    <h3 [class]="'font-semibold ' + getCategoryTitleClass(category)">{{ getCategoryTitle(category) }}</h3>
+                    <p [class]="'text-base font-semibold ' + getCategoryTitleClass(category)">{{ getCategoryTitle(category) }}</p>
                     <p [class]="'text-sm ' + getCategorySubtitleClass(category)">
                       {{ getCustomerGroups(category).length }} customer{{ getCustomerGroups(category).length !== 1 ? 's' : '' }}
                     </p>

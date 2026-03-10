@@ -11,7 +11,12 @@ import { Router } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 
 // MSAL
-import { MsalService } from '@azure/msal-angular';
+import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
+import { InteractionStatus } from '@azure/msal-browser';
+
+// RxJS
+import { filter, switchMap, take } from 'rxjs';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 // Project services
 import { ThemeService } from '@core/services/theme.service';
@@ -35,6 +40,7 @@ export class HeaderComponent {
   appState = inject(AppStateService);
   private readonly router = inject(Router);
   private readonly msalService = inject(MsalService);
+  private readonly msalBroadcast = inject(MsalBroadcastService);
   private readonly http = inject(HttpClient);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -45,7 +51,12 @@ export class HeaderComponent {
   profilePhotoUrl = signal<string | null>(null);
 
   constructor() {
-    this.http.get('https://graph.microsoft.com/v1.0/me/photo/$value', { responseType: 'blob' }).subscribe({
+    this.msalBroadcast.inProgress$.pipe(
+      filter(status => status === InteractionStatus.None),
+      take(1),
+      switchMap(() => this.http.get('https://graph.microsoft.com/v1.0/me/photo/$value', { responseType: 'blob' })),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe({
       next: (blob) => {
         const url = URL.createObjectURL(blob);
         this.profilePhotoUrl.set(url);

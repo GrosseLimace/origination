@@ -201,7 +201,7 @@
                     } @else if (info.status === 'PARTIAL') {
                       <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-scoular-yellow/10 text-scoular-yellow dark:bg-scoular-yellow/20 dark:text-scoular-yellow">Partial</span>
                     } @else if (info.status === 'PRICED') {
-                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green">Priced</span>
+                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Priced</span>
                     } @else if (info.status === 'CASH' && info.cashPrice != null) {
                       <span [class]="!contract.signed ? 'text-scoular-red-accessible dark:text-scoular-red' : ''">{{ info.cashPrice | currency:'USD':'symbol':'1.2-2' }}/{{ getSingularUnit(contract.unit) }}</span>
                     } @else if (info.status === 'LOADING') {
@@ -261,7 +261,7 @@
                                 } @else if (info.status === 'PARTIAL') {
                                   <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-scoular-yellow/10 text-scoular-yellow dark:bg-scoular-yellow/20 dark:text-scoular-yellow">Partial</span>
                                 } @else if (info.status === 'PRICED') {
-                                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green">Priced</span>
+                                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Priced</span>
                                 } @else if (info.status === 'CASH' && info.cashPrice != null) {
                                   {{ info.cashPrice | currency:'USD':'symbol':'1.4-4' }}
                                 } @else if (info.status === 'LOADING') {

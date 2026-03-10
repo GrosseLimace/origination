@@ -33,7 +33,8 @@ public class SqlDataService : IDataService
     private string GetCurrentUser()
     {
         var user = _httpContextAccessor.HttpContext?.User;
-        return user?.FindFirst("preferred_username")?.Value
+        return user?.FindFirst("name")?.Value
+            ?? user?.FindFirst("preferred_username")?.Value
             ?? user?.FindFirst("oid")?.Value
             ?? user?.Identity?.Name
             ?? "System";

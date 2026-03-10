@@ -193,7 +193,7 @@ public class ApplicationDbContext : DbContext
 
         modelBuilder.Entity<ESignEnrollment>(entity =>
         {
-            entity.ToTable("ESignEnrollment", schema: "dbo");
+            entity.ToTable("eSignEnrollment", schema: "dbo");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
             entity.Property(e => e.CustomerCode).HasColumnName("CustomerCode").HasMaxLength(50).IsRequired();
@@ -202,7 +202,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ScoularViewRecipients).HasColumnName("ScoularViewRecipients").IsRequired(false);
             entity.Property(e => e.Guild).HasColumnName("GUID").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.UpdatedOn).HasColumnName("UpdatedOn").HasDefaultValueSql("GETUTCDATE()").IsRequired();
-            entity.HasIndex(e => e.CustomerCode).IsUnique().HasDatabaseName("UQ_ESignEnrollment_CustomerCode");
+            entity.HasIndex(e => e.CustomerCode).IsUnique().HasDatabaseName("UQ_eSignEnrollment_CustomerCode");
         });
 
         modelBuilder.Entity<ProducerDetails>(entity =>

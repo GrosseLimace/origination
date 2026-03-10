@@ -72,14 +72,14 @@ export class CustomerListComponent {
       this.applyFilters();
     }
 
-    // Load trade unit groups — derive available trade units from user's groups
-    this.apiService.getTradeUnitGroups().pipe(
+    // Load trade unit groups from Entitlements DB — filtered to current user via vw_UserTradeUnitAccess
+    this.apiService.getUserTradeUnits().pipe(
       takeUntilDestroyed(this.destroyRef)
     ).subscribe({
       next: (groups) => {
         const mapped = groups.map(g => ({
           groupName: g.groupName,
-          tradeUnitCodes: g.tradeUnits.map(u => u.tradeUnitCode)
+          tradeUnitCodes: g.tradeUnitCodes
         }));
         this.userGroups.set(mapped);
         this.groupsLoading.set(false);
@@ -137,7 +137,7 @@ export class CustomerListComponent {
         }
       }
       this.applyFilters();
-    }, { allowSignalWrites: true });
+    });
 
     // React to customers changing — reapply filters
     effect(() => {
@@ -161,7 +161,7 @@ export class CustomerListComponent {
           }, 50);
         }
       }
-    }, { allowSignalWrites: true });
+    });
   }
 
   // ---- Group helpers ----
@@ -490,7 +490,7 @@ export class CustomerListComponent {
     const isSelected = this.selectedCustomer()?.id === customer.id;
     const baseClass = 'p-4 cursor-pointer transition-colors';
     const stateClass = isSelected
-      ? 'bg-scoular-green/5 dark:bg-scoular-green/20'
+      ? 'bg-green-50 dark:bg-green-900/30'
       : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700';
     return `${baseClass} ${stateClass}`;
   }
