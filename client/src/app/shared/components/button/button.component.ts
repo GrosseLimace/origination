@@ -23,26 +23,25 @@ export class ButtonComponent {
   public onClick = output<MouseEvent>();
 
   public getClasses(): string {
-    if (this.size() === 'icon') {
-      return ['scoular-btn-icon', this.class()].filter(Boolean).join(' ');
-    }
+    const base = 'inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-green disabled:pointer-events-none disabled:opacity-50';
 
     const variantMap: Record<string, string> = {
-      default:     'scoular-btn-primary',
-      primary:     'scoular-btn-primary',
-      secondary:   'scoular-btn-secondary',
-      outline:     'scoular-btn-outline',
-      ghost:       'scoular-btn-ghost',
-      destructive: 'scoular-btn-danger'
+      default:     'bg-scoular-green-accessible text-white hover:bg-scoular-green',
+      primary:     'bg-scoular-green-accessible text-white hover:bg-scoular-green',
+      secondary:   'bg-gray-100 text-gray-900 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600',
+      outline:     'border border-gray-300 dark:border-gray-600 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100',
+      ghost:       'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100',
+      destructive: 'bg-scoular-red text-white hover:bg-scoular-red-accessible'
     };
 
     const sizeMap: Record<string, string> = {
-      default: '',
-      sm:      'scoular-btn-sm',
-      lg:      'scoular-btn-lg'
+      default: 'h-10 px-4 py-2',
+      sm:      'h-8 px-3 text-sm',
+      lg:      'h-12 px-6 text-lg',
+      icon:    'h-10 w-10'
     };
 
-    return ['scoular-btn', variantMap[this.variant()], sizeMap[this.size()], this.class()]
+    return [base, variantMap[this.variant()], sizeMap[this.size()], this.class()]
       .filter(Boolean).join(' ');
   }
 }

@@ -70,12 +70,18 @@ export class HeaderComponent {
     this.profileMenuOpen.set(false);
   }
 
+  private _getAccount() {
+    return this.msalService.instance.getActiveAccount()
+      ?? this.msalService.instance.getAllAccounts()[0]
+      ?? null;
+  }
+
   getAccountName(): string {
-    return this.msalService.instance.getActiveAccount()?.name ?? 'User';
+    return this._getAccount()?.name ?? 'User';
   }
 
   getEmail(): string {
-    const username = this.msalService.instance.getActiveAccount()?.username ?? '';
+    const username = this._getAccount()?.username ?? '';
     if (username && !username.includes('@')) {
       return `${username}@scoular.com`;
     }
