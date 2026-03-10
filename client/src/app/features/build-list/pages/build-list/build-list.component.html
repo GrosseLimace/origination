@@ -26,8 +26,8 @@
         <app-card>
           <app-card-content class="!p-6">
             <div class="flex items-start gap-4">
-              <div class="flex-shrink-0 w-10 h-10 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600 dark:text-green-400">
+              <div class="flex-shrink-0 w-10 h-10 rounded-full bg-scoular-green/10 dark:bg-scoular-green-accessible flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green-accessible dark:text-scoular-green">
                   <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
                 </svg>
               </div>
@@ -70,7 +70,7 @@
               placeholder="Describe the customers you want to find... e.g., 'Customers with more than 500 acres' or 'Farmers I have not contacted in over 30 days'"
               rows="3"
               [disabled]="!hasTradeUnits || loading()"
-              class="w-full p-3 pr-9 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 resize-none disabled:opacity-50 disabled:cursor-not-allowed"
+              class="w-full p-3 pr-9 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green resize-none disabled:opacity-50 disabled:cursor-not-allowed"
             ></textarea>
             @if (queryText().trim()) {
               <button
@@ -125,12 +125,12 @@
 
       <!-- Unrecognized Query Warning (non-blocking — results still shown below) -->
       @if (queryUnrecognized() && hasGenerated() && queryText().trim()) {
-        <div class="flex items-start gap-3 px-4 py-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5">
+        <div class="flex items-start gap-3 px-4 py-3 rounded-lg bg-scoular-yellow/5 dark:bg-scoular-yellow/20 border border-scoular-yellow/30 dark:border-scoular-yellow">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-yellow dark:text-scoular-yellow flex-shrink-0 mt-0.5">
             <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
             <path d="M12 9v4"/><path d="M12 17h.01"/>
           </svg>
-          <p class="text-sm text-yellow-800 dark:text-yellow-300">Query not recognized — no customers matched. Try using keywords like <strong>acres</strong>, <strong>contracted</strong>, <strong>delivered</strong>, <strong>planting</strong>, <strong>storage</strong>, or <strong>contacted</strong>.</p>
+          <p class="text-sm text-scoular-yellow dark:text-scoular-yellow">Query not recognized — no customers matched. Try using keywords like <strong>acres</strong>, <strong>contracted</strong>, <strong>delivered</strong>, <strong>planting</strong>, <strong>storage</strong>, or <strong>contacted</strong>.</p>
         </div>
       }
 
@@ -205,15 +205,15 @@
                   <div class="space-y-2.5">
                     <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Contracts</p>
                     <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                      <input type="checkbox" [ngModel]="pendingRefinements().noActiveContracts" (ngModelChange)="pendingRefinements.update(r => ({...r, noActiveContracts: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-green-600 focus:ring-green-500">
+                      <input type="checkbox" [ngModel]="pendingRefinements().noActiveContracts" (ngModelChange)="pendingRefinements.update(r => ({...r, noActiveContracts: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                       No active contracts
                     </label>
                     <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                      <input type="checkbox" [ngModel]="pendingRefinements().hasUnsignedContracts" (ngModelChange)="pendingRefinements.update(r => ({...r, hasUnsignedContracts: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-green-600 focus:ring-green-500">
+                      <input type="checkbox" [ngModel]="pendingRefinements().hasUnsignedContracts" (ngModelChange)="pendingRefinements.update(r => ({...r, hasUnsignedContracts: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                       Has unsigned contracts
                     </label>
                     <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                      <input type="checkbox" [ngModel]="pendingRefinements().hasNegativePacing" (ngModelChange)="pendingRefinements.update(r => ({...r, hasNegativePacing: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-green-600 focus:ring-green-500">
+                      <input type="checkbox" [ngModel]="pendingRefinements().hasNegativePacing" (ngModelChange)="pendingRefinements.update(r => ({...r, hasNegativePacing: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                       Negative contract pacing %
                     </label>
                   </div>
@@ -222,7 +222,7 @@
                   <div class="space-y-2.5">
                     <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Contact History</p>
                     <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                      <input type="checkbox" [ngModel]="pendingRefinements().neverContacted" (ngModelChange)="pendingRefinements.update(r => ({...r, neverContacted: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-green-600 focus:ring-green-500">
+                      <input type="checkbox" [ngModel]="pendingRefinements().neverContacted" (ngModelChange)="pendingRefinements.update(r => ({...r, neverContacted: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
                       Never contacted
                     </label>
                     <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
@@ -233,7 +233,7 @@
                         [ngModel]="notContactedDaysInput()"
                         (ngModelChange)="notContactedDaysInput.set($event); applyNotContactedDays()"
                         placeholder="30"
-                        class="w-16 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-green-500"
+                        class="w-16 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green"
                       >
                       <span>days</span>
                     </div>
@@ -250,7 +250,7 @@
                           type="button"
                           (click)="togglePendingCrop(crop)"
                           [class]="isCropSelected(crop)
-                            ? 'bg-green-600 text-white border-green-600 dark:bg-green-600 dark:border-green-600'
+                            ? 'bg-scoular-green-accessible text-white border-scoular-green-accessible dark:bg-scoular-green-accessible dark:border-scoular-green-accessible'
                             : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'"
                           class="px-3 py-1 rounded-full border text-sm font-medium transition-colors"
                         >{{ crop }}</button>
@@ -269,7 +269,7 @@
                           type="button"
                           (click)="togglePendingState(state)"
                           [class]="isStateSelected(state)
-                            ? 'bg-green-600 text-white border-green-600 dark:bg-green-600 dark:border-green-600'
+                            ? 'bg-scoular-green-accessible text-white border-scoular-green-accessible dark:bg-scoular-green-accessible dark:border-scoular-green-accessible'
                             : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'"
                           class="px-3 py-1 rounded-full border text-sm font-medium transition-colors"
                         >{{ getStateDisplayName(state) || state }}</button>
@@ -308,7 +308,7 @@
                 <button
                   type="button"
                   (click)="queryText.set(''); hasGenerated.set(false); filteredCustomers.set([])"
-                  class="mt-3 text-sm text-green-600 hover:text-green-700 dark:text-green-400 underline"
+                  class="mt-3 text-sm text-scoular-green-accessible hover:text-scoular-green-accessible dark:text-scoular-green underline"
                 >
                   Clear query
                 </button>
@@ -330,8 +330,8 @@
                     (click)="selectCustomer(customer)"
                   >
                     <div class="flex items-start gap-3">
-                      <div class="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center flex-shrink-0">
-                        <span class="text-sm font-medium text-green-700 dark:text-green-300">{{ getInitials(customer.name) }}</span>
+                      <div class="w-10 h-10 rounded-full bg-scoular-green/10 dark:bg-scoular-green-accessible flex items-center justify-center flex-shrink-0">
+                        <span class="text-sm font-medium text-scoular-green-accessible dark:text-scoular-green">{{ getInitials(customer.name) }}</span>
                       </div>
                       <div>
                         <div class="font-medium text-gray-900 dark:text-white">{{ customer.name }} <span class="text-gray-400 dark:text-gray-500 font-normal">({{ customer.sourceCustomerId }})</span></div>
@@ -379,7 +379,7 @@
         <app-card-content>
           @if (loading()) {
             <div class="p-8 text-center">
-              <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-300 dark:border-gray-600 border-t-green-600 dark:border-t-green-500 mb-4"></div>
+              <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green mb-4"></div>
               <p class="text-gray-500 dark:text-gray-400 font-medium">Loading customers...</p>
             </div>
           } @else if (savedLists().length === 0) {
@@ -406,7 +406,7 @@
                     </div>
                     <div class="text-xs text-gray-500 dark:text-gray-400 truncate">"{{ list.query }}"</div>
                   </button>
-                  <button type="button" (click)="deleteList(list.id)" class="text-red-500 hover:text-red-600 bg-transparent border-0 p-0 flex-shrink-0">
+                  <button type="button" (click)="deleteList(list.id)" class="text-scoular-red hover:text-scoular-red-accessible bg-transparent border-0 p-0 flex-shrink-0">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M3 6h18"/>
                       <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>

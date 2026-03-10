@@ -48,14 +48,14 @@ export class ToastContainerComponent {
     const baseClasses = 'text-white';
     switch (type) {
       case 'success':
-        return `${baseClasses} bg-green-600`;
+        return `${baseClasses} bg-scoular-green-accessible`;
       case 'error':
-        return `${baseClasses} bg-red-600`;
+        return `${baseClasses} bg-scoular-red-accessible`;
       case 'warning':
         return `${baseClasses} bg-amber-500`;
       case 'info':
       default:
-        return `${baseClasses} bg-blue-600`;
+        return `${baseClasses} bg-scoular-blue`;
     }
   }
 }

@@ -40,7 +40,7 @@
                 </div>
                 <button
                   type="button"
-                  class="h-10 w-10 inline-flex items-center justify-center text-gray-400 hover:text-green-600 dark:hover:text-green-400 bg-transparent border-0 p-0"
+                  class="h-10 w-10 inline-flex items-center justify-center text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green bg-transparent border-0 p-0"
                   (click)="openEditDialog(intention)"
                 >
                   <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -187,7 +187,7 @@
                   <app-table-cell class="text-center">
                     <button
                       type="button"
-                      class="h-7 w-7 inline-flex items-center justify-center text-gray-400 hover:text-green-600 dark:hover:text-green-400 bg-transparent border-0 p-0"
+                      class="h-7 w-7 inline-flex items-center justify-center text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green bg-transparent border-0 p-0"
                       (click)="openEditDialog(intention)"
                     >
                       <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -215,7 +215,7 @@
               <select
                 [(ngModel)]="addForm.type"
                 (ngModelChange)="onAddTypeChange()"
-                class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green"
               >
                 <option value="" disabled>Select type...</option>
                 <option value="Irrigated">Irrigated</option>
@@ -237,7 +237,7 @@
                 <select
                   [(ngModel)]="addForm.crop"
                   (ngModelChange)="onAddCropChange($event)"
-                  class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                  class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green"
                 >
                   <option value="" disabled>Select a crop...</option>
                   @for (commodity of availableCrops; track commodity.id) {
@@ -245,7 +245,7 @@
                   }
                 </select>
                 @if (availableCrops.length === 0) {
-                  <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">No crops available for this customer.</p>
+                  <p class="text-xs text-scoular-yellow dark:text-scoular-yellow mt-1">No crops available for this customer.</p>
                 }
               }
             </div>
@@ -291,7 +291,7 @@
               <select
                 [(ngModel)]="editForm.type"
                 (ngModelChange)="onEditTypeChange()"
-                class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green"
               >
                 <option value="" disabled>Select type...</option>
                 <option value="Irrigated">Irrigated</option>
@@ -313,7 +313,7 @@
                 <select
                   [(ngModel)]="editForm.crop"
                   (ngModelChange)="onEditCropChange($event)"
-                  class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                  class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green"
                 >
                   <option value="" disabled>Select a crop...</option>
                   @for (commodity of availableCrops; track commodity.id) {
@@ -321,7 +321,7 @@
                   }
                 </select>
                 @if (availableCrops.length === 0) {
-                  <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">No crops available for this customer.</p>
+                  <p class="text-xs text-scoular-yellow dark:text-scoular-yellow mt-1">No crops available for this customer.</p>
                 }
               }
             </div>
@@ -339,7 +339,7 @@
         </app-dialog-content>
         <app-dialog-footer>
           <div class="flex justify-between items-center w-full">
-            <app-button variant="outline" (onClick)="openDeleteConfirm()" class="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20">
+            <app-button variant="outline" (onClick)="openDeleteConfirm()" class="text-scoular-red-accessible hover:text-scoular-red-accessible hover:bg-scoular-red/5 dark:hover:bg-scoular-red/20">
               <svg class="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
               </svg>
@@ -386,7 +386,7 @@
             </div>
             <div class="flex justify-end gap-2">
               <app-button variant="outline" (onClick)="closeDeleteConfirm()">Cancel</app-button>
-              <app-button variant="default" (onClick)="confirmDelete()" class="bg-red-600 hover:bg-red-700 text-white">Delete</app-button>
+              <app-button variant="default" (onClick)="confirmDelete()" class="bg-scoular-red-accessible hover:bg-scoular-red-accessible text-white">Delete</app-button>
             </div>
           </div>
         </div>

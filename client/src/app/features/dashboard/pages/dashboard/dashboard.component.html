@@ -22,7 +22,7 @@
                           type="checkbox"
                           [checked]="selectedDashboardTradeUnits().includes(unit)"
                           (change)="toggleDashboardTradeUnit(unit)"
-                          class="rounded border-gray-300 dark:border-gray-600 text-green-600 focus:ring-green-500"
+                          class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green"
                         />
                         {{ unit }}
                       </label>
@@ -55,7 +55,7 @@
       } @else if (loading()) {
         <div class="flex items-center justify-center py-20">
           <div class="text-center">
-            <div class="inline-block animate-spin rounded-full h-16 w-16 border-4 border-gray-300 dark:border-gray-600 border-t-green-600 dark:border-t-green-500 mb-4"></div>
+            <div class="inline-block animate-spin rounded-full h-16 w-16 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green mb-4"></div>
             <p class="text-gray-500 dark:text-gray-400 font-medium text-lg">Loading dashboard data...</p>
           </div>
         </div>
@@ -64,8 +64,8 @@
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <app-card class="!p-4">
           <div class="flex items-center gap-3">
-            <div class="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600 dark:text-green-400">
+            <div class="p-2 bg-scoular-green/10 dark:bg-scoular-green/20 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green-accessible dark:text-scoular-green">
                 <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
                 <circle cx="9" cy="7" r="4"/>
                 <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
@@ -80,8 +80,8 @@
         </app-card>
         <app-card class="!p-4">
           <div class="flex items-center gap-3">
-            <div class="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600 dark:text-blue-400">
+            <div class="p-2 bg-scoular-blue/10 dark:bg-scoular-blue/20 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-blue dark:text-scoular-blue">
                 <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
                 <polyline points="14 2 14 8 20 8"/>
               </svg>
@@ -95,7 +95,7 @@
         <app-card class="!p-4">
           <div class="flex items-center gap-3">
             <div class="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-amber-600 dark:text-amber-400">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-yellow dark:text-scoular-yellow">
                 <path d="M12 2a10 10 0 1 0 10 10H12V2z"/>
                 <path d="M12 2v10h10"/>
               </svg>
@@ -108,8 +108,8 @@
         </app-card>
         <app-card class="!p-4">
           <div class="flex items-center gap-3">
-            <div class="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-purple-600 dark:text-purple-400">
+            <div class="p-2 bg-scoular-teal/10 dark:bg-scoular-teal/20 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-teal dark:text-scoular-teal">
                 <line x1="12" x2="12" y1="2" y2="22"/>
                 <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
               </svg>
@@ -208,7 +208,7 @@
               <div class="flex items-center gap-2 flex-shrink-0" (click)="$event.stopPropagation()">
                 <label class="text-sm font-medium text-gray-500 dark:text-gray-400">Planting Year:</label>
                 <select [ngModel]="selectedPlantingYear()" (ngModelChange)="selectedPlantingYear.set($event); onPlantingYearChange()"
-                  class="px-3 py-1.5 text-sm font-semibold rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  class="px-3 py-1.5 text-sm font-semibold rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-blue">
                   @for (year of availablePlantingYears(); track year) {
                     <option [ngValue]="year">{{ year }}</option>
                   }
@@ -261,7 +261,7 @@
                         <td class="py-3 px-4 text-right">
                           @if (yieldEditMode()) {
                             <input type="number" [ngModel]="tempYieldMap()[row.cropCode]" (ngModelChange)="setTempYield(row.cropCode, $event)" min="0"
-                              class="w-24 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+                              class="w-24 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-blue [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
                           } @else {
                             @if (row.yieldEstimate != null) {
                               <span class="text-base font-bold text-gray-900 dark:text-white">{{ row.yieldEstimate }}</span>
@@ -349,7 +349,7 @@
                           @if (marketShareEditMode()) {
                             <div class="inline-flex items-center gap-1">
                               <input type="number" [ngModel]="tempMarketShareMap()[row.category]" (ngModelChange)="setTempMarketShare(row.category, $event)" min="0" max="100" step="1"
-                                class="w-16 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+                                class="w-16 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-blue [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
                               <span class="text-xs text-gray-400">%</span>
                             </div>
                           } @else {
@@ -451,7 +451,7 @@
                         <td class="py-3 px-4 text-right">
                           @if (harvestEditMode()) {
                             <input type="text" inputmode="numeric" pattern="[0-9]*" [ngModel]="tempHarvestMap()[row.id]" (ngModelChange)="setTempHarvest(row.id, $event)"
-                              class="w-28 text-right text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-0.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-blue-500 focus:outline-none" />
+                              class="w-28 text-right text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-0.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-scoular-blue focus:outline-none" />
                           } @else {
                             <span class="text-base font-bold text-gray-900 dark:text-white">{{ row.bushels | number:'1.0-0' }}</span>
                           }
@@ -459,7 +459,7 @@
                         @if (harvestEditMode()) {
                           <td class="py-3 px-2">
                             <button (click)="confirmDeleteHarvestRow.set({ id: row.id, cropCategory: row.cropCategory })"
-                              class="p-1 rounded text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                              class="p-1 rounded text-gray-400 hover:text-scoular-red-accessible dark:hover:text-scoular-red hover:bg-scoular-red/5 dark:hover:bg-scoular-red/20 transition-colors">
                               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
                             </button>
                           </td>
@@ -470,7 +470,7 @@
                       <tr class="bg-gray-50 dark:bg-gray-700/30">
                         <td class="py-2.5 px-4">
                           <select [ngModel]="newHarvestCrop()" (ngModelChange)="newHarvestCrop.set($event)"
-                            class="w-full text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-0.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-blue-500 focus:outline-none">
+                            class="w-full text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-0.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-scoular-blue focus:outline-none">
                             <option value="">Select crop...</option>
                             @for (cat of availableHarvestCropCategories; track cat) {
                               <option [value]="cat">{{ cat }}</option>
@@ -479,7 +479,7 @@
                         </td>
                         <td class="py-2.5 px-4">
                           <input type="text" inputmode="numeric" pattern="[0-9]*" [ngModel]="newHarvestBushels()" (ngModelChange)="newHarvestBushels.set($event)" placeholder="0"
-                            class="w-full text-right text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-0.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                            class="w-full text-right text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-0.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-scoular-blue focus:outline-none"
                             (keydown.enter)="addHarvestRow()" (keydown.escape)="showAddHarvestRow.set(false); newHarvestCrop.set(''); newHarvestBushels.set('')" />
                         </td>
                       </tr>
@@ -509,7 +509,7 @@
                         Cancel
                       </button>
                       <button (click)="deleteHarvestRow(confirmDeleteHarvestRow()!.id); confirmDeleteHarvestRow.set(null)"
-                        class="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors">
+                        class="px-4 py-2 text-sm font-medium rounded-lg bg-scoular-red-accessible hover:bg-scoular-red-accessible text-white transition-colors">
                         Delete
                       </button>
                     </div>

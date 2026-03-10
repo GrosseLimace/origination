@@ -419,13 +419,13 @@ export class ContractsTableComponent {
   getStatusClass(status: string): string {
     switch (status) {
       case 'Active':
-        return 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-600 text-white';
+        return 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-scoular-green-accessible text-white';
       case 'Fulfilled':
-        return 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-600 text-white';
+        return 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-scoular-blue text-white';
       case 'Pending':
         return 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-500 text-white';
       case 'Overdue':
-        return 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-600 text-white';
+        return 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-scoular-red-accessible text-white';
       case 'Cancelled':
         return 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-500 text-white';
       default:

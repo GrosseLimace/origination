@@ -9,9 +9,9 @@
         </div>
       } @else {
         <!-- Total Storage Cost Banner -->
-        <div class="mt-2 mb-4 p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-          <p class="text-sm text-blue-600 dark:text-blue-400">Total Accumulated Storage Costs</p>
-          <p class="text-2xl text-blue-700 dark:text-blue-300">{{ totalStorageCost | currency:'USD':'symbol':'1.2-2' }}</p>
+        <div class="mt-2 mb-4 p-4 rounded-lg bg-scoular-blue/5 dark:bg-scoular-blue/20 border border-scoular-blue/30 dark:border-scoular-blue-dark">
+          <p class="text-sm text-scoular-blue dark:text-scoular-blue">Total Accumulated Storage Costs</p>
+          <p class="text-2xl text-scoular-blue-medium dark:text-scoular-blue">{{ totalStorageCost | currency:'USD':'symbol':'1.2-2' }}</p>
         </div>
 
         <!-- Mobile Card View -->
@@ -23,7 +23,7 @@
                   <div class="font-medium text-gray-900 dark:text-white">{{ grain.crop }}</div>
                   <div class="text-sm text-gray-500 dark:text-gray-400">{{ grain.bin }}</div>
                 </div>
-                <div class="text-sm font-medium text-red-600 dark:text-red-400">
+                <div class="text-sm font-medium text-scoular-red-accessible dark:text-scoular-red">
                   {{ storageCostCache.get(grain.id)?.totalCost | currency:'USD':'symbol':'1.2-2' }}
                 </div>
               </div>
@@ -152,7 +152,7 @@
                   <app-table-cell>{{ grain.bin }}</app-table-cell>
                   <app-table-cell>${{ grain.storageRate.toFixed(3) }}/bu/mo</app-table-cell>
                   <app-table-cell>{{ grain.storageStartDate | date:'MMM d, yyyy' }}</app-table-cell>
-                  <app-table-cell class="text-red-600 dark:text-red-400 font-medium">
+                  <app-table-cell class="text-scoular-red-accessible dark:text-scoular-red font-medium">
                     {{ storageCostCache.get(grain.id)?.totalCost | currency:'USD':'symbol':'1.2-2' }}
                   </app-table-cell>
                 </app-table-row>
@@ -190,7 +190,7 @@
                             </div>
                             <div>
                               <p class="text-sm text-gray-500 dark:text-gray-400">Total Cost to Date</p>
-                              <p class="text-red-600 dark:text-red-400 font-medium">{{ storageCostCache.get(grain.id)?.totalCost | currency:'USD':'symbol':'1.2-2' }}</p>
+                              <p class="text-scoular-red-accessible dark:text-scoular-red font-medium">{{ storageCostCache.get(grain.id)?.totalCost | currency:'USD':'symbol':'1.2-2' }}</p>
                             </div>
                           </div>
                         </div>

@@ -127,7 +127,7 @@ export class CustomerMapComponent {
         const icon = L.divIcon({
           className: 'custom-marker',
           html: `
-            <div class="w-8 h-8 rounded-full ${isSelected ? 'bg-green-600 ring-4 ring-green-300' : 'bg-green-500'} flex items-center justify-center text-white text-xs font-bold shadow-lg cursor-pointer transform hover:scale-110 transition-transform">
+            <div class="w-8 h-8 rounded-full ${isSelected ? 'bg-scoular-green-accessible ring-4 ring-green-300' : 'bg-green-500'} flex items-center justify-center text-white text-xs font-bold shadow-lg cursor-pointer transform hover:scale-110 transition-transform">
               ${customer.name.charAt(0)}
             </div>
           `,

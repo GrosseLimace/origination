@@ -9,7 +9,7 @@
         <div class="flex items-center gap-3">
           <!-- Commodity Filter -->
           <select
-            class="px-3 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            class="px-3 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-scoular-green focus:border-transparent"
             [value]="selectedCommodity()"
             (change)="onCommodityChange($event)"
           >
@@ -20,7 +20,7 @@
           </select>
           <!-- Location Filter -->
           <select
-            class="px-3 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            class="px-3 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-scoular-green focus:border-transparent"
             [value]="selectedLocation()"
             (change)="onLocationChange($event)"
           >
@@ -52,41 +52,41 @@
         <!-- Net Position -->
         <app-card class="p-4">
           <div class="flex items-center gap-2 mb-2">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="totalNetPosition() > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="totalNetPosition() > 0 ? 'text-scoular-yellow dark:text-scoular-yellow' : 'text-scoular-green-accessible dark:text-scoular-green'">
               <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
             </svg>
             <div class="text-sm font-medium text-gray-500 dark:text-gray-400">Net Position</div>
           </div>
-          <div [class]="'text-2xl font-bold ' + (totalNetPosition() > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400')">
+          <div [class]="'text-2xl font-bold ' + (totalNetPosition() > 0 ? 'text-scoular-yellow dark:text-scoular-yellow' : 'text-scoular-green-accessible dark:text-scoular-green')">
             {{ totalNetPosition() > 0 ? '+' : '' }}{{ formatNumber(totalNetPosition()) }} bu
           </div>
-          <div [class]="'text-sm ' + (totalNetPosition() > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400')">{{ totalNetPosition() > 0 ? 'Long/Unhedged' : totalNetPosition() < 0 ? 'Short' : 'Flat' }}</div>
+          <div [class]="'text-sm ' + (totalNetPosition() > 0 ? 'text-scoular-yellow dark:text-scoular-yellow' : 'text-scoular-green-accessible dark:text-scoular-green')">{{ totalNetPosition() > 0 ? 'Long/Unhedged' : totalNetPosition() < 0 ? 'Short' : 'Flat' }}</div>
         </app-card>
 
         <!-- Total Gross Margin -->
         <app-card class="p-4">
           <div class="flex items-center gap-2 mb-2">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600 dark:text-green-400">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green-accessible dark:text-scoular-green">
               <line x1="12" x2="12" y1="2" y2="22"/>
               <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
             </svg>
             <div class="text-sm font-medium text-gray-500 dark:text-gray-400">Total Gross Margin</div>
           </div>
-          <div [class]="'text-2xl font-bold ' + (totalGrossMargin() >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400')">{{ formatCurrency(totalGrossMargin()) }}</div>
+          <div [class]="'text-2xl font-bold ' + (totalGrossMargin() >= 0 ? 'text-scoular-green-accessible dark:text-scoular-green' : 'text-scoular-red-accessible dark:text-scoular-red')">{{ formatCurrency(totalGrossMargin()) }}</div>
           <div class="text-sm text-gray-500 dark:text-gray-400">Projected {{ totalGrossMargin() >= 0 ? 'Profit' : 'Loss' }}</div>
         </app-card>
 
         <!-- Risk Exposure -->
         <app-card class="p-4">
           <div class="flex items-center gap-2 mb-2">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-600 dark:text-red-400">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-red-accessible dark:text-scoular-red">
               <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
               <line x1="12" x2="12" y1="9" y2="13"/>
               <line x1="12" x2="12.01" y1="17" y2="17"/>
             </svg>
             <div class="text-sm font-medium text-gray-500 dark:text-gray-400">Risk Exposure</div>
           </div>
-          <div [class]="'text-2xl font-bold ' + (totalNetPosition() > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white')">
+          <div [class]="'text-2xl font-bold ' + (totalNetPosition() > 0 ? 'text-scoular-red-accessible dark:text-scoular-red' : 'text-gray-900 dark:text-white')">
             {{ formatNumber(totalNetPosition() > 0 ? totalNetPosition() : 0) }}
           </div>
           <div class="text-sm text-gray-500 dark:text-gray-400">Unhedged Bushels</div>
@@ -121,12 +121,12 @@
                       <td class="px-4 py-3 text-sm text-gray-900 dark:text-white text-right">{{ formatNumber(position.purchasedBushels) }}</td>
                       <td class="px-4 py-3 text-sm text-gray-900 dark:text-white text-right">{{ formatNumber(position.hedgedBushels) }}</td>
                       <td class="px-4 py-3 text-sm text-right">
-                        <span [class]="position.netPosition > 0 ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-green-600 dark:text-green-400'">
+                        <span [class]="position.netPosition > 0 ? 'text-scoular-yellow dark:text-scoular-yellow font-medium' : 'text-scoular-green-accessible dark:text-scoular-green'">
                           {{ position.netPosition > 0 ? '+' : '' }}{{ formatNumber(position.netPosition) }}
                         </span>
                       </td>
                       <td class="px-4 py-3 text-sm text-gray-900 dark:text-white text-right hidden md:table-cell">{{ position.openContracts }}</td>
-                      <td class="px-4 py-3 text-sm text-green-600 dark:text-green-400 text-right hidden md:table-cell">{{ formatCurrency(position.grossMargin) }}</td>
+                      <td class="px-4 py-3 text-sm text-scoular-green-accessible dark:text-scoular-green text-right hidden md:table-cell">{{ formatCurrency(position.grossMargin) }}</td>
                     </tr>
                   }
                 </tbody>
@@ -136,12 +136,12 @@
                     <td class="px-4 py-3 text-sm text-gray-900 dark:text-white text-right">{{ formatNumber(totalPurchased()) }}</td>
                     <td class="px-4 py-3 text-sm text-gray-900 dark:text-white text-right">{{ formatNumber(totalHedged()) }}</td>
                     <td class="px-4 py-3 text-sm text-right">
-                      <span [class]="totalNetPosition() > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'">
+                      <span [class]="totalNetPosition() > 0 ? 'text-scoular-yellow dark:text-scoular-yellow' : 'text-scoular-green-accessible dark:text-scoular-green'">
                         {{ totalNetPosition() > 0 ? '+' : '' }}{{ formatNumber(totalNetPosition()) }}
                       </span>
                     </td>
                     <td class="px-4 py-3 text-sm text-gray-900 dark:text-white text-right hidden md:table-cell">{{ totalContracts() }}</td>
-                    <td class="px-4 py-3 text-sm text-green-600 dark:text-green-400 text-right hidden md:table-cell">{{ formatCurrency(totalGrossMargin()) }}</td>
+                    <td class="px-4 py-3 text-sm text-scoular-green-accessible dark:text-scoular-green text-right hidden md:table-cell">{{ formatCurrency(totalGrossMargin()) }}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -153,7 +153,7 @@
             <div class="mt-4 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4">
               <div class="flex items-start gap-3">
                 <div class="p-2 bg-amber-100 dark:bg-amber-900/50 rounded-lg flex-shrink-0">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-amber-600 dark:text-amber-400">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-yellow dark:text-scoular-yellow">
                     <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
                     <line x1="12" x2="12" y1="9" y2="13"/>
                     <line x1="12" x2="12.01" y1="17" y2="17"/>
@@ -161,12 +161,12 @@
                 </div>
                 <div class="flex-1">
                   <h4 class="font-semibold text-amber-800 dark:text-amber-300">Unhedged Position Alert</h4>
-                  <p class="text-sm text-amber-700 dark:text-amber-400 mt-1">
+                  <p class="text-sm text-amber-700 dark:text-scoular-yellow mt-1">
                     You have {{ formatNumber(totalNetPosition()) }} bushels of unhedged grain exposure. Consider placing hedge orders to reduce market risk.
                   </p>
                   <button
                     type="button"
-                    class="mt-3 inline-flex items-center justify-center rounded-md font-medium h-10 px-4 py-2 border border-amber-600 dark:border-amber-500 bg-white dark:bg-gray-800 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors"
+                    class="mt-3 inline-flex items-center justify-center rounded-md font-medium h-10 px-4 py-2 border border-amber-600 dark:border-amber-500 bg-white dark:bg-gray-800 text-amber-700 dark:text-scoular-yellow hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors"
                   >
                     Place Hedge Order
                   </button>
@@ -202,12 +202,12 @@
                       <td class="px-4 py-3 text-sm text-gray-900 dark:text-white text-right">{{ formatPrice(position.cashBid) }}</td>
                       <td class="px-4 py-3 text-sm text-gray-900 dark:text-white text-right">{{ formatPrice(position.futuresPrice) }}</td>
                       <td class="px-4 py-3 text-center">
-                        <app-badge [class]="position.basis >= -0.15 ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300'">
+                        <app-badge [class]="position.basis >= -0.15 ? 'bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green' : 'bg-scoular-yellow/10 text-scoular-yellow dark:bg-scoular-yellow/20 dark:text-scoular-yellow'">
                           {{ formatBasis(position.basis) }}
                         </app-badge>
                       </td>
                       <td class="px-4 py-3 text-sm text-gray-900 dark:text-white text-right hidden md:table-cell">{{ formatPrice(position.averagePurchasePrice) }}</td>
-                      <td class="px-4 py-3 text-sm text-green-600 dark:text-green-400 text-right hidden md:table-cell">{{ formatPrice(getMarginPerBushel(position)) }}</td>
+                      <td class="px-4 py-3 text-sm text-scoular-green-accessible dark:text-scoular-green text-right hidden md:table-cell">{{ formatPrice(getMarginPerBushel(position)) }}</td>
                     </tr>
                   }
                 </tbody>
@@ -216,19 +216,19 @@
           </app-card>
 
           <!-- Basis Info Card -->
-          <app-card class="mt-4 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20">
+          <app-card class="mt-4 border-scoular-blue/30 dark:border-scoular-blue-dark bg-scoular-blue/5 dark:bg-scoular-blue/20">
             <div class="p-4">
               <div class="flex items-start gap-3">
-                <div class="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg flex-shrink-0">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600 dark:text-blue-400">
+                <div class="p-2 bg-scoular-blue/10 dark:bg-scoular-blue/20 rounded-lg flex-shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-blue dark:text-scoular-blue">
                     <circle cx="12" cy="12" r="10"/>
                     <path d="M12 16v-4"/>
                     <path d="M12 8h.01"/>
                   </svg>
                 </div>
                 <div>
-                  <h4 class="font-semibold text-blue-800 dark:text-blue-300">Basis Analysis</h4>
-                  <p class="text-sm text-blue-700 dark:text-blue-400 mt-1">
+                  <h4 class="font-semibold text-scoular-blue-medium dark:text-scoular-blue">Basis Analysis</h4>
+                  <p class="text-sm text-scoular-blue-medium dark:text-scoular-blue mt-1">
                     Current basis levels are {{ averageBasis() >= -0.20 ? 'stronger than' : 'weaker than' }} historical averages.
                     {{ averageBasis() >= -0.20 ? 'Consider locking in basis on unpriced bushels.' : 'Monitor for basis improvement opportunities.' }}
                   </p>
@@ -261,7 +261,7 @@
                       <td class="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{{ hedge.commodity }}</td>
                       <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{{ hedge.contractMonth }}</td>
                       <td class="px-4 py-3 text-center">
-                        <app-badge [class]="hedge.position === 'Short' ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'">
+                        <app-badge [class]="hedge.position === 'Short' ? 'bg-scoular-red/10 text-scoular-red-accessible dark:bg-scoular-red/20 dark:text-scoular-red' : 'bg-scoular-blue/10 text-scoular-blue-medium dark:bg-scoular-blue/20 dark:text-scoular-blue'">
                           {{ hedge.position }}
                         </app-badge>
                       </td>
@@ -270,7 +270,7 @@
                       <td class="px-4 py-3 text-sm text-gray-900 dark:text-white text-right">{{ formatPrice(hedge.entryPrice) }}</td>
                       <td class="px-4 py-3 text-sm text-gray-900 dark:text-white text-right">{{ formatPrice(hedge.currentPrice) }}</td>
                       <td class="px-4 py-3 text-sm text-right">
-                        <span [class]="hedge.unrealizedPL >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'">
+                        <span [class]="hedge.unrealizedPL >= 0 ? 'text-scoular-green-accessible dark:text-scoular-green' : 'text-scoular-red-accessible dark:text-scoular-red'">
                           {{ formatCurrency(hedge.unrealizedPL) }}
                         </span>
                       </td>
@@ -281,7 +281,7 @@
                   <tr class="font-semibold">
                     <td class="px-4 py-3 text-sm text-gray-900 dark:text-white" colspan="7">Total Unrealized P&L</td>
                     <td class="px-4 py-3 text-sm text-right">
-                      <span [class]="totalUnrealizedPL() >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'">
+                      <span [class]="totalUnrealizedPL() >= 0 ? 'text-scoular-green-accessible dark:text-scoular-green' : 'text-scoular-red-accessible dark:text-scoular-red'">
                         {{ formatCurrency(totalUnrealizedPL()) }}
                       </span>
                     </td>
@@ -292,18 +292,18 @@
           </app-card>
 
           <!-- Hedge Performance Card -->
-          <app-card class="mt-4 border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20">
+          <app-card class="mt-4 border-scoular-teal/30 dark:border-scoular-teal bg-scoular-teal/5 dark:bg-scoular-teal/20">
             <div class="p-4">
               <div class="flex items-start gap-3">
-                <div class="p-2 bg-purple-100 dark:bg-purple-900/50 rounded-lg flex-shrink-0">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-purple-600 dark:text-purple-400">
+                <div class="p-2 bg-scoular-teal/10 dark:bg-scoular-teal/20 rounded-lg flex-shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-teal dark:text-scoular-teal">
                     <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
                     <polyline points="16 7 22 7 22 13"/>
                   </svg>
                 </div>
                 <div>
-                  <h4 class="font-semibold text-purple-800 dark:text-purple-300">Hedge Performance</h4>
-                  <p class="text-sm text-purple-700 dark:text-purple-400 mt-1">
+                  <h4 class="font-semibold text-scoular-teal dark:text-scoular-teal">Hedge Performance</h4>
+                  <p class="text-sm text-scoular-teal dark:text-scoular-teal mt-1">
                     {{ totalUnrealizedPL() < 0 ? 'Current hedge positions show unrealized losses due to rising futures prices. These losses are offset by gains in physical grain value.' : 'Current hedge positions are performing well with unrealized gains.' }}
                   </p>
                 </div>

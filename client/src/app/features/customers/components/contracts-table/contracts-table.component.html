@@ -183,27 +183,27 @@
                         </svg>
                       }
                     </span>
-                    <span [class]="!contract.signed ? 'font-medium text-red-600 dark:text-red-400' : 'font-medium'">
+                    <span [class]="!contract.signed ? 'font-medium text-scoular-red-accessible dark:text-scoular-red' : 'font-medium'">
                       {{ contract.sourceContractId || contract.contractNumber }}
                     </span>
                   </div>
                 </app-table-cell>
                 <app-table-cell>
-                  <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ contract.commodityCode || contract.commodityDescription }}</span>
+                  <span [class]="!contract.signed ? 'text-scoular-red-accessible dark:text-scoular-red' : ''">{{ contract.commodityCode || contract.commodityDescription }}</span>
                 </app-table-cell>
                 <app-table-cell>
-                  <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ contract.quantity | number }} {{ contract.unit }}</span>
+                  <span [class]="!contract.signed ? 'text-scoular-red-accessible dark:text-scoular-red' : ''">{{ contract.quantity | number }} {{ contract.unit }}</span>
                 </app-table-cell>
                 <app-table-cell>
                   @if (getPricingInfo(contract); as info) {
                     @if (info.status === 'UNPRICED') {
                       <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">Unpriced</span>
                     } @else if (info.status === 'PARTIAL') {
-                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">Partial</span>
+                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-scoular-yellow/10 text-scoular-yellow dark:bg-scoular-yellow/20 dark:text-scoular-yellow">Partial</span>
                     } @else if (info.status === 'PRICED') {
-                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Priced</span>
+                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green">Priced</span>
                     } @else if (info.status === 'CASH' && info.cashPrice != null) {
-                      <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ info.cashPrice | currency:'USD':'symbol':'1.2-2' }}/{{ getSingularUnit(contract.unit) }}</span>
+                      <span [class]="!contract.signed ? 'text-scoular-red-accessible dark:text-scoular-red' : ''">{{ info.cashPrice | currency:'USD':'symbol':'1.2-2' }}/{{ getSingularUnit(contract.unit) }}</span>
                     } @else if (info.status === 'LOADING') {
                       <span class="text-gray-400 text-xs">...</span>
                     } @else {
@@ -212,7 +212,7 @@
                   }
                 </app-table-cell>
                 <app-table-cell>
-                  <span [class]="!contract.signed ? 'text-red-600 dark:text-red-400' : ''">{{ contract.deliveryStart | date:'M/d/yyyy' }} - {{ contract.deliveryEnd | date:'M/d/yyyy' }}</span>
+                  <span [class]="!contract.signed ? 'text-scoular-red-accessible dark:text-scoular-red' : ''">{{ contract.deliveryStart | date:'M/d/yyyy' }} - {{ contract.deliveryEnd | date:'M/d/yyyy' }}</span>
                 </app-table-cell>
                 <app-table-cell>
                   <span [class]="getStatusClass(getCalculatedStatus(contract))">
@@ -259,9 +259,9 @@
                                 @if (info.status === 'UNPRICED') {
                                   <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">Unpriced</span>
                                 } @else if (info.status === 'PARTIAL') {
-                                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">Partial</span>
+                                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-scoular-yellow/10 text-scoular-yellow dark:bg-scoular-yellow/20 dark:text-scoular-yellow">Partial</span>
                                 } @else if (info.status === 'PRICED') {
-                                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Priced</span>
+                                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green">Priced</span>
                                 } @else if (info.status === 'CASH' && info.cashPrice != null) {
                                   {{ info.cashPrice | currency:'USD':'symbol':'1.4-4' }}
                                 } @else if (info.status === 'LOADING') {

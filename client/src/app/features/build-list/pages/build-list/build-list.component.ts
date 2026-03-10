@@ -730,15 +730,15 @@ export class BuildListComponent {
     let result: { text: string; colorClass: string };
 
     if (!lastNote) {
-      result = { text: 'Never contacted', colorClass: 'text-red-500' };
+      result = { text: 'Never contacted', colorClass: 'text-scoular-red' };
     } else {
       const daysAgo = Math.floor((Date.now() - new Date(lastNote.createdAt).getTime()) / (1000 * 60 * 60 * 24));
 
-      if (daysAgo === 0) result = { text: 'Contacted today', colorClass: 'text-green-500' };
-      else if (daysAgo === 1) result = { text: 'Contacted yesterday', colorClass: 'text-green-500' };
-      else if (daysAgo < 7) result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-green-500' };
+      if (daysAgo === 0) result = { text: 'Contacted today', colorClass: 'text-scoular-green' };
+      else if (daysAgo === 1) result = { text: 'Contacted yesterday', colorClass: 'text-scoular-green' };
+      else if (daysAgo < 7) result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-scoular-green' };
       else if (daysAgo < 30) result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-yellow-500' };
-      else result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-red-500' };
+      else result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-scoular-red' };
     }
 
     this._lastContactCache.set(customerId, result);

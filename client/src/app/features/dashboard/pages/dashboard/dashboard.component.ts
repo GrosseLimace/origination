@@ -230,7 +230,7 @@ export class DashboardComponent {
       'Active': 'bg-green-500',
       'Pending': 'bg-amber-500',
       'Fulfilled': 'bg-blue-500',
-      'Cancelled': 'bg-red-500'
+      'Cancelled': 'bg-scoular-red'
     };
 
     this.contractStatus.set(
@@ -512,7 +512,7 @@ export class DashboardComponent {
     'bg-violet-100 dark:bg-violet-800/35',
     'bg-rose-100 dark:bg-rose-800/35',
     'bg-teal-100 dark:bg-teal-800/35',
-    'bg-orange-100 dark:bg-orange-800/35',
+    'bg-scoular-yellow/10 dark:bg-scoular-yellow/35',
     'bg-indigo-100 dark:bg-indigo-800/35',
   ];
 

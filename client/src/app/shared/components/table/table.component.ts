@@ -109,7 +109,7 @@ export class TableRowComponent {
       classes += ' cursor-pointer';
     }
     if (this.highlighted()) {
-      classes += ' bg-red-50 dark:bg-red-950/20';
+      classes += ' bg-scoular-red/5 dark:bg-red-950/20';
     }
     if (this.class()) {
       classes += ' ' + this.class();

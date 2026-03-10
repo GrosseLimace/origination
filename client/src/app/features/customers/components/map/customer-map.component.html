@@ -2,7 +2,7 @@
   <!-- Header -->
   <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
     <div class="flex items-center gap-2">
-      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green-accessible">
         <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/>
         <line x1="9" x2="9" y1="3" y2="18"/>
         <line x1="15" x2="15" y1="6" y2="21"/>
@@ -44,7 +44,7 @@
       </div>
       @if (focusedState()) {
         <span class="text-gray-300 dark:text-gray-600">|</span>
-        <span class="text-green-600 dark:text-green-400">Focused on: {{ getDisplayName(focusedState()!) }}</span>
+        <span class="text-scoular-green-accessible dark:text-scoular-green">Focused on: {{ getDisplayName(focusedState()!) }}</span>
       }
     </div>
   </div>

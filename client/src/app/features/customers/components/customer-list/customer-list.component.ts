@@ -370,7 +370,7 @@ export class CustomerListComponent {
         this.lastContactCache.set(customer.id, {
           text: 'Never contacted',
           daysAgo: -1,
-          cssClass: 'text-red-500'
+          cssClass: 'text-scoular-red'
         });
         continue;
       }
@@ -405,16 +405,16 @@ export class CustomerListComponent {
     const isSelected = this.selectedCustomer()?.id === customer.id;
     const baseClass = 'p-4 cursor-pointer transition-colors';
     const stateClass = isSelected
-      ? 'bg-green-50 dark:bg-green-900/30'
+      ? 'bg-scoular-green/5 dark:bg-scoular-green/20'
       : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700';
     return `${baseClass} ${stateClass}`;
   }
 
   private _getLastContactClass(daysAgo: number): string {
-    if (daysAgo < 0) return 'text-red-500';
-    if (daysAgo <= 7) return 'text-green-500';
+    if (daysAgo < 0) return 'text-scoular-red';
+    if (daysAgo <= 7) return 'text-scoular-green';
     if (daysAgo <= 30) return 'text-yellow-500';
-    return 'text-red-500';
+    return 'text-scoular-red';
   }
 
   getFormattedLocation(customer: Customer): string {

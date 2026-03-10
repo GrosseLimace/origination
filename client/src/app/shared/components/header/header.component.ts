@@ -29,7 +29,7 @@ import { ButtonComponent } from '@shared/components/button/button.component';
               </svg>
             </button>
             <!-- Wheat Icon -->
-            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600 dark:text-green-500 flex-shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green-accessible dark:text-scoular-green flex-shrink-0">
               <path d="M2 22 16 8"/>
               <path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
               <path d="M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
@@ -73,7 +73,7 @@ import { ButtonComponent } from '@shared/components/button/button.component';
           <!-- Simple row layout for lg screens -->
           <div class="xl:hidden flex items-center justify-between">
             <div class="flex items-center gap-3">
-              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600 dark:text-green-500 flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green-accessible dark:text-scoular-green flex-shrink-0">
                 <path d="M2 22 16 8"/>
                 <path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
                 <path d="M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
@@ -188,7 +188,7 @@ import { ButtonComponent } from '@shared/components/button/button.component';
           <div class="hidden xl:grid xl:grid-cols-12 xl:gap-6">
             <!-- Left: Logo/Title (4 cols - aligned with customer list) -->
             <div class="xl:col-span-4 flex items-center gap-3">
-              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600 dark:text-green-500 flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green-accessible dark:text-scoular-green flex-shrink-0">
                 <path d="M2 22 16 8"/>
                 <path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
                 <path d="M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
@@ -313,7 +313,7 @@ import { ButtonComponent } from '@shared/components/button/button.component';
           <!-- Header -->
           <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
             <div class="flex items-center gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green-accessible">
                 <path d="M2 22 16 8"/>
                 <path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
                 <path d="M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/>
@@ -448,7 +448,7 @@ export class HeaderComponent {
     const baseClass = 'w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors';
     const isCurrentPath = path === '/' ? this.router.url === '/' : this.isActive(path);
     const activeClass = isCurrentPath
-      ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+      ? 'bg-scoular-green/5 dark:bg-scoular-green/20 text-scoular-green-accessible dark:text-scoular-green'
       : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700';
     return `${baseClass} ${activeClass}`;
   }

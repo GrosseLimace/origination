@@ -73,17 +73,17 @@ export class InsightsComponent {
     },
     {
       color: 'orange',
-      headerClass: 'bg-orange-50 dark:bg-orange-900/20 border-b border-orange-100 dark:border-orange-800',
-      pulseClass: 'bg-orange-200 dark:bg-orange-800',
-      pulseSubClass: 'bg-orange-100 dark:bg-orange-900',
-      spinnerClass: 'border-orange-200 dark:border-orange-800 border-t-orange-500 dark:border-t-orange-400',
+      headerClass: 'bg-scoular-yellow/5 dark:bg-scoular-yellow/20 border-b border-scoular-yellow/20 dark:border-scoular-yellow',
+      pulseClass: 'bg-scoular-yellow/20 dark:bg-scoular-yellow',
+      pulseSubClass: 'bg-scoular-yellow/10 dark:bg-orange-900',
+      spinnerClass: 'border-orange-200 dark:border-scoular-yellow border-t-orange-500 dark:border-t-orange-400',
     },
     {
       color: 'red',
-      headerClass: 'bg-red-50 dark:bg-red-900/20 border-b border-red-100 dark:border-red-800',
-      pulseClass: 'bg-red-200 dark:bg-red-800',
-      pulseSubClass: 'bg-red-100 dark:bg-red-900',
-      spinnerClass: 'border-red-200 dark:border-red-800 border-t-red-500 dark:border-t-red-400',
+      headerClass: 'bg-scoular-red/5 dark:bg-scoular-red/20 border-b border-scoular-red/20 dark:border-scoular-red-accessible',
+      pulseClass: 'bg-scoular-red/20 dark:bg-red-800',
+      pulseSubClass: 'bg-scoular-red/10 dark:bg-red-900',
+      spinnerClass: 'border-red-200 dark:border-scoular-red-accessible border-t-red-500 dark:border-t-red-400',
     },
   ];
 
@@ -374,7 +374,7 @@ export class InsightsComponent {
 
   getPriorityBarClass(priority: InsightPriority): string {
     switch (priority) {
-      case 'Urgent': return 'bg-red-400 dark:bg-red-500';
+      case 'Urgent': return 'bg-scoular-red dark:bg-scoular-red';
       case 'Warning': return 'bg-amber-400 dark:bg-amber-500';
       default:        return 'bg-gray-300 dark:bg-gray-600';
     }
@@ -382,10 +382,10 @@ export class InsightsComponent {
 
   getTagClass(style: InsightTagStyle): string {
     switch (style) {
-      case 'commodity': return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400';
-      case 'quantity':  return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400';
-      case 'warning':   return 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400';
-      case 'alert':     return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400';
+      case 'commodity': return 'bg-scoular-green/10 dark:bg-scoular-green/20 text-scoular-green-accessible dark:text-scoular-green';
+      case 'quantity':  return 'bg-scoular-blue/10 dark:bg-scoular-blue/20 text-scoular-blue-medium dark:text-scoular-blue';
+      case 'warning':   return 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-scoular-yellow';
+      case 'alert':     return 'bg-scoular-red/10 dark:bg-scoular-red/20 text-scoular-red-accessible dark:text-scoular-red';
       default:          return 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300';
     }
   }
@@ -393,8 +393,8 @@ export class InsightsComponent {
   getCategoryCountClass(category: InsightCategory): string {
     switch (category) {
       case 'UnconfirmedContracts': return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300';
-      case 'SpotLoads':            return 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300';
-      case 'UnshippedBushels':     return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300';
+      case 'SpotLoads':            return 'bg-scoular-yellow/10 text-scoular-yellow dark:bg-scoular-yellow/20 dark:text-scoular-yellow';
+      case 'UnshippedBushels':     return 'bg-scoular-red/10 text-scoular-red-accessible dark:bg-scoular-red/20 dark:text-scoular-red';
       default:                     return 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
     }
   }
@@ -402,17 +402,17 @@ export class InsightsComponent {
   getCategoryHeaderClass(category: InsightCategory): string {
     switch (category) {
       case 'UnconfirmedContracts': return 'bg-amber-50 dark:bg-amber-900/20 border-b border-amber-100 dark:border-amber-800';
-      case 'SpotLoads':            return 'bg-orange-50 dark:bg-orange-900/20 border-b border-orange-100 dark:border-orange-800';
-      case 'UnshippedBushels':     return 'bg-red-50 dark:bg-red-900/20 border-b border-red-100 dark:border-red-800';
+      case 'SpotLoads':            return 'bg-scoular-yellow/5 dark:bg-scoular-yellow/20 border-b border-scoular-yellow/20 dark:border-scoular-yellow';
+      case 'UnshippedBushels':     return 'bg-scoular-red/5 dark:bg-scoular-red/20 border-b border-scoular-red/20 dark:border-scoular-red-accessible';
       default:                     return 'bg-gray-50 dark:bg-gray-900/20 border-b border-gray-100 dark:border-gray-800';
     }
   }
 
   getCategoryIconClass(category: InsightCategory): string {
     switch (category) {
-      case 'UnconfirmedContracts': return 'text-amber-600 dark:text-amber-400';
-      case 'SpotLoads':            return 'text-orange-600 dark:text-orange-400';
-      case 'UnshippedBushels':     return 'text-red-600 dark:text-red-400';
+      case 'UnconfirmedContracts': return 'text-scoular-yellow dark:text-scoular-yellow';
+      case 'SpotLoads':            return 'text-scoular-yellow dark:text-scoular-yellow';
+      case 'UnshippedBushels':     return 'text-scoular-red-accessible dark:text-scoular-red';
       default:                     return 'text-gray-600 dark:text-gray-400';
     }
   }
@@ -429,17 +429,17 @@ export class InsightsComponent {
   getCategoryTitleClass(category: InsightCategory): string {
     switch (category) {
       case 'UnconfirmedContracts': return 'text-amber-900 dark:text-amber-100';
-      case 'SpotLoads':            return 'text-orange-900 dark:text-orange-100';
-      case 'UnshippedBushels':     return 'text-red-900 dark:text-red-100';
+      case 'SpotLoads':            return 'text-scoular-yellow dark:text-white';
+      case 'UnshippedBushels':     return 'text-scoular-red-accessible dark:text-red-100';
       default:                     return 'text-gray-900 dark:text-gray-100';
     }
   }
 
   getCategorySubtitleClass(category: InsightCategory): string {
     switch (category) {
-      case 'UnconfirmedContracts': return 'text-amber-600 dark:text-amber-400';
-      case 'SpotLoads':            return 'text-orange-600 dark:text-orange-400';
-      case 'UnshippedBushels':     return 'text-red-600 dark:text-red-400';
+      case 'UnconfirmedContracts': return 'text-scoular-yellow dark:text-scoular-yellow';
+      case 'SpotLoads':            return 'text-scoular-yellow dark:text-scoular-yellow';
+      case 'UnshippedBushels':     return 'text-scoular-red-accessible dark:text-scoular-red';
       default:                     return 'text-gray-600 dark:text-gray-400';
     }
   }
@@ -454,8 +454,8 @@ export class InsightsComponent {
   getCategoryBadgeClass(category: InsightCategory): string {
     switch (category) {
       case 'UnconfirmedContracts': return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300';
-      case 'SpotLoads':            return 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300';
-      case 'UnshippedBushels':     return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300';
+      case 'SpotLoads':            return 'bg-scoular-yellow/10 text-scoular-yellow dark:bg-scoular-yellow/20 dark:text-scoular-yellow';
+      case 'UnshippedBushels':     return 'bg-scoular-red/10 text-scoular-red-accessible dark:bg-scoular-red/20 dark:text-scoular-red';
       default:                     return 'bg-gray-100 text-gray-800 dark:bg-gray-900/40 dark:text-gray-300';
     }
   }
