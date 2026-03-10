@@ -1,6 +1,6 @@
 export const environment = {
   production: false,
-  envName: 'Dev',
+  envName: 'Local',
   apiBaseUrl: 'http://localhost:5000/api',
   msalConfig: {
     auth: {

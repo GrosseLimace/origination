@@ -46,9 +46,12 @@ export class CustomerListComponent {
   searchQuery = signal('');
   selectedListId = signal('all');
   selectedTradeUnits = signal<string[]>([]);
-  tradeUnits = signal<string[]>([]);
+  userGroups = signal<{ groupName: string; tradeUnitCodes: string[] }[]>([]);
+  selectedGroupNames = signal<string[]>([]);
   filteredCustomers = signal<Customer[]>([]);
   isTradeUnitDropdownOpen = signal(false);
+  isGroupDropdownOpen = signal(false);
+  groupsLoading = signal(true);
 
   // Performance optimization: Cache last contact info to avoid repeated filtering/sorting
   lastContactCache = new Map<number, LastContactInfo>();
@@ -59,6 +62,7 @@ export class CustomerListComponent {
     // Restore state from service
     this.searchQuery.set(this.appStateService.searchQuery());
     this.selectedTradeUnits.set(this.appStateService.selectedTradeUnits());
+    this.selectedGroupNames.set(this.appStateService.selectedGroupNames());
     this.selectedListId.set(this.appStateService.selectedSavedListId() || 'all');
 
     // Re-run NLQ to populate customerIds for the restored list selection
@@ -68,14 +72,30 @@ export class CustomerListComponent {
       this.applyFilters();
     }
 
-    // Load trade units
-    this.apiService.getTradeUnits().pipe(
+    // Load trade unit groups — derive available trade units from user's groups
+    this.apiService.getTradeUnitGroups().pipe(
       takeUntilDestroyed(this.destroyRef)
     ).subscribe({
-      next: (units) => {
-        this.tradeUnits.set(units);
+      next: (groups) => {
+        const mapped = groups.map(g => ({
+          groupName: g.groupName,
+          tradeUnitCodes: g.tradeUnits.map(u => u.tradeUnitCode)
+        }));
+        this.userGroups.set(mapped);
+        this.groupsLoading.set(false);
+        // Restore group selection, filtering out groups that no longer exist
+        const prevGroups = this.appStateService.selectedGroupNames();
+        if (prevGroups.length > 0) {
+          this.selectedGroupNames.set(prevGroups.filter(g => mapped.some(m => m.groupName === g)));
+        }
+        // Restore trade unit selection, keeping only units still available
+        const prevUnits = this.appStateService.selectedTradeUnits();
+        if (prevUnits.length > 0) {
+          const allAvailable = this._computeAvailableTradeUnits(mapped, this.selectedGroupNames());
+          this.selectedTradeUnits.set(prevUnits.filter(u => allAvailable.includes(u)));
+        }
       },
-      error: () => {}
+      error: () => { this.groupsLoading.set(false); }
     });
 
     // Set up search debouncing
@@ -144,8 +164,72 @@ export class CustomerListComponent {
     }, { allowSignalWrites: true });
   }
 
+  // ---- Group helpers ----
+
+  getAvailableTradeUnits(): string[] {
+    return this._computeAvailableTradeUnits(this.userGroups(), this.selectedGroupNames());
+  }
+
+  private _computeAvailableTradeUnits(
+    groups: { groupName: string; tradeUnitCodes: string[] }[],
+    selectedGroups: string[]
+  ): string[] {
+    if (groups.length <= 1) return groups[0]?.tradeUnitCodes ?? [];
+    if (selectedGroups.length === 0) return [];
+    const units = new Set<string>();
+    for (const g of groups) {
+      if (selectedGroups.includes(g.groupName)) {
+        g.tradeUnitCodes.forEach(u => units.add(u));
+      }
+    }
+    return [...units].sort();
+  }
+
+  getGroupButtonText(): string {
+    const sel = this.selectedGroupNames();
+    if (sel.length === 0) return 'Select a Group';
+    if (sel.length === 1) return sel[0];
+    return `${sel.length} groups selected`;
+  }
+
+  isGroupSelected(groupName: string): boolean {
+    return this.selectedGroupNames().includes(groupName);
+  }
+
+  toggleGroupDropdown(): void {
+    this.isGroupDropdownOpen.update(v => !v);
+    if (this.isGroupDropdownOpen()) {
+      this.isTradeUnitDropdownOpen.set(false);
+    }
+  }
+
+  toggleGroupSelection(groupName: string): void {
+    this.selectedGroupNames.update(names => {
+      const idx = names.indexOf(groupName);
+      return idx > -1 ? names.filter((_, i) => i !== idx) : [...names, groupName];
+    });
+    // Remove selected trade units no longer in any selected group
+    const available = this.getAvailableTradeUnits();
+    this.selectedTradeUnits.update(units => units.filter(u => available.includes(u)));
+    this.appStateService.setSelectedGroupNames(this.selectedGroupNames());
+    this.onTradeUnitsChange();
+  }
+
+  getListMaxHeight(): string {
+    const hasSavedLists = !this.loading() && this.getVisibleSavedLists().length > 0;
+    const hasGroupDropdown = !this.groupsLoading() && this.userGroups().length > 1;
+    let offset = hasSavedLists ? 21 : 16;
+    if (hasGroupDropdown) offset += 3;
+    return `calc(100vh - ${offset}rem)`;
+  }
+
+  // ---- Trade unit helpers ----
+
   toggleTradeUnitDropdown(): void {
     this.isTradeUnitDropdownOpen.update(v => !v);
+    if (this.isTradeUnitDropdownOpen()) {
+      this.isGroupDropdownOpen.set(false);
+    }
   }
 
   closeDropdown(): void {
@@ -191,6 +275,7 @@ export class CustomerListComponent {
 
   @HostListener('document:click', ['$event'])
   onDocumentClick(event: MouseEvent): void {
+    this.isGroupDropdownOpen.set(false);
     // Close dropdown when clicking outside
     if (this.isTradeUnitDropdownOpen()) {
       this.closeDropdown();

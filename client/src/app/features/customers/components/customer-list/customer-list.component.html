@@ -6,7 +6,51 @@
           <!-- Title Row -->
           <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Customers</h3>
 
+          <!-- Group Dropdown — only shown when user belongs to multiple groups -->
+          @if (groupsLoading()) {
+            <div class="h-9 flex items-center gap-2 px-3 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700 text-sm text-gray-400">
+              <span class="animate-pulse">Loading groups...</span>
+            </div>
+          } @else if (userGroups().length > 1) {
+            <div class="relative" (click)="$event.stopPropagation()">
+              <button
+                type="button"
+                (click)="toggleGroupDropdown()"
+                class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-scoular-green flex items-center gap-2 justify-between transition-colors"
+              >
+                <div class="flex items-center gap-2 min-w-0 flex-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0 text-gray-400">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                  </svg>
+                  <span class="truncate">{{ getGroupButtonText() }}</span>
+                </div>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0 transition-transform" [class.rotate-180]="isGroupDropdownOpen()">
+                  <path d="m6 9 6 6 6-6"/>
+                </svg>
+              </button>
+              @if (isGroupDropdownOpen()) {
+                <div class="absolute left-0 right-0 mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg z-50">
+                  <div class="max-h-[200px] overflow-y-auto p-2 space-y-1">
+                    @for (g of userGroups(); track g.groupName) {
+                      <label class="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-600 rounded cursor-pointer transition-colors">
+                        <input
+                          type="checkbox"
+                          [checked]="isGroupSelected(g.groupName)"
+                          (change)="toggleGroupSelection(g.groupName)"
+                          class="rounded border-gray-300 text-scoular-green-accessible focus:ring-scoular-green"
+                        />
+                        <span class="text-sm text-gray-900 dark:text-white">{{ g.groupName }}</span>
+                      </label>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          }
+
           <!-- Trade Unit Dropdown -->
+          @if (!groupsLoading() && getAvailableTradeUnits().length > 0) {
           <div class="relative">
             <button
               (click)="toggleTradeUnitDropdown(); $event.stopPropagation()"
@@ -29,7 +73,7 @@
                 class="absolute left-0 right-0 mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg z-50"
               >
                 <div class="max-h-[350px] overflow-y-auto p-2 space-y-1">
-                  @for (unit of tradeUnits(); track unit) {
+                  @for (unit of getAvailableTradeUnits(); track unit) {
                     <label class="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-600 rounded cursor-pointer transition-colors">
                       <input
                         type="checkbox"
@@ -59,6 +103,7 @@
               </div>
             }
           </div>
+          }
 
           <!-- Search Box -->
           <div class="relative">
@@ -106,7 +151,7 @@
         }
 
         <!-- Customer List -->
-        <div #scrollContainer class="divide-y divide-gray-200 dark:divide-gray-700 overflow-y-auto" [style.max-height]="!loading() && getVisibleSavedLists().length > 0 ? 'calc(100vh - 21rem)' : 'calc(100vh - 16rem)'"
+        <div #scrollContainer class="divide-y divide-gray-200 dark:divide-gray-700 overflow-y-auto" [style.max-height]="getListMaxHeight()"
         >
           @if (loading() && selectedTradeUnits().length > 0) {
             <div class="p-8 text-center">
@@ -144,7 +189,7 @@
               >
                 <!-- Row 1: Name and Acres -->
                 <div class="flex items-center justify-between gap-2">
-                  <h3 class="font-medium text-gray-900 dark:text-white truncate flex-1 min-w-0">{{ customer.name }}</h3>
+                  <p class="text-sm font-semibold text-gray-900 dark:text-white truncate flex-1 min-w-0">{{ customer.name }}</p>
                   <app-badge variant="secondary" class="flex-shrink-0 whitespace-nowrap">{{ customer.totalAcres | number }} acres</app-badge>
                 </div>
                 @if (customer.sourceCustomerId) {
