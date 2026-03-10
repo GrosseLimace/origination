@@ -76,21 +76,24 @@ public class GeocodeController : ControllerBase
             }
             else if (response.StatusCode == HttpStatusCode.TooManyRequests)
             {
-                _logger.LogWarning("Nominatim rate limit hit for {CacheKey} [{ErrorCode}]", cacheKey, "INFRASTRUCTURE_GEOCODE_RATE_LIMITED");
+                _logger.LogError("Nominatim rate limit hit for {CacheKey} [{ErrorCode}] [{ErrorCategory}]",
+                    cacheKey, "INFRASTRUCTURE_GEOCODE_RATE_LIMITED", "Infrastructure");
             }
             else
             {
-                _logger.LogWarning("Nominatim returned {StatusCode} for {CacheKey} [{ErrorCode}]",
-                    (int)response.StatusCode, cacheKey, "INFRASTRUCTURE_GEOCODE_UNAVAILABLE");
+                _logger.LogError("Nominatim returned {StatusCode} for {CacheKey} [{ErrorCode}] [{ErrorCategory}]",
+                    (int)response.StatusCode, cacheKey, "INFRASTRUCTURE_GEOCODE_UNAVAILABLE", "Infrastructure");
             }
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogWarning(ex, "Geocode HTTP failure for {CacheKey} [{ErrorCode}]", cacheKey, "INFRASTRUCTURE_GEOCODE_UNAVAILABLE");
+            _logger.LogError(ex, "Geocode HTTP failure for {CacheKey} [{ErrorCode}] [{ErrorCategory}]",
+                cacheKey, "INFRASTRUCTURE_GEOCODE_UNAVAILABLE", "Infrastructure");
         }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            _logger.LogWarning(ex, "Geocode request timed out for {CacheKey} [{ErrorCode}]", cacheKey, "INFRASTRUCTURE_TIMEOUT");
+            _logger.LogError(ex, "Geocode request timed out for {CacheKey} [{ErrorCode}] [{ErrorCategory}]",
+                cacheKey, "INFRASTRUCTURE_TIMEOUT", "Infrastructure");
         }
         finally
         {
@@ -142,9 +145,9 @@ public class GeocodeController : ControllerBase
                 {
                     // Exponential backoff with jitter per §6.2: min(baseDelay × 2^attempt + jitter, maxDelay)
                     var backoffMs = (int)Math.Min(500 * Math.Pow(2, rateLimitAttempt) + Random.Shared.Next(0, 200), 30_000);
-                    _logger.LogWarning(
-                        "Nominatim rate limit on batch item {CacheKey}. Backing off {BackoffMs}ms (attempt {Attempt}) [{ErrorCode}]",
-                        cacheKey, backoffMs, rateLimitAttempt + 1, "INFRASTRUCTURE_GEOCODE_RATE_LIMITED");
+                    _logger.LogError(
+                        "Nominatim rate limit on batch item {CacheKey}. Backing off {BackoffMs}ms (attempt {Attempt}) [{ErrorCode}] [{ErrorCategory}]",
+                        cacheKey, backoffMs, rateLimitAttempt + 1, "INFRASTRUCTURE_GEOCODE_RATE_LIMITED", "Infrastructure");
                     await Task.Delay(backoffMs, cancellationToken);
                     rateLimitAttempt++;
                     results.Add(new GeocodeResult { Key = req.Key });
@@ -172,8 +175,8 @@ public class GeocodeController : ControllerBase
                 }
                 else
                 {
-                    _logger.LogWarning("Nominatim returned {StatusCode} for batch item {CacheKey} [{ErrorCode}]",
-                        (int)response.StatusCode, cacheKey, "INFRASTRUCTURE_GEOCODE_UNAVAILABLE");
+                    _logger.LogError("Nominatim returned {StatusCode} for batch item {CacheKey} [{ErrorCode}] [{ErrorCategory}]",
+                        (int)response.StatusCode, cacheKey, "INFRASTRUCTURE_GEOCODE_UNAVAILABLE", "Infrastructure");
                     results.Add(new GeocodeResult { Key = req.Key });
                 }
 
@@ -182,12 +185,14 @@ public class GeocodeController : ControllerBase
             }
             catch (HttpRequestException ex)
             {
-                _logger.LogWarning(ex, "Batch geocode HTTP failure for {CacheKey} [{ErrorCode}]", cacheKey, "INFRASTRUCTURE_GEOCODE_UNAVAILABLE");
+                _logger.LogError(ex, "Batch geocode HTTP failure for {CacheKey} [{ErrorCode}] [{ErrorCategory}]",
+                    cacheKey, "INFRASTRUCTURE_GEOCODE_UNAVAILABLE", "Infrastructure");
                 results.Add(new GeocodeResult { Key = req.Key });
             }
             catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
             {
-                _logger.LogWarning(ex, "Batch geocode timed out for {CacheKey} [{ErrorCode}]", cacheKey, "INFRASTRUCTURE_TIMEOUT");
+                _logger.LogError(ex, "Batch geocode timed out for {CacheKey} [{ErrorCode}] [{ErrorCategory}]",
+                    cacheKey, "INFRASTRUCTURE_TIMEOUT", "Infrastructure");
                 results.Add(new GeocodeResult { Key = req.Key });
             }
         }

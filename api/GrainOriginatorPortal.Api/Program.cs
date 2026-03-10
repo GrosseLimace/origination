@@ -134,13 +134,19 @@ builder.Services.AddCors(options =>
 // HTTP CLIENTS
 // Nominatim geocoding client — BaseAddress set here so controllers use relative URLs.
 // Resilience pipeline: retry with exponential backoff + circuit breaker per §6.
+// CorrelationIdOutboundHandler propagates X-Correlation-Id to all outbound calls (§8).
 // =============================================================================
+
+// Register the outbound correlation handler so the DI container can create it
+builder.Services.AddTransient<CorrelationIdOutboundHandler>();
+
 builder.Services.AddHttpClient("nominatim", client =>
 {
     client.BaseAddress = new Uri("https://nominatim.openstreetmap.org/");
     client.DefaultRequestHeaders.Add("User-Agent", "GrainOriginatorPortal/1.0");
     client.Timeout = TimeSpan.FromSeconds(10);
 })
+.AddHttpMessageHandler<CorrelationIdOutboundHandler>()
 .AddResilienceHandler("nominatim", pipeline =>
 {
     // Retry: up to 3 attempts with exponential backoff + jitter (§6.2)
@@ -218,6 +224,11 @@ app.UseExceptionHandler();
 
 // Correlation ID — generate/propagate X-Correlation-Id on every request (§8)
 app.UseMiddleware<CorrelationIdMiddleware>();
+
+// Request context — sets ServiceName, Operation, TraceId, UserId in log scope
+// for every request so all log entries include the §4.1 required structured fields.
+// Must run after CorrelationIdMiddleware so traceId is already resolved.
+app.UseMiddleware<RequestContextMiddleware>();
 
 // Apply CORS policy to allow Angular frontend requests
 // MUST come before UseHttpsRedirection to handle preflight requests correctly

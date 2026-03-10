@@ -41,8 +41,8 @@ public class GlobalExceptionHandler : IExceptionHandler
         {
             case NotFoundException notFound:
                 _logger.LogInformation(
-                    "Resource not found [{TraceId}]: {Message}",
-                    traceId, notFound.Message);
+                    "Resource not found [{TraceId}] [{ErrorCode}] [{ErrorCategory}]: {Message}",
+                    traceId, "RESOURCE_NOT_FOUND", "NotFound", notFound.Message);
 
                 statusCode = StatusCodes.Status404NotFound;
                 response = BuildError("RESOURCE_NOT_FOUND", notFound.Message, traceId, timestamp, instance);
@@ -50,8 +50,8 @@ public class GlobalExceptionHandler : IExceptionHandler
 
             case Exceptions.ValidationException validation:
                 _logger.LogWarning(
-                    "Validation error [{TraceId}]: {FieldCount} field(s) failed",
-                    traceId, validation.Errors.Count);
+                    "Validation error [{TraceId}] [{ErrorCode}] [{ErrorCategory}]: {FieldCount} field(s) failed",
+                    traceId, "VALIDATION_ERROR", "Validation", validation.Errors.Count);
 
                 var details = validation.Errors
                     .SelectMany(kvp => kvp.Value.Select(msg => new ApiErrorDetail
@@ -68,8 +68,8 @@ public class GlobalExceptionHandler : IExceptionHandler
 
             case BusinessException business:
                 _logger.LogWarning(
-                    "Business rule violation [{TraceId}] [{ErrorCode}]: {Message}",
-                    traceId, business.ErrorCode, business.Message);
+                    "Business rule violation [{TraceId}] [{ErrorCode}] [{ErrorCategory}]: {Message}",
+                    traceId, business.ErrorCode, "Business", business.Message);
 
                 statusCode = business.HttpStatusCode;
                 response = BuildError(business.ErrorCode, business.Message, traceId, timestamp, instance);
@@ -78,8 +78,8 @@ public class GlobalExceptionHandler : IExceptionHandler
             case InfrastructureException infra:
                 _logger.LogError(
                     exception,
-                    "Infrastructure failure [{TraceId}] [{ErrorCode}]: {Message}",
-                    traceId, infra.ErrorCode, infra.Message);
+                    "Infrastructure failure [{TraceId}] [{ErrorCode}] [{ErrorCategory}]: {Message}",
+                    traceId, infra.ErrorCode, "Infrastructure", infra.Message);
 
                 statusCode = infra.HttpStatusCode;
                 response = BuildError(
@@ -91,8 +91,8 @@ public class GlobalExceptionHandler : IExceptionHandler
             default:
                 _logger.LogCritical(
                     exception,
-                    "Unhandled exception [{TraceId}]: {Message}",
-                    traceId, exception.Message);
+                    "Unhandled exception [{TraceId}] [{ErrorCode}] [{ErrorCategory}]: {Message}",
+                    traceId, "INTERNAL_ERROR", "Unexpected", exception.Message);
 
                 statusCode = StatusCodes.Status500InternalServerError;
                 response = BuildError(
