@@ -1,3 +1,6 @@
+// Project namespaces
+using GrainOriginatorPortal.Api.Exceptions;
+
 namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
@@ -28,11 +31,8 @@ public class FarmsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<Farm>> GetById(string id, CancellationToken cancellationToken = default)
     {
-        var farm = await _dataService.GetFarmByIdAsync(id, cancellationToken);
-        if (farm == null)
-        {
-            return NotFound();
-        }
+        var farm = await _dataService.GetFarmByIdAsync(id, cancellationToken)
+            ?? throw new NotFoundException("Farm", id);
         return Ok(farm);
     }
 

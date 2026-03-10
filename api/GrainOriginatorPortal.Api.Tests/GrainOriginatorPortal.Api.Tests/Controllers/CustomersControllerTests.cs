@@ -6,6 +6,7 @@ using Moq;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Controllers;
+using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Interfaces;
 using GrainOriginatorPortal.Api.Models;
 
@@ -61,16 +62,13 @@ public class CustomersControllerTests
 
     // -------------------------------------------------------------------------
     [Fact]
-    public async Task GetById_WhenNotFound_ReturnsNotFound()
+    public async Task GetById_WhenNotFound_ThrowsNotFoundException()
     {
         // Arrange
         _dataServiceMock.Setup(s => s.GetCustomerByIdAsync(999, It.IsAny<CancellationToken>())).ReturnsAsync((Customer?)null);
 
-        // Act
-        var result = await _sut.GetById(999);
-
-        // Assert
-        Assert.IsType<NotFoundResult>(result.Result);
+        // Act & Assert
+        await Assert.ThrowsAsync<NotFoundException>(() => _sut.GetById(999));
     }
 
     // -------------------------------------------------------------------------

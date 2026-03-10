@@ -1,3 +1,6 @@
+// Project namespaces
+using GrainOriginatorPortal.Api.Exceptions;
+
 namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
@@ -70,7 +73,7 @@ public class PlantingIntentionsController : ControllerBase
         );
         if (updated == null)
         {
-            return NotFound();
+            throw new NotFoundException("PlantingIntention", id);
         }
         return Ok(updated);
     }

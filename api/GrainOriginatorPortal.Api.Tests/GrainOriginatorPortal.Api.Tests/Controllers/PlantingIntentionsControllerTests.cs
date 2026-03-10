@@ -6,6 +6,7 @@ using Moq;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Controllers;
+using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Interfaces;
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Models.Requests;
@@ -87,7 +88,7 @@ public class PlantingIntentionsControllerTests
 
     // -------------------------------------------------------------------------
     [Fact]
-    public async Task Update_WhenNotFound_ReturnsNotFound()
+    public async Task Update_WhenNotFound_ThrowsNotFoundException()
     {
         // Arrange
         _dataServiceMock
@@ -96,11 +97,8 @@ public class PlantingIntentionsControllerTests
 
         var request = new UpdatePlantingIntentionRequest { Crop = "Corn", Acres = 100, PlantingYear = 2026 };
 
-        // Act
-        var result = await _sut.Update(99, request);
-
-        // Assert
-        Assert.IsType<NotFoundResult>(result.Result);
+        // Act & Assert
+        await Assert.ThrowsAsync<NotFoundException>(() => _sut.Update(99, request));
     }
 
     // -------------------------------------------------------------------------

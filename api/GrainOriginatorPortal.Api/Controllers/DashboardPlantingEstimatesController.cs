@@ -1,3 +1,6 @@
+// Project namespaces
+using GrainOriginatorPortal.Api.Exceptions;
+
 namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
@@ -19,10 +22,7 @@ public class DashboardPlantingEstimatesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<List<DashboardPlantingEstimate>>> Get([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(tradeUnitKey) || plantingYear < 2020 || plantingYear > DateTime.Now.Year + 5)
-        {
-            return BadRequest("tradeUnitKey and plantingYear are required.");
-        }
+        ValidateDashboardParams(tradeUnitKey, plantingYear);
         return Ok(await _dataService.GetDashboardPlantingEstimatesAsync(tradeUnitKey, plantingYear, cancellationToken));
     }
 
@@ -35,7 +35,7 @@ public class DashboardPlantingEstimatesController : ControllerBase
     {
         if (estimates == null || estimates.Count == 0)
         {
-            return BadRequest("No estimates provided.");
+            throw new ValidationException("estimates", "At least one estimate must be provided.");
         }
         await _dataService.UpsertDashboardPlantingEstimatesAsync(estimates, "system", cancellationToken);
         return NoContent();
@@ -48,10 +48,7 @@ public class DashboardPlantingEstimatesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<List<DashboardMarketShare>>> GetMarketShares([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(tradeUnitKey) || plantingYear < 2020 || plantingYear > DateTime.Now.Year + 5)
-        {
-            return BadRequest("tradeUnitKey and plantingYear are required.");
-        }
+        ValidateDashboardParams(tradeUnitKey, plantingYear);
         return Ok(await _dataService.GetDashboardMarketSharesAsync(tradeUnitKey, plantingYear, cancellationToken));
     }
 
@@ -64,7 +61,7 @@ public class DashboardPlantingEstimatesController : ControllerBase
     {
         if (shares == null || shares.Count == 0)
         {
-            return BadRequest("No market shares provided.");
+            throw new ValidationException("shares", "At least one market share must be provided.");
         }
         await _dataService.UpsertDashboardMarketSharesAsync(shares, "system", cancellationToken);
         return NoContent();
@@ -77,10 +74,7 @@ public class DashboardPlantingEstimatesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<List<DashboardActualHarvest>>> GetActualHarvest([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(tradeUnitKey) || plantingYear < 2020 || plantingYear > DateTime.Now.Year + 5)
-        {
-            return BadRequest("tradeUnitKey and plantingYear are required.");
-        }
+        ValidateDashboardParams(tradeUnitKey, plantingYear);
         return Ok(await _dataService.GetDashboardActualHarvestAsync(tradeUnitKey, plantingYear, cancellationToken));
     }
 
@@ -93,7 +87,7 @@ public class DashboardPlantingEstimatesController : ControllerBase
     {
         if (items == null || items.Count == 0)
         {
-            return BadRequest("No harvest items provided.");
+            throw new ValidationException("items", "At least one harvest item must be provided.");
         }
         await _dataService.UpsertDashboardActualHarvestAsync(items, "system", cancellationToken);
         return NoContent();
@@ -107,5 +101,27 @@ public class DashboardPlantingEstimatesController : ControllerBase
     {
         await _dataService.DeleteDashboardActualHarvestAsync(id, cancellationToken);
         return NoContent();
+    }
+
+    // -------------------------------------------------------------------------
+    private static void ValidateDashboardParams(string tradeUnitKey, int plantingYear)
+    {
+        var errors = new Dictionary<string, string[]>();
+
+        if (string.IsNullOrWhiteSpace(tradeUnitKey))
+        {
+            errors["tradeUnitKey"] = ["tradeUnitKey is required."];
+        }
+
+        var maxYear = DateTime.Now.Year + 5;
+        if (plantingYear < 2020 || plantingYear > maxYear)
+        {
+            errors["plantingYear"] = [$"plantingYear must be between 2020 and {maxYear}."];
+        }
+
+        if (errors.Count > 0)
+        {
+            throw new Exceptions.ValidationException(errors);
+        }
     }
 }

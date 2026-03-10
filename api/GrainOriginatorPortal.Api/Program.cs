@@ -20,7 +20,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Register global exception handler — returns ApiErrorResponse per error-handling-standards.md §2
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
-builder.Services.AddProblemDetails();
+
+// Required for IHttpContextAccessor in SqlDataService (traceId propagation to service-layer logs)
+builder.Services.AddHttpContextAccessor();
 
 // Add MVC controllers for REST API endpoints
 // Configure JSON to serialize enums as strings instead of numbers

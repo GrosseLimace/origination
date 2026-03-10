@@ -1,3 +1,6 @@
+// Project namespaces
+using GrainOriginatorPortal.Api.Exceptions;
+
 namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
@@ -50,11 +53,8 @@ public class CustomersController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<Customer>> GetById(long id, CancellationToken cancellationToken = default)
     {
-        var customer = await _dataService.GetCustomerByIdAsync(id, cancellationToken);
-        if (customer == null)
-        {
-            return NotFound();
-        }
+        var customer = await _dataService.GetCustomerByIdAsync(id, cancellationToken)
+            ?? throw new NotFoundException("Customer", id);
         return Ok(customer);
     }
 
@@ -65,11 +65,8 @@ public class CustomersController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<Customer>> Update(long id, [FromBody] Customer request, CancellationToken cancellationToken = default)
     {
-        var customer = await _dataService.GetCustomerByIdAsync(id, cancellationToken);
-        if (customer == null)
-        {
-            return NotFound();
-        }
+        var customer = await _dataService.GetCustomerByIdAsync(id, cancellationToken)
+            ?? throw new NotFoundException("Customer", id);
 
         await _dataService.UpdateCustomerAsync(
             id,

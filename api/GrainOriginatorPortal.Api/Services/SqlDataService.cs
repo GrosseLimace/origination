@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.SqlClient;
 using GrainOriginatorPortal.Api.Data;
+using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Models;
 
 namespace GrainOriginatorPortal.Api.Services;
@@ -14,13 +15,20 @@ public class SqlDataService : IDataService
     private readonly OriginationDbContext _context;
     private readonly ApplicationDbContext _appContext;
     private readonly ILogger<SqlDataService> _logger;
+    private readonly IHttpContextAccessor _httpContextAccessor;
 
-    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger)
+    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor)
     {
         _context = context;
         _appContext = appContext;
         _logger = logger;
+        _httpContextAccessor = httpContextAccessor;
     }
+
+    private string GetTraceId() =>
+        _httpContextAccessor.HttpContext?.Items[CorrelationIdMiddleware.ItemsKey]?.ToString()
+        ?? _httpContextAccessor.HttpContext?.TraceIdentifier
+        ?? "no-trace";
 
     // =========================================================================
     // Customer Operations
@@ -81,7 +89,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving customers");
+            _logger.LogError(ex, "Error retrieving customers [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -163,7 +172,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error searching customers for term: {SearchTerm}", searchTerm);
+            _logger.LogError(ex, "Error searching customers for term: {SearchTerm} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                searchTerm, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -282,7 +292,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving customer {CustomerId}", id);
+            _logger.LogError(ex, "Error retrieving customer {CustomerId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                id, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -316,7 +327,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating customer {CustomerId}", customerId);
+            _logger.LogError(ex, "Error updating customer {CustomerId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                customerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -354,7 +366,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving trade units");
+            _logger.LogError(ex, "Error retrieving trade units [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -483,7 +496,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving commodities");
+            _logger.LogError(ex, "Error retrieving commodities [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -504,7 +518,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving trade unit groups");
+            _logger.LogError(ex, "Error retrieving trade unit groups [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -610,7 +625,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving contracts");
+            _logger.LogError(ex, "Error retrieving contracts [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -678,7 +694,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving contracts for customer {CustomerId}", customerId);
+            _logger.LogError(ex, "Error retrieving contracts for customer {CustomerId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                customerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -694,7 +711,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving contracts for farm {FarmId}", farmId);
+            _logger.LogError(ex, "Error retrieving contracts for farm {FarmId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                farmId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -711,7 +729,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving pricing lines for contract {ContractId}", sourceContractId);
+            _logger.LogError(ex, "Error retrieving pricing lines for contract {ContractId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                sourceContractId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -729,7 +748,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving pricing lines for customer {CustomerId}", sourceCustomerId);
+            _logger.LogError(ex, "Error retrieving pricing lines for customer {CustomerId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                sourceCustomerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -854,8 +874,9 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving tickets");
-            return new List<Ticket>(); // Return empty on error rather than failing
+            _logger.LogError(ex, "Error retrieving tickets [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            throw;
         }
     }
 
@@ -903,8 +924,9 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving tickets for customer {CustomerId}", customerId);
-            return new List<Ticket>(); // Return empty on error
+            _logger.LogError(ex, "Error retrieving tickets for customer {CustomerId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                customerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            throw;
         }
     }
 
@@ -918,8 +940,9 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving tickets for farm {FarmId}", farmId);
-            return new List<Ticket>();
+            _logger.LogError(ex, "Error retrieving tickets for farm {FarmId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                farmId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            throw;
         }
     }
 
@@ -944,7 +967,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving planting intentions");
+            _logger.LogError(ex, "Error retrieving planting intentions [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -967,7 +991,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving planting intentions for customer {CustomerId}", customerId);
+            _logger.LogError(ex, "Error retrieving planting intentions for customer {CustomerId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                customerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -999,7 +1024,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating planting intention for customer {CustomerId}", customerId);
+            _logger.LogError(ex, "Error creating planting intention for customer {CustomerId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                customerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -1029,7 +1055,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating planting intention {Id}", intentionId);
+            _logger.LogError(ex, "Error updating planting intention {Id} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                intentionId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -1048,7 +1075,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting planting intention {Id}", intentionId);
+            _logger.LogError(ex, "Error deleting planting intention {Id} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                intentionId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -1075,7 +1103,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving notes");
+            _logger.LogError(ex, "Error retrieving notes [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -1097,7 +1126,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving notes for customer {CustomerId}", customerId);
+            _logger.LogError(ex, "Error retrieving notes for customer {CustomerId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                customerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -1131,7 +1161,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating note for customer {CustomerId}", customerId);
+            _logger.LogError(ex, "Error creating note for customer {CustomerId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                customerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -1154,7 +1185,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error toggling pin for note {NoteId}", noteId);
+            _logger.LogError(ex, "Error toggling pin for note {NoteId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                noteId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -1179,7 +1211,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating note {NoteId}", noteId);
+            _logger.LogError(ex, "Error updating note {NoteId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                noteId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -1201,7 +1234,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting note {NoteId}", noteId);
+            _logger.LogError(ex, "Error deleting note {NoteId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                noteId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -1218,8 +1252,9 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning("ProducerDetails table not accessible for customer {CustomerId}. Error: {Error}", customerId, ex.Message);
-            return null;
+            _logger.LogError(ex, "Error retrieving producer details for customer {CustomerId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                customerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            throw;
         }
     }
 
@@ -1282,7 +1317,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error upserting ProducerDetails for customer {CustomerId}", customerId);
+            _logger.LogError(ex, "Error upserting ProducerDetails for customer {CustomerId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                customerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -1301,7 +1337,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting ProducerDetails for customer {CustomerId}", customerId);
+            _logger.LogError(ex, "Error deleting ProducerDetails for customer {CustomerId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                customerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -1338,8 +1375,9 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving saved lists");
-            return new List<SavedList>();
+            _logger.LogError(ex, "Error retrieving saved lists [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            throw;
         }
     }
 
@@ -1362,7 +1400,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error saving list");
+            _logger.LogError(ex, "Error saving list [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -1382,7 +1421,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating saved list {ListId}", listId);
+            _logger.LogError(ex, "Error updating saved list {ListId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                listId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -1398,7 +1438,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting saved list {ListId}", listId);
+            _logger.LogError(ex, "Error deleting saved list {ListId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                listId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }

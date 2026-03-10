@@ -1,3 +1,6 @@
+// Project namespaces
+using GrainOriginatorPortal.Api.Exceptions;
+
 namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
@@ -48,7 +51,7 @@ public class ContractsController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(sourceContractId))
         {
-            return BadRequest("sourceContractId is required");
+            throw new ValidationException("sourceContractId", "sourceContractId is required.");
         }
         return Ok(await _dataService.GetPricingLinesAsync(sourceContractId, cancellationToken));
     }
@@ -62,7 +65,7 @@ public class ContractsController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(sourceCustomerId))
         {
-            return BadRequest("sourceCustomerId is required");
+            throw new ValidationException("sourceCustomerId", "sourceCustomerId is required.");
         }
         return Ok(await _dataService.GetPricingLinesByCustomerAsync(sourceCustomerId, cancellationToken));
     }

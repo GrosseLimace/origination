@@ -62,11 +62,8 @@ public class NotesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<Note>> TogglePin(long id, CancellationToken cancellationToken = default)
     {
-        var note = await _dataService.ToggleNotePinAsync(id, cancellationToken);
-        if (note == null)
-        {
-            return NotFound();
-        }
+        var note = await _dataService.ToggleNotePinAsync(id, cancellationToken)
+            ?? throw new NotFoundException("Note", id);
         return Ok(note);
     }
 
@@ -77,11 +74,8 @@ public class NotesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<Note>> Update(long id, [FromBody] UpdateNoteRequest request, CancellationToken cancellationToken = default)
     {
-        var note = await _dataService.UpdateNoteAsync(id, request.Content, cancellationToken);
-        if (note == null)
-        {
-            return NotFound();
-        }
+        var note = await _dataService.UpdateNoteAsync(id, request.Content, cancellationToken)
+            ?? throw new NotFoundException("Note", id);
         return Ok(note);
     }
 

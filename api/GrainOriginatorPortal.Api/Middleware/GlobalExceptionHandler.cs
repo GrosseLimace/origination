@@ -103,6 +103,14 @@ public class GlobalExceptionHandler : IExceptionHandler
         }
 
         httpContext.Response.StatusCode = statusCode;
+
+        // §5: ALWAYS include Retry-After header with 429 and 503 responses
+        if (statusCode == StatusCodes.Status503ServiceUnavailable ||
+            statusCode == StatusCodes.Status429TooManyRequests)
+        {
+            httpContext.Response.Headers["Retry-After"] = "30";
+        }
+
         await httpContext.Response.WriteAsJsonAsync(response, cancellationToken);
 
         return true;

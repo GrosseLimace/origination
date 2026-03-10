@@ -6,6 +6,7 @@ using Moq;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Controllers;
+using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Interfaces;
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Models.Requests;
@@ -79,16 +80,13 @@ public class NotesControllerTests
 
     // -------------------------------------------------------------------------
     [Fact]
-    public async Task TogglePin_WhenNoteNotFound_ReturnsNotFound()
+    public async Task TogglePin_WhenNoteNotFound_ThrowsNotFoundException()
     {
         // Arrange
         _dataServiceMock.Setup(s => s.ToggleNotePinAsync(99, It.IsAny<CancellationToken>())).ReturnsAsync((Note?)null);
 
-        // Act
-        var result = await _sut.TogglePin(99);
-
-        // Assert
-        Assert.IsType<NotFoundResult>(result.Result);
+        // Act & Assert
+        await Assert.ThrowsAsync<NotFoundException>(() => _sut.TogglePin(99));
     }
 
     // -------------------------------------------------------------------------
@@ -110,17 +108,14 @@ public class NotesControllerTests
 
     // -------------------------------------------------------------------------
     [Fact]
-    public async Task Update_WhenNoteNotFound_ReturnsNotFound()
+    public async Task Update_WhenNoteNotFound_ThrowsNotFoundException()
     {
         // Arrange
         _dataServiceMock.Setup(s => s.UpdateNoteAsync(99, It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((Note?)null);
         var request = new UpdateNoteRequest { Content = "Some content" };
 
-        // Act
-        var result = await _sut.Update(99, request);
-
-        // Assert
-        Assert.IsType<NotFoundResult>(result.Result);
+        // Act & Assert
+        await Assert.ThrowsAsync<NotFoundException>(() => _sut.Update(99, request));
     }
 
     // -------------------------------------------------------------------------
