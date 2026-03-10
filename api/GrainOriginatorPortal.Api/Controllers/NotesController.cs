@@ -9,10 +9,12 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class NotesController : ControllerBase
 {
     private readonly IDataService _dataService;
+    private readonly ILogger<NotesController> _logger;
 
-    public NotesController(IDataService dataService)
+    public NotesController(IDataService dataService, ILogger<NotesController> logger)
     {
         _dataService = dataService;
+        _logger = logger;
     }
 
     // -------------------------------------------------------------------------
@@ -43,6 +45,9 @@ public class NotesController : ControllerBase
         try
         {
             var note = await _dataService.AddNoteAsync(request.CustomerId, request.Content, request.TradeUnit, cancellationToken);
+            _logger.LogInformation(
+                "Note created [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}, CustomerId={CustomerId}",
+                "AUDIT_CREATE", "DataMutation", note.Id, request.CustomerId);
             return Created($"/api/notes/{note.Id}", note);
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("database permissions"))
@@ -64,6 +69,9 @@ public class NotesController : ControllerBase
     {
         var note = await _dataService.ToggleNotePinAsync(id, cancellationToken)
             ?? throw new NotFoundException("Note", id);
+        _logger.LogInformation(
+            "Note pin toggled [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}, IsPinned={IsPinned}",
+            "AUDIT_UPDATE", "DataMutation", note.Id, note.IsPinned);
         return Ok(note);
     }
 
@@ -76,6 +84,9 @@ public class NotesController : ControllerBase
     {
         var note = await _dataService.UpdateNoteAsync(id, request.Content, cancellationToken)
             ?? throw new NotFoundException("Note", id);
+        _logger.LogInformation(
+            "Note updated [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}",
+            "AUDIT_UPDATE", "DataMutation", note.Id);
         return Ok(note);
     }
 
@@ -86,6 +97,9 @@ public class NotesController : ControllerBase
     public async Task<ActionResult> Delete(long id, CancellationToken cancellationToken = default)
     {
         await _dataService.DeleteNoteAsync(id, cancellationToken);
+        _logger.LogInformation(
+            "Note deleted [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}",
+            "AUDIT_DELETE", "DataMutation", id);
         return NoContent();
     }
 }

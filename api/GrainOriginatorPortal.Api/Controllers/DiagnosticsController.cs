@@ -1,9 +1,13 @@
+// System namespaces
+using System.Text.RegularExpressions;
+
 // Microsoft namespaces
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Data;
+using GrainOriginatorPortal.Api.Exceptions;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -13,10 +17,33 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class DiagnosticsController : ControllerBase
 {
     private readonly OriginationDbContext _context;
+    private readonly IWebHostEnvironment _env;
 
-    public DiagnosticsController(OriginationDbContext context)
+    public DiagnosticsController(OriginationDbContext context, IWebHostEnvironment env)
     {
         _context = context;
+        _env = env;
+    }
+
+    // -------------------------------------------------------------------------
+    /// <summary>Returns 404 in non-development environments.</summary>
+    /// <remarks>
+    /// These endpoints expose internal DB schema structure and must never be
+    /// accessible in production. security-guide.md §4.3 (least privilege).
+    /// </remarks>
+    private IActionResult? DenyIfNotDevelopment()
+        => _env.IsDevelopment() ? null : NotFound();
+
+    // -------------------------------------------------------------------------
+    /// <summary>
+    /// Validates that tableName is a safe SQL identifier (letters, digits, underscores only).
+    /// Throws ValidationException if the name contains characters that could indicate injection.
+    /// security-guide.md §4.1 input validation.
+    /// </summary>
+    private static void ValidateTableName(string tableName)
+    {
+        if (!Regex.IsMatch(tableName, @"^[A-Za-z_][A-Za-z0-9_]*$"))
+            throw new ValidationException("tableName", "tableName must contain only letters, digits, and underscores.");
     }
 
     // -------------------------------------------------------------------------
@@ -25,6 +52,8 @@ public class DiagnosticsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> GetTables(CancellationToken cancellationToken = default)
     {
+        if (DenyIfNotDevelopment() is { } deny) return deny;
+
         var result = await _context.Database.SqlQueryRaw<TableInfo>(
             @"SELECT DB_NAME() as DatabaseName, TABLE_NAME as TableName
               FROM INFORMATION_SCHEMA.TABLES
@@ -44,6 +73,9 @@ public class DiagnosticsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> GetTableWithSchema(string tableName, CancellationToken cancellationToken = default)
     {
+        if (DenyIfNotDevelopment() is { } deny) return deny;
+        ValidateTableName(tableName);
+
         var result = await _context.Database.SqlQueryRaw<TableSchemaInfo>(
             @"SELECT TABLE_SCHEMA as SchemaName, TABLE_NAME as TableName
               FROM INFORMATION_SCHEMA.TABLES
@@ -60,6 +92,9 @@ public class DiagnosticsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> GetTableSchema(string tableName, CancellationToken cancellationToken = default)
     {
+        if (DenyIfNotDevelopment() is { } deny) return deny;
+        ValidateTableName(tableName);
+
         var columns = await _context.Database.SqlQueryRaw<ColumnInfo>(
             @"SELECT
                 COLUMN_NAME as ColumnName,

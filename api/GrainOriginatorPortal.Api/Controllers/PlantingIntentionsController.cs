@@ -9,10 +9,12 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class PlantingIntentionsController : ControllerBase
 {
     private readonly IDataService _dataService;
+    private readonly ILogger<PlantingIntentionsController> _logger;
 
-    public PlantingIntentionsController(IDataService dataService)
+    public PlantingIntentionsController(IDataService dataService, ILogger<PlantingIntentionsController> logger)
     {
         _dataService = dataService;
+        _logger = logger;
     }
 
     // -------------------------------------------------------------------------
@@ -52,6 +54,9 @@ public class PlantingIntentionsController : ControllerBase
             request.PlantingYear,
             cancellationToken
         );
+        _logger.LogInformation(
+            "Planting intention created [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}, CustomerId={CustomerId}, Crop={Crop}",
+            "AUDIT_CREATE", "DataMutation", intention.Id, request.CustomerId, request.Crop);
         return Ok(intention);
     }
 
@@ -75,6 +80,9 @@ public class PlantingIntentionsController : ControllerBase
         {
             throw new NotFoundException("PlantingIntention", id);
         }
+        _logger.LogInformation(
+            "Planting intention updated [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}",
+            "AUDIT_UPDATE", "DataMutation", id);
         return Ok(updated);
     }
 
@@ -85,6 +93,9 @@ public class PlantingIntentionsController : ControllerBase
     public async Task<ActionResult> Delete(int id, CancellationToken cancellationToken = default)
     {
         await _dataService.DeletePlantingIntentionAsync(id, cancellationToken);
+        _logger.LogInformation(
+            "Planting intention deleted [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}",
+            "AUDIT_DELETE", "DataMutation", id);
         return NoContent();
     }
 }

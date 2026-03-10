@@ -1,8 +1,7 @@
 import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-
-declare const L: any;
+import * as L from 'leaflet';
 
 interface BidEntry {
   bid: string;
@@ -113,7 +112,6 @@ export class BidSheetComponent {
   constructor() {
     this._loadBidData();
     this.filterBids();
-    this._loadLeafletStyles();
     this._startRefreshTimer();
     setTimeout(() => this._initializeMap(), 500);
     this.destroyRef.onDestroy(() => {
@@ -158,26 +156,8 @@ export class BidSheetComponent {
     }
   }
 
-  private _loadLeafletStyles(): void {
-    if (!document.getElementById('leaflet-css')) {
-      const link = document.createElement('link');
-      link.id = 'leaflet-css';
-      link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      document.head.appendChild(link);
-    }
-
-    if (!document.getElementById('leaflet-js')) {
-      const script = document.createElement('script');
-      script.id = 'leaflet-js';
-      script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-      script.onload = () => this._initializeMap();
-      document.head.appendChild(script);
-    }
-  }
-
   private _initializeMap(): void {
-    if (this._isMapInitialized || typeof L === 'undefined') return;
+    if (this._isMapInitialized) return;
 
     const mapElement = document.getElementById('bid-locations-map');
     if (!mapElement) return;

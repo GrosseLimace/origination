@@ -200,7 +200,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.CustomerName).HasColumnName("CustomerName").HasMaxLength(255).IsRequired();
             entity.Property(e => e.ESignEnabled).HasColumnName("eSignEnabled").IsRequired();
             entity.Property(e => e.ScoularViewRecipients).HasColumnName("ScoularViewRecipients").IsRequired(false);
-            entity.Property(e => e.Guild).HasColumnName("Guild").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.Guild).HasColumnName("GUID").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.UpdatedOn).HasColumnName("UpdatedOn").HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.HasIndex(e => e.CustomerCode).IsUnique().HasDatabaseName("UQ_ESignEnrollment_CustomerCode");
         });

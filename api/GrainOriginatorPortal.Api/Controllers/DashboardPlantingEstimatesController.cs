@@ -9,11 +9,21 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class DashboardPlantingEstimatesController : ControllerBase
 {
     private readonly IDataService _dataService;
+    private readonly ILogger<DashboardPlantingEstimatesController> _logger;
 
-    public DashboardPlantingEstimatesController(IDataService dataService)
+    public DashboardPlantingEstimatesController(IDataService dataService, ILogger<DashboardPlantingEstimatesController> logger)
     {
         _dataService = dataService;
+        _logger = logger;
     }
+
+    // Resolve the authenticated user's identity for audit trail in upsert operations.
+    // security-guide.md §8.1: administrative actions must be attributable to a specific user.
+    private string CurrentUserId =>
+        User.FindFirst("preferred_username")?.Value
+        ?? User.FindFirst("oid")?.Value
+        ?? User.Identity?.Name
+        ?? "unknown";
 
     // -------------------------------------------------------------------------
     /// <summary>Gets planting estimates for a trade unit key and year.</summary>
@@ -37,7 +47,10 @@ public class DashboardPlantingEstimatesController : ControllerBase
         {
             throw new ValidationException("estimates", "At least one estimate must be provided.");
         }
-        await _dataService.UpsertDashboardPlantingEstimatesAsync(estimates, "system", cancellationToken);
+        await _dataService.UpsertDashboardPlantingEstimatesAsync(estimates, CurrentUserId, cancellationToken);
+        _logger.LogInformation(
+            "Dashboard planting estimates upserted [{ErrorCode}] [{ErrorCategory}]: Count={Count}",
+            "AUDIT_UPSERT", "DataMutation", estimates.Count);
         return NoContent();
     }
 
@@ -63,7 +76,10 @@ public class DashboardPlantingEstimatesController : ControllerBase
         {
             throw new ValidationException("shares", "At least one market share must be provided.");
         }
-        await _dataService.UpsertDashboardMarketSharesAsync(shares, "system", cancellationToken);
+        await _dataService.UpsertDashboardMarketSharesAsync(shares, CurrentUserId, cancellationToken);
+        _logger.LogInformation(
+            "Dashboard market shares upserted [{ErrorCode}] [{ErrorCategory}]: Count={Count}",
+            "AUDIT_UPSERT", "DataMutation", shares.Count);
         return NoContent();
     }
 
@@ -89,7 +105,10 @@ public class DashboardPlantingEstimatesController : ControllerBase
         {
             throw new ValidationException("items", "At least one harvest item must be provided.");
         }
-        await _dataService.UpsertDashboardActualHarvestAsync(items, "system", cancellationToken);
+        await _dataService.UpsertDashboardActualHarvestAsync(items, CurrentUserId, cancellationToken);
+        _logger.LogInformation(
+            "Dashboard actual harvest upserted [{ErrorCode}] [{ErrorCategory}]: Count={Count}",
+            "AUDIT_UPSERT", "DataMutation", items.Count);
         return NoContent();
     }
 
@@ -100,6 +119,9 @@ public class DashboardPlantingEstimatesController : ControllerBase
     public async Task<ActionResult> DeleteActualHarvest(int id, CancellationToken cancellationToken = default)
     {
         await _dataService.DeleteDashboardActualHarvestAsync(id, cancellationToken);
+        _logger.LogInformation(
+            "Dashboard actual harvest deleted [{ErrorCode}] [{ErrorCategory}]: HarvestId={HarvestId}",
+            "AUDIT_DELETE", "DataMutation", id);
         return NoContent();
     }
 

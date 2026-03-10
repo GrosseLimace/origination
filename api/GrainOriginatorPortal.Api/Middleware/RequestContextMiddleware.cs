@@ -23,6 +23,15 @@ public class RequestContextMiddleware
         var traceId = context.Items[CorrelationIdMiddleware.ItemsKey]?.ToString()
             ?? context.TraceIdentifier;
 
+        // Resolve the authenticated user from JWT claims.
+        // preferred_username = UPN (user@scoular.com) — most readable for audit logs.
+        // oid = Azure AD object ID — fallback for service principals without a UPN.
+        // Requires this middleware to run AFTER UseAuthentication() so context.User is set.
+        var userId = context.User.FindFirst("preferred_username")?.Value
+            ?? context.User.FindFirst("oid")?.Value
+            ?? context.User.Identity?.Name
+            ?? "anonymous";
+
         // BeginScope on a shared-factory logger propagates to all loggers within
         // the same request (ASP.NET Core's scope provider is AsyncLocal-backed).
         using (_logger.BeginScope(new Dictionary<string, object?>
@@ -30,7 +39,7 @@ public class RequestContextMiddleware
             ["ServiceName"] = "GrainOriginatorPortal.Api",
             ["Operation"]   = $"{context.Request.Method} {context.Request.Path}",
             ["TraceId"]     = traceId,
-            ["UserId"]      = "anonymous"   // updated once MSAL auth is wired
+            ["UserId"]      = userId
         }))
         {
             await _next(context);

@@ -9,10 +9,12 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class SavedListsController : ControllerBase
 {
     private readonly IDataService _dataService;
+    private readonly ILogger<SavedListsController> _logger;
 
-    public SavedListsController(IDataService dataService)
+    public SavedListsController(IDataService dataService, ILogger<SavedListsController> logger)
     {
         _dataService = dataService;
+        _logger = logger;
     }
 
     // -------------------------------------------------------------------------
@@ -32,6 +34,9 @@ public class SavedListsController : ControllerBase
     public async Task<ActionResult<SavedList>> Create([FromBody] CreateSavedListRequest request, CancellationToken cancellationToken = default)
     {
         var savedList = await _dataService.SaveListAsync(request.Name, request.Query, request.TradeUnits, request.Filters, cancellationToken);
+        _logger.LogInformation(
+            "Saved list created [{ErrorCode}] [{ErrorCategory}]: ListId={ListId}, Name={Name}",
+            "AUDIT_CREATE", "DataMutation", savedList.Id, request.Name);
         return Created($"/api/savedlists/{savedList.Id}", savedList);
     }
 
@@ -44,6 +49,9 @@ public class SavedListsController : ControllerBase
     {
         var updated = await _dataService.UpdateListAsync(id, request.Name, request.Query, request.TradeUnits, request.Filters, cancellationToken)
             ?? throw new NotFoundException("SavedList", id);
+        _logger.LogInformation(
+            "Saved list updated [{ErrorCode}] [{ErrorCategory}]: ListId={ListId}, Name={Name}",
+            "AUDIT_UPDATE", "DataMutation", id, request.Name);
         return Ok(updated);
     }
 
@@ -54,6 +62,9 @@ public class SavedListsController : ControllerBase
     public async Task<ActionResult> Delete(int id, CancellationToken cancellationToken = default)
     {
         await _dataService.DeleteListAsync(id, cancellationToken);
+        _logger.LogInformation(
+            "Saved list deleted [{ErrorCode}] [{ErrorCategory}]: ListId={ListId}",
+            "AUDIT_DELETE", "DataMutation", id);
         return NoContent();
     }
 }

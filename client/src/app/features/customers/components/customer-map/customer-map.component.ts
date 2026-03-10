@@ -1,9 +1,7 @@
 import { Component, input, output, effect, signal, DestroyRef, inject, afterNextRender } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Customer } from '@models';
-
-// Declare Leaflet as external global (loaded dynamically from CDN)
-declare var L: any;
+import * as L from 'leaflet';
 
 /**
  * CustomerMapComponent displays an interactive map with customer locations.
@@ -64,11 +62,6 @@ export class CustomerMapComponent {
    * Initializes the Leaflet map after loading the library.
    */
   private async _initMap() {
-    // Load Leaflet dynamically from CDN if not already present
-    if (typeof L === 'undefined') {
-      await this._loadLeaflet();
-    }
-
     if (this._destroyed) return;
 
     // Initialize map centered on the US grain belt (Kansas)
@@ -81,32 +74,6 @@ export class CustomerMapComponent {
 
     this.loading.set(false);
     this._addMarkers();
-  }
-
-  /**
-   * Dynamically loads Leaflet CSS and JavaScript from CDN.
-   * Returns a promise that resolves when loading is complete.
-   */
-  private async _loadLeaflet(): Promise<void> {
-    return new Promise((resolve) => {
-      // Check if already loaded
-      if (typeof L !== 'undefined') {
-        resolve();
-        return;
-      }
-
-      // Load Leaflet CSS
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      document.head.appendChild(link);
-
-      // Load Leaflet JavaScript
-      const script = document.createElement('script');
-      script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-      script.onload = () => resolve();
-      document.head.appendChild(script);
-    });
   }
 
   /**

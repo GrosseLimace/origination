@@ -39,6 +39,11 @@ public class GlobalExceptionHandler : IExceptionHandler
 
         switch (exception)
         {
+            case OperationCanceledException:
+                // Client disconnected or request timed out — not a server error, do not log
+                httpContext.Response.StatusCode = 499; // Client Closed Request (nginx convention)
+                return true;
+
             case NotFoundException notFound:
                 _logger.LogInformation(
                     "Resource not found [{TraceId}] [{ErrorCode}] [{ErrorCategory}]: {Message}",

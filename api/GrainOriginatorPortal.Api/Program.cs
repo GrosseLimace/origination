@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Http.Resilience;
+using Microsoft.Identity.Web;
 
 // Polly namespaces
 using Polly;
@@ -20,6 +21,43 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Register global exception handler — returns ApiErrorResponse per error-handling-standards.md §2
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
+
+// =============================================================================
+// AUTHENTICATION / AUTHORIZATION — security-guide.md §4.1
+// Validates Azure AD JWT bearer tokens on every request.
+// Configuration in appsettings.json "AzureAd" section.
+// =============================================================================
+builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration);
+builder.Services.AddAuthorization();
+
+// Hook JWT bearer events to log token validation failures per security-guide.md §8.1.
+// OnAuthenticationFailed fires when the token is present but invalid (bad signature,
+// expired, wrong audience, etc.). This is more specific than SecurityAuditMiddleware's
+// generic 401 log — it captures the exact validation error reason.
+builder.Services.Configure<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>(
+    Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme,
+    options =>
+    {
+        options.Events ??= new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents();
+
+        var previousOnFailed = options.Events.OnAuthenticationFailed;
+        options.Events.OnAuthenticationFailed = async context =>
+        {
+            var logger = context.HttpContext.RequestServices
+                .GetRequiredService<ILogger<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerHandler>>();
+            var traceId = context.HttpContext.Items[CorrelationIdMiddleware.ItemsKey]?.ToString()
+                ?? context.HttpContext.TraceIdentifier;
+
+            logger.LogWarning(
+                "JWT validation failed [{TraceId}] [{ErrorCode}] [{ErrorCategory}]: {ExceptionType} — {Message}",
+                traceId, "JWT_VALIDATION_FAILED", "Security",
+                context.Exception.GetType().Name, context.Exception.Message);
+
+            if (previousOnFailed is not null)
+                await previousOnFailed(context);
+        };
+    });
 
 // Required for IHttpContextAccessor in SqlDataService (traceId propagation to service-layer logs)
 builder.Services.AddHttpContextAccessor();
@@ -32,6 +70,9 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
         // Ensure all properties are included, even null values
         options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never;
+        // Reject unknown fields in request bodies — security-guide.md §4.1 serialization hardening.
+        // Prevents mass assignment and forces clients to send only known properties.
+        options.JsonSerializerOptions.UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow;
     });
 
 // Enable OpenAPI/Swagger for API documentation (available at /openapi/v1.json)
@@ -222,13 +263,12 @@ if (app.Environment.IsDevelopment())
 // Global exception handling — must be first in the middleware pipeline
 app.UseExceptionHandler();
 
+// Security response headers — X-Content-Type-Options, X-Frame-Options, CSP, HSTS, etc.
+// security-guide.md §4.1
+app.UseMiddleware<SecurityHeadersMiddleware>();
+
 // Correlation ID — generate/propagate X-Correlation-Id on every request (§8)
 app.UseMiddleware<CorrelationIdMiddleware>();
-
-// Request context — sets ServiceName, Operation, TraceId, UserId in log scope
-// for every request so all log entries include the §4.1 required structured fields.
-// Must run after CorrelationIdMiddleware so traceId is already resolved.
-app.UseMiddleware<RequestContextMiddleware>();
 
 // Apply CORS policy to allow Angular frontend requests
 // MUST come before UseHttpsRedirection to handle preflight requests correctly
@@ -237,8 +277,22 @@ app.UseCors("AllowAngular");
 // Redirect HTTP requests to HTTPS for security
 app.UseHttpsRedirection();
 
-// Map controller routes (e.g., /api/customers, /api/contracts, etc.)
-app.MapControllers();
+// Authentication + authorization — must come after CORS and before MapControllers
+app.UseAuthentication();
+app.UseAuthorization();
+
+// Request context — sets ServiceName, Operation, TraceId, UserId in log scope.
+// MUST run AFTER UseAuthentication() so context.User is populated with JWT claims
+// and UserId resolves to the actual user (not "anonymous").
+app.UseMiddleware<RequestContextMiddleware>();
+
+// Security audit logging — logs 401 and 403 outcomes per security-guide.md §8.1.
+// Must run after UseAuthorization so the response status code is already finalized.
+app.UseMiddleware<SecurityAuditMiddleware>();
+
+// Map controller routes and require a valid Azure AD bearer token on every endpoint.
+// Health check and OpenAPI endpoints are mapped separately and are not covered here.
+app.MapControllers().RequireAuthorization();
 
 // =============================================================================
 // HEALTH CHECK ENDPOINTS (§8 — liveness + readiness probes)
