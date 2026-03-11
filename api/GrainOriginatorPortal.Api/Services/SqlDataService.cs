@@ -209,7 +209,7 @@ public class SqlDataService : IDataService
 
         var enrollments = enrollmentList
             .GroupBy(e => e.CustomerCode)
-            .ToDictionary(g => g.Key, g => g.First());
+            .ToDictionary(g => g.Key, g => g.FirstOrDefault(e => e.ESignEnabled) ?? g.First());
 
         foreach (var customer in customers)
         {
