@@ -202,6 +202,8 @@ public class SqlDataService : IDataService
             .Distinct()
             .ToList();
 
+        // Table only contains enrolled customers (eSignEnabled = true).
+        // Presence in table = enrolled; absence = not enrolled.
         var enrollmentList = await _appContext.ESignEnrollments
             .AsNoTracking()
             .Where(e => codes.Contains(e.CustomerCode))
@@ -216,9 +218,8 @@ public class SqlDataService : IDataService
             if (customer.SourceCustomerId != null &&
                 enrollments.TryGetValue(customer.SourceCustomerId, out var enrollment))
             {
-                customer.ESignEnabled = enrollment.ESignEnabled;
+                customer.ESignEnabled = true;
                 customer.ScoularViewRecipients = enrollment.ScoularViewRecipients;
-                customer.Guild = enrollment.Guild;
             }
         }
     }
