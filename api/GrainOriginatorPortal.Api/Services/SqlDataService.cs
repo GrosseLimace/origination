@@ -207,7 +207,9 @@ public class SqlDataService : IDataService
             .Where(e => codes.Contains(e.CustomerCode))
             .ToListAsync(cancellationToken);
 
-        var enrollments = enrollmentList.ToDictionary(e => e.CustomerCode, e => e);
+        var enrollments = enrollmentList
+            .GroupBy(e => e.CustomerCode)
+            .ToDictionary(g => g.Key, g => g.First());
 
         foreach (var customer in customers)
         {
