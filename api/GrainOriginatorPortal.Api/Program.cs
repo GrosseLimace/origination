@@ -349,6 +349,10 @@ app.UseCors("AllowAngular");
 // Redirect HTTP requests to HTTPS for security
 app.UseHttpsRedirection();
 
+// Serve Angular static assets (CSS, JS, images) from wwwroot
+// Must come before UseAuthentication so static files don't require a token
+app.UseStaticFiles();
+
 // Authentication + authorization — must come after CORS and before MapControllers
 app.UseAuthentication();
 app.UseAuthorization();
