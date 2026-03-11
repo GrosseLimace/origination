@@ -119,9 +119,11 @@ export class CustomerListComponent {
       }
     });
 
-    // React to customers/notes input changes
+    // React to customers/notes/filteredCustomers changes — filteredCustomers covers the
+    // search-with-no-TU case where customers() input is empty but filteredCustomers has results.
     effect(() => {
       this.customers();
+      this.filteredCustomers();
       this.notes();
       this._rebuildLastContactCache();
     });
@@ -455,7 +457,10 @@ export class CustomerListComponent {
     }
 
     // Calculate last contact for each customer - single pass O(n)
-    for (const customer of this.customers()) {
+    // Use filteredCustomers when available (covers API search results when no TU is selected
+    // and customers() input is empty). Fall back to customers() for TU-filtered loads.
+    const customersToCache = this.filteredCustomers().length > 0 ? this.filteredCustomers() : this.customers();
+    for (const customer of customersToCache) {
       const customerNotes = notesByCustomer.get(customer.id) || [];
 
       if (customerNotes.length === 0) {
