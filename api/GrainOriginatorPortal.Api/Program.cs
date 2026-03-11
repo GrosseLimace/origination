@@ -96,12 +96,6 @@ builder.Services.AddControllers()
 // Enable OpenAPI/Swagger for API documentation (available at /openapi/v1.json)
 builder.Services.AddOpenApi();
 
-// Configure Azure AD authentication — validates bearer tokens issued by the Scoular tenant.
-// ClientId and Audience are intentionally blank here; they are injected via Azure App Service
-// environment variables (AzureAd__ClientId, AzureAd__Audience) in deployed environments.
-// For local development, set them in appsettings.Development.json or user secrets.
-builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration);
-builder.Services.AddAuthorization();
 builder.Services.AddHttpContextAccessor();
 
 // Configure Entity Framework Core with SQL Server and Managed Identity
