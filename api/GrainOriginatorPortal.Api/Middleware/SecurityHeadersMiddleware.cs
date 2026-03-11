@@ -18,7 +18,6 @@ public class SecurityHeadersMiddleware
         context.Response.OnStarting(() =>
         {
             var headers = context.Response.Headers;
-            var isApiRequest = context.Request.Path.StartsWithSegments("/api");
 
             // Prevent MIME type sniffing
             headers["X-Content-Type-Options"] = "nosniff";
@@ -34,12 +33,6 @@ public class SecurityHeadersMiddleware
 
             // Force HTTPS for 1 year
             headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
-
-            if (isApiRequest)
-            {
-                // CSP for JSON API responses: no scripts, no resources, no framing
-                headers["Content-Security-Policy"] = "default-src 'none'";
-            }
 
             return Task.CompletedTask;
         });
