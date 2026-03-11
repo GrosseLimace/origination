@@ -192,27 +192,6 @@ builder.Services.AddDbContext<EntitlementsDbContext>(options =>
 //   STEP 4 - Fill in the APIM endpoint URLs in ApimDataService.cs
 // =============================================================================
 
-// Configure EntitlementsDbContext for read-only access to the Entitlements database
-// Used to resolve user-specific trade unit assignments via vw_UserTradeUnitAccess
-builder.Services.AddDbContext<EntitlementsDbContext>(options =>
-{
-    var connectionString = builder.Configuration.GetConnectionString("EntitlementsConnection");
-
-    options.UseSqlServer(connectionString, sqlOptions =>
-    {
-        sqlOptions.EnableRetryOnFailure(
-            maxRetryCount: 5,
-            maxRetryDelay: TimeSpan.FromSeconds(30),
-            errorNumbersToAdd: null);
-    });
-
-    if (builder.Environment.IsDevelopment())
-    {
-        options.EnableSensitiveDataLogging();
-        options.EnableDetailedErrors();
-    }
-});
-
 // CURRENT: Direct SQL connection via Entity Framework Core
 // TO SWITCH TO APIM: See instructions above
 builder.Services.AddScoped<IDataService, SqlDataService>();
