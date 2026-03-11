@@ -2,6 +2,7 @@
 using System.Text.RegularExpressions;
 
 // Microsoft namespaces
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.SqlClient;

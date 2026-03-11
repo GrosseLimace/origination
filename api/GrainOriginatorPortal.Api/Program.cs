@@ -1,4 +1,8 @@
+// Azure namespaces
+using Azure.Identity;
+
 // Microsoft namespaces
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Http.Resilience;
