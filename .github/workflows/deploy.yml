@@ -29,6 +29,8 @@ jobs:
       - name: Install Angular dependencies
         run: npm ci
         working-directory: client
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Build Angular (dev configuration)
         run: npx ng build --configuration dev
