@@ -16,6 +16,20 @@ using GrainOriginatorPortal.Api.Interfaces;
 var builder = WebApplication.CreateBuilder(args);
 
 // =============================================================================
+// Development: Override the ActiveDirectoryDefault SQL auth provider to use
+// AzureCliCredential directly. DefaultAzureCredential probes the Azure IMDS
+// endpoint (169.254.169.254) for ManagedIdentity, which times out (~1 s) in
+// local dev. AzureCliCredential skips all of that — it just calls
+// `az account get-access-token` and caches the result.
+// =============================================================================
+if (builder.Environment.IsDevelopment())
+{
+    SqlAuthenticationProvider.SetProvider(
+        SqlAuthenticationMethod.ActiveDirectoryDefault,
+        new AzureCliSqlAuthProvider());
+}
+
+// =============================================================================
 // Service Configuration
 // =============================================================================
 
@@ -78,13 +92,21 @@ builder.Services.AddControllers()
 // Enable OpenAPI/Swagger for API documentation (available at /openapi/v1.json)
 builder.Services.AddOpenApi();
 
+// Configure Azure AD authentication — validates bearer tokens issued by the Scoular tenant.
+// ClientId and Audience are intentionally blank here; they are injected via Azure App Service
+// environment variables (AzureAd__ClientId, AzureAd__Audience) in deployed environments.
+// For local development, set them in appsettings.Development.json or user secrets.
+builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration);
+builder.Services.AddAuthorization();
+builder.Services.AddHttpContextAccessor();
+
 // Configure Entity Framework Core with SQL Server and Managed Identity
 // - Uses connection string from appsettings.json or Azure App Settings
 // - Authentication via DefaultAzureCredential (Azure CLI locally, Managed Identity in Azure)
 // - Retry logic handles transient network failures (5 attempts, 30 second max delay)
 builder.Services.AddDbContext<OriginationDbContext>(options =>
 {
-    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+    var connectionString = builder.Configuration.GetConnectionString("ODSConnection");
 
     options.UseSqlServer(connectionString, sqlOptions =>
     {
@@ -110,7 +132,7 @@ builder.Services.AddDbContext<OriginationDbContext>(options =>
 // (Notes, and eventually TradeUnits once that table is created)
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
 {
-    var connectionString = builder.Configuration.GetConnectionString("OriginationConnection");
+    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
     options.UseSqlServer(connectionString, sqlOptions =>
     {
@@ -172,6 +194,27 @@ builder.Services.AddDbContext<EntitlementsDbContext>(options =>
 //   STEP 4 - Fill in the APIM endpoint URLs in ApimDataService.cs
 // =============================================================================
 
+// Configure EntitlementsDbContext for read-only access to the Entitlements database
+// Used to resolve user-specific trade unit assignments via vw_UserTradeUnitAccess
+builder.Services.AddDbContext<EntitlementsDbContext>(options =>
+{
+    var connectionString = builder.Configuration.GetConnectionString("EntitlementsConnection");
+
+    options.UseSqlServer(connectionString, sqlOptions =>
+    {
+        sqlOptions.EnableRetryOnFailure(
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(30),
+            errorNumbersToAdd: null);
+    });
+
+    if (builder.Environment.IsDevelopment())
+    {
+        options.EnableSensitiveDataLogging();
+        options.EnableDetailedErrors();
+    }
+});
+
 // CURRENT: Direct SQL connection via Entity Framework Core
 // TO SWITCH TO APIM: See instructions above
 builder.Services.AddScoped<IDataService, SqlDataService>();
@@ -180,14 +223,15 @@ builder.Services.AddScoped<IDataService, SqlDataService>();
 // Uncomment to use mock data instead of database:
 // builder.Services.AddSingleton<IDataService, MockDataService>();
 
-// Configure CORS to allow requests from the Angular development server.
-// This is required because the Angular app runs on a different port (4200/4202)
-// than the API (5000), which would otherwise be blocked by browser security.
+// Configure CORS — allowed origins come from configuration so they can be overridden
+// per environment via Azure App Service settings without code changes.
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAngular", policy =>
     {
-        policy.WithOrigins("http://localhost:4200", "http://localhost:4201", "http://localhost:4202")
+        var origins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>()
+            ?? new[] { "http://localhost:4200" };
+        policy.WithOrigins(origins)
               .WithHeaders("Content-Type", "Authorization")
               .WithMethods("GET", "POST", "PUT", "DELETE");
     });
@@ -244,6 +288,35 @@ builder.Services.AddHealthChecks()
     .AddDbContextCheck<ApplicationDbContext>("application_db", tags: ["ready"]);
 
 var app = builder.Build();
+
+// =============================================================================
+// Development: Warm up all three DB connections in parallel at startup.
+// Token acquisition and connection pool setup happen here (hidden in startup time)
+// rather than on the first user request, which would feel slow.
+// =============================================================================
+if (app.Environment.IsDevelopment())
+{
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var odsDb = scope.ServiceProvider.GetRequiredService<OriginationDbContext>();
+            var appDb = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var entDb = scope.ServiceProvider.GetRequiredService<EntitlementsDbContext>();
+            await Task.WhenAll(
+                odsDb.Database.OpenConnectionAsync(),
+                appDb.Database.OpenConnectionAsync(),
+                entDb.Database.OpenConnectionAsync()
+            );
+            app.Logger.LogInformation("DB connections warmed up successfully.");
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogWarning(ex, "DB warm-up failed — first request will be slower.");
+        }
+    });
+}
 
 // =============================================================================
 // Database Initialization (Development Only)
@@ -337,5 +410,32 @@ app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.Health
     }
 });
 
+// SPA fallback — return index.html for any route not matched by a controller
+// This enables Angular client-side routing (/dashboard, /build-list, etc.)
+app.MapFallbackToFile("index.html");
+
 // Start the application
 app.Run();
+
+/// <summary>
+/// Replaces DefaultAzureCredential with a version that skips ManagedIdentityCredential
+/// for local development. DefaultAzureCredential probes the Azure IMDS endpoint
+/// (169.254.169.254) which times out ~1 s per connection on a dev workstation.
+/// Excluding it lets the chain reach SharedTokenCacheCredential (which works with
+/// cached az login / Visual Studio tokens) without the IMDS delay.
+/// </summary>
+internal sealed class AzureCliSqlAuthProvider : SqlAuthenticationProvider
+{
+    private static readonly DefaultAzureCredential _credential = new(
+        new DefaultAzureCredentialOptions { ExcludeManagedIdentityCredential = true });
+    private static readonly string[] _scopes = ["https://database.windows.net/.default"];
+
+    public override async Task<SqlAuthenticationToken> AcquireTokenAsync(SqlAuthenticationParameters parameters)
+    {
+        var result = await _credential.GetTokenAsync(new Azure.Core.TokenRequestContext(_scopes));
+        return new SqlAuthenticationToken(result.Token, result.ExpiresOn);
+    }
+
+    public override bool IsSupported(SqlAuthenticationMethod authenticationMethod)
+        => authenticationMethod == SqlAuthenticationMethod.ActiveDirectoryDefault;
+}

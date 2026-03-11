@@ -8,6 +8,9 @@ client/node_modules/
 client/dist/
 client/.angular/
 
+# Angular build output in API wwwroot (rebuilt fresh by CI/CD each deploy)
+api/**/wwwroot/
+
 # Temp files
 tmpclaude-*-cwd
 client/tmpclaude-*-cwd
