@@ -6,9 +6,6 @@ import { bootstrapApplication } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient, withInterceptorsFromDi, HTTP_INTERCEPTORS } from '@angular/common/http';
 
-// 2b. RxJS
-import { firstValueFrom } from 'rxjs';
-
 // 3. Third-party (MSAL)
 import {
   MsalInterceptor,
@@ -63,12 +60,7 @@ bootstrapApplication(AppComponent, {
     },
     {
       provide: APP_INITIALIZER,
-      useFactory: (msalService: MsalService) => async () => {
-        await msalService.instance.initialize();
-        // Use the Angular wrapper (not instance.handleRedirectPromise directly) so that
-        // setActiveAccount() is called automatically — MsalGuard checks the active account.
-        await firstValueFrom(msalService.handleRedirectObservable());
-      },
+      useFactory: (msalService: MsalService) => () => msalService.instance.initialize(),
       deps: [MsalService],
       multi: true,
     },
@@ -85,7 +77,6 @@ bootstrapApplication(AppComponent, {
         interactionType: InteractionType.Redirect,
         protectedResourceMap: new Map([
           [environment.apiConfig.uri, environment.apiConfig.scopes],
-          ['https://graph.microsoft.com/v1.0/me/photo/$value', ['User.Read']],
         ]),
       },
     },
