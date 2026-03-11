@@ -1,0 +1,59 @@
+@import '@it/design-system';
+@import "tailwindcss";
+
+@theme {
+  --color-scoular-blue: #007CC0;
+  --color-scoular-blue-medium: #00588E;
+  --color-scoular-blue-dark: #00395D;
+  --color-scoular-yellow: #E8B30D;
+  --color-scoular-yellow-bright: #FFD400;
+  --color-scoular-gray: #576269;
+  --color-scoular-teal: #1CB3B4;
+  --color-scoular-red: #EF4623;
+  --color-scoular-red-accessible: #DF3410;
+  --color-scoular-green: #00A36F;
+  --color-scoular-green-accessible: #00875F;
+  --color-scoular-cream: #FBF7E2;
+  --font-sans: 'Open Sans', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Base styles */
+html {
+  scrollbar-gutter: stable;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.5;
+  font-weight: 400;
+  @apply bg-gray-50 text-gray-900;
+}
+
+/* Scoular Typescale — in @layer base so Tailwind utility classes can override */
+@layer base {
+  h1 { font-size: 64px; font-weight: 700; line-height: 72px; }
+  h2 { font-size: 36px; font-weight: 700; line-height: 48px; }
+  h3 { font-size: 24px; font-weight: 400; line-height: 40px; }
+  h4 { font-size: 19px; font-weight: 700; line-height: 26px; }
+  h5 { font-size: 18px; font-weight: 700; line-height: 24px; letter-spacing: 0.08em; }
+  h6 { font-size: 16px; font-weight: 700; line-height: 20px; }
+}
+
+.dark body {
+  @apply bg-gray-900 text-white;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { @apply bg-gray-100; }
+.dark ::-webkit-scrollbar-track { @apply bg-gray-800; }
+::-webkit-scrollbar-thumb { @apply bg-gray-300 rounded; }
+.dark ::-webkit-scrollbar-thumb { @apply bg-gray-600; }
+::-webkit-scrollbar-thumb:hover { @apply bg-gray-400; }
+.dark ::-webkit-scrollbar-thumb:hover { @apply bg-gray-500; }
+
+@layer utilities {
+  .smooth-scroll { scroll-behavior: smooth; }
+  .min-readable { min-width: 280px; }
+}

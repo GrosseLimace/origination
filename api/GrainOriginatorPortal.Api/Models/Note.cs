@@ -12,12 +12,11 @@ public class Note
     public string? TradeUnit { get; set; }
     public string Description { get; set; } = string.Empty;
     public string CreatedBy { get; set; } = string.Empty;
-    public DateTime CreatedOn { get; set; }
+    public DateTime CreatedAt { get; set; }
     public string? ModifiedBy { get; set; }
-    public DateTime? ModifiedOn { get; set; }
+    public DateTime? ModifiedAt { get; set; }
     public bool IsPinned { get; set; }
 
-    // Computed properties for backward compatibility with frontend
-    public DateTime CreatedAt => CreatedOn; // Alias for frontend compatibility
-    public string Content => Description; // Alias for frontend compatibility
+    // Computed alias for frontend compatibility
+    public string Content => Description;
 }

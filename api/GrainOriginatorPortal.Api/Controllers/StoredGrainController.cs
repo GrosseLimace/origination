@@ -1,13 +1,8 @@
-using GrainOriginatorPortal.Api.Models;
-using GrainOriginatorPortal.Api.Services;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
-
 namespace GrainOriginatorPortal.Api.Controllers;
 
-[Authorize]
 [ApiController]
 [Route("api/[controller]")]
+[Produces("application/json")]
 public class StoredGrainController : ControllerBase
 {
     private readonly IDataService _dataService;
@@ -17,15 +12,21 @@ public class StoredGrainController : ControllerBase
         _dataService = dataService;
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets all stored grain records.</summary>
     [HttpGet]
-    public async Task<ActionResult<List<StoredGrain>>> GetAll()
+    [ProducesResponseType(typeof(List<StoredGrain>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<StoredGrain>>> GetAll(CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetStoredGrain());
+        return Ok(await _dataService.GetStoredGrainAsync(cancellationToken));
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets stored grain records for a specific customer.</summary>
     [HttpGet("customer/{customerId:long}")]
-    public async Task<ActionResult<List<StoredGrain>>> GetByCustomer(long customerId)
+    [ProducesResponseType(typeof(List<StoredGrain>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<StoredGrain>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetStoredGrainByCustomer(customerId));
+        return Ok(await _dataService.GetStoredGrainByCustomerAsync(customerId, cancellationToken));
     }
 }

@@ -1,10 +1,21 @@
-using System.Text.Json.Serialization;
+// Azure namespaces
 using Azure.Identity;
+
+// Microsoft namespaces
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Identity.Web;
+
+// Polly namespaces
+using Polly;
+
+// Project namespaces
 using GrainOriginatorPortal.Api.Data;
+using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Api.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,6 +37,49 @@ if (builder.Environment.IsDevelopment())
 // Service Configuration
 // =============================================================================
 
+// Register global exception handler — returns ApiErrorResponse per error-handling-standards.md §2
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
+
+// =============================================================================
+// AUTHENTICATION / AUTHORIZATION — security-guide.md §4.1
+// Validates Azure AD JWT bearer tokens on every request.
+// Configuration in appsettings.json "AzureAd" section.
+// =============================================================================
+builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration);
+builder.Services.AddAuthorization();
+
+// Hook JWT bearer events to log token validation failures per security-guide.md §8.1.
+// OnAuthenticationFailed fires when the token is present but invalid (bad signature,
+// expired, wrong audience, etc.). This is more specific than SecurityAuditMiddleware's
+// generic 401 log — it captures the exact validation error reason.
+builder.Services.Configure<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>(
+    Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme,
+    options =>
+    {
+        options.Events ??= new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents();
+
+        var previousOnFailed = options.Events.OnAuthenticationFailed;
+        options.Events.OnAuthenticationFailed = async context =>
+        {
+            var logger = context.HttpContext.RequestServices
+                .GetRequiredService<ILogger<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerHandler>>();
+            var traceId = context.HttpContext.Items[CorrelationIdMiddleware.ItemsKey]?.ToString()
+                ?? context.HttpContext.TraceIdentifier;
+
+            logger.LogWarning(
+                "JWT validation failed [{TraceId}] [{ErrorCode}] [{ErrorCategory}]: {ExceptionType} — {Message}",
+                traceId, "JWT_VALIDATION_FAILED", "Security",
+                context.Exception.GetType().Name, context.Exception.Message);
+
+            if (previousOnFailed is not null)
+                await previousOnFailed(context);
+        };
+    });
+
+// Required for IHttpContextAccessor in SqlDataService (traceId propagation to service-layer logs)
+builder.Services.AddHttpContextAccessor();
+
 // Add MVC controllers for REST API endpoints
 // Configure JSON to serialize enums as strings instead of numbers
 builder.Services.AddControllers()
@@ -34,17 +88,14 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
         // Ensure all properties are included, even null values
         options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never;
+        // Reject unknown fields in request bodies — security-guide.md §4.1 serialization hardening.
+        // Prevents mass assignment and forces clients to send only known properties.
+        options.JsonSerializerOptions.UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow;
     });
 
 // Enable OpenAPI/Swagger for API documentation (available at /openapi/v1.json)
 builder.Services.AddOpenApi();
 
-// Configure Azure AD authentication — validates bearer tokens issued by the Scoular tenant.
-// ClientId and Audience are intentionally blank here; they are injected via Azure App Service
-// environment variables (AzureAd__ClientId, AzureAd__Audience) in deployed environments.
-// For local development, set them in appsettings.Development.json or user secrets.
-builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration);
-builder.Services.AddAuthorization();
 builder.Services.AddHttpContextAccessor();
 
 // Configure Entity Framework Core with SQL Server and Managed Identity
@@ -87,6 +138,28 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
             maxRetryCount: 5,
             maxRetryDelay: TimeSpan.FromSeconds(30),
             errorNumbersToAdd: null);
+        sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "dbo");
+    });
+
+    if (builder.Environment.IsDevelopment())
+    {
+        options.EnableSensitiveDataLogging();
+        options.EnableDetailedErrors();
+    }
+});
+
+// Configure EntitlementsDbContext for read-only access to the Entitlements database
+// Used to resolve user-specific trade unit assignments via vw_UserTradeUnitAccess
+builder.Services.AddDbContext<EntitlementsDbContext>(options =>
+{
+    var connectionString = builder.Configuration.GetConnectionString("EntitlementsConnection");
+
+    options.UseSqlServer(connectionString, sqlOptions =>
+    {
+        sqlOptions.EnableRetryOnFailure(
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(30),
+            errorNumbersToAdd: null);
     });
 
     if (builder.Environment.IsDevelopment())
@@ -119,27 +192,6 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 //   STEP 4 - Fill in the APIM endpoint URLs in ApimDataService.cs
 // =============================================================================
 
-// Configure EntitlementsDbContext for read-only access to the Entitlements database
-// Used to resolve user-specific trade unit assignments via vw_UserTradeUnitAccess
-builder.Services.AddDbContext<EntitlementsDbContext>(options =>
-{
-    var connectionString = builder.Configuration.GetConnectionString("EntitlementsConnection");
-
-    options.UseSqlServer(connectionString, sqlOptions =>
-    {
-        sqlOptions.EnableRetryOnFailure(
-            maxRetryCount: 5,
-            maxRetryDelay: TimeSpan.FromSeconds(30),
-            errorNumbersToAdd: null);
-    });
-
-    if (builder.Environment.IsDevelopment())
-    {
-        options.EnableSensitiveDataLogging();
-        options.EnableDetailedErrors();
-    }
-});
-
 // CURRENT: Direct SQL connection via Entity Framework Core
 // TO SWITCH TO APIM: See instructions above
 builder.Services.AddScoped<IDataService, SqlDataService>();
@@ -161,6 +213,56 @@ builder.Services.AddCors(options =>
               .WithMethods("GET", "POST", "PUT", "DELETE");
     });
 });
+
+// =============================================================================
+// HTTP CLIENTS
+// Nominatim geocoding client — BaseAddress set here so controllers use relative URLs.
+// Resilience pipeline: retry with exponential backoff + circuit breaker per §6.
+// CorrelationIdOutboundHandler propagates X-Correlation-Id to all outbound calls (§8).
+// =============================================================================
+
+// Register the outbound correlation handler so the DI container can create it
+builder.Services.AddTransient<CorrelationIdOutboundHandler>();
+
+builder.Services.AddHttpClient("nominatim", client =>
+{
+    client.BaseAddress = new Uri("https://nominatim.openstreetmap.org/");
+    client.DefaultRequestHeaders.Add("User-Agent", "GrainOriginatorPortal/1.0");
+    client.Timeout = TimeSpan.FromSeconds(10);
+})
+.AddHttpMessageHandler<CorrelationIdOutboundHandler>()
+.AddResilienceHandler("nominatim", pipeline =>
+{
+    // Retry: up to 3 attempts with exponential backoff + jitter (§6.2)
+    pipeline.AddRetry(new HttpRetryStrategyOptions
+    {
+        MaxRetryAttempts = 3,
+        Delay = TimeSpan.FromMilliseconds(500),
+        BackoffType = DelayBackoffType.Exponential,
+        UseJitter = true,
+        MaxDelay = TimeSpan.FromSeconds(30),
+        // Only retry on transient network/timeout failures — not 4xx
+        ShouldHandle = args => ValueTask.FromResult(
+            args.Outcome.Exception is HttpRequestException ||
+            args.Outcome.Exception is TaskCanceledException)
+    });
+
+    // Circuit breaker: opens after 50% failure rate over 5+ requests in 30s window (§6.3)
+    pipeline.AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
+    {
+        FailureRatio = 0.5,
+        SamplingDuration = TimeSpan.FromSeconds(30),
+        MinimumThroughput = 5,
+        BreakDuration = TimeSpan.FromSeconds(30)
+    });
+});
+
+// =============================================================================
+// HEALTH CHECKS (§8 — /health/live and /health/ready)
+// =============================================================================
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<OriginationDbContext>("origination_db", tags: ["ready"])
+    .AddDbContextCheck<ApplicationDbContext>("application_db", tags: ["ready"]);
 
 var app = builder.Build();
 
@@ -230,23 +332,15 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-// Global exception handler — returns a generic JSON error for unhandled exceptions
-// Placed early so it wraps all subsequent middleware
-app.UseExceptionHandler(errorApp =>
-{
-    errorApp.Run(async context =>
-    {
-        context.Response.StatusCode = 500;
-        context.Response.ContentType = "application/json";
-        await context.Response.WriteAsync("{\"error\":\"An unexpected error occurred.\"}");
-    });
-});
+// Global exception handling — must be first in the middleware pipeline
+app.UseExceptionHandler();
 
-// HSTS — enforces HTTPS for 1 year in non-development environments
-if (!app.Environment.IsDevelopment())
-{
-    app.UseHsts();
-}
+// Security response headers — X-Content-Type-Options, X-Frame-Options, CSP, HSTS, etc.
+// security-guide.md §4.1
+app.UseMiddleware<SecurityHeadersMiddleware>();
+
+// Correlation ID — generate/propagate X-Correlation-Id on every request (§8)
+app.UseMiddleware<CorrelationIdMiddleware>();
 
 // Apply CORS policy to allow Angular frontend requests
 // MUST come before UseHttpsRedirection to handle preflight requests correctly
@@ -255,32 +349,43 @@ app.UseCors("AllowAngular");
 // Redirect HTTP requests to HTTPS for security
 app.UseHttpsRedirection();
 
-// Add standard security response headers
-app.Use(async (context, next) =>
-{
-    context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
-    context.Response.Headers.Append("X-Frame-Options", "DENY");
-    context.Response.Headers.Append("X-XSS-Protection", "1; mode=block");
-    context.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
-    context.Response.Headers.Append("Content-Security-Policy",
-        "default-src 'self'; " +
-        "script-src 'self'; " +
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-        "font-src 'self' https://fonts.gstatic.com; " +
-        "img-src 'self' https://*.tile.openstreetmap.org data:; " +
-        "connect-src 'self' https://login.microsoftonline.com https://graph.microsoft.com;");
-    await next();
-});
-
-// Authentication and authorization middleware — must come after UseCors and UseHttpsRedirection
+// Authentication + authorization — must come after CORS and before MapControllers
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Serve Angular static files (JS, CSS, assets) from wwwroot
-app.UseStaticFiles();
+// Request context — sets ServiceName, Operation, TraceId, UserId in log scope.
+// MUST run AFTER UseAuthentication() so context.User is populated with JWT claims
+// and UserId resolves to the actual user (not "anonymous").
+app.UseMiddleware<RequestContextMiddleware>();
 
-// Map controller routes (e.g., /api/customers, /api/contracts, etc.)
-app.MapControllers();
+// Security audit logging — logs 401 and 403 outcomes per security-guide.md §8.1.
+// Must run after UseAuthorization so the response status code is already finalized.
+app.UseMiddleware<SecurityAuditMiddleware>();
+
+// Map controller routes and require a valid Azure AD bearer token on every endpoint.
+// Health check and OpenAPI endpoints are mapped separately and are not covered here.
+app.MapControllers().RequireAuthorization();
+
+// =============================================================================
+// HEALTH CHECK ENDPOINTS (§8 — liveness + readiness probes)
+// /health/live  — process is running (no dependency checks)
+// /health/ready — process + DB connections are ready
+// =============================================================================
+app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = _ => false  // exclude all checks — liveness only verifies the process is up
+});
+
+app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResultStatusCodes =
+    {
+        [HealthStatus.Healthy]   = StatusCodes.Status200OK,
+        [HealthStatus.Degraded]  = StatusCodes.Status200OK,
+        [HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable
+    }
+});
 
 // SPA fallback — return index.html for any route not matched by a controller
 // This enables Angular client-side routing (/dashboard, /build-list, etc.)
@@ -311,5 +416,3 @@ internal sealed class AzureCliSqlAuthProvider : SqlAuthenticationProvider
     public override bool IsSupported(SqlAuthenticationMethod authenticationMethod)
         => authenticationMethod == SqlAuthenticationMethod.ActiveDirectoryDefault;
 }
-
-// Git changes

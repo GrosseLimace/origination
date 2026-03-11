@@ -1,14 +1,22 @@
+// System namespaces
+using System.Text.RegularExpressions;
+
+// Microsoft namespaces
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using GrainOriginatorPortal.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.SqlClient;
+
+// Project namespaces
+using GrainOriginatorPortal.Api.Data;
+using GrainOriginatorPortal.Api.Exceptions;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
 [AllowAnonymous]
 [ApiController]
 [Route("api/[controller]")]
+[Produces("application/json")]
 public class DiagnosticsController : ControllerBase
 {
     private readonly OriginationDbContext _context;
@@ -31,10 +39,13 @@ public class DiagnosticsController : ControllerBase
         _env = env;
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Tests connectivity to all three database contexts. Dev/QA only.</summary>
     [HttpGet("connections")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> CheckConnections()
     {
-        if (_env.IsProduction()) return NotFound();
+        if (DenyIfNotDevelopment() is { } deny) return deny;
 
         static async Task<object> TestDb(DbContext db, string name, string testSql)
         {
@@ -77,108 +88,111 @@ public class DiagnosticsController : ControllerBase
         return Ok(new object[] { odsCustomers, odsPricing }.Concat(otherResults));
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Returns 404 in non-development environments.</summary>
+    /// <remarks>
+    /// These endpoints expose internal DB schema structure and must never be
+    /// accessible in production. security-guide.md §4.3 (least privilege).
+    /// </remarks>
+    private IActionResult? DenyIfNotDevelopment()
+        => _env.IsDevelopment() ? null : NotFound();
+
+    // -------------------------------------------------------------------------
+    /// <summary>
+    /// Validates that tableName is a safe SQL identifier (letters, digits, underscores only).
+    /// Throws ValidationException if the name contains characters that could indicate injection.
+    /// security-guide.md §4.1 input validation.
+    /// </summary>
+    private static void ValidateTableName(string tableName)
+    {
+        if (!Regex.IsMatch(tableName, @"^[A-Za-z_][A-Za-z0-9_]*$"))
+            throw new ValidationException("tableName", "tableName must contain only letters, digits, and underscores.");
+    }
+
+    // -------------------------------------------------------------------------
+    /// <summary>Lists all user tables in the connected database.</summary>
     [HttpGet("tables")]
-    public async Task<IActionResult> GetTables()
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetTables(CancellationToken cancellationToken = default)
     {
-        if (_env.IsProduction()) return NotFound();
-        try
-        {
-            // Query the system tables to see what user tables exist
-            var result = await _context.Database.SqlQueryRaw<TableInfo>(
-                @"SELECT DB_NAME() as DatabaseName, TABLE_NAME as TableName
-                  FROM INFORMATION_SCHEMA.TABLES
-                  WHERE TABLE_TYPE = 'BASE TABLE'
-                  ORDER BY TABLE_NAME"
-            ).ToListAsync();
+        if (DenyIfNotDevelopment() is { } deny) return deny;
 
-            var dbName = result.FirstOrDefault()?.DatabaseName ?? "Unknown";
-            var tables = result.Select(t => t.TableName).ToList();
+        var result = await _context.Database.SqlQueryRaw<TableInfo>(
+            @"SELECT DB_NAME() as DatabaseName, TABLE_NAME as TableName
+              FROM INFORMATION_SCHEMA.TABLES
+              WHERE TABLE_TYPE = 'BASE TABLE'
+              ORDER BY TABLE_NAME"
+        ).ToListAsync(cancellationToken);
 
-            return Ok(new {
-                Database = dbName,
-                TableCount = tables.Count,
-                Tables = tables
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving table list");
-            return StatusCode(500, new { error = "An error occurred" });
-        }
+        var dbName = result.FirstOrDefault()?.DatabaseName ?? "Unknown";
+        var tables = result.Select(t => t.TableName).ToList();
+
+        return Ok(new { Database = dbName, TableCount = tables.Count, Tables = tables });
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets schema/table info for a specific table name.</summary>
     [HttpGet("tableschema/{tableName}")]
-    public async Task<IActionResult> GetTableWithSchema(string tableName)
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetTableWithSchema(string tableName, CancellationToken cancellationToken = default)
     {
-        if (_env.IsProduction()) return NotFound();
-        try
-        {
-            var result = await _context.Database.SqlQueryRaw<TableSchemaInfo>(
-                @"SELECT TABLE_SCHEMA as SchemaName, TABLE_NAME as TableName
-                  FROM INFORMATION_SCHEMA.TABLES
-                  WHERE TABLE_NAME = {0} AND TABLE_TYPE = 'BASE TABLE'",
-                tableName
-            ).ToListAsync();
+        if (DenyIfNotDevelopment() is { } deny) return deny;
+        ValidateTableName(tableName);
 
-            return Ok(result);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving table schema for {TableName}", tableName);
-            return StatusCode(500, new { error = "An error occurred" });
-        }
+        var result = await _context.Database.SqlQueryRaw<TableSchemaInfo>(
+            @"SELECT TABLE_SCHEMA as SchemaName, TABLE_NAME as TableName
+              FROM INFORMATION_SCHEMA.TABLES
+              WHERE TABLE_NAME = {0} AND TABLE_TYPE = 'BASE TABLE'",
+            tableName
+        ).ToListAsync(cancellationToken);
+
+        return Ok(result);
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets column definitions for a specific table.</summary>
     [HttpGet("schema/{tableName}")]
-    public async Task<IActionResult> GetTableSchema(string tableName)
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetTableSchema(string tableName, CancellationToken cancellationToken = default)
     {
-        if (_env.IsProduction()) return NotFound();
-        try
-        {
-            var columns = await _context.Database.SqlQueryRaw<ColumnInfo>(
-                @"SELECT
-                    COLUMN_NAME as ColumnName,
-                    DATA_TYPE as DataType,
-                    IS_NULLABLE as IsNullable,
-                    CHARACTER_MAXIMUM_LENGTH as MaxLength,
-                    COLUMN_DEFAULT as DefaultValue
-                  FROM INFORMATION_SCHEMA.COLUMNS
-                  WHERE TABLE_NAME = {0}
-                  ORDER BY ORDINAL_POSITION",
-                tableName
-            ).ToListAsync();
+        if (DenyIfNotDevelopment() is { } deny) return deny;
+        ValidateTableName(tableName);
 
-            return Ok(new {
-                TableName = tableName,
-                ColumnCount = columns.Count,
-                Columns = columns
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving column schema for {TableName}", tableName);
-            return StatusCode(500, new { error = "An error occurred" });
-        }
+        var columns = await _context.Database.SqlQueryRaw<ColumnInfo>(
+            @"SELECT
+                COLUMN_NAME as ColumnName,
+                DATA_TYPE as DataType,
+                IS_NULLABLE as IsNullable,
+                CHARACTER_MAXIMUM_LENGTH as MaxLength,
+                COLUMN_DEFAULT as DefaultValue
+              FROM INFORMATION_SCHEMA.COLUMNS
+              WHERE TABLE_NAME = {0}
+              ORDER BY ORDINAL_POSITION",
+            tableName
+        ).ToListAsync(cancellationToken);
+
+        return Ok(new { TableName = tableName, ColumnCount = columns.Count, Columns = columns });
     }
 
-    private class TableInfo
+    // -------------------------------------------------------------------------
+    private record TableInfo
     {
-        public string DatabaseName { get; set; } = "";
-        public string TableName { get; set; } = "";
+        public string DatabaseName { get; init; } = "";
+        public string TableName { get; init; } = "";
     }
 
-    private class TableSchemaInfo
+    private record TableSchemaInfo
     {
-        public string SchemaName { get; set; } = "";
-        public string TableName { get; set; } = "";
+        public string SchemaName { get; init; } = "";
+        public string TableName { get; init; } = "";
     }
 
-    private class ColumnInfo
+    private record ColumnInfo
     {
-        public string ColumnName { get; set; } = "";
-        public string DataType { get; set; } = "";
-        public string IsNullable { get; set; } = "";
-        public int? MaxLength { get; set; }
-        public string? DefaultValue { get; set; }
+        public string ColumnName { get; init; } = "";
+        public string DataType { get; init; } = "";
+        public string IsNullable { get; init; } = "";
+        public int? MaxLength { get; init; }
+        public string? DefaultValue { get; init; }
     }
 }

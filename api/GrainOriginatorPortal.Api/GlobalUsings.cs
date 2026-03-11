@@ -1,0 +1,13 @@
+// System namespaces
+global using System.Text.Json.Serialization;
+
+// Microsoft namespaces
+global using Microsoft.AspNetCore.Http;
+global using Microsoft.AspNetCore.Mvc;
+global using Microsoft.Extensions.Logging;
+
+// Project namespaces
+global using GrainOriginatorPortal.Api.Interfaces;
+global using GrainOriginatorPortal.Api.Models;
+global using GrainOriginatorPortal.Api.Models.Requests;
+global using GrainOriginatorPortal.Api.Models.Responses;

@@ -1,79 +1,84 @@
-using GrainOriginatorPortal.Api.Models;
-using GrainOriginatorPortal.Api.Services;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Logging;
+// Project namespaces
+using GrainOriginatorPortal.Api.Exceptions;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
-[Authorize]
 [ApiController]
 [Route("api/[controller]")]
+[Produces("application/json")]
 public class CustomersController : ControllerBase
 {
     private readonly IDataService _dataService;
-    private readonly ILogger<CustomersController> _logger;
 
-    public CustomersController(IDataService dataService, ILogger<CustomersController> logger)
+    public CustomersController(IDataService dataService)
     {
         _dataService = dataService;
-        _logger = logger;
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets all customers, optionally filtered by trade units.</summary>
     [HttpGet]
-    public async Task<ActionResult<List<Customer>>> GetAll([FromQuery] List<string>? tradeUnits = null)
+    [ProducesResponseType(typeof(List<Customer>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<Customer>>> GetAll([FromQuery] List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetCustomers(tradeUnits));
+        return Ok(await _dataService.GetCustomersAsync(tradeUnits, cancellationToken));
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Searches customers by name (max 15 results).</summary>
     [HttpGet("search")]
-    public async Task<ActionResult<List<Customer>>> Search([FromQuery] string searchTerm, [FromQuery] List<string>? tradeUnits = null)
+    [ProducesResponseType(typeof(List<Customer>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<Customer>>> Search([FromQuery] string searchTerm, [FromQuery] List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(searchTerm))
         {
-            return Ok(await _dataService.GetCustomers(tradeUnits));
+            return Ok(await _dataService.GetCustomersAsync(tradeUnits, cancellationToken));
         }
-        return Ok(await _dataService.SearchCustomers(searchTerm, tradeUnits));
+        return Ok(await _dataService.SearchCustomersAsync(searchTerm, tradeUnits, cancellationToken));
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets all unique trade unit codes.</summary>
     [HttpGet("trade-units")]
-    public async Task<ActionResult<List<string>>> GetTradeUnits()
+    [ProducesResponseType(typeof(List<string>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<string>>> GetTradeUnits(CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetTradeUnits());
+        return Ok(await _dataService.GetTradeUnitsAsync(cancellationToken));
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets a single customer by ID.</summary>
     [HttpGet("{id:long}")]
-    public async Task<ActionResult<Customer>> GetById(long id)
+    [ProducesResponseType(typeof(Customer), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<Customer>> GetById(long id, CancellationToken cancellationToken = default)
     {
-        var customer = await _dataService.GetCustomerById(id);
-        if (customer == null) return NotFound();
+        var customer = await _dataService.GetCustomerByIdAsync(id, cancellationToken)
+            ?? throw new NotFoundException("Customer", id);
         return Ok(customer);
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Updates an existing customer's contact and farm information.</summary>
     [HttpPut("{id:long}")]
-    public async Task<ActionResult<Customer>> Update(long id, [FromBody] UpdateCustomerRequest request)
+    [ProducesResponseType(typeof(Customer), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<Customer>> Update(long id, [FromBody] Customer request, CancellationToken cancellationToken = default)
     {
-        try
-        {
-            var customer = await _dataService.GetCustomerById(id);
-            if (customer == null) return NotFound();
+        var customer = await _dataService.GetCustomerByIdAsync(id, cancellationToken)
+            ?? throw new NotFoundException("Customer", id);
 
-            await _dataService.UpdateCustomer(
-                id,
-                request.Location ?? string.Empty,
-                request.Phone ?? string.Empty,
-                request.Email ?? string.Empty,
-                request.FarmIds,
-                request.LinkedProducerIds ?? new List<string>()
-            );
+        await _dataService.UpdateCustomerAsync(
+            id,
+            request.Location ?? string.Empty,
+            request.Phone ?? string.Empty,
+            request.Email ?? string.Empty,
+            request.FarmIds,
+            request.LinkedProducerIds ?? new List<string>(),
+            cancellationToken
+        );
 
-            var updatedCustomer = await _dataService.GetCustomerById(id);
-            return Ok(updatedCustomer);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error updating customer {CustomerId}", id);
-            return StatusCode(500, new { error = "An error occurred while updating the customer." });
-        }
+        var updated = await _dataService.GetCustomerByIdAsync(id, cancellationToken);
+        return Ok(updated);
     }
 }

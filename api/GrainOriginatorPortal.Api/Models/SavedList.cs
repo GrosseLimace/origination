@@ -12,6 +12,8 @@ public class SavedList
     public string? TradeUnits { get; set; } // Comma-separated trade unit keys (e.g. "TU1,TU2")
     public string? Filters { get; set; }   // JSON-serialized RefinementFilters (nullable)
     public string CreatedBy { get; set; } = string.Empty;
-    public DateTime CreatedOn { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? ModifiedAt { get; set; }
+    public string? ModifiedBy { get; set; }
     public bool IsActive { get; set; } = true;
 }

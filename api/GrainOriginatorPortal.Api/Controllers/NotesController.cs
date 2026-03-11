@@ -1,13 +1,11 @@
-using GrainOriginatorPortal.Api.Models;
-using GrainOriginatorPortal.Api.Services;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
+// Project namespaces
+using GrainOriginatorPortal.Api.Exceptions;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
-[Authorize]
 [ApiController]
 [Route("api/[controller]")]
+[Produces("application/json")]
 public class NotesController : ControllerBase
 {
     private readonly IDataService _dataService;
@@ -19,85 +17,89 @@ public class NotesController : ControllerBase
         _logger = logger;
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets all notes.</summary>
     [HttpGet]
-    public async Task<ActionResult<List<Note>>> GetAll()
+    [ProducesResponseType(typeof(List<Note>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<Note>>> GetAll(CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetNotes());
+        return Ok(await _dataService.GetNotesAsync(cancellationToken));
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets all notes for a specific customer.</summary>
     [HttpGet("customer/{customerId:long}")]
-    public async Task<ActionResult<List<Note>>> GetByCustomer(long customerId)
+    [ProducesResponseType(typeof(List<Note>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<Note>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetNotesByCustomer(customerId));
+        return Ok(await _dataService.GetNotesByCustomerAsync(customerId, cancellationToken));
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Creates a new note for a customer.</summary>
     [HttpPost]
-    public async Task<ActionResult<Note>> Create([FromBody] CreateNoteRequest request)
+    [ProducesResponseType(typeof(Note), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<ActionResult<Note>> Create([FromBody] CreateNoteRequest request, CancellationToken cancellationToken = default)
     {
         try
         {
-            var note = await _dataService.AddNote(request.CustomerId, request.Content, request.TradeUnit);
+            var note = await _dataService.AddNoteAsync(request.CustomerId, request.Content, request.TradeUnit, cancellationToken);
+            _logger.LogInformation(
+                "Note created [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}, CustomerId={CustomerId}",
+                "AUDIT_CREATE", "DataMutation", note.Id, request.CustomerId);
             return Created($"/api/notes/{note.Id}", note);
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("database permissions"))
         {
-            return StatusCode(503, new { error = "Service temporarily unavailable" });
+            throw new InfrastructureException(
+                "Notes service is temporarily unavailable due to a permissions issue.",
+                "INFRASTRUCTURE_DATABASE_UNAVAILABLE",
+                ex,
+                StatusCodes.Status503ServiceUnavailable);
         }
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Toggles the pinned status of a note.</summary>
     [HttpPut("{id:long}/toggle-pin")]
-    public async Task<ActionResult<Note>> TogglePin(long id)
+    [ProducesResponseType(typeof(Note), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<Note>> TogglePin(long id, CancellationToken cancellationToken = default)
     {
-        var note = await _dataService.ToggleNotePin(id);
-        if (note == null)
-        {
-            return NotFound();
-        }
+        var note = await _dataService.ToggleNotePinAsync(id, cancellationToken)
+            ?? throw new NotFoundException("Note", id);
+        _logger.LogInformation(
+            "Note pin toggled [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}, IsPinned={IsPinned}",
+            "AUDIT_UPDATE", "DataMutation", note.Id, note.IsPinned);
         return Ok(note);
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Updates the content of a note.</summary>
     [HttpPut("{id:long}")]
-    public async Task<ActionResult<Note>> Update(long id, [FromBody] UpdateNoteRequest request)
+    [ProducesResponseType(typeof(Note), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<Note>> Update(long id, [FromBody] UpdateNoteRequest request, CancellationToken cancellationToken = default)
     {
-        var note = await _dataService.UpdateNote(id, request.Content);
-        if (note == null)
-        {
-            return NotFound();
-        }
+        var note = await _dataService.UpdateNoteAsync(id, request.Content, cancellationToken)
+            ?? throw new NotFoundException("Note", id);
+        _logger.LogInformation(
+            "Note updated [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}",
+            "AUDIT_UPDATE", "DataMutation", note.Id);
         return Ok(note);
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Deletes a note by ID.</summary>
     [HttpDelete("{id:long}")]
-    public async Task<ActionResult> Delete(long id)
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<ActionResult> Delete(long id, CancellationToken cancellationToken = default)
     {
-        try
-        {
-            await _dataService.DeleteNote(id);
-            return NoContent();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error deleting note {Id}", id);
-            return StatusCode(500, new { error = "An unexpected error occurred." });
-        }
+        await _dataService.DeleteNoteAsync(id, cancellationToken);
+        _logger.LogInformation(
+            "Note deleted [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}",
+            "AUDIT_DELETE", "DataMutation", id);
+        return NoContent();
     }
-}
-
-public class CreateNoteRequest
-{
-    [System.ComponentModel.DataAnnotations.Required]
-    public long CustomerId { get; set; }
-
-    [System.ComponentModel.DataAnnotations.Required]
-    [System.ComponentModel.DataAnnotations.StringLength(2000)]
-    public string Content { get; set; } = string.Empty;
-
-    public string? TradeUnit { get; set; }
-}
-
-public class UpdateNoteRequest
-{
-    [System.ComponentModel.DataAnnotations.Required]
-    [System.ComponentModel.DataAnnotations.StringLength(2000)]
-    public string Content { get; set; } = string.Empty;
 }

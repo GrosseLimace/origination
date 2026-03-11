@@ -1,36 +1,37 @@
 import { Routes } from '@angular/router';
-import { MsalGuard } from '@azure/msal-angular';
+
+import { authGuard } from './core/guards/auth.guard';
 
 export const routes: Routes = [
   {
     path: '',
-    canActivate: [MsalGuard],
-    loadComponent: () => import('./pages/home/home.component').then(m => m.HomeComponent)
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/customers/pages/home/home.component').then(m => m.HomeComponent)
   },
   {
     path: 'build-list',
-    canActivate: [MsalGuard],
-    loadComponent: () => import('./pages/build-list/build-list.component').then(m => m.BuildListComponent)
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/build-list/pages/build-list/build-list.component').then(m => m.BuildListComponent)
   },
   {
     path: 'insights',
-    canActivate: [MsalGuard],
-    loadComponent: () => import('./pages/insights/insights.component').then(m => m.InsightsComponent)
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/customers/pages/insights/insights.component').then(m => m.InsightsComponent)
   },
   {
     path: 'dashboard',
-    canActivate: [MsalGuard],
-    loadComponent: () => import('./pages/dashboard/dashboard.component').then(m => m.DashboardComponent)
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/dashboard/pages/dashboard/dashboard.component').then(m => m.DashboardComponent)
   },
   {
     path: 'position-report',
-    canActivate: [MsalGuard],
-    loadComponent: () => import('./pages/position-report/position-report.component').then(m => m.PositionReportComponent)
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/position-report/pages/position-report/position-report.component').then(m => m.PositionReportComponent)
   },
   {
     path: 'bid-sheet',
-    canActivate: [MsalGuard],
-    loadComponent: () => import('./pages/bid-sheet/bid-sheet.component').then(m => m.BidSheetComponent)
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/bid-sheet/pages/bid-sheet/bid-sheet.component').then(m => m.BidSheetComponent)
   },
   {
     path: '**',

@@ -5,6 +5,24 @@
   <title>Origination</title>
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!--
+    Content Security Policy — security-guide.md §4.2
+    Restricts resource loading to reduce XSS impact on SessionStorage token theft.
+      script-src  'self'                  — Angular bundle from same origin only
+      style-src   'unsafe-inline' needed  — Tailwind CSS emits inline styles at runtime
+      connect-src includes AAD + API      — MSAL token endpoint + API (dev & prod)
+      frame-src   AAD                     — MSAL uses hidden iframes for silent token renewal
+  -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self';
+                 script-src 'self';
+                 style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+                 font-src 'self' https://fonts.gstatic.com data:;
+                 img-src 'self' data: https:;
+                 connect-src 'self' https://login.microsoftonline.com https://*.azurewebsites.net http://localhost:5000 https://localhost:* https://graph.microsoft.com;
+                 frame-src https://login.microsoftonline.com;
+                 object-src 'none';
+                 base-uri 'self';">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

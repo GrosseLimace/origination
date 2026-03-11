@@ -1,13 +1,11 @@
-using GrainOriginatorPortal.Api.Models;
-using GrainOriginatorPortal.Api.Services;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
+// Project namespaces
+using GrainOriginatorPortal.Api.Exceptions;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
-[Authorize]
 [ApiController]
 [Route("api/[controller]")]
+[Produces("application/json")]
 public class PlantingIntentionsController : ControllerBase
 {
     private readonly IDataService _dataService;
@@ -19,123 +17,85 @@ public class PlantingIntentionsController : ControllerBase
         _logger = logger;
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets all planting intentions.</summary>
     [HttpGet]
-    public async Task<ActionResult<List<PlantingIntention>>> GetAll()
+    [ProducesResponseType(typeof(List<PlantingIntention>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<PlantingIntention>>> GetAll(CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetPlantingIntentions());
+        return Ok(await _dataService.GetPlantingIntentionsAsync(cancellationToken));
     }
 
-    [HttpGet("customer/{customerId:long}")]
-    public async Task<ActionResult<List<PlantingIntention>>> GetByCustomer(long customerId)
+    // -------------------------------------------------------------------------
+    /// <summary>Gets all planting intentions for a specific customer.</summary>
+    [HttpGet("customer/{customerId}")]
+    [ProducesResponseType(typeof(List<PlantingIntention>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<PlantingIntention>>> GetByCustomer(int customerId, CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetPlantingIntentionsByCustomer(customerId));
+        return Ok(await _dataService.GetPlantingIntentionsByCustomerAsync(customerId, cancellationToken));
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Creates a new planting intention for a customer.</summary>
     [HttpPost]
-    public async Task<ActionResult> Create([FromBody] CreatePlantingIntentionRequest request)
+    [ProducesResponseType(typeof(PlantingIntention), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<PlantingIntention>> Create([FromBody] CreatePlantingIntentionRequest request, CancellationToken cancellationToken = default)
     {
-        try
-        {
-            var newIntention = await _dataService.AddPlantingIntention(
-                request.CustomerId,
-                request.CustomerName,
-                request.CustomerCode,
-                request.TradeUnit,
-                request.Crop,
-                request.Type,
-                request.Description,
-                request.Acres,
-                request.PlantingYear
-            );
-            return Ok(newIntention);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error creating planting intention for customer {CustomerId}", request.CustomerId);
-            return StatusCode(500, new { error = "An unexpected error occurred." });
-        }
+        var intention = await _dataService.AddPlantingIntentionAsync(
+            request.CustomerId,
+            request.CustomerName,
+            request.CustomerCode,
+            request.TradeUnit,
+            request.Crop,
+            request.Type,
+            request.Description,
+            request.Acres,
+            request.PlantingYear,
+            cancellationToken
+        );
+        _logger.LogInformation(
+            "Planting intention created [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}, CustomerId={CustomerId}, Crop={Crop}",
+            "AUDIT_CREATE", "DataMutation", intention.Id, request.CustomerId, request.Crop);
+        return Ok(intention);
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Updates an existing planting intention.</summary>
     [HttpPut("{id}")]
-    public async Task<ActionResult> Update(int id, [FromBody] UpdatePlantingIntentionRequest request)
+    [ProducesResponseType(typeof(PlantingIntention), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<PlantingIntention>> Update(int id, [FromBody] UpdatePlantingIntentionRequest request, CancellationToken cancellationToken = default)
     {
-        var updatedIntention = await _dataService.UpdatePlantingIntention(
+        var updated = await _dataService.UpdatePlantingIntentionAsync(
             id,
             request.Crop,
             request.Type,
             request.Description,
             request.Acres,
-            request.PlantingYear
+            request.PlantingYear,
+            cancellationToken
         );
-        if (updatedIntention == null) return NotFound();
-        return Ok(updatedIntention);
+        if (updated == null)
+        {
+            throw new NotFoundException("PlantingIntention", id);
+        }
+        _logger.LogInformation(
+            "Planting intention updated [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}",
+            "AUDIT_UPDATE", "DataMutation", id);
+        return Ok(updated);
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Deletes a planting intention by ID.</summary>
     [HttpDelete("{id}")]
-    public async Task<ActionResult> Delete(int id)
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<ActionResult> Delete(int id, CancellationToken cancellationToken = default)
     {
-        try
-        {
-            await _dataService.DeletePlantingIntention(id);
-            return NoContent();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error deleting planting intention {Id}", id);
-            return StatusCode(500, new { error = "An unexpected error occurred." });
-        }
+        await _dataService.DeletePlantingIntentionAsync(id, cancellationToken);
+        _logger.LogInformation(
+            "Planting intention deleted [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}",
+            "AUDIT_DELETE", "DataMutation", id);
+        return NoContent();
     }
-}
-
-public class CreatePlantingIntentionRequest
-{
-    [System.ComponentModel.DataAnnotations.Required]
-    public long CustomerId { get; set; }
-
-    [System.ComponentModel.DataAnnotations.Required]
-    [System.ComponentModel.DataAnnotations.StringLength(255)]
-    public string CustomerName { get; set; } = string.Empty;
-
-    [System.ComponentModel.DataAnnotations.Required]
-    [System.ComponentModel.DataAnnotations.StringLength(50)]
-    public string CustomerCode { get; set; } = string.Empty;
-
-    [System.ComponentModel.DataAnnotations.Required]
-    [System.ComponentModel.DataAnnotations.StringLength(100)]
-    public string TradeUnit { get; set; } = string.Empty;
-
-    [System.ComponentModel.DataAnnotations.Required]
-    [System.ComponentModel.DataAnnotations.StringLength(100)]
-    public string Crop { get; set; } = string.Empty;
-
-    [System.ComponentModel.DataAnnotations.StringLength(100)]
-    public string? Type { get; set; }
-
-    [System.ComponentModel.DataAnnotations.StringLength(255)]
-    public string? Description { get; set; }
-
-    [System.ComponentModel.DataAnnotations.Range(1, 100000)]
-    public int Acres { get; set; }
-
-    [System.ComponentModel.DataAnnotations.Range(2020, 2100)]
-    public int PlantingYear { get; set; }
-}
-
-public class UpdatePlantingIntentionRequest
-{
-    [System.ComponentModel.DataAnnotations.Required]
-    [System.ComponentModel.DataAnnotations.StringLength(100)]
-    public string Crop { get; set; } = string.Empty;
-
-    [System.ComponentModel.DataAnnotations.StringLength(100)]
-    public string? Type { get; set; }
-
-    [System.ComponentModel.DataAnnotations.StringLength(255)]
-    public string? Description { get; set; }
-
-    [System.ComponentModel.DataAnnotations.Range(1, 100000)]
-    public int Acres { get; set; }
-
-    [System.ComponentModel.DataAnnotations.Range(2020, 2100)]
-    public int PlantingYear { get; set; }
 }

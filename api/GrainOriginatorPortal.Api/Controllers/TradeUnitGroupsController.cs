@@ -1,13 +1,8 @@
-using GrainOriginatorPortal.Api.Models;
-using GrainOriginatorPortal.Api.Services;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
-
 namespace GrainOriginatorPortal.Api.Controllers;
 
-[Authorize]
 [ApiController]
 [Route("api/[controller]")]
+[Produces("application/json")]
 public class TradeUnitGroupsController : ControllerBase
 {
     private readonly IDataService _dataService;
@@ -17,9 +12,12 @@ public class TradeUnitGroupsController : ControllerBase
         _dataService = dataService;
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets all trade unit groups with their member trade units.</summary>
     [HttpGet]
-    public async Task<ActionResult<List<TradeUnitGroup>>> GetAll()
+    [ProducesResponseType(typeof(List<TradeUnitGroup>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<TradeUnitGroup>>> GetAll(CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetTradeUnitGroups());
+        return Ok(await _dataService.GetTradeUnitGroupsAsync(cancellationToken));
     }
 }

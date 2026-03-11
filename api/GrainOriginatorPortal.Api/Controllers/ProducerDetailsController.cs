@@ -1,81 +1,63 @@
-using GrainOriginatorPortal.Api.Models;
-using GrainOriginatorPortal.Api.Services;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Logging;
-
 namespace GrainOriginatorPortal.Api.Controllers;
 
-[Authorize]
 [ApiController]
 [Route("api/[controller]")]
+[Produces("application/json")]
 public class ProducerDetailsController : ControllerBase
 {
     private readonly IDataService _dataService;
-    private readonly ILogger<ProducerDetailsController> _logger;
 
-    public ProducerDetailsController(IDataService dataService, ILogger<ProducerDetailsController> logger)
+    public ProducerDetailsController(IDataService dataService)
     {
         _dataService = dataService;
-        _logger = logger;
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets all producer details records.</summary>
     [HttpGet]
-    public async Task<ActionResult<List<ProducerDetails>>> GetAll()
+    [ProducesResponseType(typeof(List<ProducerDetails>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<ProducerDetails>>> GetAll(CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetAllProducerDetails());
+        return Ok(await _dataService.GetAllProducerDetailsAsync(cancellationToken));
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets producer details for a specific customer. Returns an empty record if not yet saved.</summary>
     [HttpGet("customer/{customerId:long}")]
-    public async Task<ActionResult<ProducerDetails>> GetByCustomer(long customerId)
+    [ProducesResponseType(typeof(ProducerDetails), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ProducerDetails>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
-        var details = await _dataService.GetProducerDetails(customerId);
-        // Return empty record rather than 404 — absence of saved details is normal for new customers
+        var details = await _dataService.GetProducerDetailsAsync(customerId, cancellationToken);
         return Ok(details ?? new ProducerDetails { CustomerId = customerId });
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Creates or updates producer details for a customer.</summary>
     [HttpPut("customer/{customerId:long}")]
-    public async Task<ActionResult<ProducerDetails>> Upsert(long customerId, [FromBody] UpsertProducerDetailsRequest request)
+    [ProducesResponseType(typeof(ProducerDetails), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ProducerDetails>> Upsert(long customerId, [FromBody] UpsertProducerDetailsRequest request, CancellationToken cancellationToken = default)
     {
-        try
-        {
-            var details = await _dataService.UpsertProducerDetails(
-                customerId,
-                request.SourceCustomerId,
-                request.CustomerName,
-                request.TotalAcres,
-                request.BinCapacity,
-                request.PrimaryContact,
-                request.Commodities,
-                request.LinkedProducerIds
-            );
-            return Ok(details);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error saving producer details for customer {CustomerId}", customerId);
-            return StatusCode(500, new { error = "Failed to save producer details" });
-        }
+        var details = await _dataService.UpsertProducerDetailsAsync(
+            customerId,
+            request.SourceCustomerId,
+            request.CustomerName,
+            request.TotalAcres,
+            request.BinCapacity,
+            request.PrimaryContact,
+            request.Commodities,
+            request.LinkedProducerIds,
+            cancellationToken
+        );
+        return Ok(details);
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Deletes producer details for a customer.</summary>
     [HttpDelete("customer/{customerId:long}")]
-    public async Task<ActionResult> Delete(long customerId)
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<ActionResult> Delete(long customerId, CancellationToken cancellationToken = default)
     {
-        await _dataService.DeleteProducerDetails(customerId);
+        await _dataService.DeleteProducerDetailsAsync(customerId, cancellationToken);
         return NoContent();
     }
-}
-
-public class UpsertProducerDetailsRequest
-{
-    [System.ComponentModel.DataAnnotations.StringLength(50)]  public string? SourceCustomerId { get; set; }
-
-    [System.ComponentModel.DataAnnotations.Required]
-    [System.ComponentModel.DataAnnotations.StringLength(255)] public string CustomerName { get; set; } = string.Empty;
-
-    [System.ComponentModel.DataAnnotations.Range(0, 999999)]  public decimal? TotalAcres { get; set; }
-    [System.ComponentModel.DataAnnotations.Range(0, 999999)]  public decimal? BinCapacity { get; set; }
-    [System.ComponentModel.DataAnnotations.StringLength(200)] public string? PrimaryContact { get; set; }
-    [System.ComponentModel.DataAnnotations.StringLength(500)] public string? Commodities { get; set; }
-    [System.ComponentModel.DataAnnotations.StringLength(500)] public string? LinkedProducerIds { get; set; }
 }

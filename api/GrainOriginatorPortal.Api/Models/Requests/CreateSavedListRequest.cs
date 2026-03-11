@@ -1,0 +1,19 @@
+using System.ComponentModel.DataAnnotations;
+
+namespace GrainOriginatorPortal.Api.Models.Requests;
+
+public record CreateSavedListRequest
+{
+    [Required]
+    [StringLength(100)]
+    public required string Name { get; init; }
+
+    [Required]
+    [StringLength(500)]
+    public required string Query { get; init; }
+
+    [StringLength(500)]
+    public string? TradeUnits { get; init; }
+
+    public string? Filters { get; init; }
+}

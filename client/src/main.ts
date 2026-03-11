@@ -1,6 +1,12 @@
+// 1. Angular core
+import { APP_INITIALIZER, ErrorHandler, provideZonelessChangeDetection } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
+
+// 2. Angular router/http
 import { provideRouter } from '@angular/router';
-import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
+import { provideHttpClient, withInterceptorsFromDi, HTTP_INTERCEPTORS } from '@angular/common/http';
+
+// 3. Third-party (MSAL)
 import {
   MsalInterceptor,
   MsalGuard,
@@ -11,12 +17,28 @@ import {
   MSAL_INTERCEPTOR_CONFIG,
 } from '@azure/msal-angular';
 import { PublicClientApplication, InteractionType, BrowserCacheLocation } from '@azure/msal-browser';
-import { APP_INITIALIZER } from '@angular/core';
-import { HTTP_INTERCEPTORS } from '@angular/common/http';
+
+// 4. App
 import { AppComponent } from './app/app.component';
 import { routes } from './app/app.routes';
 import { environment } from './environments/environment';
+import { GlobalErrorHandler } from './app/core/handlers/global-error.handler';
 
+// Token storage decision — security-guide.md §4.2:
+// "Prefer HttpOnly secure cookies for browser apps where feasible.
+//  If using tokens in memory/local storage, document the threat model."
+//
+// We use SessionStorage (not LocalStorage or memory) because:
+//   1. Tokens are cleared when the tab/browser closes — reduces stolen-token window.
+//   2. SessionStorage is tab-isolated — tokens are not shared across tabs.
+//   3. HttpOnly cookies are not feasible here: the API is on a different origin
+//      (separate App Service in production), requiring SameSite=None + Secure cookies,
+//      which creates third-party cookie restriction issues in modern browsers.
+//   4. XSS is the primary remaining risk. Mitigations in place:
+//      - Angular's built-in DOM sanitization prevents reflected/stored XSS.
+//      - No bypassSecurityTrust* usage anywhere in the app.
+//      - MSAL access tokens are short-lived (~1 hour) and refresh silently.
+//      - Content-Security-Policy headers on the API block cross-origin resource loading.
 const msalInstance = new PublicClientApplication({
   auth: {
     ...environment.msalConfig.auth,
@@ -28,6 +50,8 @@ const msalInstance = new PublicClientApplication({
 
 bootstrapApplication(AppComponent, {
   providers: [
+    provideZonelessChangeDetection(),
+    { provide: ErrorHandler, useClass: GlobalErrorHandler },
     provideRouter(routes),
     provideHttpClient(withInterceptorsFromDi()),
     {

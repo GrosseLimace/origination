@@ -1,13 +1,8 @@
-using GrainOriginatorPortal.Api.Models;
-using GrainOriginatorPortal.Api.Services;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
-
 namespace GrainOriginatorPortal.Api.Controllers;
 
-[Authorize]
 [ApiController]
 [Route("api/[controller]")]
+[Produces("application/json")]
 public class CommoditiesController : ControllerBase
 {
     private readonly IDataService _dataService;
@@ -17,9 +12,12 @@ public class CommoditiesController : ControllerBase
         _dataService = dataService;
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets all active commodities.</summary>
     [HttpGet]
-    public async Task<ActionResult<List<Commodity>>> GetAll()
+    [ProducesResponseType(typeof(List<Commodity>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<Commodity>>> GetAll(CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetCommodities());
+        return Ok(await _dataService.GetCommoditiesAsync(cancellationToken));
     }
 }
