@@ -39,6 +39,7 @@ export class HomeComponent {
   private readonly _resizeHandler = () => this._checkMobile();
   private _isLoading = false;
   private _isFirstLoad = true;
+  private _customerRequestId = 0;
 
   // Public signals — template binds directly to these
   readonly customers = signal<Customer[]>([]);
@@ -179,12 +180,16 @@ export class HomeComponent {
   }
 
   private _loadAllData(tradeUnits?: string[]): void {
-    if (this._isLoading) return;
+    // Increment request ID so any in-flight customer request from a previous
+    // trade unit selection is ignored when it eventually resolves.
+    const requestId = ++this._customerRequestId;
     this._isLoading = true;
     this.loading.set(true);
 
     this.apiService.getCustomers(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
+        // Discard result if a newer request has already been issued.
+        if (requestId !== this._customerRequestId) return;
         this.customers.set(data);
         this.appState.setCustomers(data);
         this.loading.set(false);
@@ -200,6 +205,7 @@ export class HomeComponent {
         }
       },
       error: () => {
+        if (requestId !== this._customerRequestId) return;
         this.loading.set(false);
         this._isLoading = false;
       }
@@ -386,6 +392,9 @@ export class HomeComponent {
     // while the new filtered API call is in flight.
     this.customers.set([]);
     this.appState.setCustomers([]);
+    // Reset loading flag so an explicit user selection is never blocked by a
+    // background load that may still be in-flight.
+    this._isLoading = false;
     if (tradeUnits && tradeUnits.length > 0) {
       this._loadAllData(tradeUnits);
     }
