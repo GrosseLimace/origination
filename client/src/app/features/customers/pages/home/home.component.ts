@@ -102,10 +102,10 @@ export class HomeComponent {
     this._restoreStateFromService();
     this._loadProducerDetails();
 
-    if (this.selectedTradeUnits().length > 0 && this.customers().length === 0) {
+    if (this.selectedTradeUnits().length > 0) {
+      // Always reload from API on init — appState customers may be stale/unfiltered
+      // from a previous session before trade unit scoping was in place.
       this._loadAllData(this.selectedTradeUnits());
-    } else if (this.selectedTradeUnits().length > 0) {
-      this._loadYieldData();
     }
 
     this.route.queryParams.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
@@ -129,7 +129,7 @@ export class HomeComponent {
                           event.urlAfterRedirects.startsWith('/?') ||
                           event.url === '/' ||
                           event.url.startsWith('/?');
-      if (isHomeRoute && this.selectedTradeUnits().length > 0 && this.customers().length === 0) {
+      if (isHomeRoute && this.selectedTradeUnits().length > 0) {
         this._loadAllData(this.selectedTradeUnits());
       }
     });
