@@ -11,46 +11,44 @@ namespace GrainOriginatorPortal.Api.Migrations.ApplicationDb
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.CreateTable(
-                name: "CustomerSnapshot",
-                schema: "dbo",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    CustomerId = table.Column<long>(type: "bigint", nullable: false),
-                    CustomerName = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: false),
-                    SourceCustomerId = table.Column<string>(type: "nvarchar(400)", maxLength: 400, nullable: true),
-                    IndustryCode1 = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
-                    IsActive = table.Column<bool>(type: "bit", nullable: false),
-                    EffectiveStartDate = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    EffectiveEndDate = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    MerchandisingPhone = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    MerchandisingEmail = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    ExtendedPrimaryPhone = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    SupplementalEmail = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    MerchandisingCity = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    MerchandisingStateProvince = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    MerchandisingAddressLine1 = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    MerchandisingPostalCode = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    ExtendedAddressLine1 = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    ExtendedAddressLine2 = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    ExtendedAddressLine3 = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    ExtendedAddressLine4 = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    ExtendedCity = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    ExtendedPostalCode = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    ExtendedStateProvince = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    ExtendedCountry = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    TradeUnit = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
-                    SnapshotRefreshedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "GETUTCDATE()")
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_CustomerSnapshot", x => x.Id);
-                });
+            // Guard: CustomerSnapshot may have been created manually before this migration was tracked
+            migrationBuilder.Sql(@"
+                IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'CustomerSnapshot' AND schema_id = SCHEMA_ID('dbo'))
+                BEGIN
+                    EXEC('CREATE TABLE [dbo].[CustomerSnapshot] (
+                        [Id] int NOT NULL IDENTITY,
+                        [CustomerId] bigint NOT NULL,
+                        [CustomerName] nvarchar(500) NOT NULL,
+                        [SourceCustomerId] nvarchar(400) NULL,
+                        [IndustryCode1] nvarchar(50) NULL,
+                        [IsActive] bit NOT NULL,
+                        [EffectiveStartDate] datetime2 NULL,
+                        [EffectiveEndDate] datetime2 NULL,
+                        [MerchandisingPhone] nvarchar(max) NULL,
+                        [MerchandisingEmail] nvarchar(max) NULL,
+                        [ExtendedPrimaryPhone] nvarchar(max) NULL,
+                        [SupplementalEmail] nvarchar(max) NULL,
+                        [MerchandisingCity] nvarchar(max) NULL,
+                        [MerchandisingStateProvince] nvarchar(max) NULL,
+                        [MerchandisingAddressLine1] nvarchar(max) NULL,
+                        [MerchandisingPostalCode] nvarchar(max) NULL,
+                        [ExtendedAddressLine1] nvarchar(max) NULL,
+                        [ExtendedAddressLine2] nvarchar(max) NULL,
+                        [ExtendedAddressLine3] nvarchar(max) NULL,
+                        [ExtendedAddressLine4] nvarchar(max) NULL,
+                        [ExtendedCity] nvarchar(max) NULL,
+                        [ExtendedPostalCode] nvarchar(max) NULL,
+                        [ExtendedStateProvince] nvarchar(max) NULL,
+                        [ExtendedCountry] nvarchar(max) NULL,
+                        [TradeUnit] nvarchar(100) NULL,
+                        [SnapshotRefreshedAt] datetime2 NOT NULL DEFAULT (GETUTCDATE()),
+                        CONSTRAINT [PK_CustomerSnapshot] PRIMARY KEY ([Id])
+                    )')
+                END
+            ");
         }
 
-        /// <inheritdoc />
+/// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(

@@ -59,6 +59,18 @@ public class CustomersController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
+    /// <summary>Gets a single customer by their source system ID (e.g. CTRM customer code).</summary>
+    [HttpGet("by-source/{sourceId}")]
+    [ProducesResponseType(typeof(Customer), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<Customer>> GetBySourceId(string sourceId, CancellationToken cancellationToken = default)
+    {
+        var customer = await _dataService.GetCustomerBySourceIdAsync(sourceId, cancellationToken)
+            ?? throw new NotFoundException("Customer", sourceId);
+        return Ok(customer);
+    }
+
+    // -------------------------------------------------------------------------
     /// <summary>Updates an existing customer's contact and farm information.</summary>
     [HttpPut("{id:long}")]
     [ProducesResponseType(typeof(Customer), StatusCodes.Status200OK)]

@@ -66,6 +66,7 @@ export class DashboardComponent {
   selectedPlantingYear = signal<number>(new Date().getFullYear());
 
   plantingIntentionsExpanded = signal(false);
+  showSeasonTargets = signal(false);
 
   // Tab / filter state
   activeTab = signal<'byCrop' | 'topProducers' | 'harvestContracts'>('byCrop');
@@ -683,6 +684,7 @@ export class DashboardComponent {
 
   goToSeasonTargets(): void {
     this.activeTab.set('harvestContracts');
+    this.showSeasonTargets.set(true);
   }
 
   onCropFilterChange(): void {
@@ -751,17 +753,22 @@ export class DashboardComponent {
 
   get availableCrops(): string[] {
     const selectedTUs = this.selectedDashboardTradeUnits();
-    const forYear = this.plantingIntentions().filter(p => {
-      if (+p.plantingYear !== +this.selectedPlantingYear()) return false;
-      if (selectedTUs.length > 0 && !selectedTUs.includes(p.tradeUnit)) return false;
-      return true;
-    });
     const crops = new Set<string>();
-    for (const p of forYear) {
+
+    // From planting intentions (all years) in the selected trade units
+    for (const p of this.plantingIntentions()) {
+      if (selectedTUs.length > 0 && !selectedTUs.includes(p.tradeUnit)) continue;
       const commodity = this.allCommodities().find(c => c.code === p.crop);
       const category = commodity?.category || p.crop;
-      crops.add(category);
+      if (category) crops.add(category);
     }
+
+    // From contracts — use commodityGroup (broad name like "Corn", "Wheat", "Soybeans")
+    for (const c of this.contracts()) {
+      const group = c.commodityGroup || c.commodityDescription;
+      if (group) crops.add(group);
+    }
+
     return [...crops].sort();
   }
 
@@ -865,6 +872,125 @@ export class DashboardComponent {
         production: v.production > 0 ? Math.round(v.production) : null,
         crops: [...v.cropSet].sort()
       }));
+  }
+
+  // =========================================================================
+  // Harvest & Contracts tab computed data
+  // =========================================================================
+
+  get contractsForYear(): Contract[] {
+    const year = this.selectedPlantingYear();
+    const cropFilter = this.selectedCropFilter();
+    return this.contracts().filter(c => {
+      if (c.cropYear !== year) return false;
+      if (cropFilter) {
+        const group = (c.commodityGroup || c.commodityDescription || c.commodityCode || '').toLowerCase();
+        if (!group.includes(cropFilter.toLowerCase()) && cropFilter.toLowerCase() !== group) return false;
+      }
+      return true;
+    });
+  }
+
+  get harvestTimelineMonths(): { month: string; monthIndex: number; segments: { commodity: string; bushels: number; hex: string }[]; total: number; barHeightPx: number }[] {
+    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const commodityColorMap = new Map<string, string>();
+    let colorIdx = 0;
+    const monthData: Map<number, Map<string, number>> = new Map();
+    for (let i = 0; i < 12; i++) monthData.set(i, new Map());
+
+    for (const c of this.contractsForYear) {
+      if (!c.deliveryStart) continue;
+      const d = new Date(c.deliveryStart);
+      const monthIdx = d.getMonth();
+      const commodity = c.commodityDescription || c.commodityGroup || c.commodityCode || 'Other';
+      if (!commodityColorMap.has(commodity)) {
+        commodityColorMap.set(commodity, this.CHART_COLORS[colorIdx++ % this.CHART_COLORS.length].hex);
+      }
+      const m = monthData.get(monthIdx)!;
+      m.set(commodity, (m.get(commodity) || 0) + (c.quantity || 0));
+    }
+
+    const raw = MONTHS.map((month, i) => {
+      const m = monthData.get(i)!;
+      const segments = [...m.entries()].map(([commodity, bushels]) => ({
+        commodity, bushels, hex: commodityColorMap.get(commodity)!
+      }));
+      const total = segments.reduce((s, x) => s + x.bushels, 0);
+      return { month, monthIndex: i, segments, total, barHeightPx: 0 };
+    });
+
+    const max = Math.max(...raw.map(m => m.total), 1);
+    return raw.map(m => ({ ...m, barHeightPx: Math.round((m.total / max) * 128) }));
+  }
+
+  get harvestTimelineMax(): number {
+    return Math.max(...this.harvestTimelineMonths.map(m => m.total), 1);
+  }
+
+  get harvestTimelineMidpoint(): number {
+    return Math.floor(this.harvestTimelineMax / 2);
+  }
+
+  get contractCommodityLegend(): { commodity: string; hex: string }[] {
+    const seen = new Set<string>();
+    const result: { commodity: string; hex: string }[] = [];
+    for (const m of this.harvestTimelineMonths) {
+      for (const seg of m.segments) {
+        if (!seen.has(seg.commodity)) {
+          seen.add(seg.commodity);
+          result.push({ commodity: seg.commodity, hex: seg.hex });
+        }
+      }
+    }
+    return result;
+  }
+
+  get contractCoverageRows(): { category: string; estimatedBu: number; contractedBu: number; pct: number; hex: string }[] {
+    return this.categoryRows().map((row, i) => {
+      const categoryLower = row.category.toLowerCase();
+      const contracted = this.contractsForYear
+        .filter(c => {
+          const d = (c.commodityDescription || c.commodityGroup || c.commodityCode || '').toLowerCase();
+          return d.includes(categoryLower) || categoryLower.startsWith(d.split(' ')[0]);
+        })
+        .reduce((s, c) => s + (c.quantity || 0), 0);
+      const pct = row.totalEstimatedProduction > 0
+        ? Math.min(Math.round((contracted / row.totalEstimatedProduction) * 100), 999)
+        : 0;
+      return {
+        category: row.category,
+        estimatedBu: Math.round(row.totalEstimatedProduction),
+        contractedBu: contracted,
+        pct,
+        hex: this.CHART_COLORS[i % this.CHART_COLORS.length].hex
+      };
+    });
+  }
+
+  get salesOpportunityRows(): { commodity: string; contracts: number; totalBu: number; openBu: number; unpricedBu: number; avgPrice: number; hex: string }[] {
+    const map = new Map<string, { total: number; open: number; priced: number; value: number; count: number }>();
+    for (const c of this.contractsForYear) {
+      const cat = c.commodityDescription || c.commodityGroup || c.commodityCode || 'Other';
+      if (!map.has(cat)) map.set(cat, { total: 0, open: 0, priced: 0, value: 0, count: 0 });
+      const m = map.get(cat)!;
+      m.total += c.quantity || 0;
+      m.open += c.openBalanceQuantity || 0;
+      m.priced += c.pricedQuantity || 0;
+      m.value += c.totalValue || ((c.quantity || 0) * (c.price || 0));
+      m.count++;
+    }
+    return [...map.entries()]
+      .map(([commodity, v], i) => ({
+        commodity,
+        contracts: v.count,
+        totalBu: v.total,
+        openBu: v.open,
+        unpricedBu: Math.max(0, v.total - v.priced),
+        avgPrice: v.total > 0 ? v.value / v.total : 0,
+        hex: this.CHART_COLORS[i % this.CHART_COLORS.length].hex
+      }))
+      .filter(r => r.totalBu > 0)
+      .sort((a, b) => b.openBu - a.openBu);
   }
 
   // =========================================================================

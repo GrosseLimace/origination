@@ -81,6 +81,12 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
+  /** Fetches a single customer by their source system ID (CTRM customer code) */
+  getCustomerBySourceId(sourceId: string): Observable<Customer> {
+    return this.http.get<Customer>(`${this.baseUrl}/customers/by-source/${encodeURIComponent(sourceId)}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
   /** Updates an existing customer's information */
   updateCustomer(customer: Customer): Observable<Customer> {
     return this.http.put<Customer>(`${this.baseUrl}/customers/${customer.id}`, customer)

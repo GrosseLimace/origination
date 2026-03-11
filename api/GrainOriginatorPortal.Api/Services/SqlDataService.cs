@@ -49,44 +49,23 @@ public class SqlDataService : IDataService
         try
         {
             var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
-
-            // Build contract query with optional trade unit filter
-            var contractQuery = _context.Contracts.AsNoTracking().Where(c => c.IsActive && c.CtrmCustomerId != null);
-            if (hasTradeUnitFilter)
-                contractQuery = contractQuery.Where(c => c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit));
-
-            var customerIdsWithContracts = await contractQuery
-                .Select(c => c.CtrmCustomerId)
-                .Distinct()
-                .ToListAsync(cancellationToken);
-
-            // Build ticket query with optional organization code filter
-            var ticketQuery = _context.Tickets.AsNoTracking().Where(t => t.IsActive && t.CustomerId.HasValue);
-            if (hasTradeUnitFilter)
-                ticketQuery = ticketQuery.Where(t => t.OrganizationCode != null && tradeUnits!.Contains(t.OrganizationCode));
-
-            var customerIdsWithTickets = await ticketQuery
-                .Select(t => t.CustomerId!.Value)
-                .Distinct()
-                .ToListAsync(cancellationToken);
-
             var filterMsg = hasTradeUnitFilter ? $" (filtered by {tradeUnits!.Count} trade units: {string.Join(", ", tradeUnits)})" : "";
-            _logger.LogInformation($"Found {customerIdsWithContracts.Count} customers with contracts, {customerIdsWithTickets.Count} customers with tickets{filterMsg}");
 
-            // originations.vw_CurrentCustomers is pre-filtered to active PR customers, excluding
-            // DUP / DO NOT USE / symbol-prefixed names — no redundant filters needed here.
-            var customerQuery = _context.Customers
-                .AsNoTracking()
-                .Where(c => customerIdsWithContracts.Contains(c.SourceCustomerId) ||
-                            customerIdsWithTickets.Contains(c.Id))
-                .OrderBy(c => c.Name);
+            var query = _appContext.CustomerSnapshots.AsNoTracking().Where(s => s.IsActive);
+            if (hasTradeUnitFilter)
+                query = query.Where(s => s.TradeUnit != null && tradeUnits!.Contains(s.TradeUnit));
 
-            var customers = hasTradeUnitFilter
-                ? await customerQuery.ToListAsync(cancellationToken)
-                : await customerQuery.Take(15).ToListAsync(cancellationToken);
+            var snapshots = await query.OrderBy(s => s.CustomerName).ToListAsync(cancellationToken);
+
+            // Deduplicate: one Customer per CustomerId (snapshot has one row per customer per trade unit)
+            var customers = snapshots
+                .GroupBy(s => s.CustomerId)
+                .Select(g => MapSnapshotToCustomer(g.First()))
+                .OrderBy(c => c.Name)
+                .ToList();
 
             await EnrichCustomersWithESignAsync(customers, cancellationToken);
-            _logger.LogInformation($"Returning {customers.Count} producer customers who have contracts or tickets{filterMsg}");
+            _logger.LogInformation("Returning {Count} customers from CustomerSnapshot{Filter}", customers.Count, filterMsg);
             return customers;
         }
         catch (Exception ex)
@@ -103,73 +82,42 @@ public class SqlDataService : IDataService
         {
             var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
 
-            // Split search term into words for flexible matching
-            // Example: "Jim Johnson" will match "Johnson, Jim R" because both "Jim" and "Johnson" are in the name
             var searchWords = searchTerm.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries)
                                         .Select(w => w.Trim())
                                         .Where(w => w.Length > 0)
                                         .ToList();
 
-            // If trade unit filter is applied, get customer IDs that have contracts/tickets in those trade units
-            List<string>? customerIdsWithTradeUnitContracts = null;
-            List<long>? customerIdsWithTradeUnitTickets = null;
+            var query = _appContext.CustomerSnapshots.AsNoTracking().Where(s => s.IsActive).AsQueryable();
 
             if (hasTradeUnitFilter)
-            {
-                customerIdsWithTradeUnitContracts = await _context.Contracts
-                    .AsNoTracking()
-                    .Where(c => c.IsActive && c.CtrmCustomerId != null && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
-                    .Select(c => c.CtrmCustomerId!)
-                    .Distinct()
-                    .ToListAsync(cancellationToken);
+                query = query.Where(s => s.TradeUnit != null && tradeUnits!.Contains(s.TradeUnit));
 
-                customerIdsWithTradeUnitTickets = await _context.Tickets
-                    .AsNoTracking()
-                    .Where(t => t.IsActive && t.CustomerId.HasValue && t.OrganizationCode != null && tradeUnits!.Contains(t.OrganizationCode))
-                    .Select(t => t.CustomerId!.Value)
-                    .Distinct()
-                    .ToListAsync(cancellationToken);
-            }
-
-            // originations.vw_CurrentCustomers is pre-filtered — start with all customers in the view
-            var query = _context.Customers.AsNoTracking().AsQueryable();
-
-            // Add trade unit filter if specified
-            if (customerIdsWithTradeUnitContracts != null && customerIdsWithTradeUnitTickets != null)
-            {
-                query = query.Where(c =>
-                    (c.SourceCustomerId != null && customerIdsWithTradeUnitContracts.Contains(c.SourceCustomerId)) ||
-                    customerIdsWithTradeUnitTickets.Contains(c.Id));
-            }
-
-            // Add Contains condition for each search word (all words must match name OR sourceCustomerId)
+            // All search words must match name or source customer ID
             foreach (var word in searchWords)
-            {
-                query = query.Where(c => c.Name.Contains(word) || (c.SourceCustomerId != null && c.SourceCustomerId.Contains(word)));
-            }
+                query = query.Where(s => s.CustomerName.Contains(word) || (s.SourceCustomerId != null && s.SourceCustomerId.Contains(word)));
 
-            // Get candidates (without ordering in SQL - we'll order by relevance in memory)
-            // When trade units are selected, get more candidates; otherwise limit to 100
-            var candidates = await query
-                .Take(hasTradeUnitFilter ? 1000 : 100)
-                .ToListAsync(cancellationToken);
+            var snapshots = await query.Take(hasTradeUnitFilter ? 1000 : 100).ToListAsync(cancellationToken);
 
-            // Score each customer by relevance
+            // Deduplicate by CustomerId, then score by relevance
+            var candidates = snapshots
+                .GroupBy(s => s.CustomerId)
+                .Select(g => MapSnapshotToCustomer(g.First()))
+                .ToList();
+
             var scoredResults = candidates.Select(c => new
             {
                 Customer = c,
                 Score = CalculateRelevanceScore(c.Name, searchWords, searchTerm)
             })
-            .OrderByDescending(x => x.Score) // Most relevant first
-            .ThenBy(x => x.Customer.Name);    // Then alphabetically for ties
+            .OrderByDescending(x => x.Score)
+            .ThenBy(x => x.Customer.Name);
 
-            // Only limit to 15 when no trade units are selected
             var scoredCustomers = hasTradeUnitFilter
                 ? scoredResults.Select(x => x.Customer).ToList()
                 : scoredResults.Take(15).Select(x => x.Customer).ToList();
 
             await EnrichCustomersWithESignAsync(scoredCustomers, cancellationToken);
-            _logger.LogInformation($"Search for '{searchTerm}' returned {scoredCustomers.Count} producer customers (ranked by relevance)");
+            _logger.LogInformation("Search for '{SearchTerm}' returned {Count} customers from CustomerSnapshot", searchTerm, scoredCustomers.Count);
             return scoredCustomers;
         }
         catch (Exception ex)
@@ -179,6 +127,37 @@ public class SqlDataService : IDataService
             throw;
         }
     }
+
+    /// <summary>
+    /// Maps a CustomerSnapshot row to the Customer model used by the API.
+    /// CustomerSnapshot stores one row per customer-trade unit pair; callers must deduplicate.
+    /// </summary>
+    private static Customer MapSnapshotToCustomer(CustomerSnapshot snap) => new()
+    {
+        Id = snap.CustomerId,
+        Name = snap.CustomerName,
+        SourceCustomerId = snap.SourceCustomerId,
+        IndustryCode1 = snap.IndustryCode1,
+        IsActive = snap.IsActive,
+        EffectiveStartDate = snap.EffectiveStartDate,
+        EffectiveEndDate = snap.EffectiveEndDate,
+        Phone = snap.MerchandisingPhone,
+        Email = snap.MerchandisingEmail,
+        ExtendedPrimaryPhone = snap.ExtendedPrimaryPhone,
+        SupplementalEmail = snap.SupplementalEmail,
+        Location = snap.MerchandisingCity,
+        StateProvince = snap.MerchandisingStateProvince,
+        AddressLine1 = snap.MerchandisingAddressLine1,
+        PostalCode = snap.MerchandisingPostalCode,
+        ExtendedAddressLine1 = snap.ExtendedAddressLine1,
+        ExtendedAddressLine2 = snap.ExtendedAddressLine2,
+        ExtendedAddressLine3 = snap.ExtendedAddressLine3,
+        ExtendedAddressLine4 = snap.ExtendedAddressLine4,
+        ExtendedCity = snap.ExtendedCity,
+        ExtendedPostalCode = snap.ExtendedPostalCode,
+        ExtendedStateProvince = snap.ExtendedStateProvince,
+        ExtendedCountry = snap.ExtendedCountry,
+    };
 
     /// <summary>
     /// Looks up eSign enrollment records for the given customers and populates
@@ -303,6 +282,22 @@ public class SqlDataService : IDataService
         {
             _logger.LogError(ex, "Error retrieving customer {CustomerId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
                 id, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            throw;
+        }
+    }
+
+    public async Task<Customer?> GetCustomerBySourceIdAsync(string sourceCustomerId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await _context.Customers
+                .AsNoTracking()
+                .FirstOrDefaultAsync(c => c.SourceCustomerId == sourceCustomerId && c.IsActive, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving customer by source ID {SourceCustomerId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                sourceCustomerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -736,16 +731,10 @@ public class SqlDataService : IDataService
                 .OrderBy(p => p.PriceSequence)
                 .ToListAsync(cancellationToken);
         }
-        catch (SqlException ex) when (ex.Number == 208)
-        {
-            _logger.LogWarning("vw_ContractPricing view not accessible. Returning empty list. Error: {Error}", ex.Message);
-            return new List<ContractPricingLine>();
-        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving pricing lines for contract {ContractId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
-                sourceContractId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
-            throw;
+            _logger.LogWarning("vw_ContractPricing not accessible for contract {ContractId}. Returning empty list. Error: {Error}", sourceContractId, ex.Message);
+            return new List<ContractPricingLine>();
         }
     }
 
@@ -771,16 +760,10 @@ public class SqlDataService : IDataService
                 .ThenBy(p => p.PriceSequence)
                 .ToListAsync(cancellationToken);
         }
-        catch (SqlException ex) when (ex.Number == 208)
-        {
-            _logger.LogWarning("vw_ContractPricing view not accessible for customer {CustomerId}. Returning empty list.", sourceCustomerId);
-            return new List<ContractPricingLine>();
-        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving pricing lines for customer {CustomerId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
-                sourceCustomerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
-            throw;
+            _logger.LogWarning("vw_ContractPricing not accessible for customer {CustomerId}. Returning empty list. Error: {Error}", sourceCustomerId, ex.Message);
+            return new List<ContractPricingLine>();
         }
     }
 
