@@ -53,11 +53,8 @@ public class SqlDataService : IDataService
             // Build contract query with optional trade unit filter
             var contractQuery = _context.Contracts.AsNoTracking().Where(c => c.IsActive && c.CtrmCustomerId != null);
             if (hasTradeUnitFilter)
-            {
                 contractQuery = contractQuery.Where(c => c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit));
-            }
 
-            // Get customer IDs that have contracts (via CtrmCustomerId -> SourceCustomerId)
             var customerIdsWithContracts = await contractQuery
                 .Select(c => c.CtrmCustomerId)
                 .Distinct()
@@ -66,11 +63,8 @@ public class SqlDataService : IDataService
             // Build ticket query with optional organization code filter
             var ticketQuery = _context.Tickets.AsNoTracking().Where(t => t.IsActive && t.CustomerId.HasValue);
             if (hasTradeUnitFilter)
-            {
                 ticketQuery = ticketQuery.Where(t => t.OrganizationCode != null && tradeUnits!.Contains(t.OrganizationCode));
-            }
 
-            // Get customer IDs that have tickets (via CustomerId)
             var customerIdsWithTickets = await ticketQuery
                 .Select(t => t.CustomerId!.Value)
                 .Distinct()
@@ -81,8 +75,6 @@ public class SqlDataService : IDataService
 
             // originations.vw_CurrentCustomers is pre-filtered to active PR customers, excluding
             // DUP / DO NOT USE / symbol-prefixed names — no redundant filters needed here.
-            // Include customers who have contracts OR tickets in the trade unit.
-            // When trade units are selected, return all matching customers; otherwise limit to 15.
             var customerQuery = _context.Customers
                 .AsNoTracking()
                 .Where(c => customerIdsWithContracts.Contains(c.SourceCustomerId) ||

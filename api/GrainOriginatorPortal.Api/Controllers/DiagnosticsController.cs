@@ -174,6 +174,64 @@ public class DiagnosticsController : ControllerBase
         return Ok(new { TableName = tableName, ColumnCount = columns.Count, Columns = columns });
     }
 
+    /// <summary>
+    /// Populates dbo.CustomerSnapshot in the Origination DB from originations.vw_CustomerTradeUnits in ODS.
+    /// One row per customer-trade unit pair. One-time / on-demand operation — dev only.
+    /// </summary>
+    [HttpPost("customer-snapshot/populate")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> PopulateCustomerSnapshot(CancellationToken cancellationToken = default)
+    {
+        if (DenyIfNotDevelopment() is { } deny) return deny;
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        // Read all customer-trade unit rows from ODS view
+        var customerTradeUnits = await _context.CustomerTradeUnits
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        // Clear existing snapshot rows
+        await _appContext.Database.ExecuteSqlRawAsync("DELETE FROM dbo.CustomerSnapshot", cancellationToken);
+
+        // Map and bulk-insert into snapshot table
+        var refreshedAt = DateTime.UtcNow;
+        var rows = customerTradeUnits.Select(c => new CustomerSnapshot
+        {
+            CustomerId           = c.CustomerId,
+            CustomerName         = c.CustomerName ?? string.Empty,
+            SourceCustomerId     = c.SourceCustomerId,
+            IndustryCode1        = c.IndustryCode1,
+            IsActive             = c.IsActive,
+            EffectiveStartDate   = c.EffectiveStartDate,
+            EffectiveEndDate     = c.EffectiveEndDate,
+            MerchandisingPhone   = c.MerchandisingPhone,
+            MerchandisingEmail   = c.MerchandisingEmail,
+            ExtendedPrimaryPhone = c.ExtendedPrimaryPhone,
+            SupplementalEmail    = c.SupplementalEmail,
+            MerchandisingCity    = c.MerchandisingCity,
+            MerchandisingStateProvince  = c.MerchandisingStateProvince,
+            MerchandisingAddressLine1   = c.MerchandisingAddressLine1,
+            MerchandisingPostalCode     = c.MerchandisingPostalCode,
+            ExtendedAddressLine1 = c.ExtendedAddressLine1,
+            ExtendedAddressLine2 = c.ExtendedAddressLine2,
+            ExtendedAddressLine3 = c.ExtendedAddressLine3,
+            ExtendedAddressLine4 = c.ExtendedAddressLine4,
+            ExtendedCity         = c.ExtendedCity,
+            ExtendedPostalCode   = c.ExtendedPostalCode,
+            ExtendedStateProvince = c.ExtendedStateProvince,
+            ExtendedCountry      = c.ExtendedCountry,
+            TradeUnit            = c.TradeUnit,
+            SnapshotRefreshedAt  = refreshedAt
+        }).ToList();
+
+        await _appContext.CustomerSnapshots.AddRangeAsync(rows, cancellationToken);
+        await _appContext.SaveChangesAsync(cancellationToken);
+
+        sw.Stop();
+        return Ok(new { RowsInserted = rows.Count, ElapsedMs = sw.ElapsedMilliseconds });
+    }
+
     // -------------------------------------------------------------------------
     private record TableInfo
     {

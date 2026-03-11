@@ -27,6 +27,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<DashboardActualHarvest> DashboardActualHarvests => Set<DashboardActualHarvest>();
     public DbSet<SavedList> SavedLists => Set<SavedList>();
     public DbSet<ESignEnrollment> ESignEnrollments => Set<ESignEnrollment>();
+    public DbSet<CustomerSnapshot> CustomerSnapshots => Set<CustomerSnapshot>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -225,6 +226,19 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
 
             entity.HasIndex(e => e.CustomerId).IsUnique().HasDatabaseName("IX_ProducerDetails_CustomerId");
+        });
+
+        modelBuilder.Entity<CustomerSnapshot>(entity =>
+        {
+            entity.ToTable("CustomerSnapshot", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd();
+            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
+            entity.Property(e => e.CustomerName).HasColumnName("CustomerName").HasMaxLength(500).IsRequired();
+            entity.Property(e => e.SourceCustomerId).HasColumnName("SourceCustomerId").HasMaxLength(400).IsRequired(false);
+            entity.Property(e => e.IndustryCode1).HasColumnName("IndustryCode1").HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.TradeUnit).HasColumnName("TradeUnit").HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.SnapshotRefreshedAt).HasColumnName("SnapshotRefreshedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
         });
     }
 }
