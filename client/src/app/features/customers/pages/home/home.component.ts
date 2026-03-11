@@ -382,6 +382,10 @@ export class HomeComponent {
     this.selectedCustomer.set(null);
     this.appState.selectCustomer(null);
     this._crossTradeUnitCustomers.set(new Map());
+    // Clear stale customer list immediately so the old unfiltered list doesn't show
+    // while the new filtered API call is in flight.
+    this.customers.set([]);
+    this.appState.setCustomers([]);
     if (tradeUnits && tradeUnits.length > 0) {
       this._loadAllData(tradeUnits);
     }
@@ -737,6 +741,14 @@ export class HomeComponent {
 
   handleSelectLinkedCustomer(customerId: number): void {
     if (customerId === this.selectedCustomer()?.id) return;
+    // Cache the departing customer so getLinkedGroup can still find it for reverse-link
+    // lookups after the new customer is selected (prevents the dropdown from disappearing).
+    const departing = this.selectedCustomer();
+    if (departing && !this.customers().some(c => c.id === departing.id)) {
+      const cache = new Map(this._crossTradeUnitCustomers());
+      cache.set(departing.id, departing);
+      this._crossTradeUnitCustomers.set(cache);
+    }
     const customer = this.customers().find(c => c.id === customerId);
     if (customer) {
       this.selectedCustomer.set(customer);
@@ -766,6 +778,19 @@ export class HomeComponent {
           this.selectedCustomer.set(fetched);
           this._loadCustomerContractsAndTickets(fetched.id, fetched.sourceCustomerId);
           this._loadCustomerData(fetched.id);
+        },
+        error: () => {}
+      });
+    }
+    // Notes may not be loaded if no trade units are active — refresh so the linked
+    // customer's notes appear even when _loadAllData was never called.
+    if (this.selectedTradeUnits().length === 0) {
+      this.apiService.getNotes().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: (data) => {
+          this.notes.set(data);
+          this.appState.setNotes(data);
+          const sel = this.selectedCustomer();
+          if (sel) this._loadCustomerData(sel.id);
         },
         error: () => {}
       });
