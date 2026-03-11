@@ -432,12 +432,12 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
 
             modelBuilder.Entity("GrainOriginatorPortal.Api.Models.Note", b =>
                 {
-                    b.Property<long>("Id")
+                    b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
+                        .HasColumnType("int")
                         .HasColumnName("Id");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -450,6 +450,11 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)")
                         .HasColumnName("CreatedBy");
+
+                    b.Property<string>("CustomerCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("CustomerCode");
 
                     b.Property<long>("CustomerId")
                         .HasColumnType("bigint")
@@ -583,12 +588,12 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
 
             modelBuilder.Entity("GrainOriginatorPortal.Api.Models.ProducerDetails", b =>
                 {
-                    b.Property<long>("Id")
+                    b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
+                        .HasColumnType("int")
                         .HasColumnName("Id");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<decimal?>("BinCapacity")
                         .HasColumnType("decimal(18,2)")

@@ -9,6 +9,7 @@ public class Note
     public int Id { get; set; }
     public long CustomerId { get; set; }
     public string CustomerName { get; set; } = string.Empty;
+    public string? CustomerCode { get; set; }
     public string? TradeUnit { get; set; }
     public string Description { get; set; } = string.Empty;
     public string CreatedBy { get; set; } = string.Empty;

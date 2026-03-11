@@ -29,7 +29,7 @@ import { environment } from '@env/environment';
 })
 export class ApiService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = environment.apiUrl;
+  private readonly baseUrl = environment.apiBaseUrl;
 
   // ---------------------------------------------------------
   private handleError(error: unknown): Observable<never> {

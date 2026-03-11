@@ -1,7 +1,7 @@
 export const environment = {
   production: false,
   envName: 'Dev',
-  apiUrl: '/api',
+  apiBaseUrl: '/api',
   msalConfig: {
     auth: {
       clientId: 'e0f25943-ae8b-4c2d-8060-c9ffbd448aff',
