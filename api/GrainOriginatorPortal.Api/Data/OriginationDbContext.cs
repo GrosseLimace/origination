@@ -253,44 +253,41 @@ public class OriginationDbContext : DbContext
             entity.Property(e => e.GradeCode).HasColumnName("GradeCode").HasMaxLength(100);
         });
 
-        // Configure ContractPricingLine — maps to originations.vw_ContractPricing (read-only view)
+        // Configure ContractPricingLine — maps to base.vw_ContractPricing (read-only view)
         modelBuilder.Entity<ContractPricingLine>(entity =>
         {
             entity.HasNoKey();
-            entity.ToView("vw_ContractPricing", schema: "originations");
+            entity.ToView("vw_ContractPricing", schema: "base");
 
-            entity.Property(e => e.PriceSequence).HasColumnName("price_sequence");
-            entity.Property(e => e.ContractId).HasColumnName("contract_id").HasMaxLength(64);
-            entity.Property(e => e.DisplayId).HasColumnName("display_id").HasMaxLength(64);
-            entity.Property(e => e.QuantityUom).HasColumnName("quantity_uom").HasMaxLength(16);
-            entity.Property(e => e.CommodityCode).HasColumnName("commodity_code").HasMaxLength(100);
-            entity.Property(e => e.PriceType).HasColumnName("price_type").HasMaxLength(16);
-            entity.Property(e => e.Adjustment).HasColumnName("adjustment").HasColumnType("decimal(18,6)");
-            entity.Property(e => e.BasisPrice).HasColumnName("basis_price").HasColumnType("decimal(18,6)");
-            entity.Property(e => e.CashPrice).HasColumnName("cash_price").HasColumnType("decimal(18,6)");
-            entity.Property(e => e.FuturesPrice).HasColumnName("futures_price").HasColumnType("decimal(18,6)");
-            entity.Property(e => e.FuturesMonth).HasColumnName("futures_month").HasMaxLength(10);
-            entity.Property(e => e.Currency).HasColumnName("currency").HasMaxLength(10);
-            entity.Property(e => e.AppliedQty).HasColumnName("applied_qty").HasColumnType("decimal(18,6)");
-            entity.Property(e => e.PricedQty).HasColumnName("priced_qty").HasColumnType("decimal(18,6)");
-            entity.Property(e => e.ContractQty).HasColumnName("contract_qty").HasColumnType("decimal(18,6)");
-            entity.Property(e => e.CreatedAt).HasColumnName("created_at");
-            entity.Property(e => e.PricedAt).HasColumnName("priced_at");
-            entity.Property(e => e.DeliveryPeriodStart).HasColumnName("delivery_period_start");
-            entity.Property(e => e.DeliveryPeriodEnd).HasColumnName("delivery_period_end");
-            entity.Property(e => e.SignatureStatus).HasColumnName("signature_status").HasMaxLength(16);
-            entity.Property(e => e.DeliveryStatus).HasColumnName("delivery_status").HasMaxLength(32);
-            entity.Property(e => e.PricingStatus).HasColumnName("pricing_status").HasMaxLength(32);
-            entity.Property(e => e.LocationId).HasColumnName("location_id").HasMaxLength(50);
-            entity.Property(e => e.SequenceNumber).HasColumnName("sequence_number");
-            entity.Property(e => e.CustomerId).HasColumnName("customer_id").HasMaxLength(50);
-            entity.Property(e => e.CompanyCode).HasColumnName("company_code").HasMaxLength(10);
-            entity.Property(e => e.DivisionCode).HasColumnName("division_code").HasMaxLength(10);
-            entity.Property(e => e.LocationCode).HasColumnName("location_code").HasMaxLength(10);
-            entity.Property(e => e.PrefixType).HasColumnName("prefix_type").HasMaxLength(4);
-            entity.Property(e => e.PrefixCode).HasColumnName("prefix_code").HasMaxLength(4);
-            entity.Property(e => e.ContractNumber).HasColumnName("contract_number").HasMaxLength(50);
-            entity.Property(e => e.ContractSuffix).HasColumnName("contract_suffix").HasMaxLength(10);
+            // ContractId maps to SourceContractId — the string key used to link to Contract.SourceContractId
+            entity.Property(e => e.ContractId).HasColumnName("SourceContractId").HasMaxLength(64);
+            entity.Property(e => e.ContractNumber).HasColumnName("ContractNumber").HasMaxLength(50);
+            entity.Property(e => e.CustomerName).HasColumnName("CustomerName").HasMaxLength(500);
+            entity.Property(e => e.PriceSequence).HasColumnName("PriceSequence");
+            entity.Property(e => e.PriceQuantity).HasColumnName("PriceQuantity").HasColumnType("decimal(18,6)");
+            entity.Property(e => e.PriceUom).HasColumnName("PriceUom").HasMaxLength(16);
+            entity.Property(e => e.FlatPrice).HasColumnName("FlatPrice").HasColumnType("decimal(18,6)");
+            entity.Property(e => e.BasisPrice).HasColumnName("BasisPrice").HasColumnType("decimal(18,6)");
+            entity.Property(e => e.HedgePrice).HasColumnName("HedgePrice").HasColumnType("decimal(18,6)");
+            entity.Property(e => e.PriceDate).HasColumnName("PriceDate");
+            entity.Property(e => e.PriceCurrency).HasColumnName("PriceCurrency").HasMaxLength(10);
+            entity.Property(e => e.TraderInitials).HasColumnName("TraderInitials").HasMaxLength(20);
+            entity.Property(e => e.Trader).HasColumnName("Trader").HasMaxLength(200);
+            entity.Property(e => e.PriceOpenQuantity).HasColumnName("PriceOpenQuantity").HasColumnType("decimal(18,6)");
+            entity.Property(e => e.PriceAppliedQuantity).HasColumnName("PriceAppliedQuantity").HasColumnType("decimal(18,6)");
+            entity.Property(e => e.PriceSettledQuantity).HasColumnName("PriceSettledQuantity").HasColumnType("decimal(18,6)");
+            entity.Property(e => e.PriceOpenWeight).HasColumnName("PriceOpenWeight").HasColumnType("decimal(18,6)");
+            entity.Property(e => e.PriceAppliedWeight).HasColumnName("PriceAppliedWeight").HasColumnType("decimal(18,6)");
+            entity.Property(e => e.PriceSettledWeight).HasColumnName("PriceSettledWeight").HasColumnType("decimal(18,6)");
+            entity.Property(e => e.CustomerConfirmStatus).HasColumnName("CustomerConfirmStatus").HasMaxLength(100);
+            entity.Property(e => e.BrokerConfirmStatus).HasColumnName("BrokerConfirmStatus").HasMaxLength(100);
+            entity.Property(e => e.ConfirmationStatus).HasColumnName("ConfirmationStatus").HasMaxLength(100);
+            entity.Property(e => e.CreatedDate).HasColumnName("CreatedDate");
+            entity.Property(e => e.ModifiedDate).HasColumnName("ModifiedDate");
+
+            // Computed properties — ignored by EF (derived from stored columns above)
+            entity.Ignore(e => e.PricedQty);
+            entity.Ignore(e => e.CashPrice);
         });
 
         // Note and TradeUnit entity configuration moved to ApplicationDbContext

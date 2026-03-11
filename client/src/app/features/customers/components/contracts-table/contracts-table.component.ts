@@ -209,7 +209,7 @@ export class ContractsTableComponent {
       if (lines.length === 0) return { status: 'UNPRICED' };
 
       const totalPricedQty = lines.reduce((sum, l) => sum + (l.pricedQty ?? 0), 0);
-      const contractQty = lines[0].contractQty ?? contract.quantity ?? 0;
+      const contractQty = lines[0].priceQuantity ?? contract.quantity ?? 0;
 
       if (totalPricedQty === 0) return { status: 'UNPRICED' };
       if (totalPricedQty < contractQty) return { status: 'PARTIAL' };

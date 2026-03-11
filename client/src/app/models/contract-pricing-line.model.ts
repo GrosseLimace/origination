@@ -1,45 +1,41 @@
 export interface ContractPricingLine {
-  priceSequence: number;
-  contractId: string;       // Links to Contract.sourceContractId
-  displayId: string;
-  quantityUom?: string;
-  commodityCode?: string;
-  priceType: string;        // FLAT | PRICED | DEFERRED | UNPRICED | ERROR
+  // Identifiers — contractId = SourceContractId, links to Contract.sourceContractId
+  contractId: string;
+  contractNumber?: string;
+  customerName?: string;
 
   // Pricing
-  adjustment?: number;
+  priceSequence?: number;
+  priceQuantity?: number;
+  priceUom?: string;
+  flatPrice?: number;
   basisPrice?: number;
-  cashPrice?: number;
-  futuresPrice?: number;
-  futuresMonth?: string;
-  currency?: string;
+  hedgePrice?: number;
+  priceDate?: string;
+  priceCurrency?: string;
+
+  // Trader
+  traderInitials?: string;
+  trader?: string;
 
   // Quantities
-  appliedQty?: number;
-  pricedQty?: number;
-  contractQty?: number;
+  priceOpenQuantity?: number;
+  priceAppliedQuantity?: number;
+  priceSettledQuantity?: number;
+  priceOpenWeight?: number;
+  priceAppliedWeight?: number;
+  priceSettledWeight?: number;
+
+  // Confirmation statuses
+  customerConfirmStatus?: string;
+  brokerConfirmStatus?: string;
+  confirmationStatus?: string;
 
   // Dates
-  createdAt?: string;
-  pricedAt?: string;
-  deliveryPeriodStart?: string;
-  deliveryPeriodEnd?: string;
+  createdDate?: string;
+  modifiedDate?: string;
 
-  // Derived statuses from view
-  signatureStatus: string;  // Signed | Unsigned
-  deliveryStatus: string;   // Shipped | Partially Shipped | Not Shipped
-  pricingStatus: string;    // Priced | Partially Priced | Not Priced
-
-  // Location and org
-  locationId?: string;
-  companyCode?: string;
-  divisionCode?: string;
-  locationCode?: string;
-
-  sequenceNumber: number;
-  customerId?: string;
-  prefixType?: string;
-  prefixCode?: string;
-  contractNumber?: string;
-  contractSuffix?: string;
+  // Computed aliases (populated by API, derived from stored columns)
+  pricedQty?: number;   // = priceAppliedQuantity
+  cashPrice?: number;   // = flatPrice
 }

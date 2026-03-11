@@ -201,17 +201,21 @@ public class SqlDataService : IDataService
             .Where(e => codes.Contains(e.CustomerCode))
             .ToListAsync(cancellationToken);
 
+        // Presence of any row for a CustomerCode means enrolled.
+        // ScoularViewRecipients: use the first non-empty value across all duplicate rows.
         var enrollments = enrollmentList
             .GroupBy(e => e.CustomerCode)
-            .ToDictionary(g => g.Key, g => g.First());
+            .ToDictionary(
+                g => g.Key,
+                g => g.FirstOrDefault(e => !string.IsNullOrWhiteSpace(e.ScoularViewRecipients))?.ScoularViewRecipients);
 
         foreach (var customer in customers)
         {
             if (customer.SourceCustomerId != null &&
-                enrollments.TryGetValue(customer.SourceCustomerId, out var enrollment))
+                enrollments.TryGetValue(customer.SourceCustomerId, out var recipients))
             {
                 customer.ESignEnabled = true;
-                customer.ScoularViewRecipients = enrollment.ScoularViewRecipients;
+                customer.ScoularViewRecipients = recipients;
             }
         }
     }
@@ -732,6 +736,11 @@ public class SqlDataService : IDataService
                 .OrderBy(p => p.PriceSequence)
                 .ToListAsync(cancellationToken);
         }
+        catch (SqlException ex) when (ex.Number == 208)
+        {
+            _logger.LogWarning("vw_ContractPricing view not accessible. Returning empty list. Error: {Error}", ex.Message);
+            return new List<ContractPricingLine>();
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving pricing lines for contract {ContractId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
@@ -744,12 +753,28 @@ public class SqlDataService : IDataService
     {
         try
         {
+            // base.vw_ContractPricing has no customer_id column — resolve via contracts
+            var sourceContractIds = await _context.Contracts
+                .AsNoTracking()
+                .Where(c => c.CtrmCustomerId == sourceCustomerId)
+                .Select(c => c.SourceContractId)
+                .Where(id => id != null)
+                .ToListAsync(cancellationToken);
+
+            if (sourceContractIds.Count == 0)
+                return new List<ContractPricingLine>();
+
             return await _context.ContractPricingLines
                 .AsNoTracking()
-                .Where(p => p.CustomerId == sourceCustomerId)
+                .Where(p => sourceContractIds.Contains(p.ContractId))
                 .OrderBy(p => p.ContractId)
                 .ThenBy(p => p.PriceSequence)
                 .ToListAsync(cancellationToken);
+        }
+        catch (SqlException ex) when (ex.Number == 208)
+        {
+            _logger.LogWarning("vw_ContractPricing view not accessible for customer {CustomerId}. Returning empty list.", sourceCustomerId);
+            return new List<ContractPricingLine>();
         }
         catch (Exception ex)
         {
@@ -1152,6 +1177,7 @@ public class SqlDataService : IDataService
             {
                 CustomerId = customerId,
                 CustomerName = customer.Name,
+                CustomerCode = customer.SourceCustomerId,
                 TradeUnit = tradeUnit,
                 Description = content,
                 CreatedBy = GetCurrentUser(),
