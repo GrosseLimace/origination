@@ -42,7 +42,7 @@ public class UserTradeUnitsController : ControllerBase
         {
             var rows = await _entitlementsDb.UserTradeUnitAccess
                 .Where(u => u.UserId == userId)
-                .Select(u => new { u.GroupName, u.TradeUnitCode })
+                .Select(u => new UserTradeUnitRow { GroupName = u.GroupName, TradeUnitCode = u.TradeUnitCode })
                 .Distinct()
                 .ToListAsync();
 
@@ -63,4 +63,10 @@ public class UserTradeUnitsController : ControllerBase
             return Ok(Array.Empty<object>());
         }
     }
+}
+
+file class UserTradeUnitRow
+{
+    public string? GroupName { get; set; }
+    public string TradeUnitCode { get; set; } = string.Empty;
 }
