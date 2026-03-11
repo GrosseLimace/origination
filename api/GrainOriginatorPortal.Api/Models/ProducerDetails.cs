@@ -7,7 +7,7 @@ namespace GrainOriginatorPortal.Api.Models;
 /// </summary>
 public class ProducerDetails
 {
-    public long Id { get; set; }
+    public int Id { get; set; }
     public long CustomerId { get; set; }
     public string? SourceCustomerId { get; set; }
     public string CustomerName { get; set; } = string.Empty;

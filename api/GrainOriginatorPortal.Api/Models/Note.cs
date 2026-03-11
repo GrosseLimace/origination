@@ -6,7 +6,7 @@ namespace GrainOriginatorPortal.Api.Models;
 /// </summary>
 public class Note
 {
-    public long Id { get; set; }
+    public int Id { get; set; }
     public long CustomerId { get; set; }
     public string CustomerName { get; set; } = string.Empty;
     public string? TradeUnit { get; set; }
