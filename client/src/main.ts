@@ -60,7 +60,12 @@ bootstrapApplication(AppComponent, {
     },
     {
       provide: APP_INITIALIZER,
-      useFactory: (msalService: MsalService) => () => msalService.instance.initialize(),
+      useFactory: (msalService: MsalService) => async () => {
+        await msalService.instance.initialize();
+        // Process redirect response before any guards run — exchanges auth code
+        // for token and sets the active account so MsalGuard sees the user as signed in.
+        await msalService.instance.handleRedirectPromise();
+      },
       deps: [MsalService],
       multi: true,
     },
