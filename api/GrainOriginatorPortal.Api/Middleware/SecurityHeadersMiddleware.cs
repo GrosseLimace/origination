@@ -18,11 +18,12 @@ public class SecurityHeadersMiddleware
         context.Response.OnStarting(() =>
         {
             var headers = context.Response.Headers;
+            var isApiRequest = context.Request.Path.StartsWithSegments("/api");
 
             // Prevent MIME type sniffing
             headers["X-Content-Type-Options"] = "nosniff";
 
-            // Deny framing of API responses
+            // Deny framing
             headers["X-Frame-Options"] = "DENY";
 
             // Block cross-domain Flash/PDF policies
@@ -31,11 +32,14 @@ public class SecurityHeadersMiddleware
             // Limit referrer information on cross-origin requests
             headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
 
-            // CSP for a JSON API: no scripts, no resources, no framing
-            headers["Content-Security-Policy"] = "default-src 'none'";
-
-            // Force HTTPS for 1 year (only meaningful in production, harmless in dev)
+            // Force HTTPS for 1 year
             headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+
+            if (isApiRequest)
+            {
+                // CSP for JSON API responses: no scripts, no resources, no framing
+                headers["Content-Security-Policy"] = "default-src 'none'";
+            }
 
             return Task.CompletedTask;
         });
