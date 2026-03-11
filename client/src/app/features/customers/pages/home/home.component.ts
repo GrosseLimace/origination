@@ -1,4 +1,4 @@
-import { Component, inject, signal, DestroyRef } from '@angular/core';
+import { Component, inject, signal, computed, DestroyRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, NavigationEnd } from '@angular/router';
 import { forkJoin, of } from 'rxjs';
@@ -74,7 +74,25 @@ export class HomeComponent {
   readonly isMobile = signal(false);
   readonly loading = signal(false);
 
+  readonly lastContactedDate = computed(() => {
+    const notes = this.customerNotes();
+    if (notes.length === 0) return 'Never';
+    const lastNote = notes[0];
+    const raw = typeof lastNote.createdAt === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(lastNote.createdAt as any)
+      ? (lastNote.createdAt as any) + 'Z' : lastNote.createdAt;
+    const date = new Date(raw);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    if (days === 0 && now.getDate() === date.getDate()) return 'Today';
+    if (days < 2 && now.getDate() - date.getDate() === 1) return 'Yesterday';
+    if (days < 7) return `${days} days ago`;
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  });
+
   private _pendingProducerDetails: ProducerDetails[] | null = null;
+  // Customers fetched from outside the current trade unit filter (e.g. linked producers in other TUs)
+  private readonly _crossTradeUnitCustomers = signal<Map<number, Customer>>(new Map());
 
   constructor() {
     this._checkMobile();
@@ -293,7 +311,11 @@ export class HomeComponent {
       const sel = this.selectedCustomer();
       if (sel) {
         const updatedSel = updated.find(c => c.id === sel.id);
-        if (updatedSel) this.selectedCustomer.set(updatedSel);
+        if (updatedSel) {
+          this.selectedCustomer.set(updatedSel);
+          this._fetchMissingLinkedProducers(updatedSel);
+          this._loadCustomerData(updatedSel.id, updatedSel);
+        }
       }
     }
   }
@@ -359,6 +381,7 @@ export class HomeComponent {
     this.appState.setTradeUnits(tradeUnits);
     this.selectedCustomer.set(null);
     this.appState.selectCustomer(null);
+    this._crossTradeUnitCustomers.set(new Map());
     if (tradeUnits && tradeUnits.length > 0) {
       this._loadAllData(tradeUnits);
     }
@@ -373,7 +396,8 @@ export class HomeComponent {
         totalAcres: pd.totalAcres ?? customer.totalAcres,
         binCapacity: pd.binCapacity ?? customer.binCapacity,
         primaryContact: pd.primaryContact ?? customer.primaryContact,
-        commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities
+        commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
+        linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
       };
     } else {
       this.apiService.getProducerDetails(customer.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -383,13 +407,17 @@ export class HomeComponent {
           this.producerDetailsMap.set(map);
           const sel = this.selectedCustomer();
           if (sel?.id === customer.id) {
-            this.selectedCustomer.set({
+            const updated = {
               ...sel,
               totalAcres: details.totalAcres ?? sel.totalAcres,
               binCapacity: details.binCapacity ?? sel.binCapacity,
               primaryContact: details.primaryContact ?? sel.primaryContact,
-              commodities: details.commodities ? details.commodities.split(',').map(c => c.trim()) : sel.commodities
-            });
+              commodities: details.commodities ? details.commodities.split(',').map(c => c.trim()) : sel.commodities,
+              linkedProducerIds: details.linkedProducerIds ? details.linkedProducerIds.split(',').filter(Boolean) : sel.linkedProducerIds
+            };
+            this.selectedCustomer.set(updated);
+            this._fetchMissingLinkedProducers(updated);
+            this._loadCustomerData(updated.id, updated);
           }
         },
         error: () => {}
@@ -400,6 +428,57 @@ export class HomeComponent {
     this.appState.selectCustomer(customer);
     this._loadCustomerContractsAndTickets(customer.id, customer.sourceCustomerId);
     this._loadCustomerData(customer.id);
+    this._fetchMissingLinkedProducers(customer);
+
+    // When no trade units are active, _loadAllData never ran so notes may be stale or missing.
+    // Always refresh notes in this case so the selected customer's notes appear.
+    if (this.selectedTradeUnits().length === 0) {
+      this.apiService.getNotes().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: (data) => {
+          this.notes.set(data);
+          this.appState.setNotes(data);
+          const sel = this.selectedCustomer();
+          if (sel) this._loadCustomerData(sel.id);
+        },
+        error: () => {}
+      });
+    }
+  }
+
+  private _fetchMissingLinkedProducers(customer: Customer): void {
+    const linkedIds = customer.linkedProducerIds || [];
+    if (linkedIds.length === 0) return;
+
+    const allCustomers = [...this.customers(), ...this._crossTradeUnitCustomers().values()];
+    const missing = linkedIds.filter(sourceId =>
+      !allCustomers.some(c => c.sourceCustomerId === sourceId)
+    );
+    if (missing.length === 0) return;
+
+    // Fetch each missing linked producer and cache them so getLinkedGroup can resolve them
+    missing.forEach(sourceId => {
+      this.apiService.getCustomerBySourceId(sourceId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: (fetched) => {
+          const pd = this.producerDetailsMap().get(fetched.id);
+          if (pd) {
+            fetched = {
+              ...fetched,
+              totalAcres: pd.totalAcres ?? fetched.totalAcres,
+              binCapacity: pd.binCapacity ?? fetched.binCapacity,
+              primaryContact: pd.primaryContact ?? fetched.primaryContact,
+              commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : fetched.commodities,
+              linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : fetched.linkedProducerIds
+            };
+          }
+          const cache = new Map(this._crossTradeUnitCustomers());
+          cache.set(fetched.id, fetched);
+          this._crossTradeUnitCustomers.set(cache);
+          const sel = this.selectedCustomer();
+          if (sel?.id === customer.id) this._loadCustomerData(sel.id);
+        },
+        error: () => {}
+      });
+    });
   }
 
   private _loadCustomerContractsAndTickets(customerId: number, sourceCustomerId?: string): void {
@@ -417,6 +496,7 @@ export class HomeComponent {
         const merged = [...existing];
         contracts.forEach(c => { if (!merged.some(e => e.id === c.id)) merged.push(c); });
         this.contracts.set(merged);
+        this.appState.setContracts(merged);
         this._loadCustomerData(customerId);
       },
       error: () => {}
@@ -428,6 +508,7 @@ export class HomeComponent {
         const merged = [...existing];
         tickets.forEach(t => { if (!merged.some(e => e.id === t.id)) merged.push(t); });
         this.tickets.set(merged);
+        this.appState.setTickets(merged);
         this._loadCustomerData(customerId);
 
         const customer = this.customers().find(c => c.id === customerId) || this.selectedCustomer();
@@ -585,10 +666,11 @@ export class HomeComponent {
     }
 
     if (data.primaryContact) {
-      const previousLinkedIds = new Set(customer.linkedProducerIds || []);
-      const newlyLinkedIds = data.linkedProducerIds.filter(id => !previousLinkedIds.has(id));
-      for (const linkedIdStr of newlyLinkedIds) {
-        const linkedCustomer = this.customers().find(c => c.sourceCustomerId === linkedIdStr);
+      // Propagate primary contact to ALL linked producers that don't have one yet,
+      // including cross-trade-unit customers cached in _crossTradeUnitCustomers
+      const allCustomers = [...this.customers(), ...this._crossTradeUnitCustomers().values()];
+      for (const linkedIdStr of data.linkedProducerIds) {
+        const linkedCustomer = allCustomers.find(c => c.sourceCustomerId === linkedIdStr);
         if (!linkedCustomer) continue;
         const linkedId = linkedCustomer.id;
         const linkedPd = this.producerDetailsMap().get(linkedId);
@@ -607,12 +689,18 @@ export class HomeComponent {
             map.set(pd.customerId, pd);
             this.producerDetailsMap.set(map);
             const updatedLinkedCustomer: Customer = { ...linkedCustomer, primaryContact: data.primaryContact };
-            const idx = this.customers().findIndex(c => c.id === linkedId);
-            if (idx >= 0) {
-              const arr = [...this.customers()];
-              arr[idx] = updatedLinkedCustomer;
-              this.customers.set(arr);
-              this.appState.setCustomers(arr);
+            const crossCache = new Map(this._crossTradeUnitCustomers());
+            if (crossCache.has(linkedId)) {
+              crossCache.set(linkedId, updatedLinkedCustomer);
+              this._crossTradeUnitCustomers.set(crossCache);
+            } else {
+              const idx = this.customers().findIndex(c => c.id === linkedId);
+              if (idx >= 0) {
+                const arr = [...this.customers()];
+                arr[idx] = updatedLinkedCustomer;
+                this.customers.set(arr);
+                this.appState.setCustomers(arr);
+              }
             }
           },
           error: () => {}
@@ -636,35 +724,52 @@ export class HomeComponent {
   }
 
   getLinkedGroup(customer: Customer): Customer[] {
+    const all = [...this.customers(), ...this._crossTradeUnitCustomers().values()];
     const outgoing = (customer.linkedProducerIds || [])
-      .map(id => this.customers().find(c => c.sourceCustomerId === id))
+      .map(id => all.find(c => c.sourceCustomerId === id))
       .filter((c): c is Customer => !!c);
-    const incoming = this.customers().filter(c =>
+    const incoming = all.filter(c =>
+      c.id !== customer.id &&
       (c.linkedProducerIds || []).includes(customer.sourceCustomerId || '')
     );
-    return [...new Map([...outgoing, ...incoming].map(c => [c.id, c])).values()]
-      .filter(c => c.id !== customer.id);
+    return [...new Map([...outgoing, ...incoming].map(c => [c.id, c])).values()];
   }
 
   handleSelectLinkedCustomer(customerId: number): void {
+    if (customerId === this.selectedCustomer()?.id) return;
     const customer = this.customers().find(c => c.id === customerId);
-    if (!customer || customer.id === this.selectedCustomer()?.id) return;
-    this.selectedCustomer.set(customer);
-    this._loadCustomerContractsAndTickets(customer.id);
-  }
-
-  getLastContactedDate(): string {
-    const notes = this.customerNotes();
-    if (notes.length === 0) return 'Never';
-    const lastNote = notes[0];
-    const raw = typeof lastNote.createdAt === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(lastNote.createdAt as any)
-      ? (lastNote.createdAt as any) + 'Z' : lastNote.createdAt;
-    const diff = Date.now() - new Date(raw).getTime();
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    if (days === 0) return 'Today';
-    if (days === 1) return 'Yesterday';
-    if (days < 7) return `${days} days ago`;
-    return new Date(lastNote.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    if (customer) {
+      this.selectedCustomer.set(customer);
+      this._loadCustomerContractsAndTickets(customer.id, customer.sourceCustomerId);
+      this._loadCustomerData(customer.id);
+    } else {
+      // Linked customer is in a different trade unit — fetch them from the API
+      this.apiService.getCustomerById(customerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: (fetched) => {
+          if (fetched.id === this.selectedCustomer()?.id) return;
+          // Merge producer details if available
+          const pd = this.producerDetailsMap().get(fetched.id);
+          if (pd) {
+            fetched = {
+              ...fetched,
+              totalAcres: pd.totalAcres ?? fetched.totalAcres,
+              binCapacity: pd.binCapacity ?? fetched.binCapacity,
+              primaryContact: pd.primaryContact ?? fetched.primaryContact,
+              commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : fetched.commodities,
+              linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : fetched.linkedProducerIds
+            };
+          }
+          // Cache so getLinkedGroup can find them even though they're outside the TU filter
+          const cache = new Map(this._crossTradeUnitCustomers());
+          cache.set(fetched.id, fetched);
+          this._crossTradeUnitCustomers.set(cache);
+          this.selectedCustomer.set(fetched);
+          this._loadCustomerContractsAndTickets(fetched.id, fetched.sourceCustomerId);
+          this._loadCustomerData(fetched.id);
+        },
+        error: () => {}
+      });
+    }
   }
 
   addPlantingIntention(data: {crop: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}): void {

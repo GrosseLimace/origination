@@ -383,356 +383,335 @@
 
         <!-- Harvest & Contracts Tab -->
         @else if (activeTab() === 'harvestContracts') {
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div class="space-y-5">
 
-            <!-- Table 1: Average Yield Estimates -->
-            <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-              <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50">
-                <div class="flex items-center justify-between">
-                  <div>
-                    <h3 class="text-base font-semibold text-gray-900 dark:text-white">Average Yield Estimates</h3>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Yield estimates per crop code</p>
-                  </div>
-                  <div class="flex gap-2">
-                    @if (!yieldEditMode()) {
-                      <button (click)="startYieldEdit()"
-                        class="scoular-btn scoular-btn-sm scoular-btn-ghost">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
-                        Edit
-                      </button>
-                    } @else {
-                      <button (click)="cancelYieldEdit()"
-                        class="scoular-btn scoular-btn-sm scoular-btn-ghost">Cancel</button>
-                      <button (click)="saveYieldEdit()" [disabled]="estimatesSaving()"
-                        class="scoular-btn scoular-btn-sm scoular-btn-primary">Save</button>
-                    }
-                  </div>
-                </div>
+            <!-- Harvest Timeline Chart -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-base font-semibold text-gray-900 dark:text-white">Harvest Timeline</h3>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Contracted delivery volume by month</p>
               </div>
-              <div class="overflow-x-auto">
-                <table class="w-full">
-                  <thead>
-                    <tr class="border-b border-gray-200 dark:border-gray-700">
-                      <th class="text-left py-2.5 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Crop</th>
-                      <th class="text-right py-2.5 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Yield Est. (bu/ac)</th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-gray-100 dark:divide-gray-700/60">
-                    @for (row of yieldRows(); track row.cropCode) {
-                      <tr [class]="rowColorBg(row.category)">
-                        <td class="py-3 px-4 text-sm font-semibold text-gray-800 dark:text-gray-100">{{ row.cropName }}</td>
-                        <td class="py-3 px-4 text-right">
-                          @if (yieldEditMode()) {
-                            <input type="number" [ngModel]="tempYieldMap()[row.cropCode]" (ngModelChange)="setTempYield(row.cropCode, $event)" min="0"
-                              class="w-24 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
-                          } @else {
-                            @if (row.yieldEstimate != null) {
-                              <span class="text-base font-bold text-gray-900 dark:text-white">{{ row.yieldEstimate }}</span>
-                            } @else {
-                              <span class="text-gray-400 dark:text-gray-500 italic text-xs">--</span>
-                            }
-                          }
-                        </td>
-                      </tr>
-                    }
-                    @if (yieldRows().length === 0) {
-                      <tr><td colspan="2" class="py-6 text-center text-xs text-gray-400 dark:text-gray-500 italic">No planting intentions for {{ selectedPlantingYear() }}</td></tr>
-                    }
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <!-- Table 2: Total Estimated Production -->
-            <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-              <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50">
-                <h3 class="text-base font-semibold text-gray-900 dark:text-white">Total Estimated Production</h3>
-                <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Sum of (acres × yield) by category</p>
-              </div>
-              <div class="overflow-x-auto">
-                <table class="w-full">
-                  <thead>
-                    <tr class="border-b border-gray-200 dark:border-gray-700">
-                      <th class="text-left py-2.5 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Category</th>
-                      <th class="text-right py-2.5 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Production (bu)</th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-gray-100 dark:divide-gray-700/60">
-                    @for (row of categoryRows(); track row.category) {
-                      <tr [class]="rowColorBg(row.category)">
-                        <td class="py-3 px-4 text-sm font-semibold text-gray-800 dark:text-gray-100">{{ row.category }}</td>
-                        <td class="py-3 px-4 text-right">
-                          @if (row.totalEstimatedProduction > 0) {
-                            <span class="text-base font-bold text-gray-900 dark:text-white">{{ row.totalEstimatedProduction | number:'1.0-0' }}</span>
-                          } @else {
-                            <span class="text-gray-400 dark:text-gray-500 italic text-xs">--</span>
-                          }
-                        </td>
-                      </tr>
-                    }
-                    @if (categoryRows().length === 0) {
-                      <tr><td colspan="2" class="py-6 text-center text-xs text-gray-400 dark:text-gray-500 italic">No data available</td></tr>
-                    }
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <!-- Table 3: Estimated Market Share -->
-            <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-              <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50">
-                <div class="flex items-center justify-between">
-                  <div>
-                    <h3 class="text-base font-semibold text-gray-900 dark:text-white">Estimate Market Share</h3>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Expected share by category</p>
-                  </div>
-                  @if (!marketShareEditMode()) {
-                    <button (click)="startMarketShareEdit()"
-                      class="scoular-btn scoular-btn-sm scoular-btn-ghost">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
-                      Edit
-                    </button>
-                  } @else {
-                    <div class="flex gap-1">
-                      <button (click)="cancelMarketShareEdit()"
-                        class="scoular-btn scoular-btn-sm scoular-btn-ghost">Cancel</button>
-                      <button (click)="saveMarketShareEdit()" [disabled]="estimatesSaving()"
-                        class="scoular-btn scoular-btn-sm scoular-btn-primary">Save</button>
+              <div class="px-5 pt-5 pb-4">
+                @if (contractsForYear.length === 0) {
+                  <div class="flex items-center justify-center h-32 text-sm text-gray-400 dark:text-gray-500 italic">No contract data for {{ selectedPlantingYear() }}</div>
+                } @else {
+                  <div class="flex gap-4">
+                    <!-- Y-axis labels -->
+                    <div class="flex flex-col justify-between h-32 text-right shrink-0 w-14 pb-1">
+                      <span class="text-xs text-gray-400 dark:text-gray-500 tabular-nums">{{ formatK(harvestTimelineMax) }}</span>
+                      <span class="text-xs text-gray-400 dark:text-gray-500 tabular-nums">{{ formatK(harvestTimelineMidpoint) }}</span>
+                      <span class="text-xs text-gray-400 dark:text-gray-500">0</span>
                     </div>
-                  }
-                </div>
-              </div>
-              <div class="overflow-x-auto">
-                <table class="w-full">
-                  <thead>
-                    <tr class="border-b border-gray-200 dark:border-gray-700">
-                      <th class="text-left py-2.5 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Category</th>
-                      <th class="text-right py-2.5 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Mkt Share %</th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-gray-100 dark:divide-gray-700/60">
-                    @for (row of categoryRows(); track row.category) {
-                      <tr [class]="rowColorBg(row.category)">
-                        <td class="py-3 px-4 text-sm font-semibold text-gray-800 dark:text-gray-100">{{ row.category }}</td>
-                        <td class="py-3 px-4 text-right">
-                          @if (marketShareEditMode()) {
-                            <div class="inline-flex items-center gap-1">
-                              <input type="number" [ngModel]="tempMarketShareMap()[row.category]" (ngModelChange)="setTempMarketShare(row.category, $event)" min="0" max="100" step="1"
-                                class="w-16 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
-                              <span class="text-xs text-gray-400">%</span>
+                    <!-- Chart -->
+                    <div class="flex-1 min-w-0">
+                      <div class="relative h-32">
+                        <div class="absolute inset-x-0 top-0 h-px bg-gray-100 dark:bg-gray-700/60"></div>
+                        <div class="absolute inset-x-0 top-1/2 h-px bg-gray-100 dark:bg-gray-700/60"></div>
+                        <div class="absolute inset-x-0 bottom-0 h-px bg-gray-200 dark:bg-gray-600"></div>
+                        <!-- Bars -->
+                        <div class="absolute inset-0 flex items-end gap-0.5">
+                          @for (m of harvestTimelineMonths; track m.monthIndex) {
+                            <div class="flex-1 flex items-end h-full relative group">
+                              @if (m.barHeightPx > 0) {
+                                <!-- Tooltip -->
+                                <div class="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-10 hidden group-hover:block pointer-events-none">
+                                  <div class="bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg px-2.5 py-2 whitespace-nowrap shadow-xl border border-gray-700 dark:border-gray-600">
+                                    <div class="font-semibold mb-1">{{ m.month }}: {{ m.total | number:'1.0-0' }} bu</div>
+                                    @for (seg of m.segments; track seg.commodity) {
+                                      <div class="flex items-center gap-1.5">
+                                        <div class="w-2 h-2 rounded-sm flex-shrink-0" [style.background-color]="seg.hex"></div>
+                                        <span class="text-gray-300">{{ seg.commodity }}: {{ formatK(seg.bushels) }} bu</span>
+                                      </div>
+                                    }
+                                  </div>
+                                  <div class="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-gray-700"></div>
+                                </div>
+                                <!-- Stacked bar segments -->
+                                <div class="w-full flex flex-col overflow-hidden rounded-t-sm cursor-default"
+                                     [style.height.px]="m.barHeightPx">
+                                  @for (seg of m.segments; track seg.commodity) {
+                                    <div class="w-full basis-0 transition-opacity group-hover:opacity-80"
+                                         [style.flex-grow]="seg.bushels"
+                                         [style.background-color]="seg.hex">
+                                    </div>
+                                  }
+                                </div>
+                              }
                             </div>
-                          } @else {
-                            @if (row.marketSharePct != null) {
-                              <span class="text-base font-bold text-gray-900 dark:text-white">{{ row.marketSharePct }}%</span>
-                            } @else {
-                              <span class="text-gray-400 dark:text-gray-500 italic text-xs">0%</span>
-                            }
                           }
-                        </td>
-                      </tr>
-                    }
-                    @if (categoryRows().length === 0) {
-                      <tr><td colspan="2" class="py-6 text-center text-xs text-gray-400 dark:text-gray-500 italic">No data available</td></tr>
-                    }
-                  </tbody>
-                </table>
+                        </div>
+                      </div>
+                      <!-- Month labels -->
+                      <div class="flex gap-0.5 mt-1.5">
+                        @for (m of harvestTimelineMonths; track m.monthIndex) {
+                          <div class="flex-1 text-center text-xs truncate"
+                               [class]="m.total > 0 ? 'text-gray-700 dark:text-gray-300 font-medium' : 'text-gray-400 dark:text-gray-500'">
+                            {{ m.month }}
+                          </div>
+                        }
+                      </div>
+                    </div>
+                  </div>
+                  <!-- Legend -->
+                  @if (contractCommodityLegend.length > 0) {
+                    <div class="flex flex-wrap gap-x-5 gap-y-1.5 mt-4 pt-3.5 border-t border-gray-100 dark:border-gray-700/50">
+                      @for (item of contractCommodityLegend; track item.commodity) {
+                        <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                          <div class="w-3 h-3 rounded-sm flex-shrink-0" [style.background-color]="item.hex"></div>
+                          <span>{{ item.commodity }}</span>
+                        </div>
+                      }
+                    </div>
+                  }
+                }
               </div>
             </div>
 
-            <!-- Table 4: Estimated Harvest Handle -->
-            <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-              <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50">
-                <h3 class="text-base font-semibold text-gray-900 dark:text-white">Estimate Harvest Handle</h3>
-                <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Production × market share %</p>
-              </div>
-              <div class="overflow-x-auto">
-                <table class="w-full">
-                  <thead>
-                    <tr class="border-b border-gray-200 dark:border-gray-700">
-                      <th class="text-left py-2.5 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Category</th>
-                      <th class="text-right py-2.5 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Est. Handle (bu)</th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-gray-100 dark:divide-gray-700/60">
-                    @for (row of categoryRows(); track row.category) {
-                      <tr [class]="rowColorBg(row.category)">
-                        <td class="py-3 px-4 text-sm font-semibold text-gray-800 dark:text-gray-100">{{ row.category }}</td>
-                        <td class="py-3 px-4 text-right">
-                          @if (row.estimatedHarvestHandle > 0) {
-                            <span class="text-base font-bold text-gray-900 dark:text-white">{{ row.estimatedHarvestHandle | number:'1.0-0' }}</span>
-                          } @else {
-                            <span class="text-gray-400 dark:text-gray-500 italic text-xs">--</span>
-                          }
-                        </td>
-                      </tr>
-                    }
-                    @if (categoryRows().length === 0) {
-                      <tr><td colspan="2" class="py-6 text-center text-xs text-gray-400 dark:text-gray-500 italic">No data available</td></tr>
-                    }
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <!-- Contract Coverage + Sales Opportunities -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
-            <!-- Table 5: Actual PrevYear Producer Harvest Handle -->
-            <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-              <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 flex items-center justify-between">
-                <div>
-                  <h3 class="text-base font-semibold text-gray-900 dark:text-white">Actual {{ selectedPlantingYear() - 1 }} Producer Harvest Handle</h3>
-                  <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Actual bushels handled last year by category</p>
+              <!-- Contract Coverage -->
+              <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+                  <h3 class="text-base font-semibold text-gray-900 dark:text-white">Contract Coverage</h3>
+                  <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Contracted bushels vs estimated production this season</p>
                 </div>
-                <div class="flex gap-2">
-                  @if (!harvestEditMode() && !showAddHarvestRow()) {
-                    <button (click)="showAddHarvestRow.set(true); newHarvestCrop.set(''); newHarvestBushels.set('')"
-                      class="scoular-btn scoular-btn-sm scoular-btn-outline">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                      Add Row
-                    </button>
-                    @if (actualHarvestRows.length > 0) {
-                      <button (click)="startHarvestEdit()"
-                        class="scoular-btn scoular-btn-sm scoular-btn-ghost">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
-                        Edit
-                      </button>
-                    }
-                  } @else if (showAddHarvestRow()) {
-                    <button (click)="showAddHarvestRow.set(false); newHarvestCrop.set(''); newHarvestBushels.set('')"
-                      class="scoular-btn scoular-btn-sm scoular-btn-ghost">Cancel</button>
-                    <button (click)="addHarvestRow()" [disabled]="harvestSaving() || !newHarvestCrop() || !newHarvestBushels()"
-                      class="scoular-btn scoular-btn-sm scoular-btn-primary">Save</button>
+                <div class="p-5 space-y-5">
+                  @if (contractCoverageRows.length === 0) {
+                    <div class="flex flex-col items-center justify-center py-8 gap-3 text-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-300 dark:text-gray-600"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                      <p class="text-sm text-gray-400 dark:text-gray-500 italic">Set season targets to calculate coverage</p>
+                      <button (click)="showSeasonTargets.set(true)" class="scoular-btn scoular-btn-sm scoular-btn-outline">Set Season Targets</button>
+                    </div>
                   } @else {
-                    <button (click)="cancelHarvestEdit()"
-                      class="scoular-btn scoular-btn-sm scoular-btn-ghost">Cancel</button>
-                    <button (click)="saveHarvestEdit()" [disabled]="harvestSaving()"
-                      class="scoular-btn scoular-btn-sm scoular-btn-primary">Save</button>
+                    @for (row of contractCoverageRows; track row.category) {
+                      <div>
+                        <div class="flex items-baseline justify-between mb-2">
+                          <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ row.category }}</span>
+                          <div class="text-right">
+                            <span class="text-base font-bold tabular-nums" [style.color]="row.hex">{{ row.pct }}%</span>
+                            <span class="text-xs text-gray-400 dark:text-gray-500 ml-1">covered</span>
+                          </div>
+                        </div>
+                        <div class="h-2.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                          <div class="h-full rounded-full transition-all duration-500"
+                               [style.width.%]="row.pct > 100 ? 100 : row.pct"
+                               [style.background-color]="row.hex">
+                          </div>
+                        </div>
+                        <div class="flex justify-between mt-1.5 text-xs text-gray-400 dark:text-gray-500 tabular-nums">
+                          <span>{{ formatK(row.contractedBu) }} bu contracted</span>
+                          <span>{{ formatK(row.estimatedBu) }} bu est.</span>
+                        </div>
+                      </div>
+                    }
                   }
                 </div>
               </div>
-              <div class="overflow-x-auto">
-                <table class="w-full">
-                  <thead>
-                    <tr class="border-b border-gray-200 dark:border-gray-700">
-                      <th class="text-left py-2.5 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Crop</th>
-                      <th class="text-right py-2.5 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Bushels (bu)</th>
-                      @if (harvestEditMode()) {
-                        <th class="py-2.5 px-2 w-12"></th>
-                      }
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-gray-100 dark:divide-gray-700/60">
-                    @for (row of actualHarvestRows; track row.id) {
-                      <tr [class]="rowColorBg(row.cropCategory)">
-                        <td class="py-3 px-4 text-sm font-semibold text-gray-800 dark:text-gray-100">{{ row.cropCategory }}</td>
-                        <td class="py-3 px-4 text-right">
-                          @if (harvestEditMode()) {
-                            <input type="text" inputmode="numeric" pattern="[0-9]*" [ngModel]="tempHarvestMap()[row.id]" (ngModelChange)="setTempHarvest(row.id, $event)"
-                              class="w-28 text-right text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-0.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-blue-500 focus:outline-none" />
-                          } @else {
-                            <span class="text-base font-bold text-gray-900 dark:text-white">{{ row.bushels | number:'1.0-0' }}</span>
-                          }
-                        </td>
-                        @if (harvestEditMode()) {
-                          <td class="py-3 px-2">
-                            <button (click)="confirmDeleteHarvestRow.set({ id: row.id, cropCategory: row.cropCategory })"
-                              class="p-1 rounded text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-                            </button>
-                          </td>
+
+              <!-- Sales Opportunities -->
+              <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+                  <h3 class="text-base font-semibold text-gray-900 dark:text-white">Sales Opportunities</h3>
+                  <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Open and unpriced bushels by commodity</p>
+                </div>
+                @if (salesOpportunityRows.length === 0) {
+                  <div class="flex items-center justify-center py-16 text-sm text-gray-400 dark:text-gray-500 italic">No contract data for {{ selectedPlantingYear() }}</div>
+                } @else {
+                  <div class="overflow-x-auto">
+                    <table class="w-full">
+                      <thead>
+                        <tr class="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30">
+                          <th class="text-left py-2.5 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Commodity</th>
+                          <th class="text-right py-2.5 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Open Bu</th>
+                          <th class="text-right py-2.5 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Unpriced Bu</th>
+                          <th class="text-right py-2.5 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Avg Price</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-gray-100 dark:divide-gray-700/60">
+                        @for (row of salesOpportunityRows; track row.commodity) {
+                          <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                            <td class="py-3 px-4">
+                              <div class="flex items-center gap-2">
+                                <div class="w-2.5 h-2.5 rounded-full flex-shrink-0" [style.background-color]="row.hex"></div>
+                                <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ row.commodity }}</span>
+                              </div>
+                              <div class="text-xs text-gray-400 dark:text-gray-500 pl-4.5 mt-0.5">{{ row.contracts }} contract{{ row.contracts !== 1 ? 's' : '' }}</div>
+                            </td>
+                            <td class="py-3 px-4 text-right">
+                              @if (row.openBu > 0) {
+                                <span class="text-sm font-bold text-amber-600 dark:text-amber-400 tabular-nums">{{ formatK(row.openBu) }}</span>
+                                <span class="text-xs text-gray-400 dark:text-gray-500 ml-0.5">bu</span>
+                              } @else {
+                                <span class="text-xs text-green-600 dark:text-green-400 font-medium">Delivered</span>
+                              }
+                            </td>
+                            <td class="py-3 px-4 text-right">
+                              @if (row.unpricedBu > 0) {
+                                <span class="text-sm font-bold text-orange-600 dark:text-orange-400 tabular-nums">{{ formatK(row.unpricedBu) }}</span>
+                                <span class="text-xs text-gray-400 dark:text-gray-500 ml-0.5">bu</span>
+                              } @else {
+                                <span class="text-xs text-green-600 dark:text-green-400 font-medium">Fully priced</span>
+                              }
+                            </td>
+                            <td class="py-3 px-4 text-right text-sm font-semibold text-gray-800 dark:text-gray-100 tabular-nums">
+                              @if (row.avgPrice > 0) {
+                                ${{ row.avgPrice | number:'1.2-2' }}
+                              } @else {
+                                <span class="text-gray-400 dark:text-gray-500 italic text-xs">--</span>
+                              }
+                            </td>
+                          </tr>
                         }
-                      </tr>
-                    }
-                    @if (showAddHarvestRow()) {
-                      <tr class="bg-gray-50 dark:bg-gray-700/30">
-                        <td class="py-2.5 px-4">
-                          <select [ngModel]="newHarvestCrop()" (ngModelChange)="newHarvestCrop.set($event)"
-                            class="w-full text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-0.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-blue-500 focus:outline-none">
-                            <option value="">Select crop...</option>
-                            @for (cat of availableHarvestCropCategories; track cat) {
-                              <option [value]="cat">{{ cat }}</option>
-                            }
-                          </select>
-                        </td>
-                        <td class="py-2.5 px-4">
-                          <input type="text" inputmode="numeric" pattern="[0-9]*" [ngModel]="newHarvestBushels()" (ngModelChange)="newHarvestBushels.set($event)" placeholder="0"
-                            class="w-full text-right text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-0.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-blue-500 focus:outline-none"
-                            (keydown.enter)="addHarvestRow()" (keydown.escape)="showAddHarvestRow.set(false); newHarvestCrop.set(''); newHarvestBushels.set('')" />
-                        </td>
-                      </tr>
-                    }
-                    @if (actualHarvestRows.length === 0 && !showAddHarvestRow()) {
-                      <tr>
-                        <td colspan="3" class="py-6 text-center text-xs text-gray-400 dark:text-gray-500 italic">
-                          No rows yet — click Add Row to enter last year's harvest data
-                        </td>
-                      </tr>
-                    }
-                  </tbody>
-                </table>
+                      </tbody>
+                    </table>
+                  </div>
+                }
               </div>
 
-              <!-- Delete confirmation modal -->
-              @if (confirmDeleteHarvestRow()) {
-                <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60">
-                  <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 p-6 w-full max-w-sm mx-4">
-                    <h3 class="text-base font-semibold text-gray-900 dark:text-white mb-2">Delete Row</h3>
-                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-5">
-                      Are you sure you want to delete the <span class="font-semibold text-gray-900 dark:text-white">{{ confirmDeleteHarvestRow()!.cropCategory }}</span> row? This cannot be undone.
-                    </p>
-                    <div class="flex justify-end gap-3">
-                      <button (click)="confirmDeleteHarvestRow.set(null)"
-                        class="scoular-btn scoular-btn-secondary">
-                        Cancel
-                      </button>
-                      <button (click)="deleteHarvestRow(confirmDeleteHarvestRow()!.id); confirmDeleteHarvestRow.set(null)"
-                        class="scoular-btn scoular-btn-danger">
-                        Delete
-                      </button>
+            </div>
+          </div>
+
+          <!-- Season Targets Modal -->
+          @if (showSeasonTargets()) {
+            <div class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto py-6 px-4 bg-black/50 dark:bg-black/70">
+              <div class="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-5xl my-auto">
+
+                <!-- Modal header -->
+                <div class="sticky top-0 bg-white dark:bg-gray-900 rounded-t-2xl px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between z-10">
+                  <div>
+                    <h2 class="text-lg font-bold text-gray-900 dark:text-white">Season Targets — {{ selectedPlantingYear() }}</h2>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Set yield estimates and market share for this season</p>
+                  </div>
+                  <button (click)="showSeasonTargets.set(false)"
+                    class="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+
+                <!-- Modal body: 2-col grid of 6 tables -->
+                <div class="p-6 grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+                  <!-- Table 1: Average Yield Estimates -->
+                  <div class="bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                    <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                      <div>
+                        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Average Yield Estimates</h3>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Yield per crop code (bu/ac)</p>
+                      </div>
+                      <div class="flex gap-2">
+                        @if (!yieldEditMode()) {
+                          <button (click)="startYieldEdit()" class="scoular-btn scoular-btn-sm scoular-btn-ghost">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+                            Edit
+                          </button>
+                        } @else {
+                          <button (click)="cancelYieldEdit()" class="scoular-btn scoular-btn-sm scoular-btn-ghost">Cancel</button>
+                          <button (click)="saveYieldEdit()" [disabled]="estimatesSaving()" class="scoular-btn scoular-btn-sm scoular-btn-primary">Save</button>
+                        }
+                      </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                      <table class="w-full">
+                        <thead>
+                          <tr class="border-b border-gray-200 dark:border-gray-700">
+                            <th class="text-left py-2 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Crop</th>
+                            <th class="text-right py-2 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Yield Est. (bu/ac)</th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100 dark:divide-gray-700/60">
+                          @for (row of yieldRows(); track row.cropCode) {
+                            <tr [class]="rowColorBg(row.category)">
+                              <td class="py-2.5 px-4 text-sm font-medium text-gray-800 dark:text-gray-100">{{ row.cropName }}</td>
+                              <td class="py-2.5 px-4 text-right">
+                                @if (yieldEditMode()) {
+                                  <input type="number" [ngModel]="tempYieldMap()[row.cropCode]" (ngModelChange)="setTempYield(row.cropCode, $event)" min="0"
+                                    class="w-24 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+                                } @else {
+                                  @if (row.yieldEstimate != null) {
+                                    <span class="text-sm font-bold text-gray-900 dark:text-white">{{ row.yieldEstimate }}</span>
+                                  } @else {
+                                    <span class="text-gray-400 dark:text-gray-500 italic text-xs">--</span>
+                                  }
+                                }
+                              </td>
+                            </tr>
+                          }
+                          @if (yieldRows().length === 0) {
+                            <tr><td colspan="2" class="py-5 text-center text-xs text-gray-400 dark:text-gray-500 italic">No planting intentions for {{ selectedPlantingYear() }}</td></tr>
+                          }
+                        </tbody>
+                      </table>
                     </div>
                   </div>
-                </div>
-              }
-            </div>
 
-            <!-- Table 6: Actual Market Share of Selected Producers -->
-            <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-              <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50">
-                <h3 class="text-base font-semibold text-gray-900 dark:text-white">Actual Market Share of Selected Producers</h3>
-                <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Actual harvest last year ÷ total estimated production this year</p>
-              </div>
-              <div class="overflow-x-auto">
-                <table class="w-full">
-                  <thead>
-                    <tr class="border-b border-gray-200 dark:border-gray-700">
-                      <th class="text-left py-2.5 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Crop</th>
-                      <th class="text-right py-2.5 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Market Share %</th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-gray-100 dark:divide-gray-700/60">
-                    @for (row of actualMarketShareRows; track row.cropCategory) {
-                      <tr [class]="rowColorBg(row.cropCategory)">
-                        <td class="py-3 px-4 text-sm font-semibold text-gray-800 dark:text-gray-100">{{ row.cropCategory }}</td>
-                        <td class="py-3 px-4 text-right">
-                          @if (row.pct !== null) {
-                            <span class="text-base font-bold text-gray-900 dark:text-white">{{ row.pct | number:'1.0-1' }}%</span>
-                          } @else {
-                            <span class="text-gray-400 dark:text-gray-500 italic text-xs">--</span>
+                  <!-- Table 3: Estimated Market Share -->
+                  <div class="bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                    <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                      <div>
+                        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Estimated Market Share</h3>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Expected share by category</p>
+                      </div>
+                      @if (!marketShareEditMode()) {
+                        <button (click)="startMarketShareEdit()" class="scoular-btn scoular-btn-sm scoular-btn-ghost">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+                          Edit
+                        </button>
+                      } @else {
+                        <div class="flex gap-1">
+                          <button (click)="cancelMarketShareEdit()" class="scoular-btn scoular-btn-sm scoular-btn-ghost">Cancel</button>
+                          <button (click)="saveMarketShareEdit()" [disabled]="estimatesSaving()" class="scoular-btn scoular-btn-sm scoular-btn-primary">Save</button>
+                        </div>
+                      }
+                    </div>
+                    <div class="overflow-x-auto">
+                      <table class="w-full">
+                        <thead>
+                          <tr class="border-b border-gray-200 dark:border-gray-700">
+                            <th class="text-left py-2 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Category</th>
+                            <th class="text-right py-2 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Mkt Share %</th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100 dark:divide-gray-700/60">
+                          @for (row of categoryRows(); track row.category) {
+                            <tr [class]="rowColorBg(row.category)">
+                              <td class="py-2.5 px-4 text-sm font-medium text-gray-800 dark:text-gray-100">{{ row.category }}</td>
+                              <td class="py-2.5 px-4 text-right">
+                                @if (marketShareEditMode()) {
+                                  <div class="inline-flex items-center gap-1">
+                                    <input type="number" [ngModel]="tempMarketShareMap()[row.category]" (ngModelChange)="setTempMarketShare(row.category, $event)" min="0" max="100" step="1"
+                                      class="w-16 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+                                    <span class="text-xs text-gray-400">%</span>
+                                  </div>
+                                } @else {
+                                  @if (row.marketSharePct != null) {
+                                    <span class="text-sm font-bold text-gray-900 dark:text-white">{{ row.marketSharePct }}%</span>
+                                  } @else {
+                                    <span class="text-gray-400 dark:text-gray-500 italic text-xs">0%</span>
+                                  }
+                                }
+                              </td>
+                            </tr>
                           }
-                        </td>
-                      </tr>
-                    }
-                    @if (actualMarketShareRows.length === 0) {
-                      <tr>
-                        <td colspan="2" class="py-6 text-center text-xs text-gray-400 dark:text-gray-500 italic">
-                          Add rows in the harvest table above to calculate market share
-                        </td>
-                      </tr>
-                    }
-                  </tbody>
-                </table>
+                          @if (categoryRows().length === 0) {
+                            <tr><td colspan="2" class="py-5 text-center text-xs text-gray-400 dark:text-gray-500 italic">No data available</td></tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+
+                </div>
+
+                <!-- Modal footer -->
+                <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end rounded-b-2xl bg-gray-50 dark:bg-gray-800/50">
+                  <button (click)="showSeasonTargets.set(false)" class="scoular-btn scoular-btn-primary">Done</button>
+                </div>
+
               </div>
             </div>
-
-          </div>
+          }
         }
 
       </div>

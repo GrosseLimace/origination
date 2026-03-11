@@ -15,7 +15,8 @@ import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 
 // RxJS
-import { filter, switchMap, take } from 'rxjs';
+import { EMPTY, filter, switchMap, take } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 // Project services
@@ -54,15 +55,14 @@ export class HeaderComponent {
     this.msalBroadcast.inProgress$.pipe(
       filter(status => status === InteractionStatus.None),
       take(1),
-      switchMap(() => this.http.get('https://graph.microsoft.com/v1.0/me/photo/$value', { responseType: 'blob' })),
+      switchMap(() => this.http.get('https://graph.microsoft.com/v1.0/me/photo/$value', { responseType: 'blob' }).pipe(
+        catchError(() => EMPTY)
+      )),
       takeUntilDestroyed(this.destroyRef)
-    ).subscribe({
-      next: (blob) => {
-        const url = URL.createObjectURL(blob);
-        this.profilePhotoUrl.set(url);
-        this.destroyRef.onDestroy(() => URL.revokeObjectURL(url));
-      },
-      error: () => { /* No photo available — initials shown */ }
+    ).subscribe((blob) => {
+      const url = URL.createObjectURL(blob);
+      this.profilePhotoUrl.set(url);
+      this.destroyRef.onDestroy(() => URL.revokeObjectURL(url));
     });
   }
 

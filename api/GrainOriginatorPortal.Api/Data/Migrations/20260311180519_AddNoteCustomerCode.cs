@@ -10,35 +10,13 @@ namespace GrainOriginatorPortal.Api.Migrations.ApplicationDb
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AlterColumn<int>(
-                name: "Id",
-                schema: "dbo",
-                table: "ProducerDetails",
-                type: "int",
-                nullable: false,
-                oldClrType: typeof(long),
-                oldType: "bigint")
-                .Annotation("SqlServer:Identity", "1, 1")
-                .OldAnnotation("SqlServer:Identity", "1, 1");
-
-            migrationBuilder.AlterColumn<int>(
-                name: "Id",
-                schema: "dbo",
-                table: "Notes",
-                type: "int",
-                nullable: false,
-                oldClrType: typeof(long),
-                oldType: "bigint")
-                .Annotation("SqlServer:Identity", "1, 1")
-                .OldAnnotation("SqlServer:Identity", "1, 1");
-
-            migrationBuilder.AddColumn<string>(
-                name: "CustomerCode",
-                schema: "dbo",
-                table: "Notes",
-                type: "nvarchar(50)",
-                maxLength: 50,
-                nullable: true);
+            // Guard: Notes.CustomerCode may already exist if added manually before this migration was tracked
+            migrationBuilder.Sql(@"
+                IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.Notes') AND name = 'CustomerCode')
+                BEGIN
+                    ALTER TABLE [dbo].[Notes] ADD [CustomerCode] nvarchar(50) NULL
+                END
+            ");
         }
 
         /// <inheritdoc />

@@ -269,8 +269,11 @@ export class CustomerListComponent {
   }
 
   onTradeUnitsChange(): void {
-    // Emit the array of selected trade units
-    this.tradeUnitChange.emit(this.selectedTradeUnits());
+    const units = this.selectedTradeUnits();
+    // If no individual trade units are explicitly selected, use all available units for the
+    // selected group(s). This allows a group selection alone to trigger a data load.
+    const emitUnits = units.length > 0 ? units : this.getAvailableTradeUnits();
+    this.tradeUnitChange.emit(emitUnits);
   }
 
   @HostListener('document:click', ['$event'])
@@ -389,8 +392,12 @@ export class CustomerListComponent {
   }
 
   private _performSearch(searchTerm: string): void {
-    // Pass selectedTradeUnits to search - if no trade units selected, searches all trade units
-    const tradeUnits = this.selectedTradeUnits().length > 0 ? this.selectedTradeUnits() : undefined;
+    // Scope to explicitly selected units, then to the selected group's units, then to all user-accessible units
+    const explicitUnits = this.selectedTradeUnits();
+    const availableUnits = this.getAvailableTradeUnits();
+    const tradeUnits = explicitUnits.length > 0 ? explicitUnits
+      : availableUnits.length > 0 ? availableUnits
+      : undefined;
     this.apiService.searchCustomers(searchTerm, tradeUnits).pipe(
       takeUntilDestroyed(this.destroyRef)
     ).subscribe({
