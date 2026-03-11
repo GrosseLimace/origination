@@ -6,6 +6,9 @@ import { bootstrapApplication } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient, withInterceptorsFromDi, HTTP_INTERCEPTORS } from '@angular/common/http';
 
+// 2b. RxJS
+import { firstValueFrom } from 'rxjs';
+
 // 3. Third-party (MSAL)
 import {
   MsalInterceptor,
@@ -62,9 +65,9 @@ bootstrapApplication(AppComponent, {
       provide: APP_INITIALIZER,
       useFactory: (msalService: MsalService) => async () => {
         await msalService.instance.initialize();
-        // Process redirect response before any guards run — exchanges auth code
-        // for token and sets the active account so MsalGuard sees the user as signed in.
-        await msalService.instance.handleRedirectPromise();
+        // Use the Angular wrapper (not instance.handleRedirectPromise directly) so that
+        // setActiveAccount() is called automatically — MsalGuard checks the active account.
+        await firstValueFrom(msalService.handleRedirectObservable());
       },
       deps: [MsalService],
       multi: true,
