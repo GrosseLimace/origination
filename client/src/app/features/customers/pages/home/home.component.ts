@@ -219,6 +219,9 @@ export class HomeComponent {
       next: (data) => {
         this.notes.set(data);
         this.appState.setNotes(data);
+        // Re-filter customer notes if a customer is already selected when notes arrive
+        const sel = this.selectedCustomer();
+        if (sel) this._loadCustomerData(sel.id);
       },
       error: () => {}
     });
