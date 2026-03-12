@@ -1,8 +1,8 @@
 import { Component, inject, signal, computed, DestroyRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router, NavigationEnd } from '@angular/router';
+import { ActivatedRoute } from '@angular/router';
 import { forkJoin, of } from 'rxjs';
-import { filter, catchError } from 'rxjs/operators';
+import { catchError } from 'rxjs/operators';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
@@ -34,11 +34,9 @@ export class HomeComponent {
   private readonly nlqFilterService = inject(NlqFilterService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
 
   private readonly _resizeHandler = () => this._checkMobile();
   private _isLoading = false;
-  private _isFirstLoad = true;
   private _customerRequestId = 0;
 
   // Public signals — template binds directly to these
@@ -104,9 +102,11 @@ export class HomeComponent {
     this._restoreStateFromService();
     this._loadProducerDetails();
 
-    // Always reload from API on init — appState customers may be stale/unfiltered
-    // from a previous session before trade unit scoping was in place.
-    this._loadAllData(this.selectedTradeUnits());
+    // Only fetch from API if appState has no cached customers — otherwise use the cache.
+    // This prevents a full reload every time the user navigates back from another page.
+    if (this.appState.customers().length === 0) {
+      this._loadAllData(this.selectedTradeUnits());
+    }
 
     this.route.queryParams.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
       const customerId = params['customerId'];
@@ -114,23 +114,6 @@ export class HomeComponent {
         const contractId = params['contractId'];
         this.pendingContractId.set(contractId ? parseInt(contractId, 10) : null);
         this._selectCustomerById(customerId);
-      }
-    });
-
-    this.router.events.pipe(
-      filter(event => event instanceof NavigationEnd),
-      takeUntilDestroyed(this.destroyRef)
-    ).subscribe((event: NavigationEnd) => {
-      if (this._isFirstLoad) {
-        this._isFirstLoad = false;
-        return;
-      }
-      const isHomeRoute = event.urlAfterRedirects === '/' ||
-                          event.urlAfterRedirects.startsWith('/?') ||
-                          event.url === '/' ||
-                          event.url.startsWith('/?');
-      if (isHomeRoute && this.selectedTradeUnits().length > 0) {
-        this._loadAllData(this.selectedTradeUnits());
       }
     });
   }

@@ -93,7 +93,20 @@ export class InsightsComponent {
 
   constructor() {
     if (this.selectedTradeUnits.length === 0) return;
-    this._loadData(false);
+
+    // Restore from cache if available for the same trade units
+    const cached = this.appState.insightsCache();
+    const tradeUnitsKey = [...this.selectedTradeUnits].sort().join(',');
+    if (cached && cached.tradeUnitsKey === tradeUnitsKey) {
+      this.customers.set(cached.customers);
+      this.contracts.set(cached.contracts);
+      this.tickets.set(cached.tickets);
+      this.notes.set(cached.notes);
+      this.loadedAt.set(cached.loadedAt);
+      this._generateInsights();
+    } else {
+      this._loadData(false);
+    }
   }
 
   refresh(): void {
@@ -159,9 +172,23 @@ export class InsightsComponent {
     // ticket.date maps to TicketBlDate in ODS, stored as "YYYY-MM-DD" string — direct comparison is safe.
     const todayStr = today.toLocaleDateString('en-CA'); // YYYY-MM-DD
 
+    // Pre-index contracts and tickets by customer ID for O(1) lookup instead of O(n) per customer
+    const contractsByCustomer = new Map<string, Contract[]>();
+    for (const c of this.contracts()) {
+      if (!c.ctrmCustomerId) continue;
+      const arr = contractsByCustomer.get(c.ctrmCustomerId);
+      if (arr) { arr.push(c); } else { contractsByCustomer.set(c.ctrmCustomerId, [c]); }
+    }
+    const ticketsByCustomer = new Map<string, Ticket[]>();
+    for (const t of this.tickets()) {
+      if (!t.customerCode) continue;
+      const arr = ticketsByCustomer.get(t.customerCode);
+      if (arr) { arr.push(t); } else { ticketsByCustomer.set(t.customerCode, [t]); }
+    }
+
     for (const customer of this.customers()) {
-      const customerContracts = this.contracts().filter(c => c.ctrmCustomerId === customer.sourceCustomerId);
-      const customerTickets = this.tickets().filter(t => t.customerCode === customer.sourceCustomerId);
+      const customerContracts = contractsByCustomer.get(customer.sourceCustomerId!) || [];
+      const customerTickets = ticketsByCustomer.get(customer.sourceCustomerId!) || [];
 
       // --- 1. Unconfirmed Contracts ---
       // Contracts where CustomerConfirmStatus is not 'Confirmed', excluding Fulfilled/Cancelled.
