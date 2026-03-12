@@ -5,24 +5,7 @@
   <title>Origination</title>
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!--
-    Content Security Policy — security-guide.md §4.2
-    Restricts resource loading to reduce XSS impact on SessionStorage token theft.
-      script-src  'self'                  — Angular bundle from same origin only
-      style-src   'unsafe-inline' needed  — Tailwind CSS emits inline styles at runtime
-      connect-src includes AAD + API      — MSAL token endpoint + API (dev & prod)
-      frame-src   AAD                     — MSAL uses hidden iframes for silent token renewal
-  -->
-  <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self';
-                 script-src 'self';
-                 style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-                 font-src 'self' https://fonts.gstatic.com data:;
-                 img-src 'self' data: https://*.tile.openstreetmap.org;
-                 connect-src 'self' https://login.microsoftonline.com https://*.azurewebsites.net http://localhost:5000 https://localhost:* https://graph.microsoft.com;
-                 frame-src https://login.microsoftonline.com;
-                 object-src 'none';
-                 base-uri 'self';">
+  <!-- CSP is now set via HTTP header in SecurityHeadersMiddleware.cs -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23007CC0'/><text x='16' y='23' font-size='20' font-family='Arial,sans-serif' font-weight='bold' text-anchor='middle' fill='white'>O</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

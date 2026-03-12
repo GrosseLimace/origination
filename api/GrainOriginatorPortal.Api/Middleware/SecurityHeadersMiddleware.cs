@@ -34,8 +34,24 @@ public class SecurityHeadersMiddleware
             // Force HTTPS for 1 year
             headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
 
-            // Defense-in-depth CSP for API responses — block everything by default
-            headers["Content-Security-Policy"] = "default-src 'none'";
+            // CSP: restrictive for API responses, permissive for SPA
+            if (context.Request.Path.StartsWithSegments("/api"))
+            {
+                headers["Content-Security-Policy"] = "default-src 'none'";
+            }
+            else
+            {
+                headers["Content-Security-Policy"] =
+                    "default-src 'self'; " +
+                    "script-src 'self'; " +
+                    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+                    "font-src 'self' https://fonts.gstatic.com data:; " +
+                    "img-src 'self' data: https://*.tile.openstreetmap.org; " +
+                    "connect-src 'self' https://login.microsoftonline.com https://*.azurewebsites.net http://localhost:5000 https://localhost:* https://graph.microsoft.com; " +
+                    "frame-src https://login.microsoftonline.com; " +
+                    "object-src 'none'; " +
+                    "base-uri 'self';";
+            }
 
             return Task.CompletedTask;
         });
