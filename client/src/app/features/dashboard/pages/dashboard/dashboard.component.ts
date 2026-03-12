@@ -3,7 +3,8 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { forkJoin } from 'rxjs';
+import { forkJoin, of } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService, DashboardCacheEntry } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
@@ -194,11 +195,11 @@ export class DashboardComponent {
     this.loading.set(true);
 
     forkJoin({
-      customers: this.apiService.getCustomers(tradeUnitToLoad),
-      contracts: this.apiService.getContracts(tradeUnitToLoad),
-      plantingIntentions: this.apiService.getPlantingIntentions(),
-      storedGrain: this.apiService.getStoredGrain(),
-      commodities: this.apiService.getCommodities()
+      customers: this.apiService.getCustomers(tradeUnitToLoad).pipe(catchError(() => of([] as Customer[]))),
+      contracts: this.apiService.getContracts(tradeUnitToLoad).pipe(catchError(() => of([] as Contract[]))),
+      plantingIntentions: this.apiService.getPlantingIntentions().pipe(catchError(() => of([] as PlantingIntention[]))),
+      storedGrain: this.apiService.getStoredGrain().pipe(catchError(() => of([] as StoredGrain[]))),
+      commodities: this.apiService.getCommodities().pipe(catchError(() => of([] as Commodity[])))
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this.customers.set(data.customers);
