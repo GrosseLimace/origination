@@ -38,7 +38,7 @@ import { GlobalErrorHandler } from './app/core/handlers/global-error.handler';
 //      - Angular's built-in DOM sanitization prevents reflected/stored XSS.
 //      - No bypassSecurityTrust* usage anywhere in the app.
 //      - MSAL access tokens are short-lived (~1 hour) and refresh silently.
-//      - Content-Security-Policy headers on the API block cross-origin resource loading.
+//      - Content-Security-Policy HTTP headers (set in SecurityHeadersMiddleware) restrict resource loading for both SPA and API responses.
 const msalInstance = new PublicClientApplication({
   auth: {
     ...environment.msalConfig.auth,
