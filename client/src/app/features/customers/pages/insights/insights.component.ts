@@ -3,7 +3,8 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { forkJoin } from 'rxjs';
+import { forkJoin, of } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService, InsightsCacheEntry } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
@@ -124,10 +125,10 @@ export class InsightsComponent {
     }
 
     forkJoin({
-      customers: this.apiService.getCustomers(tradeUnits),
-      contracts: this.apiService.getContracts(tradeUnits),
-      tickets: this.apiService.getTickets(tradeUnits),
-      notes: this.apiService.getNotes()
+      customers: this.apiService.getCustomers(tradeUnits).pipe(catchError(() => of([] as Customer[]))),
+      contracts: this.apiService.getContracts(tradeUnits).pipe(catchError(() => of([] as Contract[]))),
+      tickets: this.apiService.getTickets(tradeUnits).pipe(catchError(() => of([] as Ticket[]))),
+      notes: this.apiService.getNotes().pipe(catchError(() => of([] as Note[])))
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         const loadedAt = new Date();

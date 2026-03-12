@@ -236,6 +236,9 @@ export class HomeComponent {
       next: (data) => {
         this.storedGrain.set(data);
         this.appState.setStoredGrain(data);
+        // Re-filter stored grain if a customer is already selected when data arrives
+        const sel = this.selectedCustomer();
+        if (sel) this._loadCustomerData(sel.id);
       },
       error: () => {}
     });
@@ -566,6 +569,17 @@ export class HomeComponent {
 
         const customer = this.customers().find(c => c.id === customerId) || this.selectedCustomer();
         if (customer) this._autoSaveCommodities(customer, tickets);
+      },
+      error: () => {}
+    });
+
+    this.apiService.getStoredGrainByCustomer(customerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (grain) => {
+        const existing = this.storedGrain();
+        const merged = [...existing.filter(s => s.customerId !== customerId), ...grain];
+        this.storedGrain.set(merged);
+        this.appState.setStoredGrain(merged);
+        this._loadCustomerData(customerId);
       },
       error: () => {}
     });
