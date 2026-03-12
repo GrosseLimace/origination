@@ -1,5 +1,5 @@
 import { Injectable, signal, computed } from '@angular/core';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, Commodity, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest } from '@models';
 
 export interface InsightsCacheEntry {
   tradeUnitsKey: string; // sorted, comma-joined trade unit IDs — used to detect trade unit changes
@@ -7,6 +7,19 @@ export interface InsightsCacheEntry {
   contracts: Contract[];
   tickets: Ticket[];
   notes: Note[];
+  loadedAt: Date;
+}
+
+export interface DashboardCacheEntry {
+  tradeUnitsKey: string;
+  customers: Customer[];
+  contracts: Contract[];
+  plantingIntentions: PlantingIntention[];
+  storedGrain: StoredGrain[];
+  commodities: Commodity[];
+  savedYieldEstimates: DashboardPlantingEstimate[];
+  savedMarketShares: DashboardMarketShare[];
+  savedActualHarvest: DashboardActualHarvest[];
   loadedAt: Date;
 }
 
@@ -117,6 +130,17 @@ export class AppStateService {
     this.insightsCache.set(null);
   }
 
+  // Dashboard cache — keyed by trade unit so navigating back shows data instantly
+  dashboardCache = signal<DashboardCacheEntry | null>(null);
+
+  setDashboardCache(entry: DashboardCacheEntry): void {
+    this.dashboardCache.set(entry);
+  }
+
+  clearDashboardCache(): void {
+    this.dashboardCache.set(null);
+  }
+
   // Geocode cache — plain Map (not a signal) so mutation is cheap and in-place
   // Capped at 500 entries to prevent unbounded memory growth (LRU-style: evict oldest on overflow)
   private readonly GEOCODE_CACHE_MAX = 500;
@@ -168,5 +192,6 @@ export class AppStateService {
     this.buildListState.set(null);
     this.lastScrolledCustomerId.set(null);
     this.insightsCache.set(null);
+    this.dashboardCache.set(null);
   }
 }
