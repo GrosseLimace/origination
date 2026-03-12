@@ -105,31 +105,44 @@ Use SPA Client ID for `clientId` and API Client ID for scopes (see table above).
 
 Add `fileReplacements` under `configurations` for each deployed environment to swap environment files at build time.
 
-**App configuration** (`app.config.ts` for standalone Angular apps):
+**App bootstrap** (`main.ts` for standalone Angular apps):
 ```typescript
-import { MsalGuard, MsalInterceptor, MsalBroadcastService, MsalService, MSAL_GUARD_CONFIG, MSAL_INSTANCE, MSAL_INTERCEPTOR_CONFIG } from '@azure/msal-angular';
+import { MsalGuard, MsalInterceptor, MsalBroadcastService, MsalService, MsalRedirectComponent, MSAL_GUARD_CONFIG, MSAL_INSTANCE, MSAL_INTERCEPTOR_CONFIG } from '@azure/msal-angular';
 import { PublicClientApplication, InteractionType, BrowserCacheLocation } from '@azure/msal-browser';
 import { HTTP_INTERCEPTORS, provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
+import { APP_INITIALIZER } from '@angular/core';
 
-export const appConfig: ApplicationConfig = {
+// Create MSAL instance before bootstrap so APP_INITIALIZER can reference it
+const msalInstance = new PublicClientApplication({
+  auth: {
+    ...environment.msalConfig.auth,
+    navigateToLoginRequestUrl: true,
+  },
+  cache: {
+    // SessionStorage: tokens cleared on tab close, tab-isolated (not shared across tabs)
+    cacheLocation: BrowserCacheLocation.SessionStorage,
+  }
+});
+
+bootstrapApplication(AppComponent, {
   providers: [
     provideRouter(routes),
     provideHttpClient(withInterceptorsFromDi()),
+    { provide: MSAL_INSTANCE, useValue: msalInstance },
     {
-      provide: MSAL_INSTANCE,
-      useFactory: () => new PublicClientApplication({
-        auth: {
-          ...environment.msalConfig.auth,
-          navigateToLoginRequestUrl: true,
-        },
-        cache: {
-          cacheLocation: BrowserCacheLocation.LocalStorage,
-        }
-      })
+      // Initialize MSAL and process any returning redirect BEFORE the app renders.
+      // This prevents the brief flash of unauthenticated content.
+      provide: APP_INITIALIZER,
+      useFactory: (msalService: MsalService) => () => msalService.instance.initialize(),
+      deps: [MsalService],
+      multi: true
     },
     {
       provide: MSAL_GUARD_CONFIG,
-      useValue: { interactionType: InteractionType.Redirect }
+      useValue: {
+        interactionType: InteractionType.Redirect,
+        authRequest: { scopes: environment.apiConfig.scopes }
+      }
     },
     {
       provide: MSAL_INTERCEPTOR_CONFIG,
@@ -145,10 +158,22 @@ export const appConfig: ApplicationConfig = {
     MsalGuard,
     MsalBroadcastService
   ]
-};
+});
 ```
 
-**Root component** - handle redirect in `AppComponent`:
+**Route configuration** - use `MsalGuard` on routes and `MsalRedirectComponent` for auth callback:
+```typescript
+import { MsalRedirectComponent } from '@azure/msal-angular';
+
+export const routes: Routes = [
+  // MsalRedirectComponent processes the auth redirect before the app renders.
+  // Without this, the app briefly flashes unauthenticated content.
+  { path: 'auth', component: MsalRedirectComponent },
+  { path: 'dashboard', component: DashboardComponent, canActivate: [MsalGuard] }
+];
+```
+
+**Root component** - subscribe to MSAL events (redirect is handled by `MsalRedirectComponent`):
 ```typescript
 export class AppComponent implements OnInit {
   constructor(private msalService: MsalService) {}
@@ -156,11 +181,6 @@ export class AppComponent implements OnInit {
     this.msalService.handleRedirectObservable().subscribe();
   }
 }
-```
-
-**Route protection** - use `MsalGuard` on routes:
-```typescript
-{ path: 'dashboard', component: DashboardComponent, canActivate: [MsalGuard] }
 ```
 
 ### .NET API Authentication Setup
@@ -413,4 +433,4 @@ See `developer-docs/GITHUB-ACTIONS-CICD.md` for the full CI/CD guide.
 
 ---
 
-*Document version: 1.1 | 2026-02-20*
+*Document version: 1.2 | 2026-03-12*
