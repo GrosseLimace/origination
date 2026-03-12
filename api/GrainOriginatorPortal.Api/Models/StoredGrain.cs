@@ -1,22 +1,30 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace GrainOriginatorPortal.Api.Models;
 
 /// <summary>
 /// Represents grain stored at a facility on behalf of a customer.
+/// Source: ctrm.vw_GNTA39D1 joined with originations.vw_CurrentCustomers for numeric CustomerId.
 /// </summary>
 public class StoredGrain
 {
     public string Id { get; set; } = string.Empty;
-    public string CustomerId { get; set; } = string.Empty;
-    public string FarmId { get; set; } = string.Empty;
+    public long CustomerId { get; set; }
+    public string CustomerCode { get; set; } = string.Empty; // CTRM CUSTOMER_ID
     public string Crop { get; set; } = string.Empty;
-    public int Quantity { get; set; }
+    public decimal Quantity { get; set; }
     public DateTime StorageStartDate { get; set; }
     public decimal StorageRate { get; set; }
     public string Bin { get; set; } = string.Empty;
 
-    // Computed properties
-    public int Bushels => Quantity;
+    // Computed properties — not mapped from SQL, calculated on serialization
+    [NotMapped]
+    public decimal Bushels => Quantity;
+
+    [NotMapped]
     public DateTime DateReceived => StorageStartDate;
+
+    [NotMapped]
     public decimal AccumulatedStorageCost
     {
         get

@@ -32,6 +32,10 @@ export interface Ticket {
   proteinPercent?: number;
   gradeCode?: string;
 
+  // Classification — maps to GNP014.BCPFXT via ODS TicketType column
+  ticketType?: string;  // P=Purchase, S=Sale, U=Unload, L=Loadout, B=Booking
+  isApplied: boolean;   // true when ticketType is P or S (server-computed)
+
   // Status
   ticketStatusDescription?: string; // e.g. "Unload", "Final Settled", "P/A", "Force-Matched Unload"
   isActive: boolean;

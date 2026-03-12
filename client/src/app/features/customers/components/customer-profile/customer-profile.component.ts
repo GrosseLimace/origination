@@ -169,14 +169,9 @@ export class CustomerProfileComponent {
         this._pacingPct = null;
       }
 
-      // Update unapplied ticket count
+      // Update unapplied ticket count — TicketType determines applied status (P/S = applied)
       const tickets = this.tickets();
-      const appliedContractIds = new Set(
-        contracts.map(c => c.sourceContractId).filter((id): id is string => !!id)
-      );
-      this._unappliedTicketCount = tickets.filter(t =>
-        !t.ctrmContractNumber || !appliedContractIds.has(t.ctrmContractNumber.trim())
-      ).length;
+      this._unappliedTicketCount = tickets.filter(t => !t.isApplied).length;
 
       // Update tabs cache
       this._tabs = [

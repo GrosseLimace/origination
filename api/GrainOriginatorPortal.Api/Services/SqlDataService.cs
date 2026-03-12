@@ -1384,18 +1384,18 @@ public class SqlDataService : IDataService
     }
 
     // =========================================================================
-    // Storage Operations - DISABLED: Table doesn't exist in ODS
+    // Storage Operations — disabled pending data verification
     // =========================================================================
 
     public Task<List<StoredGrain>> GetStoredGrainAsync(CancellationToken cancellationToken = default)
     {
-        _logger.LogWarning("StoredGrain table doesn't exist in ODS - returning empty list");
+        _logger.LogWarning("StoredGrain disabled pending data verification - returning empty list");
         return Task.FromResult(new List<StoredGrain>());
     }
 
     public Task<List<StoredGrain>> GetStoredGrainByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
     {
-        _logger.LogWarning("StoredGrain table doesn't exist in ODS - returning empty list");
+        _logger.LogWarning("StoredGrain disabled pending data verification - returning empty list");
         return Task.FromResult(new List<StoredGrain>());
     }
 
