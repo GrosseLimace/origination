@@ -9,7 +9,7 @@ import { SelectComponent } from '@shared/components/select/select.component';
 import { Customer, PlantingIntention, Commodity } from '@models';
 import { ApiService } from '@core/services/api.service';
 
-type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'createdOn';
+type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'createdAt';
 type SortDirection = 'none' | 'asc' | 'desc';
 
 @Component({
@@ -45,9 +45,11 @@ export class PlantingIntentionsTableComponent {
   public tradeUnits = input<string[]>([]);
   public customerCommodityCodes = input<string[]>([]);
   public yieldEstimateCrops = input<string[]>([]);
+  public selectedYear = input<number>(0);
   public add = output<{crop: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
   public edit = output<{intentionId: number, crop: string, type?: string, description?: string, acres: number, plantingYear: number}>();
   public delete = output<number>();
+  public yearSelect = output<number>();
 
   allCommodities: Commodity[] = [];
   isLoadingCommodities = false;
@@ -150,8 +152,8 @@ export class PlantingIntentionsTableComponent {
           case 'acres':
             comparison = a.acres - b.acres;
             break;
-          case 'createdOn':
-            comparison = new Date(a.createdOn).getTime() - new Date(b.createdOn).getTime();
+          case 'createdAt':
+            comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
             break;
         }
         return this.currentSortDirection === 'desc' ? -comparison : comparison;
@@ -189,13 +191,7 @@ export class PlantingIntentionsTableComponent {
   }
 
   shouldShowYearSeparator(index: number, intention: PlantingIntention): boolean {
-    // Check if there are multiple years in the data
-    const uniqueYears = new Set(this.plantingIntentions().map(i => i.plantingYear));
-    if (uniqueYears.size <= 1) {
-      return false; // Don't show separators if there's only one year
-    }
-
-    // Show separator for the first item
+    // Always show separator for the first item (acts as year selector)
     if (index === 0) {
       return true;
     }
@@ -283,11 +279,13 @@ export class PlantingIntentionsTableComponent {
   }
 
   isAddFormValid(): boolean {
+    const acres = this._parseIntInput(this.addForm.acres);
+    const year = this._parseIntInput(this.addForm.plantingYear);
     return this.addForm.crop !== ''
       && this.addForm.acres !== ''
-      && !isNaN(this._parseIntInput(this.addForm.acres))
+      && !isNaN(acres) && acres > 0 && acres <= 100_000
       && this.addForm.plantingYear !== ''
-      && !isNaN(this._parseIntInput(this.addForm.plantingYear))
+      && !isNaN(year) && year >= 2020 && year <= 2100
       && this.addForm.tradeUnit !== '';
   }
 
@@ -359,11 +357,13 @@ export class PlantingIntentionsTableComponent {
   }
 
   isEditFormValid(): boolean {
+    const acres = this._parseIntInput(this.editForm.acres);
+    const year = this._parseIntInput(this.editForm.plantingYear);
     return this.editForm.crop !== ''
       && this.editForm.acres !== ''
-      && !isNaN(this._parseIntInput(this.editForm.acres))
+      && !isNaN(acres) && acres > 0 && acres <= 100_000
       && this.editForm.plantingYear !== ''
-      && !isNaN(this._parseIntInput(this.editForm.plantingYear))
+      && !isNaN(year) && year >= 2020 && year <= 2100
       && this.hasEditFormChanged();
   }
 

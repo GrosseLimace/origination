@@ -1,5 +1,7 @@
 import { Component, DestroyRef, inject, input, output, effect, afterNextRender } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
 import { Customer } from '@models';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
 import { AppStateService } from '@core/services/app-state.service';
@@ -34,6 +36,7 @@ interface StateInfo {
 export class CustomerMapComponent {
   private readonly appState = inject(AppStateService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly http = inject(HttpClient);
 
   public customers = input<Customer[]>([]);
   public focusedState = input<string | null>(null);
@@ -351,14 +354,13 @@ export class CustomerMapComponent {
         zip: addr.zip
       }));
 
-      const response = await fetch(`${environment.apiBaseUrl}/geocode/batch`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requests)
-      });
+      const results = await firstValueFrom(
+        this.http.post<Array<{ key: string; lat: number | null; lng: number | null }>>(
+          `${environment.apiBaseUrl}/geocode/batch`, requests
+        )
+      );
 
-      if (response.ok && this._map) {
-        const results: Array<{ key: string; lat: number | null; lng: number | null }> = await response.json();
+      if (results && this._map) {
         for (const result of results) {
           if (result.lat != null && result.lng != null) {
             const coords = { lat: result.lat, lng: result.lng };
@@ -423,19 +425,27 @@ export class CustomerMapComponent {
     return result;
   }
 
+  private _escapeHtml(str: string): string {
+    if (!str) return '';
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+
   private _buildMarker(customer: Customer, coords: { lat: number; lng: number }): any {
     const addr = this._resolveAddress(customer);
-    const locationParts = [addr.city, addr.state].filter(Boolean).join(', ');
-    const contactLine = customer.phone
+    const locationParts = this._escapeHtml([addr.city, addr.state].filter(Boolean).join(', '));
+    const contactLine = this._escapeHtml(customer.phone
       ? customer.phone
-      : (customer.email || '');
+      : (customer.email || ''));
+    const escapedName = this._escapeHtml(customer.name);
+    const escapedSourceId = this._escapeHtml(customer.sourceCustomerId ?? '');
 
     const popupContent = `
       <div style="min-width: 180px; font-family: inherit; padding: 2px 0;">
         <div style="font-size: 14px; font-weight: 600; color: #111827; margin-bottom: 2px; line-height: 1.3;">
-          ${customer.name}
+          ${escapedName}
         </div>
-        ${customer.sourceCustomerId ? `<div style="font-size: 11px; color: #9ca3af; margin-bottom: 6px; font-family: monospace;">${customer.sourceCustomerId}</div>` : ''}
+        ${customer.sourceCustomerId ? `<div style="font-size: 11px; color: #9ca3af; margin-bottom: 6px; font-family: monospace;">${escapedSourceId}</div>` : ''}
         ${locationParts ? `
         <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 4px;">
           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">

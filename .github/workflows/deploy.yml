@@ -16,8 +16,13 @@ on:
         options: [dev, qa, prod]
 
 jobs:
-  build:
+  deploy-dev:
     runs-on: self-hosted
+    environment: dev
+    if: github.event_name == 'push' || github.event.inputs.environment == 'dev'
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -32,33 +37,12 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Build Angular (dev configuration)
+      - name: Build Angular (dev)
         run: npx ng build --configuration dev
         working-directory: client
 
       - name: Build and Publish
         run: dotnet publish api/GrainOriginatorPortal.Api -c Release -o ./publish
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: app
-          path: ./publish
-
-  deploy-dev:
-    needs: build
-    runs-on: self-hosted
-    environment: dev
-    if: github.event_name == 'push' || github.event.inputs.environment == 'dev'
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: app
-          path: ./publish
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -82,11 +66,25 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          name: app
-          path: ./publish
+          node-version: '24.x'
+
+      - name: Install Angular dependencies
+        run: npm ci
+        working-directory: client
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Build Angular (qa)
+        run: npx ng build --configuration qa
+        working-directory: client
+
+      - name: Build and Publish
+        run: dotnet publish api/GrainOriginatorPortal.Api -c Release -o ./publish
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -110,11 +108,25 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          name: app
-          path: ./publish
+          node-version: '24.x'
+
+      - name: Install Angular dependencies
+        run: npm ci
+        working-directory: client
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Build Angular (production)
+        run: npx ng build --configuration production
+        working-directory: client
+
+      - name: Build and Publish
+        run: dotnet publish api/GrainOriginatorPortal.Api -c Release -o ./publish
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2

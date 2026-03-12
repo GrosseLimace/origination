@@ -93,21 +93,7 @@ export class InsightsComponent {
 
   constructor() {
     if (this.selectedTradeUnits.length === 0) return;
-    const tradeUnitsKey = [...this.selectedTradeUnits].sort().join(',');
-    const cached = this.appState.insightsCache();
-    if (cached && cached.tradeUnitsKey === tradeUnitsKey) {
-      // Cache hit — display immediately, then silently check for updates in the background
-      this.customers.set(cached.customers);
-      this.contracts.set(cached.contracts);
-      this.tickets.set(cached.tickets);
-      this.notes.set(cached.notes);
-      this.loadedAt.set(cached.loadedAt);
-      this._generateInsights();
-      this._loadData(true);
-    } else {
-      // Cache miss or different trade unit — full load with skeleton spinner
-      this._loadData(false);
-    }
+    this._loadData(false);
   }
 
   refresh(): void {

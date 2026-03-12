@@ -352,7 +352,7 @@ export class EditCustomerDialogComponent {
         acres: this._parseNumericInput(this.editAcres),
         binCapacity: this._parseNumericInput(this.editBinCapacity),
         commodities: this.editCommodities().filter(c => !this.isTicketCommodity(c)),
-        primaryContact: this.editPrimaryContact(),
+        primaryContact: this.editPrimaryContact().slice(0, 200),
         linkedProducerIds: this.editLinkedProducerIds(),
         removedIncomingIds: this.removedIncomingIds(),
         eSignEnabled: this.editESignEnabled()

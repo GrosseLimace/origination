@@ -339,19 +339,35 @@ export class HomeComponent {
     let pending = 2;
     const done = () => { if (--pending === 0) this.isLoadingYieldData.set(false); };
 
+    // Gather all unique planting years from intentions + contracts so we fetch
+    // yield estimates for every year the user might select.
+    const yearSet = new Set<number>();
     const currentYear = new Date().getFullYear();
-    forkJoin([
-      this.apiService.getDashboardPlantingEstimates(key, currentYear).pipe(catchError(() => of([]))),
-      this.apiService.getDashboardPlantingEstimates(key, currentYear - 1).pipe(catchError(() => of([])))
-    ]).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: ([current, prior]) => {
-        const merged = [...prior];
-        for (const est of current) {
-          const idx = merged.findIndex(e => e.crop === est.crop);
-          if (idx >= 0) merged[idx] = est; else merged.push(est);
+    yearSet.add(currentYear);
+    yearSet.add(currentYear - 1);
+    for (const pi of this.plantingIntentions()) {
+      if (pi.plantingYear) yearSet.add(pi.plantingYear);
+    }
+    for (const c of this.contracts()) {
+      if (c.cropYear) yearSet.add(c.cropYear);
+    }
+
+    const yearCalls = [...yearSet].map(y =>
+      this.apiService.getDashboardPlantingEstimates(key, y).pipe(catchError(() => of([] as DashboardPlantingEstimate[])))
+    );
+    forkJoin(yearCalls).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (results) => {
+        // Merge all years — later years overwrite earlier for same crop key
+        const map = new Map<string, DashboardPlantingEstimate>();
+        for (const batch of results) {
+          for (const est of batch) {
+            // Key by crop + year to keep per-year estimates separate
+            map.set(`${est.crop}|${est.plantingYear}`, est);
+          }
         }
+        const merged = [...map.values()];
         this.yieldEstimates.set(merged);
-        this.yieldEstimateCrops.set(merged.map(e => e.crop));
+        this.yieldEstimateCrops.set([...new Set(merged.map(e => e.crop))]);
         done();
       },
       error: () => done()
@@ -494,6 +510,42 @@ export class HomeComponent {
     });
   }
 
+  private _propagatePrimaryContact(linkedCustomer: Customer, primaryContact: string): void {
+    const existingPd = this.producerDetailsMap().get(linkedCustomer.id);
+    // Skip if the linked producer already has a primary contact
+    if (existingPd?.primaryContact || linkedCustomer.primaryContact) return;
+
+    this.apiService.saveProducerDetails(linkedCustomer.id, {
+      sourceCustomerId: linkedCustomer.sourceCustomerId || null,
+      customerName: linkedCustomer.name,
+      totalAcres: existingPd?.totalAcres ?? null,
+      binCapacity: existingPd?.binCapacity ?? null,
+      primaryContact: primaryContact,
+      commodities: existingPd?.commodities ?? null,
+      linkedProducerIds: existingPd?.linkedProducerIds ?? ((linkedCustomer.linkedProducerIds || []).join(',') || null)
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (pd) => {
+        const map = new Map(this.producerDetailsMap());
+        map.set(pd.customerId, pd);
+        this.producerDetailsMap.set(map);
+        // Update the customer object in local state
+        const updated = { ...linkedCustomer, primaryContact };
+        const idx = this.customers().findIndex(c => c.id === linkedCustomer.id);
+        if (idx >= 0) {
+          const arr = [...this.customers()];
+          arr[idx] = updated;
+          this.customers.set(arr);
+          this.appState.setCustomers(arr);
+        } else {
+          const cache = new Map(this._crossTradeUnitCustomers());
+          cache.set(linkedCustomer.id, updated);
+          this._crossTradeUnitCustomers.set(cache);
+        }
+      },
+      error: () => {}
+    });
+  }
+
   private _loadCustomerContractsAndTickets(customerId: number, sourceCustomerId?: string): void {
     if (sourceCustomerId) {
       this.customerPricingLines.set([]);
@@ -554,9 +606,7 @@ export class HomeComponent {
     const codeMap = new Map<number, string>();
     [currentCustomer, ...linkedGroup].forEach(c => { if (c?.sourceCustomerId) codeMap.set(c.id, c.sourceCustomerId); });
     this.customerCodeMap.set(codeMap);
-    this.customerNotes.set([...this.notes()
-      .filter(n => linkedIds.has(n.customerId))
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())]);
+    this.customerNotes.set(this._sortNotes(this.notes().filter(n => linkedIds.has(n.customerId))));
   }
 
   private _autoSaveCommodities(customer: Customer, customerTickets: Ticket[]): void {
@@ -679,45 +729,24 @@ export class HomeComponent {
     }
 
     if (data.primaryContact) {
-      // Propagate primary contact to ALL linked producers that don't have one yet,
-      // including cross-trade-unit customers cached in _crossTradeUnitCustomers
-      const allCustomers = [...this.customers(), ...this._crossTradeUnitCustomers().values()];
+      // Propagate primary contact to ALL linked producers that don't have one yet
+      const allKnown = [...this.customers(), ...this._crossTradeUnitCustomers().values()];
       for (const linkedIdStr of data.linkedProducerIds) {
-        const linkedCustomer = allCustomers.find(c => c.sourceCustomerId === linkedIdStr);
-        if (!linkedCustomer) continue;
-        const linkedId = linkedCustomer.id;
-        const linkedPd = this.producerDetailsMap().get(linkedId);
-        if (linkedPd?.primaryContact) continue;
-        this.apiService.saveProducerDetails(linkedId, {
-          sourceCustomerId: linkedCustomer.sourceCustomerId || null,
-          customerName: linkedCustomer.name,
-          totalAcres: linkedPd?.totalAcres ?? null,
-          binCapacity: linkedPd?.binCapacity ?? null,
-          primaryContact: data.primaryContact,
-          commodities: linkedPd?.commodities ?? null,
-          linkedProducerIds: linkedPd?.linkedProducerIds ?? null
-        }).subscribe({
-          next: (pd) => {
-            const map = new Map(this.producerDetailsMap());
-            map.set(pd.customerId, pd);
-            this.producerDetailsMap.set(map);
-            const updatedLinkedCustomer: Customer = { ...linkedCustomer, primaryContact: data.primaryContact };
-            const crossCache = new Map(this._crossTradeUnitCustomers());
-            if (crossCache.has(linkedId)) {
-              crossCache.set(linkedId, updatedLinkedCustomer);
-              this._crossTradeUnitCustomers.set(crossCache);
-            } else {
-              const idx = this.customers().findIndex(c => c.id === linkedId);
-              if (idx >= 0) {
-                const arr = [...this.customers()];
-                arr[idx] = updatedLinkedCustomer;
-                this.customers.set(arr);
-                this.appState.setCustomers(arr);
-              }
-            }
-          },
-          error: () => {}
-        });
+        const linkedCustomer = allKnown.find(c => c.sourceCustomerId === linkedIdStr);
+        if (linkedCustomer) {
+          this._propagatePrimaryContact(linkedCustomer, data.primaryContact);
+        } else {
+          // Linked producer not loaded locally — fetch by sourceId then propagate
+          this.apiService.getCustomerBySourceId(linkedIdStr).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: (fetched) => {
+              const cache = new Map(this._crossTradeUnitCustomers());
+              cache.set(fetched.id, fetched);
+              this._crossTradeUnitCustomers.set(cache);
+              this._propagatePrimaryContact(fetched, data.primaryContact);
+            },
+            error: () => {}
+          });
+        }
       }
     }
 
@@ -733,6 +762,9 @@ export class HomeComponent {
     this.selectedCustomer.set(updated);
     this.appState.setCustomers(this.customers());
     this.appState.selectCustomer(updated);
+
+    // Fetch any newly linked producers that aren't loaded yet so the dropdown updates immediately
+    this._fetchMissingLinkedProducers(updated);
     this._loadCustomerData(updated.id, updated);
   }
 
@@ -761,13 +793,13 @@ export class HomeComponent {
     const customer = this.customers().find(c => c.id === customerId);
     if (customer) {
       this.selectedCustomer.set(customer);
+      this._fetchMissingLinkedProducers(customer);
       this._loadCustomerContractsAndTickets(customer.id, customer.sourceCustomerId);
       this._loadCustomerData(customer.id);
     } else {
       // Linked customer is in a different trade unit — fetch them from the API
       this.apiService.getCustomerById(customerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (fetched) => {
-          if (fetched.id === this.selectedCustomer()?.id) return;
           // Merge producer details if available
           const pd = this.producerDetailsMap().get(fetched.id);
           if (pd) {
@@ -785,6 +817,7 @@ export class HomeComponent {
           cache.set(fetched.id, fetched);
           this._crossTradeUnitCustomers.set(cache);
           this.selectedCustomer.set(fetched);
+          this._fetchMissingLinkedProducers(fetched);
           this._loadCustomerContractsAndTickets(fetched.id, fetched.sourceCustomerId);
           this._loadCustomerData(fetched.id);
         },
@@ -863,10 +896,27 @@ export class HomeComponent {
       next: (note) => {
         this.notes.update(arr => [...arr, note]);
         this.appState.setNotes(this.notes());
-        this.customerNotes.update(arr => [note, ...arr]);
+        this.customerNotes.update(arr => this._sortNotes([...arr, note]));
         this.toastService.success('Note added');
       },
       error: () => this.toastService.error('Failed to add note')
+    });
+  }
+
+  private _parseNoteTime(ts: string | Date): number {
+    if (!ts) return 0;
+    // API returns bare ISO strings without Z suffix — treat as UTC consistently
+    const raw = typeof ts === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
+    return new Date(raw).getTime();
+  }
+
+  private _sortNotes(notes: Note[]): Note[] {
+    return notes.sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      const aTime = this._parseNoteTime(a.modifiedAt || a.createdAt);
+      const bTime = this._parseNoteTime(b.modifiedAt || b.createdAt);
+      return bTime - aTime;
     });
   }
 
@@ -875,7 +925,9 @@ export class HomeComponent {
       next: (updated) => {
         this.notes.update(arr => arr.map(n => n.id === updated.id ? updated : n));
         this.appState.setNotes(this.notes());
-        this.customerNotes.update(arr => arr.map(n => n.id === updated.id ? updated : n));
+        this.customerNotes.update(arr =>
+          this._sortNotes(arr.map(n => n.id === updated.id ? updated : n))
+        );
         this.toastService.success(updated.isPinned ? 'Note pinned' : 'Note unpinned');
       },
       error: () => this.toastService.error('Failed to update note')
@@ -887,7 +939,9 @@ export class HomeComponent {
       next: (updated) => {
         this.notes.update(arr => arr.map(n => n.id === updated.id ? updated : n));
         this.appState.setNotes(this.notes());
-        this.customerNotes.update(arr => arr.map(n => n.id === updated.id ? updated : n));
+        this.customerNotes.update(arr =>
+          this._sortNotes(arr.map(n => n.id === updated.id ? updated : n))
+        );
         this.toastService.success('Note updated');
       },
       error: () => this.toastService.error('Failed to update note')

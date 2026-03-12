@@ -8,8 +8,9 @@ public record CreateNoteRequest
     public required long CustomerId { get; init; }
 
     [Required]
-    [StringLength(2000)]
+    [StringLength(5000)]
     public required string Content { get; init; }
 
+    [StringLength(100)]
     public string? TradeUnit { get; init; }
 }

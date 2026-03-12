@@ -13,9 +13,9 @@ using GrainOriginatorPortal.Api.Exceptions;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
-[AllowAnonymous]
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 [Produces("application/json")]
 public class DiagnosticsController : ControllerBase
 {

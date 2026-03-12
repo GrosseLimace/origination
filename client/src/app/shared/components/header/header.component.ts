@@ -110,6 +110,7 @@ export class HeaderComponent {
 
   signOut(): void {
     this.profileMenuOpen.set(false);
+    this.appState.clearAll();
     this.msalService.logoutRedirect();
   }
 

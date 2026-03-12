@@ -4,8 +4,8 @@ export interface DashboardActualHarvest {
   cropCategory: string;
   plantingYear: number;
   bushels: number;
-  createdOn?: string;
+  createdAt?: string;
   createdBy?: string;
-  modifiedOn?: string;
+  modifiedAt?: string;
   modifiedBy?: string;
 }

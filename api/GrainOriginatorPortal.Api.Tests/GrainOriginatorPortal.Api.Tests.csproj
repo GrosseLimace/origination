@@ -19,6 +19,12 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <!-- Exclude nested duplicate project folder -->
+  <ItemGroup>
+    <Compile Remove="GrainOriginatorPortal.Api.Tests\**" />
+    <None Remove="GrainOriginatorPortal.Api.Tests\**" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\GrainOriginatorPortal.Api\GrainOriginatorPortal.Api.csproj" />
   </ItemGroup>

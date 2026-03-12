@@ -1,27 +1,36 @@
 // System namespaces
-using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json;
+
+// Microsoft namespaces
+using Microsoft.Extensions.Caching.Memory;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 [Produces("application/json")]
 public class GeocodeController : ControllerBase
 {
-    // In-process cache shared across requests — keyed by normalised address string
-    private static readonly ConcurrentDictionary<string, double[]?> _cache = new();
+    // Bounded cache with size limit and sliding expiration (CWE-400 / M-12)
     private static readonly SemaphoreSlim _rateLimiter = new(1, 1);
     private static DateTime _lastNominatimCall = DateTime.MinValue;
+    private static readonly MemoryCacheEntryOptions _cacheOptions = new()
+    {
+        SlidingExpiration = TimeSpan.FromHours(4),
+        Size = 1
+    };
 
     private readonly IHttpClientFactory _httpFactory;
     private readonly ILogger<GeocodeController> _logger;
+    private readonly IMemoryCache _cache;
 
-    public GeocodeController(IHttpClientFactory httpFactory, ILogger<GeocodeController> logger)
+    public GeocodeController(IHttpClientFactory httpFactory, ILogger<GeocodeController> logger, IMemoryCache cache)
     {
         _httpFactory = httpFactory;
         _logger = logger;
+        _cache = cache;
     }
 
     // -------------------------------------------------------------------------
@@ -37,7 +46,7 @@ public class GeocodeController : ControllerBase
 
         var cacheKey = BuildCacheKey(request);
 
-        if (_cache.TryGetValue(cacheKey, out var cached))
+        if (_cache.TryGetValue<double[]?>(cacheKey, out var cached))
         {
             return Ok(new GeocodeResult { Key = request.Key, Lat = cached?[0], Lng = cached?[1] });
         }
@@ -66,12 +75,12 @@ public class GeocodeController : ControllerBase
                 {
                     var lat = double.Parse(data[0].GetProperty("lat").GetString()!);
                     var lng = double.Parse(data[0].GetProperty("lon").GetString()!);
-                    _cache[cacheKey] = new[] { lat, lng };
+                    _cache.Set(cacheKey, new[] { lat, lng }, _cacheOptions);
                     return Ok(new GeocodeResult { Key = request.Key, Lat = lat, Lng = lng });
                 }
                 else
                 {
-                    _cache[cacheKey] = null;
+                    _cache.Set<double[]?>(cacheKey, null, _cacheOptions);
                 }
             }
             else if (response.StatusCode == HttpStatusCode.TooManyRequests)
@@ -129,7 +138,7 @@ public class GeocodeController : ControllerBase
             var cacheKey = BuildCacheKey(req);
 
             // Check in-memory cache first
-            if (_cache.TryGetValue(cacheKey, out var cached))
+            if (_cache.TryGetValue<double[]?>(cacheKey, out var cached))
             {
                 results.Add(new GeocodeResult { Key = req.Key, Lat = cached?[0], Lng = cached?[1] });
                 continue;
@@ -164,12 +173,12 @@ public class GeocodeController : ControllerBase
                     {
                         var lat = double.Parse(data[0].GetProperty("lat").GetString()!);
                         var lng = double.Parse(data[0].GetProperty("lon").GetString()!);
-                        _cache[cacheKey] = new[] { lat, lng };
+                        _cache.Set(cacheKey, new[] { lat, lng }, _cacheOptions);
                         results.Add(new GeocodeResult { Key = req.Key, Lat = lat, Lng = lng });
                     }
                     else
                     {
-                        _cache[cacheKey] = null;
+                        _cache.Set<double[]?>(cacheKey, null, _cacheOptions);
                         results.Add(new GeocodeResult { Key = req.Key });
                     }
                 }
@@ -198,6 +207,83 @@ public class GeocodeController : ControllerBase
         }
 
         return Ok(results);
+    }
+
+    // -------------------------------------------------------------------------
+    /// <summary>Free-text geocode search via Nominatim (proxied server-side). Rate-limited to 1 req/sec.</summary>
+    [HttpGet("search")]
+    [ProducesResponseType(typeof(List<GeocodeSearchResult>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<GeocodeSearchResult>>> Search([FromQuery] string q, [FromQuery] int limit = 1, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(q))
+            return Ok(new List<GeocodeSearchResult>());
+
+        // Cap limit at 5 to prevent abuse
+        limit = Math.Clamp(limit, 1, 5);
+
+        var cacheKey = $"search:{q.ToLower().Trim()}:{limit}";
+        if (_cache.TryGetValue<double[]?>(cacheKey, out var cached) && cached != null)
+        {
+            return Ok(new List<GeocodeSearchResult>
+            {
+                new() { Lat = cached[0], Lng = cached[1] }
+            });
+        }
+
+        await _rateLimiter.WaitAsync(cancellationToken);
+        try
+        {
+            var elapsed = DateTime.UtcNow - _lastNominatimCall;
+            if (elapsed.TotalMilliseconds < 1100)
+            {
+                await Task.Delay(1100 - (int)elapsed.TotalMilliseconds, cancellationToken);
+            }
+
+            var url = $"search?q={Uri.EscapeDataString(q)}&format=json&limit={limit}";
+            _lastNominatimCall = DateTime.UtcNow;
+
+            var http = _httpFactory.CreateClient("nominatim");
+            var response = await http.GetAsync(url, cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var json = await response.Content.ReadAsStringAsync(cancellationToken);
+                var data = JsonSerializer.Deserialize<JsonElement[]>(json);
+                if (data != null && data.Length > 0)
+                {
+                    var results = data.Select(d => new GeocodeSearchResult
+                    {
+                        Lat = double.Parse(d.GetProperty("lat").GetString()!),
+                        Lng = double.Parse(d.GetProperty("lon").GetString()!)
+                    }).ToList();
+
+                    // Cache first result
+                    _cache.Set(cacheKey, new[] { results[0].Lat, results[0].Lng }, _cacheOptions);
+                    return Ok(results);
+                }
+            }
+            else
+            {
+                _logger.LogError("Nominatim search returned {StatusCode} for query {Query} [{ErrorCode}] [{ErrorCategory}]",
+                    (int)response.StatusCode, q, "INFRASTRUCTURE_GEOCODE_UNAVAILABLE", "Infrastructure");
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "Geocode search HTTP failure for query {Query} [{ErrorCode}] [{ErrorCategory}]",
+                q, "INFRASTRUCTURE_GEOCODE_UNAVAILABLE", "Infrastructure");
+        }
+        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogError(ex, "Geocode search timed out for query {Query} [{ErrorCode}] [{ErrorCategory}]",
+                q, "INFRASTRUCTURE_TIMEOUT", "Infrastructure");
+        }
+        finally
+        {
+            _rateLimiter.Release();
+        }
+
+        return Ok(new List<GeocodeSearchResult>());
     }
 
     // -------------------------------------------------------------------------

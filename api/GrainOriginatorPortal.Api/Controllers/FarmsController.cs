@@ -1,18 +1,22 @@
 // Project namespaces
 using GrainOriginatorPortal.Api.Exceptions;
+using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 [Produces("application/json")]
 public class FarmsController : ControllerBase
 {
     private readonly IDataService _dataService;
+    private readonly IUserEntitlementService _entitlementService;
 
-    public FarmsController(IDataService dataService)
+    public FarmsController(IDataService dataService, IUserEntitlementService entitlementService)
     {
         _dataService = dataService;
+        _entitlementService = entitlementService;
     }
 
     // -------------------------------------------------------------------------
@@ -42,6 +46,7 @@ public class FarmsController : ControllerBase
     [ProducesResponseType(typeof(List<Farm>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<Farm>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
+        await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
         return Ok(await _dataService.GetFarmsByCustomerAsync(customerId, cancellationToken));
     }
 

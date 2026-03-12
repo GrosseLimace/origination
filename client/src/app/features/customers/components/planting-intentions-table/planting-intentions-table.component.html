@@ -23,12 +23,15 @@
           @for (intention of sortedIntentions; track intention.id; let i = $index) {
             <!-- Year Separator -->
             @if (shouldShowYearSeparator(i, intention)) {
-              <div class="flex items-center gap-2 py-2">
-                <div class="h-px flex-1 bg-gray-300 dark:bg-gray-600"></div>
-                <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">
+              <div class="flex items-center gap-2 py-2 cursor-pointer group" (click)="yearSelect.emit(intention.plantingYear)">
+                <div class="h-px flex-1" [class]="selectedYear() === intention.plantingYear ? 'bg-green-500 dark:bg-green-400' : 'bg-gray-300 dark:bg-gray-600'"></div>
+                <span class="text-sm font-semibold px-2 py-0.5 rounded-md transition-colors"
+                  [class]="selectedYear() === intention.plantingYear
+                    ? 'bg-green-600 text-white'
+                    : 'text-gray-700 dark:text-gray-300 group-hover:bg-gray-100 dark:group-hover:bg-gray-700'">
                   {{ intention.plantingYear }} Planting Year
                 </span>
-                <div class="h-px flex-1 bg-gray-300 dark:bg-gray-600"></div>
+                <div class="h-px flex-1" [class]="selectedYear() === intention.plantingYear ? 'bg-green-500 dark:bg-green-400' : 'bg-gray-300 dark:bg-gray-600'"></div>
               </div>
             }
 
@@ -60,7 +63,7 @@
                 </div>
                 <div>
                   <div class="text-xs text-gray-500 dark:text-gray-400">Created On</div>
-                  <div class="text-sm text-gray-900 dark:text-white">{{ intention.createdOn | date:'M/d/yy' }}</div>
+                  <div class="text-sm text-gray-900 dark:text-white">{{ intention.createdAt | date:'M/d/yy' }}</div>
                 </div>
               </div>
 
@@ -138,15 +141,15 @@
                     </span>
                   </div>
                 </app-table-head>
-                <app-table-head [sortable]="true" (click)="handleSort('createdOn')" class="w-[24%] text-center">
+                <app-table-head [sortable]="true" (click)="handleSort('createdAt')" class="w-[24%] text-center">
                   <div class="flex items-center justify-center gap-1.5">
                     <span>Created On</span>
-                    <span [class]="getSortIconClass('createdOn')">
-                      @if (currentSortColumn === 'createdOn' && currentSortDirection === 'asc') {
+                    <span [class]="getSortIconClass('createdAt')">
+                      @if (currentSortColumn === 'createdAt' && currentSortDirection === 'asc') {
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
                         </svg>
-                      } @else if (currentSortColumn === 'createdOn' && currentSortDirection === 'desc') {
+                      } @else if (currentSortColumn === 'createdAt' && currentSortDirection === 'desc') {
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                         </svg>
@@ -163,16 +166,19 @@
             </app-table-header>
             <app-table-body>
               @for (intention of sortedIntentions; track intention.id; let i = $index) {
-                <!-- Year Separator Row -->
+                <!-- Year Separator Row (clickable to select year) -->
                 @if (shouldShowYearSeparator(i, intention)) {
                   <app-table-row>
-                    <app-table-cell [colspan]="5" class="bg-gray-50 dark:bg-gray-800/50">
-                      <div class="py-2 px-3 flex items-center gap-2">
-                        <div class="h-px flex-1 bg-gray-300 dark:bg-gray-600"></div>
-                        <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                    <app-table-cell [colspan]="5" [class]="selectedYear() === intention.plantingYear ? 'bg-green-50 dark:bg-green-900/20' : 'bg-gray-50 dark:bg-gray-800/50'">
+                      <div class="py-2 px-3 flex items-center gap-2 cursor-pointer group" (click)="yearSelect.emit(intention.plantingYear)">
+                        <div class="h-px flex-1" [class]="selectedYear() === intention.plantingYear ? 'bg-green-500 dark:bg-green-400' : 'bg-gray-300 dark:bg-gray-600'"></div>
+                        <span class="text-sm font-semibold px-2.5 py-0.5 rounded-md transition-colors"
+                          [class]="selectedYear() === intention.plantingYear
+                            ? 'bg-green-600 text-white'
+                            : 'text-gray-700 dark:text-gray-300 group-hover:bg-gray-100 dark:group-hover:bg-gray-700'">
                           {{ intention.plantingYear }} Planting Year
                         </span>
-                        <div class="h-px flex-1 bg-gray-300 dark:bg-gray-600"></div>
+                        <div class="h-px flex-1" [class]="selectedYear() === intention.plantingYear ? 'bg-green-500 dark:bg-green-400' : 'bg-gray-300 dark:bg-gray-600'"></div>
                       </div>
                     </app-table-cell>
                   </app-table-row>
@@ -183,7 +189,7 @@
                   <app-table-cell class="text-center">{{ intention.type ? intention.type + ' ' : '' }}{{ getCropCategory(intention.crop) }}</app-table-cell>
                   <app-table-cell class="text-center">{{ intention.acres | number }}</app-table-cell>
                   <app-table-cell class="text-center">{{ intention.plantingYear }}</app-table-cell>
-                  <app-table-cell class="text-center">{{ intention.createdOn | date:'M/d/yy' }}</app-table-cell>
+                  <app-table-cell class="text-center">{{ intention.createdAt | date:'M/d/yy' }}</app-table-cell>
                   <app-table-cell class="text-center">
                     <button
                       type="button"
@@ -252,12 +258,12 @@
 
             <div class="space-y-2">
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Acres</label>
-              <app-input type="text" inputmode="numeric" [(ngModel)]="addForm.acres" placeholder="e.g., 1,200"></app-input>
+              <app-input type="text" inputmode="numeric" [maxlength]="10" [(ngModel)]="addForm.acres" placeholder="e.g., 1,200"></app-input>
             </div>
 
             <div class="space-y-2">
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Planting Year</label>
-              <app-input type="text" inputmode="numeric" [(ngModel)]="addForm.plantingYear" placeholder="e.g., 2025"></app-input>
+              <app-input type="text" inputmode="numeric" [maxlength]="4" [(ngModel)]="addForm.plantingYear" placeholder="e.g., 2025"></app-input>
             </div>
 
             @if (tradeUnits().length > 1) {
@@ -328,12 +334,12 @@
 
             <div class="space-y-2">
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Acres</label>
-              <app-input type="text" inputmode="numeric" [(ngModel)]="editForm.acres" placeholder="e.g., 1,200"></app-input>
+              <app-input type="text" inputmode="numeric" [maxlength]="10" [(ngModel)]="editForm.acres" placeholder="e.g., 1,200"></app-input>
             </div>
 
             <div class="space-y-2">
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Planting Year</label>
-              <app-input type="text" inputmode="numeric" [(ngModel)]="editForm.plantingYear" placeholder="e.g., 2025"></app-input>
+              <app-input type="text" inputmode="numeric" [maxlength]="4" [(ngModel)]="editForm.plantingYear" placeholder="e.g., 2025"></app-input>
             </div>
           </div>
         </app-dialog-content>

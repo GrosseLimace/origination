@@ -1,11 +1,14 @@
 // Project namespaces
 using GrainOriginatorPortal.Api.Exceptions;
+using GrainOriginatorPortal.Api.Filters;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
 [Produces("application/json")]
+[Authorize]
+[EnforceTradeUnitAccess]
 public class DashboardPlantingEstimatesController : ControllerBase
 {
     private readonly IDataService _dataService;

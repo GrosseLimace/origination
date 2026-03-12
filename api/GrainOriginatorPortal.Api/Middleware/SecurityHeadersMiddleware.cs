@@ -34,6 +34,9 @@ public class SecurityHeadersMiddleware
             // Force HTTPS for 1 year
             headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
 
+            // Defense-in-depth CSP for API responses — block everything by default
+            headers["Content-Security-Policy"] = "default-src 'none'";
+
             return Task.CompletedTask;
         });
 

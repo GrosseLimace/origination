@@ -1,7 +1,10 @@
 import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
 import * as L from 'leaflet';
+import { environment } from '../../../../../environments/environment';
 
 interface BidEntry {
   bid: string;
@@ -30,6 +33,7 @@ interface LocationCoords {
 })
 export class BidSheetComponent {
   private readonly destroyRef = inject(DestroyRef);
+  private readonly http = inject(HttpClient);
   selectedYear = signal<string>(new Date().getFullYear().toString());
   selectedCrop = signal<string>('Corn');
   searchQuery = signal<string>('');
@@ -192,6 +196,12 @@ export class BidSheetComponent {
     }
   }
 
+  private _escapeHtml(str: string): string {
+    if (!str) return '';
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+
   private _addMarkers(): void {
     if (!this._map) return;
 
@@ -252,7 +262,7 @@ export class BidSheetComponent {
             white-space: nowrap;
             ${shadowStyle}
             line-height: 1.1;
-          ">${bid || '--'}</div>
+          ">${this._escapeHtml(bid) || '--'}</div>
           <div style="
             width: 0;
             height: 0;
@@ -300,22 +310,28 @@ export class BidSheetComponent {
       status === 'beating'   ? '#fecaca' :
       status === 'changed'   ? '#bbf7d0' : '#e2e8f0';
 
+    const escapedLocation = this._escapeHtml(locationName);
+    const escapedCrop = this._escapeHtml(this.selectedCrop());
+    const escapedYear = this._escapeHtml(this.selectedYear());
+    const escapedBid = this._escapeHtml(currentBid);
+    const escapedStatus = this._escapeHtml(status.charAt(0).toUpperCase() + status.slice(1));
+
     const popupContent = `
       <div style="min-width: 210px; font-family: system-ui, -apple-system, sans-serif;">
         <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 10px;">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
           </svg>
-          <span style="font-size: 13px; font-weight: 600; color: #111; line-height: 1.3;">${locationName}</span>
+          <span style="font-size: 13px; font-weight: 600; color: #111; line-height: 1.3;">${escapedLocation}</span>
         </div>
         <div style="display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap;">
-          <span style="display: inline-flex; align-items: center; padding: 2px 8px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 9999px; font-size: 11px; font-weight: 500; color: #15803d;">${this.selectedCrop()}</span>
-          <span style="display: inline-flex; align-items: center; padding: 2px 8px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 9999px; font-size: 11px; font-weight: 500; color: #475569;">${this.selectedYear()}</span>
-          ${status !== 'none' ? `<span style="display: inline-flex; align-items: center; padding: 2px 8px; background: ${bidBg}; border: 1px solid ${bidBorder}; border-radius: 9999px; font-size: 11px; font-weight: 600; color: ${bidColor};">${status.charAt(0).toUpperCase() + status.slice(1)}</span>` : ''}
+          <span style="display: inline-flex; align-items: center; padding: 2px 8px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 9999px; font-size: 11px; font-weight: 500; color: #15803d;">${escapedCrop}</span>
+          <span style="display: inline-flex; align-items: center; padding: 2px 8px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 9999px; font-size: 11px; font-weight: 500; color: #475569;">${escapedYear}</span>
+          ${status !== 'none' ? `<span style="display: inline-flex; align-items: center; padding: 2px 8px; background: ${bidBg}; border: 1px solid ${bidBorder}; border-radius: 9999px; font-size: 11px; font-weight: 600; color: ${bidColor};">${escapedStatus}</span>` : ''}
         </div>
         <div style="background: ${bidBg}; border: 1px solid ${bidBorder}; border-radius: 8px; padding: 12px 14px;">
           <div style="font-size: 10px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px;">Current Bid</div>
-          <div style="font-size: 26px; font-family: 'Courier New', monospace; font-weight: 800; color: ${bidColor}; letter-spacing: -0.5px; line-height: 1;">${currentBid}</div>
+          <div style="font-size: 26px; font-family: 'Courier New', monospace; font-weight: 800; color: ${bidColor}; letter-spacing: -0.5px; line-height: 1;">${escapedBid}</div>
         </div>
       </div>
     `;
@@ -510,17 +526,17 @@ export class BidSheetComponent {
       }
     }
 
-    // Geocode address via Nominatim to place pin on map
+    // Geocode address via backend API (proxied Nominatim) to place pin on map
     const addressParts = [this.newLocationAddress().trim(), this.newLocationCity().trim(), this.newLocationState().trim()].filter(p => p);
     if (addressParts.length > 0 && !this.locationCoordinates().find(lc => lc.name === name)) {
       this.isGeocodingLocation.set(true);
-      const query = encodeURIComponent(addressParts.join(', '));
-      fetch(`https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`)
-        .then(r => r.json())
-        .then((results: any[]) => {
+      const query = addressParts.join(', ');
+      firstValueFrom(
+        this.http.get<Array<{ lat: number; lng: number }>>(`${environment.apiBaseUrl}/geocode/search`, { params: { q: query, limit: '1' } })
+      ).then((results) => {
           setTimeout(() => {
-            if (results.length > 0) {
-              this.locationCoordinates.update(coords => [...coords, { lat: parseFloat(results[0].lat), lng: parseFloat(results[0].lon), name, isScoular: this.newLocationIsScoular() }]);
+            if (results && results.length > 0) {
+              this.locationCoordinates.update(coords => [...coords, { lat: results[0].lat, lng: results[0].lng, name, isScoular: this.newLocationIsScoular() }]);
             }
             this.isGeocodingLocation.set(false);
             this.filterBids();

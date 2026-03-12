@@ -20,6 +20,7 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR, FormsModule } from '@angular/f
       [disabled]="disabled()"
       [class]="inputClass"
       [attr.inputmode]="inputmode() || null"
+      [attr.maxlength]="maxlength() || null"
       [(ngModel)]="value"
       (ngModelChange)="onChange($event)"
       (blur)="onTouched()"
@@ -33,6 +34,7 @@ export class InputComponent implements ControlValueAccessor {
   public type = input<string>('text');
   public inputmode = input<string>('');
   public placeholder = input<string>('');
+  public maxlength = input<number | null>(null);
   public class = input<string>('');
 
   public disabled = signal<boolean>(false);

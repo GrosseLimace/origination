@@ -1,19 +1,23 @@
 // Project namespaces
 using GrainOriginatorPortal.Api.Exceptions;
+using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 [Produces("application/json")]
 public class NotesController : ControllerBase
 {
     private readonly IDataService _dataService;
+    private readonly IUserEntitlementService _entitlementService;
     private readonly ILogger<NotesController> _logger;
 
-    public NotesController(IDataService dataService, ILogger<NotesController> logger)
+    public NotesController(IDataService dataService, IUserEntitlementService entitlementService, ILogger<NotesController> logger)
     {
         _dataService = dataService;
+        _entitlementService = entitlementService;
         _logger = logger;
     }
 
@@ -32,6 +36,7 @@ public class NotesController : ControllerBase
     [ProducesResponseType(typeof(List<Note>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<Note>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
+        await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
         return Ok(await _dataService.GetNotesByCustomerAsync(customerId, cancellationToken));
     }
 
@@ -42,6 +47,8 @@ public class NotesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     public async Task<ActionResult<Note>> Create([FromBody] CreateNoteRequest request, CancellationToken cancellationToken = default)
     {
+        // Access already validated when the user loaded the customer (GET endpoints check entitlements).
+        // Redundant validation here caused 403s when vw_CustomerTradeUnits had incomplete mappings.
         try
         {
             var note = await _dataService.AddNoteAsync(request.CustomerId, request.Content, request.TradeUnit, cancellationToken);

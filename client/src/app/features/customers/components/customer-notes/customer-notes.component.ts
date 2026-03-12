@@ -38,7 +38,12 @@ export class CustomerNotesComponent {
     effect(() => {
       const _notes = this.notes();
       this._updateSortedNotesCache();
-      this.filterValue.set(''); // Reset filter whenever the customer (and its notes) changes
+    });
+
+    // Reset filter only when the selected customer changes, not on every note edit
+    effect(() => {
+      const _customer = this.customer();
+      this.filterValue.set('');
     });
 
     this.destroyRef.onDestroy(() => {
@@ -62,13 +67,19 @@ export class CustomerNotesComponent {
    * Previously: sortedNotes getter sorted on EVERY change detection cycle
    * Now: Sort only when notes actually change
    */
+  private _parseNoteTime(ts: string | Date): number {
+    if (!ts) return 0;
+    const raw = typeof ts === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
+    return new Date(raw).getTime();
+  }
+
   private _updateSortedNotesCache(): void {
     this.sortedNotesCache.set([...this.notes()].sort((a, b) => {
-      // Pinned notes first
       if (a.isPinned && !b.isPinned) return -1;
       if (!a.isPinned && b.isPinned) return 1;
-      // Then by date (newest first)
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      const aTime = this._parseNoteTime(a.modifiedAt || a.createdAt);
+      const bTime = this._parseNoteTime(b.modifiedAt || b.createdAt);
+      return bTime - aTime;
     }));
   }
 
@@ -135,8 +146,9 @@ export class CustomerNotesComponent {
   }
 
   submitNote() {
-    if (this.newNote().trim()) {
-      this.addNote.emit(this.newNote().trim());
+    const text = this.newNote().trim().slice(0, 5000);
+    if (text) {
+      this.addNote.emit(text);
       this.newNote.set('');
     }
   }
@@ -162,8 +174,9 @@ export class CustomerNotesComponent {
   }
 
   saveEdit(note: Note) {
-    if (this.editContent().trim() && this.editContent() !== note.content) {
-      this.editNote.emit({ noteId: note.id, content: this.editContent().trim() });
+    const text = this.editContent().trim().slice(0, 5000);
+    if (text && text !== note.content) {
+      this.editNote.emit({ noteId: note.id, content: text });
     }
     this.editingNoteId.set(null);
     this.editContent.set('');
