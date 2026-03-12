@@ -9,7 +9,7 @@ export interface ProducerDetails {
   commodities?: string; // Comma-separated list (e.g. "Corn,Soybeans,Wheat")
   linkedProducerIds?: string; // Comma-separated customer IDs
   createdBy: string;
-  createdOn: string;
+  createdAt: string;
   modifiedBy?: string;
-  modifiedOn?: string;
+  modifiedAt?: string;
 }

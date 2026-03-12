@@ -80,6 +80,15 @@ public class GlobalExceptionHandler : IExceptionHandler
                 response = BuildError(business.ErrorCode, business.Message, traceId, timestamp, instance);
                 break;
 
+            case ForbiddenException forbidden:
+                _logger.LogWarning(
+                    "Authorization denied [{TraceId}] [{ErrorCode}] [{ErrorCategory}]: {Message}",
+                    traceId, "AUTHORIZATION_FORBIDDEN", "Security", forbidden.Message);
+
+                statusCode = StatusCodes.Status403Forbidden;
+                response = BuildError("AUTHORIZATION_FORBIDDEN", forbidden.Message, traceId, timestamp, instance);
+                break;
+
             case InfrastructureException infra:
                 _logger.LogError(
                     exception,

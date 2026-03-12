@@ -15,5 +15,6 @@ public record UpsertDashboardMarketShareRequest
     [Range(2020, 2100)]
     public int PlantingYear { get; init; }
 
+    [Range(0, 100)]
     public decimal? MarketSharePct { get; init; }
 }

@@ -9,18 +9,21 @@ using GrainOriginatorPortal.Api.Controllers;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Interfaces;
 using GrainOriginatorPortal.Api.Models;
+using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 
 public class CustomersControllerTests
 {
     private readonly Mock<IDataService> _dataServiceMock;
+    private readonly Mock<IUserEntitlementService> _entitlementServiceMock;
     private readonly CustomersController _sut;
 
     public CustomersControllerTests()
     {
         _dataServiceMock = new Mock<IDataService>();
-        _sut = new CustomersController(_dataServiceMock.Object);
+        _entitlementServiceMock = new Mock<IUserEntitlementService>();
+        _sut = new CustomersController(_dataServiceMock.Object, _entitlementServiceMock.Object);
     }
 
     // -------------------------------------------------------------------------

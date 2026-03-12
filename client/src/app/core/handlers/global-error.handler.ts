@@ -1,4 +1,4 @@
-import { ErrorHandler, inject, Injectable, NgZone } from '@angular/core';
+import { ErrorHandler, inject, Injectable, isDevMode, NgZone } from '@angular/core';
 
 import { ToastService } from '@core/services/toast.service';
 
@@ -11,8 +11,10 @@ export class GlobalErrorHandler implements ErrorHandler {
   handleError(error: unknown): void {
     const message = this.extractMessage(error);
 
-    // Log full error for debugging
-    console.error('[GlobalErrorHandler]', error);
+    // Log full error for debugging (dev only — CWE-532)
+    if (isDevMode()) {
+      console.error('[GlobalErrorHandler]', error);
+    }
 
     // Skip chunk-load errors (lazy route not yet downloaded) — Angular retries automatically
     if (message.includes('ChunkLoadError') || message.includes('Loading chunk')) {

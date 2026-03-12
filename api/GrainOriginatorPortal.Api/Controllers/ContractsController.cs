@@ -1,23 +1,29 @@
 // Project namespaces
 using GrainOriginatorPortal.Api.Exceptions;
+using GrainOriginatorPortal.Api.Filters;
+using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 [Produces("application/json")]
 public class ContractsController : ControllerBase
 {
     private readonly IDataService _dataService;
+    private readonly IUserEntitlementService _entitlementService;
 
-    public ContractsController(IDataService dataService)
+    public ContractsController(IDataService dataService, IUserEntitlementService entitlementService)
     {
         _dataService = dataService;
+        _entitlementService = entitlementService;
     }
 
     // -------------------------------------------------------------------------
     /// <summary>Gets all contracts, optionally filtered by trade units.</summary>
     [HttpGet]
+    [EnforceTradeUnitAccess]
     [ProducesResponseType(typeof(List<Contract>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<Contract>>> GetAll([FromQuery] List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
@@ -30,6 +36,7 @@ public class ContractsController : ControllerBase
     [ProducesResponseType(typeof(List<Contract>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<Contract>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
+        await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
         return Ok(await _dataService.GetContractsByCustomerAsync(customerId, cancellationToken));
     }
 

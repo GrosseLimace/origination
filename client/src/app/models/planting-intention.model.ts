@@ -9,8 +9,8 @@ export interface PlantingIntention {
   type?: string;
   description?: string;
   acres: number;
-  createdOn: string;
+  createdAt: string;
   createdBy: string;
-  modifiedOn?: string;
+  modifiedAt?: string;
   modifiedBy?: string;
 }

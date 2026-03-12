@@ -76,6 +76,12 @@ export class CustomerMapComponent {
     this._addMarkers();
   }
 
+  private _escapeHtml(str: string): string {
+    if (!str) return '';
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+
   /**
    * Creates map markers for all customers with coordinates.
    * Highlights the selected customer with a different style.
@@ -89,13 +95,14 @@ export class CustomerMapComponent {
     this.customers().forEach(customer => {
       if (customer.coordinates) {
         const isSelected = this.selectedCustomer()?.id === customer.id;
+        const initial = this._escapeHtml(customer.name?.charAt(0) ?? '');
 
         // Create custom div icon with customer initial
         const icon = L.divIcon({
           className: 'custom-marker',
           html: `
             <div class="w-8 h-8 rounded-full ${isSelected ? 'bg-scoular-green-accessible ring-4 ring-green-300' : 'bg-green-500'} flex items-center justify-center text-white text-xs font-bold shadow-lg cursor-pointer transform hover:scale-110 transition-transform">
-              ${customer.name.charAt(0)}
+              ${initial}
             </div>
           `,
           iconSize: [32, 32],
@@ -111,9 +118,9 @@ export class CustomerMapComponent {
         // Add popup with customer details
         marker.bindPopup(`
           <div class="p-2">
-            <h3 class="font-bold">${customer.name}</h3>
-            <p class="text-sm text-gray-600">${customer.farm}</p>
-            <p class="text-sm text-gray-600">${customer.location}</p>
+            <h3 class="font-bold">${this._escapeHtml(customer.name)}</h3>
+            <p class="text-sm text-gray-600">${this._escapeHtml(customer.farm)}</p>
+            <p class="text-sm text-gray-600">${this._escapeHtml(customer.location)}</p>
             <p class="text-sm mt-1">${customer.totalAcres.toLocaleString()} acres</p>
           </div>
         `);

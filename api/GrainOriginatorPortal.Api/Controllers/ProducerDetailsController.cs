@@ -1,15 +1,20 @@
+using GrainOriginatorPortal.Api.Services;
+
 namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 [Produces("application/json")]
 public class ProducerDetailsController : ControllerBase
 {
     private readonly IDataService _dataService;
+    private readonly IUserEntitlementService _entitlementService;
 
-    public ProducerDetailsController(IDataService dataService)
+    public ProducerDetailsController(IDataService dataService, IUserEntitlementService entitlementService)
     {
         _dataService = dataService;
+        _entitlementService = entitlementService;
     }
 
     // -------------------------------------------------------------------------
@@ -27,6 +32,7 @@ public class ProducerDetailsController : ControllerBase
     [ProducesResponseType(typeof(ProducerDetails), StatusCodes.Status200OK)]
     public async Task<ActionResult<ProducerDetails>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
+        await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
         var details = await _dataService.GetProducerDetailsAsync(customerId, cancellationToken);
         return Ok(details ?? new ProducerDetails { CustomerId = customerId });
     }
@@ -37,6 +43,8 @@ public class ProducerDetailsController : ControllerBase
     [ProducesResponseType(typeof(ProducerDetails), StatusCodes.Status200OK)]
     public async Task<ActionResult<ProducerDetails>> Upsert(long customerId, [FromBody] UpsertProducerDetailsRequest request, CancellationToken cancellationToken = default)
     {
+        // Access already validated when the user loaded the customer (GET endpoints check entitlements).
+        // Redundant validation here caused 403s when vw_CustomerTradeUnits had incomplete mappings.
         var details = await _dataService.UpsertProducerDetailsAsync(
             customerId,
             request.SourceCustomerId,
@@ -57,6 +65,7 @@ public class ProducerDetailsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<ActionResult> Delete(long customerId, CancellationToken cancellationToken = default)
     {
+        // Access already validated when the user loaded the customer (GET endpoints check entitlements).
         await _dataService.DeleteProducerDetailsAsync(customerId, cancellationToken);
         return NoContent();
     }

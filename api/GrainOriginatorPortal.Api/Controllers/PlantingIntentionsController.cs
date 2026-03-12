@@ -1,19 +1,23 @@
 // Project namespaces
 using GrainOriginatorPortal.Api.Exceptions;
+using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 [Produces("application/json")]
 public class PlantingIntentionsController : ControllerBase
 {
     private readonly IDataService _dataService;
+    private readonly IUserEntitlementService _entitlementService;
     private readonly ILogger<PlantingIntentionsController> _logger;
 
-    public PlantingIntentionsController(IDataService dataService, ILogger<PlantingIntentionsController> logger)
+    public PlantingIntentionsController(IDataService dataService, IUserEntitlementService entitlementService, ILogger<PlantingIntentionsController> logger)
     {
         _dataService = dataService;
+        _entitlementService = entitlementService;
         _logger = logger;
     }
 
@@ -32,6 +36,7 @@ public class PlantingIntentionsController : ControllerBase
     [ProducesResponseType(typeof(List<PlantingIntention>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<PlantingIntention>>> GetByCustomer(int customerId, CancellationToken cancellationToken = default)
     {
+        await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
         return Ok(await _dataService.GetPlantingIntentionsByCustomerAsync(customerId, cancellationToken));
     }
 
@@ -42,6 +47,8 @@ public class PlantingIntentionsController : ControllerBase
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<PlantingIntention>> Create([FromBody] CreatePlantingIntentionRequest request, CancellationToken cancellationToken = default)
     {
+        // Access already validated when the user loaded the customer (GET endpoints check entitlements).
+        // Redundant validation here caused 403s when vw_CustomerTradeUnits had incomplete mappings.
         var intention = await _dataService.AddPlantingIntentionAsync(
             request.CustomerId,
             request.CustomerName,

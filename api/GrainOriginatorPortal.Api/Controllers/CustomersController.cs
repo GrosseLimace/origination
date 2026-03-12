@@ -1,23 +1,29 @@
 // Project namespaces
 using GrainOriginatorPortal.Api.Exceptions;
+using GrainOriginatorPortal.Api.Filters;
+using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 [Produces("application/json")]
 public class CustomersController : ControllerBase
 {
     private readonly IDataService _dataService;
+    private readonly IUserEntitlementService _entitlementService;
 
-    public CustomersController(IDataService dataService)
+    public CustomersController(IDataService dataService, IUserEntitlementService entitlementService)
     {
         _dataService = dataService;
+        _entitlementService = entitlementService;
     }
 
     // -------------------------------------------------------------------------
     /// <summary>Gets all customers, optionally filtered by trade units.</summary>
     [HttpGet]
+    [EnforceTradeUnitAccess]
     [ProducesResponseType(typeof(List<Customer>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<Customer>>> GetAll([FromQuery] List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
@@ -27,6 +33,7 @@ public class CustomersController : ControllerBase
     // -------------------------------------------------------------------------
     /// <summary>Searches customers by name (max 15 results).</summary>
     [HttpGet("search")]
+    [EnforceTradeUnitAccess]
     [ProducesResponseType(typeof(List<Customer>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<Customer>>> Search([FromQuery] string searchTerm, [FromQuery] List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
@@ -53,6 +60,7 @@ public class CustomersController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<Customer>> GetById(long id, CancellationToken cancellationToken = default)
     {
+        await _entitlementService.ValidateCustomerAccessAsync(id, cancellationToken);
         var customer = await _dataService.GetCustomerByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("Customer", id);
         return Ok(customer);
@@ -75,8 +83,9 @@ public class CustomersController : ControllerBase
     [HttpPut("{id:long}")]
     [ProducesResponseType(typeof(Customer), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<Customer>> Update(long id, [FromBody] Customer request, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<Customer>> Update(long id, [FromBody] UpdateCustomerRequest request, CancellationToken cancellationToken = default)
     {
+        await _entitlementService.ValidateCustomerAccessAsync(id, cancellationToken);
         var customer = await _dataService.GetCustomerByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("Customer", id);
 
@@ -85,7 +94,7 @@ public class CustomersController : ControllerBase
             request.Location ?? string.Empty,
             request.Phone ?? string.Empty,
             request.Email ?? string.Empty,
-            request.FarmIds,
+            request.FarmIds ?? new List<string>(),
             request.LinkedProducerIds ?? new List<string>(),
             cancellationToken
         );

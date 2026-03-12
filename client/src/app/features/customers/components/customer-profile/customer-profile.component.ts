@@ -71,6 +71,7 @@ export class CustomerProfileComponent {
   showProducerInsights = signal(false);
   showESignRecipients = signal(false);
   showEditDialog = signal(false);
+  selectedPlantingYear = signal(0); // 0 = auto (newest)
 
   constructor() {
     effect(() => {
@@ -88,17 +89,29 @@ export class CustomerProfileComponent {
     });
 
     effect(() => {
-      // Derive the contract year from the most recent planting intention year.
+      // Derive available planting years from intentions + contracts
       const plantingIntentions = this.plantingIntentions();
-      let maxYear = 0;
-      for (const pi of plantingIntentions) {
-        if (pi.plantingYear > maxYear) maxYear = pi.plantingYear;
-      }
-      this._contractYear = maxYear;
-
-      // Recalculate total contracted bushels scoped to the planting intention year
       const contracts = this.contracts();
-      const year = this._contractYear;
+      const yearSet = new Set<number>();
+      for (const pi of plantingIntentions) {
+        if (pi.plantingYear) yearSet.add(pi.plantingYear);
+      }
+      for (const c of contracts) {
+        if (c.cropYear) yearSet.add(c.cropYear);
+      }
+      this._availablePlantingYears = [...yearSet].sort((a, b) => b - a);
+
+      // Default to newest year if none selected yet
+      const selected = this.selectedPlantingYear();
+      const year = (selected > 0 && yearSet.has(selected))
+        ? selected
+        : (this._availablePlantingYears[0] || 0);
+      if (year !== selected) {
+        this.selectedPlantingYear.set(year);
+      }
+      this._contractYear = year;
+
+      // Recalculate total contracted bushels scoped to the selected year
       this._totalContracted = contracts
         .filter(c => c.status !== 'Cancelled' && (year === 0 || c.cropYear === year))
         .reduce((sum, c) => sum + c.quantity, 0);
@@ -113,7 +126,9 @@ export class CustomerProfileComponent {
         const commodity = commodities.find(c => c.code === pi.crop);
         const category = commodity?.category || pi.crop;
         const cropKey = [pi.type, category].filter(Boolean).join(' ');
-        const est = yieldEstimates.find(ye => ye.crop === cropKey);
+        // Match yield estimate by crop key AND year (fallback to any year for that crop)
+        const est = yieldEstimates.find(ye => ye.crop === cropKey && ye.plantingYear === year)
+          || yieldEstimates.find(ye => ye.crop === cropKey);
         return sum + pi.acres * (est?.yieldEstimate ?? 0);
       }, 0);
 
@@ -200,6 +215,7 @@ export class CustomerProfileComponent {
   private _marketSharePercentage = 0;
   private _bushelsAvailable = 0;
   private _contractYear = 0;
+  private _availablePlantingYears: number[] = [];
   private _pacingDeliveryYear = 0;
   private _pacingPct: number | null = null;
   private _tabs: any[] = [];
@@ -243,6 +259,14 @@ export class CustomerProfileComponent {
       return `${baseClass} bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm`;
     }
     return `${baseClass} bg-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white`;
+  }
+
+  get availablePlantingYears(): number[] {
+    return this._availablePlantingYears;
+  }
+
+  selectPlantingYear(year: number): void {
+    this.selectedPlantingYear.set(year);
   }
 
   get contractYear(): number {
@@ -391,7 +415,7 @@ export class CustomerProfileComponent {
             ${this.customer().guild ? `
             <div class="info-item">
               <div class="label">Guild</div>
-              <div class="value">${this.customer().guild}</div>
+              <div class="value">${this._escapeHtml(this.customer().guild ?? '')}</div>
             </div>
             ` : ''}
           </div>

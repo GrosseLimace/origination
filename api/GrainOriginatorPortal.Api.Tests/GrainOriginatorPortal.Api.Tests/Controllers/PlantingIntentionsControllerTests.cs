@@ -11,18 +11,21 @@ using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Interfaces;
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Models.Requests;
+using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 
 public class PlantingIntentionsControllerTests
 {
     private readonly Mock<IDataService> _dataServiceMock;
+    private readonly Mock<IUserEntitlementService> _entitlementServiceMock;
     private readonly PlantingIntentionsController _sut;
 
     public PlantingIntentionsControllerTests()
     {
         _dataServiceMock = new Mock<IDataService>();
-        _sut = new PlantingIntentionsController(_dataServiceMock.Object, new Mock<ILogger<PlantingIntentionsController>>().Object);
+        _entitlementServiceMock = new Mock<IUserEntitlementService>();
+        _sut = new PlantingIntentionsController(_dataServiceMock.Object, _entitlementServiceMock.Object, new Mock<ILogger<PlantingIntentionsController>>().Object);
     }
 
     // -------------------------------------------------------------------------

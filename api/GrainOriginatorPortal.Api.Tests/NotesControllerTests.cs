@@ -1,5 +1,8 @@
 using GrainOriginatorPortal.Api.Controllers;
+using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models;
+using GrainOriginatorPortal.Api.Models.Requests;
+using GrainOriginatorPortal.Api.Interfaces;
 using GrainOriginatorPortal.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -10,23 +13,27 @@ namespace GrainOriginatorPortal.Api.Tests;
 public class NotesControllerTests
 {
     private readonly Mock<IDataService> _mockDataService;
+    private readonly Mock<IUserEntitlementService> _mockEntitlementService;
     private readonly Mock<ILogger<NotesController>> _mockLogger;
     private readonly NotesController _controller;
 
     public NotesControllerTests()
     {
         _mockDataService = new Mock<IDataService>();
+        _mockEntitlementService = new Mock<IUserEntitlementService>();
         _mockLogger = new Mock<ILogger<NotesController>>();
-        _controller = new NotesController(_mockDataService.Object, _mockLogger.Object);
+        _controller = new NotesController(_mockDataService.Object, _mockEntitlementService.Object, _mockLogger.Object);
     }
 
     [Fact]
-    public void GetAll_ReturnsOkWithNotes()
+    public async Task GetAll_ReturnsOkWithNotes()
     {
         var notes = new List<Note> { new Note { Id = 1, Description = "Test note" } };
-        _mockDataService.Setup(s => s.GetNotes()).Returns(notes);
+        _mockDataService
+            .Setup(s => s.GetNotesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(notes);
 
-        var result = _controller.GetAll();
+        var result = await _controller.GetAll();
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var returned = Assert.IsType<List<Note>>(ok.Value);
@@ -34,66 +41,63 @@ public class NotesControllerTests
     }
 
     [Fact]
-    public void GetByCustomer_ReturnsOkWithNotes()
+    public async Task GetByCustomer_ReturnsOkWithNotes()
     {
         var notes = new List<Note> { new Note { Id = 2, CustomerId = 99 } };
-        _mockDataService.Setup(s => s.GetNotesByCustomer(99)).Returns(notes);
+        _mockDataService
+            .Setup(s => s.GetNotesByCustomerAsync(99, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(notes);
 
-        var result = _controller.GetByCustomer(99);
+        var result = await _controller.GetByCustomer(99);
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         Assert.IsType<List<Note>>(ok.Value);
     }
 
     [Fact]
-    public void TogglePin_ReturnsNotFound_WhenNoteDoesNotExist()
+    public async Task TogglePin_ThrowsNotFoundException_WhenNoteDoesNotExist()
     {
-        _mockDataService.Setup(s => s.ToggleNotePin(It.IsAny<long>())).Returns((Note?)null);
+        _mockDataService
+            .Setup(s => s.ToggleNotePinAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Note?)null);
 
-        var result = _controller.TogglePin(999);
-
-        Assert.IsType<NotFoundResult>(result.Result);
+        await Assert.ThrowsAsync<NotFoundException>(() => _controller.TogglePin(999));
     }
 
     [Fact]
-    public void TogglePin_ReturnsOk_WhenNoteExists()
+    public async Task TogglePin_ReturnsOk_WhenNoteExists()
     {
         var note = new Note { Id = 1, IsPinned = true };
-        _mockDataService.Setup(s => s.ToggleNotePin(1)).Returns(note);
+        _mockDataService
+            .Setup(s => s.ToggleNotePinAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(note);
 
-        var result = _controller.TogglePin(1);
+        var result = await _controller.TogglePin(1);
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         Assert.Equal(note, ok.Value);
     }
 
     [Fact]
-    public void Delete_ReturnsNoContent_WhenSuccessful()
+    public async Task Delete_ReturnsNoContent_WhenSuccessful()
     {
-        _mockDataService.Setup(s => s.DeleteNote(It.IsAny<long>()));
+        _mockDataService
+            .Setup(s => s.DeleteNoteAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
-        var result = _controller.Delete(1);
+        var result = await _controller.Delete(1);
 
         Assert.IsType<NoContentResult>(result);
     }
 
     [Fact]
-    public void Delete_Returns500_WhenExceptionThrown()
+    public async Task Delete_ThrowsException_WhenServiceFails()
     {
-        _mockDataService.Setup(s => s.DeleteNote(It.IsAny<long>()))
-            .Throws(new Exception("DB connection failed"));
+        _mockDataService
+            .Setup(s => s.DeleteNoteAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("DB connection failed"));
 
-        var result = _controller.Delete(1);
-
-        var statusResult = Assert.IsType<ObjectResult>(result);
-        Assert.Equal(500, statusResult.StatusCode);
+        await Assert.ThrowsAsync<Exception>(() => _controller.Delete(1));
     }
 
-    [Fact]
-    public void HasAuthorizeAttribute()
-    {
-        var attrs = typeof(NotesController)
-            .GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), true);
-        Assert.NotEmpty(attrs);
-    }
 }

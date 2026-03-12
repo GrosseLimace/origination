@@ -15,5 +15,6 @@ public record CreateSavedListRequest
     [StringLength(500)]
     public string? TradeUnits { get; init; }
 
+    [StringLength(4000)]
     public string? Filters { get; init; }
 }

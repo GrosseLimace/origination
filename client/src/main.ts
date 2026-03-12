@@ -85,4 +85,8 @@ bootstrapApplication(AppComponent, {
     MsalGuard,
     MsalBroadcastService,
   ],
-}).catch((err) => console.error(err));
+}).catch((err) => {
+  if (!environment.production) {
+    console.error(err);
+  }
+});

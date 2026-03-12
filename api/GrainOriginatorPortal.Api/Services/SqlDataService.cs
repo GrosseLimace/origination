@@ -411,6 +411,29 @@ public class SqlDataService : IDataService
     {
         try
         {
+            // Fast read-only query — sync runs at startup via SyncCommoditiesAsync
+            return await _appContext.Commodities
+                .AsNoTracking()
+                .Where(c => c.IsActive)
+                .OrderBy(c => c.Name)
+                .ToListAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving commodities [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Syncs the Commodities table from ODS contract/ticket data.
+    /// Called once at app startup — not on every API request.
+    /// </summary>
+    public async Task SyncCommoditiesAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
             var existingCodesList = await _appContext.Commodities
                 .Where(c => c.IsActive)
                 .Select(c => c.Code)
@@ -495,14 +518,16 @@ public class SqlDataService : IDataService
                 await _appContext.SaveChangesAsync(cancellationToken);
                 _logger.LogInformation("Synced commodities from ODS - now {Count} total", allCommodities.Count);
             }
-
-            return allCommodities.OrderBy(c => c.Name).ToList();
+            else
+            {
+                _logger.LogInformation("Commodity sync complete - no changes ({Count} total)", allCommodities.Count);
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving commodities [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+            _logger.LogError(ex, "Error syncing commodities [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
                 GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
-            throw;
+            // Don't throw — sync failure shouldn't prevent app startup
         }
     }
 
@@ -614,8 +639,8 @@ public class SqlDataService : IDataService
                 .OrderByDescending(c => c.Id)
                 .ToListAsync(cancellationToken);
 
-            var filterMsg = hasTradeUnitFilter ? $" (filtered by {tradeUnits!.Count} trade units)" : "";
-            _logger.LogInformation($"Loaded {contracts.Count} contracts for customers who have contracts or tickets{filterMsg}");
+            _logger.LogInformation("Loaded {ContractCount} contracts for customers who have contracts or tickets (filtered: {IsFiltered}, tradeUnitCount: {TradeUnitCount})",
+                contracts.Count, hasTradeUnitFilter, hasTradeUnitFilter ? tradeUnits!.Count : 0);
 
             // Calculate status and set defaults for fields not in ODS view
             var today = DateTime.Today;
@@ -693,7 +718,8 @@ public class SqlDataService : IDataService
                 contract.Signed = true; // Default to signed since ODS doesn't have this field
             }
 
-            _logger.LogInformation($"Found {contracts.Count} contracts for customer {customerId} (SourceCustomerId: {customer.SourceCustomerId})");
+            _logger.LogInformation("Found {ContractCount} contracts for customer {CustomerId} (SourceCustomerId: {SourceCustomerId})",
+                contracts.Count, customerId, customer.SourceCustomerId);
             return contracts;
         }
         catch (Exception ex)
@@ -816,9 +842,8 @@ public class SqlDataService : IDataService
                 ? await customerQuery.Select(c => c.SourceCustomerId!).ToListAsync(cancellationToken)
                 : await customerQuery.Take(15).Select(c => c.SourceCustomerId!).ToListAsync(cancellationToken);
 
-            var filterMsg = hasTradeUnitFilter ? $" (filtered by {tradeUnits!.Count} trade units)" : "";
-            var customerCountMsg = hasTradeUnitFilter ? $"all {producerCustomerCodes.Count} customers" : "top 15 customers";
-            _logger.LogInformation($"Loading tickets for {customerCountMsg} who have contracts or tickets{filterMsg}");
+            _logger.LogInformation("Loading tickets for {CustomerCount} customers who have contracts or tickets (filtered: {IsFiltered}, tradeUnitCount: {TradeUnitCount})",
+                producerCustomerCodes.Count, hasTradeUnitFilter, hasTradeUnitFilter ? tradeUnits!.Count : 0);
 
             // Load all tickets for those producer customers using string matching (CustomerCode = SourceCustomerId)
             var ticketsQuery = _context.Tickets
@@ -865,22 +890,22 @@ public class SqlDataService : IDataService
                     wheatTickets++;
             }
 
-            _logger.LogInformation($"Quality data: {ticketsWithProtein} tickets have protein data, {wheatTickets} wheat tickets found");
+            _logger.LogInformation("Quality data: {TicketsWithProtein} tickets have protein data, {WheatTickets} wheat tickets found",
+                ticketsWithProtein, wheatTickets);
 
             // Log diagnostic info about ticket-contract relationships
             var ticketsWithContractId = tickets.Count(t => t.ContractId.HasValue);
             var ticketsWithContractNumber = tickets.Count(t => !string.IsNullOrEmpty(t.CtrmContractNumber));
             var ticketsWithBoth = tickets.Count(t => t.ContractId.HasValue && !string.IsNullOrEmpty(t.CtrmContractNumber));
 
-            _logger.LogInformation($"Loaded {tickets.Count} tickets for customers who have contracts or tickets{filterMsg}");
-            _logger.LogInformation($"  - {ticketsWithContractId} tickets have ContractId");
-            _logger.LogInformation($"  - {ticketsWithContractNumber} tickets have CtrmContractNumber");
-            _logger.LogInformation($"  - {ticketsWithBoth} tickets have both");
+            _logger.LogInformation("Loaded {TicketCount} tickets — {WithContractId} have ContractId, {WithContractNumber} have CtrmContractNumber, {WithBoth} have both",
+                tickets.Count, ticketsWithContractId, ticketsWithContractNumber, ticketsWithBoth);
 
             // Log first few tickets for debugging
             foreach (var ticket in tickets.Take(3))
             {
-                _logger.LogInformation($"Sample Ticket #{ticket.TicketNumber}: ContractId={ticket.ContractId}, CtrmContractNumber={ticket.CtrmContractNumber}, CustomerId={ticket.CustomerId}");
+                _logger.LogInformation("Sample Ticket #{TicketNumber}: ContractId={ContractId}, CtrmContractNumber={CtrmContractNumber}, CustomerId={TicketCustomerId}",
+                    ticket.TicketNumber, ticket.ContractId, ticket.CtrmContractNumber, ticket.CustomerId);
             }
 
             return tickets;
@@ -932,7 +957,8 @@ public class SqlDataService : IDataService
                 }
             }
 
-            _logger.LogInformation($"Found {tickets.Count} tickets for customer {customerId} (SourceCustomerId: {customer.SourceCustomerId})");
+            _logger.LogInformation("Found {TicketCount} tickets for customer {CustomerId} (SourceCustomerId: {SourceCustomerId})",
+                tickets.Count, customerId, customer.SourceCustomerId);
             return tickets;
         }
         catch (Exception ex)
@@ -1475,9 +1501,10 @@ public class SqlDataService : IDataService
 
     public async Task UpsertDashboardPlantingEstimatesAsync(List<UpsertDashboardEstimateRequest> estimates, string username, CancellationToken cancellationToken = default)
     {
-        await using var transaction = await _appContext.Database.BeginTransactionAsync(cancellationToken);
-        try
+        var strategy = _appContext.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
         {
+            await using var transaction = await _appContext.Database.BeginTransactionAsync(cancellationToken);
             foreach (var req in estimates)
             {
                 var existing = await _appContext.DashboardPlantingEstimates
@@ -1510,12 +1537,7 @@ public class SqlDataService : IDataService
             }
             await _appContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-        }
-        catch
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            throw;
-        }
+        });
     }
 
     public async Task<List<DashboardMarketShare>> GetDashboardMarketSharesAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default)
@@ -1529,9 +1551,10 @@ public class SqlDataService : IDataService
 
     public async Task UpsertDashboardMarketSharesAsync(List<UpsertDashboardMarketShareRequest> shares, string username, CancellationToken cancellationToken = default)
     {
-        await using var transaction = await _appContext.Database.BeginTransactionAsync(cancellationToken);
-        try
+        var strategy = _appContext.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
         {
+            await using var transaction = await _appContext.Database.BeginTransactionAsync(cancellationToken);
             foreach (var req in shares)
             {
                 var existing = await _appContext.DashboardMarketShares
@@ -1564,12 +1587,7 @@ public class SqlDataService : IDataService
             }
             await _appContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-        }
-        catch
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            throw;
-        }
+        });
     }
 
     // Dashboard Actual Harvest Operations
@@ -1584,9 +1602,10 @@ public class SqlDataService : IDataService
 
     public async Task UpsertDashboardActualHarvestAsync(List<UpsertDashboardActualHarvestRequest> items, string username, CancellationToken cancellationToken = default)
     {
-        await using var transaction = await _appContext.Database.BeginTransactionAsync(cancellationToken);
-        try
+        var strategy = _appContext.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
         {
+            await using var transaction = await _appContext.Database.BeginTransactionAsync(cancellationToken);
             foreach (var req in items)
             {
                 var existing = await _appContext.DashboardActualHarvests
@@ -1614,12 +1633,7 @@ public class SqlDataService : IDataService
             }
             await _appContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-        }
-        catch
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            throw;
-        }
+        });
     }
 
     public async Task DeleteDashboardActualHarvestAsync(int id, CancellationToken cancellationToken = default)

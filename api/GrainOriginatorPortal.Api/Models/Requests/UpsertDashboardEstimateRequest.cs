@@ -15,5 +15,6 @@ public record UpsertDashboardEstimateRequest
     [Range(2020, 2100)]
     public int PlantingYear { get; init; }
 
+    [Range(0, 1000)]
     public decimal? YieldEstimate { get; init; }
 }

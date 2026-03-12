@@ -11,6 +11,10 @@ using Microsoft.Identity.Web;
 // Polly namespaces
 using Polly;
 
+// Rate limiting
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
+
 // Project namespaces
 using GrainOriginatorPortal.Api.Data;
 using GrainOriginatorPortal.Api.Middleware;
@@ -48,6 +52,7 @@ builder.Services.AddProblemDetails();
 // =============================================================================
 builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration);
 builder.Services.AddAuthorization();
+builder.Services.AddScoped<IUserEntitlementService, UserEntitlementService>();
 
 // Hook JWT bearer events to log token validation failures per security-guide.md §8.1.
 // OnAuthenticationFailed fires when the token is present but invalid (bad signature,
@@ -96,6 +101,9 @@ builder.Services.AddControllers()
 // Enable OpenAPI/Swagger for API documentation (available at /openapi/v1.json)
 builder.Services.AddOpenApi();
 
+// Bounded in-memory cache for geocode results (M-12: replaces unbounded ConcurrentDictionary)
+builder.Services.AddMemoryCache(options => options.SizeLimit = 5000);
+
 builder.Services.AddHttpContextAccessor();
 
 // Configure Entity Framework Core with SQL Server and Managed Identity
@@ -118,12 +126,14 @@ builder.Services.AddDbContext<OriginationDbContext>(options =>
         sqlOptions.CommandTimeout(120);
     });
 
-    // Enable detailed errors in development
+    // Enable detailed errors in development (compile-time guard prevents accidental use in Release builds)
+#if DEBUG
     if (builder.Environment.IsDevelopment())
     {
         options.EnableSensitiveDataLogging();
         options.EnableDetailedErrors();
     }
+#endif
 });
 
 // Configure ApplicationDbContext for app-owned tables in the Origination database
@@ -141,11 +151,13 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
         sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "dbo");
     });
 
+#if DEBUG
     if (builder.Environment.IsDevelopment())
     {
         options.EnableSensitiveDataLogging();
         options.EnableDetailedErrors();
     }
+#endif
 });
 
 // Configure EntitlementsDbContext for read-only access to the Entitlements database
@@ -162,11 +174,13 @@ builder.Services.AddDbContext<EntitlementsDbContext>(options =>
             errorNumbersToAdd: null);
     });
 
+#if DEBUG
     if (builder.Environment.IsDevelopment())
     {
         options.EnableSensitiveDataLogging();
         options.EnableDetailedErrors();
     }
+#endif
 });
 
 // =============================================================================
@@ -258,6 +272,23 @@ builder.Services.AddHttpClient("nominatim", client =>
 });
 
 // =============================================================================
+// RATE LIMITING — security-guide.md §4.1 (CWE-770)
+// Fixed-window limiter: 300 requests per minute per authenticated user (or IP for anonymous).
+// =============================================================================
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            ctx.User?.Identity?.Name ?? ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 300,
+                Window = TimeSpan.FromMinutes(1)
+            }));
+});
+
+// =============================================================================
 // HEALTH CHECKS (§8 — /health/live and /health/ready)
 // =============================================================================
 builder.Services.AddHealthChecks()
@@ -287,6 +318,13 @@ if (app.Environment.IsDevelopment())
                 entDb.Database.OpenConnectionAsync()
             );
             app.Logger.LogInformation("DB connections warmed up successfully.");
+
+            // Sync commodities from ODS at startup so GET /api/commodities is fast
+            var dataService = scope.ServiceProvider.GetRequiredService<IDataService>();
+            if (dataService is SqlDataService sqlDataService)
+            {
+                await sqlDataService.SyncCommoditiesAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -345,6 +383,9 @@ app.UseMiddleware<CorrelationIdMiddleware>();
 // Apply CORS policy to allow Angular frontend requests
 // MUST come before UseHttpsRedirection to handle preflight requests correctly
 app.UseCors("AllowAngular");
+
+// Rate limiting — reject excessive requests before they hit auth/controllers (§4.1 CWE-770)
+app.UseRateLimiter();
 
 // Redirect HTTP requests to HTTPS for security
 app.UseHttpsRedirection();
