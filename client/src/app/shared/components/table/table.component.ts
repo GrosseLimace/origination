@@ -125,7 +125,7 @@ export class TableRowComponent {
   host: { style: 'display: contents' },
   template: `
     <th
-      class="h-12 px-4 text-left align-middle font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap"
+      class="h-12 px-4 text-left align-middle font-medium text-gray-700 dark:text-gray-400 whitespace-nowrap"
       [class.cursor-pointer]="sortable()"
       [class.select-none]="sortable()"
       [class.hover:bg-gray-50]="sortable()"

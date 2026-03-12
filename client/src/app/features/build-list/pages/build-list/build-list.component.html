@@ -21,20 +21,13 @@
         </app-button>
       </div>
 
-      <!-- No trade unit selected banner -->
-      @if (!hasTradeUnits) {
+      <!-- Loading banner while trade units are being fetched -->
+      @if (!hasTradeUnits && loading()) {
         <app-card>
           <app-card-content class="!p-6">
-            <div class="flex items-start gap-4">
-              <div class="flex-shrink-0 w-10 h-10 rounded-full bg-scoular-green/10 dark:bg-scoular-green-accessible flex items-center justify-center">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green-accessible dark:text-scoular-green">
-                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
-                </svg>
-              </div>
-              <div>
-                <p class="font-semibold text-gray-900 dark:text-white">Select a Trade Unit to Get Started</p>
-                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Use the Trade Unit filter on the Customers panel to select one or more trade units. Once selected, you can build lists and view customer locations on the map.</p>
-              </div>
+            <div class="flex items-center gap-4">
+              <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green"></div>
+              <p class="text-gray-500 dark:text-gray-400 font-medium">Loading trade units...</p>
             </div>
           </app-card-content>
         </app-card>
@@ -378,10 +371,10 @@
           <app-card-description>Your saved customer lists for quick access</app-card-description>
         </app-card-header>
         <app-card-content>
-          @if (loading()) {
+          @if (loadingSavedLists()) {
             <div class="p-8 text-center">
               <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green mb-4"></div>
-              <p class="text-gray-500 dark:text-gray-400 font-medium">Loading customers...</p>
+              <p class="text-gray-500 dark:text-gray-400 font-medium">Loading saved lists...</p>
             </div>
           } @else if (savedLists().length === 0) {
             <div class="text-center py-8">

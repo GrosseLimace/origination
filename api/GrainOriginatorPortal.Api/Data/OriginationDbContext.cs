@@ -203,6 +203,10 @@ public class OriginationDbContext : DbContext
             // AppliedNetQuantity is bigint in ODS - let EF Core handle the type automatically
             entity.Property(e => e.AppliedDockQuantity).HasColumnName("AppliedNetQuantity");
 
+            // Classification
+            entity.Property(e => e.TicketType).HasColumnName("TicketType").HasMaxLength(10);
+            entity.Ignore(e => e.IsApplied); // Computed from TicketType — not a DB column
+
             // Status
             entity.Property(e => e.TicketStatusDescription).HasColumnName("TicketStatusDescription").HasMaxLength(100);
             entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true);

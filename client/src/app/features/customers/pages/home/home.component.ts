@@ -84,12 +84,13 @@ export class HomeComponent {
     const date = new Date(raw);
     const now = new Date();
     const diff = now.getTime() - date.getTime();
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    if (days === 0 && now.getDate() === date.getDate()) return 'Today';
-    if (days < 2 && now.getDate() - date.getDate() === 1) return 'Yesterday';
+    const days = Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
     if (days < 7) return `${days} days ago`;
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   });
+
 
   private _pendingProducerDetails: ProducerDetails[] | null = null;
   // Customers fetched from outside the current trade unit filter (e.g. linked producers in other TUs)
@@ -103,11 +104,9 @@ export class HomeComponent {
     this._restoreStateFromService();
     this._loadProducerDetails();
 
-    if (this.selectedTradeUnits().length > 0) {
-      // Always reload from API on init — appState customers may be stale/unfiltered
-      // from a previous session before trade unit scoping was in place.
-      this._loadAllData(this.selectedTradeUnits());
-    }
+    // Always reload from API on init — appState customers may be stale/unfiltered
+    // from a previous session before trade unit scoping was in place.
+    this._loadAllData(this.selectedTradeUnits());
 
     this.route.queryParams.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
       const customerId = params['customerId'];
@@ -398,6 +397,11 @@ export class HomeComponent {
     }));
   }
 
+  handleClearSelection(): void {
+    this.selectedCustomer.set(null);
+    this.appState.selectCustomer(null);
+  }
+
   handleTradeUnitChange(tradeUnits: string[]): void {
     this.selectedTradeUnits.set(tradeUnits);
     this.appState.setTradeUnits(tradeUnits);
@@ -484,29 +488,30 @@ export class HomeComponent {
     );
     if (missing.length === 0) return;
 
-    // Fetch each missing linked producer and cache them so getLinkedGroup can resolve them
-    missing.forEach(sourceId => {
-      this.apiService.getCustomerBySourceId(sourceId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-        next: (fetched) => {
-          const pd = this.producerDetailsMap().get(fetched.id);
-          if (pd) {
-            fetched = {
-              ...fetched,
-              totalAcres: pd.totalAcres ?? fetched.totalAcres,
-              binCapacity: pd.binCapacity ?? fetched.binCapacity,
-              primaryContact: pd.primaryContact ?? fetched.primaryContact,
-              commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : fetched.commodities,
-              linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : fetched.linkedProducerIds
-            };
-          }
-          const cache = new Map(this._crossTradeUnitCustomers());
-          cache.set(fetched.id, fetched);
-          this._crossTradeUnitCustomers.set(cache);
-          const sel = this.selectedCustomer();
-          if (sel?.id === customer.id) this._loadCustomerData(sel.id);
-        },
-        error: () => {}
-      });
+    // Fetch all missing linked producers in parallel, update UI once when all resolve
+    const requests = missing.map(sourceId =>
+      this.apiService.getCustomerBySourceId(sourceId).pipe(catchError(() => of(null as Customer | null)))
+    );
+    forkJoin(requests).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(results => {
+      const cache = new Map(this._crossTradeUnitCustomers());
+      for (let fetched of results) {
+        if (!fetched) continue;
+        const pd = this.producerDetailsMap().get(fetched.id);
+        if (pd) {
+          fetched = {
+            ...fetched,
+            totalAcres: pd.totalAcres ?? fetched.totalAcres,
+            binCapacity: pd.binCapacity ?? fetched.binCapacity,
+            primaryContact: pd.primaryContact ?? fetched.primaryContact,
+            commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : fetched.commodities,
+            linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : fetched.linkedProducerIds
+          };
+        }
+        cache.set(fetched.id, fetched);
+      }
+      this._crossTradeUnitCustomers.set(cache);
+      const sel = this.selectedCustomer();
+      if (sel?.id === customer.id) this._loadCustomerData(sel.id);
     });
   }
 

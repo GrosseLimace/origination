@@ -52,6 +52,12 @@ public class Ticket
     public decimal? ProteinPercent { get; set; }
     public string? GradeCode { get; set; }
 
+    // Classification — maps to GNP014.BCPFXT via ODS TicketType column
+    public string? TicketType { get; set; } // P=Purchase, S=Sale (applied); U=Unload, L=Loadout, B=Booking (unapplied)
+
+    // A ticket is applied to a contract when its type is Purchase or Sale
+    public bool IsApplied => TicketType is "P" or "S";
+
     // Status
     public string? TicketStatusDescription { get; set; } // e.g. "Unload", "Final Settled", "P/A"
     public bool IsActive { get; set; }

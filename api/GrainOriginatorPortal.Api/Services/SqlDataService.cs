@@ -1384,19 +1384,52 @@ public class SqlDataService : IDataService
     }
 
     // =========================================================================
-    // Storage Operations - DISABLED: Table doesn't exist in ODS
+    // Storage Operations — ctrm.vw_GNTA39D1 joined with originations.vw_CurrentCustomers
     // =========================================================================
 
-    public Task<List<StoredGrain>> GetStoredGrainAsync(CancellationToken cancellationToken = default)
+    private const string StoredGrainSql = """
+        SELECT
+            CAST(sg.WHR_RECEIPT_NUMBER AS varchar(50)) AS Id,
+            c.CustomerId AS CustomerId,
+            sg.CUSTOMER_ID AS CustomerCode,
+            ISNULL(sg.COMMODITY_CODE, '') AS Crop,
+            ISNULL(sg.NET_QUANTITY, 0) AS Quantity,
+            ISNULL(sg.INITIAL_STORAGE_DATE, '1900-01-01') AS StorageStartDate,
+            ISNULL(sg.STORAGE_RATE, 0) AS StorageRate,
+            ISNULL(sg.LOCATION_CODE, '') AS Bin
+        FROM ctrm.vw_GNTA39D1 sg
+        INNER JOIN originations.vw_CurrentCustomers c ON sg.CUSTOMER_ID = c.SourceCustomerId
+        """;
+
+    public async Task<List<StoredGrain>> GetStoredGrainAsync(CancellationToken cancellationToken = default)
     {
-        _logger.LogWarning("StoredGrain table doesn't exist in ODS - returning empty list");
-        return Task.FromResult(new List<StoredGrain>());
+        try
+        {
+            return await _context.Database
+                .SqlQueryRaw<StoredGrain>(StoredGrainSql)
+                .ToListAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving stored grain");
+            return [];
+        }
     }
 
-    public Task<List<StoredGrain>> GetStoredGrainByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
+    public async Task<List<StoredGrain>> GetStoredGrainByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
     {
-        _logger.LogWarning("StoredGrain table doesn't exist in ODS - returning empty list");
-        return Task.FromResult(new List<StoredGrain>());
+        try
+        {
+            var sql = StoredGrainSql + " WHERE c.CustomerId = @customerId";
+            return await _context.Database
+                .SqlQueryRaw<StoredGrain>(sql, new SqlParameter("@customerId", customerId))
+                .ToListAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving stored grain for customer {CustomerId}", customerId);
+            return [];
+        }
     }
 
     // =========================================================================

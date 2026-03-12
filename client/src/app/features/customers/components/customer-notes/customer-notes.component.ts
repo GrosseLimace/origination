@@ -2,6 +2,7 @@ import { Component, input, output, effect, DestroyRef, inject, ChangeDetectionSt
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@shared/components/button/button.component';
+import { ToastService } from '@core/services/toast.service';
 import { Customer, Note } from '@models';
 
 @Component({
@@ -22,6 +23,7 @@ export class CustomerNotesComponent {
   public deleteNote = output<number>();
 
   private readonly destroyRef = inject(DestroyRef);
+  private readonly toastService = inject(ToastService);
 
   newNote = signal('');
   openMenuId = signal<number | null>(null);
@@ -108,21 +110,17 @@ export class CustomerNotesComponent {
     const date = new Date(raw);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const diffDays = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
 
     const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 
     // Check if same day
-    if (diffDays < 1 && now.getDate() === date.getDate()) {
+    if (diffDays === 0) {
       return `Today at ${timeStr}`;
     }
 
     // Check if yesterday
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    if (date.getDate() === yesterday.getDate() &&
-        date.getMonth() === yesterday.getMonth() &&
-        date.getFullYear() === yesterday.getFullYear()) {
+    if (diffDays === 1) {
       return `Yesterday at ${timeStr}`;
     }
 
@@ -146,11 +144,14 @@ export class CustomerNotesComponent {
   }
 
   submitNote() {
-    const text = this.newNote().trim().slice(0, 5000);
-    if (text) {
-      this.addNote.emit(text);
-      this.newNote.set('');
+    const text = this.newNote().trim();
+    if (!text) return;
+    if (text.length > 5000) {
+      this.toastService.error('Note exceeds 5,000 character limit. Please shorten it before submitting.');
+      return;
     }
+    this.addNote.emit(text);
+    this.newNote.set('');
   }
 
   toggleMenu(noteId: number, event: Event) {
@@ -174,8 +175,13 @@ export class CustomerNotesComponent {
   }
 
   saveEdit(note: Note) {
-    const text = this.editContent().trim().slice(0, 5000);
-    if (text && text !== note.content) {
+    const text = this.editContent().trim();
+    if (!text) return;
+    if (text.length > 5000) {
+      this.toastService.error('Note exceeds 5,000 character limit. Please shorten it before saving.');
+      return;
+    }
+    if (text !== note.content) {
       this.editNote.emit({ noteId: note.id, content: text });
     }
     this.editingNoteId.set(null);
@@ -195,6 +201,20 @@ export class CustomerNotesComponent {
     this.showDeleteConfirm.set(false);
     // Restore body scroll when dialog closes
     document.body.style.overflow = '';
+  }
+
+  expandedNotes = new Set<number>();
+
+  isNoteExpanded(id: number): boolean {
+    return this.expandedNotes.has(id);
+  }
+
+  toggleNoteExpand(id: number): void {
+    if (this.expandedNotes.has(id)) {
+      this.expandedNotes.delete(id);
+    } else {
+      this.expandedNotes.add(id);
+    }
   }
 
   executeDelete() {

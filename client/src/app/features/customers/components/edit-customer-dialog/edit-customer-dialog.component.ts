@@ -77,6 +77,19 @@ export class EditCustomerDialogComponent {
   isLoadingProducers = signal(false);
 
   constructor() {
+    // Eagerly load commodity lookup so it's ready before the user opens the dialog
+    this.isLoadingCommodities.set(true);
+    this.apiService.getCommodities().subscribe({
+      next: (commodities) => {
+        this.allCommodities.set(commodities);
+        this.isLoadingCommodities.set(false);
+        if (this.newCommodity().trim()) {
+          this.onCommoditySearch();
+        }
+      },
+      error: () => { this.isLoadingCommodities.set(false); }
+    });
+
     effect(() => {
       const tradeUnits = this.selectedTradeUnits();
       // Eagerly load all producers whenever selectedTradeUnits becomes empty so the cache is
@@ -112,24 +125,6 @@ export class EditCustomerDialogComponent {
         this._originalLinkedProducerIds = [...(customer.linkedProducerIds || [])];
         this._originalESignEnabled = customer.eSignEnabled;
         this._originalPrimaryContact = customer.primaryContact || '';
-
-        // Load commodity lookup table
-        if (this.allCommodities().length === 0 && !this.isLoadingCommodities()) {
-          this.isLoadingCommodities.set(true);
-          this.apiService.getCommodities().subscribe({
-            next: (commodities) => {
-              this.allCommodities.set(commodities);
-              this.isLoadingCommodities.set(false);
-              // If the user already typed in the commodity search, refresh results now
-              if (this.newCommodity().trim()) {
-                this.onCommoditySearch();
-              }
-            },
-            error: () => {
-              this.isLoadingCommodities.set(false);
-            }
-          });
-        }
 
         // If no trade units and the cache still isn't loaded (edge case: first open before effect
         // on selectedTradeUnits fired), kick off the load now.

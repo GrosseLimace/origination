@@ -177,7 +177,7 @@ export class ContractsTableComponent {
     if (this.currentSortColumn() === column) {
       return 'text-gray-600 dark:text-gray-300';
     }
-    return 'text-gray-300 dark:text-gray-600';
+    return 'text-gray-400 dark:text-gray-600';
   }
 
   toggleRow(contractId: number): void {
@@ -339,24 +339,22 @@ export class ContractsTableComponent {
   }
 
   getAppliedTickets(contract: Contract): Ticket[] {
-    // Match tickets to contracts using the correct ODS field mapping
-    // Ticket.ContractNumber (DB) → Contract.SourceContractId (DB)
+    // Only consider tickets that are actually applied (TicketType P or S)
     return this.tickets().filter(t => {
-      // Primary: Match Ticket.CtrmContractNumber to Contract.SourceContractId (trim whitespace for comparison)
+      if (!t.isApplied) return false;
+
+      // Primary: Match Ticket.CtrmContractNumber to Contract.SourceContractId
       if (t.ctrmContractNumber && contract.sourceContractId) {
         return t.ctrmContractNumber.trim() === contract.sourceContractId.trim();
       }
 
-      // Fallback: Match by contractId FK (if populated in some cases)
+      // Fallback: Match by contractId FK
       if (t.contractId && contract.id) {
         return t.contractId === contract.id;
       }
 
       return false;
-    }).sort((a, b) => {
-      // Sort by date (string comparison should work for ISO date strings)
-      return (a.date || '').localeCompare(b.date || '');
-    });
+    }).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   }
 
   hasWheatInAppliedTickets(contract: Contract): boolean {

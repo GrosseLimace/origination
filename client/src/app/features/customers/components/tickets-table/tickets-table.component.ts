@@ -72,14 +72,9 @@ export class TicketsTableComponent {
   }
 
   get unappliedTickets(): Ticket[] {
-    const appliedContractIds = new Set(
-      this.contracts()
-        .map(c => c.sourceContractId)
-        .filter((id): id is string => !!id)
-    );
-    return this.tickets().filter(t =>
-      !t.ctrmContractNumber || !appliedContractIds.has(t.ctrmContractNumber.trim())
-    );
+    // TicketType determines applied status: P (Purchase) and S (Sale) are applied to contracts.
+    // U (Unload), L (Loadout), B (Booking) are unapplied. Server computes isApplied from TicketType.
+    return this.tickets().filter(t => !t.isApplied);
   }
 
   get ticketGroups(): TicketGroup[] {
@@ -301,6 +296,6 @@ export class TicketsTableComponent {
     if (column === 'crop' ? this.cropSortActive : this.currentSortColumn === column) {
       return 'text-gray-600 dark:text-gray-300';
     }
-    return 'text-gray-300 dark:text-gray-600';
+    return 'text-gray-400 dark:text-gray-600';
   }
 }
