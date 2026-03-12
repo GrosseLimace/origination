@@ -7,10 +7,9 @@
           (ngModelChange)="newNote.set($event)"
           placeholder="Add a note about this customer..."
           rows="3"
-          maxlength="5000"
-          class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent resize-none"
+          class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent resize-y min-h-[4.5rem]"
         ></textarea>
-        <div class="flex justify-end mt-4">
+        <div class="flex justify-end mt-2">
           <app-button
             variant="default"
             [disabled]="!newNote().trim()"
@@ -146,7 +145,15 @@
 
               <!-- Note content (view mode) -->
               @if (editingNoteId() !== note.id) {
-                <p class="text-gray-700 dark:text-gray-300 whitespace-pre-wrap pt-3">{{ note.content }}</p>
+                <p class="text-gray-700 dark:text-gray-300 whitespace-pre-wrap pt-3"
+                   [class.line-clamp-4]="!isNoteExpanded(note.id)">{{ note.content }}</p>
+                @if (note.content.length > 300) {
+                  <button
+                    (click)="toggleNoteExpand(note.id)"
+                    class="text-xs text-scoular-blue dark:text-scoular-blue hover:underline mt-1 cursor-pointer">
+                    {{ isNoteExpanded(note.id) ? 'Show less' : 'Show more' }}
+                  </button>
+                }
               }
 
               <!-- Note content (edit mode) -->
@@ -156,8 +163,7 @@
                     [ngModel]="editContent()"
                     (ngModelChange)="editContent.set($event)"
                     rows="4"
-                    maxlength="5000"
-                    class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent resize-none"
+                    class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent resize-y min-h-[5rem]"
                   ></textarea>
                   <div class="flex justify-end gap-2">
                     <app-button variant="outline" (onClick)="cancelEdit()">Cancel</app-button>

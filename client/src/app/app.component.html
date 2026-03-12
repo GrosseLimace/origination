@@ -1,8 +1,17 @@
-<div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors">
-  <app-header />
-  <main class="max-w-[2000px] w-full mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-4 lg:py-6 flex-grow">
-    <router-outlet />
-  </main>
-  <app-footer />
-  <app-toast-container />
-</div>
+@if (isAuthenticated()) {
+  <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors">
+    <app-header />
+    <main class="max-w-[2000px] w-full mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-4 lg:py-6 flex-grow">
+      <router-outlet />
+    </main>
+    <app-footer />
+    <app-toast-container />
+  </div>
+} @else {
+  <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+    <div class="text-center">
+      <div class="inline-block animate-spin rounded-full h-10 w-10 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green"></div>
+      <p class="mt-4 text-gray-500 dark:text-gray-400 text-sm">Signing in...</p>
+    </div>
+  </div>
+}

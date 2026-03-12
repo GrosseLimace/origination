@@ -36,6 +36,7 @@ export class CustomerListComponent {
   public producerDetailsMap = input(new Map<number, ProducerDetails>());
   public selectCustomer = output<Customer>();
   public tradeUnitChange = output<string[]>();
+  public clearSelection = output<void>();
 
   private readonly apiService = inject(ApiService);
   private readonly appStateService = inject(AppStateService);
@@ -177,12 +178,11 @@ export class CustomerListComponent {
     selectedGroups: string[]
   ): string[] {
     if (groups.length <= 1) return groups[0]?.tradeUnitCodes ?? [];
-    if (selectedGroups.length === 0) return [];
+    // No group filter → show all trade units the user can access
+    const filterGroups = selectedGroups.length === 0 ? groups : groups.filter(g => selectedGroups.includes(g.groupName));
     const units = new Set<string>();
-    for (const g of groups) {
-      if (selectedGroups.includes(g.groupName)) {
-        g.tradeUnitCodes.forEach(u => units.add(u));
-      }
+    for (const g of filterGroups) {
+      g.tradeUnitCodes.forEach(u => units.add(u));
     }
     return [...units].sort();
   }
@@ -391,6 +391,21 @@ export class CustomerListComponent {
     this.searchQuery.set('');
     this.appStateService.setSearchQuery('');
     this.applyFilters();
+  }
+
+  clearAll(): void {
+    this.searchQuery.set('');
+    this.appStateService.setSearchQuery('');
+    this.selectedListId.set('all');
+    this.appStateService.setSelectedSavedListId('all');
+    this.selectedTradeUnits.set([]);
+    this.selectedGroupNames.set([]);
+    this.appStateService.setSelectedGroupNames([]);
+    this.isTradeUnitDropdownOpen.set(false);
+    this.isGroupDropdownOpen.set(false);
+    this.filteredCustomers.set([]);
+    this.clearSelection.emit();
+    this.tradeUnitChange.emit([]);
   }
 
   private _performSearch(searchTerm: string): void {

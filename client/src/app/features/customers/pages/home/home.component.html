@@ -1,4 +1,4 @@
-<div class="grid grid-cols-1 lg:grid-cols-[33.3%_66.7%] xl:grid-cols-[25%_75%] 2xl:grid-cols-[22%_78%] gap-4 lg:gap-6">
+<div class="grid grid-cols-1 lg:grid-cols-[33.3%_66.7%] xl:grid-cols-[25%_75%] 2xl:grid-cols-[22%_78%] gap-4 lg:gap-4">
   <!-- Customer List - Precisely sized for optimal space usage (22% on 2xl) -->
   <div class="lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)]" [class.hidden]="selectedCustomer() && isMobile()" [class.lg:block]="true">
     <app-customer-list
@@ -10,12 +10,13 @@
       [producerDetailsMap]="producerDetailsMap()"
       (selectCustomer)="handleSelectCustomer($event)"
       (tradeUnitChange)="handleTradeUnitChange($event)"
+      (clearSelection)="handleClearSelection()"
     />
   </div>
 
   <!-- Profile and Notes Container - Optimized content display (78% on 2xl) -->
-  <div [class.hidden]="!selectedCustomer() && isMobile()" [class.lg:block]="true" class="pb-6 lg:min-h-[calc(100vh-6rem)]">
-    <div class="xl:grid xl:grid-cols-[66.7%_33.3%] 2xl:grid-cols-[61.3%_38.7%] xl:gap-6 space-y-6 xl:space-y-0">
+  <div [class.hidden]="!selectedCustomer() && isMobile()" [class.lg:block]="true" class="lg:min-h-[calc(100vh-6rem)]">
+    <div class="xl:grid xl:grid-cols-[1fr_minmax(0,440px)] 2xl:grid-cols-[1fr_minmax(0,500px)] xl:gap-3 space-y-6 xl:space-y-0">
       <!-- Profile Section - Optimized for data visibility (61.3% on 2xl) -->
       <div class="space-y-6">
         @if (selectedCustomer(); as customer) {
@@ -78,7 +79,7 @@
 
       <!-- Notes Column - Below profile until xl, then right sidebar, sticky on xl+ (38.7% on 2xl) -->
       @if (selectedCustomer(); as customer) {
-        <div class="xl:sticky xl:top-20 xl:self-start xl:max-h-[calc(100vh-6rem)] xl:overflow-auto">
+        <div class="xl:sticky xl:top-20 xl:self-start xl:max-h-[calc(100vh-5rem)] xl:overflow-auto xl:pr-1">
           <app-card>
             <app-card-header>
               <div class="flex items-center justify-between">

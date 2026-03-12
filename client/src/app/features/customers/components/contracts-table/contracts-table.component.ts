@@ -177,7 +177,7 @@ export class ContractsTableComponent {
     if (this.currentSortColumn() === column) {
       return 'text-gray-600 dark:text-gray-300';
     }
-    return 'text-gray-300 dark:text-gray-600';
+    return 'text-gray-400 dark:text-gray-600';
   }
 
   toggleRow(contractId: number): void {

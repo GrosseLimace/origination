@@ -199,7 +199,7 @@ export class CustomerProfileComponent {
     // Scroll the tabs section into view so the user doesn't have to manually scroll down
     const el = this.tabsSectionRef?.nativeElement;
     if (el) {
-      const y = el.getBoundingClientRect().top + window.scrollY - 72; // 72px offset for sticky header
+      const y = el.getBoundingClientRect().top + window.scrollY - 120; // 120px offset keeps tab buttons visible with padding above
       window.scrollTo({ top: y, behavior: 'smooth' });
     }
   }
@@ -405,7 +405,7 @@ export class CustomerProfileComponent {
             ` : ''}
             <div class="info-item">
               <div class="label">eSign Status</div>
-              <div class="value">${this.customer().eSignEnabled ? 'Enabled' : 'Not Enrolled'}</div>
+              <div class="value">${this.customer().eSignEnabled ? 'Enrolled' : 'Not Enrolled'}</div>
             </div>
             ${this.customer().guild ? `
             <div class="info-item">

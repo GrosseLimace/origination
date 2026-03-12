@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { forkJoin } from 'rxjs';
+import { forkJoin, of, catchError } from 'rxjs';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService, BuildListState } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
@@ -51,6 +51,8 @@ export class BuildListComponent {
   // Trade units captured at init — used to detect changes on destroy
   private _initTradeUnits: string[] = [];
   private _initialized = false;
+  // All trade units the user can access (union of all groups from Entitlements DB)
+  private _allUserTradeUnits = signal<string[]>([]);
 
   // effect() runs in the injection context (class field initializer).
   // The initial run fires during construction (initialized = false → skipped).
@@ -70,8 +72,14 @@ export class BuildListComponent {
   storedGrain = signal<StoredGrain[]>([]);
   savedLists = signal<SavedList[]>([]);
 
+  /** Returns the effective trade units — explicit selection if any, otherwise all user-accessible TUs. */
+  get effectiveTradeUnits(): string[] {
+    const explicit = this.appState.selectedTradeUnits();
+    return explicit.length > 0 ? explicit : this._allUserTradeUnits();
+  }
+
   get hasTradeUnits(): boolean {
-    return this.appState.selectedTradeUnits().length > 0;
+    return this.effectiveTradeUnits.length > 0;
   }
 
   get activeRefinementCount(): number {
@@ -163,6 +171,7 @@ export class BuildListComponent {
   hasGenerated = signal(false);
   showMap = signal(false);
   loading = signal(false);
+  loadingSavedLists = signal(false);
   detectedState = signal<string | null>(null);
   queryUnrecognized = signal(false);
   showRefinePanel = signal(false);
@@ -188,7 +197,44 @@ export class BuildListComponent {
   constructor() {
     this._initTradeUnits = this.appState.selectedTradeUnits().slice();
     this._initialized = true;
-    this._loadData();
+
+    // Load saved lists eagerly — they're user-scoped, not TU-dependent
+    const cachedSavedLists = this.appState.savedLists();
+    if (cachedSavedLists.length > 0) {
+      this.savedLists.set(cachedSavedLists);
+    } else {
+      this.loadingSavedLists.set(true);
+      this.apiService.getSavedLists().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: (lists) => {
+          this.savedLists.set(lists);
+          this.appState.setSavedLists(lists);
+          this.loadingSavedLists.set(false);
+        },
+        error: () => { this.loadingSavedLists.set(false); }
+      });
+    }
+
+    // Load all user-accessible trade units so build-list works without prior home page visit
+    this.apiService.getUserTradeUnits().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (groups) => {
+        const units = new Set<string>();
+        for (const g of groups) {
+          g.tradeUnitCodes.forEach(u => units.add(u));
+        }
+        this._allUserTradeUnits.set([...units].sort());
+        // If no data was loaded yet (user came here without selecting TUs on home), load now
+        if (this.customers().length === 0) {
+          this._loadData();
+        }
+      }
+    });
+
+    // Only load immediately if we already have explicit TU selection or cached data
+    if (this.appState.selectedTradeUnits().length > 0 || this.appState.customers().length > 0) {
+      this._loadData();
+    } else {
+      this.loading.set(true); // Show loading state while we wait for user TUs
+    }
 
     this.destroyRef.onDestroy(() => {
       // If trade units changed while this component was alive, discard state entirely
@@ -234,17 +280,17 @@ export class BuildListComponent {
       return;
     }
 
-    // No cache — load from API respecting selected trade units
-    const tradeUnits = this.appState.selectedTradeUnits();
+    // No cache — load from API using effective trade units
+    const tradeUnits = this.effectiveTradeUnits;
     const tuParam = tradeUnits.length > 0 ? tradeUnits : undefined;
     forkJoin({
-      customers: this.apiService.getCustomers(tuParam),
-      contracts: this.apiService.getContracts(tuParam),
-      tickets: this.apiService.getTickets(tuParam),
-      plantingIntentions: this.apiService.getPlantingIntentions(),
-      notes: this.apiService.getNotes(),
-      storedGrain: this.apiService.getStoredGrain(),
-      savedLists: this.apiService.getSavedLists()
+      customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
+      contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => of([] as Contract[]))),
+      tickets: this.apiService.getTickets(tuParam).pipe(catchError(() => of([] as Ticket[]))),
+      plantingIntentions: this.apiService.getPlantingIntentions().pipe(catchError(() => of([] as PlantingIntention[]))),
+      notes: this.apiService.getNotes().pipe(catchError(() => of([] as Note[]))),
+      storedGrain: this.apiService.getStoredGrain().pipe(catchError(() => of([] as StoredGrain[]))),
+      savedLists: this.apiService.getSavedLists().pipe(catchError(() => of([] as SavedList[])))
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this.customers.set(data.customers);
@@ -321,7 +367,7 @@ export class BuildListComponent {
 
     // If trade units changed since state was saved, clear everything —
     // the user must re-enter and regenerate for the new selection.
-    const currentTus = this.appState.selectedTradeUnits();
+    const currentTus = this.effectiveTradeUnits;
     const savedTus = saved.tradeUnits ?? [];
     const tradeUnitsMatch = currentTus.length === savedTus.length &&
       currentTus.every(tu => savedTus.includes(tu));
@@ -387,19 +433,19 @@ export class BuildListComponent {
     if (!this.queryText().trim()) return;
 
     this.isProcessing.set(true);
-    const tradeUnits = overrideTradeUnits ?? this.appState.selectedTradeUnits();
+    const tradeUnits = overrideTradeUnits ?? this.effectiveTradeUnits;
     const tuParam = tradeUnits.length > 0 ? tradeUnits : undefined;
 
     // Always fetch fresh data before filtering so the query sees the latest
     // notes, contracts, tickets, ProducerDetails, and planting intentions.
     forkJoin({
-      customers: this.apiService.getCustomers(tuParam),
-      contracts: this.apiService.getContracts(tuParam),
-      tickets: this.apiService.getTickets(tuParam),
-      plantingIntentions: this.apiService.getPlantingIntentions(),
-      notes: this.apiService.getNotes(),
-      storedGrain: this.apiService.getStoredGrain(),
-      producerDetails: this.apiService.getAllProducerDetails()
+      customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
+      contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => of([] as Contract[]))),
+      tickets: this.apiService.getTickets(tuParam).pipe(catchError(() => of([] as Ticket[]))),
+      plantingIntentions: this.apiService.getPlantingIntentions().pipe(catchError(() => of([] as PlantingIntention[]))),
+      notes: this.apiService.getNotes().pipe(catchError(() => of([] as Note[]))),
+      storedGrain: this.apiService.getStoredGrain().pipe(catchError(() => of([] as StoredGrain[]))),
+      producerDetails: this.apiService.getAllProducerDetails().pipe(catchError(() => of([] as ProducerDetails[])))
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         // Merge ProducerDetails into customer objects
@@ -615,7 +661,7 @@ export class BuildListComponent {
   saveList(): void {
     if (!this.newListName().trim() || this.filteredCustomers().length === 0) return;
 
-    const tradeUnits = this.appState.selectedTradeUnits();
+    const tradeUnits = this.effectiveTradeUnits;
     const payload = {
       name: this.newListName(),
       query: this.queryText(),

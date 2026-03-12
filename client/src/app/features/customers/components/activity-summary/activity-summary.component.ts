@@ -321,19 +321,19 @@ export class ActivitySummaryComponent {
       const lastDate = new Date(raw);
       if (isNaN(lastDate.getTime())) return '';
 
-      const daysSince = this._calculateDaysBetween(lastDate, new Date());
+      const daysSince = Math.max(0, this._calculateDaysBetween(lastDate, new Date()));
       const createdBy = lastNote.createdBy || 'Unknown';
 
+      const content = (lastNote.content || '').trim();
+      const preview = content.length > 150 ? content.substring(0, 150) + '…' : content;
+      const previewStr = preview ? ` — "${preview}"` : '';
+
       if (daysSince === 0) {
-        return `Last contact was today by ${createdBy}.`;
+        return `Last contact was today by ${createdBy}${previewStr}.`;
       } else if (daysSince === 1) {
-        return `Last contact was yesterday by ${createdBy}.`;
-      } else if (daysSince <= 7) {
-        return `Last contact was ${Math.abs(daysSince)} days ago by ${createdBy}.`;
-      } else if (daysSince <= 30) {
-        return `Last contact was ${Math.abs(daysSince)} days ago by ${createdBy}.`;
+        return `Last contact was yesterday by ${createdBy}${previewStr}.`;
       } else {
-        return `Last contact was ${Math.abs(daysSince)} days ago by ${createdBy}.`;
+        return `Last contact was ${daysSince} days ago by ${createdBy}${previewStr}.`;
       }
     } catch {
       return '';
