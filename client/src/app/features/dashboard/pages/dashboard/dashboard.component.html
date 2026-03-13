@@ -1,48 +1,15 @@
 <div class="space-y-6">
 
   <!-- Header -->
-  <div class="flex items-start justify-between gap-4">
+  <div class="flex items-center justify-between gap-4">
     <div class="flex items-center gap-3">
-      <div class="p-2.5 bg-green-100 dark:bg-green-900/30 rounded-xl flex-shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600 dark:text-green-400">
-          <path d="M7 20h10"/>
-          <path d="M10 20c5.5-2.5.8-6.4 3-10"/>
-          <path d="M9.5 9.4c1.1.8 1.8 2.1 2 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.8.8z"/>
-          <path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/>
-        </svg>
-      </div>
       <div>
         <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Planting Intentions Dashboard</h2>
-        <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Aggregate planting data across all customers</p>
+        <app-trade-unit-selector class="block mt-1.5" />
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Aggregate planting data across all customers</p>
       </div>
     </div>
     <div class="flex items-center gap-2 flex-shrink-0">
-      @if (availableTradeUnits().length > 1) {
-        <div class="relative">
-          <button
-            (click)="showTradeUnitDropdown.update(v => !v)"
-            class="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-          >
-            <span>{{ selectedDashboardTradeUnits().length === availableTradeUnits().length ? 'All Trade Units' : selectedDashboardTradeUnits().length + ' selected' }}</span>
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
-          @if (showTradeUnitDropdown()) {
-            <div class="absolute top-full right-0 mt-1 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50 py-1">
-              @for (unit of availableTradeUnits(); track unit) {
-                <label class="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer text-sm text-gray-900 dark:text-white">
-                  <input
-                    type="checkbox"
-                    [checked]="selectedDashboardTradeUnits().includes(unit)"
-                    (change)="toggleDashboardTradeUnit(unit)"
-                    class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green"
-                  />
-                  {{ unit }}
-                </label>
-              }
-            </div>
-          }
-        </div>
-      }
       <button
         (click)="goToSeasonTargets()"
         class="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-lg text-sm font-medium hover:bg-gray-700 dark:hover:bg-gray-300 transition-colors"
@@ -90,7 +57,7 @@
   </div>
 
   <!-- Loading / Empty States -->
-  @if (selectedDashboardTradeUnits().length === 0) {
+  @if (selectedTradeUnits.length === 0) {
     <div class="flex items-center justify-center py-20">
       <div class="text-center">
         <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 text-gray-300 dark:text-gray-600">

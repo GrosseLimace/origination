@@ -1,5 +1,6 @@
 export interface StoredGrain {
-  id: string;
+  id: string;             // Composite: WHR_RECEIPT_NUMBER|LOCATION_CODE (unique per row)
+  receiptNumber: string;  // WHR_RECEIPT_NUMBER — group key
   customerId: number;        // Numeric CustomerId from vw_CurrentCustomers JOIN
   customerCode: string;      // CTRM CUSTOMER_ID (same as SourceCustomerId)
   crop: string;

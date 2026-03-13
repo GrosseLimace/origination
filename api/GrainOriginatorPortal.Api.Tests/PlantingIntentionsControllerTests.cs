@@ -13,16 +13,14 @@ namespace GrainOriginatorPortal.Api.Tests;
 public class PlantingIntentionsControllerTests
 {
     private readonly Mock<IDataService> _mockDataService;
-    private readonly Mock<IUserEntitlementService> _mockEntitlementService;
     private readonly Mock<ILogger<PlantingIntentionsController>> _mockLogger;
     private readonly PlantingIntentionsController _controller;
 
     public PlantingIntentionsControllerTests()
     {
         _mockDataService = new Mock<IDataService>();
-        _mockEntitlementService = new Mock<IUserEntitlementService>();
         _mockLogger = new Mock<ILogger<PlantingIntentionsController>>();
-        _controller = new PlantingIntentionsController(_mockDataService.Object, _mockEntitlementService.Object, _mockLogger.Object);
+        _controller = new PlantingIntentionsController(_mockDataService.Object, _mockLogger.Object);
     }
 
     [Fact]

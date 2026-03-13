@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { Component, DestroyRef, inject, signal, computed, effect, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -6,11 +6,12 @@ import { Router } from '@angular/router';
 import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { ApiService } from '@core/services/api.service';
-import { AppStateService, InsightsCacheEntry } from '@core/services/app-state.service';
+import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { Customer, Contract, Ticket, Note } from '@models';
 import { CardComponent } from '@shared/components/card/card.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
+import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 
 type InsightCategory = 'UnconfirmedContracts' | 'SpotLoads' | 'UnshippedBushels';
 type InsightPriority = 'Urgent' | 'Warning' | 'Info';
@@ -29,6 +30,7 @@ interface Insight {
   tags?: InsightTag[];
   contractId?: number;
   searchTerms?: string[]; // Extra searchable values not shown in chips (e.g. individual ticket numbers)
+  quantity?: number; // Bushels/quantity — used to sum per-customer totals in the row header
 }
 
 interface CustomerGroup {
@@ -39,7 +41,7 @@ interface CustomerGroup {
 @Component({
   selector: 'app-insights',
   standalone: true,
-  imports: [CommonModule, FormsModule, CardComponent, BadgeComponent],
+  imports: [CommonModule, FormsModule, CardComponent, BadgeComponent, TradeUnitSelectorComponent],
   templateUrl: './insights.component.html'
 })
 export class InsightsComponent {
@@ -49,11 +51,12 @@ export class InsightsComponent {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
-  customers = signal<Customer[]>([]);
-  contracts = signal<Contract[]>([]);
-  tickets = signal<Ticket[]>([]);
-  notes = signal<Note[]>([]);
-  isLoading = signal(false);
+  // Read directly from appState — DataPreloadService populates these on TU change
+  readonly customers = this.appState.customers;
+  readonly contracts = this.appState.contracts;
+  readonly tickets = this.appState.tickets;
+  readonly notes = this.appState.notes;
+  readonly isLoading = computed(() => this.appState.dataLoading());
   isBackgroundRefreshing = signal(false);
   loadedAt = signal<Date | null>(null);
 
@@ -93,37 +96,20 @@ export class InsightsComponent {
   }
 
   constructor() {
-    if (this.selectedTradeUnits.length === 0) return;
-
-    // Restore from cache if available for the same trade units
-    const cached = this.appState.insightsCache();
-    const tradeUnitsKey = [...this.selectedTradeUnits].sort().join(',');
-    if (cached && cached.tradeUnitsKey === tradeUnitsKey) {
-      this.customers.set(cached.customers);
-      this.contracts.set(cached.contracts);
-      this.tickets.set(cached.tickets);
-      this.notes.set(cached.notes);
-      this.loadedAt.set(cached.loadedAt);
-      this._generateInsights();
-    } else {
-      this._loadData(false);
-    }
+    // Re-generate insights whenever the preloaded data in appState changes
+    effect(() => {
+      this.appState.customers();
+      this.appState.contracts();
+      this.appState.tickets();
+      this.appState.notes();
+      untracked(() => this._generateInsights());
+    });
   }
 
   refresh(): void {
-    this._loadData(false);
-  }
-
-  private _loadData(isBackgroundRefresh = false): void {
     const tradeUnits = this.selectedTradeUnits;
-    const tradeUnitsKey = [...tradeUnits].sort().join(',');
-
-    if (isBackgroundRefresh) {
-      this.isBackgroundRefreshing.set(true);
-    } else {
-      this.isLoading.set(true);
-    }
-
+    if (tradeUnits.length === 0) return;
+    this.appState.setDataLoading(true);
     forkJoin({
       customers: this.apiService.getCustomers(tradeUnits).pipe(catchError(() => of([] as Customer[]))),
       contracts: this.apiService.getContracts(tradeUnits).pipe(catchError(() => of([] as Contract[]))),
@@ -131,34 +117,16 @@ export class InsightsComponent {
       notes: this.apiService.getNotes().pipe(catchError(() => of([] as Note[])))
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
-        const loadedAt = new Date();
-        const cached = this.appState.insightsCache();
-        const hasChanges = !cached ||
-          cached.customers.length !== data.customers.length ||
-          cached.contracts.length !== data.contracts.length ||
-          cached.tickets.length !== data.tickets.length ||
-          cached.notes.length !== data.notes.length;
-
-        this.appState.setInsightsCache({ tradeUnitsKey, ...data, loadedAt });
-
-        if (!isBackgroundRefresh || hasChanges) {
-          this.customers.set(data.customers);
-          this.contracts.set(data.contracts);
-          this.tickets.set(data.tickets);
-          this.notes.set(data.notes);
-          this.loadedAt.set(loadedAt);
-          this._generateInsights();
-        }
-
-        this.isLoading.set(false);
-        this.isBackgroundRefreshing.set(false);
+        this.appState.setCustomers(data.customers);
+        this.appState.setContracts(data.contracts);
+        this.appState.setTickets(data.tickets);
+        this.appState.setNotes(data.notes);
+        this.loadedAt.set(new Date());
+        this.appState.setDataLoading(false);
       },
       error: () => {
-        this.isLoading.set(false);
-        this.isBackgroundRefreshing.set(false);
-        if (!isBackgroundRefresh) {
-          this.toastService.error('Failed to load insights data');
-        }
+        this.appState.setDataLoading(false);
+        this.toastService.error('Failed to refresh insights data');
       }
     });
   }
@@ -167,11 +135,13 @@ export class InsightsComponent {
     if (this.customers().length === 0) return;
 
     const insights: Insight[] = [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    // todayStr used for comparing ticket dates (stored as strings in ODS) and note dates.
-    // ticket.date maps to TicketBlDate in ODS, stored as "YYYY-MM-DD" string — direct comparison is safe.
-    const todayStr = today.toLocaleDateString('en-CA'); // YYYY-MM-DD
+    // todayStr: today's date in UTC as "YYYY-MM-DD".
+    // ticket.date (TicketBlDate) is a "YYYY-MM-DD" string from ODS — direct string comparison is safe.
+    // note.createdAt is stored as GETUTCDATE() — compare using UTC date to avoid timezone drift
+    // for users in Central/Mountain time where midnight UTC != local midnight.
+    const now = new Date();
+    const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+    const today = new Date(todayStr); // UTC midnight — used for date arithmetic (daysOverdue etc.)
 
     // Pre-index contracts and tickets by customer ID for O(1) lookup instead of O(n) per customer
     const contractsByCustomer = new Map<string, Contract[]>();
@@ -209,6 +179,7 @@ export class InsightsComponent {
             priority: 'Urgent',
             message: `Contract ${contract.contractNumber} (${commodity}, ${qty} bu) — ${statusLabel}.`,
             contractId: contract.id,
+            quantity: contract.quantity ?? 0,
             tags: [
               { label: contract.sourceContractId || contract.contractNumber, style: 'default' },
               { label: commodity, style: 'commodity' },
@@ -220,18 +191,19 @@ export class InsightsComponent {
       }
 
       // --- 2. Spot Loads — Delivered Today, No Contact ---
-      // Unload tickets (grain received, not yet settled) delivered today with no customer contact.
-      // TicketStatusDescription = "Unload" identifies unsettled inbound deliveries.
+      // Unapplied tickets delivered today with no customer contact.
+      // isApplied = first char of ctrmContractNumber is 'P' or 'S' (contract prefix type) — server-computed.
       // ticket.date maps to TicketBlDate in ODS, stored as "YYYY-MM-DD" string — direct comparison is safe.
       const todayTickets = customerTickets.filter(t =>
-        t.date === todayStr && t.ticketStatusDescription === 'Unload'
+        t.date === todayStr && !t.isApplied
       );
 
       if (todayTickets.length > 0) {
         const contactedToday = this.notes().some(n => {
           try {
-            return n.customerId === customer.id &&
-                   new Date(n.createdAt).toLocaleDateString('en-CA') === todayStr;
+            const d = new Date(n.createdAt);
+            const noteUtcDate = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+            return n.customerId === customer.id && noteUtcDate === todayStr;
           } catch {
             return false;
           }
@@ -246,6 +218,7 @@ export class InsightsComponent {
               category: 'SpotLoads',
               priority: 'Urgent',
               message: `Ticket #${ticket.ticketNumber}${ticket.productCode ? ' — ' + ticket.productCode : ''}${bu ? ', ' + bu.toLocaleString() + ' bu' : ''}`,
+              quantity: bu ?? 0,
               tags: [
                 { label: `#${ticket.ticketNumber}`, style: 'default' },
                 ...(ticket.productCode ? [{ label: ticket.productCode, style: 'commodity' as InsightTagStyle }] : []),
@@ -279,6 +252,7 @@ export class InsightsComponent {
             priority: 'Warning',
             message: `Contract ${contract.contractNumber} (${commodity}, ${qty} bu) is past its delivery end date.`,
             contractId: contract.id,
+            quantity: contract.openBalanceQuantity ?? contract.quantity ?? 0,
             tags: [
               { label: contract.sourceContractId || contract.contractNumber, style: 'default' },
               { label: commodity, style: 'commodity' },
@@ -345,7 +319,7 @@ export class InsightsComponent {
       );
     }
 
-    // Category search filters by customer, tags (contract #, commodity, code), or searchTerms (ticket #)
+    // Category search: matches customer name/ID, any tag (commodity, contract#, quantity), or searchTerms
     if (search) {
       result = result.filter(g =>
         g.customer.name.toLowerCase().includes(search) ||
@@ -460,8 +434,9 @@ export class InsightsComponent {
 
   getCategorySearchPlaceholder(category: InsightCategory): string {
     switch (category) {
-      case 'SpotLoads': return 'Search by customer, code, or ticket #...';
-      default:          return 'Search by customer, contract, or commodity...';
+      case 'SpotLoads':         return 'Search by customer, code, or ticket #...';
+      case 'UnshippedBushels':  return 'Search by customer ID, name, commodity, or contract #...';
+      default:                  return 'Search by customer, contract, or commodity...';
     }
   }
 
@@ -471,6 +446,24 @@ export class InsightsComponent {
       case 'SpotLoads':            return 'bg-scoular-yellow/10 text-scoular-yellow dark:bg-scoular-yellow/20 dark:text-scoular-yellow';
       case 'UnshippedBushels':     return 'bg-scoular-red/10 text-scoular-red-accessible dark:bg-scoular-red/20 dark:text-scoular-red';
       default:                     return 'bg-gray-100 text-gray-800 dark:bg-gray-900/40 dark:text-gray-300';
+    }
+  }
+
+  /** Returns a compact summary string shown next to the customer name in the accordion row. */
+  getCategoryCustomerSummary(group: CustomerGroup, category: InsightCategory): string {
+    const count = group.items.length;
+    switch (category) {
+      case 'UnconfirmedContracts':
+        return `${count} contract${count !== 1 ? 's' : ''}`;
+      case 'SpotLoads':
+        return `${count} load${count !== 1 ? 's' : ''}`;
+      case 'UnshippedBushels': {
+        const totalBu = group.items.reduce((sum, item) => sum + (item.quantity ?? 0), 0);
+        return totalBu > 0
+          ? `${Math.round(totalBu).toLocaleString()} bu`
+          : `${count} contract${count !== 1 ? 's' : ''}`;
+      }
+      default: return '';
     }
   }
 

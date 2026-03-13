@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
 import { Customer, Ticket, Contract } from '@models';
 
-type SortColumn = 'id' | 'date' | 'crop' | 'appliedDockQuantity' | 'moisture' | 'protein';
+type SortColumn = 'id' | 'date' | 'crop' | 'appliedDockQuantity' | 'moisture' | 'testWeight' | 'protein';
 type SortDirection = 'none' | 'asc' | 'desc';
 
 interface TicketGroup {
@@ -14,6 +14,7 @@ interface TicketGroup {
   avgDate: Date | null;
   avgNetWeight: number;
   avgMoisture: number;
+  avgTestWeight: number | null;
   avgProtein: number | null;
   isWheat: boolean;
 }
@@ -72,9 +73,15 @@ export class TicketsTableComponent {
   }
 
   get unappliedTickets(): Ticket[] {
-    // TicketType determines applied status: P (Purchase) and S (Sale) are applied to contracts.
-    // U (Unload), L (Loadout), B (Booking) are unapplied. Server computes isApplied from TicketType.
-    return this.tickets().filter(t => !t.isApplied);
+    // isApplied = first char of ctrmContractNumber is 'P' or 'S' (contract prefix type) — server-computed.
+    // TicketType alone is unreliable: a U-type ticket can legitimately be applied to a contract.
+    return this.tickets()
+      .filter(t => !t.isApplied)
+      .sort((a, b) => {
+        const da = a.date ? new Date(a.date).getTime() : 0;
+        const db = b.date ? new Date(b.date).getTime() : 0;
+        return da - db; // oldest first
+      });
   }
 
   get ticketGroups(): TicketGroup[] {
@@ -111,6 +118,7 @@ export class TicketsTableComponent {
       const ticketsForAvg = avgOnly ? allTickets : filtered;
       const sorted = avgOnly ? [] : this._sortTicketList(filtered);
       const validMoisture = ticketsForAvg.filter(t => typeof t.moisture === 'number' && t.moisture > 0);
+      const validTestWeight = ticketsForAvg.filter(t => typeof t.testWeight === 'number' && t.testWeight > 0);
       const validProtein = ticketsForAvg.filter(t => typeof t.proteinPercent === 'number' && t.proteinPercent > 0);
       const validDateMs = ticketsForAvg
         .map(t => t.date ? new Date(t.date).getTime() : null)
@@ -124,6 +132,7 @@ export class TicketsTableComponent {
         avgDate: validDateMs.length ? new Date(validDateMs.reduce((s, d) => s + d, 0) / validDateMs.length) : null,
         avgNetWeight: ticketsForAvg.reduce((s, t) => s + (t.appliedDockQuantity || 0), 0) / ticketsForAvg.length,
         avgMoisture: validMoisture.length ? validMoisture.reduce((s, t) => s + (t.moisture || 0), 0) / validMoisture.length : 0,
+        avgTestWeight: validTestWeight.length ? validTestWeight.reduce((s, t) => s + (t.testWeight || 0), 0) / validTestWeight.length : null,
         avgProtein: validProtein.length ? validProtein.reduce((s, t) => s + (t.proteinPercent || 0), 0) / validProtein.length : null,
         isWheat
       });
@@ -141,7 +150,14 @@ export class TicketsTableComponent {
   }
 
   private _sortTicketList(tickets: Ticket[]): Ticket[] {
-    if (!this.currentSortColumn || this.currentSortDirection === 'none') return tickets;
+    if (!this.currentSortColumn || this.currentSortDirection === 'none') {
+      // Default: oldest to newest within each crop group
+      return [...tickets].sort((a, b) => {
+        const da = a.date ? new Date(a.date).getTime() : 0;
+        const db = b.date ? new Date(b.date).getTime() : 0;
+        return da - db;
+      });
+    }
     const sorted = [...tickets].sort((a, b) => {
       let comparison = 0;
       switch (this.currentSortColumn) {
@@ -149,6 +165,7 @@ export class TicketsTableComponent {
         case 'date': comparison = new Date(a.date).getTime() - new Date(b.date).getTime(); break;
         case 'appliedDockQuantity': comparison = (a.appliedDockQuantity || 0) - (b.appliedDockQuantity || 0); break;
         case 'moisture': comparison = (a.moisture || 0) - (b.moisture || 0); break;
+        case 'testWeight': comparison = (a.testWeight || 0) - (b.testWeight || 0); break;
         case 'protein': comparison = (a.proteinPercent || 0) - (b.proteinPercent || 0); break;
       }
       return comparison;
@@ -184,10 +201,9 @@ export class TicketsTableComponent {
   }
 
   get hasWheatTickets(): boolean {
-    // Check if any contract has wheat as commodity group or description
-    const hasWheat = this.contracts().some(c => this.isWheatCommodity(c.commodityGroup, c.commodityDescription));
-
-    return hasWheat;
+    // Show protein column if any ticket actually has protein data, or if any contract is wheat
+    return this.unappliedTickets.some(t => typeof t.proteinPercent === 'number' && t.proteinPercent > 0)
+      || this.contracts().some(c => this.isWheatCommodity(c.commodityGroup, c.commodityDescription));
   }
 
   isWheatCommodity(commodityGroup: string | undefined, commodityDescription?: string | undefined): boolean {
@@ -252,6 +268,9 @@ export class TicketsTableComponent {
           break;
         case 'moisture':
           comparison = (a.moisture || 0) - (b.moisture || 0);
+          break;
+        case 'testWeight':
+          comparison = (a.testWeight || 0) - (b.testWeight || 0);
           break;
         case 'protein':
           comparison = (a.proteinPercent || 0) - (b.proteinPercent || 0);

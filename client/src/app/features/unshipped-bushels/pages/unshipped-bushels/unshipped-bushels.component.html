@@ -1,0 +1,243 @@
+<div class="min-h-screen bg-gray-50 dark:bg-gray-900">
+  <div class="max-w-[2000px] w-full mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-8">
+
+    <!-- Page Header -->
+    <div class="mb-6">
+      <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Unshipped Bushels</h1>
+      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Open contract balances with outstanding delivery quantities</p>
+    </div>
+
+    <!-- Summary Cards -->
+    @if (!loading()) {
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <app-card class="p-4">
+          <div class="flex flex-col">
+            <span class="text-sm text-gray-500 dark:text-gray-400">Total Open Bushels</span>
+            <span class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ formatBushels(totalBushels()) }}</span>
+          </div>
+        </app-card>
+        <app-card class="p-4">
+          <div class="flex flex-col">
+            <span class="text-sm text-gray-500 dark:text-gray-400">Customers</span>
+            <span class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ totalCustomers() }}</span>
+          </div>
+        </app-card>
+        <app-card class="p-4">
+          <div class="flex flex-col">
+            <span class="text-sm text-gray-500 dark:text-gray-400">Open Contracts</span>
+            <span class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ totalContracts() }}</span>
+          </div>
+        </app-card>
+      </div>
+    }
+
+    <!-- Search Filters -->
+    <app-card class="mb-4">
+      <div class="p-4">
+        <div class="flex flex-col sm:flex-row gap-3">
+          <!-- Customer search -->
+          <div class="flex-1 relative">
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Customer ID or Name</label>
+            <div class="relative">
+              <svg class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+              </svg>
+              <input type="text" [ngModel]="searchCustomer()" (ngModelChange)="searchCustomer.set($event)"
+                placeholder="Search by customer..."
+                class="w-full pl-9 pr-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 dark:focus:ring-green-400 focus:border-transparent">
+            </div>
+          </div>
+          <!-- Commodity search -->
+          <div class="flex-1 relative">
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Commodity</label>
+            <div class="relative">
+              <svg class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2a10 10 0 0 1 10 10H2A10 10 0 0 1 12 2z"/><path d="M12 12v10"/><path d="M12 12 6.5 6.5"/><path d="M12 12 17.5 6.5"/>
+              </svg>
+              <input type="text" [ngModel]="searchCommodity()" (ngModelChange)="searchCommodity.set($event)"
+                placeholder="Filter by commodity..."
+                class="w-full pl-9 pr-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 dark:focus:ring-green-400 focus:border-transparent">
+            </div>
+          </div>
+          <!-- Contract# search -->
+          <div class="flex-1 relative">
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Contract #</label>
+            <div class="relative">
+              <svg class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                <line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><polyline points="10 9 9 9 8 9"/>
+              </svg>
+              <input type="text" [ngModel]="searchContract()" (ngModelChange)="searchContract.set($event)"
+                placeholder="Search by contract #..."
+                class="w-full pl-9 pr-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 dark:focus:ring-green-400 focus:border-transparent">
+            </div>
+          </div>
+          <!-- Clear button -->
+          @if (hasFilters) {
+            <div class="flex items-end">
+              <button type="button" (click)="clearFilters()"
+                class="px-3 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors whitespace-nowrap">
+                Clear filters
+              </button>
+            </div>
+          }
+        </div>
+      </div>
+    </app-card>
+
+    <!-- Expand / Collapse All -->
+    @if (!loading() && filteredGroups().length > 0) {
+      <div class="flex items-center justify-between mb-3">
+        <p class="text-sm text-gray-500 dark:text-gray-400">
+          {{ filteredGroups().length }} customer{{ filteredGroups().length !== 1 ? 's' : '' }}
+          &bull; {{ formatBushels(totalBushels()) }} open bu
+        </p>
+        <div class="flex gap-2">
+          <button type="button" (click)="expandAll()"
+            class="text-xs text-green-600 dark:text-green-400 hover:underline">Expand all</button>
+          <span class="text-gray-300 dark:text-gray-600">|</span>
+          <button type="button" (click)="collapseAll()"
+            class="text-xs text-green-600 dark:text-green-400 hover:underline">Collapse all</button>
+        </div>
+      </div>
+    }
+
+    <!-- Loading state -->
+    @if (loading()) {
+      <app-card>
+        <div class="flex items-center justify-center py-16">
+          <svg class="animate-spin h-6 w-6 text-green-500 mr-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          <span class="text-sm text-gray-500 dark:text-gray-400">Loading contracts...</span>
+        </div>
+      </app-card>
+    }
+
+    <!-- Empty state -->
+    @if (!loading() && filteredGroups().length === 0) {
+      <app-card>
+        <div class="flex flex-col items-center justify-center py-16 text-center">
+          <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-300 dark:text-gray-600 mb-3">
+            <path d="M12 2a10 10 0 0 1 10 10H2A10 10 0 0 1 12 2z"/><path d="M12 12v10"/><path d="M12 12 6.5 6.5"/><path d="M12 12 17.5 6.5"/>
+          </svg>
+          <p class="text-sm font-medium text-gray-500 dark:text-gray-400">
+            @if (hasFilters) {
+              No results match your filters
+            } @else {
+              No unshipped bushels found
+            }
+          </p>
+          @if (hasFilters) {
+            <button type="button" (click)="clearFilters()" class="mt-2 text-sm text-green-600 dark:text-green-400 hover:underline">Clear filters</button>
+          }
+        </div>
+      </app-card>
+    }
+
+    <!-- Customer groups -->
+    @if (!loading()) {
+      <div class="space-y-2">
+        @for (group of filteredGroups(); track group.customerCode) {
+          <app-card>
+            <!-- Customer header row -->
+            <button type="button" class="w-full text-left"
+              (click)="toggleExpand(group)">
+              <div class="flex items-center gap-3 p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-xl transition-colors">
+                <!-- Chevron -->
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                  class="flex-shrink-0 text-gray-400 transition-transform duration-200"
+                  [class.rotate-90]="group.expanded">
+                  <path d="m9 18 6-6-6-6"/>
+                </svg>
+
+                <!-- Customer info -->
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="font-semibold text-gray-900 dark:text-white">{{ group.customerName }}</span>
+                    <span class="text-xs text-gray-400 dark:text-gray-500 font-mono">{{ group.customerCode }}</span>
+                    <app-badge variant="secondary">{{ group.contracts.length }} contract{{ group.contracts.length !== 1 ? 's' : '' }}</app-badge>
+                  </div>
+                </div>
+
+                <!-- Total open bushels -->
+                <div class="flex items-center gap-3 flex-shrink-0">
+                  <div class="text-right">
+                    <div class="text-lg font-bold text-gray-900 dark:text-white">{{ formatBushels(group.totalOpenBushels) }}</div>
+                    <div class="text-xs text-gray-400 dark:text-gray-500">open bu</div>
+                  </div>
+                  <!-- Navigate to customer -->
+                  @if (group.customer) {
+                    <button type="button"
+                      (click)="$event.stopPropagation(); navigateToCustomer(group)"
+                      title="View customer"
+                      class="p-2 text-gray-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                        <polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/>
+                      </svg>
+                    </button>
+                  }
+                </div>
+              </div>
+            </button>
+
+            <!-- Expanded contract rows -->
+            @if (group.expanded) {
+              <div class="border-t border-gray-100 dark:border-gray-700">
+                <!-- Table header -->
+                <div class="grid grid-cols-12 gap-2 px-4 py-2 bg-gray-50 dark:bg-gray-800/50 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  <div class="col-span-3">Contract #</div>
+                  <div class="col-span-2">Commodity</div>
+                  <div class="col-span-2">Crop Year</div>
+                  <div class="col-span-2">Delivery End</div>
+                  <div class="col-span-2 text-right">Quantity (bu)</div>
+                  <div class="col-span-1 text-right">Open (bu)</div>
+                </div>
+                <!-- Contract rows -->
+                @for (contract of getFilteredContracts(group); track contract.id) {
+                  <div class="grid grid-cols-12 gap-2 px-4 py-3 border-t border-gray-50 dark:border-gray-700/50
+                    hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors cursor-pointer group/row"
+                    (click)="navigateToCustomer(group)"
+                    title="View customer">
+                    <!-- Contract # -->
+                    <div class="col-span-3 flex items-center gap-1">
+                      <span class="text-sm font-mono text-gray-900 dark:text-white">{{ contract.contractNumber || contract.sourceContractId || '—' }}</span>
+                    </div>
+                    <!-- Commodity -->
+                    <div class="col-span-2 flex items-center">
+                      <span class="text-sm text-gray-700 dark:text-gray-300">{{ contract.commodityDescription || contract.commodityCode || '—' }}</span>
+                    </div>
+                    <!-- Crop year -->
+                    <div class="col-span-2 flex items-center">
+                      <span class="text-sm text-gray-700 dark:text-gray-300">{{ contract.cropYear || '—' }}</span>
+                    </div>
+                    <!-- Delivery end -->
+                    <div class="col-span-2 flex items-center">
+                      <span class="text-sm text-gray-700 dark:text-gray-300">{{ formatDate(contract.deliveryEnd) }}</span>
+                    </div>
+                    <!-- Contract quantity -->
+                    <div class="col-span-2 flex items-center justify-end">
+                      <span class="text-sm text-gray-700 dark:text-gray-300">{{ formatBushels(contract.quantity) }}</span>
+                    </div>
+                    <!-- Open balance -->
+                    <div class="col-span-1 flex items-center justify-end gap-1">
+                      <span class="text-sm font-semibold text-amber-600 dark:text-amber-400">{{ formatBushels(contract.openBalanceQuantity ?? 0) }}</span>
+                      <!-- External link icon -->
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                        class="text-gray-300 dark:text-gray-600 group-hover/row:text-green-500 transition-colors flex-shrink-0">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                        <polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/>
+                      </svg>
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+          </app-card>
+        }
+      </div>
+    }
+  </div>
+</div>

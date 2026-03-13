@@ -4,14 +4,14 @@ export const environment = {
   apiBaseUrl: '/api',
   msalConfig: {
     auth: {
-      clientId: 'e0f25943-ae8b-4c2d-8060-c9ffbd448aff',
+      clientId: 'c2bb1208-063d-43aa-bad0-6b51d21437b4',
       authority: 'https://login.microsoftonline.com/1521f999-f722-4a4f-9747-166f93e9b0d1',
       redirectUri: 'https://origination-qa.scoular.com',
       postLogoutRedirectUri: 'https://origination-qa.scoular.com',
     }
   },
   apiConfig: {
-    scopes: ['api://00078a10-3f3f-4d17-9350-fe90401125ae/Origination.Application.Dev'],
+    scopes: ['api://f3fcab2b-98c8-4622-86bd-c874d281b22a/Origination.Application.QA'],
     uri: '/api/*'
   }
 };

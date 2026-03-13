@@ -1,4 +1,4 @@
-import { Component, input, output, effect, inject, ChangeDetectionStrategy, HostListener, ViewChild, ElementRef, DestroyRef, afterNextRender, signal } from '@angular/core';
+import { Component, input, output, effect, inject, ChangeDetectionStrategy, ViewChild, ElementRef, DestroyRef, afterNextRender, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -10,6 +10,7 @@ import { AppStateService } from '@core/services/app-state.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { CardComponent, CardContentComponent } from '@shared/components/card/card.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
+import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 
 interface LastContactInfo {
   text: string;
@@ -20,7 +21,7 @@ interface LastContactInfo {
 @Component({
   selector: 'app-customer-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, CardComponent, CardContentComponent, BadgeComponent],
+  imports: [CommonModule, FormsModule, CardComponent, CardContentComponent, BadgeComponent, TradeUnitSelectorComponent],
   host: { class: 'block w-full' },
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './customer-list.component.html'
@@ -35,7 +36,6 @@ export class CustomerListComponent {
   public loading = input(false);
   public producerDetailsMap = input(new Map<number, ProducerDetails>());
   public selectCustomer = output<Customer>();
-  public tradeUnitChange = output<string[]>();
   public clearSelection = output<void>();
 
   private readonly apiService = inject(ApiService);
@@ -46,13 +46,7 @@ export class CustomerListComponent {
 
   searchQuery = signal('');
   selectedListId = signal('all');
-  selectedTradeUnits = signal<string[]>([]);
-  userGroups = signal<{ groupName: string; tradeUnitCodes: string[] }[]>([]);
-  selectedGroupNames = signal<string[]>([]);
   filteredCustomers = signal<Customer[]>([]);
-  isTradeUnitDropdownOpen = signal(false);
-  isGroupDropdownOpen = signal(false);
-  groupsLoading = signal(true);
 
   // Performance optimization: Cache last contact info to avoid repeated filtering/sorting
   lastContactCache = new Map<number, LastContactInfo>();
@@ -62,8 +56,6 @@ export class CustomerListComponent {
 
     // Restore state from service
     this.searchQuery.set(this.appStateService.searchQuery());
-    this.selectedTradeUnits.set(this.appStateService.selectedTradeUnits());
-    this.selectedGroupNames.set(this.appStateService.selectedGroupNames());
     this.selectedListId.set(this.appStateService.selectedSavedListId() || 'all');
 
     // Re-run NLQ to populate customerIds for the restored list selection
@@ -72,32 +64,6 @@ export class CustomerListComponent {
     } else {
       this.applyFilters();
     }
-
-    // Load trade unit groups from Entitlements DB — filtered to current user via vw_UserTradeUnitAccess
-    this.apiService.getUserTradeUnits().pipe(
-      takeUntilDestroyed(this.destroyRef)
-    ).subscribe({
-      next: (groups) => {
-        const mapped = groups.map(g => ({
-          groupName: g.groupName,
-          tradeUnitCodes: g.tradeUnitCodes
-        }));
-        this.userGroups.set(mapped);
-        this.groupsLoading.set(false);
-        // Restore group selection, filtering out groups that no longer exist
-        const prevGroups = this.appStateService.selectedGroupNames();
-        if (prevGroups.length > 0) {
-          this.selectedGroupNames.set(prevGroups.filter(g => mapped.some(m => m.groupName === g)));
-        }
-        // Restore trade unit selection, keeping only units still available
-        const prevUnits = this.appStateService.selectedTradeUnits();
-        if (prevUnits.length > 0) {
-          const allAvailable = this._computeAvailableTradeUnits(mapped, this.selectedGroupNames());
-          this.selectedTradeUnits.set(prevUnits.filter(u => allAvailable.includes(u)));
-        }
-      },
-      error: () => { this.groupsLoading.set(false); }
-    });
 
     // Set up search debouncing
     this._searchSubject$.pipe(
@@ -167,10 +133,17 @@ export class CustomerListComponent {
     });
   }
 
-  // ---- Group helpers ----
+  get selectedTradeUnits(): string[] {
+    return this.appStateService.selectedTradeUnits();
+  }
+
+  // ---- Group / trade unit helpers (read-only — for search scoping) ----
 
   getAvailableTradeUnits(): string[] {
-    return this._computeAvailableTradeUnits(this.userGroups(), this.selectedGroupNames());
+    return this._computeAvailableTradeUnits(
+      this.appStateService.userGroups(),
+      this.appStateService.selectedGroupNames()
+    );
   }
 
   private _computeAvailableTradeUnits(
@@ -178,7 +151,6 @@ export class CustomerListComponent {
     selectedGroups: string[]
   ): string[] {
     if (groups.length <= 1) return groups[0]?.tradeUnitCodes ?? [];
-    // No group filter → show all trade units the user can access
     const filterGroups = selectedGroups.length === 0 ? groups : groups.filter(g => selectedGroups.includes(g.groupName));
     const units = new Set<string>();
     for (const g of filterGroups) {
@@ -187,104 +159,10 @@ export class CustomerListComponent {
     return [...units].sort();
   }
 
-  getGroupButtonText(): string {
-    const sel = this.selectedGroupNames();
-    if (sel.length === 0) return 'Select a Group';
-    if (sel.length === 1) return sel[0];
-    return `${sel.length} groups selected`;
-  }
-
-  isGroupSelected(groupName: string): boolean {
-    return this.selectedGroupNames().includes(groupName);
-  }
-
-  toggleGroupDropdown(): void {
-    this.isGroupDropdownOpen.update(v => !v);
-    if (this.isGroupDropdownOpen()) {
-      this.isTradeUnitDropdownOpen.set(false);
-    }
-  }
-
-  toggleGroupSelection(groupName: string): void {
-    this.selectedGroupNames.update(names => {
-      const idx = names.indexOf(groupName);
-      return idx > -1 ? names.filter((_, i) => i !== idx) : [...names, groupName];
-    });
-    // Remove selected trade units no longer in any selected group
-    const available = this.getAvailableTradeUnits();
-    this.selectedTradeUnits.update(units => units.filter(u => available.includes(u)));
-    this.appStateService.setSelectedGroupNames(this.selectedGroupNames());
-    this.onTradeUnitsChange();
-  }
-
   getListMaxHeight(): string {
     const hasSavedLists = !this.loading() && this.getVisibleSavedLists().length > 0;
-    const hasGroupDropdown = !this.groupsLoading() && this.userGroups().length > 1;
     let offset = hasSavedLists ? 21 : 16;
-    if (hasGroupDropdown) offset += 3;
     return `calc(100vh - ${offset}rem)`;
-  }
-
-  // ---- Trade unit helpers ----
-
-  toggleTradeUnitDropdown(): void {
-    this.isTradeUnitDropdownOpen.update(v => !v);
-    if (this.isTradeUnitDropdownOpen()) {
-      this.isGroupDropdownOpen.set(false);
-    }
-  }
-
-  closeDropdown(): void {
-    this.isTradeUnitDropdownOpen.set(false);
-  }
-
-  toggleTradeUnit(unit: string): void {
-    this.selectedTradeUnits.update(units => {
-      const index = units.indexOf(unit);
-      if (index > -1) {
-        return units.filter((_, i) => i !== index);
-      } else {
-        return [...units, unit];
-      }
-    });
-    this.onTradeUnitsChange();
-  }
-
-  clearAllTradeUnits(): void {
-    this.selectedTradeUnits.set([]);
-    this.onTradeUnitsChange();
-    // Keep dropdown open so user can make new selections
-  }
-
-  isTradeUnitSelected(unit: string): boolean {
-    return this.selectedTradeUnits().includes(unit);
-  }
-
-  getTradeUnitButtonText(): string {
-    if (this.selectedTradeUnits().length === 0) {
-      return 'Select Trade Units';
-    } else if (this.selectedTradeUnits().length === 1) {
-      return this.selectedTradeUnits()[0];
-    } else {
-      return `${this.selectedTradeUnits().length} trade units selected`;
-    }
-  }
-
-  onTradeUnitsChange(): void {
-    const units = this.selectedTradeUnits();
-    // If no individual trade units are explicitly selected, use all available units for the
-    // selected group(s). This allows a group selection alone to trigger a data load.
-    const emitUnits = units.length > 0 ? units : this.getAvailableTradeUnits();
-    this.tradeUnitChange.emit(emitUnits);
-  }
-
-  @HostListener('document:click', ['$event'])
-  onDocumentClick(event: MouseEvent): void {
-    this.isGroupDropdownOpen.set(false);
-    // Close dropdown when clicking outside
-    if (this.isTradeUnitDropdownOpen()) {
-      this.closeDropdown();
-    }
   }
 
 
@@ -305,31 +183,14 @@ export class CustomerListComponent {
     // Save search query to state service
     this.appStateService.setSearchQuery(this.searchQuery());
 
-    // If there's a search term but no trade units selected, use API search to search all trade units
-    if (searchTerm && this.selectedTradeUnits().length === 0) {
+    if (searchTerm) {
+      // Use API search — scoped to selected TUs when explicitly chosen, global otherwise
       this._searchSubject$.next(searchTerm);
       return;
     }
 
-    // Client-side filtering (instant) when we have customers loaded
+    // No search term — client-side filter on loaded customers
     let result = [...this.customers()];
-
-    // Apply search filter (client-side - much faster!)
-    if (searchTerm) {
-      result = result.filter(c => {
-        const searchableText = [
-          c.name,
-          c.farm,
-          c.location,
-          c.stateProvince,
-          c.phone,
-          c.email,
-          c.sourceCustomerId
-        ].filter(Boolean).join(' ').toLowerCase();
-
-        return searchableText.includes(searchTerm);
-      });
-    }
 
     // Apply saved list filter (skip for "all" which means show all customers)
     if (this.selectedListId() && this.selectedListId() !== 'all') {
@@ -344,11 +205,12 @@ export class CustomerListComponent {
 
   /** Returns saved lists whose trade units overlap with the currently selected trade units. */
   getVisibleSavedLists(): SavedList[] {
-    if (this.selectedTradeUnits().length === 0) return this.savedLists();
+    const selectedTU = this.appStateService.selectedTradeUnits();
+    if (selectedTU.length === 0) return this.savedLists();
     return this.savedLists().filter(list => {
       if (!list.tradeUnits) return true; // Legacy lists without trade units show everywhere
       const listUnits = list.tradeUnits.split(',').map(u => u.trim());
-      return listUnits.some(u => this.selectedTradeUnits().includes(u));
+      return listUnits.some(u => selectedTU.includes(u));
     });
   }
 
@@ -398,23 +260,25 @@ export class CustomerListComponent {
     this.appStateService.setSearchQuery('');
     this.selectedListId.set('all');
     this.appStateService.setSelectedSavedListId('all');
-    this.selectedTradeUnits.set([]);
-    this.selectedGroupNames.set([]);
+    this.appStateService.setTradeUnits([]);
     this.appStateService.setSelectedGroupNames([]);
-    this.isTradeUnitDropdownOpen.set(false);
-    this.isGroupDropdownOpen.set(false);
     this.filteredCustomers.set([]);
     this.clearSelection.emit();
-    this.tradeUnitChange.emit([]);
   }
 
   private _performSearch(searchTerm: string): void {
-    // Scope to explicitly selected units, then to the selected group's units, then to all user-accessible units
-    const explicitUnits = this.selectedTradeUnits();
-    const availableUnits = this.getAvailableTradeUnits();
-    const tradeUnits = explicitUnits.length > 0 ? explicitUnits
-      : availableUnits.length > 0 ? availableUnits
-      : undefined;
+    // TU scoping priority:
+    // 1. Explicit individual TUs selected → scope to those
+    // 2. Group(s) selected (no individual TU) → scope to TUs in those groups
+    // 3. Nothing selected → no filter, search all customers globally
+    const explicitUnits = this.appStateService.selectedTradeUnits();
+    const selectedGroups = this.appStateService.selectedGroupNames();
+    let tradeUnits: string[] | undefined;
+    if (explicitUnits.length > 0) {
+      tradeUnits = explicitUnits;
+    } else if (selectedGroups.length > 0) {
+      tradeUnits = this._computeAvailableTradeUnits(this.appStateService.userGroups(), selectedGroups);
+    }
     this.apiService.searchCustomers(searchTerm, tradeUnits).pipe(
       takeUntilDestroyed(this.destroyRef)
     ).subscribe({

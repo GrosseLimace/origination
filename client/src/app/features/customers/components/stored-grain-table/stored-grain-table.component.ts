@@ -1,33 +1,27 @@
 import { Component, input, effect, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
 import { Customer, StoredGrain } from '@models';
 
-type SortColumn = 'crop' | 'quantity' | 'bin' | 'storageRate' | 'startDate' | 'accumulatedCost';
-type SortDirection = 'none' | 'asc' | 'desc';
+export interface ReceiptGroup {
+  receiptNumber: string;
+  rows: StoredGrain[];
+  totalQuantity: number;
+  totalCost: number;
+  storageStartDate: Date;
+}
 
 @Component({
   selector: 'app-stored-grain-table',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    CommonModule,
-    TableComponent,
-    TableHeaderComponent,
-    TableBodyComponent,
-    TableRowComponent,
-    TableHeadComponent,
-    TableCellComponent
-  ],
+  imports: [CommonModule],
   templateUrl: './stored-grain-table.component.html'
 })
 export class StoredGrainTableComponent {
   public storedGrain = input<StoredGrain[]>([]);
   public customer = input.required<Customer>();
 
-  expandedRows = new Set<string>();
-  currentSortColumn: SortColumn | null = null;
-  currentSortDirection: SortDirection = 'none';
+  expandedReceipts = new Set<string>();
   storageCostCache = new Map<string, { totalCost: number; monthsStored: number }>();
 
   constructor() {
@@ -56,64 +50,40 @@ export class StoredGrainTableComponent {
     return sum;
   }
 
-  get sortedGrain(): StoredGrain[] {
-    if (!this.currentSortColumn || this.currentSortDirection === 'none') {
-      return this.storedGrain();
-    }
-
-    const sorted = [...this.storedGrain()].sort((a, b) => {
-      let comparison = 0;
-      switch (this.currentSortColumn) {
-        case 'crop':
-          comparison = a.crop.localeCompare(b.crop);
-          break;
-        case 'quantity':
-          comparison = a.quantity - b.quantity;
-          break;
-        case 'bin':
-          comparison = a.bin.localeCompare(b.bin);
-          break;
-        case 'storageRate':
-          comparison = a.storageRate - b.storageRate;
-          break;
-        case 'startDate':
-          comparison = new Date(a.storageStartDate).getTime() - new Date(b.storageStartDate).getTime();
-          break;
-        case 'accumulatedCost':
-          comparison = (this.storageCostCache.get(a.id)?.totalCost ?? 0) - (this.storageCostCache.get(b.id)?.totalCost ?? 0);
-          break;
+  get receiptGroups(): ReceiptGroup[] {
+    const groupMap = new Map<string, ReceiptGroup>();
+    for (const grain of this.storedGrain()) {
+      const key = grain.receiptNumber || grain.id.split('|')[0];
+      if (!groupMap.has(key)) {
+        groupMap.set(key, {
+          receiptNumber: key,
+          rows: [],
+          totalQuantity: 0,
+          totalCost: 0,
+          storageStartDate: new Date(grain.storageStartDate)
+        });
       }
-      return this.currentSortDirection === 'desc' ? -comparison : comparison;
-    });
-
-    return sorted;
+      const group = groupMap.get(key)!;
+      group.rows.push(grain);
+      group.totalQuantity += grain.quantity;
+      group.totalCost += this.storageCostCache.get(grain.id)?.totalCost ?? 0;
+      // Use the earliest start date as the group date
+      const rowDate = new Date(grain.storageStartDate);
+      if (rowDate < group.storageStartDate) group.storageStartDate = rowDate;
+    }
+    return Array.from(groupMap.values())
+      .sort((a, b) => a.receiptNumber.localeCompare(b.receiptNumber));
   }
 
-  handleSort(column: SortColumn): void {
-    if (this.currentSortColumn === column) {
-      if (this.currentSortDirection === 'none') {
-        this.currentSortDirection = 'asc';
-      } else if (this.currentSortDirection === 'asc') {
-        this.currentSortDirection = 'desc';
-      } else {
-        this.currentSortDirection = 'none';
-        this.currentSortColumn = null;
-      }
+  toggleReceipt(receiptNumber: string): void {
+    if (this.expandedReceipts.has(receiptNumber)) {
+      this.expandedReceipts.delete(receiptNumber);
     } else {
-      this.currentSortColumn = column;
-      this.currentSortDirection = 'asc';
+      this.expandedReceipts.add(receiptNumber);
     }
   }
 
-  toggleRow(id: string): void {
-    if (this.expandedRows.has(id)) {
-      this.expandedRows.delete(id);
-    } else {
-      this.expandedRows.add(id);
-    }
-  }
-
-  isExpanded(id: string): boolean {
-    return this.expandedRows.has(id);
+  isReceiptExpanded(receiptNumber: string): boolean {
+    return this.expandedReceipts.has(receiptNumber);
   }
 }

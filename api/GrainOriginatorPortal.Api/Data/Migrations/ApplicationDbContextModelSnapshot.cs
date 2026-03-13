@@ -781,6 +781,50 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                     b.ToTable("TradeUnitGroups", "dbo");
                 });
 
+            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.UserPreference", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("SelectedGroupNames")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("SelectedGroupNames");
+
+                    b.Property<string>("SelectedTradeUnits")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("SelectedTradeUnits");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("UpdatedAt");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasColumnName("UserId");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_UserPreferences_UserId");
+
+                    b.ToTable("UserPreferences", "dbo");
+                });
+
             modelBuilder.Entity("GrainOriginatorPortal.Api.Models.GroupTradeUnit", b =>
                 {
                     b.HasOne("GrainOriginatorPortal.Api.Models.TradeUnitGroup", null)

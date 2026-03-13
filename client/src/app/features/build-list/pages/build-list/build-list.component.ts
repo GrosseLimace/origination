@@ -15,6 +15,7 @@ import { BadgeComponent } from '@shared/components/badge/badge.component';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '@shared/components/dialog/dialog.component';
 import { InputComponent } from '@shared/components/input/input.component';
 import { CustomerMapComponent } from '@features/customers/components/map/customer-map.component';
+import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 
 @Component({
   selector: 'app-build-list',
@@ -36,7 +37,8 @@ import { CustomerMapComponent } from '@features/customers/components/map/custome
     DialogContentComponent,
     DialogFooterComponent,
     InputComponent,
-    CustomerMapComponent
+    CustomerMapComponent,
+    TradeUnitSelectorComponent
   ],
   templateUrl: './build-list.component.html'
 })
@@ -51,6 +53,7 @@ export class BuildListComponent {
   // Trade units captured at init — used to detect changes on destroy
   private _initTradeUnits: string[] = [];
   private _initialized = false;
+  private _dataLoadStarted = false;
   // All trade units the user can access (union of all groups from Entitlements DB)
   private _allUserTradeUnits = signal<string[]>([]);
 
@@ -62,7 +65,7 @@ export class BuildListComponent {
     if (this._initialized) {
       untracked(() => this.clearQuery());
     }
-  }, { allowSignalWrites: true });
+  });
 
   customers = signal<Customer[]>([]);
   contracts = signal<Contract[]>([]);
@@ -260,6 +263,8 @@ export class BuildListComponent {
   }
 
   private _loadData(): void {
+    if (this._dataLoadStarted) return;
+    this._dataLoadStarted = true;
     this.loading.set(true);
 
     // Use cached data from AppStateService if already loaded (trade-unit-filtered by home)
@@ -416,6 +421,15 @@ export class BuildListComponent {
       this.filteredCustomers.set([]);
       this.detectedState.set(null);
       this.queryUnrecognized.set(false);
+    }
+  }
+
+  onQueryKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      if (this.hasTradeUnits && this.queryText().trim() && !this.isProcessing() && !this.loading()) {
+        this.processQuery();
+      }
     }
   }
 
@@ -674,19 +688,11 @@ export class BuildListComponent {
       : this.apiService.createSavedList(payload);
 
     request$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: () => {
-        this.toastService.success(`List "${this.newListName()}" saved with ${this.displayedCustomers.length} customers`);
+      next: (savedList) => {
+        this.toastService.success(`List "${this.newListName()}" saved`);
         this.newListName.set('');
         this.showSaveDialog.set(false);
-        this.activeSavedList.set(null);
-        this.queryText.set('');
-        this.hasGenerated.set(false);
-        this.filteredCustomers.set([]);
-        this.detectedState.set(null);
-        this.showRefinePanel.set(false);
-        this.pendingRefinements.set({});
-        this.appliedRefinements.set({});
-        this.notContactedDaysInput.set('');
+        this.activeSavedList.set(savedList);
         this._refreshSavedLists();
       },
       error: () => {

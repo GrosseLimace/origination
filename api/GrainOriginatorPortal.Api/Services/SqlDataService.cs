@@ -92,11 +92,14 @@ public class SqlDataService : IDataService
             if (hasTradeUnitFilter)
                 query = query.Where(s => s.TradeUnit != null && tradeUnits!.Contains(s.TradeUnit));
 
-            // All search words must match name or source customer ID
+            // All search words must match name, source customer ID, or phone number
             foreach (var word in searchWords)
-                query = query.Where(s => s.CustomerName.Contains(word) || (s.SourceCustomerId != null && s.SourceCustomerId.Contains(word)));
+                query = query.Where(s => s.CustomerName.Contains(word)
+                    || (s.SourceCustomerId != null && s.SourceCustomerId.Contains(word))
+                    || (s.MerchandisingPhone != null && s.MerchandisingPhone.Contains(word))
+                    || (s.ExtendedPrimaryPhone != null && s.ExtendedPrimaryPhone.Contains(word)));
 
-            var snapshots = await query.Take(hasTradeUnitFilter ? 1000 : 100).ToListAsync(cancellationToken);
+            var snapshots = await query.Take(1000).ToListAsync(cancellationToken);
 
             // Deduplicate by CustomerId, then score by relevance
             var candidates = snapshots
@@ -104,17 +107,15 @@ public class SqlDataService : IDataService
                 .Select(g => MapSnapshotToCustomer(g.First()))
                 .ToList();
 
-            var scoredResults = candidates.Select(c => new
+            var scoredCustomers = candidates.Select(c => new
             {
                 Customer = c,
                 Score = CalculateRelevanceScore(c.Name, searchWords, searchTerm)
             })
             .OrderByDescending(x => x.Score)
-            .ThenBy(x => x.Customer.Name);
-
-            var scoredCustomers = hasTradeUnitFilter
-                ? scoredResults.Select(x => x.Customer).ToList()
-                : scoredResults.Take(15).Select(x => x.Customer).ToList();
+            .ThenBy(x => x.Customer.Name)
+            .Select(x => x.Customer)
+            .ToList();
 
             await EnrichCustomersWithESignAsync(scoredCustomers, cancellationToken);
             _logger.LogInformation("Search for '{SearchTerm}' returned {Count} customers from CustomerSnapshot", searchTerm, scoredCustomers.Count);
@@ -743,6 +744,29 @@ public class SqlDataService : IDataService
         {
             _logger.LogError(ex, "Error retrieving contracts for farm {FarmId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
                 farmId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            throw;
+        }
+    }
+
+    public async Task<List<Contract>> GetContractsBySourceIdAsync(string sourceContractId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var contracts = await _context.Contracts
+                .AsNoTracking()
+                .Where(c => c.SourceContractId == sourceContractId)
+                .ToListAsync(cancellationToken);
+
+            var today = DateTime.Today;
+            foreach (var contract in contracts)
+                contract.Status = CalculateContractStatus(contract, today);
+
+            return contracts;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving contracts for sourceContractId {SourceContractId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                sourceContractId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -1389,7 +1413,8 @@ public class SqlDataService : IDataService
 
     private const string StoredGrainSql = """
         SELECT
-            CAST(sg.WHR_RECEIPT_NUMBER AS varchar(50)) AS Id,
+            CAST(sg.WHR_RECEIPT_NUMBER AS varchar(50)) + '|' + ISNULL(sg.LOCATION_CODE, '') AS Id,
+            CAST(sg.WHR_RECEIPT_NUMBER AS varchar(50)) AS ReceiptNumber,
             c.CustomerId AS CustomerId,
             sg.CUSTOMER_ID AS CustomerCode,
             ISNULL(sg.COMMODITY_CODE, '') AS Crop,

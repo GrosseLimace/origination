@@ -5,6 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import * as L from 'leaflet';
 import { environment } from '../../../../../environments/environment';
+import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 
 interface BidEntry {
   bid: string;
@@ -28,7 +29,7 @@ interface LocationCoords {
 @Component({
   selector: 'app-bid-sheet',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TradeUnitSelectorComponent],
   templateUrl: './bid-sheet.component.html'
 })
 export class BidSheetComponent {

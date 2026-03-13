@@ -107,7 +107,7 @@ export class NlqFilterService {
       ' ks ': 'kansas', ' ks,': 'kansas', ' ks.': 'kansas',
       ' sd ': 'south dakota', ' sd,': 'south dakota', ' sd.': 'south dakota',
       ' nd ': 'north dakota', ' nd,': 'north dakota', ' nd.': 'north dakota',
-      ',in ': 'indiana', ' in,': 'indiana', ' in.': 'indiana',
+      ' in,': 'indiana', ' in.': 'indiana',
       ' oh ': 'ohio', ' oh,': 'ohio', ' oh.': 'ohio',
       ' mi ': 'michigan', ' mi,': 'michigan', ' mi.': 'michigan',
       ' tx ': 'texas', ' tx,': 'texas', ' tx.': 'texas',
@@ -1174,7 +1174,11 @@ export class NlqFilterService {
     }
 
     // --- Delivered this year ---
-    if (/deliver(?:ed|ies|y)?\s*(?:this|in\s+(?:the\s+)?current)\s*year/.test(lowerQuery)) {
+    // Matches "delivered this year" AND "delivered corn this year" (crop may appear between verb and "this year")
+    const deliveredThisYear =
+      /deliver(?:ed|ies|y)?\s*(?:this|in\s+(?:the\s+)?current)\s*year/.test(lowerQuery) ||
+      (/deliver(?:ed|ies|y)?/.test(lowerQuery) && /(?:this|current)\s*year/.test(lowerQuery));
+    if (deliveredThisYear) {
       const currentYear = new Date().getFullYear();
       result = result.filter(c =>
         getCustomerTickets(c).some(t => {

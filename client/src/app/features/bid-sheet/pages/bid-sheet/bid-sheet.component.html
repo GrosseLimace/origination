@@ -4,7 +4,9 @@
         <div id="bid-locations-map" style="height: 100%; width: 100%;"></div>
 
         <!-- Floating filter bar (top-left) -->
-        <div class="absolute top-2.5 left-4 z-[1000] flex items-center gap-2 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm p-2 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+        <div class="absolute top-2.5 left-4 z-[1000] flex items-center gap-2 flex-wrap bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm p-2 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+          <app-trade-unit-selector />
+          <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
           <select [ngModel]="selectedCrop()" (ngModelChange)="selectedCrop.set($event); onMapCropChange()" class="px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
             @for (crop of crops(); track crop) {
               <option [value]="crop">{{ crop }}</option>

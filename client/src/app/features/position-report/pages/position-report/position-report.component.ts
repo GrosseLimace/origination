@@ -8,11 +8,12 @@ import { PositionData, HedgePosition } from '@models';
 import { CardComponent } from '@shared/components/card/card.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
 import { TabsComponent, TabContentComponent } from '@shared/components/tabs/tabs.component';
+import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 
 @Component({
   selector: 'app-position-report',
   standalone: true,
-  imports: [CommonModule, CardComponent, BadgeComponent, TabsComponent, TabContentComponent],
+  imports: [CommonModule, CardComponent, BadgeComponent, TabsComponent, TabContentComponent, TradeUnitSelectorComponent],
   templateUrl: './position-report.component.html'
 })
 export class PositionReportComponent {

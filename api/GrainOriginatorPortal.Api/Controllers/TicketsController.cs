@@ -34,7 +34,6 @@ public class TicketsController : ControllerBase
     [ProducesResponseType(typeof(List<Ticket>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<Ticket>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
         return Ok(await _dataService.GetTicketsByCustomerAsync(customerId, cancellationToken));
     }
 
@@ -44,6 +43,10 @@ public class TicketsController : ControllerBase
     [ProducesResponseType(typeof(List<Ticket>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<Ticket>>> GetByFarm(string farmId, CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetTicketsByFarmAsync(farmId, cancellationToken));
+        var tickets = await _dataService.GetTicketsByFarmAsync(farmId, cancellationToken);
+        var tradeUnits = tickets.Select(t => t.OrganizationCode).Where(t => t is not null).Distinct().ToList();
+        if (tradeUnits.Count > 0)
+            await _entitlementService.ValidateTradeUnitsOrThrowAsync(tradeUnits!, cancellationToken);
+        return Ok(tickets);
     }
 }

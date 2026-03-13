@@ -13,7 +13,7 @@ public class ContractPricingLine
     public string? CustomerName { get; set; }
 
     // Pricing
-    public decimal? PriceSequence { get; set; }
+    public int? PriceSequence { get; set; }
     public decimal? PriceQuantity { get; set; }
     public string? PriceUom { get; set; }
     public decimal? FlatPrice { get; set; }

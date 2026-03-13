@@ -169,7 +169,7 @@ export class CustomerProfileComponent {
         this._pacingPct = null;
       }
 
-      // Update unapplied ticket count — TicketType determines applied status (P/S = applied)
+      // Update unapplied ticket count — isApplied uses contract prefix type (P/S in ctrmContractNumber)
       const tickets = this.tickets();
       this._unappliedTicketCount = tickets.filter(t => !t.isApplied).length;
 
