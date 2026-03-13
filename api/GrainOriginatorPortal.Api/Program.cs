@@ -337,28 +337,26 @@ if (app.Environment.IsDevelopment())
 // Database Initialization (Development Only)
 // =============================================================================
 
-// Apply pending migrations automatically in development
-// NOTE: In production, migrations should be applied via deployment pipeline
-// DISABLED: Only reading existing tables, not creating new ones
-/*
-if (app.Environment.IsDevelopment())
+// Apply ApplicationDbContext migrations automatically on startup for non-production environments.
+// ApplicationDbContext owns app tables (Notes, SavedLists, Commodities, UserPreferences, etc.)
+// that must exist before the API can serve requests. Migrations are idempotent — already-applied
+// ones are skipped via __EFMigrationsHistory.
+// NOTE: Production migrations are applied via the deployment pipeline, not at startup.
+if (!app.Environment.IsProduction())
 {
     using var scope = app.Services.CreateScope();
-    var dbContext = scope.ServiceProvider.GetRequiredService<OriginationDbContext>();
+    var appDb = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
     try
     {
-        // Apply any pending migrations
-        dbContext.Database.Migrate();
-        app.Logger.LogInformation("Database migrations applied successfully");
+        appDb.Database.Migrate();
+        app.Logger.LogInformation("ApplicationDbContext migrations applied successfully.");
     }
     catch (Exception ex)
     {
-        app.Logger.LogError(ex, "Error applying database migrations");
-        // Continue startup even if migration fails (allows debugging)
+        app.Logger.LogError(ex, "ApplicationDbContext migration failed at startup — app tables may be missing.");
     }
 }
-*/
 
 // =============================================================================
 // Middleware Pipeline Configuration
