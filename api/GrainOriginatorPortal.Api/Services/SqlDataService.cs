@@ -934,6 +934,14 @@ public class SqlDataService : IDataService
 
             return tickets;
         }
+        catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
+        {
+            // 207 = Invalid column name (e.g. TicketType not yet in Dev ODS view)
+            // 208 = Invalid object name (view doesn't exist in this environment)
+            _logger.LogWarning("Tickets view not accessible or missing a mapped column in this environment — returning empty list. SQL {Number}: {Error}",
+                ex.Number, ex.Message);
+            return [];
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving tickets [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
@@ -1023,9 +1031,9 @@ public class SqlDataService : IDataService
                 .ThenBy(p => p.CustomerName)
                 .ToListAsync(cancellationToken);
         }
-        catch (SqlException ex) when (ex.Number == 208)
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
         {
-            _logger.LogWarning("ProducerPlantingIntentions table not accessible. Returning empty list. Error: {Error}", ex.Message);
+            _logger.LogWarning("PlantingIntentions not accessible (table missing or DB connection failure) — returning empty list. Error: {Error}", ex.Message);
             return new List<PlantingIntention>();
         }
         catch (Exception ex)
@@ -1047,9 +1055,9 @@ public class SqlDataService : IDataService
                 .ThenBy(p => p.Crop)
                 .ToListAsync(cancellationToken);
         }
-        catch (SqlException ex) when (ex.Number == 208)
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
         {
-            _logger.LogWarning("ProducerPlantingIntentions table not accessible for customer {CustomerId}. Returning empty list.", customerId);
+            _logger.LogWarning("PlantingIntentions not accessible for customer {CustomerId} (table missing or DB connection failure) — returning empty list. Error: {Error}", customerId, ex.Message);
             return new List<PlantingIntention>();
         }
         catch (Exception ex)
