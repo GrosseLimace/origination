@@ -36,7 +36,6 @@ public class ContractsController : ControllerBase
     [ProducesResponseType(typeof(List<Contract>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<Contract>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
         return Ok(await _dataService.GetContractsByCustomerAsync(customerId, cancellationToken));
     }
 
@@ -46,7 +45,11 @@ public class ContractsController : ControllerBase
     [ProducesResponseType(typeof(List<Contract>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<Contract>>> GetByFarm(string farmId, CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetContractsByFarmAsync(farmId, cancellationToken));
+        var contracts = await _dataService.GetContractsByFarmAsync(farmId, cancellationToken);
+        var tradeUnits = contracts.Select(c => c.TradeUnit).Where(t => t is not null).Distinct().ToList();
+        if (tradeUnits.Count > 0)
+            await _entitlementService.ValidateTradeUnitsOrThrowAsync(tradeUnits!, cancellationToken);
+        return Ok(contracts);
     }
 
     // -------------------------------------------------------------------------
@@ -57,9 +60,14 @@ public class ContractsController : ControllerBase
     public async Task<ActionResult<List<ContractPricingLine>>> GetPricingLines([FromQuery] string sourceContractId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(sourceContractId))
-        {
             throw new ValidationException("sourceContractId", "sourceContractId is required.");
-        }
+
+        // Resolve the contract's trade unit and validate access before returning pricing data
+        var contracts = await _dataService.GetContractsBySourceIdAsync(sourceContractId, cancellationToken);
+        var tradeUnits = contracts.Select(c => c.TradeUnit).Where(t => t is not null).Distinct().ToList();
+        if (tradeUnits.Count > 0)
+            await _entitlementService.ValidateTradeUnitsOrThrowAsync(tradeUnits!, cancellationToken);
+
         return Ok(await _dataService.GetPricingLinesAsync(sourceContractId, cancellationToken));
     }
 

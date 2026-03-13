@@ -104,32 +104,26 @@ export class CustomerNotesComponent {
   }
 
   formatTimestamp(timestamp: string | Date): string {
-    // Treat bare ISO strings as UTC (API returns without Z suffix)
+    // Treat bare ISO strings as UTC (API returns GETUTCDATE() without Z suffix)
     const raw = typeof timestamp === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(timestamp)
       ? timestamp + 'Z' : timestamp;
     const date = new Date(raw);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffDays = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
 
     const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 
-    // Check if same day
-    if (diffDays === 0) {
-      return `Today at ${timeStr}`;
-    }
+    // Compare calendar days in local time, not raw ms difference.
+    // A note from 7:57 PM yesterday is ~20 hours ago — ms-based diffDays floors to 0 and
+    // incorrectly shows "Today". Midnight-normalised comparison gives the right calendar day.
+    const todayMidnight = new Date();
+    todayMidnight.setHours(0, 0, 0, 0);
+    const noteMidnight = new Date(date);
+    noteMidnight.setHours(0, 0, 0, 0);
+    const diffDays = Math.round((todayMidnight.getTime() - noteMidnight.getTime()) / (1000 * 60 * 60 * 24));
 
-    // Check if yesterday
-    if (diffDays === 1) {
-      return `Yesterday at ${timeStr}`;
-    }
+    if (diffDays === 0) return `Today at ${timeStr}`;
+    if (diffDays === 1) return `Yesterday at ${timeStr}`;
+    if (diffDays < 7)  return `${diffDays} days ago`;
 
-    // Within a week
-    if (diffDays < 7) {
-      return `${diffDays} days ago`;
-    }
-
-    // Otherwise show full date
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   }
 

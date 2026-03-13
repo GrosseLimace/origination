@@ -1,4 +1,4 @@
-import { Component, input, output } from '@angular/core';
+import { Component, input, output, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 @Component({
@@ -6,7 +6,7 @@ import { CommonModule } from '@angular/common';
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="w-full overflow-x-auto overflow-y-visible">
+    <div [class]="wrapperClass()">
       <table class="w-full min-w-max caption-bottom text-sm border-collapse">
         <ng-content></ng-content>
       </table>
@@ -55,7 +55,12 @@ import { CommonModule } from '@angular/common';
     }
   `]
 })
-export class TableComponent {}
+export class TableComponent {
+  public stickyHeader = input<boolean>(false);
+  readonly wrapperClass = computed(() =>
+    this.stickyHeader() ? 'w-full' : 'w-full overflow-x-auto overflow-y-visible'
+  );
+}
 
 @Component({
   selector: 'app-table-header',
@@ -63,7 +68,7 @@ export class TableComponent {}
   imports: [CommonModule],
   host: { style: 'display: contents' },
   template: `
-    <thead class="border-b border-gray-200 dark:border-gray-700">
+    <thead class="sticky top-0 z-10 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
       <ng-content></ng-content>
     </thead>
   `

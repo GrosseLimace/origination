@@ -8,7 +8,8 @@ namespace GrainOriginatorPortal.Api.Models;
 /// </summary>
 public class StoredGrain
 {
-    public string Id { get; set; } = string.Empty;
+    public string Id { get; set; } = string.Empty;          // Composite: WHR_RECEIPT_NUMBER|LOCATION_CODE
+    public string ReceiptNumber { get; set; } = string.Empty; // WHR_RECEIPT_NUMBER — group key
     public long CustomerId { get; set; }
     public string CustomerCode { get; set; } = string.Empty; // CTRM CUSTOMER_ID
     public string Crop { get; set; } = string.Empty;

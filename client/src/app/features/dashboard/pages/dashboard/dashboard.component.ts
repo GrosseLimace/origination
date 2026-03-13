@@ -1,18 +1,20 @@
-import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { Component, DestroyRef, inject, signal, computed, effect, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { forkJoin, of } from 'rxjs';
+import { of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService, DashboardCacheEntry } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, Commodity } from '@models';
+import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
+
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TradeUnitSelectorComponent],
   templateUrl: './dashboard.component.html'
 })
 export class DashboardComponent {
@@ -22,19 +24,22 @@ export class DashboardComponent {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
-  // Data for display
-  customers = signal<Customer[]>([]);
-  contracts = signal<Contract[]>([]);
-  plantingIntentions = signal<PlantingIntention[]>([]);
-  storedGrain = signal<StoredGrain[]>([]);
+  // Read directly from appState — DataPreloadService populates these on TU change
+  readonly customers = this.appStateService.customers;
+  readonly contracts = this.appStateService.contracts;
+  readonly plantingIntentions = this.appStateService.plantingIntentions;
+  readonly storedGrain = computed(() => {
+    const customerIds = new Set(this.appStateService.customers().map(c => c.id));
+    return this.appStateService.storedGrain().filter(s => customerIds.has(s.customerId));
+  });
   allCommodities = signal<Commodity[]>([]);
 
-  // Trade unit selection
-  availableTradeUnits = signal<string[]>([]);
-  selectedDashboardTradeUnits = signal<string[]>([]);
-  showTradeUnitDropdown = signal(false);
+  get selectedTradeUnits(): string[] {
+    return this.appStateService.selectedTradeUnits();
+  }
 
-  loading = signal(false);
+  private readonly _localLoading = signal(false);
+  readonly loading = computed(() => this.appStateService.dataLoading() || this._localLoading());
   totalAcres = signal(0);
   activeContracts = signal(0);
   totalContractValue = signal(0);
@@ -98,8 +103,8 @@ export class DashboardComponent {
   tempYieldMap = signal<Record<string, number | null>>({});
   tempMarketShareMap = signal<Record<string, number | null>>({});
 
-  // Pre-indexed commodity lookup for O(1) access instead of O(n) .find() per iteration
-  private _commodityByCode = new Map<string, Commodity>();
+  // Pre-indexed commodity lookup — computed so it's stable within a CD cycle (prevents NG0100)
+  private readonly _commodityByCode = computed(() => new Map(this.allCommodities().map(c => [c.code, c])));
 
   // Loading state to prevent concurrent data loads
   private _isLoading = false;
@@ -110,17 +115,38 @@ export class DashboardComponent {
       this.plantingIntentionsExpanded.set(savedState === 'true');
     }
 
-    this.availableTradeUnits.set(this.appStateService.selectedTradeUnits());
-    this.selectedDashboardTradeUnits.set([...this.availableTradeUnits()]);
-
-    // Restore from cache if available for the same trade units
+    // Restore commodities + dashboard-specific data from cache if available, otherwise fetch
     const cached = this.appStateService.dashboardCache();
-    const tradeUnitsKey = [...this.selectedDashboardTradeUnits()].sort().join(',');
+    const tradeUnitsKey = [...this.selectedTradeUnits].sort().join(',');
     if (cached && cached.tradeUnitsKey === tradeUnitsKey) {
       this._restoreFromCache(cached);
     } else {
-      this._loadData();
+      this._loadLocalData();
     }
+
+    // Recalculate metrics and yield rows whenever preloaded data or commodities change
+    effect(() => {
+      this.appStateService.customers();
+      this.appStateService.contracts();
+      this.appStateService.plantingIntentions();
+      this.appStateService.storedGrain();
+      this.allCommodities();
+      untracked(() => {
+        this._calculateMetrics();
+        this._calculateYieldRows();
+      });
+    });
+
+    // Reload dashboard-specific data when trade units change
+    let lastTuKey = tradeUnitsKey;
+    effect(() => {
+      const newKey = [...this.appStateService.selectedTradeUnits()].sort().join(',');
+      if (newKey === lastTuKey) return;
+      lastTuKey = newKey;
+      untracked(() => {
+        if (newKey) this._loadLocalData();
+      });
+    });
   }
 
   togglePlantingIntentions(): void {
@@ -136,38 +162,19 @@ export class DashboardComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
-          this.plantingIntentions.set(data);
-          this._calculateYieldRows();
+          this.appStateService.setPlantingIntentions(data);
+          // _calculateYieldRows() will fire via the data-change effect
           this.loadDashboardEstimates();
-
         }
       });
   }
 
-  toggleDashboardTradeUnit(unit: string): void {
-    const idx = this.selectedDashboardTradeUnits().indexOf(unit);
-    if (idx >= 0) {
-      if (this.selectedDashboardTradeUnits().length > 1) {
-        this.selectedDashboardTradeUnits.update(arr => arr.filter(u => u !== unit));
-      }
-    } else {
-      this.selectedDashboardTradeUnits.update(arr => [...arr, unit]);
-    }
-    this.selectedCropFilter.set('');
-    this._loadData();
-  }
-
   private _restoreFromCache(cached: DashboardCacheEntry): void {
-    this.customers.set(cached.customers);
-    this.contracts.set(cached.contracts);
-    this.plantingIntentions.set(cached.plantingIntentions);
-    this.storedGrain.set(cached.storedGrain);
+    // customers/contracts/plantingIntentions/storedGrain come from appState (no restore needed)
     this.allCommodities.set(cached.commodities);
-    this._commodityByCode = new Map(cached.commodities.map(c => [c.code, c]));
     this.savedYieldEstimates.set(cached.savedYieldEstimates);
     this.savedMarketShares.set(cached.savedMarketShares);
     this.savedActualHarvest.set(cached.savedActualHarvest);
-
     this._calculateMetrics();
     this._calculateYieldRows();
     this._calculateCategoryRows();
@@ -188,42 +195,25 @@ export class DashboardComponent {
     });
   }
 
-  private _loadData(): void {
+  private _loadLocalData(): void {
     if (this._isLoading) return;
     this._isLoading = true;
-    const tradeUnitToLoad = this.selectedDashboardTradeUnits().length > 0 ? this.selectedDashboardTradeUnits() : undefined;
-    this.loading.set(true);
+    this._localLoading.set(true);
 
-    forkJoin({
-      customers: this.apiService.getCustomers(tradeUnitToLoad).pipe(catchError(() => of([] as Customer[]))),
-      contracts: this.apiService.getContracts(tradeUnitToLoad).pipe(catchError(() => of([] as Contract[]))),
-      plantingIntentions: this.apiService.getPlantingIntentions().pipe(catchError(() => of([] as PlantingIntention[]))),
-      storedGrain: this.apiService.getStoredGrain().pipe(catchError(() => of([] as StoredGrain[]))),
-      commodities: this.apiService.getCommodities().pipe(catchError(() => of([] as Commodity[])))
-    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (data) => {
-        this.customers.set(data.customers);
-        this.contracts.set(data.contracts);
-        this.plantingIntentions.set(data.plantingIntentions);
-
-        const customerIds = new Set(data.customers.map(c => c.id));
-        this.storedGrain.set(data.storedGrain.filter(s => customerIds.has(s.customerId)));
-        this.allCommodities.set(data.commodities);
-        this._commodityByCode = new Map(data.commodities.map(c => [c.code, c]));
-
-        this._calculateMetrics();
-        this._calculateYieldRows();
-        this.loadDashboardEstimates();
-
+    this.apiService.getCommodities().pipe(
+      catchError(() => of([] as Commodity[])),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe({
+      next: (commodities) => {
+        this.allCommodities.set(commodities);
         this._isLoading = false;
-        this.loading.set(false);
-
+        this._localLoading.set(false);
+        this.loadDashboardEstimates();
       },
       error: () => {
-        this.toastService.error('Failed to load dashboard data');
         this._isLoading = false;
-        this.loading.set(false);
-
+        this._localLoading.set(false);
+        this.toastService.error('Failed to load commodity data');
       }
     });
   }
@@ -295,7 +285,7 @@ export class DashboardComponent {
   // =========================================================================
 
   get tradeUnitKey(): string {
-    return [...this.selectedDashboardTradeUnits()].sort().join(',');
+    return [...this.selectedTradeUnits].sort().join(',');
   }
 
   onPlantingYearChange(): void {
@@ -304,7 +294,7 @@ export class DashboardComponent {
   }
 
   private _calculateYieldRows(): void {
-    const selectedTUs = this.selectedDashboardTradeUnits();
+    const selectedTUs = this.selectedTradeUnits;
 
     const forGlobalTUs = this.plantingIntentions().filter(p =>
       selectedTUs.length === 0 || selectedTUs.includes(p.tradeUnit)
@@ -321,7 +311,7 @@ export class DashboardComponent {
     const cropAcresMap = new Map<string, number>();
     const cropCategoryMap = new Map<string, string>();
     for (const p of filtered) {
-      const commodity = this._commodityByCode.get(p.crop);
+      const commodity = this._commodityByCode().get(p.crop);
       const category = commodity?.category || p.crop;
       const cropKey = [p.type, category].filter(Boolean).join(' ');
       cropAcresMap.set(cropKey, (cropAcresMap.get(cropKey) || 0) + p.acres);
@@ -724,12 +714,12 @@ export class DashboardComponent {
   // =========================================================================
 
   get filteredIntentionsForYear(): PlantingIntention[] {
-    const selectedTUs = this.selectedDashboardTradeUnits();
+    const selectedTUs = this.selectedTradeUnits;
     return this.plantingIntentions().filter(p => {
       if (+p.plantingYear !== +this.selectedPlantingYear()) return false;
       if (selectedTUs.length > 0 && !selectedTUs.includes(p.tradeUnit)) return false;
       if (this.selectedCropFilter()) {
-        const commodity = this._commodityByCode.get(p.crop);
+        const commodity = this._commodityByCode().get(p.crop);
         const category = commodity?.category || p.crop;
         if (category !== this.selectedCropFilter()) return false;
       }
@@ -743,7 +733,7 @@ export class DashboardComponent {
 
   get acresTrend(): number | null {
     const prevYear = this.selectedPlantingYear() - 1;
-    const selectedTUs = this.selectedDashboardTradeUnits();
+    const selectedTUs = this.selectedTradeUnits;
     const prevAcres = this.plantingIntentions()
       .filter(p => +p.plantingYear === prevYear && (selectedTUs.length === 0 || selectedTUs.includes(p.tradeUnit)))
       .reduce((sum, p) => sum + p.acres, 0);
@@ -762,7 +752,7 @@ export class DashboardComponent {
   private get intentionProductionPairs(): { acres: number; yieldEst: number | null }[] {
     const yieldMap = this._yieldEstimateMap();
     return this.filteredIntentionsForYear.map(p => {
-      const commodity = this._commodityByCode.get(p.crop);
+      const commodity = this._commodityByCode().get(p.crop);
       const category = commodity?.category || p.crop;
       const cropKey = [p.type, category].filter(Boolean).join(' ');
       return { acres: p.acres, yieldEst: yieldMap.get(cropKey) ?? null };
@@ -788,13 +778,13 @@ export class DashboardComponent {
   }
 
   get availableCrops(): string[] {
-    const selectedTUs = this.selectedDashboardTradeUnits();
+    const selectedTUs = this.selectedTradeUnits;
     const crops = new Set<string>();
 
     // From planting intentions (all years) in the selected trade units
     for (const p of this.plantingIntentions()) {
       if (selectedTUs.length > 0 && !selectedTUs.includes(p.tradeUnit)) continue;
-      const commodity = this._commodityByCode.get(p.crop);
+      const commodity = this._commodityByCode().get(p.crop);
       const category = commodity?.category || p.crop;
       if (category) crops.add(category);
     }
@@ -811,7 +801,7 @@ export class DashboardComponent {
   get cropBreakdown(): { name: string; acres: number; pct: number; barColor: string; dotColor: string; hex: string }[] {
     const cropAcresMap = new Map<string, number>();
     for (const p of this.filteredIntentionsForYear) {
-      const commodity = this._commodityByCode.get(p.crop);
+      const commodity = this._commodityByCode().get(p.crop);
       const category = commodity?.category || p.crop;
       const key = this.selectedCropFilter()
         ? [p.type, category].filter(Boolean).join(' ')
@@ -855,7 +845,7 @@ export class DashboardComponent {
     const yieldMap = this._yieldEstimateMap();
     return this.cropBreakdown.map(c => {
       const matching = this.filteredIntentionsForYear.filter(p => {
-        const commodity = this._commodityByCode.get(p.crop);
+        const commodity = this._commodityByCode().get(p.crop);
         const category = commodity?.category || p.crop;
         const key = this.selectedCropFilter()
           ? [p.type, category].filter(Boolean).join(' ')
@@ -865,7 +855,7 @@ export class DashboardComponent {
       let totalProd = 0;
       let totalAcresWeighted = 0;
       for (const p of matching) {
-        const commodity = this._commodityByCode.get(p.crop);
+        const commodity = this._commodityByCode().get(p.crop);
         const category = commodity?.category || p.crop;
         const cropKey = [p.type, category].filter(Boolean).join(' ');
         const yieldEst = yieldMap.get(cropKey);
@@ -885,7 +875,7 @@ export class DashboardComponent {
     const yieldMap = this._yieldEstimateMap();
     const map = new Map<number, { customerName: string; tradeUnit: string; acres: number; production: number; cropSet: Set<string> }>();
     for (const p of this.filteredIntentionsForYear) {
-      const commodity = this._commodityByCode.get(p.crop);
+      const commodity = this._commodityByCode().get(p.crop);
       const category = commodity?.category || p.crop;
       const cropKey = [p.type, category].filter(Boolean).join(' ');
       const yieldEst = yieldMap.get(cropKey);

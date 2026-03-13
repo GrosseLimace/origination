@@ -2,9 +2,10 @@ import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterOutlet } from '@angular/router';
 import { HeaderComponent } from '@shared/components/header/header.component';
-import { FooterComponent } from '@shared/components/footer/footer.component';
 import { ToastContainerComponent } from '@shared/components/toast-container/toast-container.component';
 import { IdleTimeoutService } from '@core/services/idle-timeout.service';
+import { DataPreloadService } from '@core/services/data-preload.service';
+import { UserPreferencesService } from '@core/services/user-preferences.service';
 import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 import { filter } from 'rxjs';
@@ -12,7 +13,7 @@ import { filter } from 'rxjs';
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, HeaderComponent, FooterComponent, ToastContainerComponent],
+  imports: [RouterOutlet, HeaderComponent, ToastContainerComponent],
   templateUrl: './app.component.html'
 })
 export class AppComponent {
@@ -37,5 +38,7 @@ export class AppComponent {
       });
 
     inject(IdleTimeoutService).start();
+    inject(DataPreloadService);
+    inject(UserPreferencesService);
   }
 }

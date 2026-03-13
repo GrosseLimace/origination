@@ -11,13 +11,11 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class NotesController : ControllerBase
 {
     private readonly IDataService _dataService;
-    private readonly IUserEntitlementService _entitlementService;
     private readonly ILogger<NotesController> _logger;
 
-    public NotesController(IDataService dataService, IUserEntitlementService entitlementService, ILogger<NotesController> logger)
+    public NotesController(IDataService dataService, ILogger<NotesController> logger)
     {
         _dataService = dataService;
-        _entitlementService = entitlementService;
         _logger = logger;
     }
 
@@ -36,7 +34,6 @@ public class NotesController : ControllerBase
     [ProducesResponseType(typeof(List<Note>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<Note>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
         return Ok(await _dataService.GetNotesByCustomerAsync(customerId, cancellationToken));
     }
 

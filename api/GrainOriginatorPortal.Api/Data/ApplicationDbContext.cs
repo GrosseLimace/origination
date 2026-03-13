@@ -28,6 +28,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<SavedList> SavedLists => Set<SavedList>();
     public DbSet<ESignEnrollment> ESignEnrollments => Set<ESignEnrollment>();
     public DbSet<CustomerSnapshot> CustomerSnapshots => Set<CustomerSnapshot>();
+    public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -240,6 +241,18 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.IndustryCode1).HasColumnName("IndustryCode1").HasMaxLength(50).IsRequired(false);
             entity.Property(e => e.TradeUnit).HasColumnName("TradeUnit").HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.SnapshotRefreshedAt).HasColumnName("SnapshotRefreshedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
+        });
+
+        modelBuilder.Entity<UserPreference>(entity =>
+        {
+            entity.ToTable("UserPreferences", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.UserId).HasColumnName("UserId").HasMaxLength(256).IsRequired();
+            entity.Property(e => e.SelectedGroupNames).HasColumnName("SelectedGroupNames").HasMaxLength(2000).HasDefaultValue("[]").IsRequired();
+            entity.Property(e => e.SelectedTradeUnits).HasColumnName("SelectedTradeUnits").HasMaxLength(2000).HasDefaultValue("[]").IsRequired();
+            entity.Property(e => e.UpdatedAt).HasColumnName("UpdatedAt").IsRequired();
+            entity.HasIndex(e => e.UserId).IsUnique().HasDatabaseName("UQ_UserPreferences_UserId");
         });
     }
 }

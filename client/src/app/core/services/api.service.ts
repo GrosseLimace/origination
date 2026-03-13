@@ -339,6 +339,20 @@ export class ApiService {
   }
 
   // ==========================================================================
+  // User Preference Operations
+  // ==========================================================================
+
+  getUserPreference(): Observable<{ selectedGroupNames: string[]; selectedTradeUnits: string[] }> {
+    return this.http.get<{ selectedGroupNames: string[]; selectedTradeUnits: string[] }>(`${this.baseUrl}/userpreferences`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  saveUserPreference(selectedGroupNames: string[], selectedTradeUnits: string[]): Observable<void> {
+    return this.http.put<void>(`${this.baseUrl}/userpreferences`, { selectedGroupNames, selectedTradeUnits })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  // ==========================================================================
   // Commodity Operations
   // ==========================================================================
 

@@ -13,16 +13,14 @@ namespace GrainOriginatorPortal.Api.Tests;
 public class NotesControllerTests
 {
     private readonly Mock<IDataService> _mockDataService;
-    private readonly Mock<IUserEntitlementService> _mockEntitlementService;
     private readonly Mock<ILogger<NotesController>> _mockLogger;
     private readonly NotesController _controller;
 
     public NotesControllerTests()
     {
         _mockDataService = new Mock<IDataService>();
-        _mockEntitlementService = new Mock<IUserEntitlementService>();
         _mockLogger = new Mock<ILogger<NotesController>>();
-        _controller = new NotesController(_mockDataService.Object, _mockEntitlementService.Object, _mockLogger.Object);
+        _controller = new NotesController(_mockDataService.Object, _mockLogger.Object);
     }
 
     [Fact]

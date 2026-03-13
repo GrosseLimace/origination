@@ -79,7 +79,7 @@ public class DiagnosticsController : ControllerBase
 
         // Other contexts can run in parallel
         var otherResults = await Task.WhenAll(
-            TestDb(_appContext, "Origination (DefaultConnection)",
+            TestDb(_appContext, "Origination (OriginationConnection)",
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='ProducerDetails'"),
             TestDb(_entContext, "Entitlements (EntitlementsConnection)",
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE='BASE TABLE'")

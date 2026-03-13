@@ -11,13 +11,11 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class PlantingIntentionsController : ControllerBase
 {
     private readonly IDataService _dataService;
-    private readonly IUserEntitlementService _entitlementService;
     private readonly ILogger<PlantingIntentionsController> _logger;
 
-    public PlantingIntentionsController(IDataService dataService, IUserEntitlementService entitlementService, ILogger<PlantingIntentionsController> logger)
+    public PlantingIntentionsController(IDataService dataService, ILogger<PlantingIntentionsController> logger)
     {
         _dataService = dataService;
-        _entitlementService = entitlementService;
         _logger = logger;
     }
 
@@ -36,7 +34,6 @@ public class PlantingIntentionsController : ControllerBase
     [ProducesResponseType(typeof(List<PlantingIntention>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<PlantingIntention>>> GetByCustomer(int customerId, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
         return Ok(await _dataService.GetPlantingIntentionsByCustomerAsync(customerId, cancellationToken));
     }
 

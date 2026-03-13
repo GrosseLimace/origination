@@ -205,7 +205,7 @@ public class OriginationDbContext : DbContext
 
             // Classification
             entity.Property(e => e.TicketType).HasColumnName("TicketType").HasMaxLength(10);
-            entity.Ignore(e => e.IsApplied); // Computed from TicketType — not a DB column
+            entity.Ignore(e => e.IsApplied); // Computed from CtrmContractNumber prefix — not a DB column
 
             // Status
             entity.Property(e => e.TicketStatusDescription).HasColumnName("TicketStatusDescription").HasMaxLength(100);

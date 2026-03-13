@@ -97,6 +97,11 @@ public interface IDataService
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<List<Contract>> GetContractsByFarmAsync(string farmId, CancellationToken cancellationToken = default);
 
+    /// <summary>Gets contracts matching a specific SourceContractId (used for entitlement resolution).</summary>
+    /// <param name="sourceContractId">The source system contract identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<Contract>> GetContractsBySourceIdAsync(string sourceContractId, CancellationToken cancellationToken = default);
+
     /// <summary>Gets all pricing lines for a specific contract.</summary>
     /// <param name="sourceContractId">The source system contract identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>

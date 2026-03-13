@@ -34,6 +34,11 @@ export const routes: Routes = [
     loadComponent: () => import('./features/bid-sheet/pages/bid-sheet/bid-sheet.component').then(m => m.BidSheetComponent)
   },
   {
+    path: 'unshipped-bushels',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/unshipped-bushels/pages/unshipped-bushels/unshipped-bushels.component').then(m => m.UnshippedBushelsComponent)
+  },
+  {
     path: '**',
     redirectTo: ''
   }

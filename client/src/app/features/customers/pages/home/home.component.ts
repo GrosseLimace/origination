@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed, DestroyRef } from '@angular/core';
+import { Component, inject, signal, computed, DestroyRef, effect, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { forkJoin, of } from 'rxjs';
@@ -12,7 +12,6 @@ import { CustomerListComponent } from '../../components/customer-list/customer-l
 import { CustomerProfileComponent } from '../../components/customer-profile/customer-profile.component';
 import { CustomerNotesComponent } from '../../components/customer-notes/customer-notes.component';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent } from '@shared/components/card/card.component';
-
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -94,6 +93,10 @@ export class HomeComponent {
   // Customers fetched from outside the current trade unit filter (e.g. linked producers in other TUs)
   private readonly _crossTradeUnitCustomers = signal<Map<number, Customer>>(new Map());
 
+  // Track last trade unit key to avoid duplicate loads triggered by the effect
+  private _lastTradeUnitKey = '';
+  private _initialized = false;
+
   constructor() {
     this._checkMobile();
     window.addEventListener('resize', this._resizeHandler);
@@ -107,6 +110,18 @@ export class HomeComponent {
     if (this.appState.customers().length === 0) {
       this._loadAllData(this.selectedTradeUnits());
     }
+    this._lastTradeUnitKey = [...this.selectedTradeUnits()].sort().join(',');
+    this._initialized = true;
+
+    // React to global trade unit changes made via TradeUnitSelectorComponent
+    effect(() => {
+      const tradeUnits = this.appState.selectedTradeUnits();
+      if (!this._initialized) return;
+      const key = [...tradeUnits].sort().join(',');
+      if (key === this._lastTradeUnitKey) return;
+      this._lastTradeUnitKey = key;
+      untracked(() => this._onTradeUnitsChanged(tradeUnits));
+    });
 
     this.route.queryParams.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
       const customerId = params['customerId'];
@@ -388,9 +403,8 @@ export class HomeComponent {
     this.appState.selectCustomer(null);
   }
 
-  handleTradeUnitChange(tradeUnits: string[]): void {
+  private _onTradeUnitsChanged(tradeUnits: string[]): void {
     this.selectedTradeUnits.set(tradeUnits);
-    this.appState.setTradeUnits(tradeUnits);
     this.selectedCustomer.set(null);
     this.appState.selectCustomer(null);
     this._crossTradeUnitCustomers.set(new Map());

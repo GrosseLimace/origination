@@ -37,6 +37,34 @@ export interface BuildListState {
   providedIn: 'root'
 })
 export class AppStateService {
+  private static readonly PREFS_KEY = 'origination_user_prefs';
+
+  constructor() {
+    try {
+      const raw = localStorage.getItem(AppStateService.PREFS_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw) as { groups?: string[]; units?: string[] };
+        if (saved.groups?.length) this.selectedGroupNames.set(saved.groups);
+        if (saved.units?.length)  this.selectedTradeUnits.set(saved.units);
+      }
+    } catch { /* ignore parse errors */ }
+  }
+
+  savePrefsToLocalStorage(groups: string[], units: string[]): void {
+    try {
+      localStorage.setItem(AppStateService.PREFS_KEY, JSON.stringify({ groups, units }));
+    } catch { /* ignore */ }
+  }
+
+  // Trade unit groups cache — loaded once and shared globally
+  userGroups = signal<{ groupName: string; tradeUnitCodes: string[] }[]>([]);
+  userGroupsLoaded = signal(false);
+
+  setUserGroups(groups: { groupName: string; tradeUnitCodes: string[] }[]): void {
+    this.userGroups.set(groups);
+    this.userGroupsLoaded.set(true);
+  }
+
   // View state
   currentView = signal<'customers' | 'insights' | 'buildlist' | 'dashboard'>('customers');
 
@@ -119,6 +147,13 @@ export class AppStateService {
     this.savedLists.set(savedLists);
   }
 
+  // Global data loading flag — true while DataPreloadService is fetching on TU change
+  dataLoading = signal(false);
+
+  setDataLoading(loading: boolean): void {
+    this.dataLoading.set(loading);
+  }
+
   // Insights cache — keyed by trade unit so navigating back shows data instantly
   insightsCache = signal<InsightsCacheEntry | null>(null);
 
@@ -177,6 +212,8 @@ export class AppStateService {
 
   // Clear all state (for logout or reset)
   clearAll(): void {
+    this.userGroups.set([]);
+    this.userGroupsLoaded.set(false);
     this.selectedCustomer.set(null);
     this.selectedTradeUnits.set([]);
     this.selectedGroupNames.set([]);
@@ -193,5 +230,6 @@ export class AppStateService {
     this.lastScrolledCustomerId.set(null);
     this.insightsCache.set(null);
     this.dashboardCache.set(null);
+    this.dataLoading.set(false);
   }
 }
