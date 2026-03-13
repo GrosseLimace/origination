@@ -337,26 +337,8 @@ if (app.Environment.IsDevelopment())
 // Database Initialization (Development Only)
 // =============================================================================
 
-// Apply ApplicationDbContext migrations automatically on startup for non-production environments.
-// ApplicationDbContext owns app tables (Notes, SavedLists, Commodities, UserPreferences, etc.)
-// that must exist before the API can serve requests. Migrations are idempotent — already-applied
-// ones are skipped via __EFMigrationsHistory.
-// NOTE: Production migrations are applied via the deployment pipeline, not at startup.
-if (!app.Environment.IsProduction())
-{
-    using var scope = app.Services.CreateScope();
-    var appDb = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
-    try
-    {
-        appDb.Database.Migrate();
-        app.Logger.LogInformation("ApplicationDbContext migrations applied successfully.");
-    }
-    catch (Exception ex)
-    {
-        app.Logger.LogError(ex, "ApplicationDbContext migration failed at startup — app tables may be missing.");
-    }
-}
+// NOTE: ApplicationDbContext migrations are applied via the deployment pipeline, not at startup.
+// Run manually: dotnet ef database update --project api/GrainOriginatorPortal.Api
 
 // =============================================================================
 // Middleware Pipeline Configuration
