@@ -340,7 +340,15 @@ services.AddDbContext<AppDbContext>(options =>
 var keyVaultUrl = builder.Configuration["KeyVaultUri"];
 if (!string.IsNullOrEmpty(keyVaultUrl))
 {
-    builder.Configuration.AddAzureKeyVault(new Uri(keyVaultUrl), new DefaultAzureCredential());
+    // On App Service, use ManagedIdentityCredential directly to avoid
+    // DefaultAzureCredential cycling through 8+ providers (~120s timeout).
+    // Locally, use the full credential chain for developer convenience.
+    var isAppService = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WEBSITE_SITE_NAME"));
+    var credential = isAppService
+        ? (Azure.Core.TokenCredential)new ManagedIdentityCredential()
+        : new DefaultAzureCredential();
+
+    builder.Configuration.AddAzureKeyVault(new Uri(keyVaultUrl), credential);
 }
 // Access secrets via Configuration["secret-name"]
 ```
@@ -349,7 +357,7 @@ if (!string.IsNullOrEmpty(keyVaultUrl))
 
 ## Application Insights
 
-Auto-configured. Just use `ILogger`:
+Auto-configured via `APPLICATIONINSIGHTS_CONNECTION_STRING` (pre-configured in App Settings). Just use `ILogger`:
 
 ```csharp
 public class MyService(ILogger<MyService> logger)
@@ -359,6 +367,10 @@ public class MyService(ILogger<MyService> logger)
 ```
 
 **Don't log**: passwords, tokens, PII, connection strings.
+
+## Startup Performance
+
+Linux App Service cold starts include ~90s of certificate rehash before `dotnet` runs. Use `ManagedIdentityCredential` on App Service (see Key Vault section above) to save ~60-120s vs `DefaultAzureCredential` cycling through unused credential providers.
 
 ## Security Rules
 
@@ -433,4 +445,4 @@ See `developer-docs/GITHUB-ACTIONS-CICD.md` for the full CI/CD guide.
 
 ---
 
-*Document version: 1.2 | 2026-03-12*
+*Document version: 1.3 | 2026-03-13*

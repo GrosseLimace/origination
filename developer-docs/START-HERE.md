@@ -49,6 +49,7 @@ Your Origination application runs on fully managed Azure infrastructure with pri
 
 ### Monitoring
 - **Application Insights** — Performance monitoring, exception tracking, SQL query tracking
+- **Smart Detection** — Automatic Failure Anomalies alerting (action group per app, configurable by dev team)
 
 ### Security
 - **Managed Identity** — No passwords for Azure service access
@@ -162,4 +163,4 @@ For new developers joining the Origination team:
 
 ---
 
-*Document version: 1.0 | 2026-02-13*
+*Document version: 1.1 | 2026-03-13*
