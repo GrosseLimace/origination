@@ -29,37 +29,56 @@ export class TradeUnitSelectorComponent implements OnInit {
   isTradeUnitDropdownOpen = signal(false);
   isGroupDropdownOpen = signal(false);
   groupsLoading = signal(false);
+  groupsLoadError = signal(false);
 
   ngOnInit(): void {
     if (!this.appState.userGroupsLoaded()) {
-      this.groupsLoading.set(true);
-      this.apiService.getUserTradeUnits().pipe(
-        takeUntilDestroyed(this.destroyRef)
-      ).subscribe({
-        next: (groups) => {
-          const mapped = groups.map(g => ({
-            groupName: g.groupName,
-            tradeUnitCodes: g.tradeUnitCodes
-          }));
-          this.appState.setUserGroups(mapped);
-          this.groupsLoading.set(false);
-
-          // Restore group selection, filtering out groups that no longer exist
-          const prevGroups = this.appState.selectedGroupNames();
-          if (prevGroups.length > 0) {
-            const validGroups = prevGroups.filter(g => mapped.some(m => m.groupName === g));
-            this.appState.setSelectedGroupNames(validGroups);
-          }
-          // Restore trade unit selection, keeping only units still available
-          const prevUnits = this.appState.selectedTradeUnits();
-          if (prevUnits.length > 0) {
-            const allAvailable = this._computeAvailableTradeUnits(mapped, this.appState.selectedGroupNames());
-            this.appState.setTradeUnits(prevUnits.filter(u => allAvailable.includes(u)));
-          }
-        },
-        error: () => { this.groupsLoading.set(false); }
-      });
+      this._fetchGroups();
     }
+  }
+
+  retryLoadGroups(): void {
+    this.groupsLoadError.set(false);
+    this._fetchGroups();
+  }
+
+  private _fetchGroups(): void {
+    this.groupsLoading.set(true);
+    this.apiService.getUserTradeUnits().pipe(
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe({
+      next: (groups) => {
+        this.groupsLoading.set(false);
+        if (groups.length === 0) {
+          // Don't mark userGroupsLoaded so a page refresh can retry naturally.
+          // Surface an error so the user knows something went wrong.
+          this.groupsLoadError.set(true);
+          return;
+        }
+        const mapped = groups.map(g => ({
+          groupName: g.groupName,
+          tradeUnitCodes: g.tradeUnitCodes
+        }));
+        this.appState.setUserGroups(mapped);
+
+        // Restore group selection, filtering out groups that no longer exist
+        const prevGroups = this.appState.selectedGroupNames();
+        if (prevGroups.length > 0) {
+          const validGroups = prevGroups.filter(g => mapped.some(m => m.groupName === g));
+          this.appState.setSelectedGroupNames(validGroups);
+        }
+        // Restore trade unit selection, keeping only units still available
+        const prevUnits = this.appState.selectedTradeUnits();
+        if (prevUnits.length > 0) {
+          const allAvailable = this._computeAvailableTradeUnits(mapped, this.appState.selectedGroupNames());
+          this.appState.setTradeUnits(prevUnits.filter(u => allAvailable.includes(u)));
+        }
+      },
+      error: () => {
+        this.groupsLoading.set(false);
+        this.groupsLoadError.set(true);
+      }
+    });
   }
 
   // ---- Computed accessors that delegate to AppStateService ----
