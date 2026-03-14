@@ -677,6 +677,17 @@ public class SqlDataService : IDataService
 
             return contracts;
         }
+        catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
+        {
+            _logger.LogWarning(ex, "Contracts view not accessible or missing a mapped column in this environment — returning empty list. SQL {Number}: {Error} [{TraceId}]",
+                ex.Number, ex.Message, GetTraceId());
+            return [];
+        }
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
+        {
+            _logger.LogWarning(ex, "DB connection error retrieving contracts — returning empty list [{TraceId}]", GetTraceId());
+            return [];
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving contracts [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
@@ -746,6 +757,18 @@ public class SqlDataService : IDataService
             _logger.LogInformation("Found {ContractCount} contracts for customer {CustomerId} (SourceCustomerId: {SourceCustomerId})",
                 contracts.Count, customerId, customer.SourceCustomerId);
             return contracts;
+        }
+        catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
+        {
+            _logger.LogWarning(ex, "Contracts view missing column or object for customer {CustomerId} — returning empty list. SQL {Number} [{TraceId}]",
+                customerId, ex.Number, GetTraceId());
+            return [];
+        }
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
+        {
+            _logger.LogWarning(ex, "DB connection error retrieving contracts for customer {CustomerId} — returning empty list [{TraceId}]",
+                customerId, GetTraceId());
+            return [];
         }
         catch (Exception ex)
         {
@@ -962,8 +985,13 @@ public class SqlDataService : IDataService
         {
             // 207 = Invalid column name (e.g. TicketType not yet in Dev ODS view)
             // 208 = Invalid object name (view doesn't exist in this environment)
-            _logger.LogWarning("Tickets view not accessible or missing a mapped column in this environment — returning empty list. SQL {Number}: {Error}",
-                ex.Number, ex.Message);
+            _logger.LogWarning(ex, "Tickets view not accessible or missing a mapped column in this environment — returning empty list. SQL {Number}: {Error} [{TraceId}]",
+                ex.Number, ex.Message, GetTraceId());
+            return [];
+        }
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
+        {
+            _logger.LogWarning(ex, "DB connection error retrieving tickets — returning empty list [{TraceId}]", GetTraceId());
             return [];
         }
         catch (Exception ex)
@@ -1016,6 +1044,18 @@ public class SqlDataService : IDataService
             _logger.LogInformation("Found {TicketCount} tickets for customer {CustomerId} (SourceCustomerId: {SourceCustomerId})",
                 tickets.Count, customerId, customer.SourceCustomerId);
             return tickets;
+        }
+        catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
+        {
+            _logger.LogWarning(ex, "Tickets view missing column or object for customer {CustomerId} — returning empty list. SQL {Number} [{TraceId}]",
+                customerId, ex.Number, GetTraceId());
+            return [];
+        }
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
+        {
+            _logger.LogWarning(ex, "DB connection error retrieving tickets for customer {CustomerId} — returning empty list [{TraceId}]",
+                customerId, GetTraceId());
+            return [];
         }
         catch (Exception ex)
         {
