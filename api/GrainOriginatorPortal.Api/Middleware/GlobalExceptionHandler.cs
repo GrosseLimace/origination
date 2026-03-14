@@ -15,11 +15,13 @@ namespace GrainOriginatorPortal.Api.Middleware;
 public class GlobalExceptionHandler : IExceptionHandler
 {
     private readonly ILogger<GlobalExceptionHandler> _logger;
+    private readonly IHostEnvironment _env;
 
     // -------------------------------------------------------------------------
-    public GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger)
+    public GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger, IHostEnvironment env)
     {
         _logger = logger;
+        _env = env;
     }
 
     // -------------------------------------------------------------------------
@@ -123,6 +125,24 @@ public class GlobalExceptionHandler : IExceptionHandler
             statusCode == StatusCodes.Status429TooManyRequests)
         {
             httpContext.Response.Headers["Retry-After"] = "30";
+        }
+
+        // In non-production environments, attach the real exception details so developers
+        // can see the root cause directly in DevTools Network tab without needing log access.
+        if (!_env.IsProduction() && response.Error.Debug is null)
+        {
+            response = response with
+            {
+                Error = response.Error with
+                {
+                    Debug = new ApiErrorDebug
+                    {
+                        ExceptionType = exception.GetType().Name,
+                        ExceptionMessage = exception.Message,
+                        InnerException = exception.InnerException?.Message
+                    }
+                }
+            };
         }
 
         await httpContext.Response.WriteAsJsonAsync(response, cancellationToken);

@@ -29,6 +29,20 @@ public record ApiErrorBody
 
     /// <summary>The API path that generated the error.</summary>
     public string? Instance { get; init; }
+
+    /// <summary>
+    /// Exception details — only populated in non-production environments.
+    /// Never present in production responses.
+    /// </summary>
+    public ApiErrorDebug? Debug { get; init; }
+}
+
+/// <summary>Exception details included in non-production error responses.</summary>
+public record ApiErrorDebug
+{
+    public required string ExceptionType { get; init; }
+    public required string ExceptionMessage { get; init; }
+    public string? InnerException { get; init; }
 }
 
 /// <summary>Field-level detail within a validation error response.</summary>
