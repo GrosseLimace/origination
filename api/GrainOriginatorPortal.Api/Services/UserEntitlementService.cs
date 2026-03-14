@@ -1,5 +1,6 @@
 using GrainOriginatorPortal.Api.Data;
 using GrainOriginatorPortal.Api.Exceptions;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace GrainOriginatorPortal.Api.Services;
@@ -39,11 +40,23 @@ public class UserEntitlementService : IUserEntitlementService
         if (string.IsNullOrWhiteSpace(userId))
             throw new ForbiddenException("Unable to determine user identity from token.");
 
-        var tradeUnitCodes = await _entitlementsDb.UserTradeUnitAccess
-            .Where(u => u.UserId == userId)
-            .Select(u => u.TradeUnitCode)
-            .Distinct()
-            .ToListAsync(ct);
+        List<string> tradeUnitCodes;
+        try
+        {
+            tradeUnitCodes = await _entitlementsDb.UserTradeUnitAccess
+                .Where(u => u.UserId == userId)
+                .Select(u => u.TradeUnitCode)
+                .Distinct()
+                .ToListAsync(ct);
+        }
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
+        {
+            _logger.LogWarning(ex,
+                "Entitlements DB unavailable for user {UserId} — trade unit filter disabled for this request. [{ErrorCode}]",
+                userId, "ENTITLEMENTS_DB_UNAVAILABLE");
+            _cachedEntitlements = [];
+            return _cachedEntitlements;
+        }
 
         _cachedEntitlements = new HashSet<string>(tradeUnitCodes, StringComparer.OrdinalIgnoreCase);
 

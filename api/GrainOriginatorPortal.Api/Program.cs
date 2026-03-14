@@ -1,4 +1,5 @@
 // Azure namespaces
+using Azure.Extensions.AspNetCore.Configuration.Secrets;
 using Azure.Identity;
 
 // Microsoft namespaces
@@ -22,6 +23,36 @@ using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// =============================================================================
+// KEY VAULT — load secrets into configuration before anything else reads it.
+// On App Service, use ManagedIdentityCredential directly (avoids DefaultAzureCredential
+// cycling through ~8 providers, which adds ~60-120s to cold start on Linux).
+// Locally, use DefaultAzureCredential without ManagedIdentity (avoids IMDS timeout).
+// KeyVaultUri is pre-configured as an App Setting in all deployed environments.
+// =============================================================================
+var keyVaultUri = builder.Configuration["KeyVaultUri"];
+if (!string.IsNullOrEmpty(keyVaultUri))
+{
+    var isAppService = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WEBSITE_SITE_NAME"));
+    Azure.Core.TokenCredential kvCredential = isAppService
+        ? new ManagedIdentityCredential(ManagedIdentityId.SystemAssigned)
+        : new DefaultAzureCredential(new DefaultAzureCredentialOptions
+            { ExcludeManagedIdentityCredential = true });
+
+    try
+    {
+        builder.Configuration.AddAzureKeyVault(new Uri(keyVaultUri), kvCredential);
+    }
+    catch (Exception ex) when (!isAppService)
+    {
+        // On App Service, Key Vault is always accessible via Managed Identity — don't swallow.
+        // Locally, a developer may not yet have Key Vault access (pending Developer Access
+        // package approval). Warn and continue — no secrets are required to run locally.
+        Console.Error.WriteLine($"[WARNING] Key Vault unavailable locally ({ex.GetType().Name}: {ex.Message}). " +
+            "Request the Developer Access package at myaccess.microsoft.com if you need secrets.");
+    }
+}
 
 // =============================================================================
 // Development: Override the ActiveDirectoryDefault SQL auth provider to use
