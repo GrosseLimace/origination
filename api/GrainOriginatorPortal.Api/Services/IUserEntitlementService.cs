@@ -13,6 +13,13 @@ public interface IUserEntitlementService
     Task<IReadOnlySet<string>> GetAllowedTradeUnitCodesAsync(CancellationToken ct = default);
 
     /// <summary>
+    /// True if the Entitlements DB was reachable on the last call to GetAllowedTradeUnitCodesAsync.
+    /// False means the DB was unavailable and the returned set is empty by default — filters
+    /// should skip enforcement rather than blocking all access.
+    /// </summary>
+    bool EntitlementsAvailable { get; }
+
+    /// <summary>
     /// Validates that all provided trade unit codes are in the user's entitled set.
     /// Throws <see cref="Exceptions.ForbiddenException"/> if any are not allowed.
     /// </summary>

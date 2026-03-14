@@ -18,6 +18,7 @@ public class UserEntitlementService : IUserEntitlementService
     private readonly ILogger<UserEntitlementService> _logger;
 
     private HashSet<string>? _cachedEntitlements;
+    public bool EntitlementsAvailable { get; private set; } = true;
 
     public UserEntitlementService(
         EntitlementsDbContext entitlementsDb,
@@ -54,6 +55,7 @@ public class UserEntitlementService : IUserEntitlementService
             _logger.LogWarning(ex,
                 "Entitlements DB unavailable for user {UserId} — trade unit filter disabled for this request. [{ErrorCode}]",
                 userId, "ENTITLEMENTS_DB_UNAVAILABLE");
+            EntitlementsAvailable = false;
             _cachedEntitlements = [];
             return _cachedEntitlements;
         }

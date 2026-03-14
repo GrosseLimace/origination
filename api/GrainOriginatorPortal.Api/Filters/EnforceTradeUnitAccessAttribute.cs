@@ -37,6 +37,14 @@ public class EnforceTradeUnitAccessAttribute : Attribute, IFilterFactory
             var isReadRequest = HttpMethods.IsGet(context.HttpContext.Request.Method)
                              || HttpMethods.IsHead(context.HttpContext.Request.Method);
 
+            // If the Entitlements DB was unreachable, skip filtering on read requests rather
+            // than stripping all trade units and causing 400/empty responses.
+            if (!_entitlementService.EntitlementsAvailable && isReadRequest)
+            {
+                await next();
+                return;
+            }
+
             // Pattern 1: tradeUnits as List<string> (Customers, Contracts, Tickets)
             if (context.ActionArguments.TryGetValue("tradeUnits", out var tradeUnitsObj) && tradeUnitsObj is List<string> tradeUnitsList && tradeUnitsList.Count > 0)
             {
