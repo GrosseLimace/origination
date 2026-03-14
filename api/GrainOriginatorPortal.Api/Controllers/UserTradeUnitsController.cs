@@ -13,12 +13,14 @@ public class UserTradeUnitsController : ControllerBase
     private readonly EntitlementsDbContext _entitlementsDb;
     private readonly ApplicationDbContext _appDb;
     private readonly ILogger<UserTradeUnitsController> _logger;
+    private readonly IHostEnvironment _env;
 
-    public UserTradeUnitsController(EntitlementsDbContext entitlementsDb, ApplicationDbContext appDb, ILogger<UserTradeUnitsController> logger)
+    public UserTradeUnitsController(EntitlementsDbContext entitlementsDb, ApplicationDbContext appDb, ILogger<UserTradeUnitsController> logger, IHostEnvironment env)
     {
         _entitlementsDb = entitlementsDb;
         _appDb = appDb;
         _logger = logger;
+        _env = env;
     }
 
     /// <summary>
@@ -62,6 +64,16 @@ public class UserTradeUnitsController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Entitlements DB unavailable for user {UserId} — falling back to all trade units from CustomerSnapshot", userId);
+
+            // In non-production, surface the real error in a response header visible in DevTools Network tab
+            if (!_env.IsProduction())
+            {
+                Response.Headers["X-Entitlements-Fallback"] = "true";
+                Response.Headers["X-Entitlements-Error"] = $"{ex.GetType().Name}: {ex.Message}";
+                if (ex.InnerException != null)
+                    Response.Headers["X-Entitlements-InnerError"] = ex.InnerException.Message;
+            }
+
             return Ok(await GetFallbackTradeUnitsAsync());
         }
     }
