@@ -39,7 +39,19 @@ if (!string.IsNullOrEmpty(keyVaultUri))
         ? new ManagedIdentityCredential(ManagedIdentityId.SystemAssigned)
         : new DefaultAzureCredential(new DefaultAzureCredentialOptions
             { ExcludeManagedIdentityCredential = true });
-    builder.Configuration.AddAzureKeyVault(new Uri(keyVaultUri), kvCredential);
+
+    try
+    {
+        builder.Configuration.AddAzureKeyVault(new Uri(keyVaultUri), kvCredential);
+    }
+    catch (Exception ex) when (!isAppService)
+    {
+        // On App Service, Key Vault is always accessible via Managed Identity — don't swallow.
+        // Locally, a developer may not yet have Key Vault access (pending Developer Access
+        // package approval). Warn and continue — no secrets are required to run locally.
+        Console.Error.WriteLine($"[WARNING] Key Vault unavailable locally ({ex.GetType().Name}: {ex.Message}). " +
+            "Request the Developer Access package at myaccess.microsoft.com if you need secrets.");
+    }
 }
 
 // =============================================================================
