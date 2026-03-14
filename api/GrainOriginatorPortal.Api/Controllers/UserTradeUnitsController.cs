@@ -11,11 +11,13 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class UserTradeUnitsController : ControllerBase
 {
     private readonly EntitlementsDbContext _entitlementsDb;
+    private readonly ApplicationDbContext _appDb;
     private readonly ILogger<UserTradeUnitsController> _logger;
 
-    public UserTradeUnitsController(EntitlementsDbContext entitlementsDb, ILogger<UserTradeUnitsController> logger)
+    public UserTradeUnitsController(EntitlementsDbContext entitlementsDb, ApplicationDbContext appDb, ILogger<UserTradeUnitsController> logger)
     {
         _entitlementsDb = entitlementsDb;
+        _appDb = appDb;
         _logger = logger;
     }
 
@@ -59,8 +61,30 @@ public class UserTradeUnitsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to query Entitlements database for user {UserId} — returning empty trade unit list", userId);
-            return Ok(Array.Empty<object>());
+            _logger.LogWarning(ex, "Entitlements DB unavailable for user {UserId} — falling back to all trade units from CustomerSnapshot", userId);
+            return Ok(await GetFallbackTradeUnitsAsync());
+        }
+    }
+    private async Task<object[]> GetFallbackTradeUnitsAsync()
+    {
+        try
+        {
+            var units = await _appDb.CustomerSnapshots
+                .AsNoTracking()
+                .Where(s => s.IsActive && s.TradeUnit != null)
+                .Select(s => s.TradeUnit!)
+                .Distinct()
+                .OrderBy(u => u)
+                .ToListAsync();
+
+            if (units.Count == 0) return [];
+
+            return [new { groupName = "All Trade Units", tradeUnitCodes = units }];
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "CustomerSnapshot fallback also failed — returning empty trade unit list");
+            return [];
         }
     }
 }
