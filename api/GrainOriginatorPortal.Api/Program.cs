@@ -1,4 +1,5 @@
 // Azure namespaces
+using Azure.Extensions.AspNetCore.Configuration.Secrets;
 using Azure.Identity;
 
 // Microsoft namespaces
@@ -22,6 +23,24 @@ using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// =============================================================================
+// KEY VAULT — load secrets into configuration before anything else reads it.
+// On App Service, use ManagedIdentityCredential directly (avoids DefaultAzureCredential
+// cycling through ~8 providers, which adds ~60-120s to cold start on Linux).
+// Locally, use DefaultAzureCredential without ManagedIdentity (avoids IMDS timeout).
+// KeyVaultUri is pre-configured as an App Setting in all deployed environments.
+// =============================================================================
+var keyVaultUri = builder.Configuration["KeyVaultUri"];
+if (!string.IsNullOrEmpty(keyVaultUri))
+{
+    var isAppService = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WEBSITE_SITE_NAME"));
+    Azure.Core.TokenCredential kvCredential = isAppService
+        ? new ManagedIdentityCredential(ManagedIdentityId.SystemAssigned)
+        : new DefaultAzureCredential(new DefaultAzureCredentialOptions
+            { ExcludeManagedIdentityCredential = true });
+    builder.Configuration.AddAzureKeyVault(new Uri(keyVaultUri), kvCredential);
+}
 
 // =============================================================================
 // Development: Override the ActiveDirectoryDefault SQL auth provider to use

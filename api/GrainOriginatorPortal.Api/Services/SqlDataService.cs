@@ -68,6 +68,18 @@ public class SqlDataService : IDataService
             _logger.LogInformation("Returning {Count} customers from CustomerSnapshot{Filter}", customers.Count, filterMsg);
             return customers;
         }
+        catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
+        {
+            _logger.LogWarning(ex, "CustomerSnapshot table/column not found (SQL {Number}) — returning empty customer list [{TraceId}]",
+                ex.Number, GetTraceId());
+            return [];
+        }
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
+        {
+            _logger.LogWarning(ex, "DB connection error retrieving customers — returning empty customer list [{TraceId}]",
+                GetTraceId());
+            return [];
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving customers [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
@@ -120,6 +132,18 @@ public class SqlDataService : IDataService
             await EnrichCustomersWithESignAsync(scoredCustomers, cancellationToken);
             _logger.LogInformation("Search for '{SearchTerm}' returned {Count} customers from CustomerSnapshot", searchTerm, scoredCustomers.Count);
             return scoredCustomers;
+        }
+        catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
+        {
+            _logger.LogWarning(ex, "CustomerSnapshot table/column not found (SQL {Number}) — returning empty search results [{TraceId}]",
+                ex.Number, GetTraceId());
+            return [];
+        }
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
+        {
+            _logger.LogWarning(ex, "DB connection error searching customers — returning empty search results [{TraceId}]",
+                GetTraceId());
+            return [];
         }
         catch (Exception ex)
         {

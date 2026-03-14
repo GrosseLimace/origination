@@ -31,7 +31,7 @@ This is your starting point for understanding the Azure infrastructure behind Or
 Your Origination application runs on fully managed Azure infrastructure with private networking, automated SSL certificates, and enterprise security.
 
 ### Compute and Hosting
-- **App Service** (Windows, .NET 10.0, 64-bit, always-on)
+- **App Service** (Linux, .NET 10.0, 64-bit, always-on)
   - Dev/QA: B1 Basic (1 vCore, 1.75 GB RAM)
   - Prod: P1v3 Premium (2 vCores, 8 GB RAM, auto-scaling capable)
 
