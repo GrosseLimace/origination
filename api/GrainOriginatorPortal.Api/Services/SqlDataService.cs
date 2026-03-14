@@ -994,6 +994,12 @@ public class SqlDataService : IDataService
             _logger.LogWarning(ex, "DB connection error retrieving tickets — returning empty list [{TraceId}]", GetTraceId());
             return [];
         }
+        catch (Exception ex) when (ex is InvalidCastException or InvalidOperationException or OverflowException)
+        {
+            // EF Core type mapping mismatch (e.g. ODS column type changed) — return empty rather than 500
+            _logger.LogWarning(ex, "EF Core mapping error retrieving tickets (ODS schema mismatch?) — returning empty list [{TraceId}]", GetTraceId());
+            return [];
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving tickets [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",

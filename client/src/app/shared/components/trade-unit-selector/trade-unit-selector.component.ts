@@ -82,18 +82,12 @@ export class TradeUnitSelectorComponent implements OnInit {
   }
 
   // ---- Computed accessors that delegate to AppStateService ----
+  // Using computed() instead of getters ensures Angular's reactive system
+  // tracks these as signal dependencies for OnPush change detection.
 
-  get userGroups() {
-    return this.appState.userGroups();
-  }
-
-  get selectedTradeUnits() {
-    return this.appState.selectedTradeUnits();
-  }
-
-  get selectedGroupNames() {
-    return this.appState.selectedGroupNames();
-  }
+  readonly userGroups = computed(() => this.appState.userGroups());
+  readonly selectedTradeUnits = computed(() => this.appState.selectedTradeUnits());
+  readonly selectedGroupNames = computed(() => this.appState.selectedGroupNames());
 
   // ---- Group helpers ----
 
