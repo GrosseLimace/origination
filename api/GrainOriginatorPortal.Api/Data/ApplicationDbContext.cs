@@ -196,7 +196,7 @@ public class ApplicationDbContext : DbContext
 
         modelBuilder.Entity<ESignEnrollment>(entity =>
         {
-            entity.ToTable("eSignEnrollment", schema: "dbo");
+            entity.ToTable("ESignEnrollment", schema: "dbo");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
             entity.Property(e => e.CustomerCode).HasColumnName("CustomerCode").HasMaxLength(50).IsRequired();
