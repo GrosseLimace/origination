@@ -88,6 +88,7 @@ bootstrapApplication(AppComponent, {
         interactionType: InteractionType.Redirect,
         protectedResourceMap: new Map([
           [environment.apiConfig.uri, environment.apiConfig.scopes],
+          ['https://graph.microsoft.com/v1.0/me', ['User.Read']],
         ]),
       },
     },
