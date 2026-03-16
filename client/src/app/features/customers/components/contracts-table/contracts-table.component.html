@@ -36,8 +36,8 @@
             </button>
           }
         </div>
-        <div class="max-h-[calc(100vh-14rem)] overflow-y-auto overflow-x-auto">
-        <app-table>
+        <div class="max-h-[calc(100vh-14rem)] overflow-y-auto overflow-x-auto relative">
+        <app-table [stickyHeader]="true">
           <app-table-header>
             <app-table-row>
               <app-table-head [sortable]="true" (click)="handleSort('contractNumber')">
