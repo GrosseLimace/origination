@@ -38,13 +38,6 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_NONPROD }}
 
-      - name: Configure App Service environment
-        run: |
-          az webapp config appsettings set \
-            --name app-origination-qa-eus \
-            --resource-group $(az webapp list --query "[?name=='app-origination-qa-eus'].resourceGroup" -o tsv) \
-            --settings ASPNETCORE_ENVIRONMENT=QA
-
       - name: Deploy to QA
         uses: azure/webapps-deploy@v3
         with:
