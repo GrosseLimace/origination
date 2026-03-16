@@ -41,7 +41,7 @@ jobs:
       - name: Set App Service environment
         shell: bash
         run: |
-          RG=$(az webapp show --name app-origination-qa-eus --query resourceGroup -o tsv)
+          RG=$(az webapp list --query "[?name=='app-origination-qa-eus'].resourceGroup | [0]" -o tsv)
           az webapp config appsettings set \
             --name app-origination-qa-eus \
             --resource-group "$RG" \
