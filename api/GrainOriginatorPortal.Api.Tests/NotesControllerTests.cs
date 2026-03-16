@@ -1,10 +1,12 @@
 using GrainOriginatorPortal.Api.Controllers;
+using GrainOriginatorPortal.Api.Data;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Interfaces;
 using GrainOriginatorPortal.Api.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Moq;
 
@@ -15,6 +17,7 @@ public class NotesControllerTests
     private readonly Mock<IDataService> _mockDataService;
     private readonly Mock<ILogger<NotesController>> _mockLogger;
     private readonly Mock<IUserEntitlementService> _mockEntitlementService;
+    private readonly ApplicationDbContext _appContext;
     private readonly NotesController _controller;
 
     public NotesControllerTests()
@@ -22,7 +25,11 @@ public class NotesControllerTests
         _mockDataService = new Mock<IDataService>();
         _mockLogger = new Mock<ILogger<NotesController>>();
         _mockEntitlementService = new Mock<IUserEntitlementService>();
-        _controller = new NotesController(_mockDataService.Object, _mockLogger.Object, _mockEntitlementService.Object);
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName: $"NotesTest_{Guid.NewGuid()}")
+            .Options;
+        _appContext = new ApplicationDbContext(options);
+        _controller = new NotesController(_mockDataService.Object, _mockLogger.Object, _mockEntitlementService.Object, _appContext);
     }
 
     [Fact]

@@ -1,7 +1,9 @@
 import { Injectable, inject, DestroyRef } from '@angular/core';
 import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { of } from 'rxjs';
-import { catchError, debounceTime, filter } from 'rxjs/operators';
+import { catchError, debounceTime, filter, switchMap, take } from 'rxjs/operators';
+import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
+import { InteractionStatus } from '@azure/msal-browser';
 import { ApiService } from './api.service';
 import { AppStateService } from './app-state.service';
 
@@ -17,8 +19,15 @@ export class UserPreferencesService {
   private prefsLoaded = false;
 
   constructor() {
-    // Sync from DB on startup — DB wins over localStorage for cross-device support
-    this.apiService.getUserPreference().pipe(
+    const msalBroadcast = inject(MsalBroadcastService);
+    const msalService = inject(MsalService);
+
+    // Wait for the user to be authenticated before loading preferences.
+    // Without this guard, the GET fires before MSAL has a token (401 on first load).
+    msalBroadcast.inProgress$.pipe(
+      filter(s => s === InteractionStatus.None && msalService.instance.getAllAccounts().length > 0),
+      take(1),
+      switchMap(() => this.apiService.getUserPreference()),
       catchError(() => of(null)),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe(pref => {
