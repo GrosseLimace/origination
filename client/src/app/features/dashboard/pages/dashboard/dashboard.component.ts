@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { of } from 'rxjs';
+import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService, DashboardCacheEntry } from '@core/services/app-state.service';
@@ -164,7 +164,7 @@ export class DashboardComponent {
         next: (data) => {
           this.appStateService.setPlantingIntentions(data);
           // _calculateYieldRows() will fire via the data-change effect
-          this.loadDashboardEstimates();
+          this._loadDashboardData();
         }
       });
   }
@@ -203,9 +203,7 @@ export class DashboardComponent {
     const preloaded = this.appStateService.commodities();
     if (preloaded.length > 0) {
       this.allCommodities.set(preloaded);
-      this._isLoading = false;
-      this._localLoading.set(false);
-      this.loadDashboardEstimates();
+      this._loadDashboardData();
       return;
     }
 
@@ -216,14 +214,52 @@ export class DashboardComponent {
       next: (commodities) => {
         this.allCommodities.set(commodities);
         this.appStateService.setCommodities(commodities);
-        this._isLoading = false;
-        this._localLoading.set(false);
-        this.loadDashboardEstimates();
+        this._loadDashboardData();
       },
       error: () => {
         this._isLoading = false;
         this._localLoading.set(false);
         this.toastService.error('Failed to load commodity data');
+      }
+    });
+  }
+
+  // Fetches the three dashboard-specific API calls in parallel. Called from _loadLocalData()
+  // and reloadPlantingIntentions(). Clears _isLoading and _localLoading when done.
+  private _loadDashboardData(): void {
+    const key = this.tradeUnitKey;
+    const year = this.selectedPlantingYear();
+    if (!key) {
+      this.savedYieldEstimates.set([]);
+      this.savedMarketShares.set([]);
+      this.savedActualHarvest.set([]);
+      this._calculateYieldRows();
+      this._calculateCategoryRows();
+      this._isLoading = false;
+      this._localLoading.set(false);
+      return;
+    }
+    forkJoin({
+      estimates: this.apiService.getDashboardPlantingEstimates(key, year)
+        .pipe(catchError(() => of([] as DashboardPlantingEstimate[]))),
+      shares: this.apiService.getDashboardMarketShares(key, year)
+        .pipe(catchError(() => of([] as DashboardMarketShare[]))),
+      harvest: this.apiService.getDashboardActualHarvest(key, year - 1)
+        .pipe(catchError(() => of([] as DashboardActualHarvest[])))
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: ({ estimates, shares, harvest }) => {
+        this.savedYieldEstimates.set(estimates);
+        this.savedMarketShares.set(shares);
+        this.savedActualHarvest.set(harvest);
+        this._calculateYieldRows();
+        this._calculateCategoryRows();
+        this._saveDashboardCache();
+        this._isLoading = false;
+        this._localLoading.set(false);
+      },
+      error: () => {
+        this._isLoading = false;
+        this._localLoading.set(false);
       }
     });
   }

@@ -1,7 +1,7 @@
 import { Injectable, inject, DestroyRef } from '@angular/core';
 import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { forkJoin, of } from 'rxjs';
-import { catchError, distinctUntilChanged, filter, switchMap, take } from 'rxjs/operators';
+import { forkJoin, merge, of } from 'rxjs';
+import { catchError, distinctUntilChanged, filter, switchMap, take, tap } from 'rxjs/operators';
 import { MsalBroadcastService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 import { ApiService } from './api.service';
@@ -40,31 +40,41 @@ export class DataPreloadService {
         this.appState.clearInsightsCache();
         this.appState.clearDashboardCache();
 
-        return forkJoin({
+        // Core group — customers/contracts/tickets/notes are all that Insights and the home
+        // page need. Clear the loading flag as soon as these four arrive so those screens
+        // can render without waiting for the slower secondary group.
+        const core$ = forkJoin({
           customers: this.apiService.getCustomers(tradeUnits).pipe(catchError(() => of([] as Customer[]))),
           contracts: this.apiService.getContracts(tradeUnits).pipe(catchError(() => of([] as Contract[]))),
           tickets: this.apiService.getTickets(tradeUnits).pipe(catchError(() => of([] as Ticket[]))),
           notes: this.apiService.getNotes().pipe(catchError(() => of([] as Note[]))),
+        }).pipe(tap(core => {
+          this.appState.setCustomers(core.customers);
+          this.appState.setContracts(core.contracts);
+          this.appState.setTickets(core.tickets);
+          this.appState.setNotes(core.notes);
+          this.appState.setDataLoading(false);
+        }));
+
+        // Secondary group — needed by Dashboard, Build a List, etc. Runs in parallel with
+        // core but does not block the dataLoading flag.
+        const secondary$ = forkJoin({
           plantingIntentions: this.apiService.getPlantingIntentions().pipe(catchError(() => of([] as PlantingIntention[]))),
           storedGrain: this.apiService.getStoredGrain().pipe(catchError(() => of([] as StoredGrain[]))),
           savedLists: this.apiService.getSavedLists().pipe(catchError(() => of([] as SavedList[]))),
           commodities: this.apiService.getCommodities().pipe(catchError(() => of([] as Commodity[]))),
-          producerDetails: this.apiService.getAllProducerDetails().pipe(catchError(() => of([] as ProducerDetails[])))
-        });
+          producerDetails: this.apiService.getAllProducerDetails().pipe(catchError(() => of([] as ProducerDetails[]))),
+        }).pipe(tap(sec => {
+          this.appState.setPlantingIntentions(sec.plantingIntentions);
+          this.appState.setStoredGrain(sec.storedGrain);
+          this.appState.setSavedLists(sec.savedLists);
+          this.appState.setCommodities(sec.commodities);
+          this.appState.setProducerDetails(sec.producerDetails);
+        }));
+
+        return merge(core$, secondary$);
       }),
       takeUntilDestroyed(this.destroyRef)
-    ).subscribe(result => {
-      if (!result) return;
-      this.appState.setCustomers(result.customers);
-      this.appState.setContracts(result.contracts);
-      this.appState.setTickets(result.tickets);
-      this.appState.setNotes(result.notes);
-      this.appState.setPlantingIntentions(result.plantingIntentions);
-      this.appState.setStoredGrain(result.storedGrain);
-      this.appState.setSavedLists(result.savedLists);
-      this.appState.setCommodities(result.commodities);
-      this.appState.setProducerDetails(result.producerDetails);
-      this.appState.setDataLoading(false);
-    });
+    ).subscribe();
   }
 }
