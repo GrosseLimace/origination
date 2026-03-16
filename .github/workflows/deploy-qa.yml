@@ -50,8 +50,7 @@ jobs:
             --settings \
               ASPNETCORE_ENVIRONMENT=QA \
               KeyVaultUri=https://kv-orig-qa-eus.vault.azure.net/ \
-              AzureAd__ClientId=f3fcab2b-98c8-4622-86bd-c874d281b22a \
-              AzureAd__Audience=api://f3fcab2b-98c8-4622-86bd-c874d281b22a
+              AzureAd__ClientId=f3fcab2b-98c8-4622-86bd-c874d281b22a
 
       - name: Deploy to QA
         uses: azure/webapps-deploy@v3
