@@ -1,6 +1,8 @@
 // Project namespaces
+using GrainOriginatorPortal.Api.Data;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Services;
+using Microsoft.EntityFrameworkCore;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -13,12 +15,14 @@ public class NotesController : ControllerBase
     private readonly IDataService _dataService;
     private readonly ILogger<NotesController> _logger;
     private readonly IUserEntitlementService _entitlementService;
+    private readonly ApplicationDbContext _appContext;
 
-    public NotesController(IDataService dataService, ILogger<NotesController> logger, IUserEntitlementService entitlementService)
+    public NotesController(IDataService dataService, ILogger<NotesController> logger, IUserEntitlementService entitlementService, ApplicationDbContext appContext)
     {
         _dataService = dataService;
         _logger = logger;
         _entitlementService = entitlementService;
+        _appContext = appContext;
     }
 
     // -------------------------------------------------------------------------
@@ -40,8 +44,10 @@ public class NotesController : ControllerBase
     /// <summary>Gets all notes for a specific customer.</summary>
     [HttpGet("customer/{customerId:long}")]
     [ProducesResponseType(typeof(List<Note>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<List<Note>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
+        await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
         return Ok(await _dataService.GetNotesByCustomerAsync(customerId, cancellationToken));
     }
 
@@ -54,9 +60,17 @@ public class NotesController : ControllerBase
     public async Task<ActionResult<Note>> Create([FromBody] CreateNoteRequest request, CancellationToken cancellationToken = default)
     {
         await _entitlementService.ValidateCustomerAccessAsync(request.CustomerId, cancellationToken);
+
+        // Derive TradeUnit from the authoritative CustomerSnapshot rather than trusting the client-supplied value.
+        // This prevents a caller from assigning a foreign trade unit to manipulate note visibility.
+        var tradeUnit = await _appContext.CustomerSnapshots
+            .Where(cs => cs.CustomerId == request.CustomerId)
+            .Select(cs => cs.TradeUnit)
+            .FirstOrDefaultAsync(cancellationToken);
+
         try
         {
-            var note = await _dataService.AddNoteAsync(request.CustomerId, request.Content, request.TradeUnit, cancellationToken);
+            var note = await _dataService.AddNoteAsync(request.CustomerId, request.Content, tradeUnit, cancellationToken);
             _logger.LogInformation(
                 "Note created [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}, CustomerId={CustomerId}",
                 "AUDIT_CREATE", "DataMutation", note.Id, request.CustomerId);
