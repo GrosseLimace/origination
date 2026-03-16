@@ -1,4 +1,6 @@
+using GrainOriginatorPortal.Api.Data;
 using GrainOriginatorPortal.Api.Services;
+using Microsoft.EntityFrameworkCore;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -9,19 +11,33 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class ProducerDetailsController : ControllerBase
 {
     private readonly IDataService _dataService;
+    private readonly IUserEntitlementService _entitlementService;
+    private readonly ApplicationDbContext _appContext;
 
-    public ProducerDetailsController(IDataService dataService)
+    public ProducerDetailsController(IDataService dataService, IUserEntitlementService entitlementService, ApplicationDbContext appContext)
     {
         _dataService = dataService;
+        _entitlementService = entitlementService;
+        _appContext = appContext;
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Gets all producer details records.</summary>
+    /// <summary>Gets all producer details records, filtered to the caller's entitled trade units.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(List<ProducerDetails>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<ProducerDetails>>> GetAll(CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetAllProducerDetailsAsync(cancellationToken));
+        var details = await _dataService.GetAllProducerDetailsAsync(cancellationToken);
+        if (_entitlementService.EntitlementsAvailable)
+        {
+            var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);
+            var allowedCustomerIds = await _appContext.CustomerSnapshots
+                .Where(cs => cs.TradeUnit != null && allowed.Contains(cs.TradeUnit))
+                .Select(cs => cs.CustomerId)
+                .ToHashSetAsync(cancellationToken);
+            details = details.Where(d => allowedCustomerIds.Contains(d.CustomerId)).ToList();
+        }
+        return Ok(details);
     }
 
     // -------------------------------------------------------------------------
@@ -38,10 +54,10 @@ public class ProducerDetailsController : ControllerBase
     /// <summary>Creates or updates producer details for a customer.</summary>
     [HttpPut("customer/{customerId:long}")]
     [ProducesResponseType(typeof(ProducerDetails), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<ProducerDetails>> Upsert(long customerId, [FromBody] UpsertProducerDetailsRequest request, CancellationToken cancellationToken = default)
     {
-        // Access already validated when the user loaded the customer (GET endpoints check entitlements).
-        // Redundant validation here caused 403s when vw_CustomerTradeUnits had incomplete mappings.
+        await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
         var details = await _dataService.UpsertProducerDetailsAsync(
             customerId,
             request.SourceCustomerId,
@@ -60,9 +76,10 @@ public class ProducerDetailsController : ControllerBase
     /// <summary>Deletes producer details for a customer.</summary>
     [HttpDelete("customer/{customerId:long}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult> Delete(long customerId, CancellationToken cancellationToken = default)
     {
-        // Access already validated when the user loaded the customer (GET endpoints check entitlements).
+        await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
         await _dataService.DeleteProducerDetailsAsync(customerId, cancellationToken);
         return NoContent();
     }

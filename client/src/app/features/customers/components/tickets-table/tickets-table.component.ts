@@ -318,4 +318,24 @@ export class TicketsTableComponent {
     }
     return 'text-gray-400 dark:text-gray-600';
   }
+
+  // Standard U.S. grain conversions (lbs per bushel).
+  // TODO: replace with a per-commodity table from the database when available.
+  getLbsPerBushel(productCode: string | undefined | null): number {
+    const code = (productCode || '').toUpperCase();
+    if (code.includes('CORN') || code.includes('YC'))                              return 56;
+    if (code.includes('SOY') || code.includes('BEAN') || code.includes('SB'))      return 60;
+    if (code.includes('WHEAT') || code.includes('HRW') || code.includes('HRS') ||
+        code.includes('HWS') || code.includes('SRW') || code.includes('WW'))       return 60;
+    if (code.includes('SORGHUM') || code.includes('MILO') || code.includes('SOR') || code.includes('SG'))  return 56;
+    if (code.includes('BARLEY'))                                                    return 48;
+    if (code.includes('OAT'))                                                       return 32;
+    if (code.includes('RYE'))                                                       return 56;
+    if (code.includes('RICE'))                                                      return 45;
+    return 1; // unknown crop — show raw value
+  }
+
+  toBushels(lbs: number | null | undefined, productCode: string | undefined | null): number {
+    return (lbs || 0) / this.getLbsPerBushel(productCode);
+  }
 }

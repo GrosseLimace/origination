@@ -582,7 +582,7 @@ public class SqlDataService : IDataService
     // Farm Operations - DISABLED: Farms table doesn't exist in ODS
     // =========================================================================
 
-    public Task<List<Farm>> GetFarmsAsync(CancellationToken cancellationToken = default)
+    public Task<List<Farm>> GetFarmsAsync(List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
         _logger.LogWarning("Farms table doesn't exist in ODS - returning empty list");
         return Task.FromResult(new List<Farm>());
@@ -1143,6 +1143,9 @@ public class SqlDataService : IDataService
         }
     }
 
+    public async Task<PlantingIntention?> GetPlantingIntentionByIdAsync(int intentionId, CancellationToken cancellationToken = default)
+        => await _appContext.PlantingIntentions.AsNoTracking().FirstOrDefaultAsync(p => p.Id == intentionId, cancellationToken);
+
     public async Task<PlantingIntention> AddPlantingIntentionAsync(long customerId, string customerName, string customerCode, string tradeUnit, string crop, string? type, string? description, int acres, int plantingYear, CancellationToken cancellationToken = default)
     {
         try
@@ -1277,6 +1280,9 @@ public class SqlDataService : IDataService
             throw;
         }
     }
+
+    public async Task<Note?> GetNoteByIdAsync(long noteId, CancellationToken cancellationToken = default)
+        => await _appContext.Notes.AsNoTracking().FirstOrDefaultAsync(n => n.Id == noteId, cancellationToken);
 
     public async Task<Note> AddNoteAsync(long customerId, string content, string? tradeUnit = null, CancellationToken cancellationToken = default)
     {

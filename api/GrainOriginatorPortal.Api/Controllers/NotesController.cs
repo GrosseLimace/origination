@@ -49,11 +49,11 @@ public class NotesController : ControllerBase
     /// <summary>Creates a new note for a customer.</summary>
     [HttpPost]
     [ProducesResponseType(typeof(Note), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     public async Task<ActionResult<Note>> Create([FromBody] CreateNoteRequest request, CancellationToken cancellationToken = default)
     {
-        // Access already validated when the user loaded the customer (GET endpoints check entitlements).
-        // Redundant validation here caused 403s when vw_CustomerTradeUnits had incomplete mappings.
+        await _entitlementService.ValidateCustomerAccessAsync(request.CustomerId, cancellationToken);
         try
         {
             var note = await _dataService.AddNoteAsync(request.CustomerId, request.Content, request.TradeUnit, cancellationToken);
@@ -76,9 +76,13 @@ public class NotesController : ControllerBase
     /// <summary>Toggles the pinned status of a note.</summary>
     [HttpPut("{id:long}/toggle-pin")]
     [ProducesResponseType(typeof(Note), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<Note>> TogglePin(long id, CancellationToken cancellationToken = default)
     {
+        var existing = await _dataService.GetNoteByIdAsync(id, cancellationToken)
+            ?? throw new NotFoundException("Note", id);
+        await _entitlementService.ValidateCustomerAccessAsync(existing.CustomerId, cancellationToken);
         var note = await _dataService.ToggleNotePinAsync(id, cancellationToken)
             ?? throw new NotFoundException("Note", id);
         _logger.LogInformation(
@@ -91,9 +95,13 @@ public class NotesController : ControllerBase
     /// <summary>Updates the content of a note.</summary>
     [HttpPut("{id:long}")]
     [ProducesResponseType(typeof(Note), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<Note>> Update(long id, [FromBody] UpdateNoteRequest request, CancellationToken cancellationToken = default)
     {
+        var existing = await _dataService.GetNoteByIdAsync(id, cancellationToken)
+            ?? throw new NotFoundException("Note", id);
+        await _entitlementService.ValidateCustomerAccessAsync(existing.CustomerId, cancellationToken);
         var note = await _dataService.UpdateNoteAsync(id, request.Content, cancellationToken)
             ?? throw new NotFoundException("Note", id);
         _logger.LogInformation(
@@ -106,8 +114,12 @@ public class NotesController : ControllerBase
     /// <summary>Deletes a note by ID.</summary>
     [HttpDelete("{id:long}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult> Delete(long id, CancellationToken cancellationToken = default)
     {
+        var note = await _dataService.GetNoteByIdAsync(id, cancellationToken)
+            ?? throw new NotFoundException("Note", id);
+        await _entitlementService.ValidateCustomerAccessAsync(note.CustomerId, cancellationToken);
         await _dataService.DeleteNoteAsync(id, cancellationToken);
         _logger.LogInformation(
             "Note deleted [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}",

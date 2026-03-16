@@ -1,5 +1,6 @@
 // Project namespaces
 using GrainOriginatorPortal.Api.Exceptions;
+using GrainOriginatorPortal.Api.Filters;
 using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Controllers;
@@ -20,12 +21,13 @@ public class FarmsController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Gets all farms.</summary>
+    /// <summary>Gets all farms, filtered to the caller's entitled trade units.</summary>
     [HttpGet]
+    [EnforceTradeUnitAccess]
     [ProducesResponseType(typeof(List<Farm>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<Farm>>> GetAll(CancellationToken cancellationToken = default)
+    public async Task<ActionResult<List<Farm>>> GetAll([FromQuery] List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetFarmsAsync(cancellationToken));
+        return Ok(await _dataService.GetFarmsAsync(tradeUnits, cancellationToken));
     }
 
     // -------------------------------------------------------------------------

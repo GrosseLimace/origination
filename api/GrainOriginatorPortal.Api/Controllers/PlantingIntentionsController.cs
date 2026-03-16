@@ -50,10 +50,10 @@ public class PlantingIntentionsController : ControllerBase
     [HttpPost]
     [ProducesResponseType(typeof(PlantingIntention), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<PlantingIntention>> Create([FromBody] CreatePlantingIntentionRequest request, CancellationToken cancellationToken = default)
     {
-        // Access already validated when the user loaded the customer (GET endpoints check entitlements).
-        // Redundant validation here caused 403s when vw_CustomerTradeUnits had incomplete mappings.
+        await _entitlementService.ValidateCustomerAccessAsync(request.CustomerId, cancellationToken);
         var intention = await _dataService.AddPlantingIntentionAsync(
             request.CustomerId,
             request.CustomerName,
@@ -76,9 +76,13 @@ public class PlantingIntentionsController : ControllerBase
     /// <summary>Updates an existing planting intention.</summary>
     [HttpPut("{id}")]
     [ProducesResponseType(typeof(PlantingIntention), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<PlantingIntention>> Update(int id, [FromBody] UpdatePlantingIntentionRequest request, CancellationToken cancellationToken = default)
     {
+        var existing = await _dataService.GetPlantingIntentionByIdAsync(id, cancellationToken)
+            ?? throw new NotFoundException("PlantingIntention", id);
+        await _entitlementService.ValidateCustomerAccessAsync(existing.CustomerId, cancellationToken);
         var updated = await _dataService.UpdatePlantingIntentionAsync(
             id,
             request.Crop,
@@ -102,8 +106,12 @@ public class PlantingIntentionsController : ControllerBase
     /// <summary>Deletes a planting intention by ID.</summary>
     [HttpDelete("{id}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult> Delete(int id, CancellationToken cancellationToken = default)
     {
+        var intention = await _dataService.GetPlantingIntentionByIdAsync(id, cancellationToken)
+            ?? throw new NotFoundException("PlantingIntention", id);
+        await _entitlementService.ValidateCustomerAccessAsync(intention.CustomerId, cancellationToken);
         await _dataService.DeletePlantingIntentionAsync(id, cancellationToken);
         _logger.LogInformation(
             "Planting intention deleted [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}",
