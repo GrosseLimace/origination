@@ -47,8 +47,8 @@ public class ContractPricingLine
     // Computed properties for frontend compatibility
     // -------------------------------------------------------------------------
 
-    /// <summary>How much has been priced/applied — used by the frontend pricing status badge.</summary>
-    public decimal? PricedQty => PriceAppliedQuantity;
+    /// <summary>Quantity assigned a price on this pricing record — used by the frontend pricing status badge.</summary>
+    public decimal? PricedQty => PriceQuantity;
 
     /// <summary>Flat/cash price — used by the frontend pricing badge when a single price exists.</summary>
     public decimal? CashPrice => FlatPrice;

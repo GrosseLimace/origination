@@ -209,8 +209,11 @@ export class ContractsTableComponent {
     if (lines !== undefined) {
       if (lines.length === 0) return { status: 'UNPRICED' };
 
-      const totalPricedQty = lines.reduce((sum, l) => sum + (l.pricedQty ?? 0), 0);
-      const contractQty = lines[0].priceQuantity ?? contract.quantity ?? 0;
+      // priceQuantity = quantity assigned a price on this pricing record.
+      // priceAppliedQuantity = deliveries made against it — unrelated to pricing status.
+      const totalPricedQty = lines.reduce((sum, l) => sum + (l.priceQuantity ?? 0), 0);
+      // Always use the contract's total quantity as the denominator, not a single line's quantity.
+      const contractQty = contract.quantity ?? 0;
 
       if (totalPricedQty === 0) return { status: 'UNPRICED' };
       if (totalPricedQty < contractQty) return { status: 'PARTIAL' };
