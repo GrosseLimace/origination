@@ -36,6 +36,6 @@ export interface ContractPricingLine {
   modifiedDate?: string;
 
   // Computed aliases (populated by API, derived from stored columns)
-  pricedQty?: number;   // = priceAppliedQuantity
+  pricedQty?: number;   // = priceQuantity (quantity assigned a price, not deliveries)
   cashPrice?: number;   // = flatPrice
 }

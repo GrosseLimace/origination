@@ -55,9 +55,10 @@ public interface IDataService
     // Farm Operations
     // =========================================================================
 
-    /// <summary>Gets all farms.</summary>
+    /// <summary>Gets all farms, optionally filtered to allowed trade units.</summary>
+    /// <param name="tradeUnits">Trade unit codes to restrict results to. Null means no filter.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task<List<Farm>> GetFarmsAsync(CancellationToken cancellationToken = default);
+    Task<List<Farm>> GetFarmsAsync(List<string>? tradeUnits = null, CancellationToken cancellationToken = default);
 
     /// <summary>Gets all farms associated with a specific customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>
@@ -144,6 +145,11 @@ public interface IDataService
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<List<PlantingIntention>> GetPlantingIntentionsByCustomerAsync(long customerId, CancellationToken cancellationToken = default);
 
+    /// <summary>Gets a single planting intention by its identifier.</summary>
+    /// <param name="intentionId">The planting intention's unique identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<PlantingIntention?> GetPlantingIntentionByIdAsync(int intentionId, CancellationToken cancellationToken = default);
+
     /// <summary>Creates a new planting intention.</summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The newly created planting intention.</returns>
@@ -172,6 +178,11 @@ public interface IDataService
     /// <param name="customerId">The customer's unique identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<List<Note>> GetNotesByCustomerAsync(long customerId, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets a single note by its identifier.</summary>
+    /// <param name="noteId">The note's unique identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<Note?> GetNoteByIdAsync(long noteId, CancellationToken cancellationToken = default);
 
     /// <summary>Creates a new note for a customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>

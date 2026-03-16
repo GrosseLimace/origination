@@ -49,7 +49,7 @@
         class="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green"
       >
         <option value="">All Crops</option>
-        @for (crop of availableCrops; track crop) {
+        @for (crop of availableCrops; track $index) {
           <option [value]="crop">{{ crop }}</option>
         }
       </select>
@@ -184,7 +184,7 @@
                 </div>
               } @else {
                 <div class="flex items-end gap-2" style="height: 200px; padding-bottom: 4px;">
-                  @for (crop of cropBreakdown; track crop.name) {
+                  @for (crop of cropBreakdown; track $index) {
                     <div class="flex flex-col items-center gap-1 flex-1 min-w-0 h-full justify-end">
                       <span class="text-xs text-gray-500 dark:text-gray-400 tabular-nums whitespace-nowrap">{{ formatAcres(crop.acres) }}</span>
                       <div
@@ -228,7 +228,7 @@
                   </div>
                   <!-- Legend -->
                   <div class="flex-1 space-y-2.5 overflow-auto" style="max-height: 148px;">
-                    @for (crop of cropBreakdown; track crop.name) {
+                    @for (crop of cropBreakdown; track $index) {
                       <div class="flex items-center justify-between gap-3">
                         <div class="flex items-center gap-2 min-w-0">
                           <div class="w-2.5 h-2.5 rounded-full flex-shrink-0" [ngClass]="crop.dotColor"></div>
@@ -265,7 +265,7 @@
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-gray-100 dark:divide-gray-700/60">
-                    @for (row of cropDetailsRows; track row.name) {
+                    @for (row of cropDetailsRows; track $index) {
                       <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                         <td class="py-3 px-5">
                           <div class="flex items-center gap-2">
@@ -334,7 +334,7 @@
                         </td>
                         <td class="py-3 px-5">
                           <div class="flex flex-wrap gap-1">
-                            @for (crop of row.crops; track crop) {
+                            @for (crop of row.crops; track $index) {
                               <span class="scoular-badge scoular-badge-neutral">{{ crop }}</span>
                             }
                           </div>
@@ -384,7 +384,7 @@
                                 <div class="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-10 hidden group-hover:block pointer-events-none">
                                   <div class="bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg px-2.5 py-2 whitespace-nowrap shadow-xl border border-gray-700 dark:border-gray-600">
                                     <div class="font-semibold mb-1">{{ m.month }}: {{ m.total | number:'1.0-0' }} bu</div>
-                                    @for (seg of m.segments; track seg.commodity) {
+                                    @for (seg of m.segments; track $index) {
                                       <div class="flex items-center gap-1.5">
                                         <div class="w-2 h-2 rounded-sm flex-shrink-0" [style.background-color]="seg.hex"></div>
                                         <span class="text-gray-300">{{ seg.commodity }}: {{ formatK(seg.bushels) }} bu</span>
@@ -396,7 +396,7 @@
                                 <!-- Stacked bar segments -->
                                 <div class="w-full flex flex-col overflow-hidden rounded-t-sm cursor-default"
                                      [style.height.px]="m.barHeightPx">
-                                  @for (seg of m.segments; track seg.commodity) {
+                                  @for (seg of m.segments; track $index) {
                                     <div class="w-full basis-0 transition-opacity group-hover:opacity-80"
                                          [style.flex-grow]="seg.bushels"
                                          [style.background-color]="seg.hex">
@@ -422,7 +422,7 @@
                   <!-- Legend -->
                   @if (contractCommodityLegend.length > 0) {
                     <div class="flex flex-wrap gap-x-5 gap-y-1.5 mt-4 pt-3.5 border-t border-gray-100 dark:border-gray-700/50">
-                      @for (item of contractCommodityLegend; track item.commodity) {
+                      @for (item of contractCommodityLegend; track $index) {
                         <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
                           <div class="w-3 h-3 rounded-sm flex-shrink-0" [style.background-color]="item.hex"></div>
                           <span>{{ item.commodity }}</span>
@@ -451,7 +451,7 @@
                       <button (click)="showSeasonTargets.set(true)" class="scoular-btn scoular-btn-sm scoular-btn-outline">Set Season Targets</button>
                     </div>
                   } @else {
-                    @for (row of contractCoverageRows; track row.category) {
+                    @for (row of contractCoverageRows; track $index) {
                       <div>
                         <div class="flex items-baseline justify-between mb-2">
                           <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ row.category }}</span>
@@ -496,7 +496,7 @@
                         </tr>
                       </thead>
                       <tbody class="divide-y divide-gray-100 dark:divide-gray-700/60">
-                        @for (row of salesOpportunityRows; track row.commodity) {
+                        @for (row of salesOpportunityRows; track $index) {
                           <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                             <td class="py-3 px-4">
                               <div class="flex items-center gap-2">

@@ -65,7 +65,7 @@ public class ApimDataService : IDataService
     // Farm Operations
     // =========================================================================
 
-    public Task<List<Farm>> GetFarmsAsync(CancellationToken cancellationToken = default)
+    public Task<List<Farm>> GetFarmsAsync(List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetFarms");
 
     public Task<List<Farm>> GetFarmsByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
@@ -131,6 +131,9 @@ public class ApimDataService : IDataService
     public Task DeletePlantingIntentionAsync(int intentionId, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for DeletePlantingIntention");
 
+    public Task<PlantingIntention?> GetPlantingIntentionByIdAsync(int intentionId, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetPlantingIntentionById");
+
     // =========================================================================
     // Note Operations
     // Note: Notes are stored in the Origination database (not ODS), so these
@@ -154,6 +157,9 @@ public class ApimDataService : IDataService
         => throw new NotImplementedException("TODO: Confirm Notes approach with APIM team");
 
     public Task DeleteNoteAsync(long noteId, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Confirm Notes approach with APIM team");
+
+    public Task<Note?> GetNoteByIdAsync(long noteId, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Confirm Notes approach with APIM team");
 
     // =========================================================================
