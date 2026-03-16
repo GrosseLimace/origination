@@ -1,9 +1,9 @@
-import { Component, input, output, effect, inject, ChangeDetectionStrategy, ViewChild, ElementRef, DestroyRef, afterNextRender, signal } from '@angular/core';
+import { Component, input, output, effect, inject, untracked, ChangeDetectionStrategy, ViewChild, ElementRef, DestroyRef, afterNextRender, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Subject } from 'rxjs';
-import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
+import { Subject, of } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, switchMap } from 'rxjs/operators';
 import { Customer, SavedList, Note, ProducerDetails } from '@models';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
@@ -65,13 +65,46 @@ export class CustomerListComponent {
       this.applyFilters();
     }
 
-    // Set up search debouncing
+    // Set up search — switchMap cancels any in-flight request when a new term arrives,
+    // preventing stale results from overwriting newer ones.
     this._searchSubject$.pipe(
       debounceTime(150),
       distinctUntilChanged(),
+      switchMap(searchTerm => {
+        const explicitUnits = this.appStateService.selectedTradeUnits();
+        const selectedGroups = this.appStateService.selectedGroupNames();
+        let tradeUnits: string[] | undefined;
+        if (explicitUnits.length > 0) {
+          tradeUnits = explicitUnits;
+        } else if (selectedGroups.length > 0) {
+          tradeUnits = this._computeAvailableTradeUnits(this.appStateService.userGroups(), selectedGroups);
+        }
+        return this.apiService.searchCustomers(searchTerm, tradeUnits).pipe(
+          catchError(() => of([...this.customers()]))
+        );
+      }),
       takeUntilDestroyed(this.destroyRef)
-    ).subscribe(searchTerm => {
-      this._performSearch(searchTerm);
+    ).subscribe(customers => {
+      let result = customers.map(c => {
+        const pd = this.producerDetailsMap().get(c.id);
+        if (pd) {
+          return {
+            ...c,
+            totalAcres: pd.totalAcres ?? c.totalAcres,
+            binCapacity: pd.binCapacity ?? c.binCapacity,
+            primaryContact: pd.primaryContact ?? c.primaryContact,
+            commodities: pd.commodities ? pd.commodities.split(',').map(s => s.trim()) : c.commodities
+          };
+        }
+        return c;
+      });
+      if (this.selectedListId() && this.selectedListId() !== 'all') {
+        const savedList = this.savedLists().find(l => String(l.id) === this.selectedListId());
+        if (savedList) {
+          result = result.filter(c => (savedList.customerIds || []).includes(c.id));
+        }
+      }
+      this.filteredCustomers.set(result);
     });
 
     // Scroll to last selected customer after first render
@@ -95,23 +128,29 @@ export class CustomerListComponent {
       this._rebuildLastContactCache();
     });
 
-    // React to savedLists changes — validate selectedListId and reapply filters
+    // React to savedLists changes — validate selectedListId and reapply filters.
+    // untracked prevents applyFilters() from adding its own signal reads as
+    // effect dependencies, which would cause this effect to re-run on every keystroke.
     effect(() => {
       const savedLists = this.savedLists();
-      if (this.selectedListId() !== 'all') {
-        const stillExists = savedLists.some(l => String(l.id) === this.selectedListId());
-        if (!stillExists) {
-          this.selectedListId.set('all');
-          this.appStateService.setSelectedSavedListId('all');
+      untracked(() => {
+        if (this.selectedListId() !== 'all') {
+          const stillExists = savedLists.some(l => String(l.id) === this.selectedListId());
+          if (!stillExists) {
+            this.selectedListId.set('all');
+            this.appStateService.setSelectedSavedListId('all');
+          }
         }
-      }
-      this.applyFilters();
+        this.applyFilters();
+      });
     });
 
-    // React to customers changing — reapply filters
+    // React to customers changing — reapply filters.
+    // untracked prevents applyFilters() from implicitly tracking searchQuery, savedLists,
+    // etc. and causing this effect to fire on every keystroke.
     effect(() => {
       this.customers();
-      this.applyFilters();
+      untracked(() => this.applyFilters());
     });
 
     // React to selectedCustomer changes — scroll into view
@@ -264,56 +303,6 @@ export class CustomerListComponent {
     this.appStateService.setSelectedGroupNames([]);
     this.filteredCustomers.set([]);
     this.clearSelection.emit();
-  }
-
-  private _performSearch(searchTerm: string): void {
-    // TU scoping priority:
-    // 1. Explicit individual TUs selected → scope to those
-    // 2. Group(s) selected (no individual TU) → scope to TUs in those groups
-    // 3. Nothing selected → no filter, search all customers globally
-    const explicitUnits = this.appStateService.selectedTradeUnits();
-    const selectedGroups = this.appStateService.selectedGroupNames();
-    let tradeUnits: string[] | undefined;
-    if (explicitUnits.length > 0) {
-      tradeUnits = explicitUnits;
-    } else if (selectedGroups.length > 0) {
-      tradeUnits = this._computeAvailableTradeUnits(this.appStateService.userGroups(), selectedGroups);
-    }
-    this.apiService.searchCustomers(searchTerm, tradeUnits).pipe(
-      takeUntilDestroyed(this.destroyRef)
-    ).subscribe({
-      next: (customers) => {
-        // Merge producer details into search results (ODS doesn't return these fields)
-        let result = customers.map(c => {
-          const pd = this.producerDetailsMap().get(c.id);
-          if (pd) {
-            return {
-              ...c,
-              totalAcres: pd.totalAcres ?? c.totalAcres,
-              binCapacity: pd.binCapacity ?? c.binCapacity,
-              primaryContact: pd.primaryContact ?? c.primaryContact,
-              commodities: pd.commodities ? pd.commodities.split(',').map(s => s.trim()) : c.commodities
-            };
-          }
-          return c;
-        });
-
-        // Apply saved list filter to search results if needed
-        if (this.selectedListId()) {
-          const savedList = this.savedLists().find(l => String(l.id) === this.selectedListId());
-          if (savedList) {
-            result = result.filter(c => (savedList.customerIds || []).includes(c.id));
-          }
-        }
-        this.filteredCustomers.set(result);
-
-      },
-      error: () => {
-        // Fall back to showing initial customers on error
-        this.filteredCustomers.set([...this.customers()]);
-
-      }
-    });
   }
 
   /**
