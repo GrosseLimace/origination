@@ -616,53 +616,56 @@ public class SqlDataService : IDataService
         {
             var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
 
-            // Build contract query with optional trade unit filter
-            var contractQuery = _context.Contracts.AsNoTracking().Where(c => c.IsActive && c.CtrmCustomerId != null);
-            if (hasTradeUnitFilter)
+            // Two-path strategy to avoid SQL Server's 2100-parameter IN-clause limit:
+            // - Unfiltered: safe because Take(15) caps customer list at 15 items (well under 2100 params)
+            // - Filtered: use EXISTS subqueries (Any() → SQL EXISTS) — no parameter count regardless of data volume
+            List<Contract> contracts;
+
+            if (!hasTradeUnitFilter)
             {
-                contractQuery = contractQuery.Where(c => c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit));
+                // Get up to 15 customer CtrmCustomerIds (have contracts OR tickets) — 15 params = safe
+                var customerCtrmIds = await _context.Customers
+                    .AsNoTracking()
+                    .Where(c => c.SourceCustomerId != null && (
+                        _context.Contracts.Any(ct => ct.IsActive && ct.CtrmCustomerId == c.SourceCustomerId) ||
+                        _context.Tickets.Any(t => t.IsActive && t.CustomerId == c.Id)))
+                    .Take(15)
+                    .Select(c => c.SourceCustomerId)
+                    .ToListAsync(cancellationToken);
+
+                contracts = await _context.Contracts
+                    .AsNoTracking()
+                    .Where(c => c.IsActive && c.CtrmCustomerId != null && customerCtrmIds.Contains(c.CtrmCustomerId))
+                    .OrderByDescending(c => c.Id)
+                    .ToListAsync(cancellationToken);
             }
-
-            // Get customer IDs that have contracts (via CtrmCustomerId -> SourceCustomerId)
-            var customerIdsWithContracts = await contractQuery
-                .Select(c => c.CtrmCustomerId)
-                .Distinct()
-                .ToListAsync(cancellationToken);
-
-            // Build ticket query with optional organization code filter
-            var ticketQuery = _context.Tickets.AsNoTracking().Where(t => t.IsActive && t.CustomerId.HasValue);
-            if (hasTradeUnitFilter)
+            else
             {
-                ticketQuery = ticketQuery.Where(t => t.OrganizationCode != null && tradeUnits!.Contains(t.OrganizationCode));
+                // Build subqueries (not materialized) — EF Core translates Any() to SQL EXISTS
+                var matchingContracts = _context.Contracts.AsNoTracking()
+                    .Where(c => c.IsActive && c.CtrmCustomerId != null
+                        && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit));
+
+                var matchingTickets = _context.Tickets.AsNoTracking()
+                    .Where(t => t.IsActive && t.CustomerId.HasValue
+                        && t.OrganizationCode != null && tradeUnits!.Contains(t.OrganizationCode));
+
+                // Customer subquery: has contract OR ticket in these trade units
+                var customerSubquery = _context.Customers.AsNoTracking()
+                    .Where(c =>
+                        matchingContracts.Any(ct => ct.CtrmCustomerId == c.SourceCustomerId) ||
+                        matchingTickets.Any(t => t.CustomerId == c.Id));
+
+                // Load all contracts for those customers — intentionally NOT filtering by trade unit here
+                // so that prior-year contracts (needed for pacing calculations) are included even if
+                // they carry a different TradeUnit value than the current selection.
+                contracts = await _context.Contracts
+                    .AsNoTracking()
+                    .Where(c => c.IsActive && c.CtrmCustomerId != null &&
+                        customerSubquery.Any(cu => cu.SourceCustomerId == c.CtrmCustomerId))
+                    .OrderByDescending(c => c.Id)
+                    .ToListAsync(cancellationToken);
             }
-
-            // Get customer IDs that have tickets (via CustomerId)
-            var customerIdsWithTickets = await ticketQuery
-                .Select(t => t.CustomerId!.Value)
-                .Distinct()
-                .ToListAsync(cancellationToken);
-
-            // originations.vw_CurrentCustomers is pre-filtered — no redundant filters needed.
-            var customerQuery = _context.Customers
-                .AsNoTracking()
-                .Where(c => customerIdsWithContracts.Contains(c.SourceCustomerId) ||
-                            customerIdsWithTickets.Contains(c.Id))
-                .OrderBy(c => c.Name);
-
-            var customerCtrmIds = hasTradeUnitFilter
-                ? await customerQuery.Select(c => c.SourceCustomerId).ToListAsync(cancellationToken)
-                : await customerQuery.Take(15).Select(c => c.SourceCustomerId).ToListAsync(cancellationToken);
-
-            // Get all contracts for those customers — intentionally NOT filtering by trade unit here
-            // so that prior-year contracts (needed for pacing calculations) are included even if
-            // they carry a different TradeUnit value than the current selection.
-            var contractsQuery = _context.Contracts
-                .AsNoTracking()
-                .Where(c => c.IsActive && c.CtrmCustomerId != null && customerCtrmIds.Contains(c.CtrmCustomerId));
-
-            var contracts = await contractsQuery
-                .OrderByDescending(c => c.Id)
-                .ToListAsync(cancellationToken);
 
             _logger.LogInformation("Loaded {ContractCount} contracts for customers who have contracts or tickets (filtered: {IsFiltered}, tradeUnitCount: {TradeUnitCount})",
                 contracts.Count, hasTradeUnitFilter, hasTradeUnitFilter ? tradeUnits!.Count : 0);
@@ -875,68 +878,70 @@ public class SqlDataService : IDataService
         {
             var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
 
-            // Build contract query with optional trade unit filter
-            var contractQuery = _context.Contracts.AsNoTracking().Where(c => c.IsActive && c.CtrmCustomerId != null);
-            if (hasTradeUnitFilter)
+            // Two-path strategy to avoid SQL Server's 2100-parameter IN-clause limit:
+            // - Unfiltered: safe because Take(15) caps customer list at 15 items (well under 2100 params)
+            // - Filtered: use EXISTS subqueries (Any() → SQL EXISTS) — no parameter count regardless of data volume
+            List<Ticket> tickets;
+
+            if (!hasTradeUnitFilter)
             {
-                contractQuery = contractQuery.Where(c => c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit));
+                var customerCodes = await _context.Customers
+                    .AsNoTracking()
+                    .Where(c => c.SourceCustomerId != null && (
+                        _context.Contracts.Any(ct => ct.IsActive && ct.CtrmCustomerId == c.SourceCustomerId) ||
+                        _context.Tickets.Any(t => t.IsActive && t.CustomerCode == c.SourceCustomerId)))
+                    .Take(15)
+                    .Select(c => c.SourceCustomerId!)
+                    .ToListAsync(cancellationToken);
+
+                tickets = await _context.Tickets
+                    .AsNoTracking()
+                    .Where(t => t.IsActive && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode))
+                    .OrderByDescending(t => t.Date)
+                    .ToListAsync(cancellationToken);
             }
-
-            // Get customer IDs that have contracts (via CtrmCustomerId -> SourceCustomerId)
-            var customerIdsWithContracts = await contractQuery
-                .Select(c => c.CtrmCustomerId)
-                .Distinct()
-                .ToListAsync(cancellationToken);
-
-            // Build ticket query with optional organization code filter
-            var ticketQueryBase = _context.Tickets.AsNoTracking().Where(t => t.IsActive && t.CustomerCode != null);
-            if (hasTradeUnitFilter)
+            else
             {
-                ticketQueryBase = ticketQueryBase.Where(t => t.OrganizationCode != null && tradeUnits!.Contains(t.OrganizationCode));
-            }
+                var matchingContracts = _context.Contracts.AsNoTracking()
+                    .Where(c => c.IsActive && c.CtrmCustomerId != null
+                        && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit));
 
-            // Get customer codes that have tickets (via CustomerCode)
-            var customerCodesWithTickets = await ticketQueryBase
-                .Select(t => t.CustomerCode!)
-                .Distinct()
-                .ToListAsync(cancellationToken);
+                var matchingTickets = _context.Tickets.AsNoTracking()
+                    .Where(t => t.IsActive && t.CustomerCode != null
+                        && t.OrganizationCode != null && tradeUnits!.Contains(t.OrganizationCode));
 
-            // originations.vw_CurrentCustomers is pre-filtered — no redundant filters needed.
-            var customerQuery = _context.Customers
-                .AsNoTracking()
-                .Where(c => c.SourceCustomerId != null &&
-                            (customerIdsWithContracts.Contains(c.SourceCustomerId) ||
-                             customerCodesWithTickets.Contains(c.SourceCustomerId)))
-                .OrderBy(c => c.Name);
+                var customerSubquery = _context.Customers.AsNoTracking()
+                    .Where(c => c.SourceCustomerId != null && (
+                        matchingContracts.Any(ct => ct.CtrmCustomerId == c.SourceCustomerId) ||
+                        matchingTickets.Any(t => t.CustomerCode == c.SourceCustomerId)));
 
-            var producerCustomerCodes = hasTradeUnitFilter
-                ? await customerQuery.Select(c => c.SourceCustomerId!).ToListAsync(cancellationToken)
-                : await customerQuery.Take(15).Select(c => c.SourceCustomerId!).ToListAsync(cancellationToken);
+                var ticketsQuery = _context.Tickets
+                    .AsNoTracking()
+                    .Where(t => t.IsActive && t.CustomerCode != null &&
+                        customerSubquery.Any(cu => cu.SourceCustomerId == t.CustomerCode));
 
-            _logger.LogInformation("Loading tickets for {CustomerCount} customers who have contracts or tickets (filtered: {IsFiltered}, tradeUnitCount: {TradeUnitCount})",
-                producerCustomerCodes.Count, hasTradeUnitFilter, hasTradeUnitFilter ? tradeUnits!.Count : 0);
-
-            // Load all tickets for those producer customers using string matching (CustomerCode = SourceCustomerId)
-            var ticketsQuery = _context.Tickets
-                .AsNoTracking()
-                .Where(t => t.IsActive && t.CustomerCode != null && producerCustomerCodes.Contains(t.CustomerCode));
-
-            // Apply trade unit filter if specified
-            if (hasTradeUnitFilter)
-            {
+                // Belt-and-suspenders: also filter by trade unit directly on tickets
                 ticketsQuery = ticketsQuery.Where(t => t.OrganizationCode != null && tradeUnits!.Contains(t.OrganizationCode));
+
+                tickets = await ticketsQuery
+                    .OrderByDescending(t => t.Date)
+                    .ToListAsync(cancellationToken);
             }
 
-            var tickets = await ticketsQuery
-                .OrderByDescending(t => t.Date)
-                .ToListAsync(cancellationToken);
+            _logger.LogInformation("Loading tickets (filtered: {IsFiltered}, tradeUnitCount: {TradeUnitCount})",
+                hasTradeUnitFilter, hasTradeUnitFilter ? tradeUnits!.Count : 0);
 
-            // Load quality data for these tickets
+            // Load quality data for these tickets — chunked at 1000 to stay under SQL Server's 2100-param limit
             var ticketIds = tickets.Select(t => t.Id).ToList();
-            var qualityList = await _context.TicketQualities
-                .AsNoTracking()
-                .Where(q => ticketIds.Contains(q.TicketId))
-                .ToListAsync(cancellationToken);
+            var qualityList = new List<TicketQuality>();
+            foreach (var batch in ticketIds.Chunk(1000))
+            {
+                var batchResult = await _context.TicketQualities
+                    .AsNoTracking()
+                    .Where(q => batch.Contains(q.TicketId))
+                    .ToListAsync(cancellationToken);
+                qualityList.AddRange(batchResult);
+            }
 
             var qualityData = qualityList.ToDictionary(q => q.TicketId);
 

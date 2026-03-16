@@ -376,9 +376,10 @@ if (app.Environment.IsDevelopment())
 // =============================================================================
 
 // Enable OpenAPI endpoint in development for API testing/documentation
+// RequireAuthorization ensures a valid Azure AD token is needed to access the spec
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.MapOpenApi().RequireAuthorization();
 }
 
 // Global exception handling — must be first in the middleware pipeline

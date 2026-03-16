@@ -9,10 +9,12 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class StoredGrainController : ControllerBase
 {
     private readonly IDataService _dataService;
+    private readonly IUserEntitlementService _entitlementService;
 
-    public StoredGrainController(IDataService dataService)
+    public StoredGrainController(IDataService dataService, IUserEntitlementService entitlementService)
     {
         _dataService = dataService;
+        _entitlementService = entitlementService;
     }
 
     // -------------------------------------------------------------------------
@@ -30,6 +32,7 @@ public class StoredGrainController : ControllerBase
     [ProducesResponseType(typeof(List<StoredGrain>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<StoredGrain>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
+        await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
         return Ok(await _dataService.GetStoredGrainByCustomerAsync(customerId, cancellationToken));
     }
 }

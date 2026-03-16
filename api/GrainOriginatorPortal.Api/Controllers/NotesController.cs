@@ -12,11 +12,13 @@ public class NotesController : ControllerBase
 {
     private readonly IDataService _dataService;
     private readonly ILogger<NotesController> _logger;
+    private readonly IUserEntitlementService _entitlementService;
 
-    public NotesController(IDataService dataService, ILogger<NotesController> logger)
+    public NotesController(IDataService dataService, ILogger<NotesController> logger, IUserEntitlementService entitlementService)
     {
         _dataService = dataService;
         _logger = logger;
+        _entitlementService = entitlementService;
     }
 
     // -------------------------------------------------------------------------
@@ -25,7 +27,13 @@ public class NotesController : ControllerBase
     [ProducesResponseType(typeof(List<Note>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<Note>>> GetAll(CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetNotesAsync(cancellationToken));
+        var notes = await _dataService.GetNotesAsync(cancellationToken);
+        if (_entitlementService.EntitlementsAvailable)
+        {
+            var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);
+            notes = notes.Where(n => n.TradeUnit == null || allowed.Contains(n.TradeUnit)).ToList();
+        }
+        return Ok(notes);
     }
 
     // -------------------------------------------------------------------------

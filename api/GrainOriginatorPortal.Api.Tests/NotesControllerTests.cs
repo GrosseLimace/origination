@@ -14,13 +14,15 @@ public class NotesControllerTests
 {
     private readonly Mock<IDataService> _mockDataService;
     private readonly Mock<ILogger<NotesController>> _mockLogger;
+    private readonly Mock<IUserEntitlementService> _mockEntitlementService;
     private readonly NotesController _controller;
 
     public NotesControllerTests()
     {
         _mockDataService = new Mock<IDataService>();
         _mockLogger = new Mock<ILogger<NotesController>>();
-        _controller = new NotesController(_mockDataService.Object, _mockLogger.Object);
+        _mockEntitlementService = new Mock<IUserEntitlementService>();
+        _controller = new NotesController(_mockDataService.Object, _mockLogger.Object, _mockEntitlementService.Object);
     }
 
     [Fact]
