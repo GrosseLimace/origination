@@ -42,10 +42,16 @@ jobs:
         shell: bash
         run: |
           RG=$(az webapp list --query "[?name=='app-origination-qa-eus'].resourceGroup | [0]" -o tsv)
+          if [ -z "$RG" ]; then echo "ERROR: Could not resolve resource group"; exit 1; fi
+          echo "Resource group: $RG"
           az webapp config appsettings set \
             --name app-origination-qa-eus \
             --resource-group "$RG" \
-            --settings ASPNETCORE_ENVIRONMENT=QA
+            --settings \
+              ASPNETCORE_ENVIRONMENT=QA \
+              KeyVaultUri=https://kv-orig-qa-eus.vault.azure.net/ \
+              AzureAd__ClientId=f3fcab2b-98c8-4622-86bd-c874d281b22a \
+              AzureAd__Audience=api://f3fcab2b-98c8-4622-86bd-c874d281b22a
 
       - name: Deploy to QA
         uses: azure/webapps-deploy@v3
