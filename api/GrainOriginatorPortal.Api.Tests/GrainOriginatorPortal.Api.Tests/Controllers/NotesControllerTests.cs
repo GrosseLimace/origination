@@ -25,7 +25,7 @@ public class NotesControllerTests
     {
         _dataServiceMock = new Mock<IDataService>();
         _entitlementServiceMock = new Mock<IUserEntitlementService>();
-        _sut = new NotesController(_dataServiceMock.Object, _entitlementServiceMock.Object, new Mock<ILogger<NotesController>>().Object);
+        _sut = new NotesController(_dataServiceMock.Object, new Mock<ILogger<NotesController>>().Object, _entitlementServiceMock.Object);
     }
 
     // -------------------------------------------------------------------------

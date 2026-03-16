@@ -25,7 +25,7 @@ public class PlantingIntentionsControllerTests
     {
         _dataServiceMock = new Mock<IDataService>();
         _entitlementServiceMock = new Mock<IUserEntitlementService>();
-        _sut = new PlantingIntentionsController(_dataServiceMock.Object, _entitlementServiceMock.Object, new Mock<ILogger<PlantingIntentionsController>>().Object);
+        _sut = new PlantingIntentionsController(_dataServiceMock.Object, new Mock<ILogger<PlantingIntentionsController>>().Object, _entitlementServiceMock.Object);
     }
 
     // -------------------------------------------------------------------------

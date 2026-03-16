@@ -182,7 +182,7 @@
                   </svg>
                   @if (getEffectiveCommodities().length > 0) {
                     <div class="flex flex-wrap gap-1">
-                      @for (commodity of getEffectiveCommodities(); track commodity) {
+                      @for (commodity of getEffectiveCommodities(); track $index) {
                         <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-scoular-yellow">{{ commodity }}</span>
                       }
                     </div>

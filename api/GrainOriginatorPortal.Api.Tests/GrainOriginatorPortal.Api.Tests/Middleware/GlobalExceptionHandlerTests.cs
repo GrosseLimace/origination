@@ -1,5 +1,6 @@
 // Microsoft namespaces
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 // Moq
@@ -19,8 +20,9 @@ namespace GrainOriginatorPortal.Api.Tests.Middleware;
 public class GlobalExceptionHandlerTests
 {
     private readonly Mock<ILogger<GlobalExceptionHandler>> _loggerMock = new();
+    private readonly Mock<IHostEnvironment> _envMock = new();
 
-    private GlobalExceptionHandler CreateSut() => new(_loggerMock.Object);
+    private GlobalExceptionHandler CreateSut() => new(_loggerMock.Object, _envMock.Object);
 
     private static DefaultHttpContext BuildContext(string correlationId = "test-trace-id")
     {

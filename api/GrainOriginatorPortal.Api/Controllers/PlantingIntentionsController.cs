@@ -12,11 +12,13 @@ public class PlantingIntentionsController : ControllerBase
 {
     private readonly IDataService _dataService;
     private readonly ILogger<PlantingIntentionsController> _logger;
+    private readonly IUserEntitlementService _entitlementService;
 
-    public PlantingIntentionsController(IDataService dataService, ILogger<PlantingIntentionsController> logger)
+    public PlantingIntentionsController(IDataService dataService, ILogger<PlantingIntentionsController> logger, IUserEntitlementService entitlementService)
     {
         _dataService = dataService;
         _logger = logger;
+        _entitlementService = entitlementService;
     }
 
     // -------------------------------------------------------------------------
@@ -25,7 +27,13 @@ public class PlantingIntentionsController : ControllerBase
     [ProducesResponseType(typeof(List<PlantingIntention>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<PlantingIntention>>> GetAll(CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetPlantingIntentionsAsync(cancellationToken));
+        var intentions = await _dataService.GetPlantingIntentionsAsync(cancellationToken);
+        if (_entitlementService.EntitlementsAvailable)
+        {
+            var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);
+            intentions = intentions.Where(i => string.IsNullOrEmpty(i.TradeUnit) || allowed.Contains(i.TradeUnit)).ToList();
+        }
+        return Ok(intentions);
     }
 
     // -------------------------------------------------------------------------

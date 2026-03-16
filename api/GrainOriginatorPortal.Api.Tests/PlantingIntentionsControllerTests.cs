@@ -14,13 +14,15 @@ public class PlantingIntentionsControllerTests
 {
     private readonly Mock<IDataService> _mockDataService;
     private readonly Mock<ILogger<PlantingIntentionsController>> _mockLogger;
+    private readonly Mock<IUserEntitlementService> _mockEntitlementService;
     private readonly PlantingIntentionsController _controller;
 
     public PlantingIntentionsControllerTests()
     {
         _mockDataService = new Mock<IDataService>();
         _mockLogger = new Mock<ILogger<PlantingIntentionsController>>();
-        _controller = new PlantingIntentionsController(_mockDataService.Object, _mockLogger.Object);
+        _mockEntitlementService = new Mock<IUserEntitlementService>();
+        _controller = new PlantingIntentionsController(_mockDataService.Object, _mockLogger.Object, _mockEntitlementService.Object);
     }
 
     [Fact]
