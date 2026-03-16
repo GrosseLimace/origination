@@ -39,6 +39,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_NONPROD }}
 
       - name: Set App Service environment
+        shell: bash
         run: |
           RG=$(az webapp show --name app-origination-qa-eus --query resourceGroup -o tsv)
           az webapp config appsettings set \
