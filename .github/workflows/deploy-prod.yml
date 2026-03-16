@@ -1,0 +1,45 @@
+name: Deploy to Prod
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    environment: prod
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+
+      - name: Install Angular dependencies
+        run: npm ci
+        working-directory: client
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Build Angular (production)
+        run: npx ng build --configuration production
+        working-directory: client
+
+      - name: Build and Publish
+        run: dotnet publish api/GrainOriginatorPortal.Api -c Release -o ./publish
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_PROD }}
+
+      - name: Deploy to Prod
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: app-origination-eus
+          package: ./publish
