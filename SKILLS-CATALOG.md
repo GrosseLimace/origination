@@ -25,8 +25,8 @@ These skills were copied when the repo was created. Your team owns them and can 
 
 | Skill | Command | Description | What to Customize |
 |-------|---------|-------------|-------------------|
-| Kick-Off | `/kick-off` | Start-of-session orientation — reads CLAUDE.md Session Context, recent CHANGELOG, and git status | `claude-docs/` paths |
-| Wrap-Up | `/wrap-up` | End-of-session documentation — updates CHANGELOG, CLAUDE.md Session Context, ROADMAP, and more | `claude-docs/` paths |
+| Kick-Off | `/kick-off` | Start-of-session orientation — reads CLAUDE.md Session Context, recent CHANGELOG, and git status | `agents-docs/` paths |
+| Wrap-Up | `/wrap-up` | End-of-session documentation — updates CHANGELOG, CLAUDE.md Session Context, ROADMAP, and more | `agents-docs/` paths |
 | Sync Style Guides | `/sync-style-guides` | Pull latest style guides from dev-standards into this repo | Typically no changes needed |
 | Sync Standard Permissions | `/sync-standard-permissions` | Merge standard Claude Code permissions into local settings (additive only) | Typically no changes needed |
 
