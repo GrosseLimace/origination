@@ -77,8 +77,8 @@
         </div>
 
         <!-- Desktop Table View -->
-        <div class="hidden md:block">
-          <app-table>
+        <div class="hidden md:block max-h-[calc(100vh-14rem)] overflow-y-auto overflow-x-auto relative">
+          <app-table [stickyHeader]="true">
             <app-table-header>
               <app-table-row>
                 <app-table-head [sortable]="true" (click)="handleSort('crop')" class="w-[24%] text-center">
