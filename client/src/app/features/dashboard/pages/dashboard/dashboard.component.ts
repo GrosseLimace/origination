@@ -200,12 +200,22 @@ export class DashboardComponent {
     this._isLoading = true;
     this._localLoading.set(true);
 
+    const preloaded = this.appStateService.commodities();
+    if (preloaded.length > 0) {
+      this.allCommodities.set(preloaded);
+      this._isLoading = false;
+      this._localLoading.set(false);
+      this.loadDashboardEstimates();
+      return;
+    }
+
     this.apiService.getCommodities().pipe(
       catchError(() => of([] as Commodity[])),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe({
       next: (commodities) => {
         this.allCommodities.set(commodities);
+        this.appStateService.setCommodities(commodities);
         this._isLoading = false;
         this._localLoading.set(false);
         this.loadDashboardEstimates();

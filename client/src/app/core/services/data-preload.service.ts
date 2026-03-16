@@ -6,7 +6,8 @@ import { MsalBroadcastService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 import { ApiService } from './api.service';
 import { AppStateService } from './app-state.service';
-import { Customer, Contract, Ticket, Note, PlantingIntention, StoredGrain, SavedList } from '@models';
+import { Customer, Contract, Ticket, Note, PlantingIntention, StoredGrain, SavedList, Commodity } from '@models';
+import { ProducerDetails } from '../../models/producer-details.model';
 
 @Injectable({ providedIn: 'root' })
 export class DataPreloadService {
@@ -46,7 +47,9 @@ export class DataPreloadService {
           notes: this.apiService.getNotes().pipe(catchError(() => of([] as Note[]))),
           plantingIntentions: this.apiService.getPlantingIntentions().pipe(catchError(() => of([] as PlantingIntention[]))),
           storedGrain: this.apiService.getStoredGrain().pipe(catchError(() => of([] as StoredGrain[]))),
-          savedLists: this.apiService.getSavedLists().pipe(catchError(() => of([] as SavedList[])))
+          savedLists: this.apiService.getSavedLists().pipe(catchError(() => of([] as SavedList[]))),
+          commodities: this.apiService.getCommodities().pipe(catchError(() => of([] as Commodity[]))),
+          producerDetails: this.apiService.getAllProducerDetails().pipe(catchError(() => of([] as ProducerDetails[])))
         });
       }),
       takeUntilDestroyed(this.destroyRef)
@@ -59,6 +62,8 @@ export class DataPreloadService {
       this.appState.setPlantingIntentions(result.plantingIntentions);
       this.appState.setStoredGrain(result.storedGrain);
       this.appState.setSavedLists(result.savedLists);
+      this.appState.setCommodities(result.commodities);
+      this.appState.setProducerDetails(result.producerDetails);
       this.appState.setDataLoading(false);
     });
   }
