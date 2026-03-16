@@ -44,6 +44,10 @@ export class CustomerProfileComponent {
   public yieldEstimates = input<DashboardPlantingEstimate[]>([]);
   public commodities = input<Commodity[]>([]);
   public isLoadingEstimates = input(false);
+  public isLoadingContracts = input(false);
+  public isLoadingTickets = input(false);
+  public isLoadingPlanting = input(false);
+  public isLoadingStoredGrain = input(false);
 
   // Unfiltered data for Activity Summary
   public allCustomerContracts = input<Contract[]>([]);

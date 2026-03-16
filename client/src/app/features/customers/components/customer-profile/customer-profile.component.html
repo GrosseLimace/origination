@@ -268,10 +268,10 @@
         <div class="pb-8">
           @switch (activeTab()) {
             @case ('contracts') {
-              <app-contracts-table [contracts]="contracts()" [tickets]="tickets()" [pricingLines]="pricingLines()" [customer]="customer()" [openContractId]="openContractId()"></app-contracts-table>
+              <app-contracts-table [contracts]="contracts()" [tickets]="tickets()" [pricingLines]="pricingLines()" [customer]="customer()" [openContractId]="openContractId()" [isLoading]="isLoadingContracts()"></app-contracts-table>
             }
             @case ('tickets') {
-              <app-tickets-table [tickets]="tickets()" [contracts]="contracts()" [customer]="customer()"></app-tickets-table>
+              <app-tickets-table [tickets]="tickets()" [contracts]="contracts()" [customer]="customer()" [isLoading]="isLoadingTickets()"></app-tickets-table>
             }
             @case ('planting') {
               <!-- Contract Percentage Summary for this planting year -->
@@ -325,6 +325,7 @@
                 [customerCommodityCodes]="getEffectiveCommodities()"
                 [yieldEstimateCrops]="yieldEstimateCrops()"
                 [selectedYear]="selectedPlantingYear()"
+                [isLoading]="isLoadingPlanting()"
                 (yearSelect)="selectPlantingYear($event)"
                 (add)="onAddPlanting.emit($event)"
                 (edit)="onEditPlanting.emit($event)"
@@ -332,7 +333,7 @@
               </app-planting-intentions-table>
             }
             @case ('storage') {
-              <app-stored-grain-table [storedGrain]="storedGrain()" [customer]="customer()"></app-stored-grain-table>
+              <app-stored-grain-table [storedGrain]="storedGrain()" [customer]="customer()" [isLoading]="isLoadingStoredGrain()"></app-stored-grain-table>
             }
           }
         </div>

@@ -35,6 +35,7 @@ interface TicketGroup {
   templateUrl: './tickets-table.component.html'
 })
 export class TicketsTableComponent {
+  public isLoading = input(false);
   public tickets = input<Ticket[]>([]);
   public contracts = input<Contract[]>([]);
   public customer = input.required<Customer>();

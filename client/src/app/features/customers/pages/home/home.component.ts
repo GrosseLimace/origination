@@ -68,6 +68,10 @@ export class HomeComponent {
   readonly yieldEstimates = signal<DashboardPlantingEstimate[]>([]);
   readonly commodities = signal<Commodity[]>([]);
   readonly isLoadingYieldData = signal(false);
+  readonly isLoadingContracts = signal(false);
+  readonly isLoadingTickets = signal(false);
+  readonly isLoadingStoredGrain = signal(false);
+  readonly isLoadingPlanting = signal(true);
 
   readonly isMobile = signal(false);
   readonly loading = signal(false);
@@ -232,8 +236,11 @@ export class HomeComponent {
       next: (data) => {
         this.plantingIntentions.set(data);
         this.appState.setPlantingIntentions(data);
+        this.isLoadingPlanting.set(false);
+        const sel = this.selectedCustomer();
+        if (sel) this._loadCustomerData(sel.id);
       },
-      error: () => {}
+      error: () => { this.isLoadingPlanting.set(false); }
     });
 
     this.apiService.getNotes().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -459,6 +466,9 @@ export class HomeComponent {
 
     this.selectedCustomer.set(customer);
     this.appState.selectCustomer(customer);
+    this.isLoadingContracts.set(true);
+    this.isLoadingTickets.set(true);
+    this.isLoadingStoredGrain.set(true);
     this._loadCustomerContractsAndTickets(customer.id, customer.sourceCustomerId);
     this._loadCustomerData(customer.id);
     this._fetchMissingLinkedProducers(customer);
@@ -567,9 +577,10 @@ export class HomeComponent {
         contracts.forEach(c => { if (!merged.some(e => e.id === c.id)) merged.push(c); });
         this.contracts.set(merged);
         this.appState.setContracts(merged);
+        this.isLoadingContracts.set(false);
         this._loadCustomerData(customerId);
       },
-      error: () => {}
+      error: () => { this.isLoadingContracts.set(false); }
     });
 
     this.apiService.getTicketsByCustomer(customerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -579,12 +590,13 @@ export class HomeComponent {
         tickets.forEach(t => { if (!merged.some(e => e.id === t.id)) merged.push(t); });
         this.tickets.set(merged);
         this.appState.setTickets(merged);
+        this.isLoadingTickets.set(false);
         this._loadCustomerData(customerId);
 
         const customer = this.customers().find(c => c.id === customerId) || this.selectedCustomer();
         if (customer) this._autoSaveCommodities(customer, tickets);
       },
-      error: () => {}
+      error: () => { this.isLoadingTickets.set(false); }
     });
 
     this.apiService.getStoredGrainByCustomer(customerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -593,9 +605,10 @@ export class HomeComponent {
         const merged = [...existing.filter(s => s.customerId !== customerId), ...grain];
         this.storedGrain.set(merged);
         this.appState.setStoredGrain(merged);
+        this.isLoadingStoredGrain.set(false);
         this._loadCustomerData(customerId);
       },
-      error: () => {}
+      error: () => { this.isLoadingStoredGrain.set(false); }
     });
   }
 

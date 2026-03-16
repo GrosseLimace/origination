@@ -32,7 +32,6 @@ export class TradeUnitSelectorComponent implements OnInit {
   groupsLoadError = signal(false);
 
   ngOnInit(): void {
-    console.log('[TUSel] init — loaded:', this.appState.userGroupsLoaded(), 'groups:', this.appState.userGroups().length);
     if (!this.appState.userGroupsLoaded()) {
       this._fetchGroups();
     }
@@ -50,7 +49,6 @@ export class TradeUnitSelectorComponent implements OnInit {
     ).subscribe({
       next: (groups) => {
         this.groupsLoading.set(false);
-        console.log('[TUSel] groups received:', groups.length, groups.map(g => g.groupName));
         if (groups.length === 0) {
           // Don't mark userGroupsLoaded so a page refresh can retry naturally.
           // Surface an error so the user knows something went wrong.
@@ -62,7 +60,6 @@ export class TradeUnitSelectorComponent implements OnInit {
           tradeUnitCodes: g.tradeUnitCodes
         }));
         this.appState.setUserGroups(mapped);
-        console.log('[TUSel] userGroups signal set to', this.appState.userGroups().length, '— showing group dropdown:', this.appState.userGroups().length > 1);
 
         // Restore group selection, filtering out groups that no longer exist
         const prevGroups = this.appState.selectedGroupNames();

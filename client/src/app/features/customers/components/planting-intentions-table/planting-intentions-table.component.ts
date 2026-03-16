@@ -40,6 +40,7 @@ export class PlantingIntentionsTableComponent {
   private apiService = inject(ApiService);
   private destroyRef = inject(DestroyRef);
 
+  public isLoading = input(false);
   public plantingIntentions = input<PlantingIntention[]>([]);
   public customer = input.required<Customer>();
   public tradeUnits = input<string[]>([]);

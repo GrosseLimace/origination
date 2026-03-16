@@ -325,12 +325,16 @@ export class BuildListComponent {
   }
 
   private _loadAndMergeProducerDetails(): void {
-    this.apiService.getAllProducerDetails().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    const preloaded = this.appState.producerDetails();
+    (preloaded.length > 0 ? of(preloaded) : this.apiService.getAllProducerDetails()).pipe(
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe({
       next: (details) => {
         if (details.length === 0) {
           this.loading.set(false);
           return;
         }
+        if (preloaded.length === 0) this.appState.setProducerDetails(details);
         const detailsMap = new Map(details.map(d => [d.customerId, d]));
         let changed = false;
         const merged = this.customers().map(customer => {
@@ -459,7 +463,7 @@ export class BuildListComponent {
       plantingIntentions: this.apiService.getPlantingIntentions().pipe(catchError(() => of([] as PlantingIntention[]))),
       notes: this.apiService.getNotes().pipe(catchError(() => of([] as Note[]))),
       storedGrain: this.apiService.getStoredGrain().pipe(catchError(() => of([] as StoredGrain[]))),
-      producerDetails: this.apiService.getAllProducerDetails().pipe(catchError(() => of([] as ProducerDetails[])))
+      producerDetails: (this.appState.producerDetails().length > 0 ? of(this.appState.producerDetails()) : this.apiService.getAllProducerDetails()).pipe(catchError(() => of([] as ProducerDetails[])))
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         // Merge ProducerDetails into customer objects

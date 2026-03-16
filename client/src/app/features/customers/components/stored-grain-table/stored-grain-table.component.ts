@@ -18,6 +18,7 @@ export interface ReceiptGroup {
   templateUrl: './stored-grain-table.component.html'
 })
 export class StoredGrainTableComponent {
+  public isLoading = input(false);
   public storedGrain = input<StoredGrain[]>([]);
   public customer = input.required<Customer>();
 

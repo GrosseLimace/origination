@@ -1,5 +1,6 @@
 import { Injectable, signal, computed } from '@angular/core';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, Commodity, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest } from '@models';
+import { ProducerDetails } from '../../models/producer-details.model';
 
 export interface InsightsCacheEntry {
   tradeUnitsKey: string; // sorted, comma-joined trade unit IDs — used to detect trade unit changes
@@ -93,6 +94,8 @@ export class AppStateService {
   notes = signal<Note[]>([]);
   storedGrain = signal<StoredGrain[]>([]);
   savedLists = signal<SavedList[]>([]);
+  commodities = signal<Commodity[]>([]);
+  producerDetails = signal<ProducerDetails[]>([]);
 
   setView(view: 'customers' | 'insights' | 'buildlist' | 'dashboard'): void {
     this.currentView.set(view);
@@ -145,6 +148,14 @@ export class AppStateService {
 
   setSavedLists(savedLists: SavedList[]): void {
     this.savedLists.set(savedLists);
+  }
+
+  setCommodities(commodities: Commodity[]): void {
+    this.commodities.set(commodities);
+  }
+
+  setProducerDetails(details: ProducerDetails[]): void {
+    this.producerDetails.set(details);
   }
 
   // Global data loading flag — true while DataPreloadService is fetching on TU change
@@ -226,6 +237,8 @@ export class AppStateService {
     this.notes.set([]);
     this.storedGrain.set([]);
     this.savedLists.set([]);
+    this.commodities.set([]);
+    this.producerDetails.set([]);
     this.buildListState.set(null);
     this.lastScrolledCustomerId.set(null);
     this.insightsCache.set(null);

@@ -23,6 +23,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
   templateUrl: './contracts-table.component.html'
 })
 export class ContractsTableComponent {
+  public isLoading = input(false);
   public contracts = input<Contract[]>([]);
   public tickets = input<Ticket[]>([]);
   public pricingLines = input<ContractPricingLine[]>([]);
