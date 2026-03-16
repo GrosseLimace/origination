@@ -55,7 +55,7 @@ These are automatically deployed - do NOT tell developers to add them:
 ```typescript
 export const environment = {
   production: false,
-  apiUrl: 'https://localhost:5001/api/v1',
+  apiBaseUrl: 'http://localhost:5000/api',
   msalConfig: {
     auth: {
       clientId: '<DEV_SPA_CLIENT_ID>',
@@ -66,27 +66,47 @@ export const environment = {
   },
   apiConfig: {
     scopes: ['api://<DEV_API_CLIENT_ID>/Origination.Application.Dev'],
-    uri: 'https://localhost:5001/api/v1'
+    uri: 'http://localhost:5000/api/*'
   }
 };
 ```
 
-`environment.dev.ts` / `environment.qa.ts` / `environment.prod.ts` (deployed - relative URL, same origin):
+`environment.dev.ts` / `environment.qa.ts` (deployed non-production - relative URL, same origin):
 ```typescript
 export const environment = {
-  production: true,
-  apiUrl: '/api/v1',
+  production: false,  // dev and qa are non-production; only environment.prod.ts uses true
+  apiBaseUrl: '/api',
   msalConfig: {
     auth: {
       clientId: '<SPA_CLIENT_ID>',
       authority: 'https://login.microsoftonline.com/1521f999-f722-4a4f-9747-166f93e9b0d1',
-      redirectUri: 'https://origination-dev.scoular.com', // or -qa / no suffix for prod
-      postLogoutRedirectUri: 'https://origination-dev.scoular.com', // or -qa / no suffix for prod
+      redirectUri: 'https://origination-dev.scoular.com', // or -qa for QA
+      postLogoutRedirectUri: 'https://origination-dev.scoular.com', // or -qa for QA
     }
   },
   apiConfig: {
-    scopes: ['api://<API_CLIENT_ID>/Origination.Application.Dev'], // .QA or .Prod for other envs
-    uri: '/api/v1'
+    scopes: ['api://<API_CLIENT_ID>/Origination.Application.Dev'], // .QA for QA env
+    uri: '/api/*'
+  }
+};
+```
+
+`environment.prod.ts` (production):
+```typescript
+export const environment = {
+  production: true,
+  apiBaseUrl: '/api',
+  msalConfig: {
+    auth: {
+      clientId: '<PROD_SPA_CLIENT_ID>',
+      authority: 'https://login.microsoftonline.com/1521f999-f722-4a4f-9747-166f93e9b0d1',
+      redirectUri: 'https://origination.scoular.com',
+      postLogoutRedirectUri: 'https://origination.scoular.com',
+    }
+  },
+  apiConfig: {
+    scopes: ['api://<PROD_API_CLIENT_ID>/Origination.Application.Prod'],
+    uri: '/api/*'
   }
 };
 ```
@@ -106,18 +126,23 @@ Use SPA Client ID for `clientId` and API Client ID for scopes (see table above).
 Add `fileReplacements` under `configurations` for each deployed environment to swap environment files at build time.
 
 **App bootstrap** (`main.ts` for standalone Angular apps):
-```typescript
-import { MsalGuard, MsalInterceptor, MsalBroadcastService, MsalService, MsalRedirectComponent, MSAL_GUARD_CONFIG, MSAL_INSTANCE, MSAL_INTERCEPTOR_CONFIG } from '@azure/msal-angular';
-import { PublicClientApplication, InteractionType, BrowserCacheLocation } from '@azure/msal-browser';
-import { HTTP_INTERCEPTORS, provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
-import { APP_INITIALIZER } from '@angular/core';
 
-// Create MSAL instance before bootstrap so APP_INITIALIZER can reference it
+The app uses `APP_INITIALIZER` to await MSAL initialization and process any returning redirect **before** route guards run. This prevents the login redirect loop where `MsalGuard` fires before MSAL has processed the auth code.
+
+```typescript
+import { APP_INITIALIZER, ErrorHandler, provideZonelessChangeDetection } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
+import { bootstrapApplication } from '@angular/platform-browser';
+import { provideRouter } from '@angular/router';
+import { provideHttpClient, withInterceptorsFromDi, HTTP_INTERCEPTORS } from '@angular/common/http';
+import {
+  MsalInterceptor, MsalGuard, MsalBroadcastService, MsalService,
+  MSAL_GUARD_CONFIG, MSAL_INSTANCE, MSAL_INTERCEPTOR_CONFIG,
+} from '@azure/msal-angular';
+import { PublicClientApplication, InteractionType, BrowserCacheLocation } from '@azure/msal-browser';
+
 const msalInstance = new PublicClientApplication({
-  auth: {
-    ...environment.msalConfig.auth,
-    navigateToLoginRequestUrl: true,
-  },
+  auth: { ...environment.msalConfig.auth },
   cache: {
     // SessionStorage: tokens cleared on tab close, tab-isolated (not shared across tabs)
     cacheLocation: BrowserCacheLocation.SessionStorage,
@@ -126,14 +151,23 @@ const msalInstance = new PublicClientApplication({
 
 bootstrapApplication(AppComponent, {
   providers: [
+    provideZonelessChangeDetection(),
     provideRouter(routes),
     provideHttpClient(withInterceptorsFromDi()),
     { provide: MSAL_INSTANCE, useValue: msalInstance },
     {
-      // Initialize MSAL and process any returning redirect BEFORE the app renders.
-      // This prevents the brief flash of unauthenticated content.
+      // Initialize MSAL and process any returning redirect BEFORE guards run.
+      // Without awaiting handleRedirectObservable(), the auth code from Azure AD
+      // is unprocessed when guards execute, causing a login redirect loop.
       provide: APP_INITIALIZER,
-      useFactory: (msalService: MsalService) => () => msalService.instance.initialize(),
+      useFactory: (msalService: MsalService) => async () => {
+        await msalService.instance.initialize();
+        try {
+          await firstValueFrom(msalService.handleRedirectObservable());
+        } catch {
+          // Auth errors are handled via MsalBroadcastService; don't block bootstrap.
+        }
+      },
       deps: [MsalService],
       multi: true
     },
@@ -161,27 +195,42 @@ bootstrapApplication(AppComponent, {
 });
 ```
 
-**Route configuration** - use `MsalGuard` on routes and `MsalRedirectComponent` for auth callback:
-```typescript
-import { MsalRedirectComponent } from '@azure/msal-angular';
+**Route guard** — wait for MSAL interaction to complete before calling `MsalGuard`:
 
+The guard must wait for `InteractionStatus.None` before invoking `MsalGuard.canActivate()`. If the guard fires while MSAL is still in `HandleRedirect` status (processing the auth code), it sees no account and triggers another login redirect.
+
+```typescript
+import { inject } from '@angular/core';
+import { CanActivateFn } from '@angular/router';
+import { MsalGuard, MsalBroadcastService } from '@azure/msal-angular';
+import { InteractionStatus } from '@azure/msal-browser';
+import { filter, take, switchMap } from 'rxjs/operators';
+
+export const authGuard: CanActivateFn = (...args) => {
+  const broadcastService = inject(MsalBroadcastService);
+  const msalGuard = inject(MsalGuard);
+
+  return broadcastService.inProgress$.pipe(
+    filter(status => status === InteractionStatus.None),
+    take(1),
+    switchMap(() => msalGuard.canActivate(...args))
+  );
+};
+```
+
+**Route configuration** — use `authGuard` on protected routes:
+```typescript
 export const routes: Routes = [
-  // MsalRedirectComponent processes the auth redirect before the app renders.
-  // Without this, the app briefly flashes unauthenticated content.
-  { path: 'auth', component: MsalRedirectComponent },
-  { path: 'dashboard', component: DashboardComponent, canActivate: [MsalGuard] }
+  {
+    path: '',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/home/home.component').then(m => m.HomeComponent)
+  },
+  { path: '**', redirectTo: '' }
 ];
 ```
 
-**Root component** - subscribe to MSAL events (redirect is handled by `MsalRedirectComponent`):
-```typescript
-export class AppComponent implements OnInit {
-  constructor(private msalService: MsalService) {}
-  ngOnInit(): void {
-    this.msalService.handleRedirectObservable().subscribe();
-  }
-}
-```
+> **Note:** `MsalRedirectComponent` is NOT used in this app. The `APP_INITIALIZER` + `inProgress$`-aware guard pattern handles all redirect scenarios without a dedicated auth route.
 
 ### .NET API Authentication Setup
 
@@ -226,7 +275,7 @@ app.MapFallbackToFile("index.html");  // SPA fallback for Angular routing
 ```csharp
 [ApiController]
 [Authorize]
-[Route("api/v1/[controller]")]
+[Route("api/[controller]")]
 public class MyController : ControllerBase { }
 ```
 
@@ -242,7 +291,7 @@ If using SignalR, the WebSocket handshake cannot send HTTP headers. Pass the tok
 **Angular client:**
 ```typescript
 const connection = new signalR.HubConnectionBuilder()
-  .withUrl(`${environment.apiUrl}/myhub`, {
+  .withUrl(`${environment.apiBaseUrl}/myhub`, {
     accessTokenFactory: () => this.msalService.acquireTokenSilent({
       scopes: environment.apiConfig.scopes
     }).then(result => result.accessToken)
@@ -263,7 +312,7 @@ options.Events = new JwtBearerEvents
     {
         var accessToken = context.Request.Query["access_token"];
         var path = context.HttpContext.Request.Path;
-        if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/api/v1/myhub"))
+        if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/api/myhub"))
         {
             context.Token = accessToken;
         }
@@ -445,4 +494,4 @@ See `developer-docs/GITHUB-ACTIONS-CICD.md` for the full CI/CD guide.
 
 ---
 
-*Document version: 1.3 | 2026-03-13*
+*Document version: 1.4 | 2026-03-16*
