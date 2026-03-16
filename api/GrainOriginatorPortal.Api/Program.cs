@@ -113,6 +113,28 @@ builder.Services.Configure<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBear
         };
     });
 
+// Accept both bare-GUID and api://-prefixed audience forms.
+// Azure AD v2 tokens carry aud = {clientId} (bare GUID). Infra pre-configures
+// AzureAd__Audience = api://{clientId} on every App Service. When an explicit
+// Audience is set, Microsoft.Identity.Web uses it as the sole ValidAudience,
+// causing IDX10214 if the token carries the other form. PostConfigure runs
+// after all Configure registrations (including Microsoft.Identity.Web) so this
+// override wins regardless of what App Settings or appsettings.*.json contain.
+builder.Services.PostConfigure<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>(
+    Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme,
+    options =>
+    {
+        var clientId = builder.Configuration["AzureAd:ClientId"];
+        if (!string.IsNullOrEmpty(clientId))
+        {
+            options.TokenValidationParameters.ValidAudiences =
+            [
+                clientId,
+                $"api://{clientId}"
+            ];
+        }
+    });
+
 // Required for IHttpContextAccessor in SqlDataService (traceId propagation to service-layer logs)
 builder.Services.AddHttpContextAccessor();
 
