@@ -2,7 +2,7 @@ import { Injectable, inject, DestroyRef } from '@angular/core';
 import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { forkJoin, merge, of } from 'rxjs';
 import { catchError, distinctUntilChanged, filter, switchMap, take, tap } from 'rxjs/operators';
-import { MsalBroadcastService } from '@azure/msal-angular';
+import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 import { ApiService } from './api.service';
 import { AppStateService } from './app-state.service';
@@ -17,17 +17,18 @@ export class DataPreloadService {
 
   constructor() {
     const msalBroadcast = inject(MsalBroadcastService);
+    const msalService = inject(MsalService);
 
     // Build the TU-change stream in the injection context (required for toObservable)
     const tuChanges$ = toObservable(this.appState.selectedTradeUnits).pipe(
       distinctUntilChanged((a, b) => [...a].sort().join(',') === [...b].sort().join(','))
     );
 
-    // Wait for MSAL to confirm auth is complete before making any API calls.
-    // inProgress$ is a BehaviorSubject so it replays the current status immediately —
-    // if auth is already done (None), the preload starts right away.
+    // Wait for MSAL to confirm the user is authenticated before making any API calls.
+    // Checking both InteractionStatus.None (no auth interaction in progress) AND that
+    // an account exists prevents premature API calls on first load before login.
     msalBroadcast.inProgress$.pipe(
-      filter(s => s === InteractionStatus.None),
+      filter(s => s === InteractionStatus.None && msalService.instance.getAllAccounts().length > 0),
       take(1),
       switchMap(() => tuChanges$),
       switchMap(tradeUnits => {

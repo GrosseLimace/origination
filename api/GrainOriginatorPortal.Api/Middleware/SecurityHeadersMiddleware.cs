@@ -48,7 +48,7 @@ public class SecurityHeadersMiddleware
                     "font-src 'self' https://fonts.gstatic.com data:; " +
                     "img-src 'self' data: https://*.tile.openstreetmap.org; " +
                     "connect-src 'self' https://login.microsoftonline.com https://*.azurewebsites.net http://localhost:5000 https://localhost:* https://graph.microsoft.com; " +
-                    "frame-src https://login.microsoftonline.com; " +
+                    "frame-src 'self' https://login.microsoftonline.com; " +
                     "object-src 'none'; " +
                     "base-uri 'self';";
             }

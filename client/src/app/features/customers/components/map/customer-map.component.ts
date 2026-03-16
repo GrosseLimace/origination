@@ -496,10 +496,10 @@ export class CustomerMapComponent {
       // Wire up "View Customer →" link
       const link = document.querySelector(`.view-customer-link[data-customer-id="${customer.id}"]`);
       if (link) {
-        (link as HTMLElement).onclick = (e: Event) => {
+        link.addEventListener('click', (e: Event) => {
           e.preventDefault();
           this.selectCustomer.emit(customer);
-        };
+        });
       }
 
       // Keep popup open while mouse is inside it
