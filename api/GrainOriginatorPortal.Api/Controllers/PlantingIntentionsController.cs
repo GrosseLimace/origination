@@ -1,6 +1,8 @@
 // Project namespaces
+using GrainOriginatorPortal.Api.Data;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Services;
+using Microsoft.EntityFrameworkCore;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -13,12 +15,14 @@ public class PlantingIntentionsController : ControllerBase
     private readonly IDataService _dataService;
     private readonly ILogger<PlantingIntentionsController> _logger;
     private readonly IUserEntitlementService _entitlementService;
+    private readonly ApplicationDbContext _appContext;
 
-    public PlantingIntentionsController(IDataService dataService, ILogger<PlantingIntentionsController> logger, IUserEntitlementService entitlementService)
+    public PlantingIntentionsController(IDataService dataService, ILogger<PlantingIntentionsController> logger, IUserEntitlementService entitlementService, ApplicationDbContext appContext)
     {
         _dataService = dataService;
         _logger = logger;
         _entitlementService = entitlementService;
+        _appContext = appContext;
     }
 
     // -------------------------------------------------------------------------
@@ -40,8 +44,10 @@ public class PlantingIntentionsController : ControllerBase
     /// <summary>Gets all planting intentions for a specific customer.</summary>
     [HttpGet("customer/{customerId}")]
     [ProducesResponseType(typeof(List<PlantingIntention>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<List<PlantingIntention>>> GetByCustomer(int customerId, CancellationToken cancellationToken = default)
     {
+        await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
         return Ok(await _dataService.GetPlantingIntentionsByCustomerAsync(customerId, cancellationToken));
     }
 
@@ -54,11 +60,22 @@ public class PlantingIntentionsController : ControllerBase
     public async Task<ActionResult<PlantingIntention>> Create([FromBody] CreatePlantingIntentionRequest request, CancellationToken cancellationToken = default)
     {
         await _entitlementService.ValidateCustomerAccessAsync(request.CustomerId, cancellationToken);
+
+        // Derive customer metadata from the authoritative CustomerSnapshot rather than trusting
+        // client-supplied values. This prevents callers from spoofing trade units or customer identity
+        // to make records appear in unauthorized views.
+        var snapshot = await _appContext.CustomerSnapshots
+            .FirstOrDefaultAsync(cs => cs.CustomerId == request.CustomerId, cancellationToken);
+
+        var customerName = snapshot?.CustomerName ?? request.CustomerName;
+        var customerCode = snapshot?.SourceCustomerId ?? request.CustomerCode;
+        var tradeUnit = snapshot?.TradeUnit ?? request.TradeUnit;
+
         var intention = await _dataService.AddPlantingIntentionAsync(
             request.CustomerId,
-            request.CustomerName,
-            request.CustomerCode,
-            request.TradeUnit,
+            customerName,
+            customerCode,
+            tradeUnit,
             request.Crop,
             request.Type,
             request.Description,
