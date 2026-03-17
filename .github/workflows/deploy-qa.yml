@@ -1,4 +1,4 @@
-name: Deploy to QA
+name: Originations Deploy to QA
 
 on:
   workflow_dispatch:
