@@ -1,4 +1,4 @@
-name: Deploy to Dev
+name: Originations Deploy to DEV
 
 on:
   push:
