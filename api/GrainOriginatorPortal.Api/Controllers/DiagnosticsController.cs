@@ -89,13 +89,13 @@ public class DiagnosticsController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Returns 404 in production environments.</summary>
+    /// <summary>Returns 404 unless running in Development or QA.</summary>
     /// <remarks>
     /// These endpoints expose internal DB schema structure and must never be
     /// accessible in production. security-guide.md §4.3 (least privilege).
     /// </remarks>
     private IActionResult? DenyIfNotDevelopment()
-        => _env.IsProduction() ? NotFound() : null;
+        => _env.IsDevelopment() || _env.IsEnvironment("QA") ? null : NotFound();
 
     // -------------------------------------------------------------------------
     /// <summary>
