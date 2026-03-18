@@ -1,9 +1,9 @@
 
-    <div class="space-y-6">
-      <!-- Header -->
-      <div>
-        <h2 class="text-2xl font-semibold text-gray-900 dark:text-white">Actionable Insights</h2>
-        <div class="flex items-center justify-between gap-4 mt-2 flex-wrap">
+    <div class="flex flex-col h-full">
+      <!-- Fixed header -->
+      <div class="flex-shrink-0 pb-4">
+        <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-white">Actionable Insights</h2>
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 mt-2">
           <app-trade-unit-selector />
           @if (loadedAt() && !isLoading()) {
             <div class="flex items-center gap-2 flex-shrink-0">
@@ -39,11 +39,14 @@
         </p>
       </div>
 
+      <!-- Scrollable content area -->
+      <div class="flex-1 overflow-y-auto space-y-6 min-h-0 mt-2 pr-2">
+
       <!-- No trade unit selected -->
       @if (selectedTradeUnits.length === 0) {
-        <div class="flex items-center justify-center py-20">
-          <div class="text-center">
-            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 text-gray-400 dark:text-gray-500">
+        <div class="flex items-center justify-center py-12 sm:py-20">
+          <div class="text-center px-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 text-gray-400 dark:text-gray-500 sm:w-16 sm:h-16">
               <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
             </svg>
             <p class="text-gray-500 dark:text-gray-400 font-medium text-lg mb-2">No Trade Unit Selected</p>
@@ -79,19 +82,19 @@
       } @else {
 
         <!-- Global customer search -->
-        <div class="flex items-center gap-2.5 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
+        <div class="flex items-center gap-2.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
           <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
           </svg>
           <input
             type="text"
-            [ngModel]="globalSearch()"
-            (ngModelChange)="globalSearch.set($event)"
+            [ngModel]="globalSearchRaw()"
+            (ngModelChange)="globalSearchRaw.set($event)"
             placeholder="Filter all categories by customer..."
             class="flex-1 py-0.5 text-sm bg-transparent focus:outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
           />
-          @if (globalSearch()) {
-            <button (click)="globalSearch.set('')" class="p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded">
+          @if (globalSearchRaw()) {
+            <button (click)="globalSearchRaw.set('')" class="p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded">
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
               </svg>
@@ -101,16 +104,18 @@
 
         <!-- Category cards -->
         @for (category of categories; track category) {
+          @let groups = customerGroupsByCategory()[category];
+          @let meta = categoryMeta[category];
           <app-card class="overflow-hidden">
 
             <!-- Category header (click to expand/collapse) -->
-            <div [class]="getCategoryHeaderClass(category)" class="p-4 cursor-pointer select-none" (click)="toggleCategory(category)">
+            <div [class]="meta.headerClass" class="p-3 sm:p-4 cursor-pointer select-none" (click)="toggleCategory(category)">
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-3">
                   <!-- Icon -->
                   @switch (category) {
                     @case ('UnconfirmedContracts') {
-                      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="getCategoryIconClass(category)">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="meta.iconClass">
                         <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
                         <polyline points="14 2 14 8 20 8"/>
                         <line x1="16" x2="8" y1="13" y2="13"/>
@@ -119,7 +124,7 @@
                       </svg>
                     }
                     @case ('SpotLoads') {
-                      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="getCategoryIconClass(category)">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="meta.iconClass">
                         <path d="M5 17H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v3"/>
                         <rect width="13" height="9" x="9" y="11" rx="1"/>
                         <circle cx="12" cy="20" r="1"/>
@@ -127,22 +132,22 @@
                       </svg>
                     }
                     @case ('UnshippedBushels') {
-                      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="getCategoryIconClass(category)">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="meta.iconClass">
                         <circle cx="12" cy="12" r="10"/>
                         <polyline points="12 6 12 12 16 14"/>
                       </svg>
                     }
                   }
                   <div>
-                    <p [class]="'text-base font-semibold ' + getCategoryTitleClass(category)">{{ getCategoryTitle(category) }}</p>
-                    <p [class]="'text-sm ' + getCategorySubtitleClass(category)">
-                      {{ getCustomerGroups(category).length }} customer{{ getCustomerGroups(category).length !== 1 ? 's' : '' }}
+                    <p [class]="'text-base font-semibold ' + meta.titleClass">{{ meta.title }}</p>
+                    <p [class]="'text-sm ' + meta.subtitleClass">
+                      {{ groups.length }} customer{{ groups.length !== 1 ? 's' : '' }}
                     </p>
                   </div>
                 </div>
                 <div class="flex items-center gap-2">
-                  <app-badge [class]="getCategoryBadgeClass(category)">{{ getCustomerGroups(category).length }}</app-badge>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="getCategoryIconClass(category)">
+                  <app-badge [class]="meta.badgeClass">{{ groups.length }}</app-badge>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class]="meta.iconClass">
                     @if (expandedCategories().has(category)) {
                       <path d="m18 15-6-6-6 6"/>
                     } @else {
@@ -163,13 +168,13 @@
                 </svg>
                 <input
                   type="text"
-                  [ngModel]="categorySearch()[category]"
+                  [ngModel]="categorySearchRaw()[category]"
                   (ngModelChange)="setCategorySearch(category, $event)"
-                  [placeholder]="getCategorySearchPlaceholder(category)"
+                  [placeholder]="meta.searchPlaceholder"
                   class="flex-1 py-1 text-sm bg-transparent focus:outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
                   (click)="$event.stopPropagation()"
                 />
-                @if (categorySearch()[category]) {
+                @if (categorySearchRaw()[category]) {
                   <button (click)="setCategorySearch(category, ''); $event.stopPropagation()" class="p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
@@ -179,30 +184,30 @@
               </div>
 
               <!-- Customer list -->
-              @if (getCustomerGroups(category).length === 0) {
+              @if (groups.length === 0) {
                 <div class="p-6 text-center text-sm text-gray-400 dark:text-gray-500">
-                  {{ categorySearch()[category] ? 'No customers match your search.' : 'No items to report.' }}
+                  {{ categorySearchRaw()[category] ? 'No customers match your search.' : 'No items to report.' }}
                 </div>
               } @else {
                 <div class="divide-y divide-gray-200 dark:divide-gray-700">
-                  @for (group of getCustomerGroups(category); track group.customer.id) {
+                  @for (group of groups; track group.customer.id) {
 
                     <!-- Customer row -->
                     <div
-                      class="px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors select-none"
+                      class="px-3 sm:px-4 py-2.5 sm:py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors select-none"
                       (click)="toggleCustomerGroup(category, group.customer.id)">
-                      <div class="flex items-center justify-between gap-3">
-                        <div class="min-w-0 flex-1 flex items-center gap-2 flex-wrap">
-                          <span class="font-semibold text-sm text-gray-900 dark:text-white leading-tight">{{ group.customer.name }}</span>
+                      <div class="flex items-center justify-between gap-2 sm:gap-3">
+                        <div class="min-w-0 flex-1 flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                          <span class="font-semibold text-xs sm:text-sm text-gray-900 dark:text-white leading-tight">{{ group.customer.name }}</span>
                           @if (group.customer.sourceCustomerId) {
                             <span class="text-xs text-gray-400 dark:text-gray-500 font-mono">{{ group.customer.sourceCustomerId }}</span>
                           }
-                          <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" [class]="getCategoryCountClass(category)">
-                            {{ getCategoryCustomerSummary(group, category) }}
+                          <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" [class]="meta.countClass">
+                            {{ group.summary }}
                           </span>
                         </div>
                         <div class="flex items-center gap-2 flex-shrink-0">
-                          <span class="inline-flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold" [class]="getCategoryCountClass(category)">
+                          <span class="inline-flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold" [class]="meta.countClass">
                             {{ group.items.length }}
                           </span>
                           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400 dark:text-gray-500 transition-transform" [class.rotate-90]="isCustomerExpanded(category, group.customer.id)">
@@ -216,7 +221,7 @@
                     @if (isCustomerExpanded(category, group.customer.id)) {
                       @for (insight of group.items; track insight.message) {
                         <div
-                          class="pl-6 pr-4 py-2.5 bg-gray-50/80 dark:bg-gray-800/40 border-t border-gray-100 dark:border-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700/30 cursor-pointer transition-colors"
+                          class="pl-4 sm:pl-6 pr-3 sm:pr-4 py-2 sm:py-2.5 bg-gray-50/80 dark:bg-gray-800/40 border-t border-gray-100 dark:border-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700/30 cursor-pointer transition-colors"
                           (click)="selectInsight(insight); $event.stopPropagation()">
                           <div class="flex items-center gap-2.5">
                             <div class="flex-shrink-0 w-1 self-stretch min-h-[1.5rem] rounded-full" [class]="getPriorityBarClass(insight.priority)"></div>
@@ -250,4 +255,5 @@
         }
 
       }
+      </div>
     </div>

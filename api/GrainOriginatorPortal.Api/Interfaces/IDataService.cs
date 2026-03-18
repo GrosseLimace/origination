@@ -171,9 +171,10 @@ public interface IDataService
     // Note Operations
     // =========================================================================
 
-    /// <summary>Gets all notes across all customers.</summary>
+    /// <summary>Gets notes, optionally filtered by trade units.</summary>
+    /// <param name="tradeUnits">Optional trade unit codes to filter by. If null/empty, returns all.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task<List<Note>> GetNotesAsync(CancellationToken cancellationToken = default);
+    Task<List<Note>> GetNotesAsync(IEnumerable<string>? tradeUnits = null, CancellationToken cancellationToken = default);
 
     /// <summary>Gets all notes for a specific customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>

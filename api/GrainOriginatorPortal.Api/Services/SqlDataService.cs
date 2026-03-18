@@ -1241,14 +1241,19 @@ public class SqlDataService : IDataService
     // Note Operations - Uses dbo.Notes table in Origination database
     // =========================================================================
 
-    public async Task<List<Note>> GetNotesAsync(CancellationToken cancellationToken = default)
+    public async Task<List<Note>> GetNotesAsync(IEnumerable<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
         try
         {
             _logger.LogInformation("Attempting to retrieve notes from database");
 
-            return await _appContext.Notes
-                .AsNoTracking()
+            var query = _appContext.Notes.AsNoTracking();
+            var tuList = tradeUnits?.Where(t => !string.IsNullOrEmpty(t)).ToList();
+            if (tuList is { Count: > 0 })
+            {
+                query = query.Where(n => n.TradeUnit == null || tuList.Contains(n.TradeUnit));
+            }
+            return await query
                 .OrderByDescending(n => n.CreatedAt)
                 .ToListAsync(cancellationToken);
         }

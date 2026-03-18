@@ -77,14 +77,12 @@ export class BuildListComponent {
   savedLists = signal<SavedList[]>([]);
 
   /** Returns the effective trade units — explicit selection if any, otherwise all user-accessible TUs. */
-  get effectiveTradeUnits(): string[] {
+  readonly effectiveTradeUnits = computed(() => {
     const explicit = this.appState.selectedTradeUnits();
     return explicit.length > 0 ? explicit : this._allUserTradeUnits();
-  }
+  });
 
-  get hasTradeUnits(): boolean {
-    return this.effectiveTradeUnits.length > 0;
-  }
+  readonly hasTradeUnits = computed(() => this.effectiveTradeUnits().length > 0);
 
   readonly activeRefinementCount = computed(() => {
     const r = this.appliedRefinements();
@@ -102,17 +100,20 @@ export class BuildListComponent {
   readonly displayedCustomers = computed(() => {
     let list = this.filteredCustomers();
     const r = this.appliedRefinements();
+    const contractMap = this._contractsByCustomer();
+    const contactMap = this.lastContactByCustomer();
 
     if (r.noActiveContracts) {
-      list = list.filter(c => !this.contracts().some(ct =>
-        ct.ctrmCustomerId === c.sourceCustomerId &&
-        (ct.status === 'Active' || ct.status === 'Pending' || ct.status === 'Overdue')
-      ));
+      list = list.filter(c => {
+        const contracts = contractMap.get(c.sourceCustomerId!) || [];
+        return !contracts.some(ct => ct.status === 'Active' || ct.status === 'Pending' || ct.status === 'Overdue');
+      });
     }
     if (r.hasUnsignedContracts) {
-      list = list.filter(c => this.contracts().some(ct =>
-        ct.ctrmCustomerId === c.sourceCustomerId && ct.signed === false
-      ));
+      list = list.filter(c => {
+        const contracts = contractMap.get(c.sourceCustomerId!) || [];
+        return contracts.some(ct => ct.signed === false);
+      });
     }
     if (r.hasNegativePacing) {
       list = list.filter(c => {
@@ -121,15 +122,18 @@ export class BuildListComponent {
       });
     }
     if (r.neverContacted) {
-      list = list.filter(c => !this.notes().some(n => n.customerId === c.id));
+      list = list.filter(c => !contactMap.has(c.id));
     } else if (r.notContactedDays != null && r.notContactedDays > 0) {
       const threshold = new Date();
       threshold.setDate(threshold.getDate() - r.notContactedDays);
       list = list.filter(c => {
-        const lastNote = this.notes()
-          .filter(n => n.customerId === c.id)
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-        return !lastNote || new Date(lastNote.createdAt) < threshold;
+        const info = contactMap.get(c.id);
+        if (!info) return true; // never contacted → include
+        // Parse days from the cached text to avoid re-scanning notes
+        const match = info.text.match(/(\d+) days ago/);
+        if (match) return parseInt(match[1], 10) >= r.notContactedDays!;
+        if (info.text === 'Never contacted') return true;
+        return false; // "today" or "yesterday" → contacted recently
       });
     }
     if (r.crops && r.crops.length > 0) {
@@ -183,18 +187,83 @@ export class BuildListComponent {
   appliedRefinements = signal<RefinementFilters>({});
   notContactedDaysInput = signal('');
 
-  private _lastContactCache = new Map<number, { text: string; colorClass: string }>();
-  private _customerCropsCache = new Map<number, string[]>();
+  // ── Pre-indexed computed signals for O(1) lookups ────────────────────────
+
+  /** Contracts grouped by ctrmCustomerId — used by displayedCustomers refinements and pacing. */
+  private readonly _contractsByCustomer = computed(() => {
+    const map = new Map<string, Contract[]>();
+    for (const c of this.contracts()) {
+      if (!c.ctrmCustomerId) continue;
+      const arr = map.get(c.ctrmCustomerId);
+      if (arr) arr.push(c); else map.set(c.ctrmCustomerId, [c]);
+    }
+    return map;
+  });
+
+  /** Most recent note per customer — pre-indexed for O(1) template lookup. */
+  readonly lastContactByCustomer = computed(() => {
+    const map = new Map<number, { text: string; colorClass: string }>();
+    // Pre-index: find most recent note per customer, parsing Date once per note
+    const latestNotes = new Map<number, { time: number }>();
+    for (const n of this.notes()) {
+      const time = new Date(n.createdAt).getTime();
+      const existing = latestNotes.get(n.customerId);
+      if (!existing || time > existing.time) {
+        latestNotes.set(n.customerId, { time });
+      }
+    }
+    const now = Date.now();
+    for (const [customerId, { time }] of latestNotes) {
+      const daysAgo = Math.floor((now - time) / 86400000);
+      let result: { text: string; colorClass: string };
+      if (daysAgo === 0) result = { text: 'Contacted today', colorClass: 'text-scoular-green' };
+      else if (daysAgo === 1) result = { text: 'Contacted yesterday', colorClass: 'text-scoular-green' };
+      else if (daysAgo < 7) result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-scoular-green' };
+      else if (daysAgo < 30) result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-yellow-500' };
+      else result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-scoular-red' };
+      map.set(customerId, result);
+    }
+    return map;
+  });
+
+  /** Crops per customer — merged from ProducerDetails, contracts, intentions. */
+  readonly cropsByCustomer = computed(() => {
+    const map = new Map<number, string[]>();
+    const contractMap = this._contractsByCustomer();
+
+    // Pre-index intention crops by customerId — O(intentions) instead of O(customers × intentions)
+    const intentionCropsByCustomer = new Map<number, Set<string>>();
+    for (const p of this.plantingIntentions()) {
+      if (!intentionCropsByCustomer.has(p.customerId)) {
+        intentionCropsByCustomer.set(p.customerId, new Set());
+      }
+      intentionCropsByCustomer.get(p.customerId)!.add(p.crop);
+    }
+
+    for (const customer of this.customers()) {
+      const detailCrops = customer.commodities?.length ? [...customer.commodities] : [];
+      const contractCrops = customer.sourceCustomerId
+        ? [...new Set(
+            (contractMap.get(customer.sourceCustomerId) || [])
+              .map(c => c.commodityCode)
+              .filter((crop): crop is string => !!crop)
+          )]
+        : [];
+      const intentionCrops = [...(intentionCropsByCustomer.get(customer.id) || [])];
+      map.set(customer.id, [...new Set([...detailCrops, ...contractCrops, ...intentionCrops])].slice(0, 5));
+    }
+    return map;
+  });
 
   exampleQueries = [
     'Top 10 largest operations',
-    'Customers with more than 500 acres',
+    'Customers with corn or soybeans contracts',
     'Farmers not contacted in over 30 days',
-    'Producers with active contracts',
-    'Growers who delivered corn this year',
-    'Customers with overdue contracts',
-    'Farmers with no email',
-    'Customers planting soybeans in 2026'
+    'Producers with contracts but no deliveries',
+    'Customers planting soybeans in 2026',
+    'Growers with unapplied tickets',
+    'Customers with unconfirmed contracts',
+    'Grain stored for over 60 days'
   ];
 
 
@@ -268,26 +337,50 @@ export class BuildListComponent {
     this._dataLoadStarted = true;
     this.loading.set(true);
 
-    // Use cached data from AppStateService if already loaded (trade-unit-filtered by home)
+    // Use cached core data from AppState if available (populated by DataPreloadService)
     const cachedCustomers = this.appState.customers();
     if (cachedCustomers.length > 0) {
       this._syncFromAppState();
-      this._rebuildCaches();
+
+      // Core data is available — only fetch secondary signals if missing
+      const missing: Record<string, any> = {};
+      if (this.appState.plantingIntentions().length === 0) {
+        const tuParam = this.effectiveTradeUnits().length > 0 ? this.effectiveTradeUnits() : undefined;
+        missing['plantingIntentions'] = this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[])));
+      }
+      if (this.appState.storedGrain().length === 0) {
+        missing['storedGrain'] = this.apiService.getStoredGrain().pipe(catchError(() => of([] as StoredGrain[])));
+      }
+      if (this.appState.producerDetails().length === 0) {
+        missing['producerDetails'] = this.apiService.getAllProducerDetails().pipe(catchError(() => of([] as ProducerDetails[])));
+      }
+
+      if (Object.keys(missing).length > 0) {
+        forkJoin(missing).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+          next: (data: any) => {
+            if (data.plantingIntentions) { this.plantingIntentions.set(data.plantingIntentions); this.appState.setPlantingIntentions(data.plantingIntentions); }
+            if (data.storedGrain) { this.storedGrain.set(data.storedGrain); this.appState.setStoredGrain(data.storedGrain); }
+            if (data.producerDetails) { this._mergeProducerDetails(data.producerDetails); this.appState.setProducerDetails(data.producerDetails); this.appState.setCustomers(this.customers()); }
+          }
+        });
+      } else {
+        this._mergeProducerDetails(this.appState.producerDetails());
+      }
+
       this._restoreUIState();
-      this._mergeProducerDetails(this.appState.producerDetails());
       this.loading.set(false);
       return;
     }
 
-    // No cache — load ALL data (including ProducerDetails) in one parallel forkJoin
-    const tradeUnits = this.effectiveTradeUnits;
+    // No cache — load ALL data in one parallel forkJoin
+    const tradeUnits = this.effectiveTradeUnits();
     const tuParam = tradeUnits.length > 0 ? tradeUnits : undefined;
     forkJoin({
       customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
       contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => of([] as Contract[]))),
       tickets: this.apiService.getTickets(tuParam).pipe(catchError(() => of([] as Ticket[]))),
       plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[]))),
-      notes: this.apiService.getNotes().pipe(catchError(() => of([] as Note[]))),
+      notes: this.apiService.getNotes(tuParam).pipe(catchError(() => of([] as Note[]))),
       storedGrain: this.apiService.getStoredGrain().pipe(catchError(() => of([] as StoredGrain[]))),
       savedLists: this.apiService.getSavedLists().pipe(catchError(() => of([] as SavedList[]))),
       producerDetails: this.apiService.getAllProducerDetails().pipe(catchError(() => of([] as ProducerDetails[])))
@@ -306,11 +399,9 @@ export class BuildListComponent {
         this.appState.setStoredGrain(data.storedGrain);
         this.appState.setSavedLists(data.savedLists);
         if (data.producerDetails.length > 0) this.appState.setProducerDetails(data.producerDetails);
-        // Merge ProducerDetails into customers before setting
         this.customers.set(data.customers);
         this._mergeProducerDetails(data.producerDetails);
         this.appState.setCustomers(this.customers());
-        this._rebuildCaches();
         this._restoreUIState();
         this.loading.set(false);
       },
@@ -355,7 +446,7 @@ export class BuildListComponent {
     });
     if (changed) {
       this.customers.set([...merged]);
-      this._customerCropsCache.clear();
+      // cropsByCustomer computed auto-invalidates when customers() changes
     }
   }
 
@@ -365,7 +456,7 @@ export class BuildListComponent {
 
     // If trade units changed since state was saved, clear everything —
     // the user must re-enter and regenerate for the new selection.
-    const currentTus = this.effectiveTradeUnits;
+    const currentTus = this.effectiveTradeUnits();
     const savedTus = saved.tradeUnits ?? [];
     const tradeUnitsMatch = currentTus.length === savedTus.length &&
       currentTus.every(tu => savedTus.includes(tu));
@@ -390,9 +481,9 @@ export class BuildListComponent {
     this.showMap.update(v => !v);
   }
 
-  getMapCustomers(): Customer[] {
-    return this.hasGenerated() ? this.displayedCustomers() : this.customers();
-  }
+  readonly mapCustomers = computed(() =>
+    this.hasGenerated() ? this.displayedCustomers() : this.customers()
+  );
 
   clearQuery(): void {
     this.queryText.set('');
@@ -420,7 +511,7 @@ export class BuildListComponent {
   onQueryKeydown(event: KeyboardEvent): void {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      if (this.hasTradeUnits && this.queryText().trim() && !this.isProcessing() && !this.loading()) {
+      if (this.hasTradeUnits() && this.queryText().trim() && !this.isProcessing() && !this.loading()) {
         this.processQuery();
       }
     }
@@ -442,7 +533,17 @@ export class BuildListComponent {
     this.isProcessing.set(true);
 
     // If loading a saved list with different trade units, we must re-fetch for those TUs.
+    // But skip the fetch if the saved list TUs match the currently loaded data.
     if (overrideTradeUnits && overrideTradeUnits.length > 0) {
+      const currentKey = [...this.effectiveTradeUnits()].sort().join(',');
+      const overrideKey = [...overrideTradeUnits].sort().join(',');
+      if (overrideKey === currentKey && this.customers().length > 0) {
+        // TUs match and data is already loaded — skip re-fetch
+        this._syncFromAppState();
+        this._applyNlqFilter();
+        this.isProcessing.set(false);
+        return;
+      }
       this._fetchAndFilter(overrideTradeUnits);
       return;
     }
@@ -450,7 +551,7 @@ export class BuildListComponent {
     // For normal queries: sync latest data from appState (picks up notes/contracts
     // added on other pages) then filter locally — no API round trip needed.
     this._syncFromAppState();
-    this._rebuildCaches();
+
     this._applyNlqFilter();
     this.isProcessing.set(false);
   }
@@ -463,7 +564,7 @@ export class BuildListComponent {
       contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => of([] as Contract[]))),
       tickets: this.apiService.getTickets(tuParam).pipe(catchError(() => of([] as Ticket[]))),
       plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[]))),
-      notes: this.apiService.getNotes().pipe(catchError(() => of([] as Note[]))),
+      notes: this.apiService.getNotes(tuParam).pipe(catchError(() => of([] as Note[]))),
       storedGrain: this.apiService.getStoredGrain().pipe(catchError(() => of([] as StoredGrain[]))),
       producerDetails: (this.appState.producerDetails().length > 0 ? of(this.appState.producerDetails()) : this.apiService.getAllProducerDetails()).pipe(catchError(() => of([] as ProducerDetails[])))
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -476,7 +577,7 @@ export class BuildListComponent {
         this.plantingIntentions.set(data.plantingIntentions);
         this.storedGrain.set(data.storedGrain);
 
-        this._rebuildCaches();
+    
         this._applyNlqFilter();
         this.isProcessing.set(false);
       },
@@ -527,14 +628,10 @@ export class BuildListComponent {
       }
     }
 
-    this._rebuildCaches();
+
   }
 
 
-  private _rebuildCaches(): void {
-    this._lastContactCache.clear();
-    this._customerCropsCache.clear();
-  }
 
   getStateDisplayName(state: string): string {
     return this.nlqFilterService.getStateDisplayName(state);
@@ -609,7 +706,7 @@ export class BuildListComponent {
   }
 
   private _getCustomerPacing(customer: Customer): number | null {
-    const customerContracts = this.contracts().filter(ct => ct.ctrmCustomerId === customer.sourceCustomerId);
+    const customerContracts = this._contractsByCustomer().get(customer.sourceCustomerId!) || [];
     if (customerContracts.length === 0) return null;
     let maxYear = 0;
     for (const c of customerContracts) {
@@ -661,7 +758,7 @@ export class BuildListComponent {
   saveList(): void {
     if (!this.newListName().trim() || this.filteredCustomers().length === 0) return;
 
-    const tradeUnits = this.effectiveTradeUnits;
+    const tradeUnits = this.effectiveTradeUnits();
     const payload = {
       name: this.newListName(),
       query: this.queryText(),
@@ -756,58 +853,11 @@ export class BuildListComponent {
   }
 
   getLastContactInfo(customerId: number): { text: string; colorClass: string } {
-    const cached = this._lastContactCache.get(customerId);
-    if (cached !== undefined) {
-      return cached;
-    }
-
-    const lastNote = this.notes()
-      .filter(n => n.customerId === customerId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-
-    let result: { text: string; colorClass: string };
-
-    if (!lastNote) {
-      result = { text: 'Never contacted', colorClass: 'text-scoular-red' };
-    } else {
-      const daysAgo = Math.floor((Date.now() - new Date(lastNote.createdAt).getTime()) / (1000 * 60 * 60 * 24));
-
-      if (daysAgo === 0) result = { text: 'Contacted today', colorClass: 'text-scoular-green' };
-      else if (daysAgo === 1) result = { text: 'Contacted yesterday', colorClass: 'text-scoular-green' };
-      else if (daysAgo < 7) result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-scoular-green' };
-      else if (daysAgo < 30) result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-yellow-500' };
-      else result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-scoular-red' };
-    }
-
-    this._lastContactCache.set(customerId, result);
-    return result;
+    return this.lastContactByCustomer().get(customerId)
+      ?? { text: 'Never contacted', colorClass: 'text-scoular-red' };
   }
 
   getCustomerCrops(customerId: number): string[] {
-    const cached = this._customerCropsCache.get(customerId);
-    if (cached !== undefined) {
-      return cached;
-    }
-
-    const customer = this.customers().find(c => c.id === customerId);
-    // Farmer detail commodities (ProducerDetails) — primary source
-    const detailCrops = customer?.commodities?.length ? [...customer.commodities] : [];
-    // Contract commodities (ODS data) — supplemental source
-    const contractCrops = customer?.sourceCustomerId
-      ? [...new Set(
-          this.contracts()
-            .filter(c => c.ctrmCustomerId === customer.sourceCustomerId)
-            .map(c => c.commodityCode)
-            .filter((crop): crop is string => !!crop)
-        )]
-      : [];
-    // Planting intentions as supplemental source
-    const intentionCrops = [...new Set(
-      this.plantingIntentions().filter(p => p.customerId === customerId).map(p => p.crop)
-    )];
-    const result = [...new Set([...detailCrops, ...contractCrops, ...intentionCrops])].slice(0, 5);
-
-    this._customerCropsCache.set(customerId, result);
-    return result;
+    return this.cropsByCustomer().get(customerId) ?? [];
   }
 }

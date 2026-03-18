@@ -29,9 +29,10 @@ public class NotesController : ControllerBase
     /// <summary>Gets all notes.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(List<Note>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<Note>>> GetAll(CancellationToken cancellationToken = default)
+    public async Task<ActionResult<List<Note>>> GetAll([FromQuery] string? tradeUnits = null, CancellationToken cancellationToken = default)
     {
-        var notes = await _dataService.GetNotesAsync(cancellationToken);
+        var tuList = tradeUnits?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var notes = await _dataService.GetNotesAsync(tuList, cancellationToken);
         if (_entitlementService.EntitlementsAvailable)
         {
             var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);
