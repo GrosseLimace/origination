@@ -79,10 +79,14 @@ export class CustomerProfileComponent {
 
   constructor() {
     effect(() => {
-      // When arriving from Insights with a specific contract, switch to contracts tab
+      // When arriving from Insights with a specific contract, switch to contracts tab and scroll to it
       const openContractId = this.openContractId();
       if (openContractId != null) {
         this.activeTab.set('contracts');
+        // Defer scroll until after Angular renders the tab switch
+        setTimeout(() => {
+          this.tabsSectionRef?.nativeElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 50);
       }
     });
 
@@ -200,12 +204,14 @@ export class CustomerProfileComponent {
 
   selectTab(tabId: string): void {
     this.activeTab.set(tabId);
-    // Scroll the tabs section into view so the user doesn't have to manually scroll down
-    const el = this.tabsSectionRef?.nativeElement;
-    if (el) {
-      const y = el.getBoundingClientRect().top + window.scrollY - 120; // 120px offset keeps tab buttons visible with padding above
-      window.scrollTo({ top: y, behavior: 'smooth' });
-    }
+    // Defer scroll until after Angular renders the new tab content — otherwise the DOM
+    // still shows the old (tall) tab and the scroll position doesn't update correctly.
+    setTimeout(() => {
+      const el = this.tabsSectionRef?.nativeElement;
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 0);
   }
 
   // Performance optimization: Cache computed values used in template
