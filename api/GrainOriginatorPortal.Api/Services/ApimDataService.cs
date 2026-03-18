@@ -116,7 +116,7 @@ public class ApimDataService : IDataService
     // Planting Intention Operations
     // =========================================================================
 
-    public Task<List<PlantingIntention>> GetPlantingIntentionsAsync(CancellationToken cancellationToken = default)
+    public Task<List<PlantingIntention>> GetPlantingIntentionsAsync(IEnumerable<string>? tradeUnits = null, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetPlantingIntentions");
 
     public Task<List<PlantingIntention>> GetPlantingIntentionsByCustomerAsync(long customerId, CancellationToken cancellationToken = default)

@@ -286,7 +286,7 @@ export class BuildListComponent {
       customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
       contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => of([] as Contract[]))),
       tickets: this.apiService.getTickets(tuParam).pipe(catchError(() => of([] as Ticket[]))),
-      plantingIntentions: this.apiService.getPlantingIntentions().pipe(catchError(() => of([] as PlantingIntention[]))),
+      plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[]))),
       notes: this.apiService.getNotes().pipe(catchError(() => of([] as Note[]))),
       storedGrain: this.apiService.getStoredGrain().pipe(catchError(() => of([] as StoredGrain[]))),
       savedLists: this.apiService.getSavedLists().pipe(catchError(() => of([] as SavedList[]))),
@@ -462,7 +462,7 @@ export class BuildListComponent {
       customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
       contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => of([] as Contract[]))),
       tickets: this.apiService.getTickets(tuParam).pipe(catchError(() => of([] as Ticket[]))),
-      plantingIntentions: this.apiService.getPlantingIntentions().pipe(catchError(() => of([] as PlantingIntention[]))),
+      plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[]))),
       notes: this.apiService.getNotes().pipe(catchError(() => of([] as Note[]))),
       storedGrain: this.apiService.getStoredGrain().pipe(catchError(() => of([] as StoredGrain[]))),
       producerDetails: (this.appState.producerDetails().length > 0 ? of(this.appState.producerDetails()) : this.apiService.getAllProducerDetails()).pipe(catchError(() => of([] as ProducerDetails[])))

@@ -166,9 +166,12 @@ export class ApiService {
   // Planting Intention Operations
   // ==========================================================================
 
-  /** Fetches all planting intentions in the system */
-  getPlantingIntentions(): Observable<PlantingIntention[]> {
-    return this.http.get<PlantingIntention[]>(`${this.baseUrl}/plantingintentions`)
+  /** Fetches planting intentions, optionally filtered by trade units */
+  getPlantingIntentions(tradeUnits?: string[]): Observable<PlantingIntention[]> {
+    const url = tradeUnits?.length
+      ? `${this.baseUrl}/plantingintentions?tradeUnits=${encodeURIComponent(tradeUnits.join(','))}`
+      : `${this.baseUrl}/plantingintentions`;
+    return this.http.get<PlantingIntention[]>(url)
       .pipe(catchError(e => this.handleError(e)));
   }
 

@@ -136,9 +136,10 @@ public interface IDataService
     // Planting Intention Operations
     // =========================================================================
 
-    /// <summary>Gets all planting intentions across all customers.</summary>
+    /// <summary>Gets planting intentions, optionally filtered by trade units.</summary>
+    /// <param name="tradeUnits">Optional trade unit codes to filter by. If null/empty, returns all.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task<List<PlantingIntention>> GetPlantingIntentionsAsync(CancellationToken cancellationToken = default);
+    Task<List<PlantingIntention>> GetPlantingIntentionsAsync(IEnumerable<string>? tradeUnits = null, CancellationToken cancellationToken = default);
 
     /// <summary>Gets all planting intentions for a specific customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>

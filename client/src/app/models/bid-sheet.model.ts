@@ -9,6 +9,8 @@ export interface BidSheetEntry {
   elevatorCode?: string;
   tradeUnitCode: string;
   commodityCode: string;
+  commodityName?: string;
+  commodityCategory?: string;
   cropYear: number;
   bid: string;
   createdBy: string;
@@ -30,8 +32,7 @@ export interface Elevator {
   elevatorCode: string;
   elevatorShortName: string;
   elevatorName: string;
-  address1?: string;
-  address2?: string;
+  address?: string;
   city?: string;
   state?: string;
   zipCode?: string;
@@ -40,6 +41,7 @@ export interface Elevator {
   elevatorCompanyCode?: string;
   elevatorDivisionCode?: string;
   elevatorLocationCode?: string;
+  tradeUnitCode?: string;
   latitude?: number;
   longitude?: number;
 }

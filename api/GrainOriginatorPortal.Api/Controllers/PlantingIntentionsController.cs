@@ -29,9 +29,10 @@ public class PlantingIntentionsController : ControllerBase
     /// <summary>Gets all planting intentions.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(List<PlantingIntention>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<PlantingIntention>>> GetAll(CancellationToken cancellationToken = default)
+    public async Task<ActionResult<List<PlantingIntention>>> GetAll([FromQuery] string? tradeUnits = null, CancellationToken cancellationToken = default)
     {
-        var intentions = await _dataService.GetPlantingIntentionsAsync(cancellationToken);
+        var tuList = tradeUnits?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var intentions = await _dataService.GetPlantingIntentionsAsync(tuList, cancellationToken);
         if (_entitlementService.EntitlementsAvailable)
         {
             var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);

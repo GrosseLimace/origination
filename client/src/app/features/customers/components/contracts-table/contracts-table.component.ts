@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
 import { Customer, Contract, Ticket, ContractPricingLine } from '@models';
 
-type SortColumn = 'contractNumber' | 'crop' | 'quantity' | 'price' | 'deliveryStart' | 'status';
+type SortColumn = 'contractNumber' | 'date' | 'crop' | 'quantity' | 'price' | 'deliveryStart' | 'status';
 type SortDirection = 'none' | 'asc' | 'desc';
 
 @Component({
@@ -87,6 +87,7 @@ export class ContractsTableComponent {
         (c.commodityCode || '').toLowerCase().includes(term) ||
         (c.commodityGroup || '').toLowerCase().includes(term) ||
         this.getCalculatedStatus(c).toLowerCase().includes(term) ||
+        this._matchesDate(c.contractDate, term) ||
         deliveryStr.includes(term) ||
         this._matchesDeliveryPeriod(c.deliveryStart, c.deliveryEnd, term)
       );
@@ -204,6 +205,9 @@ export class ContractsTableComponent {
       switch (this.currentSortColumn()) {
         case 'contractNumber':
           comparison = a.contractNumber.localeCompare(b.contractNumber);
+          break;
+        case 'date':
+          comparison = new Date(a.contractDate || 0).getTime() - new Date(b.contractDate || 0).getTime();
           break;
         case 'crop':
           comparison = (a.commodityDescription || '').localeCompare(b.commodityDescription || '');
