@@ -103,15 +103,17 @@ export class TicketsTableComponent {
       if (!q || avgOnly) {
         filtered = avgOnly ? [] : allTickets;
       } else {
-        filtered = allTickets.filter(t =>
-          terms.some(term =>
+        filtered = allTickets.filter(t => {
+          const fmtDate = this._formatTicketDate(t.date);
+          return terms.some(term =>
             t.ticketNumber.toLowerCase().includes(term) ||
-            (t.date || '').toLowerCase().includes(term) ||
+            fmtDate.includes(term) ||
+            this._matchesDate(t.date, term) ||
             (t.productCode || '').toLowerCase().includes(term) ||
             (t.ctrmContractNumber || '').toLowerCase().includes(term) ||
             (t.organizationCode || '').toLowerCase().includes(term)
-          )
-        );
+          );
+        });
       }
 
       if (!avgOnly && filtered.length === 0) continue;
@@ -174,6 +176,18 @@ export class TicketsTableComponent {
     return this.currentSortDirection === 'desc' ? sorted.reverse() : sorted;
   }
 
+  /** Format ticket date as "Oct 23, 2025" and "10/23/2025" for searchable text. */
+  private _formatTicketDate(dateStr: string | undefined): string {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    const m = d.getMonth(), day = d.getDate(), year = d.getFullYear();
+    const short = TicketsTableComponent._MONTHS_SHORT[m];
+    const full = TicketsTableComponent._MONTHS[m];
+    // Include multiple formats so "oct", "october", "10/23/2025", "10/23" all match
+    return `${short} ${day}, ${year} ${full} ${day}, ${year} ${m + 1}/${day}/${year}`.toLowerCase();
+  }
+
   private _expandWithAliases(q: string): string[] {
     const aliases: { [key: string]: string[] } = {
       'avg':       ['avg', 'average'],
@@ -199,6 +213,49 @@ export class TicketsTableComponent {
       if (key.startsWith(q)) terms.forEach(t => expanded.add(t));
     }
     return Array.from(expanded);
+  }
+
+  private static readonly _MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+  private static readonly _MONTHS_SHORT = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+  /** Check if a ticket date matches a search term. Supports:
+   *  - Month names: "July", "Oct", "march"
+   *  - Day numbers: "19", "31"
+   *  - Years: "2025", "2026"
+   *  - Slash/dash dates: "10/1/2025", "1-1-2026", "3/15"
+   *  - Natural dates: "Oct 23, 2025", "March 2025", "October 23 2025"
+   *  - Raw ISO match: "2026-03-15"
+   */
+  private _matchesDate(dateStr: string | undefined, term: string): boolean {
+    if (!dateStr) return false;
+    if (dateStr.toLowerCase().includes(term)) return true;
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return false;
+    const month = d.getMonth(), day = d.getDate(), year = d.getFullYear();
+    // Month name match (full or abbreviated)
+    if (TicketsTableComponent._MONTHS[month].startsWith(term) || TicketsTableComponent._MONTHS_SHORT[month] === term) return true;
+    // Exact year match
+    if (term === String(year)) return true;
+    // Exact day match (only 1-2 digit numbers)
+    if (/^\d{1,2}$/.test(term) && parseInt(term, 10) === day) return true;
+    // Slash or dash date: M/D/YYYY, M-D-YYYY, M/D, M-D
+    const dateParts = term.split(/[/\-]/);
+    if (dateParts.length >= 2) {
+      const m = parseInt(dateParts[0], 10), dd = parseInt(dateParts[1], 10), yy = dateParts[2] ? parseInt(dateParts[2], 10) : null;
+      if (!isNaN(m) && !isNaN(dd)) {
+        if (m === month + 1 && dd === day && (yy === null || yy === year)) return true;
+      }
+    }
+    // Natural date string: "Oct 23, 2025", "March 2025", "October 23 2025"
+    const parsed = new Date(term.replace(',', ''));
+    if (!isNaN(parsed.getTime())) {
+      // If term has no day component (e.g. "March 2025"), match month+year only
+      const hasDay = /\d{1,2}[,\s]/.test(term) || /\s\d{1,2}\s/.test(term) || /\s\d{1,2}$/.test(term);
+      if (parsed.getMonth() === month && parsed.getFullYear() === year) {
+        return !hasDay || parsed.getDate() === day;
+      }
+    }
+    return false;
   }
 
   get hasWheatTickets(): boolean {

@@ -1,6 +1,6 @@
-    <div class="space-y-8">
-      <!-- Header -->
-      <div class="flex items-start justify-between">
+    <div class="h-full flex flex-col gap-6">
+      <!-- Header (fixed, does not scroll) -->
+      <div class="flex items-start justify-between flex-shrink-0">
         <div>
           <h2 class="text-2xl font-semibold text-gray-900 dark:text-white">Build a List</h2>
           <app-trade-unit-selector class="mt-2 block" />
@@ -21,6 +21,9 @@
           Map
         </app-button>
       </div>
+
+      <!-- Scrollable content area -->
+      <div class="flex-1 overflow-auto pr-4 pb-12 space-y-8">
 
       <!-- Loading banner while trade units are being fetched -->
       @if (!hasTradeUnits && loading()) {
@@ -138,12 +141,12 @@
               <div>
                 <app-card-title>Results</app-card-title>
                 <app-card-description>
-                  @if (activeRefinementCount > 0) {
-                    Showing {{ displayedCustomers.length }} of {{ filteredCustomers().length }} customer(s)
+                  @if (activeRefinementCount() > 0) {
+                    Showing {{ displayedCustomers().length }} of {{ filteredCustomers().length }} customer(s)
                     @if (detectedState()) {
                       <span> in {{ getStateDisplayName(detectedState()!) }}</span>
                     }
-                    <span> ({{ activeRefinementCount }} filter{{ activeRefinementCount === 1 ? '' : 's' }} applied)</span>
+                    <span> ({{ activeRefinementCount() }} filter{{ activeRefinementCount() === 1 ? '' : 's' }} applied)</span>
                   } @else {
                     Found {{ filteredCustomers().length }} of {{ customers().length }} customer(s) matching your criteria
                     @if (detectedState()) {
@@ -169,8 +172,8 @@
                       <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
                     </svg>
                     Refine Filters
-                    @if (activeRefinementCount > 0) {
-                      <span class="ml-1.5 inline-flex items-center justify-center w-4 h-4 text-xs font-bold rounded-full bg-gray-600 dark:bg-gray-400 text-white dark:text-gray-900">{{ activeRefinementCount }}</span>
+                    @if (activeRefinementCount() > 0) {
+                      <span class="ml-1.5 inline-flex items-center justify-center w-4 h-4 text-xs font-bold rounded-full bg-gray-600 dark:bg-gray-400 text-white dark:text-gray-900">{{ activeRefinementCount() }}</span>
                     }
                   </app-button>
                   <app-button variant="outline" (onClick)="openSaveDialog()">
@@ -190,7 +193,7 @@
                 <!-- Panel header -->
                 <div class="flex items-center justify-between">
                   <h4 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Refine Filters</h4>
-                  @if (activeRefinementCount > 0) {
+                  @if (activeRefinementCount() > 0) {
                     <button type="button" (click)="clearRefinements()" class="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:underline">Clear All</button>
                   }
                 </div>
@@ -237,11 +240,11 @@
                 </div>
 
                 <!-- Crops -->
-                @if (availableCrops.length > 0) {
+                @if (availableCrops().length > 0) {
                   <div class="space-y-2.5 pt-1 border-t border-gray-200 dark:border-gray-700">
                     <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 pt-3">Crops</p>
                     <div class="flex flex-wrap gap-2">
-                      @for (crop of availableCrops; track crop) {
+                      @for (crop of availableCrops(); track crop) {
                         <button
                           type="button"
                           (click)="togglePendingCrop(crop)"
@@ -256,11 +259,11 @@
                 }
 
                 <!-- Location / States -->
-                @if (availableStates.length > 0) {
+                @if (availableStates().length > 0) {
                   <div class="space-y-2.5 pt-1 border-t border-gray-200 dark:border-gray-700">
                     <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 pt-3">Location</p>
                     <div class="flex flex-wrap gap-2">
-                      @for (state of availableStates; track state) {
+                      @for (state of availableStates(); track state) {
                         <button
                           type="button"
                           (click)="togglePendingState(state)"
@@ -277,8 +280,8 @@
                 <!-- Footer: count + Apply button -->
                 <div class="flex items-center justify-between pt-3 border-t border-gray-200 dark:border-gray-700">
                   <p class="text-xs text-gray-400 dark:text-gray-500">
-                    @if (activeRefinementCount > 0) {
-                      Showing {{ displayedCustomers.length }} of {{ customers().length }} producers
+                    @if (activeRefinementCount() > 0) {
+                      Showing {{ displayedCustomers().length }} of {{ customers().length }} producers
                     }
                   </p>
                   <app-button (onClick)="applyFilters()">Apply Filters</app-button>
@@ -309,7 +312,7 @@
                   Clear query
                 </button>
               </div>
-            } @else if (displayedCustomers.length === 0) {
+            } @else if (displayedCustomers().length === 0) {
               <div class="text-center py-8">
                 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 text-gray-300 dark:text-gray-600">
                   <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
@@ -320,7 +323,7 @@
               </div>
             } @else {
               <div class="divide-y divide-gray-200 dark:divide-gray-700">
-                @for (customer of displayedCustomers; track customer.id) {
+                @for (customer of displayedCustomers(); track customer.id) {
                   <div
                     class="py-4 flex items-start justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 -mx-6 px-6 cursor-pointer transition-colors"
                     (click)="selectCustomer(customer)"
@@ -387,7 +390,7 @@
               <p class="text-sm text-gray-400 dark:text-gray-500">Generate a list above and save it for quick access later</p>
             </div>
           } @else {
-            <div class="space-y-2">
+            <div class="space-y-2 pb-2">
               @for (list of savedLists(); track list.id) {
                 <div class="flex items-center justify-between gap-4 p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                   <button type="button" (click)="loadSavedList(list)" class="flex-1 text-left min-w-0">
@@ -453,4 +456,5 @@
           <app-button variant="destructive" (onClick)="confirmDeleteList()">Delete</app-button>
         </app-dialog-footer>
       </app-dialog>
+      </div>
     </div>

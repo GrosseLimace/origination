@@ -198,20 +198,22 @@ public class SqlDataService : IDataService
             .Distinct()
             .ToList();
 
-        // Table only contains enrolled customers (eSignEnabled = true).
-        // Presence in table = enrolled; absence = not enrolled.
+        // Presence in table = enrolled (table only contains eSign customers).
         var enrollmentList = await _appContext.ESignEnrollments
             .AsNoTracking()
             .Where(e => codes.Contains(e.CustomerCode))
             .ToListAsync(cancellationToken);
 
-        // Presence of any row for a CustomerCode means enrolled.
-        // ScoularViewRecipients: use the first non-empty value across all duplicate rows.
+        // For duplicates: find the first row with real ScoularViewRecipients
+        // (not null, empty, or "No"). If none have recipients, value stays null.
         var enrollments = enrollmentList
             .GroupBy(e => e.CustomerCode)
             .ToDictionary(
                 g => g.Key,
-                g => g.FirstOrDefault(e => !string.IsNullOrWhiteSpace(e.ScoularViewRecipients))?.ScoularViewRecipients);
+                g => g.FirstOrDefault(e =>
+                    !string.IsNullOrWhiteSpace(e.ScoularViewRecipients) &&
+                    !e.ScoularViewRecipients!.Equals("No", StringComparison.OrdinalIgnoreCase)
+                )?.ScoularViewRecipients);
 
         foreach (var customer in customers)
         {
@@ -1791,5 +1793,125 @@ public class SqlDataService : IDataService
             _appContext.DashboardActualHarvests.Remove(entity);
             await _appContext.SaveChangesAsync(cancellationToken);
         }
+    }
+
+    // =========================================================================
+    // Bid Sheet Operations
+    // =========================================================================
+
+    public async Task<List<ElevatorCache>> GetElevatorsAsync(string? tradeUnitCode = null, CancellationToken cancellationToken = default)
+    {
+        var query = _appContext.ElevatorCaches.AsNoTracking().Where(e => e.IsActive);
+
+        if (!string.IsNullOrEmpty(tradeUnitCode))
+            query = query.Where(e => e.TradeUnitCode == tradeUnitCode);
+
+        return await query.ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<BidSheetEntry>> GetBidSheetEntriesAsync(string tradeUnitCode, int? cropYear = null, string? commodityCode = null, CancellationToken cancellationToken = default)
+    {
+        var query = _appContext.BidSheetEntries
+            .AsNoTracking()
+            .Where(e => e.TradeUnitCode == tradeUnitCode);
+
+        if (cropYear.HasValue)
+            query = query.Where(e => e.CropYear == cropYear.Value);
+
+        if (!string.IsNullOrEmpty(commodityCode))
+            query = query.Where(e => e.CommodityCode == commodityCode);
+
+        return await query.OrderByDescending(e => e.CreatedAt).ToListAsync(cancellationToken);
+    }
+
+    public async Task<BidSheetEntry> CreateBidSheetEntryAsync(BidSheetEntry entry, CancellationToken cancellationToken = default)
+    {
+        _appContext.BidSheetEntries.Add(entry);
+        await _appContext.SaveChangesAsync(cancellationToken);
+        return entry;
+    }
+
+    public async Task<BidSheetEntry?> UpdateBidSheetEntryAsync(int id, BidSheetEntry entry, CancellationToken cancellationToken = default)
+    {
+        var existing = await _appContext.BidSheetEntries.FindAsync([id], cancellationToken);
+        if (existing == null) return null;
+
+        existing.Name = entry.Name;
+        existing.Address = entry.Address;
+        existing.City = entry.City;
+        existing.State = entry.State;
+        existing.Latitude = entry.Latitude;
+        existing.Longitude = entry.Longitude;
+        existing.Bid = entry.Bid;
+        existing.ModifiedBy = entry.ModifiedBy;
+        existing.ModifiedAt = DateTime.UtcNow;
+
+        await _appContext.SaveChangesAsync(cancellationToken);
+        return existing;
+    }
+
+    public async Task DeleteBidSheetEntryAsync(int id, CancellationToken cancellationToken = default)
+    {
+        var existing = await _appContext.BidSheetEntries.FindAsync([id], cancellationToken);
+        if (existing != null)
+        {
+            _appContext.BidSheetEntries.Remove(existing);
+            await _appContext.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    public async Task BulkCreateBidSheetEntriesAsync(List<BidSheetEntry> entries, CancellationToken cancellationToken = default)
+    {
+        if (entries.Count == 0) return;
+        await _appContext.BidSheetEntries.AddRangeAsync(entries, cancellationToken);
+        await _appContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<BidReference?> GetBidReferenceAsync(string userId, string tradeUnitCode, string commodityCode, CancellationToken cancellationToken = default)
+    {
+        return await _appContext.BidReferences
+            .AsNoTracking()
+            .FirstOrDefaultAsync(r => r.UserId == userId && r.TradeUnitCode == tradeUnitCode && r.CommodityCode == commodityCode, cancellationToken);
+    }
+
+    public async Task SetBidReferenceAsync(BidReference reference, CancellationToken cancellationToken = default)
+    {
+        var existing = await _appContext.BidReferences
+            .FirstOrDefaultAsync(r => r.UserId == reference.UserId && r.TradeUnitCode == reference.TradeUnitCode && r.CommodityCode == reference.CommodityCode, cancellationToken);
+
+        if (existing != null)
+        {
+            existing.ElevatorCode = reference.ElevatorCode;
+            existing.ModifiedAt = DateTime.UtcNow;
+        }
+        else
+        {
+            reference.ModifiedAt = DateTime.UtcNow;
+            _appContext.BidReferences.Add(reference);
+        }
+
+        await _appContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<List<int>> GetBidCropYearsAsync(string tradeUnitCode, CancellationToken cancellationToken = default)
+    {
+        return await _appContext.BidSheetEntries
+            .AsNoTracking()
+            .Where(e => e.TradeUnitCode == tradeUnitCode)
+            .Select(e => e.CropYear)
+            .Distinct()
+            .OrderBy(y => y)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<string>> GetBidCommoditiesAsync(string tradeUnitCode, CancellationToken cancellationToken = default)
+    {
+        return await _appContext.BidSheetEntries
+            .AsNoTracking()
+            .Where(e => e.TradeUnitCode == tradeUnitCode)
+            .Select(e => e.CommodityCode)
+            .Distinct()
+            .OrderBy(c => c)
+            .ToListAsync(cancellationToken);
     }
 }

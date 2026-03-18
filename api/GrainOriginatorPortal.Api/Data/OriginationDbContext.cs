@@ -22,6 +22,7 @@ public class OriginationDbContext : DbContext
     public DbSet<Ticket> Tickets => Set<Ticket>();
     public DbSet<TicketQuality> TicketQualities => Set<TicketQuality>();
     public DbSet<ContractPricingLine> ContractPricingLines => Set<ContractPricingLine>();
+    public DbSet<Elevator> Elevators => Set<Elevator>();
 
     // Application tables - Notes and TradeUnits moved to ApplicationDbContext (Origination database)
 
@@ -304,5 +305,27 @@ public class OriginationDbContext : DbContext
 
         // Configure SavedList entity - DISABLED: Table doesn't exist in ODS
         // modelBuilder.Entity<SavedList>(entity => { ... });
+
+        // Configure Elevator — maps to ctrm.vw_GNP026 (read-only view, no PK)
+        modelBuilder.Entity<Elevator>(entity =>
+        {
+            entity.ToView("vw_GNP026", schema: "ctrm");
+            entity.HasNoKey();
+            entity.Property(e => e.ElevatorCode).HasColumnName("Elevator_Code").HasMaxLength(6);
+            entity.Property(e => e.ElevatorShortName).HasColumnName("Elevator_Short_Name").HasMaxLength(4);
+            entity.Property(e => e.ElevatorName).HasColumnName("Elevator_Name").HasMaxLength(30);
+            entity.Property(e => e.Address1).HasColumnName("Elevator_Address_1").HasMaxLength(30);
+            entity.Property(e => e.Address2).HasColumnName("Elevator_Address_2").HasMaxLength(30);
+            entity.Property(e => e.City).HasColumnName("Elevator_City").HasMaxLength(15);
+            entity.Property(e => e.State).HasColumnName("Elevator_State").HasMaxLength(2);
+            entity.Property(e => e.ZipCode).HasColumnName("Division_Zip_Code").HasColumnType("decimal(18,0)");
+            entity.Property(e => e.OurFacility).HasColumnName("Our_Facility").HasMaxLength(1);
+            entity.Property(e => e.BushelCapacity).HasColumnName("Bushel_Capacity_In_Bushels").HasColumnType("decimal(18,0)");
+            entity.Property(e => e.ElevatorCompanyCode).HasColumnName("Elevator_Company_Code").HasMaxLength(2);
+            entity.Property(e => e.ElevatorDivisionCode).HasColumnName("Elevator_Division_Code").HasMaxLength(2);
+            entity.Property(e => e.ElevatorLocationCode).HasColumnName("Elevator_Location_Code").HasMaxLength(4);
+            entity.Ignore(e => e.Latitude);
+            entity.Ignore(e => e.Longitude);
+        });
     }
 }

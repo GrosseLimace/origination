@@ -128,13 +128,15 @@ export class TradeUnitSelectorComponent implements OnInit {
 
   toggleGroupSelection(groupName: string): void {
     const current = this.appState.selectedGroupNames();
-    const idx = current.indexOf(groupName);
-    const updated = idx > -1 ? current.filter((_, i) => i !== idx) : [...current, groupName];
+    // Single-select: if already selected, deselect; otherwise select only this one
+    const updated = current.includes(groupName) ? [] : [groupName];
     this.appState.setSelectedGroupNames(updated);
-    // Remove selected trade units no longer in any selected group
+    // Remove selected trade units no longer in the selected group
     const available = this.getAvailableTradeUnits();
     const filteredUnits = this.appState.selectedTradeUnits().filter(u => available.includes(u));
     this.appState.setTradeUnits(filteredUnits);
+    // Close the dropdown after selection
+    this.isGroupDropdownOpen.set(false);
   }
 
   // ---- Trade unit helpers ----

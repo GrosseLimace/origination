@@ -37,15 +37,23 @@
         : 'absolute left-0 mt-1 min-w-[180px] bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg z-50'">
         <div class="max-h-[200px] overflow-y-auto p-2 space-y-1">
           @for (g of userGroups(); track g.groupName) {
-            <label class="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-600 rounded cursor-pointer transition-colors">
-              <input
-                type="checkbox"
-                [checked]="isGroupSelected(g.groupName)"
-                (change)="toggleGroupSelection(g.groupName)"
-                class="rounded border-gray-300 text-scoular-green-accessible focus:ring-scoular-green"
-              />
-              <span [class]="stacked() ? 'text-base text-gray-900 dark:text-white' : 'text-sm text-gray-900 dark:text-white'">{{ g.groupName }}</span>
-            </label>
+            <button
+              type="button"
+              (click)="toggleGroupSelection(g.groupName)"
+              class="w-full flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors"
+              [class]="isGroupSelected(g.groupName)
+                ? 'bg-scoular-green-accessible/10 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-green-300'
+                : 'hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-900 dark:text-white'"
+            >
+              @if (isGroupSelected(g.groupName)) {
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              } @else {
+                <span class="w-4 flex-shrink-0"></span>
+              }
+              <span [class]="stacked() ? 'text-base' : 'text-sm'">{{ g.groupName }}</span>
+            </button>
           }
         </div>
       </div>
@@ -90,12 +98,12 @@
             </label>
           }
         </div>
-        @if (selectedTradeUnits().length > 0) {
-          <div class="border-t border-gray-200 dark:border-gray-600 p-2">
+        <div class="border-t border-gray-200 dark:border-gray-600 p-2 flex items-center gap-2">
+          @if (selectedTradeUnits().length > 0) {
             <button
               (click)="clearAllTradeUnits()"
               type="button"
-              class="w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-md transition-colors flex items-center justify-center gap-2"
+              class="flex-1 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-md transition-colors flex items-center justify-center gap-2"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M18 6L6 18"/>
@@ -103,8 +111,15 @@
               </svg>
               Clear All
             </button>
-          </div>
-        }
+          }
+          <button
+            (click)="closeDropdown()"
+            type="button"
+            class="flex-1 px-3 py-2 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-md transition-colors flex items-center justify-center gap-2"
+          >
+            Done
+          </button>
+        </div>
       </div>
     }
   </div>

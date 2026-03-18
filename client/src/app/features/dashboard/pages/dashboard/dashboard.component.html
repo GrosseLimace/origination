@@ -49,7 +49,7 @@
         class="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green"
       >
         <option value="">All Crops</option>
-        @for (crop of availableCrops; track $index) {
+        @for (crop of availableCrops(); track $index) {
           <option [value]="crop">{{ crop }}</option>
         }
       </select>
@@ -91,10 +91,10 @@
           </div>
           <span class="text-sm font-medium text-gray-500 dark:text-gray-400">Total Acres</span>
         </div>
-        <div class="text-3xl font-bold text-gray-900 dark:text-white tabular-nums">{{ totalAcresForYear | number }}</div>
-        @if (acresTrend !== null) {
-          <div class="mt-1.5 text-xs font-medium" [class]="acresTrend >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'">
-            {{ acresTrend >= 0 ? '↑' : '↓' }} {{ acresTrend < 0 ? (acresTrend * -1 | number:'1.0-1') : (acresTrend | number:'1.0-1') }}% vs {{ selectedPlantingYear() - 1 }}
+        <div class="text-3xl font-bold text-gray-900 dark:text-white tabular-nums">{{ totalAcresForYear() | number }}</div>
+        @if (acresTrend() !== null) {
+          <div class="mt-1.5 text-xs font-medium" [class]="acresTrend()! >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'">
+            {{ acresTrend()! >= 0 ? '↑' : '↓' }} {{ acresTrend()! < 0 ? (acresTrend()! * -1 | number:'1.0-1') : (acresTrend()! | number:'1.0-1') }}% vs {{ selectedPlantingYear() - 1 }}
           </div>
         } @else {
           <div class="mt-1.5 text-xs text-gray-400 dark:text-gray-500">No prior year data</div>
@@ -113,7 +113,7 @@
           </div>
           <span class="text-sm font-medium text-gray-500 dark:text-gray-400">Projected Production</span>
         </div>
-        <div class="text-3xl font-bold text-gray-900 dark:text-white tabular-nums">{{ projectedProductionFormatted }}</div>
+        <div class="text-3xl font-bold text-gray-900 dark:text-white tabular-nums">{{ projectedProductionFormatted() }}</div>
         <div class="mt-1.5 text-xs text-gray-400 dark:text-gray-500">bushels estimated</div>
       </div>
 
@@ -128,7 +128,7 @@
           </div>
           <span class="text-sm font-medium text-gray-500 dark:text-gray-400">Average Yield</span>
         </div>
-        <div class="text-3xl font-bold text-gray-900 dark:text-white tabular-nums">{{ averageYield > 0 ? averageYield : '--' }}</div>
+        <div class="text-3xl font-bold text-gray-900 dark:text-white tabular-nums">{{ averageYield() > 0 ? averageYield() : '--' }}</div>
         <div class="mt-1.5 text-xs text-gray-400 dark:text-gray-500">bu / acre (weighted avg)</div>
       </div>
 
@@ -145,7 +145,7 @@
           </div>
           <span class="text-sm font-medium text-gray-500 dark:text-gray-400">Active Growers</span>
         </div>
-        <div class="text-3xl font-bold text-gray-900 dark:text-white tabular-nums">{{ activeGrowers }}</div>
+        <div class="text-3xl font-bold text-gray-900 dark:text-white tabular-nums">{{ activeGrowers() }}</div>
         <div class="mt-1.5 text-xs text-gray-400 dark:text-gray-500">customers with intentions</div>
       </div>
 
@@ -178,19 +178,19 @@
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
               <h3 class="text-base font-semibold text-gray-900 dark:text-white">Acres by Crop</h3>
               <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 mb-5">Planned acres by crop type for {{ selectedPlantingYear() }}</p>
-              @if (cropBreakdown.length === 0) {
+              @if (cropBreakdown().length === 0) {
                 <div class="flex items-center justify-center h-48 text-sm text-gray-400 dark:text-gray-500 italic">
                   No planting data for {{ selectedPlantingYear() }}
                 </div>
               } @else {
                 <div class="flex items-end gap-2" style="height: 200px; padding-bottom: 4px;">
-                  @for (crop of cropBreakdown; track $index) {
+                  @for (crop of cropBreakdown(); track $index) {
                     <div class="flex flex-col items-center gap-1 flex-1 min-w-0 h-full justify-end">
                       <span class="text-xs text-gray-500 dark:text-gray-400 tabular-nums whitespace-nowrap">{{ formatAcres(crop.acres) }}</span>
                       <div
                         class="w-full rounded-t-sm transition-all duration-300"
                         [ngClass]="crop.barColor"
-                        [style.height.px]="maxCropAcres > 0 ? (crop.acres / maxCropAcres) * 155 : 0"
+                        [style.height.px]="maxCropAcres() > 0 ? (crop.acres / maxCropAcres()) * 155 : 0"
                       ></div>
                       <span class="text-xs text-gray-600 dark:text-gray-400 truncate w-full text-center leading-tight mt-0.5">{{ crop.name }}</span>
                     </div>
@@ -203,7 +203,7 @@
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
               <h3 class="text-base font-semibold text-gray-900 dark:text-white">Crop Distribution</h3>
               <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 mb-5">Share of total acres by crop type</p>
-              @if (cropBreakdown.length === 0) {
+              @if (cropBreakdown().length === 0) {
                 <div class="flex items-center justify-center h-48 text-sm text-gray-400 dark:text-gray-500 italic">
                   No planting data for {{ selectedPlantingYear() }}
                 </div>
@@ -213,7 +213,7 @@
                   <div
                     class="relative flex-shrink-0 rounded-full"
                     style="width: 148px; height: 148px;"
-                    [style.background]="cropDistributionGradient"
+                    [style.background]="cropDistributionGradient()"
                   >
                     <!-- Inner circle (donut hole) -->
                     <div
@@ -221,14 +221,14 @@
                       style="top: 37px; left: 37px; right: 37px; bottom: 37px;"
                     >
                       <div class="text-center">
-                        <div class="text-base font-bold text-gray-900 dark:text-white">{{ cropBreakdown.length }}</div>
+                        <div class="text-base font-bold text-gray-900 dark:text-white">{{ cropBreakdown().length }}</div>
                         <div class="text-xs text-gray-500 dark:text-gray-400">Crops</div>
                       </div>
                     </div>
                   </div>
                   <!-- Legend -->
                   <div class="flex-1 space-y-2.5 overflow-auto" style="max-height: 148px;">
-                    @for (crop of cropBreakdown; track $index) {
+                    @for (crop of cropBreakdown(); track $index) {
                       <div class="flex items-center justify-between gap-3">
                         <div class="flex items-center gap-2 min-w-0">
                           <div class="w-2.5 h-2.5 rounded-full flex-shrink-0" [ngClass]="crop.dotColor"></div>
@@ -248,7 +248,7 @@
           </div>
 
           <!-- Crop Details Table -->
-          @if (cropDetailsRows.length > 0) {
+          @if (cropDetailsRows().length > 0) {
             <div class="mt-6 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
               <div class="px-5 py-3 border-b border-gray-200 dark:border-gray-700">
                 <h3 class="text-base font-semibold text-gray-900 dark:text-white">Crop Details</h3>
@@ -265,7 +265,7 @@
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-gray-100 dark:divide-gray-700/60">
-                    @for (row of cropDetailsRows; track $index) {
+                    @for (row of cropDetailsRows(); track $index) {
                       <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                         <td class="py-3 px-5">
                           <div class="flex items-center gap-2">
@@ -297,7 +297,7 @@
               <h3 class="text-base font-semibold text-gray-900 dark:text-white">Top 10 Producers by Volume</h3>
               <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Ranked by total planned acres for {{ selectedPlantingYear() }}</p>
             </div>
-            @if (topProducersRows.length === 0) {
+            @if (topProducersRows().length === 0) {
               <div class="flex items-center justify-center py-16 text-sm text-gray-400 dark:text-gray-500 italic">
                 No planting intentions for {{ selectedPlantingYear() }}
               </div>
@@ -314,7 +314,7 @@
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-gray-100 dark:divide-gray-700/60">
-                    @for (row of topProducersRows; track row.customerId; let i = $index) {
+                    @for (row of topProducersRows(); track row.customerId; let i = $index) {
                       <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                         <td class="py-3 px-5 text-sm font-medium text-gray-400 dark:text-gray-500 tabular-nums">{{ i + 1 }}</td>
                         <td class="py-3 px-5">
@@ -326,7 +326,7 @@
                         <td class="py-3 px-5 text-right">
                           <span class="text-sm font-bold text-gray-900 dark:text-white tabular-nums">{{ row.acres | number }}</span>
                           <div class="mt-1 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden" style="width: 80px; margin-left: auto;">
-                            <div class="h-full bg-scoular-green-accessible rounded-full" [style.width.%]="(row.acres / topProducersRows[0].acres) * 100"></div>
+                            <div class="h-full bg-scoular-green-accessible rounded-full" [style.width.%]="(row.acres / topProducersRows()[0].acres) * 100"></div>
                           </div>
                         </td>
                         <td class="py-3 px-5 text-right text-sm text-gray-700 dark:text-gray-300 tabular-nums">
@@ -359,14 +359,14 @@
                 <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Contracted delivery volume by month</p>
               </div>
               <div class="px-5 pt-5 pb-4">
-                @if (contractsForYear.length === 0) {
+                @if (contractsForYear().length === 0) {
                   <div class="flex items-center justify-center h-32 text-sm text-gray-400 dark:text-gray-500 italic">No contract data for {{ selectedPlantingYear() }}</div>
                 } @else {
                   <div class="flex gap-4">
                     <!-- Y-axis labels -->
                     <div class="flex flex-col justify-between h-32 text-right shrink-0 w-14 pb-1">
-                      <span class="text-xs text-gray-400 dark:text-gray-500 tabular-nums">{{ formatK(harvestTimelineMax) }}</span>
-                      <span class="text-xs text-gray-400 dark:text-gray-500 tabular-nums">{{ formatK(harvestTimelineMidpoint) }}</span>
+                      <span class="text-xs text-gray-400 dark:text-gray-500 tabular-nums">{{ formatK(harvestTimelineMax()) }}</span>
+                      <span class="text-xs text-gray-400 dark:text-gray-500 tabular-nums">{{ formatK(harvestTimelineMidpoint()) }}</span>
                       <span class="text-xs text-gray-400 dark:text-gray-500">0</span>
                     </div>
                     <!-- Chart -->
@@ -377,7 +377,7 @@
                         <div class="absolute inset-x-0 bottom-0 h-px bg-gray-200 dark:bg-gray-600"></div>
                         <!-- Bars -->
                         <div class="absolute inset-0 flex items-end gap-0.5">
-                          @for (m of harvestTimelineMonths; track m.monthIndex) {
+                          @for (m of harvestTimelineMonths(); track m.monthIndex) {
                             <div class="flex-1 flex items-end h-full relative group">
                               @if (m.barHeightPx > 0) {
                                 <!-- Tooltip -->
@@ -410,7 +410,7 @@
                       </div>
                       <!-- Month labels -->
                       <div class="flex gap-0.5 mt-1.5">
-                        @for (m of harvestTimelineMonths; track m.monthIndex) {
+                        @for (m of harvestTimelineMonths(); track m.monthIndex) {
                           <div class="flex-1 text-center text-xs truncate"
                                [class]="m.total > 0 ? 'text-gray-700 dark:text-gray-300 font-medium' : 'text-gray-400 dark:text-gray-500'">
                             {{ m.month }}
@@ -420,9 +420,9 @@
                     </div>
                   </div>
                   <!-- Legend -->
-                  @if (contractCommodityLegend.length > 0) {
+                  @if (contractCommodityLegend().length > 0) {
                     <div class="flex flex-wrap gap-x-5 gap-y-1.5 mt-4 pt-3.5 border-t border-gray-100 dark:border-gray-700/50">
-                      @for (item of contractCommodityLegend; track $index) {
+                      @for (item of contractCommodityLegend(); track $index) {
                         <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
                           <div class="w-3 h-3 rounded-sm flex-shrink-0" [style.background-color]="item.hex"></div>
                           <span>{{ item.commodity }}</span>
@@ -444,14 +444,14 @@
                   <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Contracted bushels vs estimated production this season</p>
                 </div>
                 <div class="p-5 space-y-5">
-                  @if (contractCoverageRows.length === 0) {
+                  @if (contractCoverageRows().length === 0) {
                     <div class="flex flex-col items-center justify-center py-8 gap-3 text-center">
                       <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-300 dark:text-gray-600"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                       <p class="text-sm text-gray-400 dark:text-gray-500 italic">Set season targets to calculate coverage</p>
                       <button (click)="showSeasonTargets.set(true)" class="scoular-btn scoular-btn-sm scoular-btn-outline">Set Season Targets</button>
                     </div>
                   } @else {
-                    @for (row of contractCoverageRows; track $index) {
+                    @for (row of contractCoverageRows(); track $index) {
                       <div>
                         <div class="flex items-baseline justify-between mb-2">
                           <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ row.category }}</span>
@@ -482,7 +482,7 @@
                   <h3 class="text-base font-semibold text-gray-900 dark:text-white">Sales Opportunities</h3>
                   <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Open and unpriced bushels by commodity</p>
                 </div>
-                @if (salesOpportunityRows.length === 0) {
+                @if (salesOpportunityRows().length === 0) {
                   <div class="flex items-center justify-center py-16 text-sm text-gray-400 dark:text-gray-500 italic">No contract data for {{ selectedPlantingYear() }}</div>
                 } @else {
                   <div class="overflow-x-auto">
@@ -496,7 +496,7 @@
                         </tr>
                       </thead>
                       <tbody class="divide-y divide-gray-100 dark:divide-gray-700/60">
-                        @for (row of salesOpportunityRows; track $index) {
+                        @for (row of salesOpportunityRows(); track $index) {
                           <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                             <td class="py-3 px-4">
                               <div class="flex items-center gap-2">

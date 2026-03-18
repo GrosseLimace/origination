@@ -1,4 +1,6 @@
 // System namespaces
+using System.Net;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 // Microsoft namespaces
@@ -10,6 +12,7 @@ using Microsoft.Data.SqlClient;
 // Project namespaces
 using GrainOriginatorPortal.Api.Data;
 using GrainOriginatorPortal.Api.Exceptions;
+using GrainOriginatorPortal.Api.Models;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -24,19 +27,23 @@ public class DiagnosticsController : ControllerBase
     private readonly EntitlementsDbContext _entContext;
     private readonly ILogger<DiagnosticsController> _logger;
     private readonly IWebHostEnvironment _env;
+    private readonly IHttpClientFactory _httpFactory;
+    private static int _isGeocoding;
 
     public DiagnosticsController(
         OriginationDbContext context,
         ApplicationDbContext appContext,
         EntitlementsDbContext entContext,
         ILogger<DiagnosticsController> logger,
-        IWebHostEnvironment env)
+        IWebHostEnvironment env,
+        IHttpClientFactory httpFactory)
     {
         _context = context;
         _appContext = appContext;
         _entContext = entContext;
         _logger = logger;
         _env = env;
+        _httpFactory = httpFactory;
     }
 
     // -------------------------------------------------------------------------
@@ -89,13 +96,13 @@ public class DiagnosticsController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Returns 404 in production environments.</summary>
+    /// <summary>Returns 404 unless running in Development or QA.</summary>
     /// <remarks>
     /// These endpoints expose internal DB schema structure and must never be
     /// accessible in production. security-guide.md §4.3 (least privilege).
     /// </remarks>
     private IActionResult? DenyIfNotDevelopment()
-        => _env.IsProduction() ? NotFound() : null;
+        => _env.IsDevelopment() || _env.IsEnvironment("QA") ? null : NotFound();
 
     // -------------------------------------------------------------------------
     /// <summary>
@@ -243,6 +250,298 @@ public class DiagnosticsController : ControllerBase
     {
         public string SchemaName { get; init; } = "";
         public string TableName { get; init; } = "";
+    }
+
+    /// <summary>
+    /// Seeds dbo.Commodities from distinct CommodityCode/CommodityDescription in ODS contracts.
+    /// Skips codes that already exist. Dev/QA only.
+    /// </summary>
+    [HttpPost("commodities/seed")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> SeedCommodities(CancellationToken cancellationToken = default)
+    {
+        if (DenyIfNotDevelopment() is { } deny) return deny;
+
+        // Get distinct commodity codes from ODS contracts
+        var odsContracts = await _context.Contracts.AsNoTracking()
+            .Where(c => c.CommodityCode != null && c.CommodityCode != ""
+                     && c.CommodityDescription != null && c.CommodityDescription != "")
+            .Select(c => new { c.CommodityCode, c.CommodityDescription })
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        // Get existing commodity codes
+        var existingCodes = await _appContext.Commodities
+            .Select(c => c.Code)
+            .ToListAsync(cancellationToken);
+        var existingSet = new HashSet<string>(existingCodes, StringComparer.OrdinalIgnoreCase);
+
+        int inserted = 0;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in odsContracts)
+        {
+            var code = item.CommodityCode!.Trim();
+            if (existingSet.Contains(code) || seen.Contains(code)) continue;
+            seen.Add(code);
+
+            _appContext.Commodities.Add(new Commodity
+            {
+                Code = code,
+                Name = item.CommodityDescription!.Trim(),
+                IsActive = true
+            });
+            inserted++;
+        }
+
+        await _appContext.SaveChangesAsync(cancellationToken);
+        return Ok(new { Inserted = inserted, AlreadyExisted = existingCodes.Count, TotalOds = odsContracts.Count });
+    }
+
+    /// <summary>
+    /// Copies all elevators from ODS ctrm.vw_GNP026 into dbo.ElevatorCache.
+    /// Upserts by ElevatorCode — existing rows are updated, new rows are inserted.
+    /// Optionally geocodes elevators missing coordinates (pass ?geocode=true, slow ~1 req/sec).
+    /// Dev/QA only.
+    /// </summary>
+    [HttpPost("elevator-cache/refresh")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> RefreshElevatorCache([FromQuery] bool geocode = false, CancellationToken cancellationToken = default)
+    {
+        if (DenyIfNotDevelopment() is { } deny) return deny;
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        // Read all elevators from ODS
+        var odsElevators = await _context.Elevators.AsNoTracking().ToListAsync(cancellationToken);
+
+        // Read existing cache
+        var existingCache = await _appContext.ElevatorCaches.ToDictionaryAsync(e => e.ElevatorCode, cancellationToken);
+
+        int inserted = 0, updated = 0, geocoded = 0, geoFailed = 0;
+
+        foreach (var elev in odsElevators)
+        {
+            var code = (elev.ElevatorCode ?? "").Trim();
+            if (string.IsNullOrEmpty(code)) continue;
+
+            if (existingCache.TryGetValue(code, out var cached))
+            {
+                // Update existing
+                cached.ElevatorShortName = elev.ElevatorShortName?.Trim();
+                cached.ElevatorName = elev.ElevatorName?.Trim();
+                cached.Address = elev.Address1?.Trim();
+                cached.City = elev.City?.Trim();
+                cached.State = elev.State?.Trim();
+                cached.ZipCode = elev.ZipCode?.ToString("0");
+                cached.OurFacility = elev.OurFacility?.Trim();
+                cached.TradeUnitCode = elev.ElevatorLocationCode?.Trim();
+                cached.LastRefreshedAt = DateTime.UtcNow;
+                updated++;
+            }
+            else
+            {
+                // Insert new
+                var newEntry = new ElevatorCache
+                {
+                    ElevatorCode = code,
+                    ElevatorShortName = elev.ElevatorShortName?.Trim(),
+                    ElevatorName = elev.ElevatorName?.Trim(),
+                    Address = elev.Address1?.Trim(),
+                    City = elev.City?.Trim(),
+                    State = elev.State?.Trim(),
+                    ZipCode = elev.ZipCode?.ToString("0"),
+                    OurFacility = elev.OurFacility?.Trim(),
+                    TradeUnitCode = elev.ElevatorLocationCode?.Trim(),
+                    IsActive = true,
+                    LastRefreshedAt = DateTime.UtcNow
+                };
+                _appContext.ElevatorCaches.Add(newEntry);
+                existingCache[code] = newEntry;
+                inserted++;
+            }
+        }
+
+        await _appContext.SaveChangesAsync(cancellationToken);
+
+        // Optional geocoding for entries missing coordinates
+        if (geocode)
+        {
+            var toGeocode = await _appContext.ElevatorCaches
+                .Where(e => e.Latitude == null && e.IsActive)
+                .Where(e => e.City != null || e.Address != null)
+                .ToListAsync(cancellationToken);
+
+            var client = _httpFactory.CreateClient();
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("GrainOriginatorPortal/1.0");
+
+            foreach (var elev in toGeocode)
+            {
+                if (cancellationToken.IsCancellationRequested) break;
+
+                var parts = new[] { elev.Address?.Trim(), elev.City?.Trim(), elev.State?.Trim() }
+                    .Where(p => !string.IsNullOrWhiteSpace(p));
+                var query = string.Join(", ", parts);
+                if (string.IsNullOrWhiteSpace(query)) { geoFailed++; continue; }
+
+                try
+                {
+                    await Task.Delay(1100, cancellationToken);
+                    var url = $"https://nominatim.openstreetmap.org/search?format=json&limit=1&q={Uri.EscapeDataString(query)}";
+                    var response = await client.GetAsync(url, cancellationToken);
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        var json = await response.Content.ReadAsStringAsync(cancellationToken);
+                        var results = JsonSerializer.Deserialize<JsonElement[]>(json);
+                        if (results != null && results.Length > 0)
+                        {
+                            elev.Latitude = double.Parse(results[0].GetProperty("lat").GetString()!);
+                            elev.Longitude = double.Parse(results[0].GetProperty("lon").GetString()!);
+                            geocoded++;
+                        }
+                        else { geoFailed++; }
+                    }
+                    else { geoFailed++; }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Geocoding failed for {Code}", elev.ElevatorCode);
+                    geoFailed++;
+                }
+            }
+
+            await _appContext.SaveChangesAsync(cancellationToken);
+        }
+
+        sw.Stop();
+        return Ok(new
+        {
+            OdsTotal = odsElevators.Count,
+            Inserted = inserted,
+            Updated = updated,
+            Geocoded = geocoded,
+            GeoFailed = geoFailed,
+            ElapsedSeconds = sw.Elapsed.TotalSeconds
+        });
+    }
+
+    /// <summary>
+    /// Starts geocoding all elevators missing coordinates in the background.
+    /// Returns immediately with estimated time. Check progress via GET elevator-cache/geocode-status.
+    /// </summary>
+    [HttpPost("elevator-cache/geocode")]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    public IActionResult StartElevatorGeocode(CancellationToken cancellationToken = default)
+    {
+        if (DenyIfNotDevelopment() is { } deny) return deny;
+
+        if (Interlocked.CompareExchange(ref _isGeocoding, 1, 0) != 0)
+            return Conflict(new { Message = "Geocoding is already in progress." });
+
+        var missing = _appContext.ElevatorCaches
+            .Count(e => e.Latitude == null && e.IsActive && (e.City != null || e.Address != null));
+
+        // Capture the service provider before the request ends
+        var serviceProvider = HttpContext.RequestServices.GetRequiredService<IServiceScopeFactory>();
+        _ = Task.Run(async () =>
+        {
+            try { await GeocodeElevatorsBackground(serviceProvider); }
+            finally { Interlocked.Exchange(ref _isGeocoding, 0); }
+        });
+
+        return Accepted(new
+        {
+            Message = "Geocoding started in background",
+            ElevatorsToGeocode = missing,
+            EstimatedMinutes = Math.Ceiling(missing * 1.1 / 60.0)
+        });
+    }
+
+    /// <summary>Returns current geocoding progress.</summary>
+    [HttpGet("elevator-cache/geocode-status")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetGeocodeStatus(CancellationToken ct = default)
+    {
+        if (DenyIfNotDevelopment() is { } deny) return deny;
+
+        var total = await _appContext.ElevatorCaches.CountAsync(e => e.IsActive, ct);
+        var withCoords = await _appContext.ElevatorCaches.CountAsync(e => e.IsActive && e.Latitude != null, ct);
+        var missing = total - withCoords;
+
+        return Ok(new
+        {
+            Total = total,
+            WithCoordinates = withCoords,
+            MissingCoordinates = missing,
+            PercentComplete = total > 0 ? Math.Round(100.0 * withCoords / total, 1) : 0
+        });
+    }
+
+    private async Task GeocodeElevatorsBackground(IServiceScopeFactory scopeFactory)
+    {
+        try
+        {
+            // Create a new scope since the controller's DbContext will be disposed
+            using var scope = scopeFactory.CreateScope();
+            var appContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var httpFactory = scope.ServiceProvider.GetRequiredService<IHttpClientFactory>();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<DiagnosticsController>>();
+
+            var toGeocode = await appContext.ElevatorCaches
+                .Where(e => e.Latitude == null && e.IsActive)
+                .Where(e => e.City != null || e.Address != null)
+                .ToListAsync();
+
+            var client = httpFactory.CreateClient();
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("GrainOriginatorPortal/1.0");
+
+            int done = 0, failed = 0;
+
+            foreach (var elev in toGeocode)
+            {
+                var parts = new[] { elev.Address?.Trim(), elev.City?.Trim(), elev.State?.Trim() }
+                    .Where(p => !string.IsNullOrWhiteSpace(p));
+                var query = string.Join(", ", parts);
+                if (string.IsNullOrWhiteSpace(query)) { failed++; continue; }
+
+                try
+                {
+                    await Task.Delay(1100);
+                    var url = $"https://nominatim.openstreetmap.org/search?format=json&limit=1&q={Uri.EscapeDataString(query)}";
+                    var response = await client.GetAsync(url);
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        var json = await response.Content.ReadAsStringAsync();
+                        var results = JsonSerializer.Deserialize<JsonElement[]>(json);
+                        if (results != null && results.Length > 0)
+                        {
+                            elev.Latitude = double.Parse(results[0].GetProperty("lat").GetString()!);
+                            elev.Longitude = double.Parse(results[0].GetProperty("lon").GetString()!);
+                            done++;
+                        }
+                        else { failed++; }
+                    }
+                    else { failed++; }
+
+                    // Save every 50 to avoid losing progress
+                    if ((done + failed) % 50 == 0)
+                        await appContext.SaveChangesAsync();
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Geocoding failed for {Code}", elev.ElevatorCode);
+                    failed++;
+                }
+            }
+
+            await appContext.SaveChangesAsync();
+            logger.LogInformation("Elevator geocoding complete: {Done} geocoded, {Failed} failed", done, failed);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Background elevator geocoding crashed");
+        }
     }
 
     private record ColumnInfo

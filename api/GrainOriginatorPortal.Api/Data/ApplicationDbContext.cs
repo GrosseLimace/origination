@@ -29,6 +29,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<ESignEnrollment> ESignEnrollments => Set<ESignEnrollment>();
     public DbSet<CustomerSnapshot> CustomerSnapshots => Set<CustomerSnapshot>();
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
+    public DbSet<BidSheetEntry> BidSheetEntries => Set<BidSheetEntry>();
+    public DbSet<BidReference> BidReferences => Set<BidReference>();
+    public DbSet<ElevatorCache> ElevatorCaches => Set<ElevatorCache>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -253,6 +256,62 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.SelectedTradeUnits).HasColumnName("SelectedTradeUnits").HasMaxLength(2000).HasDefaultValue("[]").IsRequired();
             entity.Property(e => e.UpdatedAt).HasColumnName("UpdatedAt").IsRequired();
             entity.HasIndex(e => e.UserId).IsUnique().HasDatabaseName("UQ_UserPreferences_UserId");
+        });
+
+        modelBuilder.Entity<ElevatorCache>(entity =>
+        {
+            entity.ToTable("ElevatorCache", schema: "dbo");
+            entity.HasKey(e => e.ElevatorCode);
+            entity.Property(e => e.ElevatorCode).HasColumnName("ElevatorCode").HasMaxLength(50).IsRequired();
+            entity.Property(e => e.ElevatorShortName).HasColumnName("ElevatorShortName").HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.ElevatorName).HasColumnName("ElevatorName").HasMaxLength(200).IsRequired(false);
+            entity.Property(e => e.Address).HasColumnName("Address").HasMaxLength(300).IsRequired(false);
+            entity.Property(e => e.City).HasColumnName("City").HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.State).HasColumnName("State").HasMaxLength(10).IsRequired(false);
+            entity.Property(e => e.ZipCode).HasColumnName("ZipCode").HasMaxLength(20).IsRequired(false);
+            entity.Property(e => e.OurFacility).HasColumnName("OurFacility").HasMaxLength(1).IsRequired(false);
+            entity.Property(e => e.TradeUnitCode).HasColumnName("TradeUnitCode").HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.Latitude).HasColumnName("Latitude").IsRequired(false);
+            entity.Property(e => e.Longitude).HasColumnName("Longitude").IsRequired(false);
+            entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
+            entity.Property(e => e.LastRefreshedAt).HasColumnName("LastRefreshedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.HasIndex(e => e.TradeUnitCode).HasDatabaseName("IX_ElevatorCache_TradeUnitCode");
+        });
+
+        modelBuilder.Entity<BidSheetEntry>(entity =>
+        {
+            entity.ToTable("BidSheetEntries", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.Name).HasColumnName("Name").HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Address).HasColumnName("Address").HasMaxLength(300).IsRequired(false);
+            entity.Property(e => e.City).HasColumnName("City").HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.State).HasColumnName("State").HasMaxLength(10).IsRequired(false);
+            entity.Property(e => e.Latitude).HasColumnName("Latitude").IsRequired(false);
+            entity.Property(e => e.Longitude).HasColumnName("Longitude").IsRequired(false);
+            entity.Property(e => e.ElevatorCode).HasColumnName("ElevatorCode").HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.TradeUnitCode).HasColumnName("TradeUnitCode").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.CommodityCode).HasColumnName("CommodityCode").HasMaxLength(50).IsRequired();
+            entity.Property(e => e.CropYear).HasColumnName("CropYear").IsRequired();
+            entity.Property(e => e.Bid).HasColumnName("Bid").HasMaxLength(50).IsRequired();
+            entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
+            entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
+            entity.HasIndex(e => new { e.TradeUnitCode, e.CropYear, e.CommodityCode }).HasDatabaseName("IX_BidSheetEntries_TradeUnit_Year");
+        });
+
+        modelBuilder.Entity<BidReference>(entity =>
+        {
+            entity.ToTable("BidReferences", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.UserId).HasColumnName("UserId").HasMaxLength(256).IsRequired();
+            entity.Property(e => e.TradeUnitCode).HasColumnName("TradeUnitCode").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.CommodityCode).HasColumnName("CommodityCode").HasMaxLength(50).IsRequired();
+            entity.Property(e => e.ElevatorCode).HasColumnName("ElevatorCode").HasMaxLength(50).IsRequired();
+            entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.HasIndex(e => new { e.UserId, e.TradeUnitCode, e.CommodityCode }).IsUnique().HasDatabaseName("UQ_BidReferences_User_TradeUnit_Commodity");
         });
     }
 }

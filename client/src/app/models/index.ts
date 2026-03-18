@@ -15,3 +15,4 @@ export * from './dashboard-market-share.model';
 export * from './dashboard-actual-harvest.model';
 export * from './contract-pricing-line.model';
 export * from './refine-filters.model';
+export * from './bid-sheet.model';

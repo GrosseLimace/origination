@@ -335,4 +335,19 @@ public interface IDataService
     /// <param name="listId">The saved list's unique identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task DeleteListAsync(int listId, CancellationToken cancellationToken = default);
+
+    // =========================================================================
+    // Bid Sheet Operations
+    // =========================================================================
+
+    Task<List<ElevatorCache>> GetElevatorsAsync(string? tradeUnitCode = null, CancellationToken cancellationToken = default);
+    Task<List<BidSheetEntry>> GetBidSheetEntriesAsync(string tradeUnitCode, int? cropYear = null, string? commodityCode = null, CancellationToken cancellationToken = default);
+    Task<BidSheetEntry> CreateBidSheetEntryAsync(BidSheetEntry entry, CancellationToken cancellationToken = default);
+    Task<BidSheetEntry?> UpdateBidSheetEntryAsync(int id, BidSheetEntry entry, CancellationToken cancellationToken = default);
+    Task DeleteBidSheetEntryAsync(int id, CancellationToken cancellationToken = default);
+    Task BulkCreateBidSheetEntriesAsync(List<BidSheetEntry> entries, CancellationToken cancellationToken = default);
+    Task<BidReference?> GetBidReferenceAsync(string userId, string tradeUnitCode, string commodityCode, CancellationToken cancellationToken = default);
+    Task SetBidReferenceAsync(BidReference reference, CancellationToken cancellationToken = default);
+    Task<List<int>> GetBidCropYearsAsync(string tradeUnitCode, CancellationToken cancellationToken = default);
+    Task<List<string>> GetBidCommoditiesAsync(string tradeUnitCode, CancellationToken cancellationToken = default);
 }

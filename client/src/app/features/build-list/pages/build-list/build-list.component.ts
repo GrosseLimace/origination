@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject, effect, untracked, signal } from '@angular/core';
+import { Component, ChangeDetectionStrategy, DestroyRef, inject, effect, untracked, signal, computed } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -40,7 +40,8 @@ import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-select
     CustomerMapComponent,
     TradeUnitSelectorComponent
   ],
-  templateUrl: './build-list.component.html'
+  templateUrl: './build-list.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class BuildListComponent {
   private readonly apiService = inject(ApiService);
@@ -85,7 +86,7 @@ export class BuildListComponent {
     return this.effectiveTradeUnits.length > 0;
   }
 
-  get activeRefinementCount(): number {
+  readonly activeRefinementCount = computed(() => {
     const r = this.appliedRefinements();
     return [
       r.noActiveContracts,
@@ -96,9 +97,9 @@ export class BuildListComponent {
       r.crops && r.crops.length > 0,
       r.states && r.states.length > 0
     ].filter(Boolean).length;
-  }
+  });
 
-  get displayedCustomers(): Customer[] {
+  readonly displayedCustomers = computed(() => {
     let list = this.filteredCustomers();
     const r = this.appliedRefinements();
 
@@ -141,9 +142,9 @@ export class BuildListComponent {
       });
     }
     return list;
-  }
+  });
 
-  get availableCrops(): string[] {
+  readonly availableCrops = computed(() => {
     const crops = new Set<string>();
     for (const c of this.filteredCustomers()) {
       for (const crop of (c.commodities ?? [])) {
@@ -151,9 +152,9 @@ export class BuildListComponent {
       }
     }
     return [...crops].sort();
-  }
+  });
 
-  get availableStates(): string[] {
+  readonly availableStates = computed(() => {
     const states = new Set<string>();
     for (const c of this.filteredCustomers()) {
       const s = c.extendedStateProvince || c.stateProvince;
@@ -161,7 +162,7 @@ export class BuildListComponent {
     }
     const list = [...states].sort();
     return list.length > 1 ? list : [];
-  }
+  });
 
   queryText = signal('');
   filteredCustomers = signal<Customer[]>([]);
@@ -270,22 +271,15 @@ export class BuildListComponent {
     // Use cached data from AppStateService if already loaded (trade-unit-filtered by home)
     const cachedCustomers = this.appState.customers();
     if (cachedCustomers.length > 0) {
-      this.customers.set(cachedCustomers);
-      this.contracts.set(this.appState.contracts());
-      this.tickets.set(this.appState.tickets());
-      this.plantingIntentions.set(this.appState.plantingIntentions());
-      this.notes.set(this.appState.notes());
-      this.storedGrain.set(this.appState.storedGrain());
-      this.savedLists.set(this.appState.savedLists());
+      this._syncFromAppState();
       this._rebuildCaches();
-      // Restore UI state if we have it
       this._restoreUIState();
-      // Load and merge ProducerDetails (commodities, bin capacity, etc.) if not already merged
-      this._loadAndMergeProducerDetails();
+      this._mergeProducerDetails(this.appState.producerDetails());
+      this.loading.set(false);
       return;
     }
 
-    // No cache — load from API using effective trade units
+    // No cache — load ALL data (including ProducerDetails) in one parallel forkJoin
     const tradeUnits = this.effectiveTradeUnits;
     const tuParam = tradeUnits.length > 0 ? tradeUnits : undefined;
     forkJoin({
@@ -295,27 +289,30 @@ export class BuildListComponent {
       plantingIntentions: this.apiService.getPlantingIntentions().pipe(catchError(() => of([] as PlantingIntention[]))),
       notes: this.apiService.getNotes().pipe(catchError(() => of([] as Note[]))),
       storedGrain: this.apiService.getStoredGrain().pipe(catchError(() => of([] as StoredGrain[]))),
-      savedLists: this.apiService.getSavedLists().pipe(catchError(() => of([] as SavedList[])))
+      savedLists: this.apiService.getSavedLists().pipe(catchError(() => of([] as SavedList[]))),
+      producerDetails: this.apiService.getAllProducerDetails().pipe(catchError(() => of([] as ProducerDetails[])))
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
-        this.customers.set(data.customers);
         this.contracts.set(data.contracts);
         this.tickets.set(data.tickets);
         this.plantingIntentions.set(data.plantingIntentions);
         this.notes.set(data.notes);
         this.storedGrain.set(data.storedGrain);
         this.savedLists.set(data.savedLists);
-        this.appState.setCustomers(data.customers);
         this.appState.setContracts(data.contracts);
         this.appState.setTickets(data.tickets);
         this.appState.setPlantingIntentions(data.plantingIntentions);
         this.appState.setNotes(data.notes);
         this.appState.setStoredGrain(data.storedGrain);
         this.appState.setSavedLists(data.savedLists);
+        if (data.producerDetails.length > 0) this.appState.setProducerDetails(data.producerDetails);
+        // Merge ProducerDetails into customers before setting
+        this.customers.set(data.customers);
+        this._mergeProducerDetails(data.producerDetails);
+        this.appState.setCustomers(this.customers());
         this._rebuildCaches();
         this._restoreUIState();
-        // Load and merge ProducerDetails (commodities, bin capacity, etc.)
-        this._loadAndMergeProducerDetails();
+        this.loading.set(false);
       },
       error: () => {
         this.loading.set(false);
@@ -324,50 +321,42 @@ export class BuildListComponent {
     });
   }
 
-  private _loadAndMergeProducerDetails(): void {
-    const preloaded = this.appState.producerDetails();
-    (preloaded.length > 0 ? of(preloaded) : this.apiService.getAllProducerDetails()).pipe(
-      takeUntilDestroyed(this.destroyRef)
-    ).subscribe({
-      next: (details) => {
-        if (details.length === 0) {
-          this.loading.set(false);
-          return;
-        }
-        if (preloaded.length === 0) this.appState.setProducerDetails(details);
-        const detailsMap = new Map(details.map(d => [d.customerId, d]));
-        let changed = false;
-        const merged = this.customers().map(customer => {
-          const pd = detailsMap.get(customer.id);
-          if (pd) {
-            changed = true;
-            return {
-              ...customer,
-              totalAcres: pd.totalAcres ?? customer.totalAcres,
-              binCapacity: pd.binCapacity ?? customer.binCapacity,
-              primaryContact: pd.primaryContact ?? customer.primaryContact,
-              commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
-              linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
-            };
-          }
-          return customer;
-        });
-        if (changed) {
-          this.customers.set([...merged]);
-          this.appState.setCustomers(this.customers());
-          this._customerCropsCache.clear();
-        }
-        // Re-apply the current query with the newly merged customer data
-        // (uses cached contracts/tickets/notes — no extra API calls needed here)
-        if (this.hasGenerated() && this.queryText().trim()) {
-          this._applyNlqFilter();
-        }
-        this.loading.set(false);
-      },
-      error: () => {
-        this.loading.set(false);
+  /** Sync local signals from appState (picks up changes made on other pages). */
+  private _syncFromAppState(): void {
+    this.customers.set(this.appState.customers());
+    this.contracts.set(this.appState.contracts());
+    this.tickets.set(this.appState.tickets());
+    this.plantingIntentions.set(this.appState.plantingIntentions());
+    this.notes.set(this.appState.notes());
+    this.storedGrain.set(this.appState.storedGrain());
+    const lists = this.appState.savedLists();
+    if (lists.length > 0) this.savedLists.set(lists);
+  }
+
+  /** Merge ProducerDetails into customer objects (commodities, bin capacity, etc.). */
+  private _mergeProducerDetails(details: ProducerDetails[]): void {
+    if (details.length === 0) return;
+    const detailsMap = new Map(details.map(d => [d.customerId, d]));
+    let changed = false;
+    const merged = this.customers().map(customer => {
+      const pd = detailsMap.get(customer.id);
+      if (pd) {
+        changed = true;
+        return {
+          ...customer,
+          totalAcres: pd.totalAcres ?? customer.totalAcres,
+          binCapacity: pd.binCapacity ?? customer.binCapacity,
+          primaryContact: pd.primaryContact ?? customer.primaryContact,
+          commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
+          linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
+        };
       }
+      return customer;
     });
+    if (changed) {
+      this.customers.set([...merged]);
+      this._customerCropsCache.clear();
+    }
   }
 
   private _restoreUIState(): void {
@@ -402,7 +391,7 @@ export class BuildListComponent {
   }
 
   getMapCustomers(): Customer[] {
-    return this.hasGenerated() ? this.displayedCustomers : this.customers();
+    return this.hasGenerated() ? this.displayedCustomers() : this.customers();
   }
 
   clearQuery(): void {
@@ -451,11 +440,24 @@ export class BuildListComponent {
     if (!this.queryText().trim()) return;
 
     this.isProcessing.set(true);
-    const tradeUnits = overrideTradeUnits ?? this.effectiveTradeUnits;
-    const tuParam = tradeUnits.length > 0 ? tradeUnits : undefined;
 
-    // Always fetch fresh data before filtering so the query sees the latest
-    // notes, contracts, tickets, ProducerDetails, and planting intentions.
+    // If loading a saved list with different trade units, we must re-fetch for those TUs.
+    if (overrideTradeUnits && overrideTradeUnits.length > 0) {
+      this._fetchAndFilter(overrideTradeUnits);
+      return;
+    }
+
+    // For normal queries: sync latest data from appState (picks up notes/contracts
+    // added on other pages) then filter locally — no API round trip needed.
+    this._syncFromAppState();
+    this._rebuildCaches();
+    this._applyNlqFilter();
+    this.isProcessing.set(false);
+  }
+
+  /** Fetches fresh data for specific trade units and runs the NLQ filter. */
+  private _fetchAndFilter(tradeUnits: string[]): void {
+    const tuParam = tradeUnits.length > 0 ? tradeUnits : undefined;
     forkJoin({
       customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
       contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => of([] as Contract[]))),
@@ -466,33 +468,13 @@ export class BuildListComponent {
       producerDetails: (this.appState.producerDetails().length > 0 ? of(this.appState.producerDetails()) : this.apiService.getAllProducerDetails()).pipe(catchError(() => of([] as ProducerDetails[])))
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
-        // Merge ProducerDetails into customer objects
-        const detailsMap = new Map(data.producerDetails.map(d => [d.customerId, d]));
-        this.customers.set(data.customers.map(customer => {
-          const pd = detailsMap.get(customer.id);
-          if (!pd) return customer;
-          return {
-            ...customer,
-            totalAcres: pd.totalAcres ?? customer.totalAcres,
-            binCapacity: pd.binCapacity ?? customer.binCapacity,
-            primaryContact: pd.primaryContact ?? customer.primaryContact,
-            commodities: pd.commodities ? pd.commodities.split(',').map((c: string) => c.trim()) : customer.commodities,
-            linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
-          };
-        }));
+        this.customers.set(data.customers);
+        this._mergeProducerDetails(data.producerDetails);
         this.contracts.set(data.contracts);
         this.tickets.set(data.tickets);
         this.notes.set(data.notes);
         this.plantingIntentions.set(data.plantingIntentions);
         this.storedGrain.set(data.storedGrain);
-
-        // Update appState cache so other pages see the fresh data too
-        this.appState.setCustomers(this.customers());
-        this.appState.setContracts(this.contracts());
-        this.appState.setTickets(this.tickets());
-        this.appState.setNotes(this.notes());
-        this.appState.setPlantingIntentions(this.plantingIntentions());
-        this.appState.setStoredGrain(this.storedGrain());
 
         this._rebuildCaches();
         this._applyNlqFilter();
@@ -684,7 +666,7 @@ export class BuildListComponent {
       name: this.newListName(),
       query: this.queryText(),
       tradeUnits: tradeUnits.length > 0 ? tradeUnits.join(',') : undefined,
-      filters: this.activeRefinementCount > 0 ? { ...this.appliedRefinements() } : undefined
+      filters: this.activeRefinementCount() > 0 ? { ...this.appliedRefinements() } : undefined
     };
 
     const request$ = this.activeSavedList()

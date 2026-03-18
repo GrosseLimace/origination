@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject, signal, computed, effect, untracked } from '@angular/core';
+import { Component, ChangeDetectionStrategy, DestroyRef, inject, signal, computed, effect, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -42,7 +42,8 @@ interface CustomerGroup {
   selector: 'app-insights',
   standalone: true,
   imports: [CommonModule, FormsModule, CardComponent, BadgeComponent, TradeUnitSelectorComponent],
-  templateUrl: './insights.component.html'
+  templateUrl: './insights.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class InsightsComponent {
   private readonly apiService = inject(ApiService);

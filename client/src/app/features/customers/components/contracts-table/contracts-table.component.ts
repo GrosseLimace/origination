@@ -80,23 +80,92 @@ export class ContractsTableComponent {
     if (!q) return this.sortedContracts;
     const terms = this._expandWithAliases(q);
     return this.sortedContracts.filter(c => {
-      const deliveryPeriod = this._formatDeliveryPeriod(c);
+      const deliveryStr = this._formatDeliveryPeriod(c.deliveryStart, c.deliveryEnd);
       return terms.some(term =>
         c.contractNumber.toLowerCase().includes(term) ||
         (c.commodityDescription || '').toLowerCase().includes(term) ||
         (c.commodityCode || '').toLowerCase().includes(term) ||
         (c.commodityGroup || '').toLowerCase().includes(term) ||
         this.getCalculatedStatus(c).toLowerCase().includes(term) ||
-        deliveryPeriod.toLowerCase().includes(term)
+        deliveryStr.includes(term) ||
+        this._matchesDeliveryPeriod(c.deliveryStart, c.deliveryEnd, term)
       );
     });
   }
 
-  private _formatDeliveryPeriod(contract: Contract): string {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const start = new Date(contract.deliveryStart);
-    const end = new Date(contract.deliveryEnd);
-    return `${months[start.getMonth()]} ${start.getFullYear()} ${months[end.getMonth()]} ${end.getFullYear()}`;
+  private static readonly _MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+  private static readonly _MONTHS_SHORT = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+  /** Check if a date matches a search term. Supports:
+   *  - Month names: "July", "Oct", "march"
+   *  - Day numbers: "19", "31"
+   *  - Years: "2025", "2026"
+   *  - Slash/dash dates: "10/1/2025", "1-1-2026", "3/15"
+   *  - Natural dates: "Oct 23, 2025", "March 2025", "October 23 2025"
+   */
+  private _matchesDate(dateVal: Date | string | undefined, term: string): boolean {
+    if (!dateVal) return false;
+    const d = dateVal instanceof Date ? dateVal : new Date(dateVal);
+    if (isNaN(d.getTime())) return false;
+    const month = d.getMonth(), day = d.getDate(), year = d.getFullYear();
+    // Month name match (full or abbreviated)
+    if (ContractsTableComponent._MONTHS[month].startsWith(term) || ContractsTableComponent._MONTHS_SHORT[month] === term) return true;
+    // Exact year match
+    if (term === String(year)) return true;
+    // Exact day match (only 1-2 digit numbers)
+    if (/^\d{1,2}$/.test(term) && parseInt(term, 10) === day) return true;
+    // Slash or dash date: M/D/YYYY, M-D-YYYY, M/D, M-D
+    const dateParts = term.split(/[/\-]/);
+    if (dateParts.length >= 2) {
+      const m = parseInt(dateParts[0], 10), dd = parseInt(dateParts[1], 10), yy = dateParts[2] ? parseInt(dateParts[2], 10) : null;
+      if (!isNaN(m) && !isNaN(dd)) {
+        if (m === month + 1 && dd === day && (yy === null || yy === year)) return true;
+      }
+    }
+    // Natural date string: "Oct 23, 2025", "March 2025", "October 23 2025"
+    const parsed = new Date(term.replace(',', ''));
+    if (!isNaN(parsed.getTime())) {
+      const hasDay = /\d{1,2}[,\s]/.test(term) || /\s\d{1,2}\s/.test(term) || /\s\d{1,2}$/.test(term);
+      if (parsed.getMonth() === month && parsed.getFullYear() === year) {
+        return !hasDay || parsed.getDate() === day;
+      }
+    }
+    return false;
+  }
+
+  /** Check if a delivery period (start–end range) contains a month/year matching the term.
+   *  E.g. searching "July" matches a contract with delivery 6/1/2025 - 8/31/2025 because July falls within.
+   */
+  private _matchesDeliveryPeriod(start: Date | string | undefined, end: Date | string | undefined, term: string): boolean {
+    // First check individual dates
+    if (this._matchesDate(start, term) || this._matchesDate(end, term)) return true;
+    // Then check if a month/year falls within the range
+    if (!start || !end) return false;
+    const s = start instanceof Date ? start : new Date(start);
+    const e = end instanceof Date ? end : new Date(end);
+    if (isNaN(s.getTime()) || isNaN(e.getTime())) return false;
+    // Check month name — see if that month in any year between start and end is within range
+    const monthIdx = ContractsTableComponent._MONTHS.findIndex(m => m.startsWith(term));
+    const monthShortIdx = monthIdx === -1 ? ContractsTableComponent._MONTHS_SHORT.indexOf(term) : monthIdx;
+    if (monthShortIdx !== -1) {
+      for (let y = s.getFullYear(); y <= e.getFullYear(); y++) {
+        const monthStart = new Date(y, monthShortIdx, 1);
+        const monthEnd = new Date(y, monthShortIdx + 1, 0); // last day of month
+        if (monthStart <= e && monthEnd >= s) return true;
+      }
+    }
+    return false;
+  }
+
+  /** Format delivery period as "M/D/YYYY - M/D/YYYY" to match the template display. */
+  private _formatDeliveryPeriod(start: Date | string | undefined, end: Date | string | undefined): string {
+    const fmt = (v: Date | string | undefined): string => {
+      if (!v) return '';
+      const d = v instanceof Date ? v : new Date(v);
+      if (isNaN(d.getTime())) return '';
+      return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+    };
+    return `${fmt(start)} - ${fmt(end)}`.toLowerCase();
   }
 
   private _expandWithAliases(q: string): string[] {
