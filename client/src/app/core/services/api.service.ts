@@ -1,6 +1,6 @@
 import { inject, Injectable, isDevMode } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
-import { Observable, throwError } from 'rxjs';
+import { Observable, of, throwError } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
 import {
   Customer,
@@ -16,7 +16,10 @@ import {
   DashboardMarketShare,
   DashboardActualHarvest,
   ContractPricingLine,
-  RefinementFilters
+  RefinementFilters,
+  BidSheetEntry,
+  BidReference,
+  Elevator
 } from '@models';
 import { environment } from '@env/environment';
 import { ToastService } from '@core/services/toast.service';
@@ -401,5 +404,84 @@ export class ApiService {
   deleteSavedList(id: number): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/savedlists/${id}`)
       .pipe(catchError(e => this.handleError(e)));
+  }
+
+  // =========================================================================
+  // Bid Sheet Operations
+  // =========================================================================
+
+  /** Gets elevators from ODS. If tradeUnitCode omitted, returns all. */
+  getElevators(tradeUnitCode?: string): Observable<Elevator[]> {
+    const params: any = {};
+    if (tradeUnitCode) params.tradeUnitCode = tradeUnitCode;
+    return this.http.get<Elevator[]>(`${this.baseUrl}/bidsheet/elevators`, { params })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Gets bid sheet entries for a trade unit */
+  getBidSheetEntries(tradeUnitCode: string, cropYear?: number, commodityCode?: string): Observable<BidSheetEntry[]> {
+    let params: any = { tradeUnitCode };
+    if (cropYear) params.cropYear = cropYear.toString();
+    if (commodityCode) params.commodityCode = commodityCode;
+    return this.http.get<BidSheetEntry[]>(`${this.baseUrl}/bidsheet/entries`, { params })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Creates a new bid sheet entry */
+  createBidSheetEntry(entry: Partial<BidSheetEntry>): Observable<BidSheetEntry> {
+    return this.http.post<BidSheetEntry>(`${this.baseUrl}/bidsheet/entries`, entry)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Updates a bid sheet entry */
+  updateBidSheetEntry(id: number, entry: Partial<BidSheetEntry>): Observable<BidSheetEntry> {
+    return this.http.put<BidSheetEntry>(`${this.baseUrl}/bidsheet/entries/${id}`, entry)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Deletes a bid sheet entry */
+  deleteBidSheetEntry(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/bidsheet/entries/${id}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Bulk creates bid sheet entries */
+  bulkCreateBidSheetEntries(entries: Partial<BidSheetEntry>[]): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/bidsheet/entries/bulk`, entries)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Gets distinct crop years from bid sheet entries for a trade unit */
+  getBidCropYears(tradeUnitCode: string): Observable<number[]> {
+    return this.http.get<number[]>(`${this.baseUrl}/bidsheet/cropyears`, { params: { tradeUnitCode } })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Gets distinct commodity codes from bid sheet entries for a trade unit */
+  getBidCommodities(tradeUnitCode: string): Observable<string[]> {
+    return this.http.get<string[]>(`${this.baseUrl}/bidsheet/commodities`, { params: { tradeUnitCode } })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Gets the user's reference elevator for a trade unit + commodity */
+  getBidReference(tradeUnitCode: string, commodityCode: string): Observable<BidReference | null> {
+    return this.http.get<BidReference>(`${this.baseUrl}/bidsheet/reference`, { params: { tradeUnitCode, commodityCode } })
+      .pipe(catchError(() => of(null as BidReference | null)));
+  }
+
+  /** Sets or updates the user's reference elevator */
+  setBidReference(tradeUnitCode: string, commodityCode: string, elevatorCode: string): Observable<void> {
+    return this.http.put<void>(`${this.baseUrl}/bidsheet/reference`, { tradeUnitCode, commodityCode, elevatorCode })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  // =========================================================================
+  // Geocoding
+  // =========================================================================
+
+  /** Free-text geocode search via backend proxy */
+  geocodeSearch(query: string): Observable<Array<{ lat: number; lng: number }>> {
+    return this.http.get<Array<{ lat: number; lng: number }>>(`${this.baseUrl}/geocode/search`, { params: { q: query, limit: '1' } })
+      .pipe(catchError(() => of([])));
   }
 }

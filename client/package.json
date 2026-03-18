@@ -24,7 +24,9 @@
     "@azure/msal-angular": "5.1.1",
     "@azure/msal-browser": "5.4.0",
     "@it/design-system": "0.1.1",
+    "@types/leaflet.markercluster": "^1.5.6",
     "leaflet": "1.9.4",
+    "leaflet.markercluster": "^1.5.3",
     "rxjs": "7.8.2",
     "tslib": "2.8.1",
     "zone.js": "0.15.1"

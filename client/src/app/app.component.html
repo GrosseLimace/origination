@@ -1,7 +1,7 @@
 @if (isAuthenticated()) {
-  <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors">
+  <div class="h-screen flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors overflow-hidden">
     <app-header />
-    <main class="max-w-[2000px] w-full mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-4 lg:py-6 flex-grow">
+    <main class="max-w-[2000px] w-full mx-auto p-4 sm:p-6 lg:p-6 flex-grow overflow-hidden">
       <router-outlet />
     </main>
 <app-toast-container />

@@ -345,7 +345,11 @@ export class CustomerListComponent {
         return new Date(note.createdAt).getTime() > new Date(latest.createdAt).getTime() ? note : latest;
       }, customerNotes[0]);
 
-      const daysAgo = Math.max(0, Math.floor((Date.now() - new Date(lastNote.createdAt).getTime()) / (1000 * 60 * 60 * 24)));
+      const noteDate = new Date(lastNote.createdAt);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      noteDate.setHours(0, 0, 0, 0);
+      const daysAgo = Math.max(0, Math.round((today.getTime() - noteDate.getTime()) / (1000 * 60 * 60 * 24)));
 
       let text: string;
       if (daysAgo === 0) text = 'Today';

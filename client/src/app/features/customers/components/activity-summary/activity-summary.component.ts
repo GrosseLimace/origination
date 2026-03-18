@@ -302,18 +302,18 @@ export class ActivitySummaryComponent {
     const validNotes = ownNotes.filter(n => n && n.createdAt);
     if (validNotes.length === 0) return '';
 
-    // Last contact with error handling
+    // Prefer pinned note; fall back to most recent
     try {
       const sorted = [...validNotes].sort((a, b) => {
         const dateA = new Date(a.createdAt).getTime();
         const dateB = new Date(b.createdAt).getTime();
-        // Handle invalid dates
         if (isNaN(dateA)) return 1;
         if (isNaN(dateB)) return -1;
         return dateB - dateA;
       });
 
-      const lastNote = sorted[0];
+      const pinnedNote = sorted.find(n => n.isPinned);
+      const lastNote = pinnedNote || sorted[0];
       if (!lastNote) return '';
 
       const raw = typeof lastNote.createdAt === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(lastNote.createdAt as any)
@@ -321,11 +321,12 @@ export class ActivitySummaryComponent {
       const lastDate = new Date(raw);
       if (isNaN(lastDate.getTime())) return '';
 
-      const daysSince = Math.max(0, this._calculateDaysBetween(lastDate, new Date()));
+      const daysSince = Math.max(0, this._calendarDaysBetween(lastDate, new Date()));
       const createdBy = lastNote.createdBy || 'Unknown';
 
       const content = (lastNote.content || '').trim();
-      const preview = content.length > 150 ? content.substring(0, 150) + '…' : content;
+      // Show full content for pinned notes; truncate others to 150 chars
+      const preview = pinnedNote ? content : (content.length > 150 ? content.substring(0, 150) + '…' : content);
       const previewStr = preview ? ` — "${preview}"` : '';
 
       if (daysSince === 0) {
@@ -418,6 +419,14 @@ export class ActivitySummaryComponent {
       return `0 ${unit}`;
     }
     return `${value.toLocaleString('en-US')} ${unit}`;
+  }
+
+  /** Compare by local calendar date so "yesterday at 3pm" is always 1 day ago. */
+  private _calendarDaysBetween(start: Date, end: Date): number {
+    if (!start || !end || isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
+    const s = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const e = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+    return Math.floor((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
   }
 
   private _calculateDaysBetween(start: Date, end: Date): number {
