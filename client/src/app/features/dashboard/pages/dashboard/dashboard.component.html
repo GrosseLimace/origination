@@ -1,27 +1,29 @@
-<div class="space-y-6">
+<div class="flex flex-col h-full">
 
-  <!-- Header -->
-  <div class="flex items-center justify-between gap-4">
-    <div class="flex items-center gap-3">
-      <div>
-        <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Planting Intentions Dashboard</h2>
-        <app-trade-unit-selector class="block mt-1.5" />
-        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Aggregate planting data across all customers</p>
+  <!-- Fixed header area -->
+  <div class="flex-shrink-0 space-y-6 pb-4">
+    <!-- Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div>
+          <h2 class="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">Planting Intentions Dashboard</h2>
+          <app-trade-unit-selector class="block mt-1.5" />
+          <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Aggregate planting data across all customers</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <button
+          (click)="goToSeasonTargets()"
+          class="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-lg text-sm font-medium hover:bg-gray-700 dark:hover:bg-gray-300 transition-colors"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+          Set Season Targets
+        </button>
       </div>
     </div>
-    <div class="flex items-center gap-2 flex-shrink-0">
-      <button
-        (click)="goToSeasonTargets()"
-        class="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-lg text-sm font-medium hover:bg-gray-700 dark:hover:bg-gray-300 transition-colors"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
-        Set Season Targets
-      </button>
-    </div>
-  </div>
 
-  <!-- Year Navigation + Crop Filter Bar -->
-  <div class="flex items-center gap-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-5 py-3">
+    <!-- Year Navigation + Crop Filter Bar -->
+    <div class="flex flex-wrap items-center gap-3 sm:gap-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 sm:px-5 py-3">
     <div class="flex items-center gap-3">
       <button
         (click)="prevYear()"
@@ -55,6 +57,10 @@
       </select>
     </div>
   </div>
+  </div>
+
+  <!-- Scrollable content area -->
+  <div class="flex-1 overflow-y-auto space-y-6 min-h-0 mt-2 pr-2">
 
   <!-- Loading / Empty States -->
   @if (selectedTradeUnits.length === 0) {
@@ -77,7 +83,7 @@
   } @else {
 
     <!-- 4 Stat Cards -->
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 
       <!-- Total Acres -->
       <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
@@ -91,7 +97,7 @@
           </div>
           <span class="text-sm font-medium text-gray-500 dark:text-gray-400">Total Acres</span>
         </div>
-        <div class="text-3xl font-bold text-gray-900 dark:text-white tabular-nums">{{ totalAcresForYear() | number }}</div>
+        <div class="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white tabular-nums">{{ totalAcresForYear() | number }}</div>
         @if (acresTrend() !== null) {
           <div class="mt-1.5 text-xs font-medium" [class]="acresTrend()! >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'">
             {{ acresTrend()! >= 0 ? '↑' : '↓' }} {{ acresTrend()! < 0 ? (acresTrend()! * -1 | number:'1.0-1') : (acresTrend()! | number:'1.0-1') }}% vs {{ selectedPlantingYear() - 1 }}
@@ -113,7 +119,7 @@
           </div>
           <span class="text-sm font-medium text-gray-500 dark:text-gray-400">Projected Production</span>
         </div>
-        <div class="text-3xl font-bold text-gray-900 dark:text-white tabular-nums">{{ projectedProductionFormatted() }}</div>
+        <div class="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white tabular-nums">{{ projectedProductionFormatted() }}</div>
         <div class="mt-1.5 text-xs text-gray-400 dark:text-gray-500">bushels estimated</div>
       </div>
 
@@ -128,7 +134,7 @@
           </div>
           <span class="text-sm font-medium text-gray-500 dark:text-gray-400">Average Yield</span>
         </div>
-        <div class="text-3xl font-bold text-gray-900 dark:text-white tabular-nums">{{ averageYield() > 0 ? averageYield() : '--' }}</div>
+        <div class="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white tabular-nums">{{ averageYield() > 0 ? averageYield() : '--' }}</div>
         <div class="mt-1.5 text-xs text-gray-400 dark:text-gray-500">bu / acre (weighted avg)</div>
       </div>
 
@@ -145,7 +151,7 @@
           </div>
           <span class="text-sm font-medium text-gray-500 dark:text-gray-400">Active Growers</span>
         </div>
-        <div class="text-3xl font-bold text-gray-900 dark:text-white tabular-nums">{{ activeGrowers() }}</div>
+        <div class="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white tabular-nums">{{ activeGrowers() }}</div>
         <div class="mt-1.5 text-xs text-gray-400 dark:text-gray-500">customers with intentions</div>
       </div>
 
@@ -153,7 +159,7 @@
 
     <!-- Tab Navigation -->
     <div>
-      <div class="flex gap-1 bg-gray-100 dark:bg-gray-800/60 rounded-xl p-1 border border-gray-200 dark:border-gray-700">
+      <div class="flex flex-wrap sm:flex-nowrap gap-1 bg-gray-100 dark:bg-gray-800/60 rounded-xl p-1 border border-gray-200 dark:border-gray-700">
         @for (tab of tabs; track tab.id) {
           <button
             (click)="activeTab.set(tab.id)"
@@ -172,25 +178,27 @@
 
         <!-- By Crop Tab -->
         @if (activeTab() === 'byCrop') {
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 
             <!-- Bar Chart: Acres by Crop -->
+            @let breakdown = cropBreakdown();
+            @let maxAcres = maxCropAcres();
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
               <h3 class="text-base font-semibold text-gray-900 dark:text-white">Acres by Crop</h3>
               <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 mb-5">Planned acres by crop type for {{ selectedPlantingYear() }}</p>
-              @if (cropBreakdown().length === 0) {
+              @if (breakdown.length === 0) {
                 <div class="flex items-center justify-center h-48 text-sm text-gray-400 dark:text-gray-500 italic">
                   No planting data for {{ selectedPlantingYear() }}
                 </div>
               } @else {
                 <div class="flex items-end gap-2" style="height: 200px; padding-bottom: 4px;">
-                  @for (crop of cropBreakdown(); track $index) {
+                  @for (crop of breakdown; track $index) {
                     <div class="flex flex-col items-center gap-1 flex-1 min-w-0 h-full justify-end">
                       <span class="text-xs text-gray-500 dark:text-gray-400 tabular-nums whitespace-nowrap">{{ formatAcres(crop.acres) }}</span>
                       <div
                         class="w-full rounded-t-sm transition-all duration-300"
                         [ngClass]="crop.barColor"
-                        [style.height.px]="maxCropAcres() > 0 ? (crop.acres / maxCropAcres()) * 155 : 0"
+                        [style.height.px]="maxAcres > 0 ? (crop.acres / maxAcres) * 155 : 0"
                       ></div>
                       <span class="text-xs text-gray-600 dark:text-gray-400 truncate w-full text-center leading-tight mt-0.5">{{ crop.name }}</span>
                     </div>
@@ -203,12 +211,12 @@
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
               <h3 class="text-base font-semibold text-gray-900 dark:text-white">Crop Distribution</h3>
               <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 mb-5">Share of total acres by crop type</p>
-              @if (cropBreakdown().length === 0) {
+              @if (breakdown.length === 0) {
                 <div class="flex items-center justify-center h-48 text-sm text-gray-400 dark:text-gray-500 italic">
                   No planting data for {{ selectedPlantingYear() }}
                 </div>
               } @else {
-                <div class="flex items-center gap-6">
+                <div class="flex flex-col sm:flex-row items-center gap-6">
                   <!-- Donut ring -->
                   <div
                     class="relative flex-shrink-0 rounded-full"
@@ -221,14 +229,14 @@
                       style="top: 37px; left: 37px; right: 37px; bottom: 37px;"
                     >
                       <div class="text-center">
-                        <div class="text-base font-bold text-gray-900 dark:text-white">{{ cropBreakdown().length }}</div>
+                        <div class="text-base font-bold text-gray-900 dark:text-white">{{ breakdown.length }}</div>
                         <div class="text-xs text-gray-500 dark:text-gray-400">Crops</div>
                       </div>
                     </div>
                   </div>
                   <!-- Legend -->
                   <div class="flex-1 space-y-2.5 overflow-auto" style="max-height: 148px;">
-                    @for (crop of cropBreakdown(); track $index) {
+                    @for (crop of breakdown; track $index) {
                       <div class="flex items-center justify-between gap-3">
                         <div class="flex items-center gap-2 min-w-0">
                           <div class="w-2.5 h-2.5 rounded-full flex-shrink-0" [ngClass]="crop.dotColor"></div>
@@ -370,6 +378,7 @@
                       <span class="text-xs text-gray-400 dark:text-gray-500">0</span>
                     </div>
                     <!-- Chart -->
+                    @let timeline = harvestTimelineMonths();
                     <div class="flex-1 min-w-0">
                       <div class="relative h-32">
                         <div class="absolute inset-x-0 top-0 h-px bg-gray-100 dark:bg-gray-700/60"></div>
@@ -377,7 +386,7 @@
                         <div class="absolute inset-x-0 bottom-0 h-px bg-gray-200 dark:bg-gray-600"></div>
                         <!-- Bars -->
                         <div class="absolute inset-0 flex items-end gap-0.5">
-                          @for (m of harvestTimelineMonths(); track m.monthIndex) {
+                          @for (m of timeline; track m.monthIndex) {
                             <div class="flex-1 flex items-end h-full relative group">
                               @if (m.barHeightPx > 0) {
                                 <!-- Tooltip -->
@@ -410,7 +419,7 @@
                       </div>
                       <!-- Month labels -->
                       <div class="flex gap-0.5 mt-1.5">
-                        @for (m of harvestTimelineMonths(); track m.monthIndex) {
+                        @for (m of timeline; track m.monthIndex) {
                           <div class="flex-1 text-center text-xs truncate"
                                [class]="m.total > 0 ? 'text-gray-700 dark:text-gray-300 font-medium' : 'text-gray-400 dark:text-gray-500'">
                             {{ m.month }}
@@ -685,4 +694,5 @@
     </div>
 
   }
+  </div>
 </div>

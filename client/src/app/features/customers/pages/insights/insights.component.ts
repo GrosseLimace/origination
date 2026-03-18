@@ -1,10 +1,10 @@
 import { Component, ChangeDetectionStrategy, DestroyRef, inject, signal, computed, effect, untracked } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { toObservable, toSignal, takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { forkJoin, of } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { catchError, debounceTime } from 'rxjs/operators';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
@@ -29,13 +29,75 @@ interface Insight {
   message: string;
   tags?: InsightTag[];
   contractId?: number;
-  searchTerms?: string[]; // Extra searchable values not shown in chips (e.g. individual ticket numbers)
-  quantity?: number; // Bushels/quantity — used to sum per-customer totals in the row header
+  searchTerms?: string[];
+  quantity?: number;
 }
 
 interface CustomerGroup {
   customer: Customer;
   items: Insight[];
+  summary: string; // Pre-computed summary text (e.g. "3 contracts", "1,500 bu")
+}
+
+// ── Static category metadata ────────────────────────────────────────────────
+const CATEGORY_META: Record<InsightCategory, {
+  title: string;
+  headerClass: string;
+  iconClass: string;
+  titleClass: string;
+  subtitleClass: string;
+  badgeClass: string;
+  countClass: string;
+  searchPlaceholder: string;
+}> = {
+  UnconfirmedContracts: {
+    title: 'Unconfirmed Contracts',
+    headerClass: 'bg-amber-50 dark:bg-amber-900/20 border-b border-amber-100 dark:border-amber-800',
+    iconClass: 'text-scoular-yellow dark:text-scoular-yellow',
+    titleClass: 'text-amber-900 dark:text-amber-100',
+    subtitleClass: 'text-scoular-yellow dark:text-scoular-yellow',
+    badgeClass: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+    countClass: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+    searchPlaceholder: 'Search by customer, contract, or commodity...',
+  },
+  SpotLoads: {
+    title: 'Spot Loads — Delivered Today, No Contact',
+    headerClass: 'bg-scoular-yellow/5 dark:bg-scoular-yellow/20 border-b border-scoular-yellow/20 dark:border-scoular-yellow',
+    iconClass: 'text-scoular-yellow dark:text-scoular-yellow',
+    titleClass: 'text-scoular-yellow dark:text-white',
+    subtitleClass: 'text-scoular-yellow dark:text-scoular-yellow',
+    badgeClass: 'bg-scoular-yellow/10 text-scoular-yellow dark:bg-scoular-yellow/20 dark:text-scoular-yellow',
+    countClass: 'bg-scoular-yellow/10 text-scoular-yellow dark:bg-scoular-yellow/20 dark:text-scoular-yellow',
+    searchPlaceholder: 'Search by customer, code, or ticket #...',
+  },
+  UnshippedBushels: {
+    title: 'Unshipped Bushels Past Delivery Date',
+    headerClass: 'bg-scoular-red/5 dark:bg-scoular-red/20 border-b border-scoular-red/20 dark:border-scoular-red-accessible',
+    iconClass: 'text-scoular-red-accessible dark:text-scoular-red',
+    titleClass: 'text-scoular-red-accessible dark:text-red-100',
+    subtitleClass: 'text-scoular-red-accessible dark:text-scoular-red',
+    badgeClass: 'bg-scoular-red/10 text-scoular-red-accessible dark:bg-scoular-red/20 dark:text-scoular-red',
+    countClass: 'bg-scoular-red/10 text-scoular-red-accessible dark:bg-scoular-red/20 dark:text-scoular-red',
+    searchPlaceholder: 'Search by customer ID, name, commodity, or contract #...',
+  },
+};
+
+/** Pre-compute summary text for a customer group */
+function computeSummary(items: Insight[], category: InsightCategory): string {
+  const count = items.length;
+  switch (category) {
+    case 'UnconfirmedContracts':
+      return `${count} contract${count !== 1 ? 's' : ''}`;
+    case 'SpotLoads':
+      return `${count} load${count !== 1 ? 's' : ''}`;
+    case 'UnshippedBushels': {
+      const totalBu = items.reduce((sum, item) => sum + (item.quantity ?? 0), 0);
+      return totalBu > 0
+        ? `${Math.round(totalBu).toLocaleString()} bu`
+        : `${count} contract${count !== 1 ? 's' : ''}`;
+    }
+    default: return '';
+  }
 }
 
 @Component({
@@ -61,18 +123,172 @@ export class InsightsComponent {
   isBackgroundRefreshing = signal(false);
   loadedAt = signal<Date | null>(null);
 
-  allInsights = signal<Insight[]>([]);
   expandedCategories = signal(new Set<InsightCategory>());
   expandedCustomers = signal(new Set<string>());
-  categorySearch = signal<{ [key: string]: string }>({});
-  globalSearch = signal('');
   categories: InsightCategory[] = ['UnconfirmedContracts', 'SpotLoads', 'UnshippedBushels'];
 
-  // Memoized customer groups per category — recomputes only when allInsights, globalSearch, or categorySearch change
+  // Expose static metadata to the template
+  readonly categoryMeta = CATEGORY_META;
+
+  // ── Debounced search signals ──────────────────────────────────────────────
+  // Raw signals bound to inputs; debounced signals used by the computed filter.
+  // This prevents customerGroupsByCategory from recomputing on every keystroke.
+  readonly globalSearchRaw = signal('');
+  readonly categorySearchRaw = signal<{ [key: string]: string }>({});
+
+  readonly globalSearch = toSignal(
+    toObservable(this.globalSearchRaw).pipe(debounceTime(250)),
+    { initialValue: '' }
+  );
+  readonly categorySearch = toSignal(
+    toObservable(this.categorySearchRaw).pipe(debounceTime(250)),
+    { initialValue: {} as { [key: string]: string } }
+  );
+
+  // ── Derived state (computed signals) ──────────────────────────────────────
+
+  // Separate computed for "contacted today" — only re-parses dates when notes change,
+  // not when customers/contracts/tickets change.
+  private readonly _contactedTodaySet = computed(() => {
+    const now = new Date();
+    const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+    const set = new Set<number>();
+    for (const n of this.notes()) {
+      try {
+        const d = new Date(n.createdAt);
+        const noteUtcDate = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+        if (noteUtcDate === todayStr) set.add(n.customerId);
+      } catch { /* skip malformed dates */ }
+    }
+    return set;
+  });
+
+  // Generates all insights from source data. Evaluates exactly once per
+  // change-detection cycle (lazy, glitch-free).
+  readonly allInsights = computed(() => {
+    const customers = this.customers();
+    if (customers.length === 0) return [] as Insight[];
+    const contracts = this.contracts();
+    const tickets = this.tickets();
+    const contactedTodaySet = this._contactedTodaySet();
+
+    const insights: Insight[] = [];
+    const now = new Date();
+    const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+    const today = new Date(todayStr);
+
+    // Pre-index contracts and tickets by customer ID for O(1) lookup
+    const contractsByCustomer = new Map<string, Contract[]>();
+    for (const c of contracts) {
+      if (!c.ctrmCustomerId) continue;
+      const arr = contractsByCustomer.get(c.ctrmCustomerId);
+      if (arr) { arr.push(c); } else { contractsByCustomer.set(c.ctrmCustomerId, [c]); }
+    }
+    const ticketsByCustomer = new Map<string, Ticket[]>();
+    for (const t of tickets) {
+      if (!t.customerCode) continue;
+      const arr = ticketsByCustomer.get(t.customerCode);
+      if (arr) { arr.push(t); } else { ticketsByCustomer.set(t.customerCode, [t]); }
+    }
+
+    for (const customer of customers) {
+      const customerContracts = contractsByCustomer.get(customer.sourceCustomerId!) || [];
+      const customerTickets = ticketsByCustomer.get(customer.sourceCustomerId!) || [];
+
+      // --- 1. Unconfirmed Contracts ---
+      for (const contract of customerContracts) {
+        const confirmStatus = (contract.customerConfirmStatus || '').trim();
+        const isConfirmed = confirmStatus.toLowerCase() === 'confirmed';
+        if (!isConfirmed && contract.status !== 'Fulfilled' && contract.status !== 'Cancelled') {
+          const desc = contract.commodityDescription?.trim();
+          const code = contract.commodityCode?.trim();
+          const commodity = desc && code ? `${desc} (${code})` : desc || code || 'Unknown commodity';
+          const qty = contract.quantity ? Math.round(contract.quantity).toLocaleString() : '?';
+          const statusLabel = confirmStatus || 'No status';
+          insights.push({
+            customer,
+            category: 'UnconfirmedContracts',
+            priority: 'Urgent',
+            message: `Contract ${contract.contractNumber} (${commodity}, ${qty} bu) — ${statusLabel}.`,
+            contractId: contract.id,
+            quantity: contract.quantity ?? 0,
+            tags: [
+              { label: contract.sourceContractId || contract.contractNumber, style: 'default' },
+              { label: commodity, style: 'commodity' },
+              { label: `${qty} bu`, style: 'quantity' },
+              { label: statusLabel, style: 'warning' },
+            ]
+          });
+        }
+      }
+
+      // --- 2. Spot Loads — Delivered Today, No Contact ---
+      const todayTickets = customerTickets.filter(t =>
+        t.date === todayStr && !t.isApplied
+      );
+
+      if (todayTickets.length > 0) {
+        if (!contactedTodaySet.has(customer.id)) {
+          for (const ticket of todayTickets) {
+            const bu = ticket.unloadQuantity ? Math.round(ticket.unloadQuantity) : null;
+            insights.push({
+              customer,
+              category: 'SpotLoads',
+              priority: 'Urgent',
+              message: `Ticket #${ticket.ticketNumber}${ticket.productCode ? ' — ' + ticket.productCode : ''}${bu ? ', ' + bu.toLocaleString() + ' bu' : ''}`,
+              quantity: bu ?? 0,
+              tags: [
+                { label: `#${ticket.ticketNumber}`, style: 'default' },
+                ...(ticket.productCode ? [{ label: ticket.productCode, style: 'commodity' as InsightTagStyle }] : []),
+                ...(bu ? [{ label: `${bu.toLocaleString()} bu`, style: 'quantity' as InsightTagStyle }] : []),
+                { label: 'Unload', style: 'warning' },
+              ],
+              searchTerms: [ticket.ticketNumber, ticket.productCode].filter(Boolean) as string[]
+            });
+          }
+        }
+      }
+
+      // --- 3. Unshipped Bushels Past Delivery Date ---
+      for (const contract of customerContracts) {
+        const deliveryEnd = new Date(contract.deliveryEnd);
+        const isPastDue = deliveryEnd < today;
+        const isOpen = contract.status === 'Active' || contract.status === 'Overdue';
+
+        if (isPastDue && isOpen) {
+          const desc = contract.commodityDescription?.trim();
+          const code = contract.commodityCode?.trim();
+          const commodity = desc && code ? `${desc} (${code})` : desc || code || 'Unknown commodity';
+          const qty = contract.quantity ? Math.round(contract.quantity).toLocaleString() : '?';
+          const daysOverdue = Math.floor((today.getTime() - deliveryEnd.getTime()) / (1000 * 60 * 60 * 24));
+          insights.push({
+            customer,
+            category: 'UnshippedBushels',
+            priority: 'Warning',
+            message: `Contract ${contract.contractNumber} (${commodity}, ${qty} bu) is past its delivery end date.`,
+            contractId: contract.id,
+            quantity: contract.openBalanceQuantity ?? contract.quantity ?? 0,
+            tags: [
+              { label: contract.sourceContractId || contract.contractNumber, style: 'default' },
+              { label: commodity, style: 'commodity' },
+              { label: `${qty} bu`, style: 'quantity' },
+              { label: `${daysOverdue}d overdue`, style: 'alert' },
+            ]
+          });
+        }
+      }
+    }
+
+    const priorityOrder: Record<InsightPriority, number> = { 'Urgent': 0, 'Warning': 1, 'Info': 2 };
+    return insights.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
+  });
+
+  // Memoized customer groups per category with pre-computed summaries.
+  // Uses debounced search signals so typing doesn't trigger per-keystroke recomputation.
   readonly customerGroupsByCategory = computed(() => {
     const insights = this.allInsights();
-    const global = this.globalSearch().toLowerCase().trim();
-    const searches = this.categorySearch();
+    const global = (this.globalSearch() ?? '').toLowerCase().trim();
+    const searches = this.categorySearch() ?? {};
     const result: Record<InsightCategory, CustomerGroup[]> = {
       UnconfirmedContracts: [],
       SpotLoads: [],
@@ -80,7 +296,7 @@ export class InsightsComponent {
     };
 
     // Group all insights by category and customer in a single pass
-    const grouped = new Map<string, Map<number, CustomerGroup>>();
+    const grouped = new Map<string, Map<number, { customer: Customer; items: Insight[] }>>();
     for (const category of this.categories) {
       grouped.set(category, new Map());
     }
@@ -93,7 +309,13 @@ export class InsightsComponent {
     }
 
     for (const category of this.categories) {
-      let groups = Array.from(grouped.get(category)!.values());
+      // Build groups with pre-computed summaries
+      let groups: CustomerGroup[] = Array.from(grouped.get(category)!.values()).map(g => ({
+        customer: g.customer,
+        items: g.items,
+        summary: computeSummary(g.items, category),
+      }));
+
       if (global) {
         groups = groups.filter(g =>
           g.customer.name.toLowerCase().includes(global) ||
@@ -145,13 +367,17 @@ export class InsightsComponent {
   }
 
   constructor() {
-    // Re-generate insights whenever the preloaded data in appState changes
+    // Reset UI state and update loadedAt when insights data changes
     effect(() => {
-      this.appState.customers();
-      this.appState.contracts();
-      this.appState.tickets();
-      this.appState.notes();
-      untracked(() => this._generateInsights());
+      this.allInsights(); // track dependency
+      untracked(() => {
+        this.expandedCustomers.set(new Set());
+        this.categorySearchRaw.set({});
+        this.globalSearchRaw.set('');
+        if (this.customers().length > 0) {
+          this.loadedAt.set(new Date());
+        }
+      });
     });
   }
 
@@ -170,7 +396,6 @@ export class InsightsComponent {
         this.appState.setContracts(data.contracts);
         this.appState.setTickets(data.tickets);
         this.appState.setNotes(data.notes);
-        this.loadedAt.set(new Date());
         this.appState.setDataLoading(false);
       },
       error: () => {
@@ -178,149 +403,6 @@ export class InsightsComponent {
         this.toastService.error('Failed to refresh insights data');
       }
     });
-  }
-
-  private _generateInsights(): void {
-    if (this.customers().length === 0) return;
-
-    const insights: Insight[] = [];
-    // todayStr: today's date in UTC as "YYYY-MM-DD".
-    // ticket.date (TicketBlDate) is a "YYYY-MM-DD" string from ODS — direct string comparison is safe.
-    // note.createdAt is stored as GETUTCDATE() — compare using UTC date to avoid timezone drift
-    // for users in Central/Mountain time where midnight UTC != local midnight.
-    const now = new Date();
-    const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
-    const today = new Date(todayStr); // UTC midnight — used for date arithmetic (daysOverdue etc.)
-
-    // Pre-index contracts and tickets by customer ID for O(1) lookup instead of O(n) per customer
-    const contractsByCustomer = new Map<string, Contract[]>();
-    for (const c of this.contracts()) {
-      if (!c.ctrmCustomerId) continue;
-      const arr = contractsByCustomer.get(c.ctrmCustomerId);
-      if (arr) { arr.push(c); } else { contractsByCustomer.set(c.ctrmCustomerId, [c]); }
-    }
-    const ticketsByCustomer = new Map<string, Ticket[]>();
-    for (const t of this.tickets()) {
-      if (!t.customerCode) continue;
-      const arr = ticketsByCustomer.get(t.customerCode);
-      if (arr) { arr.push(t); } else { ticketsByCustomer.set(t.customerCode, [t]); }
-    }
-
-    // Pre-index today's notes by customerId for O(1) "contacted today" lookup instead of O(n) per customer
-    const contactedTodaySet = new Set<number>();
-    for (const n of this.notes()) {
-      try {
-        const d = new Date(n.createdAt);
-        const noteUtcDate = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-        if (noteUtcDate === todayStr) contactedTodaySet.add(n.customerId);
-      } catch { /* skip malformed dates */ }
-    }
-
-    for (const customer of this.customers()) {
-      const customerContracts = contractsByCustomer.get(customer.sourceCustomerId!) || [];
-      const customerTickets = ticketsByCustomer.get(customer.sourceCustomerId!) || [];
-
-      // --- 1. Unconfirmed Contracts ---
-      // Contracts where CustomerConfirmStatus is not 'Confirmed', excluding Fulfilled/Cancelled.
-      // TODO: Verify exact ODS values for CustomerConfirmStatus against live data.
-      for (const contract of customerContracts) {
-        const confirmStatus = (contract.customerConfirmStatus || '').trim();
-        const isConfirmed = confirmStatus.toLowerCase() === 'confirmed';
-        if (!isConfirmed && contract.status !== 'Fulfilled' && contract.status !== 'Cancelled') {
-          const desc = contract.commodityDescription?.trim();
-          const code = contract.commodityCode?.trim();
-          const commodity = desc && code ? `${desc} (${code})` : desc || code || 'Unknown commodity';
-          const qty = contract.quantity ? Math.round(contract.quantity).toLocaleString() : '?';
-          const statusLabel = confirmStatus || 'No status';
-          insights.push({
-            customer,
-            category: 'UnconfirmedContracts',
-            priority: 'Urgent',
-            message: `Contract ${contract.contractNumber} (${commodity}, ${qty} bu) — ${statusLabel}.`,
-            contractId: contract.id,
-            quantity: contract.quantity ?? 0,
-            tags: [
-              { label: contract.sourceContractId || contract.contractNumber, style: 'default' },
-              { label: commodity, style: 'commodity' },
-              { label: `${qty} bu`, style: 'quantity' },
-              { label: statusLabel, style: 'warning' },
-            ]
-          });
-        }
-      }
-
-      // --- 2. Spot Loads — Delivered Today, No Contact ---
-      // Unapplied tickets delivered today with no customer contact.
-      // isApplied = first char of ctrmContractNumber is 'P' or 'S' (contract prefix type) — server-computed.
-      // ticket.date maps to TicketBlDate in ODS, stored as "YYYY-MM-DD" string — direct comparison is safe.
-      const todayTickets = customerTickets.filter(t =>
-        t.date === todayStr && !t.isApplied
-      );
-
-      if (todayTickets.length > 0) {
-        if (!contactedTodaySet.has(customer.id)) {
-          // One insight per ticket so the user can see and select individual tickets.
-          for (const ticket of todayTickets) {
-            const bu = ticket.unloadQuantity ? Math.round(ticket.unloadQuantity) : null;
-            insights.push({
-              customer,
-              category: 'SpotLoads',
-              priority: 'Urgent',
-              message: `Ticket #${ticket.ticketNumber}${ticket.productCode ? ' — ' + ticket.productCode : ''}${bu ? ', ' + bu.toLocaleString() + ' bu' : ''}`,
-              quantity: bu ?? 0,
-              tags: [
-                { label: `#${ticket.ticketNumber}`, style: 'default' },
-                ...(ticket.productCode ? [{ label: ticket.productCode, style: 'commodity' as InsightTagStyle }] : []),
-                ...(bu ? [{ label: `${bu.toLocaleString()} bu`, style: 'quantity' as InsightTagStyle }] : []),
-                { label: 'Unload', style: 'warning' },
-              ],
-              searchTerms: [ticket.ticketNumber, ticket.productCode].filter(Boolean) as string[]
-            });
-          }
-        }
-      }
-
-      // --- 3. Unshipped Bushels Past Delivery Date ---
-      // Contracts past their delivery end date that are still Active or Overdue.
-      //
-      // TODO: Refine remaining bushels calculation using ticket appliedDockQuantity vs contract quantity.
-      for (const contract of customerContracts) {
-        const deliveryEnd = new Date(contract.deliveryEnd);
-        const isPastDue = deliveryEnd < today;
-        const isOpen = contract.status === 'Active' || contract.status === 'Overdue';
-
-        if (isPastDue && isOpen) {
-          const desc = contract.commodityDescription?.trim();
-          const code = contract.commodityCode?.trim();
-          const commodity = desc && code ? `${desc} (${code})` : desc || code || 'Unknown commodity';
-          const qty = contract.quantity ? Math.round(contract.quantity).toLocaleString() : '?';
-          const daysOverdue = Math.floor((today.getTime() - deliveryEnd.getTime()) / (1000 * 60 * 60 * 24));
-          insights.push({
-            customer,
-            category: 'UnshippedBushels',
-            priority: 'Warning',
-            message: `Contract ${contract.contractNumber} (${commodity}, ${qty} bu) is past its delivery end date.`,
-            contractId: contract.id,
-            quantity: contract.openBalanceQuantity ?? contract.quantity ?? 0,
-            tags: [
-              { label: contract.sourceContractId || contract.contractNumber, style: 'default' },
-              { label: commodity, style: 'commodity' },
-              { label: `${qty} bu`, style: 'quantity' },
-              { label: `${daysOverdue}d overdue`, style: 'alert' },
-            ]
-          });
-        }
-      }
-    }
-
-    // Sort by priority
-    const priorityOrder: Record<InsightPriority, number> = { 'Urgent': 0, 'Warning': 1, 'Info': 2 };
-    this.allInsights.set(insights.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]));
-
-    // Reset all search/expand state when insights are regenerated
-    this.expandedCustomers.set(new Set());
-    this.categorySearch.set({});
-    this.globalSearch.set('');
   }
 
   // ── Category accordion ──────────────────────────────────────────────────────
@@ -334,19 +416,11 @@ export class InsightsComponent {
         if (key.startsWith(category + ':')) customers.delete(key);
       });
       this.expandedCustomers.set(customers);
-      this.categorySearch.update(s => { const copy = { ...s }; delete copy[category]; return copy; });
+      this.categorySearchRaw.update(s => { const copy = { ...s }; delete copy[category]; return copy; });
     } else {
       expanded.add(category);
     }
     this.expandedCategories.set(expanded);
-  }
-
-  getInsightsByCategory(category: InsightCategory): Insight[] {
-    return this.allInsights().filter(i => i.category === category);
-  }
-
-  getCustomerGroups(category: InsightCategory): CustomerGroup[] {
-    return this.customerGroupsByCategory()[category];
   }
 
   // ── Customer accordion ──────────────────────────────────────────────────────
@@ -374,7 +448,7 @@ export class InsightsComponent {
     this.router.navigate(['/'], { queryParams: params });
   }
 
-  // ── Style helpers ───────────────────────────────────────────────────────────
+  // ── Style helpers (dynamic per-insight, kept as methods) ──────────────────
 
   getPriorityBarClass(priority: InsightPriority): string {
     switch (priority) {
@@ -394,97 +468,8 @@ export class InsightsComponent {
     }
   }
 
-  getCategoryCountClass(category: InsightCategory): string {
-    switch (category) {
-      case 'UnconfirmedContracts': return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300';
-      case 'SpotLoads':            return 'bg-scoular-yellow/10 text-scoular-yellow dark:bg-scoular-yellow/20 dark:text-scoular-yellow';
-      case 'UnshippedBushels':     return 'bg-scoular-red/10 text-scoular-red-accessible dark:bg-scoular-red/20 dark:text-scoular-red';
-      default:                     return 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
-    }
-  }
-
-  getCategoryHeaderClass(category: InsightCategory): string {
-    switch (category) {
-      case 'UnconfirmedContracts': return 'bg-amber-50 dark:bg-amber-900/20 border-b border-amber-100 dark:border-amber-800';
-      case 'SpotLoads':            return 'bg-scoular-yellow/5 dark:bg-scoular-yellow/20 border-b border-scoular-yellow/20 dark:border-scoular-yellow';
-      case 'UnshippedBushels':     return 'bg-scoular-red/5 dark:bg-scoular-red/20 border-b border-scoular-red/20 dark:border-scoular-red-accessible';
-      default:                     return 'bg-gray-50 dark:bg-gray-900/20 border-b border-gray-100 dark:border-gray-800';
-    }
-  }
-
-  getCategoryIconClass(category: InsightCategory): string {
-    switch (category) {
-      case 'UnconfirmedContracts': return 'text-scoular-yellow dark:text-scoular-yellow';
-      case 'SpotLoads':            return 'text-scoular-yellow dark:text-scoular-yellow';
-      case 'UnshippedBushels':     return 'text-scoular-red-accessible dark:text-scoular-red';
-      default:                     return 'text-gray-600 dark:text-gray-400';
-    }
-  }
-
-  getCategoryTitle(category: InsightCategory): string {
-    switch (category) {
-      case 'UnconfirmedContracts': return 'Unconfirmed Contracts';
-      case 'SpotLoads':            return 'Spot Loads — Delivered Today, No Contact';
-      case 'UnshippedBushels':     return 'Unshipped Bushels Past Delivery Date';
-      default:                     return 'Other';
-    }
-  }
-
-  getCategoryTitleClass(category: InsightCategory): string {
-    switch (category) {
-      case 'UnconfirmedContracts': return 'text-amber-900 dark:text-amber-100';
-      case 'SpotLoads':            return 'text-scoular-yellow dark:text-white';
-      case 'UnshippedBushels':     return 'text-scoular-red-accessible dark:text-red-100';
-      default:                     return 'text-gray-900 dark:text-gray-100';
-    }
-  }
-
-  getCategorySubtitleClass(category: InsightCategory): string {
-    switch (category) {
-      case 'UnconfirmedContracts': return 'text-scoular-yellow dark:text-scoular-yellow';
-      case 'SpotLoads':            return 'text-scoular-yellow dark:text-scoular-yellow';
-      case 'UnshippedBushels':     return 'text-scoular-red-accessible dark:text-scoular-red';
-      default:                     return 'text-gray-600 dark:text-gray-400';
-    }
-  }
-
-  getCategorySearchPlaceholder(category: InsightCategory): string {
-    switch (category) {
-      case 'SpotLoads':         return 'Search by customer, code, or ticket #...';
-      case 'UnshippedBushels':  return 'Search by customer ID, name, commodity, or contract #...';
-      default:                  return 'Search by customer, contract, or commodity...';
-    }
-  }
-
-  getCategoryBadgeClass(category: InsightCategory): string {
-    switch (category) {
-      case 'UnconfirmedContracts': return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300';
-      case 'SpotLoads':            return 'bg-scoular-yellow/10 text-scoular-yellow dark:bg-scoular-yellow/20 dark:text-scoular-yellow';
-      case 'UnshippedBushels':     return 'bg-scoular-red/10 text-scoular-red-accessible dark:bg-scoular-red/20 dark:text-scoular-red';
-      default:                     return 'bg-gray-100 text-gray-800 dark:bg-gray-900/40 dark:text-gray-300';
-    }
-  }
-
-  /** Returns a compact summary string shown next to the customer name in the accordion row. */
-  getCategoryCustomerSummary(group: CustomerGroup, category: InsightCategory): string {
-    const count = group.items.length;
-    switch (category) {
-      case 'UnconfirmedContracts':
-        return `${count} contract${count !== 1 ? 's' : ''}`;
-      case 'SpotLoads':
-        return `${count} load${count !== 1 ? 's' : ''}`;
-      case 'UnshippedBushels': {
-        const totalBu = group.items.reduce((sum, item) => sum + (item.quantity ?? 0), 0);
-        return totalBu > 0
-          ? `${Math.round(totalBu).toLocaleString()} bu`
-          : `${count} contract${count !== 1 ? 's' : ''}`;
-      }
-      default: return '';
-    }
-  }
-
-  /** Template helper: update a single category search entry without computed property syntax */
+  /** Template helper: update a single category search entry */
   setCategorySearch(category: InsightCategory, value: string): void {
-    this.categorySearch.update(s => ({ ...s, [category]: value }));
+    this.categorySearchRaw.update(s => ({ ...s, [category]: value }));
   }
 }

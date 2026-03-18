@@ -243,7 +243,7 @@ export class HomeComponent {
       error: () => { this.isLoadingPlanting.set(false); }
     });
 
-    this.apiService.getNotes().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.apiService.getNotes(this.selectedTradeUnits()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this.notes.set(data);
         this.appState.setNotes(data);

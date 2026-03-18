@@ -85,7 +85,7 @@
       <div [class]="stacked()
         ? 'absolute left-0 right-0 mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg z-50'
         : 'absolute left-0 mt-1 min-w-[200px] bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg z-50'">
-        <div class="max-h-[350px] overflow-y-auto p-2 space-y-1">
+        <div class="max-h-[350px] overflow-y-auto p-2 space-y-1" (wheel)="$event.stopPropagation()">
           @for (unit of getAvailableTradeUnits(); track unit) {
             <label class="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-600 rounded cursor-pointer transition-colors">
               <input

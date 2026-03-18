@@ -264,9 +264,12 @@ export class ApiService {
   // Note Operations (Customer contact notes)
   // ==========================================================================
 
-  /** Fetches all notes in the system */
-  getNotes(): Observable<Note[]> {
-    return this.http.get<Note[]>(`${this.baseUrl}/notes`)
+  /** Fetches notes, optionally filtered by trade units */
+  getNotes(tradeUnits?: string[]): Observable<Note[]> {
+    const url = tradeUnits?.length
+      ? `${this.baseUrl}/notes?tradeUnits=${encodeURIComponent(tradeUnits.join(','))}`
+      : `${this.baseUrl}/notes`;
+    return this.http.get<Note[]>(url)
       .pipe(catchError(e => this.handleError(e)));
   }
 

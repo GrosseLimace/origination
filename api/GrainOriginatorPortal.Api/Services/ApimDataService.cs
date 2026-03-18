@@ -141,7 +141,7 @@ public class ApimDataService : IDataService
     // Confirm with the APIM team whether Notes will be exposed via APIM.
     // =========================================================================
 
-    public Task<List<Note>> GetNotesAsync(CancellationToken cancellationToken = default)
+    public Task<List<Note>> GetNotesAsync(IEnumerable<string>? tradeUnits = null, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Confirm Notes approach with APIM team");
 
     public Task<List<Note>> GetNotesByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
