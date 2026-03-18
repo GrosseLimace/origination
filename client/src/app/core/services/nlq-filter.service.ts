@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Customer, Contract, Ticket, Note, PlantingIntention, StoredGrain, RefinementFilters } from '@models';
+import { Customer, Contract, Ticket, Note, PlantingIntention, StoredGrain, RefinementFilters, Commodity } from '@models';
 
 export interface NlqFilterContext {
   customers: Customer[];
@@ -8,6 +8,7 @@ export interface NlqFilterContext {
   notes: Note[];
   plantingIntentions: PlantingIntention[];
   storedGrain: StoredGrain[];
+  commodities?: Commodity[];
 }
 
 export interface NlqFilterResult {
@@ -61,34 +62,123 @@ export class NlqFilterService {
     'western corn belt': ['iowa', 'nebraska', 'minnesota', 'south dakota'],
   };
 
-  /** Detect ALL crops mentioned in a query (supports multi-commodity AND). */
+  /** Detect ALL crops mentioned in a query (supports multi-commodity AND/OR). */
   private detectAllCropsInQuery(query: string): string[] {
     const lower = query.toLowerCase();
     const found: string[] = [];
+    // Check hardcoded grain crops first
     for (const crop of this.grainCrops) {
       if (lower.includes(crop)) {
-        // Normalize: "soybean" and "beans" → "soybeans"
         const normalized = (crop === 'soybean' || crop === 'beans') ? 'soybeans' : crop;
         if (!found.includes(normalized)) found.push(normalized);
+      }
+    }
+    // Check dynamic commodity terms (codes/names from DB)
+    for (const term of this._allCommodityTerms) {
+      if (term.length > 2 && lower.includes(term) && !found.includes(term)) {
+        // Don't add if it's a substring of an already-found crop (e.g. "corn" already found, skip "cor")
+        if (!found.some(f => f.includes(term) || term.includes(f))) {
+          found.push(term);
+        }
       }
     }
     return found;
   }
 
+  // ── Dynamic commodity lookup (built from Commodities table) ────────────
+  // Maps a category (lowered) → set of codes/names that belong to it.
+  // Rebuilt when setCommodityLookup() is called with fresh data.
+  private _codesByCategory = new Map<string, Set<string>>();
+  // Maps a code or name (lowered) → its category (lowered).
+  private _categoryByCodeOrName = new Map<string, string>();
+  // All known commodity names/codes (lowered) for query detection.
+  private _allCommodityTerms: string[] = [];
+
+  /** Call once when commodities are available to build the dynamic lookup. */
+  private _buildCommodityLookup(commodities: Commodity[]): void {
+    if (commodities.length === 0) return;
+    this._codesByCategory.clear();
+    this._categoryByCodeOrName.clear();
+    const terms = new Set<string>();
+
+    for (const c of commodities) {
+      if (!c.isActive) continue;
+      const code = c.code.toLowerCase().trim();
+      const name = c.name.toLowerCase().trim();
+      const category = (c.category || c.name).toLowerCase().trim();
+
+      // Map code → category
+      if (code) {
+        this._categoryByCodeOrName.set(code, category);
+        terms.add(code);
+      }
+      // Map name → category (if different from code)
+      if (name && name !== code) {
+        this._categoryByCodeOrName.set(name, category);
+        if (name.length > 2) terms.add(name); // skip very short names to avoid false matches
+      }
+
+      // Build category → codes set
+      if (!this._codesByCategory.has(category)) {
+        this._codesByCategory.set(category, new Set());
+      }
+      this._codesByCategory.get(category)!.add(code);
+      if (name) this._codesByCategory.get(category)!.add(name);
+    }
+    this._allCommodityTerms = [...terms].sort((a, b) => b.length - a.length); // longest first for greedy match
+  }
+
+  /**
+   * Matches a commodity value (code/description from a contract or ticket) against a search term.
+   * Uses the dynamic commodities table lookup first, then falls back to hardcoded cropCodeMap.
+   */
   private matchesCommodity(value: string | undefined | null, searchCrop: string): boolean {
     if (!value) return false;
-    const lower = value.toLowerCase();
-    const patterns = this.cropCodeMap[searchCrop];
+    const lower = value.toLowerCase().trim();
+    const search = searchCrop.toLowerCase().trim();
+
+    // 1. If search is a known category, check if value's code/name belongs to that category
+    const categorySet = this._codesByCategory.get(search);
+    if (categorySet) {
+      if (categorySet.has(lower)) return true;
+      // Also check if value contains any code in that category
+      for (const code of categorySet) {
+        if (lower === code || lower.includes(code)) return true;
+      }
+    }
+
+    // 2. If search is a known code/name, resolve its category and check if value belongs
+    const resolvedCategory = this._categoryByCodeOrName.get(search);
+    if (resolvedCategory) {
+      const catSet = this._codesByCategory.get(resolvedCategory);
+      if (catSet && (catSet.has(lower) || [...catSet].some(c => lower === c || lower.includes(c)))) return true;
+    }
+
+    // 3. Fallback: hardcoded cropCodeMap (covers common grain names)
+    const patterns = this.cropCodeMap[search];
     if (patterns) {
       return patterns.some(p => lower === p || lower.includes(p));
     }
-    return lower.includes(searchCrop);
+
+    // 4. Simple substring match
+    return lower.includes(search);
   }
 
+  /**
+   * Detects a commodity mentioned in the query by checking against:
+   * 1. Hardcoded grain crop names (corn, soybeans, wheat, etc.)
+   * 2. Dynamic commodity codes/names from the Commodities table
+   * Returns the matched term (lowered) or null.
+   */
   private detectCropInQuery(query: string): string | null {
     const lower = query.toLowerCase();
+    // Check hardcoded crops first (fast, common case)
     for (const crop of this.grainCrops) {
       if (lower.includes(crop)) return crop;
+    }
+    // Check dynamic commodity terms (codes and names from the DB)
+    for (const term of this._allCommodityTerms) {
+      if (term.length > 2 && lower.includes(term)) return term;
     }
     return null;
   }
@@ -112,6 +202,10 @@ export class NlqFilterService {
   // ============================================================
 
   parseAndFilter(query: string, context: NlqFilterContext): NlqFilterResult {
+    // Build dynamic commodity lookup before pattern detection so codes/names are recognized
+    if (context.commodities && context.commodities.length > 0 && this._allCommodityTerms.length === 0) {
+      this._buildCommodityLookup(context.commodities);
+    }
     const detectedState = this.detectStateInQuery(query);
     const matchedPatterns = this.detectPatterns(query, detectedState);
     const customers = this.filterCustomers(query, context, detectedState);
@@ -418,6 +512,12 @@ export class NlqFilterService {
         /(?:corn|soybeans?|wheat|oats|barley|sorghum|milo|beans|canola|sunflower)\s*(?:customers?|producers?|growers?|farmers?)/i.test(lowerQuery)) {
       matched.push('commodities_match');
     }
+    // Dynamic commodity detection from Commodities table (codes, names, categories)
+    if (matched.length === 0 || !matched.includes('commodities_match')) {
+      if (this._allCommodityTerms.some(term => term.length > 2 && lowerQuery.includes(term))) {
+        matched.push('commodities_match');
+      }
+    }
     if (lowerQuery.includes('linked producer') || lowerQuery.includes('linked customer') ||
         lowerQuery.includes('has linked') || lowerQuery.includes('with linked')) matched.push('has_linked_producers');
     if (lowerQuery.includes('no linked') || lowerQuery.includes('without linked') ||
@@ -537,7 +637,7 @@ export class NlqFilterService {
     result = this.applyRegionFilter(lowerQuery, result);
     result = this.applyStateFilter(result, detectedState);
     result = this.applyAcresFilter(lowerQuery, result);
-    result = this.applyCustomerInfoFilters(lowerQuery, result, context.tickets);
+    result = this.applyCustomerInfoFilters(lowerQuery, result, context.tickets, context.contracts);
     result = this.applyContactFilters(lowerQuery, result, latestNoteByCustomer, customerIdsWithNotes);
     result = this.applyNoteFilters(lowerQuery, result, context.notes);
     result = this.applyStorageFilters(lowerQuery, result, context.storedGrain);
@@ -806,7 +906,7 @@ export class NlqFilterService {
   // CUSTOMER INFO FILTERS (email, phone, esign, bin, linked, zip, commodities)
   // ============================================================
 
-  private applyCustomerInfoFilters(lowerQuery: string, result: Customer[], tickets: Ticket[]): Customer[] {
+  private applyCustomerInfoFilters(lowerQuery: string, result: Customer[], tickets: Ticket[], contracts: Contract[] = []): Customer[] {
     // Email — "has email", "with an email", "have email addresses", etc.
     const hasEmail = /(?:has|have|with)\s+(?:an?\s+)?email|email\s*address/i.test(lowerQuery);
     const noEmail = /(?:no|without|missing|don'?t have|doesn'?t have)\s+(?:an?\s+)?email|no\s+email/i.test(lowerQuery);
@@ -852,13 +952,25 @@ export class NlqFilterService {
       result = result.filter(c => isNegative ? !c.eSignEnabled : c.eSignEnabled);
     }
 
-    // Commodities match (from customer's commodity list + ticket product codes — grow/produce/raise language)
+    // Commodities match (from customer's commodity list + ticket product codes + contracts)
     // Supports OR: "corn or soybeans customers", "grow corn or wheat"
+    // Also supports dynamic commodity codes/names from the Commodities table (e.g. "HRWW", "yellow corn")
     const commodityTradeMatch = lowerQuery.match(/(?:trad|deal|work|grow|produc|rais|farm)\w*\s*(?:in|with|of)?\s*(corn|soybeans?|wheat|oats|barley|sorghum|milo|beans|canola|sunflower)/);
     const commodityProducerMatch = lowerQuery.match(/(corn|soybeans?|wheat|oats|barley|sorghum|milo|beans|canola|sunflower)\s*(?:customers?|producers?|growers?|farmers?)/);
-    const commodityCrop = commodityTradeMatch?.[1] || commodityProducerMatch?.[1];
+    let commodityCrop = commodityTradeMatch?.[1] || commodityProducerMatch?.[1] || null;
+
+    // If no hardcoded crop found, try detecting a dynamic commodity term from the DB
+    if (!commodityCrop) {
+      for (const term of this._allCommodityTerms) {
+        if (term.length > 2 && lowerQuery.includes(term)) {
+          commodityCrop = term;
+          break;
+        }
+      }
+    }
+
     if (commodityCrop) {
-      // Detect all crops in query for OR logic (e.g. "corn or soybeans customers")
+      // Detect all crops/terms in query for OR logic
       const allCrops = this.detectAllCropsInQuery(lowerQuery);
       const cropsToMatch = allCrops.length > 1 && lowerQuery.includes(' or ') ? allCrops : [commodityCrop];
 
@@ -872,10 +984,26 @@ export class NlqFilterService {
         ticketCommoditiesByCustomer.get(t.customerCode)!.add(t.productCode);
       }
 
+      // Build customer → contract commodity codes map
+      const contractCommoditiesByCustomer = new Map<string, Set<string>>();
+      for (const c of contracts) {
+        if (!c.ctrmCustomerId) continue;
+        if (!contractCommoditiesByCustomer.has(c.ctrmCustomerId)) {
+          contractCommoditiesByCustomer.set(c.ctrmCustomerId, new Set());
+        }
+        if (c.commodityCode) contractCommoditiesByCustomer.get(c.ctrmCustomerId)!.add(c.commodityCode);
+        if (c.commodityDescription) contractCommoditiesByCustomer.get(c.ctrmCustomerId)!.add(c.commodityDescription);
+      }
+
       result = result.filter(c => {
         return cropsToMatch.some(crop => {
+          // Check customer's ProducerDetails commodities
           const hasInDetails = c.commodities?.some(cm => this.matchesCommodity(cm, crop)) ?? false;
           if (hasInDetails) return true;
+          // Check contract commodity codes/descriptions
+          const contractCodes = contractCommoditiesByCustomer.get(c.sourceCustomerId ?? '');
+          if (contractCodes && [...contractCodes].some(code => this.matchesCommodity(code, crop))) return true;
+          // Check ticket product codes
           const ticketCodes = ticketCommoditiesByCustomer.get(c.sourceCustomerId ?? '');
           return ticketCodes ? [...ticketCodes].some(code => this.matchesCommodity(code, crop)) : false;
         });
@@ -1514,8 +1642,12 @@ export class NlqFilterService {
     // --- Delivered specific commodity — supports OR: "delivered corn or soybeans" ---
     const deliveryCropsFound: string[] = [];
     for (const crop of this.grainCrops) {
-      const deliveryPattern = new RegExp(`(?:deliver(?:ed|ies|y)?|hauled)\\s+(?:\\w+\\s+)?(?:or\\s+)?${crop}|${crop}\\s+(?:deliver|ticket)`);
-      if (deliveryPattern.test(lowerQuery)) deliveryCropsFound.push(crop);
+      // Use .includes() instead of RegExp to avoid regex injection risk
+      if (lowerQuery.includes(`delivered ${crop}`) || lowerQuery.includes(`hauled ${crop}`) ||
+          lowerQuery.includes(`delivery ${crop}`) || lowerQuery.includes(`deliveries ${crop}`) ||
+          lowerQuery.includes(`${crop} deliver`) || lowerQuery.includes(`${crop} ticket`)) {
+        deliveryCropsFound.push(crop);
+      }
     }
     if (deliveryCropsFound.length > 0) {
       result = result.filter(c =>

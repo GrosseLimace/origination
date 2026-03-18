@@ -1,6 +1,6 @@
 import { Injectable, inject, DestroyRef } from '@angular/core';
 import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { forkJoin, merge, of } from 'rxjs';
+import { merge, of } from 'rxjs';
 import { catchError, distinctUntilChanged, filter, switchMap, take, tap } from 'rxjs/operators';
 import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
@@ -19,14 +19,10 @@ export class DataPreloadService {
     const msalBroadcast = inject(MsalBroadcastService);
     const msalService = inject(MsalService);
 
-    // Build the TU-change stream in the injection context (required for toObservable)
     const tuChanges$ = toObservable(this.appState.selectedTradeUnits).pipe(
       distinctUntilChanged((a, b) => [...a].sort().join(',') === [...b].sort().join(','))
     );
 
-    // Wait for MSAL to confirm the user is authenticated before making any API calls.
-    // Checking both InteractionStatus.None (no auth interaction in progress) AND that
-    // an account exists prevents premature API calls on first load before login.
     msalBroadcast.inProgress$.pipe(
       filter(s => s === InteractionStatus.None && msalService.instance.getAllAccounts().length > 0),
       take(1),
@@ -41,39 +37,62 @@ export class DataPreloadService {
         this.appState.clearInsightsCache();
         this.appState.clearDashboardCache();
 
-        // Core group — customers/contracts/tickets/notes are all that Insights and the home
-        // page need. Clear the loading flag as soon as these four arrive so those screens
-        // can render without waiting for the slower secondary group.
-        const core$ = forkJoin({
-          customers: this.apiService.getCustomers(tradeUnits).pipe(catchError(() => of([] as Customer[]))),
-          contracts: this.apiService.getContracts(tradeUnits).pipe(catchError(() => of([] as Contract[]))),
-          tickets: this.apiService.getTickets(tradeUnits).pipe(catchError(() => of([] as Ticket[]))),
-          notes: this.apiService.getNotes(tradeUnits).pipe(catchError(() => of([] as Note[]))),
-        }).pipe(tap(core => {
-          this.appState.setCustomers(core.customers);
-          this.appState.setContracts(core.contracts);
-          this.appState.setTickets(core.tickets);
-          this.appState.setNotes(core.notes);
-          this.appState.setDataLoading(false);
-        }));
+        // Core group — each result streams into AppState as it arrives.
+        // dataLoading clears when customers + contracts are ready (enough for
+        // Insights to render Unconfirmed Contracts & Unshipped Bushels).
+        // Spot Loads populate when tickets + notes arrive shortly after.
+        let coreArrived = { customers: false, contracts: false };
 
-        // Secondary group — needed by Dashboard, Build a List, etc. Runs in parallel with
-        // core but does not block the dataLoading flag.
-        const secondary$ = forkJoin({
-          plantingIntentions: this.apiService.getPlantingIntentions(tradeUnits).pipe(catchError(() => of([] as PlantingIntention[]))),
-          storedGrain: this.apiService.getStoredGrain().pipe(catchError(() => of([] as StoredGrain[]))),
-          savedLists: this.apiService.getSavedLists().pipe(catchError(() => of([] as SavedList[]))),
-          commodities: this.apiService.getCommodities().pipe(catchError(() => of([] as Commodity[]))),
-          producerDetails: this.apiService.getAllProducerDetails().pipe(catchError(() => of([] as ProducerDetails[]))),
-        }).pipe(tap(sec => {
-          this.appState.setPlantingIntentions(sec.plantingIntentions);
-          this.appState.setStoredGrain(sec.storedGrain);
-          this.appState.setSavedLists(sec.savedLists);
-          this.appState.setCommodities(sec.commodities);
-          this.appState.setProducerDetails(sec.producerDetails);
-        }));
+        const customers$ = this.apiService.getCustomers(tradeUnits).pipe(
+          catchError(() => of([] as Customer[])),
+          tap(data => {
+            this.appState.setCustomers(data);
+            coreArrived.customers = true;
+            if (coreArrived.contracts) this.appState.setDataLoading(false);
+          })
+        );
+        const contracts$ = this.apiService.getContracts(tradeUnits).pipe(
+          catchError(() => of([] as Contract[])),
+          tap(data => {
+            this.appState.setContracts(data);
+            coreArrived.contracts = true;
+            if (coreArrived.customers) this.appState.setDataLoading(false);
+          })
+        );
+        const tickets$ = this.apiService.getTickets(tradeUnits).pipe(
+          catchError(() => of([] as Ticket[])),
+          tap(data => this.appState.setTickets(data))
+        );
+        const notes$ = this.apiService.getNotes(tradeUnits).pipe(
+          catchError(() => of([] as Note[])),
+          tap(data => this.appState.setNotes(data))
+        );
 
-        return merge(core$, secondary$);
+        // Secondary group — each result streams into AppState as it arrives.
+        // Using merge (not forkJoin) so fast calls like getCommodities don't wait
+        // for slower calls like getPlantingIntentions to complete.
+        const plantingIntentions$ = this.apiService.getPlantingIntentions(tradeUnits).pipe(
+          catchError(() => of([] as PlantingIntention[])),
+          tap(data => this.appState.setPlantingIntentions(data))
+        );
+        const storedGrain$ = this.apiService.getStoredGrain().pipe(
+          catchError(() => of([] as StoredGrain[])),
+          tap(data => this.appState.setStoredGrain(data))
+        );
+        const savedLists$ = this.apiService.getSavedLists().pipe(
+          catchError(() => of([] as SavedList[])),
+          tap(data => this.appState.setSavedLists(data))
+        );
+        const commodities$ = this.apiService.getCommodities().pipe(
+          catchError(() => of([] as Commodity[])),
+          tap(data => this.appState.setCommodities(data))
+        );
+        const producerDetails$ = this.apiService.getAllProducerDetails().pipe(
+          catchError(() => of([] as ProducerDetails[])),
+          tap(data => this.appState.setProducerDetails(data))
+        );
+
+        return merge(customers$, contracts$, tickets$, notes$, plantingIntentions$, storedGrain$, savedLists$, commodities$, producerDetails$);
       }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe();

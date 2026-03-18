@@ -1566,9 +1566,10 @@ public class SqlDataService : IDataService
     {
         try
         {
+            var currentUser = GetCurrentUser();
             return await _appContext.SavedLists
                 .AsNoTracking()
-                .Where(s => s.IsActive)
+                .Where(s => s.IsActive && s.CreatedBy == currentUser)
                 .OrderByDescending(s => s.CreatedAt)
                 .ToListAsync(cancellationToken);
         }
@@ -1609,14 +1610,15 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var list = await _appContext.SavedLists.FirstOrDefaultAsync(s => s.Id == listId, cancellationToken);
+            var currentUser = GetCurrentUser();
+            var list = await _appContext.SavedLists.FirstOrDefaultAsync(s => s.Id == listId && s.CreatedBy == currentUser, cancellationToken);
             if (list == null) return null;
             list.Name = name;
             list.Query = query;
             list.TradeUnits = tradeUnits;
             list.Filters = filters;
             list.ModifiedAt = DateTime.UtcNow;
-            list.ModifiedBy = GetCurrentUser();
+            list.ModifiedBy = currentUser;
             await _appContext.SaveChangesAsync(cancellationToken);
             return list;
         }
@@ -1632,7 +1634,8 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var list = await _appContext.SavedLists.FirstOrDefaultAsync(s => s.Id == listId, cancellationToken);
+            var currentUser = GetCurrentUser();
+            var list = await _appContext.SavedLists.FirstOrDefaultAsync(s => s.Id == listId && s.CreatedBy == currentUser, cancellationToken);
             if (list == null) return;
             _appContext.SavedLists.Remove(list);
             await _appContext.SaveChangesAsync(cancellationToken);

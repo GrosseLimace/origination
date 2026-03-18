@@ -389,7 +389,7 @@ export class InsightsComponent {
       customers: this.apiService.getCustomers(tradeUnits).pipe(catchError(() => of([] as Customer[]))),
       contracts: this.apiService.getContracts(tradeUnits).pipe(catchError(() => of([] as Contract[]))),
       tickets: this.apiService.getTickets(tradeUnits).pipe(catchError(() => of([] as Ticket[]))),
-      notes: this.apiService.getNotes().pipe(catchError(() => of([] as Note[])))
+      notes: this.apiService.getNotes(tradeUnits).pipe(catchError(() => of([] as Note[])))
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this.appState.setCustomers(data.customers);

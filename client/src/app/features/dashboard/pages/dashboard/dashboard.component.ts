@@ -502,6 +502,18 @@ export class DashboardComponent {
       this._loadLocalData();
     }
 
+    // Sync commodities from appState when DataPreloadService populates them.
+    // This avoids a duplicate getCommodities() fetch — the dashboard uses what
+    // DataPreloadService already fetched in its secondary group.
+    effect(() => {
+      const appCommodities = this.appStateService.commodities();
+      untracked(() => {
+        if (appCommodities.length > 0 && this.allCommodities().length === 0) {
+          this.allCommodities.set(appCommodities);
+        }
+      });
+    });
+
     // Recalculate metrics and yield rows whenever preloaded data or commodities change
     // Guarded by _dataReady to avoid wasted cycles when commodities haven't loaded yet
     effect(() => {
@@ -518,14 +530,21 @@ export class DashboardComponent {
       });
     });
 
-    // Reload dashboard-specific data when trade units change
+    // Reload dashboard-specific data when trade units change.
+    // Only fetch the 3 dashboard APIs (estimates/shares/harvest) — commodities and
+    // planting intentions are handled by DataPreloadService's secondary group.
     let lastTuKey = tradeUnitsKey;
     effect(() => {
       const newKey = this.tradeUnitKey();
       if (newKey === lastTuKey) return;
       lastTuKey = newKey;
       untracked(() => {
-        if (newKey) this._loadLocalData();
+        if (newKey) {
+          // Use commodities from appState if available (DataPreloadService fetches them)
+          const preloaded = this.appStateService.commodities();
+          if (preloaded.length > 0) this.allCommodities.set(preloaded);
+          this._loadDashboardData();
+        }
       });
     });
   }
@@ -539,15 +558,38 @@ export class DashboardComponent {
   }
 
   reloadPlantingIntentions(): void {
-    this.apiService.getPlantingIntentions(this.selectedTradeUnits)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (data) => {
-          this.appStateService.setPlantingIntentions(data);
-          // _calculateYieldRows() will fire via the data-change effect
-          this._loadDashboardData();
-        }
-      });
+    const requestId = ++this._loadRequestId;
+    const key = this.tradeUnitKey();
+    const year = this.selectedPlantingYear();
+    this._localLoading.set(true);
+
+    // Fire PI fetch and dashboard APIs in parallel instead of sequentially
+    forkJoin({
+      pi: this.apiService.getPlantingIntentions(this.selectedTradeUnits)
+        .pipe(catchError(() => of([] as PlantingIntention[]))),
+      estimates: key ? this.apiService.getDashboardPlantingEstimates(key, year)
+        .pipe(catchError(() => of([] as DashboardPlantingEstimate[]))) : of([] as DashboardPlantingEstimate[]),
+      shares: key ? this.apiService.getDashboardMarketShares(key, year)
+        .pipe(catchError(() => of([] as DashboardMarketShare[]))) : of([] as DashboardMarketShare[]),
+      harvest: key ? this.apiService.getDashboardActualHarvest(key, year - 1)
+        .pipe(catchError(() => of([] as DashboardActualHarvest[]))) : of([] as DashboardActualHarvest[]),
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: ({ pi, estimates, shares, harvest }) => {
+        if (requestId !== this._loadRequestId) return; // discard stale response
+        this.appStateService.setPlantingIntentions(pi);
+        this.savedYieldEstimates.set(estimates);
+        this.savedMarketShares.set(shares);
+        this.savedActualHarvest.set(harvest);
+        this._calculateYieldRows();
+        this._calculateCategoryRows();
+        this._saveDashboardCache();
+        this._localLoading.set(false);
+      },
+      error: () => {
+        if (requestId !== this._loadRequestId) return;
+        this._localLoading.set(false);
+      }
+    });
   }
 
   private _restoreFromCache(cached: DashboardCacheEntry): void {
