@@ -64,7 +64,14 @@ export class BuildListComponent {
   private _tuEffect = effect(() => {
     this.appState.selectedTradeUnits(); // establish reactive dependency
     if (this._initialized) {
-      untracked(() => this.clearQuery());
+      untracked(() => {
+        this.clearQuery();
+        // Reset the load guard and reload data for the new trade units.
+        // Without this, _dataLoadStarted blocks reloading and the local
+        // signals stay stale (or loading stays true if initial load hasn't finished).
+        this._dataLoadStarted = false;
+        this._loadData();
+      });
     }
   });
 
@@ -596,7 +603,8 @@ export class BuildListComponent {
       tickets: this.tickets(),
       notes: this.notes(),
       plantingIntentions: this.plantingIntentions(),
-      storedGrain: this.storedGrain()
+      storedGrain: this.storedGrain(),
+      commodities: this.appState.commodities()
     };
     const result = this.nlqFilterService.parseAndFilter(this.queryText(), context);
     this.detectedState.set(result.detectedState);
