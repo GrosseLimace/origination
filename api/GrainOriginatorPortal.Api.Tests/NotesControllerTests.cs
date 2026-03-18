@@ -74,7 +74,13 @@ public class NotesControllerTests
     [Fact]
     public async Task TogglePin_ReturnsOk_WhenNoteExists()
     {
-        var note = new Note { Id = 1, IsPinned = true };
+        var note = new Note { Id = 1, CustomerId = 99, IsPinned = true };
+        _mockDataService
+            .Setup(s => s.GetNoteByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(note);
+        _mockEntitlementService
+            .Setup(s => s.ValidateCustomerAccessAsync(99, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
         _mockDataService
             .Setup(s => s.ToggleNotePinAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(note);
@@ -88,8 +94,15 @@ public class NotesControllerTests
     [Fact]
     public async Task Delete_ReturnsNoContent_WhenSuccessful()
     {
+        var note = new Note { Id = 1, CustomerId = 99 };
         _mockDataService
-            .Setup(s => s.DeleteNoteAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .Setup(s => s.GetNoteByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(note);
+        _mockEntitlementService
+            .Setup(s => s.ValidateCustomerAccessAsync(99, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _mockDataService
+            .Setup(s => s.DeleteNoteAsync(1, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         var result = await _controller.Delete(1);
@@ -100,8 +113,15 @@ public class NotesControllerTests
     [Fact]
     public async Task Delete_ThrowsException_WhenServiceFails()
     {
+        var note = new Note { Id = 1, CustomerId = 99 };
         _mockDataService
-            .Setup(s => s.DeleteNoteAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .Setup(s => s.GetNoteByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(note);
+        _mockEntitlementService
+            .Setup(s => s.ValidateCustomerAccessAsync(99, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _mockDataService
+            .Setup(s => s.DeleteNoteAsync(1, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("DB connection failed"));
 
         await Assert.ThrowsAsync<Exception>(() => _controller.Delete(1));
