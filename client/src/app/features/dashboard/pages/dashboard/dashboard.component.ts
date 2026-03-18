@@ -504,7 +504,7 @@ export class DashboardComponent {
   }
 
   reloadPlantingIntentions(): void {
-    this.apiService.getPlantingIntentions()
+    this.apiService.getPlantingIntentions(this.selectedTradeUnits)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {

@@ -232,7 +232,7 @@ export class HomeComponent {
       error: () => {}
     });
 
-    this.apiService.getPlantingIntentions().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.apiService.getPlantingIntentions(this.selectedTradeUnits()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this.plantingIntentions.set(data);
         this.appState.setPlantingIntentions(data);

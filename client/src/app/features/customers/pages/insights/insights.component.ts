@@ -68,6 +68,54 @@ export class InsightsComponent {
   globalSearch = signal('');
   categories: InsightCategory[] = ['UnconfirmedContracts', 'SpotLoads', 'UnshippedBushels'];
 
+  // Memoized customer groups per category — recomputes only when allInsights, globalSearch, or categorySearch change
+  readonly customerGroupsByCategory = computed(() => {
+    const insights = this.allInsights();
+    const global = this.globalSearch().toLowerCase().trim();
+    const searches = this.categorySearch();
+    const result: Record<InsightCategory, CustomerGroup[]> = {
+      UnconfirmedContracts: [],
+      SpotLoads: [],
+      UnshippedBushels: [],
+    };
+
+    // Group all insights by category and customer in a single pass
+    const grouped = new Map<string, Map<number, CustomerGroup>>();
+    for (const category of this.categories) {
+      grouped.set(category, new Map());
+    }
+    for (const insight of insights) {
+      const catMap = grouped.get(insight.category)!;
+      if (!catMap.has(insight.customer.id)) {
+        catMap.set(insight.customer.id, { customer: insight.customer, items: [] });
+      }
+      catMap.get(insight.customer.id)!.items.push(insight);
+    }
+
+    for (const category of this.categories) {
+      let groups = Array.from(grouped.get(category)!.values());
+      if (global) {
+        groups = groups.filter(g =>
+          g.customer.name.toLowerCase().includes(global) ||
+          (g.customer.sourceCustomerId || '').toLowerCase().includes(global)
+        );
+      }
+      const search = (searches[category] || '').toLowerCase().trim();
+      if (search) {
+        groups = groups.filter(g =>
+          g.customer.name.toLowerCase().includes(search) ||
+          (g.customer.sourceCustomerId || '').toLowerCase().includes(search) ||
+          g.items.some(item =>
+            item.tags?.some(tag => tag.label.toLowerCase().includes(search)) ||
+            item.searchTerms?.some(term => term.toLowerCase().includes(search))
+          )
+        );
+      }
+      result[category] = groups;
+    }
+    return result;
+  });
+
   skeletonCategories = [
     {
       color: 'amber',
@@ -158,6 +206,16 @@ export class InsightsComponent {
       if (arr) { arr.push(t); } else { ticketsByCustomer.set(t.customerCode, [t]); }
     }
 
+    // Pre-index today's notes by customerId for O(1) "contacted today" lookup instead of O(n) per customer
+    const contactedTodaySet = new Set<number>();
+    for (const n of this.notes()) {
+      try {
+        const d = new Date(n.createdAt);
+        const noteUtcDate = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+        if (noteUtcDate === todayStr) contactedTodaySet.add(n.customerId);
+      } catch { /* skip malformed dates */ }
+    }
+
     for (const customer of this.customers()) {
       const customerContracts = contractsByCustomer.get(customer.sourceCustomerId!) || [];
       const customerTickets = ticketsByCustomer.get(customer.sourceCustomerId!) || [];
@@ -200,17 +258,7 @@ export class InsightsComponent {
       );
 
       if (todayTickets.length > 0) {
-        const contactedToday = this.notes().some(n => {
-          try {
-            const d = new Date(n.createdAt);
-            const noteUtcDate = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-            return n.customerId === customer.id && noteUtcDate === todayStr;
-          } catch {
-            return false;
-          }
-        });
-
-        if (!contactedToday) {
+        if (!contactedTodaySet.has(customer.id)) {
           // One insight per ticket so the user can see and select individual tickets.
           for (const ticket of todayTickets) {
             const bu = ticket.unloadQuantity ? Math.round(ticket.unloadQuantity) : null;
@@ -298,40 +346,7 @@ export class InsightsComponent {
   }
 
   getCustomerGroups(category: InsightCategory): CustomerGroup[] {
-    const categoryInsights = this.getInsightsByCategory(category);
-    const search = (this.categorySearch()[category] || '').toLowerCase().trim();
-
-    const grouped = new Map<number, CustomerGroup>();
-    for (const insight of categoryInsights) {
-      if (!grouped.has(insight.customer.id)) {
-        grouped.set(insight.customer.id, { customer: insight.customer, items: [] });
-      }
-      grouped.get(insight.customer.id)!.items.push(insight);
-    }
-
-    let result = Array.from(grouped.values());
-
-    // Global search filters by customer name/code across all categories
-    const global = this.globalSearch().toLowerCase().trim();
-    if (global) {
-      result = result.filter(g =>
-        g.customer.name.toLowerCase().includes(global) ||
-        (g.customer.sourceCustomerId || '').toLowerCase().includes(global)
-      );
-    }
-
-    // Category search: matches customer name/ID, any tag (commodity, contract#, quantity), or searchTerms
-    if (search) {
-      result = result.filter(g =>
-        g.customer.name.toLowerCase().includes(search) ||
-        (g.customer.sourceCustomerId || '').toLowerCase().includes(search) ||
-        g.items.some(item =>
-          item.tags?.some(tag => tag.label.toLowerCase().includes(search)) ||
-          item.searchTerms?.some(term => term.toLowerCase().includes(search))
-        )
-      );
-    }
-    return result;
+    return this.customerGroupsByCategory()[category];
   }
 
   // ── Customer accordion ──────────────────────────────────────────────────────

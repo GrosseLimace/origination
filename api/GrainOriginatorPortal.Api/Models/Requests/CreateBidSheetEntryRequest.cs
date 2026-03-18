@@ -28,6 +28,12 @@ public class CreateBidSheetEntryRequest
     [Required, MaxLength(50)]
     public string CommodityCode { get; set; } = string.Empty;
 
+    [MaxLength(200)]
+    public string? CommodityName { get; set; }
+
+    [MaxLength(100)]
+    public string? CommodityCategory { get; set; }
+
     [Required]
     public int CropYear { get; set; }
 

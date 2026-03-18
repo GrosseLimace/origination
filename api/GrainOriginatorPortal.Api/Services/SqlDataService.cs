@@ -934,16 +934,16 @@ public class SqlDataService : IDataService
                 hasTradeUnitFilter, hasTradeUnitFilter ? tradeUnits!.Count : 0);
 
             // Load quality data for these tickets — chunked at 1000 to stay under SQL Server's 2100-param limit
+            // Batches run in parallel for faster loading when multiple chunks exist.
             var ticketIds = tickets.Select(t => t.Id).ToList();
-            var qualityList = new List<TicketQuality>();
-            foreach (var batch in ticketIds.Chunk(1000))
-            {
-                var batchResult = await _context.TicketQualities
+            var qualityTasks = ticketIds.Chunk(1000).Select(batch =>
+                _context.TicketQualities
                     .AsNoTracking()
                     .Where(q => batch.Contains(q.TicketId))
-                    .ToListAsync(cancellationToken);
-                qualityList.AddRange(batchResult);
-            }
+                    .ToListAsync(cancellationToken)
+            ).ToList();
+            var qualityResults = await Task.WhenAll(qualityTasks);
+            var qualityList = qualityResults.SelectMany(r => r).ToList();
 
             var qualityData = qualityList.ToDictionary(q => q.TicketId);
 
@@ -1098,12 +1098,17 @@ public class SqlDataService : IDataService
     // Planting Intention Operations - Uses dbo.ProducerPlantingIntentions table
     // =========================================================================
 
-    public async Task<List<PlantingIntention>> GetPlantingIntentionsAsync(CancellationToken cancellationToken = default)
+    public async Task<List<PlantingIntention>> GetPlantingIntentionsAsync(IEnumerable<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
         try
         {
-            return await _appContext.PlantingIntentions
-                .AsNoTracking()
+            var query = _appContext.PlantingIntentions.AsNoTracking();
+            var tuList = tradeUnits?.Where(t => !string.IsNullOrEmpty(t)).ToList();
+            if (tuList is { Count: > 0 })
+            {
+                query = query.Where(p => tuList.Contains(p.TradeUnit));
+            }
+            return await query
                 .OrderByDescending(p => p.PlantingYear)
                 .ThenBy(p => p.CustomerName)
                 .ToListAsync(cancellationToken);

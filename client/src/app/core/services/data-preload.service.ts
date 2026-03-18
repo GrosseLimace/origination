@@ -60,7 +60,7 @@ export class DataPreloadService {
         // Secondary group — needed by Dashboard, Build a List, etc. Runs in parallel with
         // core but does not block the dataLoading flag.
         const secondary$ = forkJoin({
-          plantingIntentions: this.apiService.getPlantingIntentions().pipe(catchError(() => of([] as PlantingIntention[]))),
+          plantingIntentions: this.apiService.getPlantingIntentions(tradeUnits).pipe(catchError(() => of([] as PlantingIntention[]))),
           storedGrain: this.apiService.getStoredGrain().pipe(catchError(() => of([] as StoredGrain[]))),
           savedLists: this.apiService.getSavedLists().pipe(catchError(() => of([] as SavedList[]))),
           commodities: this.apiService.getCommodities().pipe(catchError(() => of([] as Commodity[]))),

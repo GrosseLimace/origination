@@ -544,6 +544,83 @@ public class DiagnosticsController : ControllerBase
         }
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Geocode missing elevators using zip code centroids (zippopotam.us).</summary>
+    [HttpPost("elevator-cache/geocode-zip")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GeocodeByZip(CancellationToken ct = default)
+    {
+        if (DenyIfNotDevelopment() is { } deny) return deny;
+
+        var missing = await _appContext.ElevatorCaches
+            .Where(e => e.Latitude == null && e.IsActive && e.ZipCode != null && e.ZipCode != "0")
+            .ToListAsync(ct);
+
+        if (missing.Count == 0)
+            return Ok(new { Message = "No elevators need zip-based geocoding", Updated = 0 });
+
+        // Group by zip to avoid redundant API calls
+        var byZip = missing.GroupBy(e => e.ZipCode!.Trim().Split('.')[0].Split('-')[0]).ToList();
+        var client = _httpFactory.CreateClient();
+        int updated = 0, failed = 0;
+        var zipCache = new Dictionary<string, (double lat, double lng)>();
+
+        foreach (var group in byZip)
+        {
+            var zip = group.Key;
+            if (string.IsNullOrWhiteSpace(zip) || zip == "0") { failed += group.Count(); continue; }
+
+            // Normalize: take first 5 digits
+            if (zip.Length > 5) zip = zip[..5];
+
+            if (!zipCache.TryGetValue(zip, out var coords))
+            {
+                try
+                {
+                    await Task.Delay(100, ct); // Be polite
+                    var response = await client.GetAsync($"https://api.zippopotam.us/us/{zip}", ct);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        var json = await response.Content.ReadAsStringAsync(ct);
+                        var doc = JsonSerializer.Deserialize<JsonElement>(json);
+                        var places = doc.GetProperty("places");
+                        if (places.GetArrayLength() > 0)
+                        {
+                            var place = places[0];
+                            var lat = double.Parse(place.GetProperty("latitude").GetString()!);
+                            var lng = double.Parse(place.GetProperty("longitude").GetString()!);
+                            coords = (lat, lng);
+                            zipCache[zip] = coords;
+                        }
+                        else { failed += group.Count(); continue; }
+                    }
+                    else { failed += group.Count(); continue; }
+                }
+                catch { failed += group.Count(); continue; }
+            }
+
+            foreach (var elev in group)
+            {
+                elev.Latitude = coords.lat;
+                elev.Longitude = coords.lng;
+                updated++;
+            }
+
+            // Save every 100
+            if (updated % 100 == 0) await _appContext.SaveChangesAsync(ct);
+        }
+
+        await _appContext.SaveChangesAsync(ct);
+
+        return Ok(new
+        {
+            Message = "Zip-based geocoding complete",
+            UniqueZips = byZip.Count,
+            Updated = updated,
+            Failed = failed
+        });
+    }
+
     private record ColumnInfo
     {
         public string ColumnName { get; init; } = "";

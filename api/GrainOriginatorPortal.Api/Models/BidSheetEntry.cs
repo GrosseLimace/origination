@@ -12,6 +12,8 @@ public class BidSheetEntry
     public string? ElevatorCode { get; set; }
     public string TradeUnitCode { get; set; } = string.Empty;
     public string CommodityCode { get; set; } = string.Empty;
+    public string? CommodityName { get; set; }
+    public string? CommodityCategory { get; set; }
     public int CropYear { get; set; }
     public string Bid { get; set; } = string.Empty;
     public string CreatedBy { get; set; } = string.Empty;

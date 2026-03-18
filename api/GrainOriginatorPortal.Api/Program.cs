@@ -336,7 +336,7 @@ builder.Services.AddRateLimiter(options =>
             ctx.User?.Identity?.Name ?? ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
             _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 300,
+                PermitLimit = 1000,
                 Window = TimeSpan.FromMinutes(1)
             }));
 });
