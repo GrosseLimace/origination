@@ -217,7 +217,8 @@ export class InsightsComponent {
               { label: commodity, style: 'commodity' },
               { label: `${qty} bu`, style: 'quantity' },
               { label: statusLabel, style: 'warning' },
-            ]
+            ],
+            searchTerms: [contract.sourceContractId, contract.contractNumber, desc, code].filter(Boolean) as string[]
           });
         }
       }
@@ -273,7 +274,8 @@ export class InsightsComponent {
               { label: commodity, style: 'commodity' },
               { label: `${qty} bu`, style: 'quantity' },
               { label: `${daysOverdue}d overdue`, style: 'alert' },
-            ]
+            ],
+            searchTerms: [contract.sourceContractId, contract.contractNumber, desc, code].filter(Boolean) as string[]
           });
         }
       }
@@ -317,21 +319,41 @@ export class InsightsComponent {
       }));
 
       if (global) {
-        groups = groups.filter(g =>
-          g.customer.name.toLowerCase().includes(global) ||
-          (g.customer.sourceCustomerId || '').toLowerCase().includes(global)
-        );
+        groups = groups.reduce<CustomerGroup[]>((acc, g) => {
+          if (g.customer.name.toLowerCase().includes(global) ||
+              (g.customer.sourceCustomerId || '').toLowerCase().includes(global)) {
+            acc.push(g);
+            return acc;
+          }
+          const matchingItems = g.items.filter(item =>
+            item.searchTerms?.some(term => term.toLowerCase().includes(global)) ||
+            item.tags?.some(tag => tag.label.toLowerCase().includes(global))
+          );
+          if (matchingItems.length > 0) {
+            acc.push({ customer: g.customer, items: matchingItems, summary: computeSummary(matchingItems, category) });
+          }
+          return acc;
+        }, []);
       }
       const search = (searches[category] || '').toLowerCase().trim();
       if (search) {
-        groups = groups.filter(g =>
-          g.customer.name.toLowerCase().includes(search) ||
-          (g.customer.sourceCustomerId || '').toLowerCase().includes(search) ||
-          g.items.some(item =>
-            item.tags?.some(tag => tag.label.toLowerCase().includes(search)) ||
-            item.searchTerms?.some(term => term.toLowerCase().includes(search))
-          )
-        );
+        groups = groups.reduce<CustomerGroup[]>((acc, g) => {
+          // Customer-level match: show all items
+          if (g.customer.name.toLowerCase().includes(search) ||
+              (g.customer.sourceCustomerId || '').toLowerCase().includes(search)) {
+            acc.push(g);
+            return acc;
+          }
+          // Item-level match: filter to only matching items
+          const matchingItems = g.items.filter(item =>
+            item.searchTerms?.some(term => term.toLowerCase().includes(search)) ||
+            item.tags?.some(tag => tag.label.toLowerCase().includes(search))
+          );
+          if (matchingItems.length > 0) {
+            acc.push({ customer: g.customer, items: matchingItems, summary: computeSummary(matchingItems, category) });
+          }
+          return acc;
+        }, []);
       }
       result[category] = groups;
     }
