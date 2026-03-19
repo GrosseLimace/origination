@@ -360,11 +360,12 @@ export class CustomerListComponent {
         continue;
       }
 
-      // Find most recent note — use modifiedAt when available (matches _sortNotes logic)
-      const noteTime = (n: Note) => new Date(n.modifiedAt || n.createdAt).getTime();
+      // Find the most recently CREATED note — createdAt only, not modifiedAt.
+      // Pinning or editing a note updates modifiedAt but is not a new contact event.
+      const noteTime = (n: Note) => new Date(n.createdAt).getTime();
       const lastNote = customerNotes.reduce((latest, note) => noteTime(note) > noteTime(latest) ? note : latest, customerNotes[0]);
 
-      const noteDate = new Date(lastNote.modifiedAt || lastNote.createdAt);
+      const noteDate = new Date(lastNote.createdAt);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       noteDate.setHours(0, 0, 0, 0);

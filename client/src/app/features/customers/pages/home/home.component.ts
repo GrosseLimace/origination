@@ -80,7 +80,12 @@ export class HomeComponent {
   readonly lastContactedDate = computed(() => {
     const notes = this.customerNotes();
     if (notes.length === 0) return 'Never';
-    const lastNote = notes[0];
+    // Find the most recently CREATED note — don't use notes[0] since pinned notes sort
+    // to the top but may have an old createdAt. modifiedAt reflects edits/pins, not contact.
+    const lastNote = notes.reduce((latest, note) =>
+      this._parseNoteTime(note.createdAt) > this._parseNoteTime(latest.createdAt) ? note : latest,
+      notes[0]
+    );
     const raw = typeof lastNote.createdAt === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(lastNote.createdAt as any)
       ? (lastNote.createdAt as any) + 'Z' : lastNote.createdAt;
     const date = new Date(raw);
