@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { switchMap } from 'rxjs/operators';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '@shared/components/dialog/dialog.component';
-import { Customer, Ticket, Commodity } from '@models';
+import { Customer, Contract, Ticket, Commodity } from '@models';
 import { ApiService } from '@core/services/api.service';
 
 @Component({
@@ -27,6 +27,7 @@ export class EditCustomerDialogComponent {
   public isOpen = input(false);
   public customer = input<Customer | null>(null);
   public tickets = input<Ticket[]>([]);
+  public contracts = input<Contract[]>([]);
   public allCustomers = input<Customer[]>([]);
   public selectedTradeUnits = input<string[]>([]);
 
@@ -45,7 +46,7 @@ export class EditCustomerDialogComponent {
   editAcres: string = '';
   editBinCapacity: string = '';
   editCommodities = signal<string[]>([]);
-  private _ticketCommoditySet = new Set<string>();
+  private _derivedCommoditySet = new Set<string>();
   editLinkedProducerIds = signal<string[]>([]);
   removedIncomingIds = signal<string[]>([]); // incoming links removed locally, saved on Save Changes
   editESignEnabled = signal(false);
@@ -110,9 +111,12 @@ export class EditCustomerDialogComponent {
         const ticketCommodities = [...new Set(
           this.tickets().map(t => t.productCode || '').filter(Boolean)
         )];
-        this._ticketCommoditySet = new Set(ticketCommodities);
+        const contractCommodities = [...new Set(
+          this.contracts().map(c => c.commodityCode || '').filter(Boolean)
+        )];
+        this._derivedCommoditySet = new Set([...ticketCommodities, ...contractCommodities]);
         const userCommodities = customer.commodities || [];
-        this.editCommodities.set([...new Set([...ticketCommodities, ...userCommodities])].sort());
+        this.editCommodities.set([...new Set([...ticketCommodities, ...contractCommodities, ...userCommodities])].sort());
         this.editLinkedProducerIds.set([...(customer.linkedProducerIds || [])]);
         this.removedIncomingIds.set([]);
         this.editESignEnabled.set(customer.eSignEnabled);
@@ -169,7 +173,7 @@ export class EditCustomerDialogComponent {
   }
 
   isTicketCommodity(commodity: string): boolean {
-    return this._ticketCommoditySet.has(commodity);
+    return this._derivedCommoditySet.has(commodity);
   }
 
   removeCommodity(commodity: string): void {

@@ -1,5 +1,6 @@
 // Microsoft namespaces
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 // Third-party namespaces
@@ -26,7 +27,11 @@ public class NotesControllerTests
     {
         _dataServiceMock = new Mock<IDataService>();
         _entitlementServiceMock = new Mock<IUserEntitlementService>();
-        _sut = new NotesController(_dataServiceMock.Object, new Mock<ILogger<NotesController>>().Object, _entitlementServiceMock.Object, new Mock<ApplicationDbContext>().Object);
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName: $"NotesTest_{Guid.NewGuid()}")
+            .Options;
+        var appContext = new ApplicationDbContext(options);
+        _sut = new NotesController(_dataServiceMock.Object, new Mock<ILogger<NotesController>>().Object, _entitlementServiceMock.Object, appContext);
     }
 
     // -------------------------------------------------------------------------
@@ -39,7 +44,11 @@ public class NotesControllerTests
             new Note { Id = 1, CustomerId = 10, Description = "Test note", IsPinned = false },
             new Note { Id = 2, CustomerId = 10, Description = "Pinned note", IsPinned = true }
         };
+<<<<<<< HEAD
+        _dataServiceMock.Setup(s => s.GetNotesAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(notes);
+=======
         _dataServiceMock.Setup(s => s.GetNotesAsync(It.IsAny<IEnumerable<string>?>(), It.IsAny<CancellationToken>())).ReturnsAsync(notes);
+>>>>>>> github/main
 
         // Act
         var result = await _sut.GetAll();

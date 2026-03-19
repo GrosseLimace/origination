@@ -643,28 +643,21 @@ public class SqlDataService : IDataService
             }
             else
             {
-                // Build subqueries (not materialized) — EF Core translates Any() to SQL EXISTS
-                var matchingContracts = _context.Contracts.AsNoTracking()
-                    .Where(c => c.IsActive && c.CtrmCustomerId != null
-                        && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit));
+                // Step 1: materialize CtrmCustomerIds from CustomerSnapshot (AppDb, indexed, ~200-300 rows)
+                // filtered by TradeUnit. Avoids scanning the large ODS contracts view to find customer IDs.
+                var ctrmIds = await _appContext.CustomerSnapshots
+                    .AsNoTracking()
+                    .Where(c => c.SourceCustomerId != null && c.IsActive && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
+                    .Select(c => c.SourceCustomerId!)
+                    .Distinct()
+                    .ToListAsync(cancellationToken);
 
-                var matchingTickets = _context.Tickets.AsNoTracking()
-                    .Where(t => t.IsActive && t.CustomerId.HasValue
-                        && t.OrganizationCode != null && tradeUnits!.Contains(t.OrganizationCode));
-
-                // Customer subquery: has contract OR ticket in these trade units
-                var customerSubquery = _context.Customers.AsNoTracking()
-                    .Where(c =>
-                        matchingContracts.Any(ct => ct.CtrmCustomerId == c.SourceCustomerId) ||
-                        matchingTickets.Any(t => t.CustomerId == c.Id));
-
-                // Load all contracts for those customers — intentionally NOT filtering by trade unit here
-                // so that prior-year contracts (needed for pacing calculations) are included even if
+                // Step 2: load ALL active contracts for those customers — intentionally NOT re-filtering
+                // by trade unit so prior-year contracts (needed for pacing) are included even if
                 // they carry a different TradeUnit value than the current selection.
                 contracts = await _context.Contracts
                     .AsNoTracking()
-                    .Where(c => c.IsActive && c.CtrmCustomerId != null &&
-                        customerSubquery.Any(cu => cu.SourceCustomerId == c.CtrmCustomerId))
+                    .Where(c => c.IsActive && c.CtrmCustomerId != null && ctrmIds.Contains(c.CtrmCustomerId))
                     .OrderByDescending(c => c.Id)
                     .ToListAsync(cancellationToken);
             }
@@ -904,30 +897,37 @@ public class SqlDataService : IDataService
             }
             else
             {
-                var matchingContracts = _context.Contracts.AsNoTracking()
-                    .Where(c => c.IsActive && c.CtrmCustomerId != null
-                        && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit));
-
-                var matchingTickets = _context.Tickets.AsNoTracking()
-                    .Where(t => t.IsActive && t.CustomerCode != null
-                        && t.OrganizationCode != null && tradeUnits!.Contains(t.OrganizationCode));
-
-                var customerSubquery = _context.Customers.AsNoTracking()
-                    .Where(c => c.SourceCustomerId != null && (
-                        matchingContracts.Any(ct => ct.CtrmCustomerId == c.SourceCustomerId) ||
-                        matchingTickets.Any(t => t.CustomerCode == c.SourceCustomerId)));
-
-                var ticketsQuery = _context.Tickets
+                // Two-step approach: resolve customer codes AND contract numbers via the contracts
+                // TradeUnit index (fast), then load tickets by CustomerCode. OrganizationCode on
+                // vw_CurrentTickets has no usable index and caused full-scan queries taking 80+ seconds.
+                // Contract numbers are retained so we can post-filter tickets to only those belonging
+                // to this trade unit's contracts — prevents cross-TU ticket leakage for shared customers.
+                var tuContracts = await _context.Contracts
                     .AsNoTracking()
-                    .Where(t => t.IsActive && t.CustomerCode != null &&
-                        customerSubquery.Any(cu => cu.SourceCustomerId == t.CustomerCode));
+                    .Where(c => c.IsActive && c.CtrmCustomerId != null
+                        && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
+                    .Select(c => new { c.CtrmCustomerId, c.SourceContractId })
+                    .Distinct()
+                    .ToListAsync(cancellationToken);
 
-                // Belt-and-suspenders: also filter by trade unit directly on tickets
-                ticketsQuery = ticketsQuery.Where(t => t.OrganizationCode != null && tradeUnits!.Contains(t.OrganizationCode));
+                var customerCodes = tuContracts.Select(c => c.CtrmCustomerId!).Distinct().ToList();
+                var tuContractNumbers = tuContracts
+                    .Select(c => c.SourceContractId)
+                    .Where(n => n != null)
+                    .ToHashSet();
 
-                tickets = await ticketsQuery
+                var rawTickets = await _context.Tickets
+                    .AsNoTracking()
+                    .Where(t => t.IsActive && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode))
                     .OrderByDescending(t => t.Date)
                     .ToListAsync(cancellationToken);
+
+                // Post-filter: keep tickets linked to a TU contract, or unlinked (spot/cash purchases
+                // with no contract number — no way to attribute them to a specific TU).
+                tickets = rawTickets
+                    .Where(t => string.IsNullOrEmpty(t.CtrmContractNumber)
+                             || tuContractNumbers.Contains(t.CtrmContractNumber))
+                    .ToList();
             }
 
             _logger.LogInformation("Loading tickets (filtered: {IsFiltered}, tradeUnitCount: {TradeUnitCount})",
@@ -1089,7 +1089,7 @@ public class SqlDataService : IDataService
     // Planting Intention Operations - Uses dbo.ProducerPlantingIntentions table
     // =========================================================================
 
-    public async Task<List<PlantingIntention>> GetPlantingIntentionsAsync(IEnumerable<string>? tradeUnits = null, CancellationToken cancellationToken = default)
+    public async Task<List<PlantingIntention>> GetPlantingIntentionsAsync(IEnumerable<string>? tradeUnits = null, int? plantingYear = null, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -1099,10 +1099,15 @@ public class SqlDataService : IDataService
             {
                 query = query.Where(p => tuList.Contains(p.TradeUnit));
             }
-            return await query
+            if (plantingYear.HasValue)
+            {
+                query = query.Where(p => p.PlantingYear == plantingYear.Value);
+            }
+            var results = await query
                 .OrderByDescending(p => p.PlantingYear)
                 .ThenBy(p => p.CustomerName)
                 .ToListAsync(cancellationToken);
+            return results;
         }
         catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
         {
@@ -1518,10 +1523,20 @@ public class SqlDataService : IDataService
         INNER JOIN originations.vw_CurrentCustomers c ON sg.CUSTOMER_ID = c.SourceCustomerId
         """;
 
-    public async Task<List<StoredGrain>> GetStoredGrainAsync(CancellationToken cancellationToken = default)
+    public async Task<List<StoredGrain>> GetStoredGrainAsync(IEnumerable<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
         try
         {
+            var tuList = tradeUnits?.ToList();
+            if (tuList is { Count: > 0 })
+            {
+                var paramNames = tuList.Select((_, i) => $"@tu{i}").ToArray();
+                var sql = StoredGrainSql + $" WHERE c.TradeUnit IN ({string.Join(", ", paramNames)})";
+                var sqlParams = tuList.Select((tu, i) => new SqlParameter($"@tu{i}", tu)).ToArray<object>();
+                return await _context.Database
+                    .SqlQueryRaw<StoredGrain>(sql, sqlParams)
+                    .ToListAsync(cancellationToken);
+            }
             return await _context.Database
                 .SqlQueryRaw<StoredGrain>(StoredGrainSql)
                 .ToListAsync(cancellationToken);

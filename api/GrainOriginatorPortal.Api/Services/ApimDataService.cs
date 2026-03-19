@@ -116,7 +116,7 @@ public class ApimDataService : IDataService
     // Planting Intention Operations
     // =========================================================================
 
-    public Task<List<PlantingIntention>> GetPlantingIntentionsAsync(IEnumerable<string>? tradeUnits = null, CancellationToken cancellationToken = default)
+    public Task<List<PlantingIntention>> GetPlantingIntentionsAsync(IEnumerable<string>? tradeUnits = null, int? plantingYear = null, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetPlantingIntentions");
 
     public Task<List<PlantingIntention>> GetPlantingIntentionsByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
@@ -182,7 +182,7 @@ public class ApimDataService : IDataService
     // Storage Operations
     // =========================================================================
 
-    public Task<List<StoredGrain>> GetStoredGrainAsync(CancellationToken cancellationToken = default)
+    public Task<List<StoredGrain>> GetStoredGrainAsync(IEnumerable<string>? tradeUnits = null, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetStoredGrain");
 
     public Task<List<StoredGrain>> GetStoredGrainByCustomerAsync(long customerId, CancellationToken cancellationToken = default)

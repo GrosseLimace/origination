@@ -1,5 +1,6 @@
 // Microsoft namespaces
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 // Third-party namespaces
@@ -26,7 +27,11 @@ public class PlantingIntentionsControllerTests
     {
         _dataServiceMock = new Mock<IDataService>();
         _entitlementServiceMock = new Mock<IUserEntitlementService>();
-        _sut = new PlantingIntentionsController(_dataServiceMock.Object, new Mock<ILogger<PlantingIntentionsController>>().Object, _entitlementServiceMock.Object, new Mock<ApplicationDbContext>().Object);
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName: $"PlantingIntentionsTest_{Guid.NewGuid()}")
+            .Options;
+        var appContext = new ApplicationDbContext(options);
+        _sut = new PlantingIntentionsController(_dataServiceMock.Object, new Mock<ILogger<PlantingIntentionsController>>().Object, _entitlementServiceMock.Object, appContext);
     }
 
     // -------------------------------------------------------------------------
@@ -38,7 +43,11 @@ public class PlantingIntentionsControllerTests
         {
             new PlantingIntention { Id = 1, CustomerId = 10, Crop = "Corn", Acres = 200, PlantingYear = 2026 }
         };
+<<<<<<< HEAD
+        _dataServiceMock.Setup(s => s.GetPlantingIntentionsAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<int?>(), It.IsAny<CancellationToken>())).ReturnsAsync(intentions);
+=======
         _dataServiceMock.Setup(s => s.GetPlantingIntentionsAsync(It.IsAny<IEnumerable<string>?>(), It.IsAny<CancellationToken>())).ReturnsAsync(intentions);
+>>>>>>> github/main
 
         // Act
         var result = await _sut.GetAll();

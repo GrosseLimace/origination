@@ -37,6 +37,7 @@ export class HomeComponent {
   private readonly _resizeHandler = () => this._checkMobile();
   private _isLoading = false;
   private _customerRequestId = 0;
+  private _piRequestId = 0;
 
   // Public signals — template binds directly to these
   readonly customers = signal<Customer[]>([]);
@@ -146,6 +147,7 @@ export class HomeComponent {
       this.contracts.set(this.appState.contracts());
       this.tickets.set(this.appState.tickets());
       this.plantingIntentions.set(this.appState.plantingIntentions());
+      this.isLoadingPlanting.set(false);
       this.notes.set(this.appState.notes());
       this.storedGrain.set(this.appState.storedGrain());
       this.savedLists.set(this.appState.savedLists());
@@ -254,7 +256,7 @@ export class HomeComponent {
       error: () => {}
     });
 
-    this.apiService.getStoredGrain().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.apiService.getStoredGrain(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this.storedGrain.set(data);
         this.appState.setStoredGrain(data);
@@ -473,6 +475,23 @@ export class HomeComponent {
     this._loadCustomerData(customer.id);
     this._fetchMissingLinkedProducers(customer);
 
+    // Fetch planting intentions exactly once per customer selection.
+    // _loadCustomerData is called multiple times (contracts, tickets, storedGrain callbacks),
+    // so the fetch lives here instead to avoid triple API calls.
+    this.allCustomerPlantingIntentions.set([]);
+    this.customerPlantingIntentions.set([]);
+    const piRequestId = ++this._piRequestId;
+    this.apiService.getPlantingIntentionsByCustomer(customer.id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (intentions) => {
+          if (piRequestId !== this._piRequestId) return;
+          this.allCustomerPlantingIntentions.set(intentions);
+          this.customerPlantingIntentions.set(intentions);
+        },
+        error: () => {}
+      });
+
     // When no trade units are active, _loadAllData never ran so notes may be stale or missing.
     // Always refresh notes in this case so the selected customer's notes appear.
     if (this.selectedTradeUnits().length === 0) {
@@ -579,6 +598,10 @@ export class HomeComponent {
         this.appState.setContracts(merged);
         this.isLoadingContracts.set(false);
         this._loadCustomerData(customerId);
+        // Re-run auto-save now that we have the complete contract list — tickets may have
+        // arrived first and run auto-save before allCustomerContracts was populated.
+        const customer = this.customers().find(c => c.id === customerId) || this.selectedCustomer();
+        if (customer) this._autoSaveCommodities(customer, this.allCustomerTickets());
       },
       error: () => { this.isLoadingContracts.set(false); }
     });
@@ -623,11 +646,8 @@ export class HomeComponent {
     this.customerContracts.set([...allContracts]);
     this.customerTickets.set([...allTickets]);
 
-    const allPlanting = this.plantingIntentions().filter(p => p.customerId === customerId);
     const allStored = this.storedGrain().filter(s => s.customerId === customerId);
-    this.allCustomerPlantingIntentions.set([...allPlanting]);
     this.allCustomerStoredGrain.set([...allStored]);
-    this.customerPlantingIntentions.set([...allPlanting]);
     this.customerStoredGrain.set([...allStored]);
 
     const linkedGroup = this.getLinkedGroup(currentCustomer);
@@ -640,13 +660,17 @@ export class HomeComponent {
 
   private _autoSaveCommodities(customer: Customer, customerTickets: Ticket[]): void {
     const ticketCommodities = [...new Set(customerTickets.map(t => t.productCode || '').filter(Boolean))];
-    if (ticketCommodities.length === 0) return;
+    const contractCommodities = [...new Set(
+      this.allCustomerContracts().map(c => c.commodityCode || '').filter(Boolean)
+    )];
+    const sourceCommodities = [...new Set([...ticketCommodities, ...contractCommodities])];
+    if (sourceCommodities.length === 0) return;
 
     const storedCommodities = customer.commodities || [];
-    const hasNew = ticketCommodities.some(tc => !storedCommodities.includes(tc));
+    const hasNew = sourceCommodities.some(tc => !storedCommodities.includes(tc));
     if (!hasNew) return;
 
-    const merged = [...new Set([...storedCommodities, ...ticketCommodities])].sort();
+    const merged = [...new Set([...storedCommodities, ...sourceCommodities])].sort();
     const existingPd = this.producerDetailsMap().get(customer.id);
     this.apiService.saveProducerDetails(customer.id, {
       sourceCustomerId: customer.sourceCustomerId || null,
@@ -683,7 +707,8 @@ export class HomeComponent {
     if (!customer) return;
 
     const ticketCommodities = [...new Set(this.allCustomerTickets().map(t => t.productCode || '').filter(Boolean))];
-    const allCommodities = [...new Set([...ticketCommodities, ...data.commodities])].sort();
+    const contractCommodities = [...new Set(this.allCustomerContracts().map(c => c.commodityCode || '').filter(Boolean))];
+    const allCommodities = [...new Set([...ticketCommodities, ...contractCommodities, ...data.commodities])].sort();
 
     const updated: Customer = {
       ...customer,
@@ -825,6 +850,19 @@ export class HomeComponent {
       this._fetchMissingLinkedProducers(customer);
       this._loadCustomerContractsAndTickets(customer.id, customer.sourceCustomerId);
       this._loadCustomerData(customer.id);
+      this.allCustomerPlantingIntentions.set([]);
+      this.customerPlantingIntentions.set([]);
+      const piRequestId = ++this._piRequestId;
+      this.apiService.getPlantingIntentionsByCustomer(customer.id)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: (intentions) => {
+            if (piRequestId !== this._piRequestId) return;
+            this.allCustomerPlantingIntentions.set(intentions);
+            this.customerPlantingIntentions.set(intentions);
+          },
+          error: () => {}
+        });
     } else {
       // Linked customer is in a different trade unit — fetch them from the API
       this.apiService.getCustomerById(customerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -849,6 +887,19 @@ export class HomeComponent {
           this._fetchMissingLinkedProducers(fetched);
           this._loadCustomerContractsAndTickets(fetched.id, fetched.sourceCustomerId);
           this._loadCustomerData(fetched.id);
+          this.allCustomerPlantingIntentions.set([]);
+          this.customerPlantingIntentions.set([]);
+          const piRequestId = ++this._piRequestId;
+          this.apiService.getPlantingIntentionsByCustomer(fetched.id)
+            .pipe(takeUntilDestroyed(this.destroyRef))
+            .subscribe({
+              next: (intentions) => {
+                if (piRequestId !== this._piRequestId) return;
+                this.allCustomerPlantingIntentions.set(intentions);
+                this.customerPlantingIntentions.set(intentions);
+              },
+              error: () => {}
+            });
         },
         error: () => {}
       });

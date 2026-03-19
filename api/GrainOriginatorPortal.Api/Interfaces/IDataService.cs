@@ -136,10 +136,11 @@ public interface IDataService
     // Planting Intention Operations
     // =========================================================================
 
-    /// <summary>Gets planting intentions, optionally filtered by trade units.</summary>
+    /// <summary>Gets planting intentions, optionally filtered by trade units and/or planting year.</summary>
     /// <param name="tradeUnits">Optional trade unit codes to filter by. If null/empty, returns all.</param>
+    /// <param name="plantingYear">Optional planting year to filter by. If null, returns all years.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task<List<PlantingIntention>> GetPlantingIntentionsAsync(IEnumerable<string>? tradeUnits = null, CancellationToken cancellationToken = default);
+    Task<List<PlantingIntention>> GetPlantingIntentionsAsync(IEnumerable<string>? tradeUnits = null, int? plantingYear = null, CancellationToken cancellationToken = default);
 
     /// <summary>Gets all planting intentions for a specific customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>
@@ -301,9 +302,10 @@ public interface IDataService
     // Storage Operations
     // =========================================================================
 
-    /// <summary>Gets all stored grain records.</summary>
+    /// <summary>Gets stored grain records, optionally filtered by trade units.</summary>
+    /// <param name="tradeUnits">Optional trade unit codes to filter by. If null/empty, returns all.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task<List<StoredGrain>> GetStoredGrainAsync(CancellationToken cancellationToken = default);
+    Task<List<StoredGrain>> GetStoredGrainAsync(IEnumerable<string>? tradeUnits = null, CancellationToken cancellationToken = default);
 
     /// <summary>Gets stored grain records for a specific customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>

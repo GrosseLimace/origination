@@ -128,7 +128,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
 
             entity.HasIndex(e => e.CustomerId).HasDatabaseName("IX_ProducerPlantingIntentions_CustomerId");
-            entity.HasIndex(e => e.TradeUnit).HasDatabaseName("IX_ProducerPlantingIntentions_TradeUnit");
+            entity.HasIndex(e => new { e.TradeUnit, e.PlantingYear }).HasDatabaseName("IX_ProducerPlantingIntentions_TradeUnit");
         });
 
         modelBuilder.Entity<DashboardPlantingEstimate>(entity =>
