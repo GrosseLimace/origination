@@ -71,7 +71,7 @@
         }
 
         <!-- Customer List -->
-        <div #scrollContainer class="divide-y divide-gray-200 dark:divide-gray-700 overflow-y-auto" [style.max-height]="getListMaxHeight()"
+        <div #scrollContainer class="divide-y divide-gray-200 dark:divide-gray-700 overflow-y-auto" [style.max-height]="listMaxHeight()"
         >
           @if (loading() && selectedTradeUnits.length > 0) {
             <div class="p-8 text-center">

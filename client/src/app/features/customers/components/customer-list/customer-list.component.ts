@@ -1,4 +1,4 @@
-import { Component, input, output, effect, inject, untracked, ChangeDetectionStrategy, ViewChild, ElementRef, DestroyRef, afterNextRender, signal } from '@angular/core';
+import { Component, input, output, effect, inject, untracked, ChangeDetectionStrategy, ViewChild, ElementRef, DestroyRef, afterNextRender, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -51,6 +51,13 @@ export class CustomerListComponent {
   // Performance optimization: Cache last contact info to avoid repeated filtering/sorting
   // Signal so the OnPush template re-renders automatically when the cache is rebuilt.
   lastContactCache = signal(new Map<number, LastContactInfo>());
+
+  readonly listMaxHeight = computed(() => {
+    const hasSavedLists = !this.loading() && this.getVisibleSavedLists().length > 0;
+    return `calc(100vh - ${hasSavedLists ? 21 : 16}rem)`;
+  });
+
+  private _scrollTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this._rebuildLastContactCache();
@@ -161,7 +168,9 @@ export class CustomerListComponent {
         const newId = selectedCustomer.id;
         if (newId !== this.appStateService.lastScrolledCustomerId()) {
           this.appStateService.setLastScrolledCustomerId(newId);
-          setTimeout(() => {
+          if (this._scrollTimeoutId !== null) clearTimeout(this._scrollTimeoutId);
+          this._scrollTimeoutId = setTimeout(() => {
+            this._scrollTimeoutId = null;
             const el = this.scrollContainer?.nativeElement
               ?.querySelector<HTMLElement>(`#customer-item-${newId}`);
             if (el) {
@@ -170,6 +179,10 @@ export class CustomerListComponent {
           }, 50);
         }
       }
+    });
+
+    this.destroyRef.onDestroy(() => {
+      if (this._scrollTimeoutId !== null) clearTimeout(this._scrollTimeoutId);
     });
   }
 
@@ -199,11 +212,6 @@ export class CustomerListComponent {
     return [...units].sort();
   }
 
-  getListMaxHeight(): string {
-    const hasSavedLists = !this.loading() && this.getVisibleSavedLists().length > 0;
-    let offset = hasSavedLists ? 21 : 16;
-    return `calc(100vh - ${offset}rem)`;
-  }
 
 
   /** Scroll a customer item into view within the list container only — never scrolls the document. */
