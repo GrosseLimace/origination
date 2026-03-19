@@ -90,9 +90,8 @@ public interface IDataService
 
     /// <summary>Gets all contracts for a specific customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>
-    /// <param name="sourceCustomerId">Optional source system customer ID. When provided, skips the customer lookup DB round-trip.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task<List<Contract>> GetContractsByCustomerAsync(long customerId, string? sourceCustomerId = null, CancellationToken cancellationToken = default);
+    Task<List<Contract>> GetContractsByCustomerAsync(long customerId, CancellationToken cancellationToken = default);
 
     /// <summary>Gets all contracts associated with a specific farm.</summary>
     /// <param name="farmId">The farm's string identifier.</param>
@@ -125,9 +124,8 @@ public interface IDataService
 
     /// <summary>Gets all tickets for a specific customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>
-    /// <param name="sourceCustomerId">Optional source system customer ID. When provided, skips the customer lookup DB round-trip.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task<List<Ticket>> GetTicketsByCustomerAsync(long customerId, string? sourceCustomerId = null, CancellationToken cancellationToken = default);
+    Task<List<Ticket>> GetTicketsByCustomerAsync(long customerId, CancellationToken cancellationToken = default);
 
     /// <summary>Gets all tickets associated with a specific farm.</summary>
     /// <param name="farmId">The farm's string identifier.</param>
