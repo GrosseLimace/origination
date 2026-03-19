@@ -366,15 +366,15 @@
                                   </div>
                                   <div class="text-center">
                                     <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Date</p>
-                                    <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.date | date:'MMM d, yyyy' }}</p>
+                                    <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.date | date:'M/d/yyyy' }}</p>
                                   </div>
                                   <div class="text-center">
                                     <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Crop</p>
                                     <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.productCode || 'N/A' }}</p>
                                   </div>
                                   <div class="text-center">
-                                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Net Weight (lbs)</p>
-                                    <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.appliedDockQuantity | number }}</p>
+                                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Net Bu</p>
+                                    <p class="font-medium text-gray-900 dark:text-gray-100">{{ toBushels(ticket.appliedDockQuantity, ticket.productCode) | number:'1.0-0' }}</p>
                                   </div>
                                   <div class="text-center">
                                     <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Moisture %</p>

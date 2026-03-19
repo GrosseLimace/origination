@@ -415,6 +415,21 @@ export class ContractsTableComponent {
     return 56;
   }
 
+  toBushels(lbs: number | null | undefined, productCode: string | undefined | null): number {
+    const code = (productCode || '').toUpperCase();
+    let lbsPerBu = 56;
+    if (code.includes('CORN') || code.includes('YC'))                                           lbsPerBu = 56;
+    else if (code.includes('SOY') || code.includes('BEAN') || code.includes('SB'))             lbsPerBu = 60;
+    else if (code.includes('WHEAT') || code.includes('HRW') || code.includes('HRS') ||
+             code.includes('HWS') || code.includes('SRW') || code.includes('WW'))              lbsPerBu = 60;
+    else if (code.includes('SORGHUM') || code.includes('MILO') || code.includes('SOR') ||
+             code.includes('SG'))                                                               lbsPerBu = 56;
+    else if (code.includes('BARLEY'))                                                           lbsPerBu = 48;
+    else if (code.includes('OAT'))                                                              lbsPerBu = 32;
+    else if (code.includes('RYE'))                                                              lbsPerBu = 56;
+    return (lbs || 0) / lbsPerBu;
+  }
+
   getAppliedTickets(contract: Contract): Ticket[] {
     // Only consider tickets that are actually applied (contract prefix type 'P' or 'S' in ctrmContractNumber)
     return this.tickets().filter(t => {
