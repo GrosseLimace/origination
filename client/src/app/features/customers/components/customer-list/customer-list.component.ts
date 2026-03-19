@@ -315,6 +315,12 @@ export class CustomerListComponent {
   private _rebuildLastContactCache(): void {
     this.lastContactCache.clear();
 
+    // Build sourceCustomerId → customerId map so we can resolve linked producer IDs
+    const sourceToId = new Map<string, number>();
+    for (const c of [...this.customers(), ...this.filteredCustomers()]) {
+      if (c.sourceCustomerId) sourceToId.set(c.sourceCustomerId, c.id);
+    }
+
     // Group notes by customer ID - single pass through notes O(m)
     const notesByCustomer = new Map<number, Note[]>();
     for (const note of this.notes()) {
@@ -329,7 +335,12 @@ export class CustomerListComponent {
     // and customers() input is empty). Fall back to customers() for TU-filtered loads.
     const customersToCache = this.filteredCustomers().length > 0 ? this.filteredCustomers() : this.customers();
     for (const customer of customersToCache) {
-      const customerNotes = notesByCustomer.get(customer.id) || [];
+      // Include notes from linked producers so the card matches the detail view
+      // (mirrors the linkedIds logic in home.component _loadCustomerData)
+      const linkedIds = (customer.linkedProducerIds || [])
+        .map(sourceId => sourceToId.get(sourceId))
+        .filter((id): id is number => id !== undefined);
+      const customerNotes = [customer.id, ...linkedIds].flatMap(id => notesByCustomer.get(id) || []);
 
       if (customerNotes.length === 0) {
         this.lastContactCache.set(customer.id, {

@@ -729,19 +729,14 @@ public class SqlDataService : IDataService
     {
         try
         {
-            // Resolve SourceCustomerId from CustomerSnapshots (app DB, small indexed table) —
-            // faster than querying the ODS Customers view.
-            var sourceCustomerId = await _appContext.CustomerSnapshots
-                .AsNoTracking()
-                .Where(c => c.CustomerId == customerId && c.IsActive && c.SourceCustomerId != null)
-                .Select(c => c.SourceCustomerId)
-                .FirstOrDefaultAsync(cancellationToken);
-
-            if (string.IsNullOrEmpty(sourceCustomerId))
+            // Resolve SourceCustomerId via the ODS Customers view (PK-indexed on Id).
+            var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive, cancellationToken);
+            if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
             {
-                _logger.LogWarning("Customer {CustomerId} not found in CustomerSnapshots or has no SourceCustomerId", customerId);
+                _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
                 return new List<Contract>();
             }
+            var sourceCustomerId = customer.SourceCustomerId;
 
             // Match contracts using CtrmCustomerId = sourceCustomerId (string matching)
             var contracts = await _context.Contracts
@@ -1016,19 +1011,14 @@ public class SqlDataService : IDataService
     {
         try
         {
-            // Resolve SourceCustomerId from CustomerSnapshots (app DB, small indexed table) —
-            // faster than querying the ODS Customers view.
-            var sourceCustomerId = await _appContext.CustomerSnapshots
-                .AsNoTracking()
-                .Where(c => c.CustomerId == customerId && c.IsActive && c.SourceCustomerId != null)
-                .Select(c => c.SourceCustomerId)
-                .FirstOrDefaultAsync(cancellationToken);
-
-            if (string.IsNullOrEmpty(sourceCustomerId))
+            // Resolve SourceCustomerId via the ODS Customers view (PK-indexed on Id).
+            var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive, cancellationToken);
+            if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
             {
-                _logger.LogWarning("Customer {CustomerId} not found in CustomerSnapshots or has no SourceCustomerId", customerId);
+                _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
                 return new List<Ticket>();
             }
+            var sourceCustomerId = customer.SourceCustomerId;
 
             // Match tickets using CustomerCode = sourceCustomerId (string matching, like contracts)
             var tickets = await _context.Tickets
@@ -1109,7 +1099,18 @@ public class SqlDataService : IDataService
             var tuList = tradeUnits?.Where(t => !string.IsNullOrEmpty(t)).ToList();
             if (tuList is { Count: > 0 })
             {
-                query = query.Where(p => tuList.Contains(p.TradeUnit));
+                // Two-step: get customer codes from contracts in the selected TUs,
+                // then filter PIs by CustomerCode — avoids relying on the TradeUnit stamp
+                // which may be empty or stale when a PI is created without a TU selected.
+                var customerCodes = await _context.Contracts
+                    .AsNoTracking()
+                    .Where(c => c.IsActive && c.CtrmCustomerId != null
+                             && c.TradeUnit != null && tuList.Contains(c.TradeUnit))
+                    .Select(c => c.CtrmCustomerId!)
+                    .Distinct()
+                    .ToListAsync(cancellationToken);
+
+                query = query.Where(p => customerCodes.Contains(p.CustomerCode));
             }
             if (plantingYear.HasValue)
             {
