@@ -25,9 +25,10 @@ public class StoredGrainController : ControllerBase
     /// <summary>Gets all stored grain records, filtered to the caller's entitled trade units.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(List<StoredGrain>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<StoredGrain>>> GetAll(CancellationToken cancellationToken = default)
+    public async Task<ActionResult<List<StoredGrain>>> GetAll([FromQuery] string? tradeUnits = null, CancellationToken cancellationToken = default)
     {
-        var grain = await _dataService.GetStoredGrainAsync(cancellationToken);
+        var tuList = tradeUnits?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var grain = await _dataService.GetStoredGrainAsync(tuList, cancellationToken);
         if (_entitlementService.EntitlementsAvailable)
         {
             var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);

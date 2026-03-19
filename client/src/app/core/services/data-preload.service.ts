@@ -61,11 +61,15 @@ export class DataPreloadService {
         );
         const tickets$ = this.apiService.getTickets(tradeUnits).pipe(
           catchError(() => of([] as Ticket[])),
-          tap(data => this.appState.setTickets(data))
+          tap(data => {
+            this.appState.setTickets(data);
+          })
         );
         const notes$ = this.apiService.getNotes(tradeUnits).pipe(
           catchError(() => of([] as Note[])),
-          tap(data => this.appState.setNotes(data))
+          tap(data => {
+            this.appState.setNotes(data);
+          })
         );
 
         // Secondary group — each result streams into AppState as it arrives.
@@ -73,23 +77,33 @@ export class DataPreloadService {
         // for slower calls like getPlantingIntentions to complete.
         const plantingIntentions$ = this.apiService.getPlantingIntentions(tradeUnits).pipe(
           catchError(() => of([] as PlantingIntention[])),
-          tap(data => this.appState.setPlantingIntentions(data))
+          tap(data => {
+            this.appState.setPlantingIntentions(data);
+          })
         );
-        const storedGrain$ = this.apiService.getStoredGrain().pipe(
+        const storedGrain$ = this.apiService.getStoredGrain(tradeUnits).pipe(
           catchError(() => of([] as StoredGrain[])),
-          tap(data => this.appState.setStoredGrain(data))
+          tap(data => {
+            this.appState.setStoredGrain(data);
+          })
         );
         const savedLists$ = this.apiService.getSavedLists().pipe(
           catchError(() => of([] as SavedList[])),
-          tap(data => this.appState.setSavedLists(data))
+          tap(data => {
+            this.appState.setSavedLists(data);
+          })
         );
         const commodities$ = this.apiService.getCommodities().pipe(
           catchError(() => of([] as Commodity[])),
-          tap(data => this.appState.setCommodities(data))
+          tap(data => {
+            this.appState.setCommodities(data);
+          })
         );
         const producerDetails$ = this.apiService.getAllProducerDetails().pipe(
           catchError(() => of([] as ProducerDetails[])),
-          tap(data => this.appState.setProducerDetails(data))
+          tap(data => {
+            this.appState.setProducerDetails(data);
+          })
         );
 
         return merge(customers$, contracts$, tickets$, notes$, plantingIntentions$, storedGrain$, savedLists$, commodities$, producerDetails$);

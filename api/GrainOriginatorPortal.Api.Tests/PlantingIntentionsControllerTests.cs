@@ -40,7 +40,7 @@ public class PlantingIntentionsControllerTests
             new PlantingIntention { Id = 1, Crop = "Corn", Acres = 500 }
         };
         _mockDataService
-            .Setup(s => s.GetPlantingIntentionsAsync(It.IsAny<CancellationToken>()))
+            .Setup(s => s.GetPlantingIntentionsAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(intentions);
 
         var result = await _controller.GetAll();

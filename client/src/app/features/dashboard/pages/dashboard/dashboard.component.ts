@@ -143,6 +143,9 @@ export class DashboardComponent {
   // Request-ID pattern for concurrent load handling
   private _loadRequestId = 0;
 
+  // Debounce flag — collapses burst signal updates (up to 5 on load) into one recalculation
+  private _recalcPending = false;
+
   // =========================================================================
   // Computed signals — cached derived data (replaces get accessors)
   // =========================================================================
@@ -371,7 +374,8 @@ export class DashboardComponent {
     const year = this.selectedPlantingYear();
     const cropFilter = this.selectedCropFilter();
     return this.contracts().filter(c => {
-      if (c.cropYear !== year) return false;
+      const contractYear = c.contractDate ? new Date(c.contractDate).getFullYear() : null;
+      if (contractYear !== year) return false;
       if (cropFilter) {
         const group = (c.commodityGroup || c.commodityDescription || c.commodityCode || '').toLowerCase();
         if (!group.includes(cropFilter.toLowerCase()) && cropFilter.toLowerCase() !== group) return false;
@@ -514,19 +518,27 @@ export class DashboardComponent {
       });
     });
 
-    // Recalculate metrics and yield rows whenever preloaded data or commodities change
-    // Guarded by _dataReady to avoid wasted cycles when commodities haven't loaded yet
+    // Recalculate metrics and yield rows whenever preloaded data or commodities change.
+    // Guarded by _dataReady to avoid wasted cycles when commodities haven't loaded yet.
+    // queueMicrotask debounce collapses burst signal arrivals into a single recalculation pass.
+    // Note: storedGrain is intentionally NOT tracked here — it's not used in either calculation
+    // and would cause an extra recalc when 100k+ stored grain records finish downloading.
     effect(() => {
       this.appStateService.customers();
       this.appStateService.contracts();
       this.appStateService.plantingIntentions();
-      this.appStateService.storedGrain();
       this.allCommodities();
       const ready = this._dataReady();
       untracked(() => {
         if (!ready) return;
-        this._calculateMetrics();
-        this._calculateYieldRows();
+        if (!this._recalcPending) {
+          this._recalcPending = true;
+          queueMicrotask(() => {
+            this._recalcPending = false;
+            this._calculateMetrics();
+            this._calculateYieldRows();
+          });
+        }
       });
     });
 
@@ -558,12 +570,19 @@ export class DashboardComponent {
   }
 
   reloadPlantingIntentions(): void {
+    // If appState already has planting intentions, skip re-fetching them — just refresh
+    // the 3 dashboard-specific APIs (estimates, shares, harvest) which are year-specific.
+    if (this.appStateService.plantingIntentions().length > 0) {
+      this._loadDashboardData();
+      return;
+    }
+
     const requestId = ++this._loadRequestId;
     const key = this.tradeUnitKey();
     const year = this.selectedPlantingYear();
     this._localLoading.set(true);
 
-    // Fire PI fetch and dashboard APIs in parallel instead of sequentially
+    // PI not yet loaded — fetch PI and dashboard APIs in parallel
     forkJoin({
       pi: this.apiService.getPlantingIntentions(this.selectedTradeUnits)
         .pipe(catchError(() => of([] as PlantingIntention[]))),
@@ -716,7 +735,7 @@ export class DashboardComponent {
   private _calculateMetrics(): void {
     this.totalAcres.set(this.customers().reduce((sum, c) => sum + c.totalAcres, 0));
     this.activeContracts.set(this.contracts().filter(c => c.status === 'Active').length);
-    this.totalContractValue.set(this.contracts().reduce((sum, c) => sum + c.quantity * c.price, 0));
+    this.totalContractValue.set(this.contracts().reduce((sum, c) => sum + (c.totalValue || 0), 0));
 
     this._calculateCropDistribution();
     this._calculateContractStatus();
@@ -815,18 +834,16 @@ export class DashboardComponent {
 
     // Use crop keys from planting intentions only
     const allCropCodes = new Set<string>(cropAcresMap.keys());
+    const yieldMap = this._yieldEstimateMap();
 
     this.yieldRows.set(
-      [...allCropCodes].sort().map(cropCode => {
-        const saved = this.savedYieldEstimates().find(e => e.crop === cropCode);
-        return {
-          cropCode,
-          cropName: cropCode,
-          category: cropCategoryMap.get(cropCode) || 'Unknown',
-          totalAcres: cropAcresMap.get(cropCode) || 0,
-          yieldEstimate: saved?.yieldEstimate ?? null
-        };
-      })
+      [...allCropCodes].sort().map(cropCode => ({
+        cropCode,
+        cropName: cropCode,
+        category: cropCategoryMap.get(cropCode) || 'Unknown',
+        totalAcres: cropAcresMap.get(cropCode) || 0,
+        yieldEstimate: yieldMap.get(cropCode) ?? null
+      }))
     );
 
     this._calculateCategoryRows();
@@ -1041,11 +1058,13 @@ export class DashboardComponent {
     'bg-indigo-100 dark:bg-indigo-800/35',
   ];
 
-  rowColorBg(category: string): string {
-    const idx = this.categoryRows().findIndex(r => r.category === category);
-    if (idx < 0) return 'transition-colors';
-    return `${DashboardComponent._CATEGORY_ROW_COLORS[idx % DashboardComponent._CATEGORY_ROW_COLORS.length]} transition-colors`;
-  }
+  readonly categoryColorMap = computed(() => {
+    const map = new Map<string, string>();
+    this.categoryRows().forEach((r, i) => {
+      map.set(r.category, `${DashboardComponent._CATEGORY_ROW_COLORS[i % DashboardComponent._CATEGORY_ROW_COLORS.length]} transition-colors`);
+    });
+    return map;
+  });
 
   // =========================================================================
   // Actual harvest CRUD

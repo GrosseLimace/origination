@@ -167,11 +167,11 @@ export class ApiService {
   // ==========================================================================
 
   /** Fetches planting intentions, optionally filtered by trade units */
-  getPlantingIntentions(tradeUnits?: string[]): Observable<PlantingIntention[]> {
-    const url = tradeUnits?.length
-      ? `${this.baseUrl}/plantingintentions?tradeUnits=${encodeURIComponent(tradeUnits.join(','))}`
-      : `${this.baseUrl}/plantingintentions`;
-    return this.http.get<PlantingIntention[]>(url)
+  getPlantingIntentions(tradeUnits?: string[], plantingYear?: number): Observable<PlantingIntention[]> {
+    let params = new HttpParams();
+    if (tradeUnits?.length) params = params.set('tradeUnits', tradeUnits.join(','));
+    if (plantingYear != null) params = params.set('plantingYear', plantingYear.toString());
+    return this.http.get<PlantingIntention[]>(`${this.baseUrl}/plantingintentions`, { params })
       .pipe(catchError(e => this.handleError(e)));
   }
 
@@ -336,8 +336,10 @@ export class ApiService {
   // ==========================================================================
 
   /** Fetches all stored grain records in the system */
-  getStoredGrain(): Observable<StoredGrain[]> {
-    return this.http.get<StoredGrain[]>(`${this.baseUrl}/storedgrain`)
+  getStoredGrain(tradeUnits?: string[]): Observable<StoredGrain[]> {
+    let params = new HttpParams();
+    if (tradeUnits?.length) params = params.set('tradeUnits', tradeUnits.join(','));
+    return this.http.get<StoredGrain[]>(`${this.baseUrl}/storedgrain`, { params })
       .pipe(catchError(e => this.handleError(e)));
   }
 
