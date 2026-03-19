@@ -1,6 +1,6 @@
 import { Injectable, inject, DestroyRef } from '@angular/core';
 import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { merge, of } from 'rxjs';
+import { Subject, merge, of } from 'rxjs';
 import { catchError, distinctUntilChanged, filter, switchMap, take, tap } from 'rxjs/operators';
 import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
@@ -14,13 +14,24 @@ export class DataPreloadService {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly _forceReload$ = new Subject<string[]>();
+
+  /** Re-run the full data load with the current trade units, cancelling any in-progress load. */
+  forceReload(): void {
+    const tradeUnits = this.appState.selectedTradeUnits();
+    if (tradeUnits.length === 0) return;
+    this._forceReload$.next(tradeUnits);
+  }
 
   constructor() {
     const msalBroadcast = inject(MsalBroadcastService);
     const msalService = inject(MsalService);
 
-    const tuChanges$ = toObservable(this.appState.selectedTradeUnits).pipe(
-      distinctUntilChanged((a, b) => [...a].sort().join(',') === [...b].sort().join(','))
+    const tuChanges$ = merge(
+      toObservable(this.appState.selectedTradeUnits).pipe(
+        distinctUntilChanged((a, b) => [...a].sort().join(',') === [...b].sort().join(','))
+      ),
+      this._forceReload$
     );
 
     msalBroadcast.inProgress$.pipe(
