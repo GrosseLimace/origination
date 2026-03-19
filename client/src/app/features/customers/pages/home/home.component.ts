@@ -589,7 +589,7 @@ export class HomeComponent {
       });
     }
 
-    this.apiService.getContractsByCustomer(customerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.apiService.getContractsByCustomer(customerId, sourceCustomerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (contracts) => {
         const existing = this.contracts();
         const merged = [...existing];
@@ -606,7 +606,7 @@ export class HomeComponent {
       error: () => { this.isLoadingContracts.set(false); }
     });
 
-    this.apiService.getTicketsByCustomer(customerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.apiService.getTicketsByCustomer(customerId, sourceCustomerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (tickets) => {
         const existing = this.tickets();
         const merged = [...existing];

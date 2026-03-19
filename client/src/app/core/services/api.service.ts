@@ -123,8 +123,9 @@ export class ApiService {
   }
 
   /** Fetches all contracts for a specific customer */
-  getContractsByCustomer(customerId: number): Observable<Contract[]> {
-    return this.http.get<Contract[]>(`${this.baseUrl}/contracts/customer/${customerId}`)
+  getContractsByCustomer(customerId: number, sourceCustomerId?: string): Observable<Contract[]> {
+    const params = sourceCustomerId ? new HttpParams().set('sourceCustomerId', sourceCustomerId) : undefined;
+    return this.http.get<Contract[]>(`${this.baseUrl}/contracts/customer/${customerId}`, { params })
       .pipe(catchError(e => this.handleError(e)));
   }
 
@@ -157,8 +158,9 @@ export class ApiService {
   }
 
   /** Fetches all delivery tickets for a specific customer */
-  getTicketsByCustomer(customerId: number): Observable<Ticket[]> {
-    return this.http.get<Ticket[]>(`${this.baseUrl}/tickets/customer/${customerId}`)
+  getTicketsByCustomer(customerId: number, sourceCustomerId?: string): Observable<Ticket[]> {
+    const params = sourceCustomerId ? new HttpParams().set('sourceCustomerId', sourceCustomerId) : undefined;
+    return this.http.get<Ticket[]>(`${this.baseUrl}/tickets/customer/${customerId}`, { params })
       .pipe(catchError(e => this.handleError(e)));
   }
 
