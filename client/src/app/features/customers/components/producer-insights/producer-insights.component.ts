@@ -96,7 +96,7 @@ export class ProducerInsightsComponent {
   }
 
   get totalInteractions(): number {
-    return this.notes().length + this.tickets().length;
+    return this.notes().length;
   }
 
   formatBu(bu: number): string {

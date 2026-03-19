@@ -923,11 +923,12 @@ public class SqlDataService : IDataService
                     .OrderByDescending(t => t.Date)
                     .ToListAsync(cancellationToken);
 
-                // Post-filter: keep tickets linked to a TU contract, or unlinked (spot/cash purchases
-                // with no contract number — no way to attribute them to a specific TU).
+                // Post-filter: keep all unapplied tickets (not linked to a purchase/sale contract —
+                // includes null/empty and non-P/S prefix tickets like unload 'U12345') plus applied
+                // tickets that belong to this TU's contracts. Prevents cross-TU leakage for shared
+                // customers while including all unapplied tickets regardless of prefix.
                 tickets = rawTickets
-                    .Where(t => string.IsNullOrEmpty(t.CtrmContractNumber)
-                             || tuContractNumbers.Contains(t.CtrmContractNumber))
+                    .Where(t => !t.IsApplied || tuContractNumbers.Contains(t.CtrmContractNumber!))
                     .ToList();
             }
 
