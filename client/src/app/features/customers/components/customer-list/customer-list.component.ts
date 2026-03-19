@@ -324,10 +324,18 @@ export class CustomerListComponent {
   private _rebuildLastContactCache(): void {
     const newCache = new Map<number, LastContactInfo>();
 
-    // Build sourceCustomerId → customerId map so we can resolve linked producer IDs
+    // Build sourceCustomerId → customerId map so we can resolve linked producer IDs.
+    // Seed from customers first, then augment from notes so linked producers that are
+    // outside the current trade unit (or not in the top-N loaded customers) are still
+    // resolved — otherwise their notes would be silently excluded.
     const sourceToId = new Map<string, number>();
     for (const c of [...this.customers(), ...this.filteredCustomers()]) {
       if (c.sourceCustomerId) sourceToId.set(c.sourceCustomerId, c.id);
+    }
+    for (const note of this.notes()) {
+      if (note.customerCode && !sourceToId.has(note.customerCode)) {
+        sourceToId.set(note.customerCode, note.customerId);
+      }
     }
 
     // Group notes by customer ID - single pass through notes O(m)
