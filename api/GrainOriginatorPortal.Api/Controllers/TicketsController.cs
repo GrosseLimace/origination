@@ -32,9 +32,9 @@ public class TicketsController : ControllerBase
     /// <summary>Gets all delivery tickets for a specific customer.</summary>
     [HttpGet("customer/{customerId:long}")]
     [ProducesResponseType(typeof(List<Ticket>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<Ticket>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<List<Ticket>>> GetByCustomer(long customerId, [FromQuery] string? sourceCustomerId = null, CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetTicketsByCustomerAsync(customerId, cancellationToken));
+        return Ok(await _dataService.GetTicketsByCustomerAsync(customerId, sourceCustomerId, cancellationToken));
     }
 
     // -------------------------------------------------------------------------

@@ -725,22 +725,26 @@ public class SqlDataService : IDataService
         return ContractStatus.Pending;
     }
 
-    public async Task<List<Contract>> GetContractsByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
+    public async Task<List<Contract>> GetContractsByCustomerAsync(long customerId, string? sourceCustomerId = null, CancellationToken cancellationToken = default)
     {
         try
         {
-            // Get the customer's SourceCustomerId for matching with contract.CtrmCustomerId
-            var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive, cancellationToken);
-            if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
+            // Use provided sourceCustomerId to skip the customer lookup round-trip when available.
+            if (string.IsNullOrEmpty(sourceCustomerId))
             {
-                _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
-                return new List<Contract>();
+                var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive, cancellationToken);
+                if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
+                {
+                    _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
+                    return new List<Contract>();
+                }
+                sourceCustomerId = customer.SourceCustomerId;
             }
 
-            // Match contracts using CtrmCustomerId = customer.SourceCustomerId (string matching)
+            // Match contracts using CtrmCustomerId = sourceCustomerId (string matching)
             var contracts = await _context.Contracts
                 .AsNoTracking()
-                .Where(c => c.IsActive && c.CtrmCustomerId == customer.SourceCustomerId)
+                .Where(c => c.IsActive && c.CtrmCustomerId == sourceCustomerId)
                 .OrderByDescending(c => c.Id)
                 .ToListAsync(cancellationToken);
 
@@ -753,7 +757,7 @@ public class SqlDataService : IDataService
             }
 
             _logger.LogInformation("Found {ContractCount} contracts for customer {CustomerId} (SourceCustomerId: {SourceCustomerId})",
-                contracts.Count, customerId, customer.SourceCustomerId);
+                contracts.Count, customerId, sourceCustomerId);
             return contracts;
         }
         catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
@@ -1006,22 +1010,26 @@ public class SqlDataService : IDataService
         }
     }
 
-    public async Task<List<Ticket>> GetTicketsByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
+    public async Task<List<Ticket>> GetTicketsByCustomerAsync(long customerId, string? sourceCustomerId = null, CancellationToken cancellationToken = default)
     {
         try
         {
-            // Get the customer's SourceCustomerId for matching with ticket.CustomerCode
-            var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive, cancellationToken);
-            if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
+            // Use provided sourceCustomerId to skip the customer lookup round-trip when available.
+            if (string.IsNullOrEmpty(sourceCustomerId))
             {
-                _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
-                return new List<Ticket>();
+                var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive, cancellationToken);
+                if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
+                {
+                    _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
+                    return new List<Ticket>();
+                }
+                sourceCustomerId = customer.SourceCustomerId;
             }
 
-            // Match tickets using CustomerCode = customer.SourceCustomerId (string matching, like contracts)
+            // Match tickets using CustomerCode = sourceCustomerId (string matching, like contracts)
             var tickets = await _context.Tickets
                 .AsNoTracking()
-                .Where(t => t.IsActive && t.CustomerCode == customer.SourceCustomerId)
+                .Where(t => t.IsActive && t.CustomerCode == sourceCustomerId)
                 .OrderByDescending(t => t.Date)
                 .ToListAsync(cancellationToken);
 
@@ -1046,7 +1054,7 @@ public class SqlDataService : IDataService
             }
 
             _logger.LogInformation("Found {TicketCount} tickets for customer {CustomerId} (SourceCustomerId: {SourceCustomerId})",
-                tickets.Count, customerId, customer.SourceCustomerId);
+                tickets.Count, customerId, sourceCustomerId);
             return tickets;
         }
         catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)

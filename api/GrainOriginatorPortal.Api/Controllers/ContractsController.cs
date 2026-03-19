@@ -34,9 +34,9 @@ public class ContractsController : ControllerBase
     /// <summary>Gets all contracts for a specific customer.</summary>
     [HttpGet("customer/{customerId:long}")]
     [ProducesResponseType(typeof(List<Contract>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<Contract>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<List<Contract>>> GetByCustomer(long customerId, [FromQuery] string? sourceCustomerId = null, CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetContractsByCustomerAsync(customerId, cancellationToken));
+        return Ok(await _dataService.GetContractsByCustomerAsync(customerId, sourceCustomerId, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
