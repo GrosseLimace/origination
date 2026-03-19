@@ -72,6 +72,9 @@ public class PlantingIntentionsController : ControllerBase
         var customerCode = snapshot?.SourceCustomerId ?? request.CustomerCode;
         var tradeUnit = snapshot?.TradeUnit ?? request.TradeUnit;
 
+        if (string.IsNullOrWhiteSpace(tradeUnit))
+            return BadRequest("Trade unit could not be determined for this customer. Please select a trade unit and try again.");
+
         var intention = await _dataService.AddPlantingIntentionAsync(
             request.CustomerId,
             customerName,

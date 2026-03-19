@@ -29,6 +29,7 @@ export class DashboardComponent {
   readonly customers = this.appStateService.customers;
   readonly contracts = this.appStateService.contracts;
   readonly plantingIntentions = this.appStateService.plantingIntentions;
+  private readonly _customerIdSet = computed(() => new Set(this.customers().map(c => c.id)));
   readonly storedGrain = computed(() => {
     const customerIds = new Set(this.appStateService.customers().map(c => c.id));
     return this.appStateService.storedGrain().filter(s => customerIds.has(s.customerId));
@@ -190,10 +191,10 @@ export class DashboardComponent {
   });
 
   readonly filteredIntentionsForYear = computed(() => {
-    const selectedTUs = this.selectedTradeUnits;
+    const customerIdSet = this._customerIdSet();
     return this.plantingIntentions().filter(p => {
       if (+p.plantingYear !== +this.selectedPlantingYear()) return false;
-      if (selectedTUs.length > 0 && !selectedTUs.includes(p.tradeUnit)) return false;
+      if (!customerIdSet.has(p.customerId)) return false;
       if (this.selectedCropFilter()) {
         const commodity = this._commodityByCode().get(p.crop);
         const category = commodity?.category || p.crop;
@@ -209,9 +210,9 @@ export class DashboardComponent {
 
   readonly acresTrend = computed(() => {
     const prevYear = this.selectedPlantingYear() - 1;
-    const selectedTUs = this.selectedTradeUnits;
+    const customerIdSet = this._customerIdSet();
     const prevAcres = this.plantingIntentions()
-      .filter(p => +p.plantingYear === prevYear && (selectedTUs.length === 0 || selectedTUs.includes(p.tradeUnit)))
+      .filter(p => +p.plantingYear === prevYear && customerIdSet.has(p.customerId))
       .reduce((sum, p) => sum + p.acres, 0);
     if (prevAcres === 0) return null;
     return ((this.totalAcresForYear() - prevAcres) / prevAcres) * 100;
@@ -254,11 +255,11 @@ export class DashboardComponent {
   );
 
   readonly availableCrops = computed(() => {
-    const selectedTUs = this.selectedTradeUnits;
+    const customerIdSet = this._customerIdSet();
     const crops = new Set<string>();
 
     for (const p of this.plantingIntentions()) {
-      if (selectedTUs.length > 0 && !selectedTUs.includes(p.tradeUnit)) continue;
+      if (!customerIdSet.has(p.customerId)) continue;
       const commodity = this._commodityByCode().get(p.crop);
       const category = commodity?.category || p.crop;
       if (category) crops.add(category);
@@ -808,10 +809,10 @@ export class DashboardComponent {
   }
 
   private _calculateYieldRows(): void {
-    const selectedTUs = this.selectedTradeUnits;
+    const customerIdSet = this._customerIdSet();
 
     const forGlobalTUs = this.plantingIntentions().filter(p =>
-      selectedTUs.length === 0 || selectedTUs.includes(p.tradeUnit)
+      customerIdSet.has(p.customerId)
     );
 
     // Available years
