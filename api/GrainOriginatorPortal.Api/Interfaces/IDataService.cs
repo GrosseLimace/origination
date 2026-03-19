@@ -344,14 +344,33 @@ public interface IDataService
     // Bid Sheet Operations
     // =========================================================================
 
+    /// <summary>Gets elevator locations, optionally filtered by trade unit.</summary>
     Task<List<ElevatorCache>> GetElevatorsAsync(string? tradeUnitCode = null, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets bid sheet entries for a trade unit, optionally filtered by crop year and commodity.</summary>
     Task<List<BidSheetEntry>> GetBidSheetEntriesAsync(string tradeUnitCode, int? cropYear = null, string? commodityCode = null, CancellationToken cancellationToken = default);
+
+    /// <summary>Creates a new bid sheet entry.</summary>
     Task<BidSheetEntry> CreateBidSheetEntryAsync(BidSheetEntry entry, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates an existing bid sheet entry. Returns null if not found.</summary>
     Task<BidSheetEntry?> UpdateBidSheetEntryAsync(int id, BidSheetEntry entry, CancellationToken cancellationToken = default);
+
+    /// <summary>Deletes a bid sheet entry by its identifier.</summary>
     Task DeleteBidSheetEntryAsync(int id, CancellationToken cancellationToken = default);
+
+    /// <summary>Bulk creates bid sheet entries, replacing any existing entries for the same trade unit and crop year.</summary>
     Task BulkCreateBidSheetEntriesAsync(List<BidSheetEntry> entries, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets the bid reference (basis/futures) for a user, trade unit, and commodity. Returns null if not set.</summary>
     Task<BidReference?> GetBidReferenceAsync(string userId, string tradeUnitCode, string commodityCode, CancellationToken cancellationToken = default);
+
+    /// <summary>Creates or updates the bid reference for a user, trade unit, and commodity.</summary>
     Task SetBidReferenceAsync(BidReference reference, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets the distinct crop years that have bid sheet entries for a trade unit.</summary>
     Task<List<int>> GetBidCropYearsAsync(string tradeUnitCode, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets the distinct commodity codes that have bid sheet entries for a trade unit.</summary>
     Task<List<string>> GetBidCommoditiesAsync(string tradeUnitCode, CancellationToken cancellationToken = default);
 }

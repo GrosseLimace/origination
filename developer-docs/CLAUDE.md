@@ -495,3 +495,41 @@ See `developer-docs/GITHUB-ACTIONS-CICD.md` for the full CI/CD guide.
 ---
 
 *Document version: 1.4 | 2026-03-16*
+
+---
+
+## Software Bill of Materials (SBOM)
+
+Last Updated: 2026-03-19
+
+### Backend Dependencies (C# / .NET 10)
+
+| Package | Version | License | Purpose |
+|---------|---------|---------|---------|
+| Azure.Extensions.AspNetCore.Configuration.Secrets | 1.5.0 | MIT | Azure Key Vault config provider |
+| Azure.Identity | 1.18.0 | MIT | Managed Identity / Key Vault authentication |
+| Microsoft.AspNetCore.OpenApi | 10.0.1 | MIT | Swagger / OpenAPI support |
+| Microsoft.Data.SqlClient | 6.1.4 | MIT | SQL Server driver |
+| Microsoft.EntityFrameworkCore.SqlServer | 10.0.1 | MIT | EF Core ORM for SQL Server |
+| Microsoft.EntityFrameworkCore.Design | 10.0.1 | MIT | EF Core design-time tools (dev only) |
+| Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore | 10.0.3 | MIT | EF Core health check endpoint |
+| Microsoft.Extensions.Http.Resilience | 10.3.0 | MIT | HTTP retry / resilience policies |
+| Microsoft.Identity.Web | 3.8.4 | MIT | Azure AD / JWT Bearer authentication |
+
+### Frontend Dependencies (Angular 21 / TypeScript)
+
+| Package | Version | License | Purpose |
+|---------|---------|---------|---------|
+| @angular/core | 21.2.1 | MIT | UI framework |
+| @angular/router | 21.2.1 | MIT | Client-side routing |
+| @angular/forms | 21.2.1 | MIT | Reactive forms |
+| @angular/animations | 21.2.1 | MIT | Animation support |
+| @azure/msal-angular | 5.1.1 | MIT | Azure AD authentication (Angular) |
+| @azure/msal-browser | 5.4.0 | MIT | MSAL browser runtime |
+| @it/design-system | 0.1.1 | Internal | Scoular IT design system components |
+| leaflet | 1.9.4 | BSD-2-Clause | Interactive map rendering |
+| leaflet.markercluster | ~1.5.3 | MIT | Leaflet marker clustering |
+| rxjs | 7.8.2 | Apache-2.0 | Reactive programming (Observables) |
+| tslib | 2.8.1 | 0BSD | TypeScript runtime helpers |
+| zone.js | 0.15.1 | MIT | Angular change detection zone |
+| tailwindcss | 4.2.1 | MIT | Utility-first CSS framework |
