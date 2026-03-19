@@ -44,7 +44,11 @@ public class NotesControllerTests
             new Note { Id = 1, CustomerId = 10, Description = "Test note", IsPinned = false },
             new Note { Id = 2, CustomerId = 10, Description = "Pinned note", IsPinned = true }
         };
+<<<<<<< HEAD
         _dataServiceMock.Setup(s => s.GetNotesAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(notes);
+=======
+        _dataServiceMock.Setup(s => s.GetNotesAsync(It.IsAny<IEnumerable<string>?>(), It.IsAny<CancellationToken>())).ReturnsAsync(notes);
+>>>>>>> github/main
 
         // Act
         var result = await _sut.GetAll();

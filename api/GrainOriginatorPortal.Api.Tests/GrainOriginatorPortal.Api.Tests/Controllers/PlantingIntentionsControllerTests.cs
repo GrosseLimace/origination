@@ -43,7 +43,11 @@ public class PlantingIntentionsControllerTests
         {
             new PlantingIntention { Id = 1, CustomerId = 10, Crop = "Corn", Acres = 200, PlantingYear = 2026 }
         };
+<<<<<<< HEAD
         _dataServiceMock.Setup(s => s.GetPlantingIntentionsAsync(It.IsAny<IEnumerable<string>>(), It.IsAny<int?>(), It.IsAny<CancellationToken>())).ReturnsAsync(intentions);
+=======
+        _dataServiceMock.Setup(s => s.GetPlantingIntentionsAsync(It.IsAny<IEnumerable<string>?>(), It.IsAny<CancellationToken>())).ReturnsAsync(intentions);
+>>>>>>> github/main
 
         // Act
         var result = await _sut.GetAll();
