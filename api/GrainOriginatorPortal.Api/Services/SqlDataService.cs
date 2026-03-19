@@ -725,20 +725,22 @@ public class SqlDataService : IDataService
         return ContractStatus.Pending;
     }
 
-    public async Task<List<Contract>> GetContractsByCustomerAsync(long customerId, string? sourceCustomerId = null, CancellationToken cancellationToken = default)
+    public async Task<List<Contract>> GetContractsByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
     {
         try
         {
-            // Use provided sourceCustomerId to skip the customer lookup round-trip when available.
+            // Resolve SourceCustomerId from CustomerSnapshots (app DB, small indexed table) —
+            // faster than querying the ODS Customers view.
+            var sourceCustomerId = await _appContext.CustomerSnapshots
+                .AsNoTracking()
+                .Where(c => c.CustomerId == customerId && c.IsActive && c.SourceCustomerId != null)
+                .Select(c => c.SourceCustomerId)
+                .FirstOrDefaultAsync(cancellationToken);
+
             if (string.IsNullOrEmpty(sourceCustomerId))
             {
-                var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive, cancellationToken);
-                if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
-                {
-                    _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
-                    return new List<Contract>();
-                }
-                sourceCustomerId = customer.SourceCustomerId;
+                _logger.LogWarning("Customer {CustomerId} not found in CustomerSnapshots or has no SourceCustomerId", customerId);
+                return new List<Contract>();
             }
 
             // Match contracts using CtrmCustomerId = sourceCustomerId (string matching)
@@ -1010,20 +1012,22 @@ public class SqlDataService : IDataService
         }
     }
 
-    public async Task<List<Ticket>> GetTicketsByCustomerAsync(long customerId, string? sourceCustomerId = null, CancellationToken cancellationToken = default)
+    public async Task<List<Ticket>> GetTicketsByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
     {
         try
         {
-            // Use provided sourceCustomerId to skip the customer lookup round-trip when available.
+            // Resolve SourceCustomerId from CustomerSnapshots (app DB, small indexed table) —
+            // faster than querying the ODS Customers view.
+            var sourceCustomerId = await _appContext.CustomerSnapshots
+                .AsNoTracking()
+                .Where(c => c.CustomerId == customerId && c.IsActive && c.SourceCustomerId != null)
+                .Select(c => c.SourceCustomerId)
+                .FirstOrDefaultAsync(cancellationToken);
+
             if (string.IsNullOrEmpty(sourceCustomerId))
             {
-                var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive, cancellationToken);
-                if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
-                {
-                    _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
-                    return new List<Ticket>();
-                }
-                sourceCustomerId = customer.SourceCustomerId;
+                _logger.LogWarning("Customer {CustomerId} not found in CustomerSnapshots or has no SourceCustomerId", customerId);
+                return new List<Ticket>();
             }
 
             // Match tickets using CustomerCode = sourceCustomerId (string matching, like contracts)

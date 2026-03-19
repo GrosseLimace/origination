@@ -340,12 +340,11 @@ export class CustomerListComponent {
         continue;
       }
 
-      // Find most recent note
-      const lastNote = customerNotes.reduce((latest, note) => {
-        return new Date(note.createdAt).getTime() > new Date(latest.createdAt).getTime() ? note : latest;
-      }, customerNotes[0]);
+      // Find most recent note — use modifiedAt when available (matches _sortNotes logic)
+      const noteTime = (n: Note) => new Date(n.modifiedAt || n.createdAt).getTime();
+      const lastNote = customerNotes.reduce((latest, note) => noteTime(note) > noteTime(latest) ? note : latest, customerNotes[0]);
 
-      const noteDate = new Date(lastNote.createdAt);
+      const noteDate = new Date(lastNote.modifiedAt || lastNote.createdAt);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       noteDate.setHours(0, 0, 0, 0);
