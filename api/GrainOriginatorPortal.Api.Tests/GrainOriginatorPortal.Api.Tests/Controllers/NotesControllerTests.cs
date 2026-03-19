@@ -7,6 +7,7 @@ using Moq;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Controllers;
+using GrainOriginatorPortal.Api.Data;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Interfaces;
 using GrainOriginatorPortal.Api.Models;
@@ -25,7 +26,7 @@ public class NotesControllerTests
     {
         _dataServiceMock = new Mock<IDataService>();
         _entitlementServiceMock = new Mock<IUserEntitlementService>();
-        _sut = new NotesController(_dataServiceMock.Object, new Mock<ILogger<NotesController>>().Object, _entitlementServiceMock.Object);
+        _sut = new NotesController(_dataServiceMock.Object, new Mock<ILogger<NotesController>>().Object, _entitlementServiceMock.Object, new Mock<ApplicationDbContext>().Object);
     }
 
     // -------------------------------------------------------------------------
@@ -38,7 +39,7 @@ public class NotesControllerTests
             new Note { Id = 1, CustomerId = 10, Description = "Test note", IsPinned = false },
             new Note { Id = 2, CustomerId = 10, Description = "Pinned note", IsPinned = true }
         };
-        _dataServiceMock.Setup(s => s.GetNotesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(notes);
+        _dataServiceMock.Setup(s => s.GetNotesAsync(It.IsAny<IEnumerable<string>?>(), It.IsAny<CancellationToken>())).ReturnsAsync(notes);
 
         // Act
         var result = await _sut.GetAll();

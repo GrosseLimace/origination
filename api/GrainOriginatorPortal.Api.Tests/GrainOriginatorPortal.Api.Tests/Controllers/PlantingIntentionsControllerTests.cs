@@ -7,6 +7,7 @@ using Moq;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Controllers;
+using GrainOriginatorPortal.Api.Data;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Interfaces;
 using GrainOriginatorPortal.Api.Models;
@@ -25,7 +26,7 @@ public class PlantingIntentionsControllerTests
     {
         _dataServiceMock = new Mock<IDataService>();
         _entitlementServiceMock = new Mock<IUserEntitlementService>();
-        _sut = new PlantingIntentionsController(_dataServiceMock.Object, new Mock<ILogger<PlantingIntentionsController>>().Object, _entitlementServiceMock.Object);
+        _sut = new PlantingIntentionsController(_dataServiceMock.Object, new Mock<ILogger<PlantingIntentionsController>>().Object, _entitlementServiceMock.Object, new Mock<ApplicationDbContext>().Object);
     }
 
     // -------------------------------------------------------------------------
@@ -37,7 +38,7 @@ public class PlantingIntentionsControllerTests
         {
             new PlantingIntention { Id = 1, CustomerId = 10, Crop = "Corn", Acres = 200, PlantingYear = 2026 }
         };
-        _dataServiceMock.Setup(s => s.GetPlantingIntentionsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(intentions);
+        _dataServiceMock.Setup(s => s.GetPlantingIntentionsAsync(It.IsAny<IEnumerable<string>?>(), It.IsAny<CancellationToken>())).ReturnsAsync(intentions);
 
         // Act
         var result = await _sut.GetAll();
