@@ -49,7 +49,8 @@ export class CustomerListComponent {
   filteredCustomers = signal<Customer[]>([]);
 
   // Performance optimization: Cache last contact info to avoid repeated filtering/sorting
-  lastContactCache = new Map<number, LastContactInfo>();
+  // Signal so the OnPush template re-renders automatically when the cache is rebuilt.
+  lastContactCache = signal(new Map<number, LastContactInfo>());
 
   constructor() {
     this._rebuildLastContactCache();
@@ -313,7 +314,7 @@ export class CustomerListComponent {
    * Previously: O(n * m) on EVERY change detection cycle
    */
   private _rebuildLastContactCache(): void {
-    this.lastContactCache.clear();
+    const newCache = new Map<number, LastContactInfo>();
 
     // Build sourceCustomerId → customerId map so we can resolve linked producer IDs
     const sourceToId = new Map<string, number>();
@@ -343,7 +344,7 @@ export class CustomerListComponent {
       const customerNotes = [customer.id, ...linkedIds].flatMap(id => notesByCustomer.get(id) || []);
 
       if (customerNotes.length === 0) {
-        this.lastContactCache.set(customer.id, {
+        newCache.set(customer.id, {
           text: 'Never contacted',
           daysAgo: -1,
           cssClass: 'text-red-500'
@@ -376,8 +377,11 @@ export class CustomerListComponent {
 
       const cssClass = this._getLastContactClass(daysAgo);
 
-      this.lastContactCache.set(customer.id, { text, daysAgo, cssClass });
+      newCache.set(customer.id, { text, daysAgo, cssClass });
     }
+
+    // Assign new Map reference so the signal notifies the OnPush template to re-render.
+    this.lastContactCache.set(newCache);
   }
 
   getCustomerItemClass(customer: Customer): string {
