@@ -897,22 +897,37 @@ public class SqlDataService : IDataService
             }
             else
             {
-                // Two-step approach: resolve customer codes via the contracts TradeUnit index (fast),
-                // then load tickets by CustomerCode. OrganizationCode on vw_CurrentTickets has no
-                // usable index and caused full-scan queries taking 80+ seconds.
-                var customerCodes = await _context.Contracts
+                // Two-step approach: resolve customer codes AND contract numbers via the contracts
+                // TradeUnit index (fast), then load tickets by CustomerCode. OrganizationCode on
+                // vw_CurrentTickets has no usable index and caused full-scan queries taking 80+ seconds.
+                // Contract numbers are retained so we can post-filter tickets to only those belonging
+                // to this trade unit's contracts — prevents cross-TU ticket leakage for shared customers.
+                var tuContracts = await _context.Contracts
                     .AsNoTracking()
                     .Where(c => c.IsActive && c.CtrmCustomerId != null
                         && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
-                    .Select(c => c.CtrmCustomerId!)
+                    .Select(c => new { c.CtrmCustomerId, c.SourceContractId })
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
-                tickets = await _context.Tickets
+                var customerCodes = tuContracts.Select(c => c.CtrmCustomerId!).Distinct().ToList();
+                var tuContractNumbers = tuContracts
+                    .Select(c => c.SourceContractId)
+                    .Where(n => n != null)
+                    .ToHashSet();
+
+                var rawTickets = await _context.Tickets
                     .AsNoTracking()
                     .Where(t => t.IsActive && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode))
                     .OrderByDescending(t => t.Date)
                     .ToListAsync(cancellationToken);
+
+                // Post-filter: keep tickets linked to a TU contract, or unlinked (spot/cash purchases
+                // with no contract number — no way to attribute them to a specific TU).
+                tickets = rawTickets
+                    .Where(t => string.IsNullOrEmpty(t.CtrmContractNumber)
+                             || tuContractNumbers.Contains(t.CtrmContractNumber))
+                    .ToList();
             }
 
             _logger.LogInformation("Loading tickets (filtered: {IsFiltered}, tradeUnitCount: {TradeUnitCount})",
