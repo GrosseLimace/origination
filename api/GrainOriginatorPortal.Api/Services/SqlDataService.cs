@@ -933,19 +933,12 @@ public class SqlDataService : IDataService
             _logger.LogInformation("Loading tickets (filtered: {IsFiltered}, tradeUnitCount: {TradeUnitCount})",
                 hasTradeUnitFilter, hasTradeUnitFilter ? tradeUnits!.Count : 0);
 
-            // Load quality data for these tickets — chunked at 1000 to stay under SQL Server's 2100-param limit
-            // Batches run in parallel for faster loading when multiple chunks exist.
-            var ticketIds = tickets.Select(t => t.Id).ToList();
-            var qualityTasks = ticketIds.Chunk(1000).Select(batch =>
-                _context.TicketQualities
-                    .AsNoTracking()
-                    .Where(q => batch.Contains(q.TicketId))
-                    .ToListAsync(cancellationToken)
-            ).ToList();
-            var qualityResults = await Task.WhenAll(qualityTasks);
-            var qualityList = qualityResults.SelectMany(r => r).ToList();
-
-            var qualityData = qualityList.ToDictionary(q => q.TicketId);
+            // Load quality data in a single query using a server-side join on ticket IDs
+            var ticketIds = tickets.Select(t => t.Id);
+            var qualityData = await _context.TicketQualities
+                .AsNoTracking()
+                .Where(q => ticketIds.Contains(q.TicketId))
+                .ToDictionaryAsync(q => q.TicketId, cancellationToken);
 
             // Populate moisture and quality data on tickets
             var ticketsWithProtein = 0;
@@ -960,8 +953,6 @@ public class SqlDataService : IDataService
 
                     if (ticket.ProteinPercent.HasValue)
                         ticketsWithProtein++;
-
-                    // GradeCode is already loaded from base.Ticket table
                 }
 
                 if ((ticket.ProductCode ?? "").ToLower().Contains("wheat"))
