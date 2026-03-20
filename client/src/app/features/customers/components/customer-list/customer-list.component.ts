@@ -386,10 +386,14 @@ export class CustomerListComponent {
 
       // Find the most recently CREATED note — createdAt only, not modifiedAt.
       // Pinning or editing a note updates modifiedAt but is not a new contact event.
-      const noteTime = (n: Note) => new Date(n.createdAt).getTime();
-      const lastNote = customerNotes.reduce((latest, note) => noteTime(note) > noteTime(latest) ? note : latest, customerNotes[0]);
+      // Treat bare ISO strings as UTC (API stores DateTime.UtcNow without Z suffix).
+      const parseUtc = (ts: string | Date) => {
+        const raw = typeof ts === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
+        return new Date(raw).getTime();
+      };
+      const lastNote = customerNotes.reduce((latest, note) => parseUtc(note.createdAt) > parseUtc(latest.createdAt) ? note : latest, customerNotes[0]);
 
-      const noteDate = new Date(lastNote.createdAt);
+      const noteDate = new Date(parseUtc(lastNote.createdAt));
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       noteDate.setHours(0, 0, 0, 0);
