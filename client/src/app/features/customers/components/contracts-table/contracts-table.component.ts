@@ -298,12 +298,13 @@ export class ContractsTableComponent {
     }
 
     // Fallback: use contract fields before lines are loaded
+    if (contract.price != null) return { status: 'CASH', cashPrice: contract.price };
+
     const pricedQty = contract.pricedQuantity ?? 0;
     const totalQty = contract.quantity ?? 0;
 
     if (pricedQty === 0) return { status: 'UNPRICED' };
     if (pricedQty < totalQty) return { status: 'PARTIAL' };
-    if (contract.price != null) return { status: 'CASH', cashPrice: contract.price };
     return { status: 'PRICED' };
   }
 
