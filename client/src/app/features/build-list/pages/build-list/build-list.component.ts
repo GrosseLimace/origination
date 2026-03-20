@@ -6,6 +6,7 @@ import { Router } from '@angular/router';
 import { forkJoin, of, catchError } from 'rxjs';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService, BuildListState } from '@core/services/app-state.service';
+import { DataPreloadService } from '@core/services/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, ProducerDetails, RefinementFilters } from '@models';
@@ -46,6 +47,7 @@ import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-select
 export class BuildListComponent {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
+  private readonly dataPreloadService = inject(DataPreloadService);
   private readonly toastService = inject(ToastService);
   private readonly nlqFilterService = inject(NlqFilterService);
   private readonly router = inject(Router);
@@ -59,20 +61,24 @@ export class BuildListComponent {
   private _allUserTradeUnits = signal<string[]>([]);
 
   // effect() runs in the injection context (class field initializer).
-  // The initial run fires during construction (initialized = false → skipped).
+  // The first run fires asynchronously (during the first CD cycle, after the constructor
+  // body completes). We skip that first run by checking _initialized — which is set to
+  // true only INSIDE the effect, so the first run always sees false and returns early.
   // Every subsequent run means TUs changed while the component is alive.
   private _tuEffect = effect(() => {
     this.appState.selectedTradeUnits(); // establish reactive dependency
-    if (this._initialized) {
-      untracked(() => {
-        this.clearQuery();
-        // Reset the load guard and reload data for the new trade units.
-        // Without this, _dataLoadStarted blocks reloading and the local
-        // signals stay stale (or loading stays true if initial load hasn't finished).
-        this._dataLoadStarted = false;
-        this._loadData();
-      });
+    if (!this._initialized) {
+      this._initialized = true;
+      return;
     }
+    untracked(() => {
+      this.clearQuery();
+      // Reset the load guard and reload data for the new trade units.
+      // Without this, _dataLoadStarted blocks reloading and the local
+      // signals stay stale (or loading stays true if initial load hasn't finished).
+      this._dataLoadStarted = false;
+      this._loadData();
+    });
   });
 
   customers = signal<Customer[]>([]);
@@ -276,7 +282,6 @@ export class BuildListComponent {
 
   constructor() {
     this._initTradeUnits = this.appState.selectedTradeUnits().slice();
-    this._initialized = true;
 
     // Load saved lists eagerly — they're user-scoped, not TU-dependent
     const cachedSavedLists = this.appState.savedLists();
@@ -333,7 +338,10 @@ export class BuildListComponent {
           showMap: this.showMap(),
           detectedState: this.detectedState(),
           queryUnrecognized: this.queryUnrecognized(),
-          tradeUnits: this._initTradeUnits
+          tradeUnits: this._initTradeUnits,
+          appliedRefinements: this.appliedRefinements(),
+          notContactedDaysInput: this.notContactedDaysInput(),
+          showRefinePanel: this.showRefinePanel()
         });
       }
     });
@@ -374,8 +382,19 @@ export class BuildListComponent {
         this._mergeProducerDetails(this.appState.producerDetails());
       }
 
+      // Pre-load tickets in the background if missing — survives navigation via DataPreloadService.
+      if (this.appState.tickets().length === 0) {
+        this.dataPreloadService.ensureTicketsLoaded(this.effectiveTradeUnits())
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe(() => this.tickets.set(this.appState.tickets()));
+      }
+
       this._restoreUIState();
       this.loading.set(false);
+      // If the user navigated away while a query was in-flight, auto-resume it.
+      if (this.queryText().trim() && !this.hasGenerated()) {
+        this.processQuery();
+      }
       return;
     }
 
@@ -411,6 +430,10 @@ export class BuildListComponent {
         this.appState.setCustomers(this.customers());
         this._restoreUIState();
         this.loading.set(false);
+        // If the user navigated away while a query was in-flight, auto-resume it.
+        if (this.queryText().trim() && !this.hasGenerated()) {
+          this.processQuery();
+        }
       },
       error: () => {
         this.loading.set(false);
@@ -478,6 +501,12 @@ export class BuildListComponent {
     this.showMap.set(saved.showMap);
     this.detectedState.set(saved.detectedState);
     this.queryUnrecognized.set(saved.queryUnrecognized);
+    if (saved.appliedRefinements) {
+      this.appliedRefinements.set(saved.appliedRefinements);
+      this.pendingRefinements.set(saved.appliedRefinements);
+    }
+    if (saved.notContactedDaysInput) this.notContactedDaysInput.set(saved.notContactedDaysInput);
+    if (saved.showRefinePanel) this.showRefinePanel.set(saved.showRefinePanel);
     if (saved.hasGenerated && saved.filteredCustomerIds.length > 0) {
       const idSet = new Set(saved.filteredCustomerIds);
       this.filteredCustomers.set(this.customers().filter(c => idSet.has(c.id)));
@@ -552,6 +581,18 @@ export class BuildListComponent {
         return;
       }
       this._fetchAndFilter(overrideTradeUnits);
+      return;
+    }
+
+    // If tickets haven't loaded yet, wait for the background pre-load (or start one if not running).
+    if (this.appState.tickets().length === 0) {
+      this.dataPreloadService.ensureTicketsLoaded(this.effectiveTradeUnits())
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(() => {
+          this._syncFromAppState();
+          this._applyNlqFilter();
+          this.isProcessing.set(false);
+        });
       return;
     }
 

@@ -59,6 +59,8 @@ public class Ticket
     // CtrmContractNumber is built from ODS BCPFXC (prefix) + BCNTNO (number).
     // This is more reliable than TicketType alone — a U-type ticket can legitimately be applied
     // to a contract, but the contract prefix is the authoritative indicator.
+    // [JsonInclude] required because System.Text.Json skips getter-only properties by default.
+    [System.Text.Json.Serialization.JsonInclude]
     public bool IsApplied =>
         CtrmContractNumber is { Length: > 0 } &&
         (CtrmContractNumber[0] == 'P' || CtrmContractNumber[0] == 'S');

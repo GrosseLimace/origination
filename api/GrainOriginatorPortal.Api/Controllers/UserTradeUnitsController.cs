@@ -69,9 +69,6 @@ public class UserTradeUnitsController : ControllerBase
             if (!_env.IsProduction())
             {
                 Response.Headers["X-Entitlements-Fallback"] = "true";
-                Response.Headers["X-Entitlements-Error"] = $"{ex.GetType().Name}: {ex.Message}";
-                if (ex.InnerException != null)
-                    Response.Headers["X-Entitlements-InnerError"] = ex.InnerException.Message;
             }
 
             return Ok(await GetFallbackTradeUnitsAsync());

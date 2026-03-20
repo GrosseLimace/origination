@@ -193,7 +193,7 @@
               @for (ticket of group.tickets; track ticket.id) {
                 <app-table-row>
                   <app-table-cell class="text-center">{{ ticket.ticketNumber }}</app-table-cell>
-                  <app-table-cell class="text-center">{{ ticket.date | date:'MMM d, yyyy' }}</app-table-cell>
+                  <app-table-cell class="text-center">{{ ticket.date | date:'M/d/yyyy' }}</app-table-cell>
                   <app-table-cell class="text-center">{{ ticket.productCode }}</app-table-cell>
                   <app-table-cell class="text-center">{{ toBushels(ticket.appliedDockQuantity, ticket.productCode) | number:'1.0-0' }}</app-table-cell>
                   <app-table-cell class="text-center">{{ ticket.moisture | number:'1.1-1' }}%</app-table-cell>
@@ -223,7 +223,7 @@
                 </app-table-cell>
                 <app-table-cell class="text-center">
                   @if (group.avgDate) {
-                    <span class="font-bold text-gray-800 dark:text-gray-100">{{ group.avgDate | date:'MMM d, yyyy' }}</span>
+                    <span class="font-bold text-gray-800 dark:text-gray-100">{{ group.avgDate | date:'M/d/yyyy' }}</span>
                   } @else {
                     <span class="font-bold text-gray-800 dark:text-gray-100">—</span>
                   }

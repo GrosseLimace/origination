@@ -161,6 +161,16 @@ export class CustomerListComponent {
       untracked(() => this.applyFilters());
     });
 
+    // Clear search when the trade unit or group selection changes so stale search
+    // results from the previous TU don't persist into the new view.
+    let _tuInitialized = false;
+    effect(() => {
+      this.appStateService.selectedTradeUnits();
+      this.appStateService.selectedGroupNames();
+      if (!_tuInitialized) { _tuInitialized = true; return; }
+      untracked(() => { if (this.searchQuery()) this.clearSearch(); });
+    });
+
     // React to selectedCustomer changes — scroll into view
     effect(() => {
       const selectedCustomer = this.selectedCustomer();
@@ -324,32 +334,46 @@ export class CustomerListComponent {
   private _rebuildLastContactCache(): void {
     const newCache = new Map<number, LastContactInfo>();
 
-    // Build sourceCustomerId → customerId map so we can resolve linked producer IDs
-    const sourceToId = new Map<string, number>();
-    for (const c of [...this.customers(), ...this.filteredCustomers()]) {
-      if (c.sourceCustomerId) sourceToId.set(c.sourceCustomerId, c.id);
-    }
-
-    // Group notes by customer ID - single pass through notes O(m)
-    const notesByCustomer = new Map<number, Note[]>();
+    // Group notes by customerCode (ODS source ID string) — more stable than customerId.
+    // Notes carry the ODS code of the customer they were written for, so this works even
+    // after linked-producer relationships are removed or for cross-TU producers whose
+    // customer record isn't in the current loaded set (no sourceToId resolution needed).
+    const notesByCode = new Map<string, Note[]>();
     for (const note of this.notes()) {
-      if (!notesByCustomer.has(note.customerId)) {
-        notesByCustomer.set(note.customerId, []);
-      }
-      notesByCustomer.get(note.customerId)!.push(note);
+      const key = note.customerCode;
+      if (!key) continue;
+      if (!notesByCode.has(key)) notesByCode.set(key, []);
+      notesByCode.get(key)!.push(note);
     }
 
     // Calculate last contact for each customer - single pass O(n)
     // Use filteredCustomers when available (covers API search results when no TU is selected
     // and customers() input is empty). Fall back to customers() for TU-filtered loads.
     const customersToCache = this.filteredCustomers().length > 0 ? this.filteredCustomers() : this.customers();
+
+    // Build incoming-links map: sourceCustomerId → Set of sourceCustomerIds that link TO it.
+    // linkedProducerIds entries are source ID strings, so no numeric ID resolution is needed.
+    // Mirrors the reverse-link lookup in home.component getLinkedGroup.
+    const incomingCodeLinks = new Map<string, Set<string>>();
+    for (const c of customersToCache) {
+      if (!c.sourceCustomerId) continue;
+      for (const linkedCode of (c.linkedProducerIds || [])) {
+        if (!incomingCodeLinks.has(linkedCode)) incomingCodeLinks.set(linkedCode, new Set());
+        incomingCodeLinks.get(linkedCode)!.add(c.sourceCustomerId);
+      }
+    }
+
     for (const customer of customersToCache) {
-      // Include notes from linked producers so the card matches the detail view
-      // (mirrors the linkedIds logic in home.component _loadCustomerData)
-      const linkedIds = (customer.linkedProducerIds || [])
-        .map(sourceId => sourceToId.get(sourceId))
-        .filter((id): id is number => id !== undefined);
-      const customerNotes = [customer.id, ...linkedIds].flatMap(id => notesByCustomer.get(id) || []);
+      // Collect all source codes to look up: this customer + outgoing links + incoming links.
+      // Using codes means cross-TU linked producers and formerly-linked producers whose
+      // notes carry their customerCode are all found without needing a numeric ID lookup.
+      const allCodes = new Set<string>();
+      if (customer.sourceCustomerId) allCodes.add(customer.sourceCustomerId);
+      for (const linkedCode of (customer.linkedProducerIds || [])) allCodes.add(linkedCode);
+      for (const incomingCode of (incomingCodeLinks.get(customer.sourceCustomerId || '') || new Set<string>())) {
+        allCodes.add(incomingCode);
+      }
+      const customerNotes = [...allCodes].flatMap(code => notesByCode.get(code) || []);
 
       if (customerNotes.length === 0) {
         newCache.set(customer.id, {
@@ -360,11 +384,12 @@ export class CustomerListComponent {
         continue;
       }
 
-      // Find most recent note — use modifiedAt when available (matches _sortNotes logic)
-      const noteTime = (n: Note) => new Date(n.modifiedAt || n.createdAt).getTime();
+      // Find the most recently CREATED note — createdAt only, not modifiedAt.
+      // Pinning or editing a note updates modifiedAt but is not a new contact event.
+      const noteTime = (n: Note) => new Date(n.createdAt).getTime();
       const lastNote = customerNotes.reduce((latest, note) => noteTime(note) > noteTime(latest) ? note : latest, customerNotes[0]);
 
-      const noteDate = new Date(lastNote.modifiedAt || lastNote.createdAt);
+      const noteDate = new Date(lastNote.createdAt);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       noteDate.setHours(0, 0, 0, 0);

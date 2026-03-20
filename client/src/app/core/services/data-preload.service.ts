@@ -1,6 +1,6 @@
 import { Injectable, inject, DestroyRef } from '@angular/core';
 import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { merge, of } from 'rxjs';
+import { Subject, merge, of, ReplaySubject } from 'rxjs';
 import { catchError, distinctUntilChanged, filter, switchMap, take, tap } from 'rxjs/operators';
 import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
@@ -14,13 +14,55 @@ export class DataPreloadService {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly _forceReload$ = new Subject<string[]>();
+
+  /** In-flight ticket pre-load — non-null while loading, survives component navigation. */
+  private _ticketPreload$: ReplaySubject<void> | null = null;
+
+  /**
+   * Ensures tickets are loaded into AppState. If already loaded, resolves immediately.
+   * If a load is already in flight (e.g. started before navigating away), subscribes to
+   * the existing one instead of starting a duplicate request.
+   */
+  ensureTicketsLoaded(tradeUnits: string[]): ReplaySubject<void> {
+    if (this.appState.tickets().length > 0) {
+      const done = new ReplaySubject<void>(1);
+      done.next();
+      done.complete();
+      return done;
+    }
+    if (this._ticketPreload$) return this._ticketPreload$;
+
+    this._ticketPreload$ = new ReplaySubject<void>(1);
+    const tuParam = tradeUnits.length > 0 ? tradeUnits : undefined;
+    this.apiService.getTickets(tuParam).pipe(
+      catchError(() => of([] as import('@models').Ticket[])),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe(tickets => {
+      this.appState.setTickets(tickets);
+      this._ticketPreload$!.next();
+      this._ticketPreload$!.complete();
+      this._ticketPreload$ = null;
+    });
+    return this._ticketPreload$;
+  }
+
+  /** Re-run the full data load with the current trade units, cancelling any in-progress load. */
+  forceReload(): void {
+    const tradeUnits = this.appState.selectedTradeUnits();
+    if (tradeUnits.length === 0) return;
+    this._forceReload$.next(tradeUnits);
+  }
 
   constructor() {
     const msalBroadcast = inject(MsalBroadcastService);
     const msalService = inject(MsalService);
 
-    const tuChanges$ = toObservable(this.appState.selectedTradeUnits).pipe(
-      distinctUntilChanged((a, b) => [...a].sort().join(',') === [...b].sort().join(','))
+    const tuChanges$ = merge(
+      toObservable(this.appState.selectedTradeUnits).pipe(
+        distinctUntilChanged((a, b) => [...a].sort().join(',') === [...b].sort().join(','))
+      ),
+      this._forceReload$
     );
 
     msalBroadcast.inProgress$.pipe(
@@ -36,6 +78,15 @@ export class DataPreloadService {
         this.appState.setDataLoading(true);
         this.appState.clearInsightsCache();
         this.appState.clearDashboardCache();
+
+        // Pre-wire _ticketPreload$ to this load cycle so ensureTicketsLoaded()
+        // callers share this load's result instead of spawning a duplicate HTTP call.
+        // A duplicate concurrent getTickets() against the same slow ODS view causes
+        // DB contention and race conditions (one call may return empty and overwrite
+        // good data from the other).
+        if (!this._ticketPreload$) {
+          this._ticketPreload$ = new ReplaySubject<void>(1);
+        }
 
         // Core group — each result streams into AppState as it arrives.
         // dataLoading clears when customers + contracts are ready (enough for
@@ -63,6 +114,12 @@ export class DataPreloadService {
           catchError(() => of([] as Ticket[])),
           tap(data => {
             this.appState.setTickets(data);
+            // Resolve any ensureTicketsLoaded() waiters — they share this load.
+            if (this._ticketPreload$) {
+              this._ticketPreload$.next();
+              this._ticketPreload$.complete();
+              this._ticketPreload$ = null;
+            }
           })
         );
         const notes$ = this.apiService.getNotes(tradeUnits).pipe(

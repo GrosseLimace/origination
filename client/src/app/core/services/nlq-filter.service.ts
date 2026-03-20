@@ -1888,8 +1888,26 @@ export class NlqFilterService {
         return isTop ? bVal - aVal : aVal - bVal;
       });
     } else {
-      // Default: sort by acreage
-      result = [...result].sort((a, b) => isTop ? b.totalAcres - a.totalAcres : a.totalAcres - b.totalAcres);
+      // Default: sort by acreage, falling back to contract volume then ticket volume
+      // when acres data hasn't been entered yet (all zero).
+      const contractTotals = new Map<string, number>();
+      for (const c of (contracts || [])) {
+        if (!c.ctrmCustomerId) continue;
+        contractTotals.set(c.ctrmCustomerId, (contractTotals.get(c.ctrmCustomerId) || 0) + (c.quantity || 0));
+      }
+      const ticketTotals = new Map<string, number>();
+      for (const t of (tickets || [])) {
+        if (!t.customerCode) continue;
+        ticketTotals.set(t.customerCode, (ticketTotals.get(t.customerCode) || 0) + (t.appliedDockQuantity || 0));
+      }
+      result = [...result].sort((a, b) => {
+        const acresDiff = (b.totalAcres || 0) - (a.totalAcres || 0);
+        if (acresDiff !== 0) return isTop ? acresDiff : -acresDiff;
+        const contractDiff = (contractTotals.get(b.sourceCustomerId!) || 0) - (contractTotals.get(a.sourceCustomerId!) || 0);
+        if (contractDiff !== 0) return isTop ? contractDiff : -contractDiff;
+        const ticketDiff = (ticketTotals.get(b.sourceCustomerId!) || 0) - (ticketTotals.get(a.sourceCustomerId!) || 0);
+        return isTop ? ticketDiff : -ticketDiff;
+      });
     }
 
     return result.slice(0, n);

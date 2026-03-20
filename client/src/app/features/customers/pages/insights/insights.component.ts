@@ -3,10 +3,9 @@ import { toObservable, toSignal, takeUntilDestroyed } from '@angular/core/rxjs-i
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { forkJoin, of } from 'rxjs';
-import { catchError, debounceTime } from 'rxjs/operators';
-import { ApiService } from '@core/services/api.service';
+import { debounceTime, filter, pairwise, take } from 'rxjs/operators';
 import { AppStateService } from '@core/services/app-state.service';
+import { DataPreloadService } from '@core/services/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { Customer, Contract, Ticket, Note } from '@models';
 import { CardComponent } from '@shared/components/card/card.component';
@@ -108,8 +107,8 @@ function computeSummary(items: Insight[], category: InsightCategory): string {
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class InsightsComponent {
-  private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
+  private readonly dataPreloadService = inject(DataPreloadService);
   private readonly toastService = inject(ToastService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
@@ -121,6 +120,7 @@ export class InsightsComponent {
   readonly notes = this.appState.notes;
   readonly isLoading = computed(() => this.appState.dataLoading());
   isBackgroundRefreshing = signal(false);
+  private readonly _dataLoading$ = toObservable(this.appState.dataLoading);
   loadedAt = signal<Date | null>(null);
 
   expandedCategories = signal(new Set<InsightCategory>());
@@ -404,27 +404,17 @@ export class InsightsComponent {
   }
 
   refresh(): void {
-    const tradeUnits = this.selectedTradeUnits;
-    if (tradeUnits.length === 0) return;
-    this.appState.setDataLoading(true);
-    forkJoin({
-      customers: this.apiService.getCustomers(tradeUnits).pipe(catchError(() => of([] as Customer[]))),
-      contracts: this.apiService.getContracts(tradeUnits).pipe(catchError(() => of([] as Contract[]))),
-      tickets: this.apiService.getTickets(tradeUnits).pipe(catchError(() => of([] as Ticket[]))),
-      notes: this.apiService.getNotes(tradeUnits).pipe(catchError(() => of([] as Note[])))
-    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (data) => {
-        this.appState.setCustomers(data.customers);
-        this.appState.setContracts(data.contracts);
-        this.appState.setTickets(data.tickets);
-        this.appState.setNotes(data.notes);
-        this.appState.setDataLoading(false);
-      },
-      error: () => {
-        this.appState.setDataLoading(false);
-        this.toastService.error('Failed to refresh insights data');
-      }
-    });
+    if (this.selectedTradeUnits.length === 0) return;
+    this.isBackgroundRefreshing.set(true);
+    this.dataPreloadService.forceReload();
+    // Clear spinner once dataLoading transitions true → false (core data arrived).
+    // pairwise() ignores the pre-existing false value before the reload starts.
+    this._dataLoading$.pipe(
+      pairwise(),
+      filter(([prev, curr]) => prev === true && curr === false),
+      take(1),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe(() => this.isBackgroundRefreshing.set(false));
   }
 
   // ── Category accordion ──────────────────────────────────────────────────────

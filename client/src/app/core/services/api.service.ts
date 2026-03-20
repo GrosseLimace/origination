@@ -382,7 +382,7 @@ export class ApiService {
     return this.http.get<any[]>(`${this.baseUrl}/savedlists`).pipe(
       map(lists => lists.map(l => ({
         ...l,
-        filters: l.filters ? JSON.parse(l.filters) as RefinementFilters : undefined
+        filters: l.filters ? (() => { try { return JSON.parse(l.filters) as RefinementFilters; } catch { return undefined; } })() : undefined
       }))),
       catchError(e => this.handleError(e))
     );

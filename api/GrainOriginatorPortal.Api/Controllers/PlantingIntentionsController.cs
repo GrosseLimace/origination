@@ -43,7 +43,7 @@ public class PlantingIntentionsController : ControllerBase
 
     // -------------------------------------------------------------------------
     /// <summary>Gets all planting intentions for a specific customer.</summary>
-    [HttpGet("customer/{customerId}")]
+    [HttpGet("customer/{customerId:int}")]
     [ProducesResponseType(typeof(List<PlantingIntention>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<List<PlantingIntention>>> GetByCustomer(int customerId, CancellationToken cancellationToken = default)

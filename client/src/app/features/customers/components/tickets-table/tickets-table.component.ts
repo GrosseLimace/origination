@@ -79,8 +79,8 @@ export class TicketsTableComponent {
     return this.tickets()
       .filter(t => !t.isApplied)
       .sort((a, b) => {
-        const da = a.date ? new Date(a.date).getTime() : 0;
-        const db = b.date ? new Date(b.date).getTime() : 0;
+        const da = this._parseTicketDate(a.date)?.getTime() ?? 0;
+        const db = this._parseTicketDate(b.date)?.getTime() ?? 0;
         return da - db; // oldest first
       });
   }
@@ -124,7 +124,7 @@ export class TicketsTableComponent {
       const validTestWeight = ticketsForAvg.filter(t => typeof t.testWeight === 'number' && t.testWeight > 0);
       const validProtein = ticketsForAvg.filter(t => typeof t.proteinPercent === 'number' && t.proteinPercent > 0);
       const validDateMs = ticketsForAvg
-        .map(t => t.date ? new Date(t.date).getTime() : null)
+        .map(t => this._parseTicketDate(t.date)?.getTime() ?? null)
         .filter((d): d is number => d !== null && !isNaN(d));
       const isWheat = this.isWheatCommodity(undefined, productCode);
 
@@ -165,7 +165,7 @@ export class TicketsTableComponent {
       let comparison = 0;
       switch (this.currentSortColumn) {
         case 'id': comparison = a.id - b.id; break;
-        case 'date': comparison = new Date(a.date).getTime() - new Date(b.date).getTime(); break;
+        case 'date': comparison = (this._parseTicketDate(a.date)?.getTime() ?? 0) - (this._parseTicketDate(b.date)?.getTime() ?? 0); break;
         case 'appliedDockQuantity': comparison = (a.appliedDockQuantity || 0) - (b.appliedDockQuantity || 0); break;
         case 'moisture': comparison = (a.moisture || 0) - (b.moisture || 0); break;
         case 'testWeight': comparison = (a.testWeight || 0) - (b.testWeight || 0); break;
@@ -176,11 +176,22 @@ export class TicketsTableComponent {
     return this.currentSortDirection === 'desc' ? sorted.reverse() : sorted;
   }
 
+  /** Parse a ticket date string into a local-time Date, avoiding the UTC-midnight
+   *  off-by-one bug: ISO date-only strings ("YYYY-MM-DD") are treated as UTC by
+   *  the JS spec, which shifts the calendar date backwards by one day in US timezones.
+   *  Appending T12:00:00 forces noon local time so the date is always preserved. */
+  private _parseTicketDate(dateStr: string | undefined): Date | null {
+    if (!dateStr) return null;
+    const s = /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? dateStr + 'T12:00:00' : dateStr;
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
   /** Format ticket date as "Oct 23, 2025" and "10/23/2025" for searchable text. */
   private _formatTicketDate(dateStr: string | undefined): string {
     if (!dateStr) return '';
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return '';
+    const d = this._parseTicketDate(dateStr);
+    if (!d) return '';
     const m = d.getMonth(), day = d.getDate(), year = d.getFullYear();
     const short = TicketsTableComponent._MONTHS_SHORT[m];
     const full = TicketsTableComponent._MONTHS[m];
@@ -229,8 +240,8 @@ export class TicketsTableComponent {
   private _matchesDate(dateStr: string | undefined, term: string): boolean {
     if (!dateStr) return false;
     if (dateStr.toLowerCase().includes(term)) return true;
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return false;
+    const d = this._parseTicketDate(dateStr);
+    if (!d) return false;
     const month = d.getMonth(), day = d.getDate(), year = d.getFullYear();
     // Month name match (full or abbreviated)
     if (TicketsTableComponent._MONTHS[month].startsWith(term) || TicketsTableComponent._MONTHS_SHORT[month] === term) return true;
@@ -316,7 +327,7 @@ export class TicketsTableComponent {
           comparison = a.id - b.id;
           break;
         case 'date':
-          comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
+          comparison = (this._parseTicketDate(a.date)?.getTime() ?? 0) - (this._parseTicketDate(b.date)?.getTime() ?? 0);
           break;
         case 'crop':
           comparison = (a.productCode || '').localeCompare(b.productCode || '');

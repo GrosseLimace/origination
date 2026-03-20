@@ -103,8 +103,7 @@
           </div>
 
           <!-- Slide-in bids panel (right edge) -->
-          <div class="absolute top-0 right-0 h-full w-[420px] z-[999] bg-white dark:bg-gray-900 shadow-2xl border-l border-gray-200 dark:border-gray-700 flex flex-col"
-               style="transition: transform 0.3s ease-in-out;"
+          <div class="absolute top-0 right-0 h-full w-[420px] z-[999] bg-white dark:bg-gray-900 shadow-2xl border-l border-gray-200 dark:border-gray-700 flex flex-col transition-transform duration-300 ease-in-out"
                [style.transform]="showPanel() ? 'translateX(0)' : 'translateX(100%)'">
 
             <!-- Panel Header -->
@@ -299,7 +298,7 @@
                       Add Crop
                     </button>
                   </div>
-                  @for (crop of newLocationCrops(); track $index) {
+                  @for (crop of newLocationCrops(); track crop.commodityCode) {
                     <div class="flex items-center gap-2 mb-2">
                       <div class="flex-1 relative">
                         @if (crop.commodityCode) {

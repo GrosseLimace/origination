@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject, signal, computed } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal, computed } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { forkJoin } from 'rxjs';
@@ -14,7 +14,8 @@ import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-select
   selector: 'app-position-report',
   standalone: true,
   imports: [CommonModule, CardComponent, BadgeComponent, TabsComponent, TabContentComponent, TradeUnitSelectorComponent],
-  templateUrl: './position-report.component.html'
+  templateUrl: './position-report.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class PositionReportComponent {
   private readonly positionService = inject(PositionService);

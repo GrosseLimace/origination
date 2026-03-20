@@ -1,6 +1,7 @@
 export const environment = {
   production: false,
   envName: 'Local',
+  bidSheetEnabled: true,
   apiBaseUrl: 'http://localhost:5000/api',
   msalConfig: {
     auth: {
