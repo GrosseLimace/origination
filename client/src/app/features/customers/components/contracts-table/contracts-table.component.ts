@@ -83,6 +83,7 @@ export class ContractsTableComponent {
       const deliveryStr = this._formatDeliveryPeriod(c.deliveryStart, c.deliveryEnd);
       return terms.some(term =>
         c.contractNumber.toLowerCase().includes(term) ||
+        (c.sourceContractId || '').toLowerCase().includes(term) ||
         (c.commodityDescription || '').toLowerCase().includes(term) ||
         (c.commodityCode || '').toLowerCase().includes(term) ||
         (c.commodityGroup || '').toLowerCase().includes(term) ||

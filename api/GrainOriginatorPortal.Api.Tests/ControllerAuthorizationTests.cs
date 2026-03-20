@@ -27,6 +27,9 @@ public class ControllerAuthorizationTests
         yield return new object[] { typeof(PlantingIntentionsController) };
         yield return new object[] { typeof(SavedListsController) };
         yield return new object[] { typeof(GeocodeController) };
+        yield return new object[] { typeof(BidSheetController) };
+        yield return new object[] { typeof(UserPreferencesController) };
+        yield return new object[] { typeof(UserTradeUnitsController) };
     }
 
     [Theory]
