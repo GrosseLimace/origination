@@ -448,8 +448,8 @@ export class ApiService {
   }
 
   /** Deletes a bid sheet entry */
-  deleteBidSheetEntry(id: number): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/bidsheet/entries/${id}`)
+  deleteBidSheetEntry(id: number, tradeUnitCode: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/bidsheet/entries/${id}?tradeUnitCode=${encodeURIComponent(tradeUnitCode)}`)
       .pipe(catchError(e => this.handleError(e)));
   }
 

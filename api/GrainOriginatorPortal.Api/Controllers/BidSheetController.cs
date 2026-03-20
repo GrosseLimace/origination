@@ -1,5 +1,6 @@
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Models.Requests;
+using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -11,11 +12,14 @@ public class BidSheetController : ControllerBase
 {
     private readonly IDataService _dataService;
     private readonly ILogger<BidSheetController> _logger;
+    private readonly IUserEntitlementService _entitlementService;
 
-    public BidSheetController(IDataService dataService, ILogger<BidSheetController> logger)
+    public BidSheetController(IDataService dataService, ILogger<BidSheetController> logger,
+        IUserEntitlementService entitlementService)
     {
         _dataService = dataService;
         _logger = logger;
+        _entitlementService = entitlementService;
     }
 
     private string CurrentUserId => User.FindFirst("preferred_username")?.Value
@@ -31,6 +35,8 @@ public class BidSheetController : ControllerBase
     [ProducesResponseType(typeof(List<ElevatorCache>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<ElevatorCache>>> GetElevators([FromQuery] string? tradeUnitCode = null, CancellationToken ct = default)
     {
+        if (!string.IsNullOrEmpty(tradeUnitCode))
+            await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
         return Ok(await _dataService.GetElevatorsAsync(tradeUnitCode, ct));
     }
 
@@ -47,6 +53,7 @@ public class BidSheetController : ControllerBase
         [FromQuery] string? commodityCode = null,
         CancellationToken ct = default)
     {
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
         return Ok(await _dataService.GetBidSheetEntriesAsync(tradeUnitCode, cropYear, commodityCode, ct));
     }
 
@@ -55,6 +62,7 @@ public class BidSheetController : ControllerBase
     [ProducesResponseType(typeof(BidSheetEntry), StatusCodes.Status201Created)]
     public async Task<ActionResult<BidSheetEntry>> CreateEntry([FromBody] CreateBidSheetEntryRequest request, CancellationToken ct = default)
     {
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync([request.TradeUnitCode], ct);
         var entry = new BidSheetEntry
         {
             Name = request.Name,
@@ -84,6 +92,7 @@ public class BidSheetController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<BidSheetEntry>> UpdateEntry(int id, [FromBody] CreateBidSheetEntryRequest request, CancellationToken ct = default)
     {
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync([request.TradeUnitCode], ct);
         var entry = new BidSheetEntry
         {
             Name = request.Name,
@@ -104,8 +113,9 @@ public class BidSheetController : ControllerBase
     /// <summary>Deletes a bid sheet entry.</summary>
     [HttpDelete("entries/{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> DeleteEntry(int id, CancellationToken ct = default)
+    public async Task<IActionResult> DeleteEntry(int id, [FromQuery] string tradeUnitCode, CancellationToken ct = default)
     {
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
         await _dataService.DeleteBidSheetEntryAsync(id, ct);
         return NoContent();
     }
@@ -117,6 +127,7 @@ public class BidSheetController : ControllerBase
     {
         if (requests.Count > 500)
             return BadRequest("Maximum 500 entries per bulk request.");
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync(requests.Select(r => r.TradeUnitCode).Distinct(), ct);
 
         var entries = requests.Select(r => new BidSheetEntry
         {
@@ -150,6 +161,7 @@ public class BidSheetController : ControllerBase
     [ProducesResponseType(typeof(List<int>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<int>>> GetCropYears([FromQuery] string tradeUnitCode, CancellationToken ct = default)
     {
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
         return Ok(await _dataService.GetBidCropYearsAsync(tradeUnitCode, ct));
     }
 
@@ -158,6 +170,7 @@ public class BidSheetController : ControllerBase
     [ProducesResponseType(typeof(List<string>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<string>>> GetBidCommodities([FromQuery] string tradeUnitCode, CancellationToken ct = default)
     {
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
         return Ok(await _dataService.GetBidCommoditiesAsync(tradeUnitCode, ct));
     }
 
@@ -174,6 +187,7 @@ public class BidSheetController : ControllerBase
         [FromQuery] string commodityCode,
         CancellationToken ct = default)
     {
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
         var reference = await _dataService.GetBidReferenceAsync(CurrentUserId, tradeUnitCode, commodityCode, ct);
         if (reference == null) return NotFound();
         return Ok(reference);
@@ -184,6 +198,7 @@ public class BidSheetController : ControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> SetReference([FromBody] SetBidReferenceRequest request, CancellationToken ct = default)
     {
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync([request.TradeUnitCode], ct);
         var reference = new BidReference
         {
             UserId = CurrentUserId,
