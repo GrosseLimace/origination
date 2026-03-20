@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 
 import { authGuard } from './guards/auth.guard';
+import { environment } from '../environments/environment';
 
 export const routes: Routes = [
   {
@@ -28,11 +29,13 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./features/position-report/pages/position-report/position-report.component').then(m => m.PositionReportComponent)
   },
-  {
-    path: 'bid-sheet',
-    canActivate: [authGuard],
-    loadComponent: () => import('./features/bid-sheet/pages/bid-sheet/bid-sheet.component').then(m => m.BidSheetComponent)
-  },
+  environment.bidSheetEnabled
+    ? {
+        path: 'bid-sheet',
+        canActivate: [authGuard],
+        loadComponent: () => import('./features/bid-sheet/pages/bid-sheet/bid-sheet.component').then(m => m.BidSheetComponent)
+      }
+    : { path: 'bid-sheet', redirectTo: '' },
   {
     path: 'unshipped-bushels',
     canActivate: [authGuard],

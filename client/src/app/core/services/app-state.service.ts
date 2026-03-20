@@ -1,5 +1,5 @@
 import { Injectable, signal, computed } from '@angular/core';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, Commodity, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, Commodity, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, RefinementFilters } from '@models';
 import { ProducerDetails } from '../../models/producer-details.model';
 
 export interface InsightsCacheEntry {
@@ -32,6 +32,9 @@ export interface BuildListState {
   detectedState: string | null;
   queryUnrecognized: boolean;
   tradeUnits: string[];
+  appliedRefinements?: RefinementFilters;
+  notContactedDaysInput?: string;
+  showRefinePanel?: boolean;
 }
 
 @Injectable({

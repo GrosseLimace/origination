@@ -20,7 +20,7 @@ public class BidSheetController : ControllerBase
 
     private string CurrentUserId => User.FindFirst("preferred_username")?.Value
         ?? User.FindFirst("name")?.Value
-        ?? "system";
+        ?? throw new InvalidOperationException("User identity claims are missing.");
 
     // -------------------------------------------------------------------------
     // Elevators (from dbo.ElevatorCache in Origination DB)

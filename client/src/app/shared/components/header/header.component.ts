@@ -1,5 +1,5 @@
 // Angular core
-import { Component, DestroyRef, HostListener, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, HostListener, inject, signal } from '@angular/core';
 
 // Angular common
 import { CommonModule } from '@angular/common';
@@ -34,7 +34,8 @@ import { environment } from '../../../../environments/environment';
   standalone: true,
   imports: [CommonModule, ButtonComponent],
   host: { class: 'block sticky top-0 z-50' },
-  templateUrl: './header.component.html'
+  templateUrl: './header.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class HeaderComponent {
   themeService = inject(ThemeService);

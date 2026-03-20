@@ -1,4 +1,4 @@
-import { Component, input, output, effect, signal, DestroyRef, inject, afterNextRender } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input, output, effect, signal, DestroyRef, inject, afterNextRender } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Customer } from '@models';
 import * as L from 'leaflet';
@@ -12,7 +12,8 @@ import * as L from 'leaflet';
   selector: 'app-customer-map',
   standalone: true,
   imports: [CommonModule],
-  templateUrl: './customer-map.component.html'
+  templateUrl: './customer-map.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class CustomerMapComponent {
   public customers = input<Customer[]>([]);

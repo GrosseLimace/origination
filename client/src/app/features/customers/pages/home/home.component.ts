@@ -422,15 +422,31 @@ export class HomeComponent {
     this.selectedCustomer.set(null);
     this.appState.selectCustomer(null);
     this._crossTradeUnitCustomers.set(new Map());
-    // Clear stale customer list immediately so the old unfiltered list doesn't show
-    // while the new filtered API call is in flight.
+    // Clear stale customer list and notes immediately so the old unfiltered list and
+    // wrong "last contacted" dates don't show while the new API calls are in flight.
     this.customers.set([]);
     this.appState.setCustomers([]);
+    this.notes.set([]);
+    this.appState.setNotes([]);
     // Reset loading flag so an explicit user selection is never blocked by a
     // background load that may still be in-flight.
     this._isLoading = false;
     if (tradeUnits && tradeUnits.length > 0) {
       this._loadAllData(tradeUnits);
+    } else {
+      // No TU selected (e.g. after Reset) — load all notes without a TU filter so
+      // customer list cards show correct "last contacted" dates in search results.
+      // Without this, notes stay stale from the previous TU until a customer is clicked.
+      this.apiService.getNotes().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: (data) => {
+          // Discard if the user selected a TU while this request was in-flight —
+          // _loadAllData will set the correct TU-filtered notes when it completes.
+          if (this.selectedTradeUnits().length > 0) return;
+          this.notes.set(data);
+          this.appState.setNotes(data);
+        },
+        error: () => {}
+      });
     }
   }
 

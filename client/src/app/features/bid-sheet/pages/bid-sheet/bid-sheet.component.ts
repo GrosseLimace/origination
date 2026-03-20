@@ -1,4 +1,4 @@
-import { Component, DestroyRef, effect, inject, signal, computed } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, signal, computed } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -15,7 +15,8 @@ import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-select
   selector: 'app-bid-sheet',
   standalone: true,
   imports: [CommonModule, FormsModule, TradeUnitSelectorComponent],
-  templateUrl: './bid-sheet.component.html'
+  templateUrl: './bid-sheet.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class BidSheetComponent {
   private readonly destroyRef = inject(DestroyRef);
