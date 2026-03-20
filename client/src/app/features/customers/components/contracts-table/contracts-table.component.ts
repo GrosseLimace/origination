@@ -283,19 +283,17 @@ export class ContractsTableComponent {
     if (lines !== undefined) {
       if (lines.length === 0) return { status: 'UNPRICED' };
 
-      // priceQuantity = quantity assigned a price on this pricing record.
-      // priceAppliedQuantity = deliveries made against it — unrelated to pricing status.
+      // Single line with a flat price — show the cash price regardless of quantity allocation
+      if (lines.length === 1 && lines[0].cashPrice != null) {
+        return { status: 'CASH', cashPrice: lines[0].cashPrice };
+      }
+
       const totalPricedQty = lines.reduce((sum, l) => sum + (l.priceQuantity ?? 0), 0);
-      // Always use the contract's total quantity as the denominator, not a single line's quantity.
       const contractQty = contract.quantity ?? 0;
 
       if (totalPricedQty === 0) return { status: 'UNPRICED' };
       if (totalPricedQty < contractQty) return { status: 'PARTIAL' };
       if (lines.length > 1) return { status: 'PRICED' };
-
-      // Single fully-priced line — show cash price
-      const cashPrice = lines[0].cashPrice;
-      if (cashPrice != null) return { status: 'CASH', cashPrice };
       return { status: 'PRICED' };
     }
 
