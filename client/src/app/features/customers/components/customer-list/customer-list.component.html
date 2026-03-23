@@ -6,7 +6,7 @@
           <!-- Title Row -->
           <div class="flex items-center justify-between">
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Customers</h3>
-            @if (searchQuery() || selectedListId() !== 'all' || selectedCustomer()) {
+            @if (searchInputValue || selectedListId() !== 'all' || selectedCustomer()) {
               <button
                 (click)="clearAll()"
                 type="button"
@@ -33,12 +33,12 @@
             </svg>
             <input
               type="text"
-              [ngModel]="searchQuery()"
-              (ngModelChange)="searchQuery.set($event); applyFilters()"
+              [(ngModel)]="searchInputValue"
+              (ngModelChange)="onSearchInput($event)"
               placeholder="Search customers..."
               class="w-full h-9 pl-10 pr-10 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-base text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green"
             />
-            @if (searchQuery()) {
+            @if (searchInputValue) {
               <button
                 (click)="clearSearch()"
                 type="button"
@@ -78,7 +78,7 @@
               <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green mb-4"></div>
               <p class="text-gray-500 dark:text-gray-400 font-medium">Loading customers...</p>
             </div>
-          } @else if (selectedTradeUnits.length === 0 && !searchQuery()) {
+          } @else if (selectedTradeUnits.length === 0 && !searchInputValue) {
             <div class="p-8 text-center text-gray-500">
               <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 opacity-50">
                 <path d="M3 3h18v18H3z"/>

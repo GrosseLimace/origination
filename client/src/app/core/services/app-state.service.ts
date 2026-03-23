@@ -1,5 +1,5 @@
 import { Injectable, signal, computed } from '@angular/core';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, Commodity, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, RefinementFilters } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, Commodity, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, RefinementFilters, ContractPricingLine } from '@models';
 import { ProducerDetails } from '../../models/producer-details.model';
 
 export interface InsightsCacheEntry {
@@ -99,6 +99,7 @@ export class AppStateService {
   savedLists = signal<SavedList[]>([]);
   commodities = signal<Commodity[]>([]);
   producerDetails = signal<ProducerDetails[]>([]);
+  pricingLines = signal<ContractPricingLine[]>([]);
 
   setView(view: 'customers' | 'insights' | 'buildlist' | 'dashboard'): void {
     this.currentView.set(view);
@@ -147,6 +148,10 @@ export class AppStateService {
 
   setStoredGrain(storedGrain: StoredGrain[]): void {
     this.storedGrain.set(storedGrain);
+  }
+
+  setPricingLines(lines: ContractPricingLine[]): void {
+    this.pricingLines.set(lines);
   }
 
   setSavedLists(savedLists: SavedList[]): void {

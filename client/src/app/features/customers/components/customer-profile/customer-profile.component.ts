@@ -76,6 +76,7 @@ export class CustomerProfileComponent {
   showESignRecipients = signal(false);
   showEditDialog = signal(false);
   selectedPlantingYear = signal(0); // 0 = auto (newest)
+  private _yearUserSelected = false; // true only when user explicitly clicks a year tab
 
   constructor() {
     effect(() => {
@@ -91,9 +92,11 @@ export class CustomerProfileComponent {
     });
 
     effect(() => {
-      // Reset eSign recipients panel when switching customers
+      // Reset eSign recipients panel and year selection when switching customers
       const _customer = this.customer();
       this.showESignRecipients.set(false);
+      this._yearUserSelected = false;
+      this.selectedPlantingYear.set(0);
     });
 
     effect(() => {
@@ -109,8 +112,10 @@ export class CustomerProfileComponent {
       }
       this._availablePlantingYears = [...yearSet].sort((a, b) => b - a);
 
-      // Default to newest year if none selected yet
-      const selected = this.selectedPlantingYear();
+      // Always pick newest when user hasn't manually chosen a year.
+      // Without this, contracts (2025) loading before planting intentions (2026) causes
+      // the year to lock on 2025 and never update when 2026 arrives.
+      const selected = this._yearUserSelected ? this.selectedPlantingYear() : 0;
       const year = (selected > 0 && yearSet.has(selected))
         ? selected
         : (this._availablePlantingYears[0] || 0);
@@ -186,7 +191,7 @@ export class CustomerProfileComponent {
         { id: 'contracts', label: 'Contracts', shortLabel: 'Cont', count: contracts.length },
         { id: 'tickets', label: 'Unapplied Tickets', shortLabel: 'Tick', count: this._unappliedTicketCount },
         { id: 'planting', label: 'Planting', shortLabel: 'Plan', count: this.plantingIntentions().length },
-        { id: 'storage', label: 'Storage', shortLabel: 'Stor', count: this.storedGrain().length }
+        { id: 'storage', label: 'Storage', shortLabel: 'Stor', count: new Set(this.storedGrain().map(g => g.crop || 'Unknown')).size }
       ];
     });
 
@@ -271,6 +276,7 @@ export class CustomerProfileComponent {
   }
 
   selectPlantingYear(year: number): void {
+    this._yearUserSelected = true;
     this.selectedPlantingYear.set(year);
   }
 

@@ -1,4 +1,4 @@
-import { Component, input, effect, signal } from '@angular/core';
+import { Component, input, effect, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
@@ -32,7 +32,15 @@ export class ContractsTableComponent {
 
   expandedRows = new Set<number>();
   expandedTicketSections = new Set<number>();
-  pricingLinesMap = new Map<string, ContractPricingLine[]>();
+  pricingLinesMap = computed(() => {
+    const map = new Map<string, ContractPricingLine[]>();
+    for (const line of this.pricingLines()) {
+      if (!line.contractId) continue;
+      if (!map.has(line.contractId)) map.set(line.contractId, []);
+      map.get(line.contractId)!.push(line);
+    }
+    return map;
+  });
   currentSortColumn = signal<SortColumn | null>(null);
   currentSortDirection = signal<SortDirection>('none');
   showSearch = signal(false);
@@ -49,23 +57,10 @@ export class ContractsTableComponent {
       this._deliveryStatsCache.clear();
       this._statusCache.clear();
       this.expandedRows.clear();
-      this.pricingLinesMap.clear();
       // Apply openContractId after clearing expandedRows so it always wins
       const openId = this.openContractId();
       if (openId != null) {
         this.expandedRows.add(openId);
-      }
-    });
-
-    effect(() => {
-      // React to pricingLines changing
-      const lines = this.pricingLines();
-      this.pricingLinesMap.clear();
-      for (const line of lines) {
-        if (!line.contractId) continue;
-        const key = line.contractId;
-        if (!this.pricingLinesMap.has(key)) this.pricingLinesMap.set(key, []);
-        this.pricingLinesMap.get(key)!.push(line);
       }
     });
   }
@@ -278,7 +273,7 @@ export class ContractsTableComponent {
 
   getPricingInfo(contract: Contract): { status: 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'CASH' | 'LOADING'; cashPrice?: number } {
     const key = contract.sourceContractId;
-    const lines = key ? this.pricingLinesMap.get(key) : undefined;
+    const lines = key ? this.pricingLinesMap().get(key) : undefined;
 
     if (lines !== undefined) {
       if (lines.length === 0) return { status: 'UNPRICED' };

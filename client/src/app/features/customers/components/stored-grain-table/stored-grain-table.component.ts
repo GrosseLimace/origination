@@ -1,20 +1,21 @@
-import { Component, input, effect, ChangeDetectionStrategy } from '@angular/core';
+import { Component, input, computed, signal, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { Customer, StoredGrain } from '@models';
 
-export interface ReceiptGroup {
-  receiptNumber: string;
-  rows: StoredGrain[];
-  totalQuantity: number;
+export interface CommodityGroup {
+  crop: string;
+  receipts: StoredGrain[];
+  totalBushels: number;
   totalCost: number;
-  storageStartDate: Date;
+  earliestDate: Date;
 }
 
 @Component({
   selector: 'app-stored-grain-table',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './stored-grain-table.component.html'
 })
 export class StoredGrainTableComponent {
@@ -22,69 +23,115 @@ export class StoredGrainTableComponent {
   public storedGrain = input<StoredGrain[]>([]);
   public customer = input.required<Customer>();
 
-  expandedReceipts = new Set<string>();
-  storageCostCache = new Map<string, { totalCost: number; monthsStored: number }>();
+  showSearch = signal(false);
+  searchQuery = signal('');
+  expandedCommodities = new Set<string>();
 
-  constructor() {
-    effect(() => {
-      const _grain = this.storedGrain();
-      this._rebuildCache();
-    });
-  }
-
-  private _rebuildCache(): void {
-    this.storageCostCache.clear();
+  private readonly costCache = computed(() => {
+    const cache = new Map<string, { totalCost: number; monthsStored: number }>();
     const now = new Date();
     for (const grain of this.storedGrain()) {
-      const startDate = new Date(grain.storageStartDate);
-      const monthsStored = (now.getFullYear() - startDate.getFullYear()) * 12
-                         + (now.getMonth() - startDate.getMonth())
+      const start = new Date(grain.storageStartDate);
+      const monthsStored = (now.getFullYear() - start.getFullYear()) * 12
+                         + (now.getMonth() - start.getMonth())
                          + (now.getDate() / 30);
-      const totalCost = monthsStored * grain.storageRate * grain.quantity;
-      this.storageCostCache.set(grain.id, { totalCost, monthsStored });
+      cache.set(grain.id, { totalCost: monthsStored * grain.storageRate * grain.quantity, monthsStored });
     }
-  }
+    return cache;
+  });
 
-  get totalStorageCost(): number {
-    let sum = 0;
-    for (const val of this.storageCostCache.values()) sum += val.totalCost;
-    return sum;
-  }
+  private readonly allCommodityGroups = computed<CommodityGroup[]>(() => {
+    const cache = this.costCache();
+    const groupMap = new Map<string, CommodityGroup>();
 
-  get receiptGroups(): ReceiptGroup[] {
-    const groupMap = new Map<string, ReceiptGroup>();
     for (const grain of this.storedGrain()) {
-      const key = grain.receiptNumber || grain.id.split('|')[0];
+      const key = grain.crop || 'Unknown';
       if (!groupMap.has(key)) {
         groupMap.set(key, {
-          receiptNumber: key,
-          rows: [],
-          totalQuantity: 0,
+          crop: key,
+          receipts: [],
+          totalBushels: 0,
           totalCost: 0,
-          storageStartDate: new Date(grain.storageStartDate)
+          earliestDate: new Date(grain.storageStartDate)
         });
       }
       const group = groupMap.get(key)!;
-      group.rows.push(grain);
-      group.totalQuantity += grain.quantity;
-      group.totalCost += this.storageCostCache.get(grain.id)?.totalCost ?? 0;
-      // Use the earliest start date as the group date
+      group.receipts.push(grain);
+      group.totalBushels += grain.quantity;
+      group.totalCost += cache.get(grain.id)?.totalCost ?? 0;
       const rowDate = new Date(grain.storageStartDate);
-      if (rowDate < group.storageStartDate) group.storageStartDate = rowDate;
+      if (rowDate < group.earliestDate) group.earliestDate = rowDate;
     }
-    return Array.from(groupMap.values())
-      .sort((a, b) => a.receiptNumber.localeCompare(b.receiptNumber));
+
+    return Array.from(groupMap.values()).sort((a, b) => a.crop.localeCompare(b.crop));
+  });
+
+  readonly commodityGroups = computed<CommodityGroup[]>(() => {
+    const term = this.searchQuery().trim().toLowerCase();
+    if (!term) return this.allCommodityGroups();
+
+    const result: CommodityGroup[] = [];
+    for (const group of this.allCommodityGroups()) {
+      // Commodity name matches
+      if (group.crop.toLowerCase().includes(term)) {
+        result.push(group);
+        continue;
+      }
+      // Filter to receipts matching ticket # or date
+      const matchedReceipts = group.receipts.filter(r =>
+        r.receiptNumber.toLowerCase().includes(term) ||
+        this._formatDate(r.storageStartDate).includes(term)
+      );
+      if (matchedReceipts.length > 0) {
+        const cache = this.costCache();
+        result.push({
+          ...group,
+          receipts: matchedReceipts,
+          totalBushels: matchedReceipts.reduce((s, r) => s + r.quantity, 0),
+          totalCost: matchedReceipts.reduce((s, r) => s + (cache.get(r.id)?.totalCost ?? 0), 0)
+        });
+      }
+    }
+    return result;
+  });
+
+  readonly totalStorageCost = computed(() =>
+    this.allCommodityGroups().reduce((sum, g) => sum + g.totalCost, 0)
+  );
+
+  private _formatDate(d: Date | string): string {
+    const date = new Date(d);
+    return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
   }
 
-  toggleReceipt(receiptNumber: string): void {
-    if (this.expandedReceipts.has(receiptNumber)) {
-      this.expandedReceipts.delete(receiptNumber);
+  getCost(grainId: string): number {
+    return this.costCache().get(grainId)?.totalCost ?? 0;
+  }
+
+  getMonths(grainId: string): number {
+    return this.costCache().get(grainId)?.monthsStored ?? 0;
+  }
+
+  clearSearch(): void {
+    this.searchQuery.set('');
+    this.showSearch.set(false);
+  }
+
+  toggleCommodity(crop: string, event: MouseEvent): void {
+    if (this.expandedCommodities.has(crop)) {
+      this.expandedCommodities.delete(crop);
     } else {
-      this.expandedReceipts.add(receiptNumber);
+      this.expandedCommodities.add(crop);
+      // Capture currentTarget synchronously — it becomes null after event dispatch completes
+      const header = event.currentTarget as HTMLElement;
+      setTimeout(() => {
+        const row = header.parentElement; // .border container
+        row?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 50);
     }
   }
 
-  isReceiptExpanded(receiptNumber: string): boolean {
-    return this.expandedReceipts.has(receiptNumber);
+  isExpanded(crop: string): boolean {
+    return this.expandedCommodities.has(crop);
   }
 }

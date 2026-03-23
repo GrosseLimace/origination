@@ -4,7 +4,8 @@ export interface StoredGrain {
   customerId: number;        // Numeric CustomerId from vw_CurrentCustomers JOIN
   customerCode: string;      // CTRM CUSTOMER_ID (same as SourceCustomerId)
   crop: string;
-  quantity: number;
+  quantity: number;       // NET_QUANTITY
+  grossQuantity: number;  // GROSS_QUANTITY
   storageStartDate: Date;
   storageRate: number;
   bin: string;

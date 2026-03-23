@@ -79,8 +79,8 @@ export class CustomerNotesComponent {
     this.sortedNotesCache.set([...this.notes()].sort((a, b) => {
       if (a.isPinned && !b.isPinned) return -1;
       if (!a.isPinned && b.isPinned) return 1;
-      const aTime = this._parseNoteTime(a.modifiedAt || a.createdAt);
-      const bTime = this._parseNoteTime(b.modifiedAt || b.createdAt);
+      const aTime = this._parseNoteTime(a.createdAt);
+      const bTime = this._parseNoteTime(b.createdAt);
       return bTime - aTime;
     }));
   }

@@ -89,9 +89,11 @@ export class HomeComponent {
     const raw = typeof lastNote.createdAt === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(lastNote.createdAt as any)
       ? (lastNote.createdAt as any) + 'Z' : lastNote.createdAt;
     const date = new Date(raw);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const days = Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
+    const todayMidnight = new Date();
+    todayMidnight.setHours(0, 0, 0, 0);
+    const noteMidnight = new Date(date);
+    noteMidnight.setHours(0, 0, 0, 0);
+    const days = Math.max(0, Math.round((todayMidnight.getTime() - noteMidnight.getTime()) / (1000 * 60 * 60 * 24)));
     if (days === 0) return 'Today';
     if (days === 1) return 'Yesterday';
     if (days < 7) return `${days} days ago`;
@@ -161,6 +163,7 @@ export class HomeComponent {
       const stateSelectedCustomer = this.appState.selectedCustomer();
       if (stateSelectedCustomer) {
         this.selectedCustomer.set(stateSelectedCustomer);
+        this.customerPricingLines.set(this.appState.pricingLines());
         this._loadCustomerData(stateSelectedCustomer.id);
       }
     }
@@ -603,9 +606,8 @@ export class HomeComponent {
 
   private _loadCustomerContractsAndTickets(customerId: number, sourceCustomerId?: string): void {
     if (sourceCustomerId) {
-      this.customerPricingLines.set([]);
       this.apiService.getPricingLinesByCustomer(sourceCustomerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-        next: (lines) => this.customerPricingLines.set(lines),
+        next: (lines) => { this.customerPricingLines.set(lines); this.appState.setPricingLines(lines); },
         error: () => this.customerPricingLines.set([])
       });
     }
