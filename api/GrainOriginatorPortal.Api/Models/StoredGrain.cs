@@ -13,7 +13,8 @@ public class StoredGrain
     public long CustomerId { get; set; }
     public string CustomerCode { get; set; } = string.Empty; // CTRM CUSTOMER_ID
     public string Crop { get; set; } = string.Empty;
-    public decimal Quantity { get; set; }
+    public decimal Quantity { get; set; }       // NET_QUANTITY
+    public decimal GrossQuantity { get; set; }  // GROSS_QUANTITY
     public DateTime StorageStartDate { get; set; }
     public decimal StorageRate { get; set; }
     public string Bin { get; set; } = string.Empty;

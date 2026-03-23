@@ -375,8 +375,7 @@ export class DashboardComponent {
     const year = this.selectedPlantingYear();
     const cropFilter = this.selectedCropFilter();
     return this.contracts().filter(c => {
-      const contractYear = c.contractDate ? new Date(c.contractDate).getFullYear() : null;
-      if (contractYear !== year) return false;
+      if (c.cropYear !== year) return false;
       if (cropFilter) {
         const group = (c.commodityGroup || c.commodityDescription || c.commodityCode || '').toLowerCase();
         if (!group.includes(cropFilter.toLowerCase()) && cropFilter.toLowerCase() !== group) return false;

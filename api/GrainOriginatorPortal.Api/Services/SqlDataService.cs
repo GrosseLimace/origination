@@ -1530,6 +1530,7 @@ public class SqlDataService : IDataService
             sg.CUSTOMER_ID AS CustomerCode,
             ISNULL(sg.COMMODITY_CODE, '') AS Crop,
             ISNULL(sg.NET_QUANTITY, 0) AS Quantity,
+            ISNULL(sg.GROSS_QUANTITY, 0) AS GrossQuantity,
             ISNULL(sg.INITIAL_STORAGE_DATE, '1900-01-01') AS StorageStartDate,
             ISNULL(sg.STORAGE_RATE, 0) AS StorageRate,
             ISNULL(sg.LOCATION_CODE, '') AS Bin

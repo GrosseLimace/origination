@@ -1,111 +1,152 @@
 
-    <div class="w-full space-y-4">
-      @if (isLoading()) {
-        <div class="text-center py-8 text-gray-500 dark:text-gray-400">
-          <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green"></div>
-          <p class="mt-3 text-sm">Loading storage...</p>
-        </div>
-      } @else if (storedGrain().length === 0) {
-        <div class="text-center py-8 text-gray-500 dark:text-gray-400">
-          <svg class="mx-auto h-12 w-12 text-gray-400 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+<div class="w-full">
+  @if (isLoading()) {
+    <div class="text-center py-8 text-gray-500 dark:text-gray-400">
+      <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green"></div>
+      <p class="mt-3 text-sm">Loading storage...</p>
+    </div>
+  } @else if (storedGrain().length === 0) {
+    <div class="text-center py-8 text-gray-500 dark:text-gray-400">
+      <svg class="mx-auto h-12 w-12 text-gray-400 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+      </svg>
+      <p class="mt-4">No grain currently in storage for this customer</p>
+    </div>
+  } @else {
+
+    <!-- Search toolbar -->
+    <div class="flex items-center border-b border-gray-100 dark:border-gray-800 px-3 py-1.5">
+      @if (showSearch()) {
+        <div class="flex items-center w-full gap-2">
+          <svg class="w-4 h-4 text-gray-500 dark:text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
           </svg>
-          <p class="mt-4">No grain currently in storage for this customer</p>
+          <input
+            type="text"
+            [ngModel]="searchQuery()"
+            (ngModelChange)="searchQuery.set($event)"
+            placeholder="Search by commodity, ticket #, or date..."
+            class="flex-1 py-1 text-sm bg-transparent focus:outline-none text-gray-900 dark:text-white placeholder-gray-400"
+          />
+          <button (click)="clearSearch()" title="Clear search" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
         </div>
       } @else {
-        <!-- Total Storage Cost Banner -->
-        <div class="mt-2 mb-4 p-4 rounded-lg bg-scoular-blue/5 dark:bg-scoular-blue/20 border border-scoular-blue/30 dark:border-scoular-blue-dark">
-          <p class="text-sm text-scoular-blue dark:text-scoular-blue">Total Accumulated Storage Costs</p>
-          <p class="text-2xl text-scoular-blue-medium dark:text-scoular-blue">{{ totalStorageCost | currency:'USD':'symbol':'1.2-2' }}</p>
-        </div>
-
-        <!-- Receipt Groups -->
-        <div class="max-h-[calc(100vh-14rem)] overflow-y-auto overflow-x-auto space-y-2">
-          @for (group of receiptGroups; track group.receiptNumber) {
-            <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-
-              <!-- Receipt Header Row (click to expand) -->
-              <div
-                class="flex items-center justify-between px-4 py-3 cursor-pointer select-none bg-gray-50 dark:bg-gray-800/60 hover:bg-gray-100 dark:hover:bg-gray-700/60 transition-colors"
-                (click)="toggleReceipt(group.receiptNumber)"
-              >
-                <div class="flex items-center gap-3 min-w-0">
-                  <svg class="h-4 w-4 text-gray-400 flex-shrink-0 transition-transform" [class.rotate-90]="isReceiptExpanded(group.receiptNumber)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 18 6-6-6-6"/>
-                  </svg>
-                  <div class="min-w-0">
-                    <p class="text-sm font-semibold text-gray-900 dark:text-white">Receipt #{{ group.receiptNumber }}</p>
-                    <p class="text-xs text-gray-500 dark:text-gray-400">
-                      {{ group.rows.length }} line{{ group.rows.length !== 1 ? 's' : '' }} &middot; In storage since {{ group.storageStartDate | date:'MMM d, yyyy' }}
-                    </p>
-                  </div>
-                </div>
-                <div class="flex items-center gap-4 flex-shrink-0">
-                  <div class="text-right">
-                    <p class="text-sm font-medium text-gray-900 dark:text-white">{{ group.totalQuantity | number }} bu</p>
-                    <p class="text-xs text-scoular-red-accessible dark:text-scoular-red">{{ group.totalCost | currency:'USD':'symbol':'1.2-2' }}</p>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Expanded Detail Rows -->
-              @if (isReceiptExpanded(group.receiptNumber)) {
-                <!-- Mobile -->
-                <div class="md:hidden divide-y divide-gray-100 dark:divide-gray-700/50">
-                  @for (grain of group.rows; track grain.id) {
-                    <div class="px-4 py-3 bg-white dark:bg-gray-800">
-                      <div class="flex items-center justify-between mb-2">
-                        <span class="font-medium text-sm text-gray-900 dark:text-white">{{ grain.crop }}</span>
-                        <span class="text-sm text-scoular-red-accessible dark:text-scoular-red font-medium">
-                          {{ storageCostCache.get(grain.id)?.totalCost | currency:'USD':'symbol':'1.2-2' }}
-                        </span>
-                      </div>
-                      <div class="grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
-                        <div><span class="font-medium">Bin:</span> {{ grain.bin || '—' }}</div>
-                        <div><span class="font-medium">Quantity:</span> {{ grain.quantity | number }} bu</div>
-                        <div><span class="font-medium">Rate:</span> ${{ grain.storageRate.toFixed(3) }}/bu/mo</div>
-                        <div><span class="font-medium">Time:</span> {{ (storageCostCache.get(grain.id)?.monthsStored ?? 0).toFixed(1) }} mo</div>
-                      </div>
-                    </div>
-                  }
-                </div>
-
-                <!-- Desktop Table -->
-                <div class="hidden md:block overflow-x-auto">
-                  <table class="w-full text-sm">
-                    <thead class="sticky top-0 z-10">
-                      <tr class="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Crop</th>
-                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Bin</th>
-                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Quantity (bu)</th>
-                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Storage Rate</th>
-                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Start Date</th>
-                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Time in Storage</th>
-                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Accumulated Cost</th>
-                      </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50 bg-white dark:bg-gray-800">
-                      @for (grain of group.rows; track grain.id) {
-                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                          <td class="px-4 py-2.5 font-medium text-gray-900 dark:text-white">{{ grain.crop }}</td>
-                          <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">{{ grain.bin || '—' }}</td>
-                          <td class="px-4 py-2.5 text-right text-gray-900 dark:text-white">{{ grain.quantity | number }}</td>
-                          <td class="px-4 py-2.5 text-right text-gray-600 dark:text-gray-400">${{ grain.storageRate.toFixed(3) }}/bu/mo</td>
-                          <td class="px-4 py-2.5 text-right text-gray-600 dark:text-gray-400">{{ grain.storageStartDate | date:'MMM d, yyyy' }}</td>
-                          <td class="px-4 py-2.5 text-right text-gray-600 dark:text-gray-400">{{ (storageCostCache.get(grain.id)?.monthsStored ?? 0).toFixed(1) }} mo</td>
-                          <td class="px-4 py-2.5 text-right font-medium text-scoular-red-accessible dark:text-scoular-red">
-                            {{ storageCostCache.get(grain.id)?.totalCost | currency:'USD':'symbol':'1.2-2' }}
-                          </td>
-                        </tr>
-                      }
-                    </tbody>
-                  </table>
-                </div>
-              }
-
-            </div>
-          }
-        </div>
-
+        <button (click)="showSearch.set(true)" title="Search storage" class="ml-auto p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+          </svg>
+        </button>
       }
     </div>
+
+    <!-- Commodity Groups -->
+    <div class="max-h-[calc(100vh-14rem)] overflow-y-auto space-y-2 pt-2 px-1">
+
+      @if (commodityGroups().length === 0) {
+        <p class="text-center py-6 text-sm text-gray-500 dark:text-gray-400">
+          No storage matches "<span class="font-medium text-gray-700 dark:text-gray-300">{{ searchQuery() }}</span>"
+        </p>
+      }
+
+      @for (group of commodityGroups(); track group.crop) {
+        <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+
+          <!-- Collapsed Header -->
+          <div
+            class="flex items-center justify-between px-4 py-3 cursor-pointer select-none bg-gray-50 dark:bg-gray-800/60 hover:bg-gray-100 dark:hover:bg-gray-700/60 transition-colors"
+            (click)="toggleCommodity(group.crop, $event)"
+          >
+            <div class="flex items-center gap-3 min-w-0">
+              <svg class="h-4 w-4 text-gray-400 flex-shrink-0 transition-transform duration-200" [class.rotate-90]="isExpanded(group.crop)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 18 6-6-6-6"/>
+              </svg>
+              <div class="min-w-0">
+                <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ group.crop }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                  {{ group.receipts.length }} ticket{{ group.receipts.length !== 1 ? 's' : '' }}
+                  &middot; Since {{ group.earliestDate | date:'M/d/yyyy' }}
+                </p>
+              </div>
+            </div>
+            <div class="flex items-center gap-4 flex-shrink-0">
+              <div class="w-24 text-right">
+                <p class="text-xs text-gray-500 dark:text-gray-400">Bushels</p>
+                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ group.totalBushels | number:'1.0-0' }} bu</p>
+              </div>
+              <div class="w-32 text-right">
+                <p class="text-xs text-gray-500 dark:text-gray-400">Accumulated Cost</p>
+                <p class="text-sm font-medium text-scoular-red-accessible dark:text-scoular-red">{{ group.totalCost | currency:'USD':'symbol':'1.2-2' }}</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Expanded: Individual Tickets -->
+          @if (isExpanded(group.crop)) {
+
+            <!-- Mobile -->
+            <div class="md:hidden divide-y divide-gray-100 dark:divide-gray-700/50">
+              @for (grain of group.receipts; track grain.id) {
+                <div class="px-4 py-3 bg-white dark:bg-gray-800">
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="font-medium text-sm text-gray-900 dark:text-white">Ticket #{{ grain.receiptNumber }}</span>
+                    <span class="text-sm font-medium text-scoular-red-accessible dark:text-scoular-red">
+                      {{ getCost(grain.id) | currency:'USD':'symbol':'1.2-2' }}
+                    </span>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
+                    <div><span class="font-medium">Bin:</span> {{ grain.bin || '—' }}</div>
+                    <div><span class="font-medium">Net Bu:</span> {{ grain.quantity | number }}</div>
+                    <div><span class="font-medium">Gross Bu:</span> {{ grain.grossQuantity | number }}</div>
+                    <div><span class="font-medium">Rate:</span> ${{ grain.storageRate.toFixed(3) }}/bu/mo</div>
+                    <div><span class="font-medium">Months:</span> {{ getMonths(grain.id).toFixed(1) }}</div>
+                    <div><span class="font-medium">Since:</span> {{ grain.storageStartDate | date:'M/d/yyyy' }}</div>
+                  </div>
+                </div>
+              }
+            </div>
+
+            <!-- Desktop Table -->
+            <div class="hidden md:block overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Ticket #</th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Bin</th>
+                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Net Bu</th>
+                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Gross Bu</th>
+                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Rate</th>
+                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">In Storage Since</th>
+                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Months</th>
+                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Accumulated Cost</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50 bg-white dark:bg-gray-800">
+                  @for (grain of group.receipts; track grain.id) {
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                      <td class="px-4 py-2.5 font-medium text-gray-900 dark:text-white">{{ grain.receiptNumber }}</td>
+                      <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">{{ grain.bin || '—' }}</td>
+                      <td class="px-4 py-2.5 text-right text-gray-900 dark:text-white">{{ grain.quantity | number }}</td>
+                      <td class="px-4 py-2.5 text-right text-gray-900 dark:text-white">{{ grain.grossQuantity | number }}</td>
+                      <td class="px-4 py-2.5 text-right text-gray-600 dark:text-gray-400">${{ grain.storageRate.toFixed(3) }}/bu/mo</td>
+                      <td class="px-4 py-2.5 text-right text-gray-600 dark:text-gray-400">{{ grain.storageStartDate | date:'M/d/yyyy' }}</td>
+                      <td class="px-4 py-2.5 text-right text-gray-600 dark:text-gray-400">{{ getMonths(grain.id).toFixed(1) }}</td>
+                      <td class="px-4 py-2.5 text-right font-medium text-scoular-red-accessible dark:text-scoular-red">
+                        {{ getCost(grain.id) | currency:'USD':'symbol':'1.2-2' }}
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+
+        </div>
+      }
+    </div>
+
+  }
+</div>

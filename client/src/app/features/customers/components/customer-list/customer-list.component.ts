@@ -1,4 +1,4 @@
-import { Component, input, output, effect, inject, untracked, ChangeDetectionStrategy, ViewChild, ElementRef, DestroyRef, afterNextRender, signal, computed } from '@angular/core';
+import { Component, input, output, effect, inject, untracked, ChangeDetectionStrategy, ChangeDetectorRef, ViewChild, ElementRef, DestroyRef, afterNextRender, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -42,9 +42,12 @@ export class CustomerListComponent {
   private readonly appStateService = inject(AppStateService);
   private readonly nlqFilterService = inject(NlqFilterService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly _cdr = inject(ChangeDetectorRef);
   private readonly _searchSubject$ = new Subject<string>();
 
-  searchQuery = signal('');
+  // Plain property for the search input — not a signal, so typing does not mark the
+  // component dirty and does not re-render the customer list on each keystroke.
+  searchInputValue = '';
   selectedListId = signal('all');
   filteredCustomers = signal<Customer[]>([]);
 
@@ -63,7 +66,7 @@ export class CustomerListComponent {
     this._rebuildLastContactCache();
 
     // Restore state from service
-    this.searchQuery.set(this.appStateService.searchQuery());
+    this.searchInputValue = this.appStateService.searchQuery();
     this.selectedListId.set(this.appStateService.selectedSavedListId() || 'all');
 
     // Re-run NLQ to populate customerIds for the restored list selection
@@ -168,7 +171,7 @@ export class CustomerListComponent {
       this.appStateService.selectedTradeUnits();
       this.appStateService.selectedGroupNames();
       if (!_tuInitialized) { _tuInitialized = true; return; }
-      untracked(() => { if (this.searchQuery()) this.clearSearch(); });
+      untracked(() => { if (this.searchInputValue) this.clearSearch(); });
     });
 
     // React to selectedCustomer changes — scroll into view
@@ -235,11 +238,21 @@ export class CustomerListComponent {
     container.scrollTo({ top: target, behavior });
   }
 
+  onSearchInput(value: string): void {
+    const wasNonEmpty = !!this.searchInputValue;
+    this.searchInputValue = value;
+    this.applyFilters();
+    // Only trigger CD when X / Reset button visibility changes (empty↔non-empty transition).
+    // During continuous typing (non-empty→non-empty) no CD fires — the customer list is
+    // not re-rendered until actual search results arrive via filteredCustomers signal.
+    if (!!value !== wasNonEmpty) this._cdr.markForCheck();
+  }
+
   applyFilters(): void {
-    const searchTerm = this.searchQuery().trim().toLowerCase();
+    const searchTerm = this.searchInputValue.trim().toLowerCase();
 
     // Save search query to state service
-    this.appStateService.setSearchQuery(this.searchQuery());
+    this.appStateService.setSearchQuery(this.searchInputValue);
 
     if (searchTerm) {
       // Use API search — scoped to selected TUs when explicitly chosen, global otherwise
@@ -308,13 +321,13 @@ export class CustomerListComponent {
   }
 
   clearSearch(): void {
-    this.searchQuery.set('');
+    this.searchInputValue = '';
     this.appStateService.setSearchQuery('');
     this.applyFilters();
   }
 
   clearAll(): void {
-    this.searchQuery.set('');
+    this.searchInputValue = '';
     this.appStateService.setSearchQuery('');
     this.selectedListId.set('all');
     this.appStateService.setSelectedSavedListId('all');

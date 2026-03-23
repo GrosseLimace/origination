@@ -7,7 +7,7 @@ import { debounceTime, filter, pairwise, take } from 'rxjs/operators';
 import { AppStateService } from '@core/services/app-state.service';
 import { DataPreloadService } from '@core/services/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
-import { Customer, Contract, Ticket, Note } from '@models';
+import { Customer, Contract, Ticket } from '@models';
 import { CardComponent } from '@shared/components/card/card.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
@@ -60,7 +60,7 @@ const CATEGORY_META: Record<InsightCategory, {
     searchPlaceholder: 'Search by customer, contract, or commodity...',
   },
   SpotLoads: {
-    title: 'Spot Loads — Delivered Today, No Contact',
+    title: 'Spot Loads — Delivered Today, No Contract',
     headerClass: 'bg-scoular-yellow/5 dark:bg-scoular-yellow/20 border-b border-scoular-yellow/20 dark:border-scoular-yellow',
     iconClass: 'text-scoular-yellow dark:text-scoular-yellow',
     titleClass: 'text-scoular-yellow dark:text-white',
@@ -117,7 +117,6 @@ export class InsightsComponent {
   readonly customers = this.appState.customers;
   readonly contracts = this.appState.contracts;
   readonly tickets = this.appState.tickets;
-  readonly notes = this.appState.notes;
   readonly isLoading = computed(() => this.appState.dataLoading());
   isBackgroundRefreshing = signal(false);
   private readonly _dataLoading$ = toObservable(this.appState.dataLoading);
@@ -147,22 +146,6 @@ export class InsightsComponent {
 
   // ── Derived state (computed signals) ──────────────────────────────────────
 
-  // Separate computed for "contacted today" — only re-parses dates when notes change,
-  // not when customers/contracts/tickets change.
-  private readonly _contactedTodaySet = computed(() => {
-    const now = new Date();
-    const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
-    const set = new Set<number>();
-    for (const n of this.notes()) {
-      try {
-        const d = new Date(n.createdAt);
-        const noteUtcDate = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-        if (noteUtcDate === todayStr) set.add(n.customerId);
-      } catch { /* skip malformed dates */ }
-    }
-    return set;
-  });
-
   // Generates all insights from source data. Evaluates exactly once per
   // change-detection cycle (lazy, glitch-free).
   readonly allInsights = computed(() => {
@@ -170,7 +153,6 @@ export class InsightsComponent {
     if (customers.length === 0) return [] as Insight[];
     const contracts = this.contracts();
     const tickets = this.tickets();
-    const contactedTodaySet = this._contactedTodaySet();
 
     const insights: Insight[] = [];
     const now = new Date();
@@ -223,13 +205,20 @@ export class InsightsComponent {
         }
       }
 
-      // --- 2. Spot Loads — Delivered Today, No Contact ---
-      const todayTickets = customerTickets.filter(t =>
-        t.date === todayStr && !t.isApplied
-      );
+      // --- 2. Spot Loads — Delivered Today, No Contract Coverage ---
+      // A spot load is a ticket delivered today where the customer has no active/pending
+      // contract whose delivery window (deliveryStart–deliveryEnd) covers today.
+      const todayTickets = customerTickets.filter(t => t.date === todayStr);
 
       if (todayTickets.length > 0) {
-        if (!contactedTodaySet.has(customer.id)) {
+        const hasContractForToday = customerContracts.some(c => {
+          if (c.status === 'Fulfilled' || c.status === 'Cancelled') return false;
+          const start = new Date(c.deliveryStart);
+          const end = new Date(c.deliveryEnd);
+          return start <= today && end >= today;
+        });
+
+        if (!hasContractForToday) {
           for (const ticket of todayTickets) {
             const bu = ticket.unloadQuantity ? Math.round(ticket.unloadQuantity) : null;
             insights.push({
@@ -242,7 +231,7 @@ export class InsightsComponent {
                 { label: `#${ticket.ticketNumber}`, style: 'default' },
                 ...(ticket.productCode ? [{ label: ticket.productCode, style: 'commodity' as InsightTagStyle }] : []),
                 ...(bu ? [{ label: `${bu.toLocaleString()} bu`, style: 'quantity' as InsightTagStyle }] : []),
-                { label: 'Unload', style: 'warning' },
+                { label: 'Spot', style: 'warning' },
               ],
               searchTerms: [ticket.ticketNumber, ticket.productCode].filter(Boolean) as string[]
             });
