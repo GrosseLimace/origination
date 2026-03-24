@@ -682,7 +682,7 @@
 
                 <!-- Modal footer -->
                 <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end rounded-b-2xl bg-gray-50 dark:bg-gray-800/50">
-                  <button (click)="showSeasonTargets.set(false)" class="scoular-btn scoular-btn-primary">Done</button>
+                  <button (click)="showSeasonTargets.set(false)" class="scoular-btn scoular-btn-primary" [disabled]="yieldEditMode() || marketShareEditMode() || harvestEditMode()" [title]="(yieldEditMode() || marketShareEditMode() || harvestEditMode()) ? 'Save or cancel your changes before closing' : ''">Done</button>
                 </div>
 
               </div>

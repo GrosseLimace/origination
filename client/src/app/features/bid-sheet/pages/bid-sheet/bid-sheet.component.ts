@@ -11,6 +11,16 @@ import { ToastService } from '@core/services/toast.service';
 import { BidSheetEntry, BidReference, Elevator, Commodity } from '@models';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 
+interface EditBidsRow {
+  name: string;
+  type: 'elevator' | 'entry';
+  elevatorCode?: string;
+  latitude?: number;
+  longitude?: number;
+  bids: Record<string, string>;
+  originalBids: Record<string, string>;
+}
+
 @Component({
   selector: 'app-bid-sheet',
   standalone: true,
@@ -61,6 +71,12 @@ export class BidSheetComponent {
   // --- Panel ---
   showPanel = signal<boolean>(false);
   filteredBidItems = signal<any[]>([]);
+
+  // --- Edit Bids ---
+  editBidsMode = signal(false);
+  editBidsYear = signal<number>(new Date().getFullYear());
+  editBidsRows = signal<EditBidsRow[]>([]);
+  editBidsSaving = signal(false);
 
   // --- Commodities lookup ---
   allCommodities = signal<Commodity[]>([]);
@@ -123,14 +139,32 @@ export class BidSheetComponent {
   private _map: any = null;
   private _clusterGroup: any = null;
   private _isMapInitialized = false;
-  private _lastTu = '';
+  private _lastTuSet = '';
 
   // Geocode cache removed — coordinates now come from API (dbo.ElevatorCoordinates)
 
-  // --- Active trade unit ---
+  // --- Active trade units (TU codes to display on map) ---
+  // Individual TU selections take precedence; group selection is the fallback when none are checked.
+  readonly activeTradeUnits = computed(() => {
+    const selectedUnits = this.appState.selectedTradeUnits();
+    if (selectedUnits.length > 0) return selectedUnits.map(c => c.trim());
+
+    const selectedGroups = this.appState.selectedGroupNames();
+    const allGroups = this.appState.userGroups();
+    const codes = new Set<string>();
+    for (const g of allGroups) {
+      if (selectedGroups.includes(g.groupName)) {
+        g.tradeUnitCodes.forEach(c => codes.add(c.trim()));
+      }
+    }
+    return [...codes];
+  });
+
+  // Primary TU for bid data — first individual selection, then first in group
   readonly activeTradeUnit = computed(() => {
     const units = this.appState.selectedTradeUnits();
-    return units.length > 0 ? units[0] : '';
+    if (units.length > 0) return units[0];
+    return this.activeTradeUnits()[0] ?? '';
   });
 
   constructor() {
@@ -141,12 +175,13 @@ export class BidSheetComponent {
       error: () => {}
     });
 
-    // React to trade unit changes — skip if same TU (prevents re-zoom on nav back)
+    // React to trade unit / group changes — skip if same set (prevents re-zoom on nav back)
     effect(() => {
-      const tu = this.activeTradeUnit();
-      if (tu === this._lastTu) return;
-      this._lastTu = tu;
-      this._onTradeUnitChanged(tu);
+      const tus = this.activeTradeUnits();
+      const key = [...tus].sort().join(',');
+      if (key === this._lastTuSet) return;
+      this._lastTuSet = key;
+      this._onTradeUnitsChanged(tus);
     });
 
     this._startRefreshTimer();
@@ -167,22 +202,25 @@ export class BidSheetComponent {
       next: (elevators) => {
         this.allElevators.set(elevators);
         this._refreshMapMarkers();
-        // If a TU is already selected (navigated from another page), load its data
-        const tu = this.activeTradeUnit();
-        if (tu) this._onTradeUnitChanged(tu);
+        // If TUs are already selected (navigated from another page), apply them now
+        const tus = this.activeTradeUnits();
+        if (tus.length > 0) this._onTradeUnitsChanged(tus);
       },
       error: () => this.toastService.error('Failed to load elevators')
     });
   }
 
-  private _onTradeUnitChanged(tradeUnitCode: string): void {
-    // Filter elevators to trade unit
-    if (tradeUnitCode) {
-      const tuElevators = this.allElevators().filter(e => (e.tradeUnitCode ?? '').trim() === tradeUnitCode);
+  private _onTradeUnitsChanged(tus: string[]): void {
+    if (tus.length > 0) {
+      // Filter all elevators to any of the active TU codes
+      const tuSet = new Set(tus);
+      const tuElevators = this.allElevators().filter(e => tuSet.has((e.tradeUnitCode ?? '').trim()));
       this.tradeUnitElevators.set(tuElevators);
-      this._loadBidData(tradeUnitCode);
+      // Load bid data for the primary TU
+      const primaryTu = this.activeTradeUnit();
+      if (primaryTu) this._loadBidData(primaryTu);
       this._zoomToTradeUnit(tuElevators);
-      this.filterBids();  // Show elevators immediately while bid data loads
+      this.filterBids();
       this._refreshMapMarkers();
     } else {
       this.tradeUnitElevators.set([]);
@@ -299,20 +337,22 @@ export class BidSheetComponent {
 
     let items: any[] = [];
 
-    // Always add trade unit elevators (regardless of crop selection)
+    // Add trade unit elevators owned by Scoular (OurFacility = 'Y') only
     for (const elev of this.tradeUnitElevators()) {
       const code = (elev.elevatorCode ?? '').trim();
       if (!code) continue;
+      if ((elev.ourFacility ?? '').trim() !== 'Y') continue;
       const name = ((elev.elevatorName ?? '') || (elev.elevatorShortName ?? '')).trim() || code;
       const isRef = code === refCode;
-      const isScoular = (elev.ourFacility ?? '').trim() === 'Y';
 
       items.push({
         type: 'elevator',
         elevatorCode: code,
         name,
-        isScoular,
+        isScoular: true,
         isRef,
+        latitude: elev.latitude ?? null,
+        longitude: elev.longitude ?? null,
         oldBid: '',
         newBid: '',
         status: isRef ? 'reference' : 'none'
@@ -327,12 +367,15 @@ export class BidSheetComponent {
     for (const name of uniqueNames) {
       const oldBid = getLatestBid(this.bidEntries(), name, oldYr, crop);
       const newBid = getLatestBid(this.bidEntries(), name, newYr, crop);
+      const entryWithCoords = this.bidEntries().find(e => e.name === name);
 
       items.push({
         type: 'entry',
         name,
         isScoular: false,
         isRef: false,
+        latitude: entryWithCoords?.latitude ?? null,
+        longitude: entryWithCoords?.longitude ?? null,
         oldBid,
         newBid,
         status: 'none'
@@ -457,6 +500,7 @@ export class BidSheetComponent {
         latitude: lat ?? undefined,
         longitude: lng ?? undefined,
         tradeUnitCode: tu,
+        groupName: this._getGroupNameForTu(tu) || undefined,
         commodityCode: crop.commodityCode.trim(),
         commodityName: commodity?.name,
         commodityCategory: commodity?.category ?? undefined,
@@ -481,6 +525,125 @@ export class BidSheetComponent {
   }
 
   cancelAddLocation(): void { this.exitAddLocationMode(); }
+
+  private _getGroupNameForTu(tuCode: string): string {
+    return this.appState.userGroups()
+      .find(g => g.tradeUnitCodes.some(c => c.trim() === tuCode.trim()))
+      ?.groupName ?? '';
+  }
+
+  // =========================================================================
+  // Edit Bids
+  // =========================================================================
+
+  openEditBids(): void {
+    const year = this.newYear() ?? this.selectedYear();
+    this.editBidsYear.set(year);
+    this._buildEditGrid(year);
+    this.editBidsMode.set(true);
+  }
+
+  private _buildEditGrid(year: number): void {
+    const entries = this.bidEntries().filter(e => e.cropYear === year);
+    const crops = this.crops();
+    const rows: EditBidsRow[] = [];
+
+    for (const elev of this.tradeUnitElevators()) {
+      if ((elev.ourFacility ?? '').trim() !== 'Y') continue;
+      const name = ((elev.elevatorName ?? '') || (elev.elevatorShortName ?? '')).trim() || (elev.elevatorCode ?? '').trim();
+      if (!name) continue;
+      const bids: Record<string, string> = {};
+      for (const crop of crops) {
+        const latest = entries
+          .filter(e => e.name === name && e.commodityCode === crop)
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+        bids[crop] = latest?.bid ?? '';
+      }
+      rows.push({ name, type: 'elevator', elevatorCode: (elev.elevatorCode ?? '').trim(), latitude: elev.latitude, longitude: elev.longitude, bids, originalBids: { ...bids } });
+    }
+
+    const elevNames = new Set(rows.map(r => r.name));
+    const customNames = [...new Set(this.bidEntries().map(e => e.name))].filter(n => !elevNames.has(n));
+    for (const name of customNames) {
+      const rep = this.bidEntries().find(e => e.name === name);
+      const bids: Record<string, string> = {};
+      for (const crop of crops) {
+        const latest = entries
+          .filter(e => e.name === name && e.commodityCode === crop)
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+        bids[crop] = latest?.bid ?? '';
+      }
+      rows.push({ name, type: 'entry', latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids } });
+    }
+
+    this.editBidsRows.set(rows);
+  }
+
+  onEditBidsYearChange(year: number): void {
+    this.editBidsYear.set(year);
+    this._buildEditGrid(year);
+  }
+
+  updateBid(rowIndex: number, crop: string, value: string): void {
+    this.editBidsRows.update(rows => {
+      const updated = [...rows];
+      updated[rowIndex] = { ...updated[rowIndex], bids: { ...updated[rowIndex].bids, [crop]: value } };
+      return updated;
+    });
+  }
+
+  saveEditBids(): void {
+    const year = this.editBidsYear();
+    const tu = this.activeTradeUnit();
+    const commodityLookup = new Map(this.allCommodities().map(c => [c.code, c]));
+    const toCreate: Partial<BidSheetEntry>[] = [];
+
+    for (const row of this.editBidsRows()) {
+      for (const crop of this.crops()) {
+        const current = (row.bids[crop] ?? '').trim();
+        const original = (row.originalBids[crop] ?? '').trim();
+        if (current !== original && current) {
+          const commodity = commodityLookup.get(crop);
+          toCreate.push({
+            name: row.name,
+            latitude: row.latitude,
+            longitude: row.longitude,
+            elevatorCode: row.elevatorCode,
+            tradeUnitCode: tu,
+            groupName: this._getGroupNameForTu(tu) || undefined,
+            commodityCode: crop,
+            commodityName: commodity?.name,
+            commodityCategory: commodity?.category ?? undefined,
+            cropYear: year,
+            bid: current
+          });
+        }
+      }
+    }
+
+    if (toCreate.length === 0) { this.editBidsMode.set(false); return; }
+
+    this.editBidsSaving.set(true);
+    this.apiService.bulkCreateBidSheetEntries(toCreate)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.editBidsSaving.set(false);
+          this.editBidsMode.set(false);
+          this.toastService.success(`Saved ${toCreate.length} bid update${toCreate.length !== 1 ? 's' : ''}`);
+          this._loadBidData(tu);
+        },
+        error: () => {
+          this.editBidsSaving.set(false);
+          this.toastService.error('Failed to save bids');
+        }
+      });
+  }
+
+  cancelEditBids(): void {
+    this.editBidsMode.set(false);
+    this.editBidsRows.set([]);
+  }
 
   private _removeAddLocationPin(): void {
     if (this._addLocationPin && this._map) {
@@ -544,6 +707,18 @@ export class BidSheetComponent {
   selectItemFromTable(item: any): void {
     // Could expand to show detail view later
     this.showPanel.set(true);
+  }
+
+  selectPanelItem(item: any): void {
+    if (item.type === 'elevator') {
+      this.toggleReferenceLocation(item.elevatorCode);
+    } else {
+      this.selectItemFromTable(item);
+    }
+    // Pan map to the selected location
+    if (this._map && item.latitude != null && item.longitude != null) {
+      this._map.flyTo([item.latitude, item.longitude], Math.max(this._map.getZoom(), 11));
+    }
   }
 
   togglePanel(): void { this.showPanel.set(!this.showPanel()); }
@@ -613,16 +788,22 @@ export class BidSheetComponent {
     if (!this._map || !this._clusterGroup) return;
     this._clusterGroup.clearLayers();
 
-    const tu = this.activeTradeUnit();
     const refCode = this.referenceElevatorCode();
-    const hasTu = !!tu;
+    const activeTus = this.activeTradeUnits();
+    const hasTu = activeTus.length > 0;
     const zoom = this._map.getZoom();
+
+    // Only render Scoular-owned elevators in the selected group/TUs; fall back to all Scoular when nothing selected
+    const scoularOnly = (e: Elevator) => (e.ourFacility ?? '').trim() === 'Y';
+    const elevsToRender = hasTu
+      ? this.tradeUnitElevators().filter(scoularOnly)
+      : this.allElevators().filter(scoularOnly);
 
     // Group elevators by location (round to ~100m precision)
     const locKey = (lat: number, lng: number) => `${lat.toFixed(3)},${lng.toFixed(3)}`;
     const elevsByLoc = new Map<string, Elevator[]>();
 
-    for (const elev of this.allElevators()) {
+    for (const elev of elevsToRender) {
       if (!elev.elevatorCode?.trim() || !elev.latitude || !elev.longitude) continue;
       const key = locKey(elev.latitude, elev.longitude);
       const arr = elevsByLoc.get(key) || [];
@@ -635,12 +816,8 @@ export class BidSheetComponent {
       const lat = first.latitude!;
       const lng = first.longitude!;
 
-      // Check if any in this group belong to the selected TU
-      const tuGroup = hasTu ? group.filter(e => (e.tradeUnitCode ?? '').trim() === tu) : [];
-      const hasTuElev = tuGroup.length > 0;
-
       if (!hasTu) {
-        // No TU selected — always green dot, cluster handles grouping
+        // No TU/group selected — show all elevators as green dots
         const count = group.length;
         const dotIcon = L.divIcon({
           className: 'custom-marker',
@@ -654,22 +831,8 @@ export class BidSheetComponent {
         continue;
       }
 
-      // TU is selected but no TU elevators at this location
-      if (!hasTuElev) {
-        const count = group.length;
-        const dotIcon = L.divIcon({
-          className: 'custom-marker',
-          html: zoom < 8
-            ? `<div style="width:20px;height:20px;background:#9ca3af;border:2px solid #6b7280;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.3);">${count}</div>`
-            : this._buildStackedLabel(this._getGroupedNames(group), '#9ca3af', '#6b7280'),
-          iconSize: zoom < 8 ? [20, 20] : [Math.max(80, ...this._getGroupedNames(group).map(n => n.length * 6 + 20)), this._getGroupedNames(group).length * 22 + 8],
-          iconAnchor: zoom < 8 ? [10, 10] : [Math.max(80, ...this._getGroupedNames(group).map(n => n.length * 6 + 20)) / 2, this._getGroupedNames(group).length * 22 + 8]
-        });
-        this._clusterGroup.addLayer(L.marker([lat, lng], { icon: dotIcon }));
-        continue;
-      }
-
-      // TU elevators at this location — stacked label marker
+      // All elevators in this group are from the selected TU(s) — render as labeled markers
+      const tuGroup = group;
       const names = this._getGroupedNames(tuGroup);
       const linesHtml = names.map(n => {
         const elev = tuGroup.find(e => ((e.elevatorName ?? '') || (e.elevatorShortName ?? '')).trim().startsWith(n.split('\n')[0]));
@@ -702,34 +865,41 @@ export class BidSheetComponent {
       this._clusterGroup.addLayer(marker);
     }
 
-    // Show competitor entries on map
+    // Show competitor entries on map — all entries with coordinates, one pin per location name
     if (hasTu) {
       const crop = this.selectedCrop();
       const year = this.selectedYear();
-      const competitorEntries = this.bidEntries().filter(e =>
-        e.commodityCode === crop && e.cropYear === year && e.latitude && e.longitude
-      );
 
-      const latestByName = new Map<string, BidSheetEntry>();
-      for (const entry of competitorEntries) {
-        const existing = latestByName.get(entry.name);
+      // Deduplicate by name using any entry that has coordinates
+      const repByName = new Map<string, BidSheetEntry>();
+      for (const entry of this.bidEntries()) {
+        if (!entry.latitude || !entry.longitude) continue;
+        const existing = repByName.get(entry.name);
         if (!existing || new Date(entry.createdAt) > new Date(existing.createdAt)) {
-          latestByName.set(entry.name, entry);
+          repByName.set(entry.name, entry);
         }
       }
 
-      for (const [, entry] of latestByName) {
+      for (const [name, rep] of repByName) {
+        // Use the bid for the currently selected crop/year as the label, else fall back to location name
+        const matched = crop
+          ? this.bidEntries()
+              .filter(e => e.name === name && e.commodityCode === crop && e.cropYear === year)
+              .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
+          : null;
+        const label = matched ? matched.bid : name.slice(0, 10);
+
         const divIcon = L.divIcon({
           className: 'custom-marker',
           html: `<div style="position:relative;width:58px;text-align:center;">
-            <div style="background:#d1d5db;border:2px solid #6b7280;border-radius:6px;padding:4px 3px;font-size:10px;font-weight:700;color:#fff;white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,0.3);line-height:1.1;">${this._esc(entry.bid)}</div>
+            <div style="background:#d1d5db;border:2px solid #6b7280;border-radius:6px;padding:4px 3px;font-size:10px;font-weight:700;color:#fff;white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,0.3);line-height:1.1;">${this._esc(label)}</div>
             <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid #d1d5db;margin:-1px auto 0;"></div>
           </div>`,
           iconSize: [58, 36],
           iconAnchor: [29, 36],
           popupAnchor: [0, -36]
         });
-        this._clusterGroup.addLayer(L.marker([entry.latitude!, entry.longitude!], { icon: divIcon }));
+        this._clusterGroup.addLayer(L.marker([rep.latitude!, rep.longitude!], { icon: divIcon }));
       }
     }
   }

@@ -50,6 +50,9 @@ export class CustomerListComponent {
   searchInputValue = '';
   selectedListId = signal('all');
   filteredCustomers = signal<Customer[]>([]);
+  readonly hasTradeUnitSelection = computed(() =>
+    this.appStateService.selectedTradeUnits().length > 0 || this.appStateService.selectedGroupNames().length > 0
+  );
 
   // Performance optimization: Cache last contact info to avoid repeated filtering/sorting
   // Signal so the OnPush template re-renders automatically when the cache is rebuilt.

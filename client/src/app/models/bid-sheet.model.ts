@@ -8,6 +8,7 @@ export interface BidSheetEntry {
   longitude?: number;
   elevatorCode?: string;
   tradeUnitCode: string;
+  groupName?: string;
   commodityCode: string;
   commodityName?: string;
   commodityCategory?: string;

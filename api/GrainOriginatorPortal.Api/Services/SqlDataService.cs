@@ -1522,7 +1522,30 @@ public class SqlDataService : IDataService
     // Storage Operations — ctrm.vw_GNTA39D1 joined with originations.vw_CurrentCustomers
     // =========================================================================
 
+    // Each night run inserts a new copy of every receipt into vw_GNTA39D1.
+    // Each receipt also has two rows per run: STATUS='F' (free days) and STATUS='S' (paid storage).
+    // The CTE deduplicates to exactly one row per receipt+location by taking the STATUS='S' row
+    // from the most recent REPORT_RUN_STAMP, eliminating both cross-run and F/S duplicates.
+    // Callers append "AND ..." (not "WHERE ...") since the base query already has WHERE rn = 1.
     private const string StoredGrainSql = """
+        WITH LatestReceipts AS (
+            SELECT
+                WHR_RECEIPT_NUMBER,
+                LOCATION_CODE,
+                CUSTOMER_ID,
+                COMMODITY_CODE,
+                NET_QUANTITY,
+                GROSS_QUANTITY,
+                INITIAL_STORAGE_DATE,
+                STORAGE_RATE,
+                ROW_NUMBER() OVER (
+                    PARTITION BY WHR_RECEIPT_NUMBER, LOCATION_CODE
+                    ORDER BY REPORT_RUN_STAMP DESC,
+                             CASE WHEN STATUS = 'S' THEN 0 ELSE 1 END
+                ) AS rn
+            FROM ctrm.vw_GNTA39D1
+            WHERE STATUS IN ('S', 'F')
+        )
         SELECT
             CAST(sg.WHR_RECEIPT_NUMBER AS varchar(50)) + '|' + ISNULL(sg.LOCATION_CODE, '') AS Id,
             CAST(sg.WHR_RECEIPT_NUMBER AS varchar(50)) AS ReceiptNumber,
@@ -1534,8 +1557,9 @@ public class SqlDataService : IDataService
             ISNULL(sg.INITIAL_STORAGE_DATE, '1900-01-01') AS StorageStartDate,
             ISNULL(sg.STORAGE_RATE, 0) AS StorageRate,
             ISNULL(sg.LOCATION_CODE, '') AS Bin
-        FROM ctrm.vw_GNTA39D1 sg
+        FROM LatestReceipts sg
         INNER JOIN originations.vw_CurrentCustomers c ON sg.CUSTOMER_ID = c.SourceCustomerId
+        WHERE sg.rn = 1
         """;
 
     public async Task<List<StoredGrain>> GetStoredGrainAsync(IEnumerable<string>? tradeUnits = null, CancellationToken cancellationToken = default)
@@ -1546,7 +1570,7 @@ public class SqlDataService : IDataService
             if (tuList is { Count: > 0 })
             {
                 var paramNames = tuList.Select((_, i) => $"@tu{i}").ToArray();
-                var sql = StoredGrainSql + $" WHERE c.TradeUnit IN ({string.Join(", ", paramNames)})";
+                var sql = StoredGrainSql + $" AND c.TradeUnit IN ({string.Join(", ", paramNames)})";
                 var sqlParams = tuList.Select((tu, i) => new SqlParameter($"@tu{i}", tu)).ToArray<object>();
                 return await _context.Database
                     .SqlQueryRaw<StoredGrain>(sql, sqlParams)
@@ -1567,7 +1591,7 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var sql = StoredGrainSql + " WHERE c.CustomerId = @customerId";
+            var sql = StoredGrainSql + " AND c.CustomerId = @customerId";
             return await _context.Database
                 .SqlQueryRaw<StoredGrain>(sql, new SqlParameter("@customerId", customerId))
                 .ToListAsync(cancellationToken);

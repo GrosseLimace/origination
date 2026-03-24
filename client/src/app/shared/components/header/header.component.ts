@@ -5,7 +5,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, HostListener, inject, s
 import { CommonModule } from '@angular/common';
 
 // Angular router
-import { Router } from '@angular/router';
+import { NavigationEnd, Router } from '@angular/router';
 
 // Angular HTTP
 import { HttpClient } from '@angular/common/http';
@@ -51,8 +51,17 @@ export class HeaderComponent {
   mobileMenuOpen = signal(false);
   profileMenuOpen = signal(false);
   profilePhotoUrl = signal<string | null>(null);
+  private readonly currentUrl = signal(this.router.url);
 
   constructor() {
+    // Track URL via NavigationEnd so OnPush re-renders correctly after every navigation
+    this.router.events.pipe(
+      filter(e => e instanceof NavigationEnd),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe((e: NavigationEnd) => {
+      this.currentUrl.set(e.urlAfterRedirects);
+    });
+
     this.msalBroadcast.inProgress$.pipe(
       filter(status => status === InteractionStatus.None),
       take(1),
@@ -116,7 +125,8 @@ export class HeaderComponent {
   }
 
   isActive(path: string): boolean {
-    return this.router.url === path || this.router.url.startsWith(path + '?');
+    const url = this.currentUrl();
+    return url === path || url.startsWith(path + '?');
   }
 
   navigate(path: string): void {

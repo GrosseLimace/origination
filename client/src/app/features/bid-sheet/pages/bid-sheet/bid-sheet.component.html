@@ -111,9 +111,14 @@
               <h3 class="text-sm font-semibold text-gray-900 dark:text-white truncate">
                 Locations · {{ selectedCrop() || 'All Crops' }} · {{ selectedYear() }}
               </h3>
-              <button (click)="togglePanel()" class="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-              </button>
+              <div class="flex items-center gap-1">
+                <button (click)="openEditBids()" title="Edit bids" class="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                <button (click)="togglePanel()" class="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+              </div>
             </div>
 
             <!-- Panel Body -->
@@ -145,7 +150,7 @@
                 <tbody>
                   @for (item of filteredBidItems(); track (item.elevatorCode || item.name) + item.type) {
                     <tr
-                      (click)="item.type === 'elevator' ? toggleReferenceLocation(item.elevatorCode) : selectItemFromTable(item)"
+                      (click)="selectPanelItem(item)"
                       class="group border-b border-gray-200 dark:border-gray-700 cursor-pointer transition-colors"
                       [ngClass]="item.isRef
                         ? 'bg-scoular-blue/5 dark:bg-scoular-blue/20 hover:bg-scoular-blue/10 dark:hover:bg-scoular-blue/30'
@@ -298,13 +303,13 @@
                       Add Crop
                     </button>
                   </div>
-                  @for (crop of newLocationCrops(); track crop.commodityCode) {
+                  @for (crop of newLocationCrops(); track crop.commodityCode; let rowIndex = $index) {
                     <div class="flex items-center gap-2 mb-2">
                       <div class="flex-1 relative">
                         @if (crop.commodityCode) {
                           <div class="flex items-center w-full text-sm text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-2.5 py-1.5">
                             <span class="flex-1 truncate">{{ crop.searchQuery || crop.commodityCode }}</span>
-                            <button type="button" (click)="clearCropSelection($index)" class="ml-1 text-gray-400 hover:text-scoular-red transition-colors shrink-0">
+                            <button type="button" (click)="clearCropSelection(rowIndex)" class="ml-1 text-gray-400 hover:text-scoular-red transition-colors shrink-0">
                               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
                             </button>
                           </div>
@@ -312,20 +317,20 @@
                           <input
                             type="text"
                             [ngModel]="crop.searchQuery"
-                            (ngModelChange)="onCropSearchInput($index, $event)"
-                            (focus)="crop.searchQuery ? onCropSearchInput($index, crop.searchQuery) : null"
+                            (ngModelChange)="onCropSearchInput(rowIndex, $event)"
+                            (focus)="crop.searchQuery ? onCropSearchInput(rowIndex, crop.searchQuery) : null"
                             (blur)="hideCropDropdownDelayed()"
                             placeholder="Search crop..."
                             class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"
                           />
                         }
-                        @if (cropDropdownIndex() === $index && filteredCommodities(crop.searchQuery).length > 0) {
+                        @if (cropDropdownIndex() === rowIndex && filteredCommodities(crop.searchQuery).length > 0) {
                           <div class="absolute z-10 w-[340px] mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-64 overflow-y-auto">
                             @for (c of filteredCommodities(crop.searchQuery); track c.code) {
                               <button
                                 type="button"
                                 class="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white transition-colors"
-                                (mousedown)="selectCommodity($index, c)"
+                                (mousedown)="selectCommodity(rowIndex, c)"
                               >
                                 <span class="font-medium">{{ c.code }}</span>
                                 <span class="text-gray-400 dark:text-gray-500 ml-1">({{ c.name }})</span>
@@ -334,9 +339,9 @@
                           </div>
                         }
                       </div>
-                      <input type="text" [ngModel]="crop.bid" (ngModelChange)="updateCropBid($index, $event)" placeholder="Bid" class="w-24 font-mono text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
+                      <input type="text" [ngModel]="crop.bid" (ngModelChange)="updateCropBid(rowIndex, $event)" placeholder="Bid" class="w-24 font-mono text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
                       @if (newLocationCrops().length > 1) {
-                        <button (click)="removeCropRow($index)" type="button" class="text-gray-400 hover:text-scoular-red p-1">
+                        <button (click)="removeCropRow(rowIndex)" type="button" class="text-gray-400 hover:text-scoular-red p-1">
                           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                         </button>
                       }
@@ -359,6 +364,95 @@
               </div>
             </div>
           }
+        }
+
+        <!-- Edit Bids Overlay -->
+        @if (editBidsMode()) {
+          <div class="absolute inset-0 z-[1100] bg-white dark:bg-gray-900 flex flex-col">
+
+            <!-- Header -->
+            <div class="shrink-0 px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-4 bg-white dark:bg-gray-900">
+              <div class="flex items-center gap-3 min-w-0">
+                <h2 class="text-sm font-semibold text-gray-900 dark:text-white whitespace-nowrap">Edit Bids — {{ activeTradeUnit() }}</h2>
+                <select
+                  [ngModel]="editBidsYear()"
+                  (ngModelChange)="onEditBidsYearChange(+$event)"
+                  class="px-2.5 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green cursor-pointer"
+                >
+                  @if (cropYears().length === 0) {
+                    <option [value]="editBidsYear()">{{ editBidsYear() }}</option>
+                  }
+                  @for (year of cropYears(); track year) {
+                    <option [value]="year">{{ year }}</option>
+                  }
+                </select>
+                @if (editBidsRows().length > 0 && crops().length > 0) {
+                  <span class="text-xs text-gray-400 dark:text-gray-500">{{ editBidsRows().length }} location{{ editBidsRows().length !== 1 ? 's' : '' }}, {{ crops().length }} crop{{ crops().length !== 1 ? 's' : '' }}</span>
+                }
+              </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <button
+                  (click)="cancelEditBids()"
+                  class="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >Cancel</button>
+                <button
+                  (click)="saveEditBids()"
+                  [disabled]="editBidsSaving()"
+                  class="px-3 py-1.5 text-sm font-medium text-white rounded-lg transition-colors"
+                  [ngClass]="editBidsSaving() ? 'bg-gray-400 cursor-not-allowed' : 'bg-scoular-green-accessible hover:bg-scoular-green'"
+                >{{ editBidsSaving() ? 'Saving…' : 'Save Changes' }}</button>
+              </div>
+            </div>
+
+            <!-- Grid -->
+            @if (editBidsRows().length === 0 || crops().length === 0) {
+              <div class="flex-1 flex items-center justify-center text-gray-400 dark:text-gray-500 text-sm">
+                No locations or crops found for this trade unit.
+              </div>
+            } @else {
+              <div class="flex-1 overflow-auto">
+                <table class="border-collapse text-sm" style="min-width: max-content; width: 100%;">
+                  <thead class="sticky top-0 z-10">
+                    <tr class="bg-gray-50 dark:bg-gray-800">
+                      <th class="sticky left-0 z-20 px-3 py-2.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 min-w-[200px]">Location</th>
+                      @for (crop of crops(); track crop) {
+                        <th class="px-3 py-2.5 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 min-w-[110px]">{{ crop }}</th>
+                      }
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of editBidsRows(); track row.name; let rowIdx = $index) {
+                      <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-800/30">
+                        <td class="sticky left-0 z-10 px-3 py-1.5 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+                          <div class="flex items-center gap-1.5">
+                            @if (row.type === 'elevator') {
+                              <span class="shrink-0 inline-flex items-center px-1 py-0.5 rounded text-xs font-medium bg-scoular-green/10 text-scoular-green-accessible dark:bg-scoular-green/20">S</span>
+                            }
+                            <span class="text-xs text-gray-900 dark:text-white truncate" style="max-width: 160px;" [title]="row.name">{{ row.name }}</span>
+                          </div>
+                        </td>
+                        @for (crop of crops(); track crop; let colIdx = $index) {
+                          <td class="px-2 py-1">
+                            <input
+                              type="text"
+                              [ngModel]="row.bids[crop]"
+                              (ngModelChange)="updateBid(rowIdx, crop, $event)"
+                              placeholder="—"
+                              class="w-full font-mono text-xs text-center rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
+                              [ngClass]="row.bids[crop] !== row.originalBids[crop]
+                                ? 'border-scoular-green bg-scoular-green/5 dark:bg-scoular-green/10 text-gray-900 dark:text-white'
+                                : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white'"
+                            />
+                          </td>
+                        }
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+
+          </div>
         }
 
     </div>

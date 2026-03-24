@@ -291,12 +291,12 @@
                         <div class="text-3xl font-bold" [class]="marketSharePercentage > 0 ? 'text-scoular-green-accessible dark:text-scoular-green' : 'text-gray-400 dark:text-gray-500'">{{ marketSharePercentage | number:'1.0-0' }}%</div>
                         <div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Contracted{{ contractYear > 0 ? ' (' + contractYear + ')' : '' }}</div>
                         <!-- Hover tooltip -->
-                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10 w-64 pointer-events-none">
+                        <div class="absolute bottom-full left-0 mb-2 hidden group-hover:block z-50 w-64 pointer-events-none">
                           <div class="bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg px-3 py-2 shadow-lg text-left space-y-1">
                             <p class="text-gray-300">bu contracted / bu projected yield</p>
                             <p class="text-gray-400">Projected yield = planting acres × yield estimate (set in the Trade Unit Dashboard).</p>
                           </div>
-                          <div class="w-2 h-2 bg-gray-900 dark:bg-gray-700 rotate-45 mx-auto -mt-1"></div>
+                          <div class="w-2 h-2 bg-gray-900 dark:bg-gray-700 rotate-45 ml-8 -mt-1"></div>
                         </div>
                       </div>
                       <div class="border-l border-gray-200 dark:border-gray-700 pl-6 space-y-1 text-sm sm:text-base text-gray-600 dark:text-gray-400">

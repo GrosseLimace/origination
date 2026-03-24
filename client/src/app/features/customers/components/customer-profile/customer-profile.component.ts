@@ -1,4 +1,4 @@
-import { Component, input, output, inject, effect, ChangeDetectionStrategy, ViewChild, ElementRef, signal } from '@angular/core';
+import { Component, input, output, inject, effect, computed, ChangeDetectionStrategy, ViewChild, ElementRef, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ThemeService } from '@core/services/theme.service';
 import { ContractsTableComponent } from '../contracts-table/contracts-table.component';
@@ -99,8 +99,9 @@ export class CustomerProfileComponent {
       this.selectedPlantingYear.set(0);
     });
 
+    // Effect: auto-select the best planting year when data changes.
+    // Kept as an effect (not computed) because it writes to selectedPlantingYear.
     effect(() => {
-      // Derive available planting years from intentions + contracts
       const plantingIntentions = this.plantingIntentions();
       const contracts = this.contracts();
       const yearSet = new Set<number>();
@@ -113,42 +114,13 @@ export class CustomerProfileComponent {
       this._availablePlantingYears = [...yearSet].sort((a, b) => b - a);
 
       // Always pick newest when user hasn't manually chosen a year.
-      // Without this, contracts (2025) loading before planting intentions (2026) causes
-      // the year to lock on 2025 and never update when 2026 arrives.
       const selected = this._yearUserSelected ? this.selectedPlantingYear() : 0;
-      const year = (selected > 0 && yearSet.has(selected))
+      const best = (selected > 0 && yearSet.has(selected))
         ? selected
         : (this._availablePlantingYears[0] || 0);
-      if (year !== selected) {
-        this.selectedPlantingYear.set(year);
+      if (best !== selected) {
+        this.selectedPlantingYear.set(best);
       }
-      this._contractYear = year;
-
-      // Recalculate total contracted bushels scoped to the selected year
-      this._totalContracted = contracts
-        .filter(c => c.status !== 'Cancelled' && (year === 0 || c.cropYear === year))
-        .reduce((sum, c) => sum + c.quantity, 0);
-
-      // Recalculate projected yield
-      const intentionsForYear = year > 0
-        ? plantingIntentions.filter(pi => pi.plantingYear === year)
-        : plantingIntentions;
-      const commodities = this.commodities();
-      const yieldEstimates = this.yieldEstimates();
-      this._totalProjectedYield = intentionsForYear.reduce((sum, pi) => {
-        const commodity = commodities.find(c => c.code === pi.crop);
-        const category = commodity?.category || pi.crop;
-        const cropKey = [pi.type, category].filter(Boolean).join(' ');
-        // Match yield estimate by crop key AND year (fallback to any year for that crop)
-        const est = yieldEstimates.find(ye => ye.crop === cropKey && ye.plantingYear === year)
-          || yieldEstimates.find(ye => ye.crop === cropKey);
-        return sum + pi.acres * (est?.yieldEstimate ?? 0);
-      }, 0);
-
-      this._marketSharePercentage = this._totalProjectedYield > 0
-        ? (this._totalContracted / this._totalProjectedYield) * 100
-        : 0;
-      this._bushelsAvailable = Math.max(0, this._totalProjectedYield - this._totalContracted);
     });
 
     effect(() => {
@@ -219,12 +191,42 @@ export class CustomerProfileComponent {
     }, 0);
   }
 
-  // Performance optimization: Cache computed values used in template
-  private _totalProjectedYield = 0;
-  private _totalContracted = 0;
-  private _marketSharePercentage = 0;
-  private _bushelsAvailable = 0;
-  private _contractYear = 0;
+  // Computed signal: all planting metrics derived reactively from signals.
+  // Angular's signal system re-evaluates this whenever any dependency changes,
+  // and automatically triggers OnPush re-render — no effect/detectChanges needed.
+  readonly contractMetrics = computed(() => {
+    const year = this.selectedPlantingYear();
+    const plantingIntentions = this.plantingIntentions();
+    const contracts = this.contracts();
+    const commodities = this.commodities();
+    const yieldEstimates = this.yieldEstimates();
+
+    const totalContracted = contracts
+      .filter(c => c.status !== 'Cancelled' && (year === 0 || c.cropYear === year))
+      .reduce((sum, c) => sum + c.quantity, 0);
+
+    const intentionsForYear = year > 0
+      ? plantingIntentions.filter(pi => pi.plantingYear === year)
+      : plantingIntentions;
+
+    const totalProjectedYield = intentionsForYear.reduce((sum, pi) => {
+      const commodity = commodities.find(c => c.code === pi.crop);
+      const category = commodity?.category || pi.crop;
+      const cropKey = [pi.type, category].filter(Boolean).join(' ');
+      const est = yieldEstimates.find(ye => ye.crop === cropKey && ye.plantingYear === year)
+        || yieldEstimates.find(ye => ye.crop === cropKey);
+      return sum + pi.acres * (est?.yieldEstimate ?? 0);
+    }, 0);
+
+    return {
+      contractYear: year,
+      totalContracted,
+      totalProjectedYield,
+      marketSharePercentage: totalProjectedYield > 0 ? (totalContracted / totalProjectedYield) * 100 : 0,
+      bushelsAvailable: Math.max(0, totalProjectedYield - totalContracted),
+    };
+  });
+
   private _availablePlantingYears: number[] = [];
   private _pacingDeliveryYear = 0;
   private _pacingPct: number | null = null;
@@ -280,25 +282,11 @@ export class CustomerProfileComponent {
     this.selectedPlantingYear.set(year);
   }
 
-  get contractYear(): number {
-    return this._contractYear;
-  }
-
-  get totalProjectedYield(): number {
-    return this._totalProjectedYield;
-  }
-
-  get totalContracted(): number {
-    return this._totalContracted;
-  }
-
-  get marketSharePercentage(): number {
-    return this._marketSharePercentage;
-  }
-
-  get bushelsAvailable(): number {
-    return this._bushelsAvailable;
-  }
+  get contractYear(): number { return this.contractMetrics().contractYear; }
+  get totalProjectedYield(): number { return this.contractMetrics().totalProjectedYield; }
+  get totalContracted(): number { return this.contractMetrics().totalContracted; }
+  get marketSharePercentage(): number { return this.contractMetrics().marketSharePercentage; }
+  get bushelsAvailable(): number { return this.contractMetrics().bushelsAvailable; }
 
   /** Most recent delivery year seen across all contracts. */
   get yoyCurrentYear(): number { return this._pacingDeliveryYear; }
