@@ -11,6 +11,7 @@ public class BidSheetEntry
     public double? Longitude { get; set; }
     public string? ElevatorCode { get; set; }
     public string TradeUnitCode { get; set; } = string.Empty;
+    public string? GroupName { get; set; }
     public string CommodityCode { get; set; } = string.Empty;
     public string? CommodityName { get; set; }
     public string? CommodityCategory { get; set; }

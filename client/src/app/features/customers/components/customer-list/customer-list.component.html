@@ -6,7 +6,7 @@
           <!-- Title Row -->
           <div class="flex items-center justify-between">
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Customers</h3>
-            @if (searchInputValue || selectedListId() !== 'all' || selectedCustomer()) {
+            @if (searchInputValue || selectedListId() !== 'all' || selectedCustomer() || hasTradeUnitSelection()) {
               <button
                 (click)="clearAll()"
                 type="button"

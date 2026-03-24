@@ -1,7 +1,7 @@
 import { inject, Injectable, isDevMode } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
-import { Observable, of, throwError } from 'rxjs';
-import { catchError, map } from 'rxjs/operators';
+import { Observable, of, throwError, shareReplay } from 'rxjs';
+import { catchError, finalize, map } from 'rxjs/operators';
 import {
   Customer,
   Contract,
@@ -37,6 +37,23 @@ export class ApiService {
   private readonly baseUrl = environment.apiBaseUrl;
 
   // ---------------------------------------------------------
+  // In-flight request deduplication — prevents duplicate concurrent calls to the same
+  // slow ODS endpoint (e.g. from HomeComponent._loadAllData() and DataPreloadService).
+  // When a second caller requests the same key while the first is still in-flight,
+  // they share one HTTP request and both receive the same response.
+  private readonly _inFlight = new Map<string, Observable<any>>();
+
+  private _dedupe<T>(key: string, request: Observable<T>): Observable<T> {
+    const cached = this._inFlight.get(key);
+    if (cached) return cached as Observable<T>;
+    const shared = request.pipe(
+      shareReplay({ bufferSize: 1, refCount: false }),
+      finalize(() => this._inFlight.delete(key))
+    );
+    this._inFlight.set(key, shared);
+    return shared;
+  }
+
   private handleError(error: unknown): Observable<never> {
     if (isDevMode()) {
       console.error('API Error:', error);
@@ -58,8 +75,11 @@ export class ApiService {
   getCustomers(tradeUnits?: string[]): Observable<Customer[]> {
     let params = new HttpParams();
     tradeUnits?.forEach(tu => params = params.append('tradeUnits', tu));
-    return this.http.get<Customer[]>(`${this.baseUrl}/customers`, { params })
-      .pipe(catchError(e => this.handleError(e)));
+    const key = `customers:${[...(tradeUnits ?? [])].sort().join(',')}`;
+    return this._dedupe(key,
+      this.http.get<Customer[]>(`${this.baseUrl}/customers`, { params })
+        .pipe(catchError(e => this.handleError(e)))
+    );
   }
 
   /** Searches customers by name (max 15 results) */
@@ -118,8 +138,11 @@ export class ApiService {
   getContracts(tradeUnits?: string[]): Observable<Contract[]> {
     let params = new HttpParams();
     tradeUnits?.forEach(tu => params = params.append('tradeUnits', tu));
-    return this.http.get<Contract[]>(`${this.baseUrl}/contracts`, { params })
-      .pipe(catchError(e => this.handleError(e)));
+    const key = `contracts:${[...(tradeUnits ?? [])].sort().join(',')}`;
+    return this._dedupe(key,
+      this.http.get<Contract[]>(`${this.baseUrl}/contracts`, { params })
+        .pipe(catchError(e => this.handleError(e)))
+    );
   }
 
   /** Fetches all contracts for a specific customer */
@@ -152,8 +175,11 @@ export class ApiService {
   getTickets(tradeUnits?: string[]): Observable<Ticket[]> {
     let params = new HttpParams();
     tradeUnits?.forEach(tu => params = params.append('tradeUnits', tu));
-    return this.http.get<Ticket[]>(`${this.baseUrl}/tickets`, { params })
-      .pipe(catchError(e => this.handleError(e)));
+    const key = `tickets:${[...(tradeUnits ?? [])].sort().join(',')}`;
+    return this._dedupe(key,
+      this.http.get<Ticket[]>(`${this.baseUrl}/tickets`, { params })
+        .pipe(catchError(e => this.handleError(e)))
+    );
   }
 
   /** Fetches all delivery tickets for a specific customer */
@@ -171,8 +197,11 @@ export class ApiService {
     let params = new HttpParams();
     if (tradeUnits?.length) params = params.set('tradeUnits', tradeUnits.join(','));
     if (plantingYear != null) params = params.set('plantingYear', plantingYear.toString());
-    return this.http.get<PlantingIntention[]>(`${this.baseUrl}/plantingintentions`, { params })
-      .pipe(catchError(e => this.handleError(e)));
+    const key = `plantingintentions:${[...(tradeUnits ?? [])].sort().join(',')}:${plantingYear ?? ''}`;
+    return this._dedupe(key,
+      this.http.get<PlantingIntention[]>(`${this.baseUrl}/plantingintentions`, { params })
+        .pipe(catchError(e => this.handleError(e)))
+    );
   }
 
   /** Fetches all planting intentions for a specific customer */
@@ -269,8 +298,10 @@ export class ApiService {
     const url = tradeUnits?.length
       ? `${this.baseUrl}/notes?tradeUnits=${encodeURIComponent(tradeUnits.join(','))}`
       : `${this.baseUrl}/notes`;
-    return this.http.get<Note[]>(url)
-      .pipe(catchError(e => this.handleError(e)));
+    const key = `notes:${[...(tradeUnits ?? [])].sort().join(',')}`;
+    return this._dedupe(key,
+      this.http.get<Note[]>(url).pipe(catchError(e => this.handleError(e)))
+    );
   }
 
   /** Fetches all notes for a specific customer */
@@ -339,8 +370,11 @@ export class ApiService {
   getStoredGrain(tradeUnits?: string[]): Observable<StoredGrain[]> {
     let params = new HttpParams();
     if (tradeUnits?.length) params = params.set('tradeUnits', tradeUnits.join(','));
-    return this.http.get<StoredGrain[]>(`${this.baseUrl}/storedgrain`, { params })
-      .pipe(catchError(e => this.handleError(e)));
+    const key = `storedgrain:${[...(tradeUnits ?? [])].sort().join(',')}`;
+    return this._dedupe(key,
+      this.http.get<StoredGrain[]>(`${this.baseUrl}/storedgrain`, { params })
+        .pipe(catchError(e => this.handleError(e)))
+    );
   }
 
   /** Fetches all stored grain records for a specific customer */
@@ -379,12 +413,14 @@ export class ApiService {
 
   /** Fetches all saved customer lists — deserializes the Filters JSON string to an object */
   getSavedLists(): Observable<SavedList[]> {
-    return this.http.get<any[]>(`${this.baseUrl}/savedlists`).pipe(
-      map(lists => lists.map(l => ({
-        ...l,
-        filters: l.filters ? (() => { try { return JSON.parse(l.filters) as RefinementFilters; } catch { return undefined; } })() : undefined
-      }))),
-      catchError(e => this.handleError(e))
+    return this._dedupe('savedlists',
+      this.http.get<any[]>(`${this.baseUrl}/savedlists`).pipe(
+        map(lists => lists.map(l => ({
+          ...l,
+          filters: l.filters ? (() => { try { return JSON.parse(l.filters) as RefinementFilters; } catch { return undefined; } })() : undefined
+        }))),
+        catchError(e => this.handleError(e))
+      )
     );
   }
 

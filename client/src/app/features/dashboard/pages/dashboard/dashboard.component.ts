@@ -393,6 +393,7 @@ export class DashboardComponent {
 
     for (const c of this.contractsForYear()) {
       if (!c.deliveryStart) continue;
+      if (!c.sourceContractId?.startsWith('P')) continue; // Purchase contracts only
       const d = new Date(c.deliveryStart);
       const monthIdx = d.getMonth();
       const commodity = c.commodityDescription || c.commodityGroup || c.commodityCode || 'Other';

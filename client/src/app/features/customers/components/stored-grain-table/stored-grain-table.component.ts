@@ -25,7 +25,7 @@ export class StoredGrainTableComponent {
 
   showSearch = signal(false);
   searchQuery = signal('');
-  expandedCommodities = new Set<string>();
+  expandedCommodities = signal(new Set<string>());
 
   private readonly costCache = computed(() => {
     const cache = new Map<string, { totalCost: number; monthsStored: number }>();
@@ -118,10 +118,13 @@ export class StoredGrainTableComponent {
   }
 
   toggleCommodity(crop: string, event: MouseEvent): void {
-    if (this.expandedCommodities.has(crop)) {
-      this.expandedCommodities.delete(crop);
-    } else {
-      this.expandedCommodities.add(crop);
+    const isOpening = !this.expandedCommodities().has(crop);
+    this.expandedCommodities.update(set => {
+      const next = new Set(set);
+      isOpening ? next.add(crop) : next.delete(crop);
+      return next;
+    });
+    if (isOpening) {
       // Capture currentTarget synchronously — it becomes null after event dispatch completes
       const header = event.currentTarget as HTMLElement;
       setTimeout(() => {
@@ -132,6 +135,6 @@ export class StoredGrainTableComponent {
   }
 
   isExpanded(crop: string): boolean {
-    return this.expandedCommodities.has(crop);
+    return this.expandedCommodities().has(crop);
   }
 }

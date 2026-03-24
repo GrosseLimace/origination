@@ -25,6 +25,9 @@ public class CreateBidSheetEntryRequest
     [Required, MaxLength(100)]
     public string TradeUnitCode { get; set; } = string.Empty;
 
+    [MaxLength(200)]
+    public string? GroupName { get; set; }
+
     [Required, MaxLength(50)]
     public string CommodityCode { get; set; } = string.Empty;
 

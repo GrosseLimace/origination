@@ -165,7 +165,25 @@ export class HomeComponent {
         this.selectedCustomer.set(stateSelectedCustomer);
         this.customerPricingLines.set(this.appState.pricingLines());
         this._loadCustomerData(stateSelectedCustomer.id);
+        // Re-fetch per-customer planting intentions on navigation back —
+        // these are not stored in appState so they must be reloaded.
+        this.allCustomerPlantingIntentions.set([]);
+        this.customerPlantingIntentions.set([]);
+        const piRequestId = ++this._piRequestId;
+        this.apiService.getPlantingIntentionsByCustomer(stateSelectedCustomer.id)
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe({
+            next: (intentions) => {
+              if (piRequestId !== this._piRequestId) return;
+              this.allCustomerPlantingIntentions.set(intentions);
+              this.customerPlantingIntentions.set(intentions);
+            },
+            error: () => {}
+          });
       }
+      // Reload yield estimates and commodities — not stored in appState so
+      // they are lost on navigation away and must be re-fetched on return.
+      this._loadYieldData();
     }
   }
 
@@ -247,8 +265,6 @@ export class HomeComponent {
         this.plantingIntentions.set(data);
         this.appState.setPlantingIntentions(data);
         this.isLoadingPlanting.set(false);
-        const sel = this.selectedCustomer();
-        if (sel) this._loadCustomerData(sel.id);
       },
       error: () => { this.isLoadingPlanting.set(false); }
     });

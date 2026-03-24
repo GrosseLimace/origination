@@ -1,7 +1,7 @@
 export const environment = {
   production: false,
   envName: 'Dev',
-  bidSheetEnabled: true,
+  bidSheetEnabled: false,
   apiBaseUrl: '/api',
   msalConfig: {
     auth: {
