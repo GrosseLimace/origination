@@ -300,8 +300,13 @@ public class OriginationDbContext : DbContext
         // Configure PlantingIntention entity - DISABLED: Table doesn't exist in ODS
         // modelBuilder.Entity<PlantingIntention>(entity => { ... });
 
-        // Configure StoredGrain entity - DISABLED: Table doesn't exist in ODS
-        // modelBuilder.Entity<StoredGrain>(entity => { ... });
+        // Configure StoredGrain — keyless result type for SqlQueryRaw (no table/view mapping)
+        modelBuilder.Entity<StoredGrain>(entity =>
+        {
+            entity.HasNoKey();
+            entity.Ignore(e => e.Bushels);
+            entity.Ignore(e => e.DateReceived);
+        });
 
         // Configure SavedList entity - DISABLED: Table doesn't exist in ODS
         // modelBuilder.Entity<SavedList>(entity => { ... });

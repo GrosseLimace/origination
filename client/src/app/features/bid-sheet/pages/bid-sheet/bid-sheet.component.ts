@@ -8,13 +8,14 @@ import 'leaflet.markercluster';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
-import { BidSheetEntry, BidReference, Elevator, Commodity } from '@models';
+import { BidSheetEntry, BidSheetLocation, BidSheetLocationBid, Elevator, Commodity } from '@models';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 
 interface EditBidsRow {
   name: string;
   type: 'elevator' | 'entry';
   elevatorCode?: string;
+  tradeUnitCode?: string;
   latitude?: number;
   longitude?: number;
   bids: Record<string, string>;
@@ -43,7 +44,34 @@ export class BidSheetComponent {
   // --- Data ---
   allElevators = signal<Elevator[]>([]);           // ALL elevators from ODS (loaded once)
   tradeUnitElevators = signal<Elevator[]>([]);     // Filtered to selected trade unit
-  bidEntries = signal<BidSheetEntry[]>([]);
+  bidLocations = signal<BidSheetLocation[]>([]);
+  /** Flattened view of bidLocations — each location×bid becomes one BidSheetEntry row. */
+  readonly bidEntries = computed<BidSheetEntry[]>(() =>
+    this.bidLocations().flatMap(loc =>
+      (loc.bids ?? []).map(bid => ({
+        id: bid.id,
+        locationId: loc.id,
+        name: loc.name,
+        address: loc.address,
+        city: loc.city,
+        state: loc.state,
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        elevatorCode: loc.elevatorCode,
+        tradeUnitCode: loc.tradeUnitCode,
+        groupName: loc.groupName,
+        commodityCode: bid.commodityCode,
+        commodityName: bid.commodityName,
+        commodityCategory: bid.commodityCategory,
+        cropYear: bid.cropYear,
+        bid: bid.bid,
+        createdBy: bid.createdBy,
+        createdAt: bid.createdAt,
+        modifiedBy: bid.modifiedBy,
+        modifiedAt: bid.modifiedAt
+      }))
+    )
+  );
   cropYears = signal<number[]>([]);
   crops = signal<string[]>([]);
   isLoading = signal<boolean>(false);
@@ -75,8 +103,14 @@ export class BidSheetComponent {
   // --- Edit Bids ---
   editBidsMode = signal(false);
   editBidsYear = signal<number>(new Date().getFullYear());
+  editBidsCrop = signal<string>('');
   editBidsRows = signal<EditBidsRow[]>([]);
   editBidsSaving = signal(false);
+
+  readonly editBidsCrops = computed(() => {
+    const filter = this.editBidsCrop();
+    return filter ? this.crops().filter(c => c === filter) : this.crops();
+  });
 
   // --- Commodities lookup ---
   allCommodities = signal<Commodity[]>([]);
@@ -90,20 +124,39 @@ export class BidSheetComponent {
   newLocationState = signal<string>('');
   newLocationLat = signal<number | null>(null);
   newLocationLng = signal<number | null>(null);
-  newLocationCrops = signal<{ commodityCode: string; bid: string; searchQuery: string; showDropdown: boolean }[]>([]);
+  newLocationTu = signal<string>('');
+  newLocationCrops = signal<{ commodityCode: string; searchQuery: string; showDropdown: boolean; oldYear: number; oldBid: string; newYear: number; newBid: string }[]>([]);
+  readonly addLocationYears: number[] = (() => { const y = new Date().getFullYear(); return [y - 1, y]; })();
+  // (commodityCode stores the category value, e.g. "CORN", "WHEAT")
   private _addLocationPin: any = null;
 
-  filteredCommodities(query: string): Commodity[] {
+  // TUs available for selection when adding a location — mirrors activeTradeUnits()
+  readonly addLocationTus = computed(() => this.activeTradeUnits());
+
+  private static readonly _excludedCommodityCategories = new Set([
+    'CURRENCY', 'TRANSPORTATION', 'FEED & FERT INGREDIENTS', 'FEED &FERT INGREDIENTS'
+  ]);
+
+  // Returns unique grain crop categories (Corn, Wheat, Milo, etc.) matching the query
+  filteredCommodities(query: string): { code: string; name: string }[] {
     if (!query || query.length < 1) return [];
     const q = query.toLowerCase();
-    return this.allCommodities()
-      .filter(c => c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q) || (c.category ?? '').toLowerCase().includes(q))
-      .slice(0, 20);
+    const seen = new Set<string>();
+    const results: { code: string; name: string }[] = [];
+    for (const c of this.allCommodities()) {
+      const cat = (c.category ?? '').trim().toUpperCase();
+      if (!cat || seen.has(cat) || BidSheetComponent._excludedCommodityCategories.has(cat)) continue;
+      if (cat.toLowerCase().includes(q)) {
+        seen.add(cat);
+        results.push({ code: cat, name: cat });
+      }
+    }
+    return results.sort((a, b) => a.name.localeCompare(b.name)).slice(0, 20);
   }
 
-  selectCommodity(index: number, commodity: Commodity): void {
+  selectCommodity(index: number, item: { code: string; name: string }): void {
     this.newLocationCrops.update(rows => rows.map((r, i) =>
-      i === index ? { ...r, commodityCode: commodity.code, searchQuery: `${commodity.code} (${commodity.name})`, showDropdown: false } : r
+      i === index ? { ...r, commodityCode: item.code, searchQuery: item.name, showDropdown: false } : r
     ));
     this.cropDropdownIndex.set(-1);
   }
@@ -216,15 +269,14 @@ export class BidSheetComponent {
       const tuSet = new Set(tus);
       const tuElevators = this.allElevators().filter(e => tuSet.has((e.tradeUnitCode ?? '').trim()));
       this.tradeUnitElevators.set(tuElevators);
-      // Load bid data for the primary TU
-      const primaryTu = this.activeTradeUnit();
-      if (primaryTu) this._loadBidData(primaryTu);
+      // Load bid data for all active TUs
+      this._loadBidData(tus);
       this._zoomToTradeUnit(tuElevators);
       this.filterBids();
       this._refreshMapMarkers();
     } else {
       this.tradeUnitElevators.set([]);
-      this.bidEntries.set([]);
+      this.bidLocations.set([]);
       this.cropYears.set([]);
       this.crops.set([]);
       this.referenceElevatorCode.set('');
@@ -248,16 +300,23 @@ export class BidSheetComponent {
     }
   }
 
-  private _loadBidData(tradeUnitCode: string): void {
+  private _loadBidData(tradeUnitCodes: string[]): void {
+    if (tradeUnitCodes.length === 0) return;
     this.isLoading.set(true);
 
-    forkJoin({
-      entries: this.apiService.getBidSheetEntries(tradeUnitCode),
-      cropYears: this.apiService.getBidCropYears(tradeUnitCode),
-      bidCommodities: this.apiService.getBidCommodities(tradeUnitCode)
-    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: ({ entries, cropYears, bidCommodities }) => {
-        this.bidEntries.set(entries);
+    forkJoin(
+      tradeUnitCodes.map(tu => forkJoin({
+        locations: this.apiService.getBidSheetLocations(tu),
+        cropYears: this.apiService.getBidCropYears(tu),
+        bidCommodities: this.apiService.getBidCommodities(tu)
+      }))
+    ).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (results) => {
+        const allLocations = results.flatMap(r => r.locations);
+        let cropYears = [...new Set(results.flatMap(r => r.cropYears))].sort((a, b) => a - b);
+        const bidCommodities = [...new Set(results.flatMap(r => r.bidCommodities))].sort();
+
+        this.bidLocations.set(allLocations);
         this.crops.set(bidCommodities);
 
         if (!this.selectedCrop() || (bidCommodities.length > 0 && !bidCommodities.includes(this.selectedCrop()))) {
@@ -271,8 +330,6 @@ export class BidSheetComponent {
           this.selectedYear.set(cropYears.includes(currentYear) ? currentYear : cropYears[cropYears.length - 1]);
         }
 
-        // Load reference
-        this._loadReference(tradeUnitCode);
         this.isLoading.set(false);
         this.filterBids();
         this._refreshMapMarkers();
@@ -284,30 +341,12 @@ export class BidSheetComponent {
     });
   }
 
-  private _loadReference(tradeUnitCode: string): void {
-    const crop = this.selectedCrop();
-    if (!crop) { this.referenceElevatorCode.set(''); return; }
-
-    this.apiService.getBidReference(tradeUnitCode, crop)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (ref) => {
-          this.referenceElevatorCode.set(ref?.elevatorCode?.trim() ?? '');
-          this.filterBids();
-          this._refreshMapMarkers();
-        },
-        error: () => this.referenceElevatorCode.set('')
-      });
-  }
-
   // =========================================================================
   // Filter & Display (Panel)
   // =========================================================================
 
   onFilterChange(): void {
     if (this._map) this._map.closePopup();
-    const tu = this.activeTradeUnit();
-    if (tu) this._loadReference(tu);
     this.filterBids();
     this._refreshMapMarkers();
   }
@@ -317,23 +356,21 @@ export class BidSheetComponent {
   }
 
   filterBids(): void {
-    const tu = this.activeTradeUnit();
-    if (!tu) { this.filteredBidItems.set([]); return; }
+    if (this.activeTradeUnits().length === 0) { this.filteredBidItems.set([]); return; }
 
     const crop = this.selectedCrop();
     const oldYr = this.oldYear();
     const newYr = this.newYear();
     const refCode = this.referenceElevatorCode();
     const query = this.searchQuery().toLowerCase();
+    const basis = this.selectedBasis();
 
-    // Get latest bid per location name for old and new years
-    const getLatestBid = (entries: BidSheetEntry[], name: string, year: number | null, commodityCode: string): string => {
-      if (!year || !commodityCode) return '';
-      const matching = entries.filter(e => e.name === name && e.commodityCode === commodityCode && e.cropYear === year);
-      if (matching.length === 0) return '';
-      matching.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      return matching[0].bid;
-    };
+    // Get the reference elevator's bid for the new year (used for status comparison)
+    const refElev = this.referenceElevator;
+    const refName = refElev
+      ? (((refElev.elevatorName ?? '') || (refElev.elevatorShortName ?? '')).trim() || (refElev.elevatorCode ?? '').trim())
+      : '';
+    const refBid = this._parseBid(refName ? this._getLatestBid(refName, newYr, crop) : '');
 
     let items: any[] = [];
 
@@ -344,6 +381,8 @@ export class BidSheetComponent {
       if ((elev.ourFacility ?? '').trim() !== 'Y') continue;
       const name = ((elev.elevatorName ?? '') || (elev.elevatorShortName ?? '')).trim() || code;
       const isRef = code === refCode;
+      const oldBid = this._getLatestBid(name, oldYr, crop);
+      const newBid = this._getLatestBid(name, newYr, crop);
 
       items.push({
         type: 'elevator',
@@ -353,9 +392,9 @@ export class BidSheetComponent {
         isRef,
         latitude: elev.latitude ?? null,
         longitude: elev.longitude ?? null,
-        oldBid: '',
-        newBid: '',
-        status: isRef ? 'reference' : 'none'
+        oldBid,
+        newBid,
+        status: this._computeItemStatus(newBid, oldBid, isRef, refBid)
       });
     }
 
@@ -365,8 +404,8 @@ export class BidSheetComponent {
       : this.bidEntries();
     const uniqueNames = [...new Set(entries.map(e => e.name))];
     for (const name of uniqueNames) {
-      const oldBid = getLatestBid(this.bidEntries(), name, oldYr, crop);
-      const newBid = getLatestBid(this.bidEntries(), name, newYr, crop);
+      const oldBid = this._getLatestBid(name, oldYr, crop);
+      const newBid = this._getLatestBid(name, newYr, crop);
       const entryWithCoords = this.bidEntries().find(e => e.name === name);
 
       items.push({
@@ -378,7 +417,7 @@ export class BidSheetComponent {
         longitude: entryWithCoords?.longitude ?? null,
         oldBid,
         newBid,
-        status: 'none'
+        status: this._computeItemStatus(newBid, oldBid, false, refBid)
       });
     }
 
@@ -387,6 +426,11 @@ export class BidSheetComponent {
       items = items.filter(item =>
         item.isRef || item.name.toLowerCase().includes(query)
       );
+    }
+
+    // Status (basis) filter — always keep the reference item
+    if (basis !== 'all') {
+      items = items.filter(item => item.status === 'reference' || item.status === basis);
     }
 
     // Sort: reference first, then Scoular elevators, then competitors
@@ -399,6 +443,31 @@ export class BidSheetComponent {
     });
 
     this.filteredBidItems.set(items);
+  }
+
+  private _getLatestBid(name: string, year: number | null, commodityCode: string): string {
+    if (!year || !commodityCode) return '';
+    const matching = this.bidEntries().filter(
+      e => e.name === name && e.commodityCode === commodityCode && e.cropYear === year
+    );
+    if (matching.length === 0) return '';
+    return matching.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0].bid;
+  }
+
+  private _parseBid(bid: string): number | null {
+    const n = parseFloat(bid);
+    return isNaN(n) ? null : n;
+  }
+
+  private _computeItemStatus(newBidStr: string, oldBidStr: string, isRef: boolean, refBid: number | null): string {
+    if (isRef) return 'reference';
+    const newNum = this._parseBid(newBidStr);
+    if (refBid !== null && newNum !== null) {
+      if (newNum > refBid) return 'beating';
+      if (newNum === refBid) return 'matching';
+    }
+    if (newBidStr && oldBidStr && newBidStr !== oldBidStr) return 'changed';
+    return 'none';
   }
 
   // =========================================================================
@@ -445,15 +514,21 @@ export class BidSheetComponent {
     });
     this._addLocationPin = L.marker([lat, lng], { icon: pinIcon }).addTo(this._map);
 
+    // Auto-select TU if only one is active
+    const tus = this.activeTradeUnits();
+    this.newLocationTu.set(tus.length === 1 ? tus[0] : '');
+
     // Open the form
-    this.newLocationCrops.set([{ commodityCode: '', bid: '', searchQuery: '', showDropdown: false }]);
+    const defOldYear = this.oldYear() ?? (this.selectedYear() - 1);
+    const defNewYear = this.newYear() ?? this.selectedYear();
+    this.newLocationCrops.set([{ commodityCode: '', searchQuery: '', showDropdown: false, oldYear: defOldYear, oldBid: '', newYear: defNewYear, newBid: '' }]);
     this.showAddLocationForm.set(true);
   }
 
   canSaveLocation = computed(() => {
     const name = this.newLocationName().trim();
-    const tu = this.activeTradeUnit();
-    const crops = this.newLocationCrops().filter(c => c.commodityCode.trim() && c.bid.trim());
+    const tu = this.newLocationTu();
+    const crops = this.newLocationCrops().filter(c => c.commodityCode.trim() && c.oldBid.trim() && c.newBid.trim());
     return !!name && !!tu && crops.length > 0 && this.newLocationLat() !== null;
   });
 
@@ -464,64 +539,73 @@ export class BidSheetComponent {
   }
 
   addCropRow(): void {
-    this.newLocationCrops.update(rows => [...rows, { commodityCode: '', bid: '', searchQuery: '', showDropdown: false }]);
+    const defOldYear = this.oldYear() ?? (this.selectedYear() - 1);
+    const defNewYear = this.newYear() ?? this.selectedYear();
+    this.newLocationCrops.update(rows => [...rows, { commodityCode: '', searchQuery: '', showDropdown: false, oldYear: defOldYear, oldBid: '', newYear: defNewYear, newBid: '' }]);
   }
 
   removeCropRow(index: number): void {
     this.newLocationCrops.update(rows => rows.filter((_, i) => i !== index));
   }
 
-  updateCropBid(index: number, value: string): void {
-    this.newLocationCrops.update(rows => rows.map((r, i) => i === index ? { ...r, bid: value } : r));
+  updateCropOldBid(index: number, value: string): void {
+    this.newLocationCrops.update(rows => rows.map((r, i) => i === index ? { ...r, oldBid: value } : r));
+  }
+
+  updateCropNewBid(index: number, value: string): void {
+    this.newLocationCrops.update(rows => rows.map((r, i) => i === index ? { ...r, newBid: value } : r));
   }
 
   confirmAddLocation(): void {
     const name = this.newLocationName().trim();
-    const tu = this.activeTradeUnit();
+    const tu = this.newLocationTu();
     const lat = this.newLocationLat();
     const lng = this.newLocationLng();
-    const commodityLookup = new Map(this.allCommodities().map(c => [c.code, c]));
-    const crops = this.newLocationCrops().filter(c => c.commodityCode.trim() && c.bid.trim());
+    const crops = this.newLocationCrops().filter(c => c.commodityCode.trim() && c.oldBid.trim() && c.newBid.trim());
 
     if (!name) { this.toastService.error('Enter a location name'); return; }
     if (!tu) { this.toastService.error('Select a trade unit'); return; }
-    if (crops.length === 0) { this.toastService.error('Add at least one crop with a bid'); return; }
+    if (crops.length === 0) { this.toastService.error('Add at least one crop with both bids'); return; }
 
-    const year = this.selectedYear();
-    let completed = 0;
+    // Build bids payload (2 per crop row: oldYear + newYear)
+    const bids = crops.flatMap(crop => {
+      const code = crop.commodityCode.trim();
+      return [
+        { commodityCode: code, commodityName: code, commodityCategory: code, cropYear: crop.oldYear, bid: crop.oldBid.trim() },
+        { commodityCode: code, commodityName: code, commodityCategory: code, cropYear: crop.newYear, bid: crop.newBid.trim() }
+      ];
+    });
 
-    for (const crop of crops) {
-      const commodity = commodityLookup.get(crop.commodityCode.trim());
-      this.apiService.createBidSheetEntry({
-        name,
-        address: this.newLocationAddress().trim() || undefined,
-        city: this.newLocationCity().trim() || undefined,
-        state: this.newLocationState().trim() || undefined,
-        latitude: lat ?? undefined,
-        longitude: lng ?? undefined,
-        tradeUnitCode: tu,
-        groupName: this._getGroupNameForTu(tu) || undefined,
-        commodityCode: crop.commodityCode.trim(),
-        commodityName: commodity?.name,
-        commodityCategory: commodity?.category ?? undefined,
-        cropYear: year,
-        bid: crop.bid.trim()
-      }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-        next: (entry) => {
-          this.bidEntries.update(arr => [entry, ...arr]);
-          if (!this.crops().includes(entry.commodityCode)) {
-            this.crops.update(arr => [...arr, entry.commodityCode].sort());
+    this.apiService.createBidSheetLocation({
+      name,
+      address: this.newLocationAddress().trim() || undefined,
+      city: this.newLocationCity().trim() || undefined,
+      state: this.newLocationState().trim() || undefined,
+      latitude: lat ?? undefined,
+      longitude: lng ?? undefined,
+      tradeUnitCode: tu,
+      groupName: this._getGroupNameForTu(tu) || undefined,
+      bids
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (saved) => {
+        this.bidLocations.update(locs => [saved, ...locs]);
+        for (const b of saved.bids ?? []) {
+          if (!this.crops().includes(b.commodityCode)) {
+            this.crops.update(arr => [...arr, b.commodityCode].sort());
           }
-          completed++;
-          if (completed === crops.length) {
-            this.toastService.success(`Added ${name} with ${crops.length} crop(s)`);
-            this.exitAddLocationMode();
-            this.filterBids();
+          if (!this.cropYears().includes(b.cropYear)) {
+            this.cropYears.update(yrs => [...yrs, b.cropYear].sort((a, b) => a - b));
           }
-        },
-        error: () => this.toastService.error('Failed to add entry')
-      });
-    }
+        }
+        if (!this.selectedCrop() && this.crops().length > 0) {
+          this.selectedCrop.set(this.crops()[0]);
+        }
+        this.toastService.success(`Added ${name} with ${crops.length} crop(s)`);
+        this.exitAddLocationMode();
+        this.filterBids();
+      },
+      error: () => this.toastService.error('Failed to add location')
+    });
   }
 
   cancelAddLocation(): void { this.exitAddLocationMode(); }
@@ -537,10 +621,19 @@ export class BidSheetComponent {
   // =========================================================================
 
   openEditBids(): void {
-    const year = this.newYear() ?? this.selectedYear();
+    const year = this.selectedYear();
     this.editBidsYear.set(year);
+    this.editBidsCrop.set('');
     this._buildEditGrid(year);
     this.editBidsMode.set(true);
+  }
+
+  prevEditYear(): void {
+    this.onEditBidsYearChange(this.editBidsYear() - 1);
+  }
+
+  nextEditYear(): void {
+    this.onEditBidsYearChange(this.editBidsYear() + 1);
   }
 
   private _buildEditGrid(year: number): void {
@@ -559,7 +652,7 @@ export class BidSheetComponent {
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
         bids[crop] = latest?.bid ?? '';
       }
-      rows.push({ name, type: 'elevator', elevatorCode: (elev.elevatorCode ?? '').trim(), latitude: elev.latitude, longitude: elev.longitude, bids, originalBids: { ...bids } });
+      rows.push({ name, type: 'elevator', elevatorCode: (elev.elevatorCode ?? '').trim(), tradeUnitCode: (elev.tradeUnitCode ?? '').trim(), latitude: elev.latitude, longitude: elev.longitude, bids, originalBids: { ...bids } });
     }
 
     const elevNames = new Set(rows.map(r => r.name));
@@ -573,7 +666,7 @@ export class BidSheetComponent {
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
         bids[crop] = latest?.bid ?? '';
       }
-      rows.push({ name, type: 'entry', latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids } });
+      rows.push({ name, type: 'entry', tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids } });
     }
 
     this.editBidsRows.set(rows);
@@ -596,7 +689,7 @@ export class BidSheetComponent {
     const year = this.editBidsYear();
     const tu = this.activeTradeUnit();
     const commodityLookup = new Map(this.allCommodities().map(c => [c.code, c]));
-    const toCreate: Partial<BidSheetEntry>[] = [];
+    const toCreate: Array<{ name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string }> = [];
 
     for (const row of this.editBidsRows()) {
       for (const crop of this.crops()) {
@@ -609,8 +702,8 @@ export class BidSheetComponent {
             latitude: row.latitude,
             longitude: row.longitude,
             elevatorCode: row.elevatorCode,
-            tradeUnitCode: tu,
-            groupName: this._getGroupNameForTu(tu) || undefined,
+            tradeUnitCode: row.tradeUnitCode || tu,
+            groupName: this._getGroupNameForTu(row.tradeUnitCode || tu) || undefined,
             commodityCode: crop,
             commodityName: commodity?.name,
             commodityCategory: commodity?.category ?? undefined,
@@ -624,14 +717,14 @@ export class BidSheetComponent {
     if (toCreate.length === 0) { this.editBidsMode.set(false); return; }
 
     this.editBidsSaving.set(true);
-    this.apiService.bulkCreateBidSheetEntries(toCreate)
+    this.apiService.bulkUpsertBidSheetBids(toCreate)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
           this.editBidsSaving.set(false);
           this.editBidsMode.set(false);
           this.toastService.success(`Saved ${toCreate.length} bid update${toCreate.length !== 1 ? 's' : ''}`);
-          this._loadBidData(tu);
+          this._loadBidData(this.activeTradeUnits());
         },
         error: () => {
           this.editBidsSaving.set(false);
@@ -659,6 +752,7 @@ export class BidSheetComponent {
     this.newLocationState.set('');
     this.newLocationLat.set(null);
     this.newLocationLng.set(null);
+    this.newLocationTu.set('');
     this.newLocationCrops.set([]);
   }
 
@@ -680,19 +774,12 @@ export class BidSheetComponent {
   confirmReferenceChange(): void {
     const code = this.pendingReferenceCode();
     if (!code) return;
-
-    this.apiService.setBidReference(this.activeTradeUnit(), this.selectedCrop(), code)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: () => {
-          this.referenceElevatorCode.set(code);
-          this.pendingReferenceCode.set('');
-          this.showReferenceConfirm.set(false);
-          this.filterBids();
-          this._refreshMapMarkers();
-        },
-        error: () => this.toastService.error('Failed to set reference')
-      });
+    // Reference selection is session-only (BidReferences table removed)
+    this.referenceElevatorCode.set(code);
+    this.pendingReferenceCode.set('');
+    this.showReferenceConfirm.set(false);
+    this.filterBids();
+    this._refreshMapMarkers();
   }
 
   cancelReferenceChange(): void {
@@ -725,8 +812,8 @@ export class BidSheetComponent {
 
   refreshBids(): void {
     this._loadAllElevators();
-    const tu = this.activeTradeUnit();
-    if (tu) this._loadBidData(tu);
+    const tus = this.activeTradeUnits();
+    if (tus.length > 0) this._loadBidData(tus);
     this._startRefreshTimer();
   }
 
@@ -880,6 +967,22 @@ export class BidSheetComponent {
         }
       }
 
+      // Compute reference bid once for status comparison
+      const oldYr = this.oldYear();
+      const newYr = this.newYear();
+      const refElev = this.referenceElevator;
+      const refName = refElev
+        ? (((refElev.elevatorName ?? '') || (refElev.elevatorShortName ?? '')).trim() || (refElev.elevatorCode ?? '').trim())
+        : '';
+      const refBid = this._parseBid(refName ? this._getLatestBid(refName, newYr, crop) : '');
+
+      const statusColors: Record<string, { bg: string; border: string }> = {
+        beating: { bg: '#dc2626', border: '#991b1b' },
+        matching: { bg: '#eab308', border: '#a16207' },
+        changed:  { bg: '#22c55e', border: '#15803d' },
+        none:     { bg: '#d1d5db', border: '#6b7280' }
+      };
+
       for (const [name, rep] of repByName) {
         // Use the bid for the currently selected crop/year as the label, else fall back to location name
         const matched = crop
@@ -889,11 +992,17 @@ export class BidSheetComponent {
           : null;
         const label = matched ? matched.bid : name.slice(0, 10);
 
+        // Color pin based on status relative to reference
+        const newBidStr = matched?.bid ?? '';
+        const oldBidStr = this._getLatestBid(name, oldYr, crop);
+        const status = this._computeItemStatus(newBidStr, oldBidStr, false, refBid);
+        const { bg, border } = statusColors[status] ?? statusColors['none'];
+
         const divIcon = L.divIcon({
           className: 'custom-marker',
           html: `<div style="position:relative;width:58px;text-align:center;">
-            <div style="background:#d1d5db;border:2px solid #6b7280;border-radius:6px;padding:4px 3px;font-size:10px;font-weight:700;color:#fff;white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,0.3);line-height:1.1;">${this._esc(label)}</div>
-            <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid #d1d5db;margin:-1px auto 0;"></div>
+            <div style="background:${bg};border:2px solid ${border};border-radius:6px;padding:4px 3px;font-size:10px;font-weight:700;color:#fff;white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,0.3);line-height:1.1;">${this._esc(label)}</div>
+            <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid ${bg};margin:-1px auto 0;"></div>
           </div>`,
           iconSize: [58, 36],
           iconAnchor: [29, 36],

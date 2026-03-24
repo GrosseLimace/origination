@@ -18,23 +18,14 @@ public class StoredGrain
     public DateTime StorageStartDate { get; set; }
     public decimal StorageRate { get; set; }
     public string Bin { get; set; } = string.Empty;
+    public decimal ReceivableAmount { get; set; }   // RECEIVABLE_AMOUNT — accumulated cost from CTRM
+    public decimal StorageDays { get; set; }         // STORAGE_DAYS — days in storage from CTRM
+    public DateTime? ChargedFromDate { get; set; }   // CHARGED_FROM_DATE
+    public DateTime? ChargedThruDate { get; set; }   // CHARGED_THRU_DATE
 
-    // Computed properties — not mapped from SQL, calculated on serialization
     [NotMapped]
     public decimal Bushels => Quantity;
 
     [NotMapped]
     public DateTime DateReceived => StorageStartDate;
-
-    [NotMapped]
-    public decimal AccumulatedStorageCost
-    {
-        get
-        {
-            var monthsStored = (DateTime.Now.Year - StorageStartDate.Year) * 12
-                             + (DateTime.Now.Month - StorageStartDate.Month)
-                             + (DateTime.Now.Day / 30.0);
-            return (decimal)monthsStored * StorageRate * Quantity;
-        }
-    }
 }

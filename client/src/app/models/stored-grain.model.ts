@@ -9,7 +9,10 @@ export interface StoredGrain {
   storageStartDate: Date;
   storageRate: number;
   bin: string;
+  receivableAmount: number;   // RECEIVABLE_AMOUNT — accumulated cost from CTRM
+  storageDays: number;        // STORAGE_DAYS — days in storage from CTRM (decimal)
+  chargedFromDate: Date | null;
+  chargedThruDate: Date | null;
   bushels: number;
   dateReceived: Date;
-  accumulatedStorageCost: number;
 }

@@ -92,18 +92,23 @@
               @for (grain of group.receipts; track grain.id) {
                 <div class="px-4 py-3 bg-white dark:bg-gray-800">
                   <div class="flex items-center justify-between mb-2">
-                    <span class="font-medium text-sm text-gray-900 dark:text-white">Ticket #{{ grain.receiptNumber }}</span>
+                    <div>
+                      <span class="font-medium text-sm text-gray-900 dark:text-white">Ticket #{{ grain.receiptNumber }}</span>
+                      <span class="ml-2 text-xs text-gray-500 dark:text-gray-400">{{ grain.crop }}</span>
+                    </div>
                     <span class="text-sm font-medium text-scoular-red-accessible dark:text-scoular-red">
                       {{ getCost(grain.id) | currency:'USD':'symbol':'1.2-2' }}
                     </span>
                   </div>
                   <div class="grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
-                    <div><span class="font-medium">Bin:</span> {{ grain.bin || '—' }}</div>
-                    <div><span class="font-medium">Net Bu:</span> {{ grain.quantity | number }}</div>
                     <div><span class="font-medium">Gross Bu:</span> {{ grain.grossQuantity | number }}</div>
-                    <div><span class="font-medium">Rate:</span> ${{ grain.storageRate.toFixed(3) }}/bu/mo</div>
-                    <div><span class="font-medium">Months:</span> {{ getMonths(grain.id).toFixed(1) }}</div>
-                    <div><span class="font-medium">Since:</span> {{ grain.storageStartDate | date:'M/d/yyyy' }}</div>
+                    <div><span class="font-medium">Net Bu:</span> {{ grain.quantity | number }}</div>
+                    <div class="col-span-2">
+                      <span class="font-medium">Charged:</span>
+                      {{ grain.chargedFromDate | date:'M/d/yy' }} – {{ grain.chargedThruDate | date:'M/d/yy' }}
+                    </div>
+                    <div><span class="font-medium">Storage Days:</span> {{ grain.storageDays | number:'1.0-1' }}</div>
+                    <div><span class="font-medium">Rate:</span> ${{ grain.storageRate.toFixed(3) }}</div>
                   </div>
                 </div>
               }
@@ -114,27 +119,29 @@
               <table class="w-full text-sm">
                 <thead>
                   <tr class="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Ticket #</th>
-                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Bin</th>
-                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Net Bu</th>
-                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Gross Bu</th>
-                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Rate</th>
-                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">In Storage Since</th>
-                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Months</th>
-                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Accumulated Cost</th>
+                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Ticket #</th>
+                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Commodity</th>
+                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Gross Bu</th>
+                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Net Bu</th>
+                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Charged From – Thru</th>
+                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Storage Days</th>
+                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Rate</th>
+                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Storage Amount</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50 bg-white dark:bg-gray-800">
                   @for (grain of group.receipts; track grain.id) {
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                      <td class="px-4 py-2.5 font-medium text-gray-900 dark:text-white">{{ grain.receiptNumber }}</td>
-                      <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">{{ grain.bin || '—' }}</td>
-                      <td class="px-4 py-2.5 text-right text-gray-900 dark:text-white">{{ grain.quantity | number }}</td>
-                      <td class="px-4 py-2.5 text-right text-gray-900 dark:text-white">{{ grain.grossQuantity | number }}</td>
-                      <td class="px-4 py-2.5 text-right text-gray-600 dark:text-gray-400">${{ grain.storageRate.toFixed(3) }}/bu/mo</td>
-                      <td class="px-4 py-2.5 text-right text-gray-600 dark:text-gray-400">{{ grain.storageStartDate | date:'M/d/yyyy' }}</td>
-                      <td class="px-4 py-2.5 text-right text-gray-600 dark:text-gray-400">{{ getMonths(grain.id).toFixed(1) }}</td>
-                      <td class="px-4 py-2.5 text-right font-medium text-scoular-red-accessible dark:text-scoular-red">
+                      <td class="px-4 py-2.5 text-center font-medium text-gray-900 dark:text-white">{{ grain.receiptNumber }}</td>
+                      <td class="px-4 py-2.5 text-center text-gray-600 dark:text-gray-400">{{ grain.crop }}</td>
+                      <td class="px-4 py-2.5 text-center text-gray-900 dark:text-white">{{ grain.grossQuantity | number }}</td>
+                      <td class="px-4 py-2.5 text-center text-gray-900 dark:text-white">{{ grain.quantity | number }}</td>
+                      <td class="px-4 py-2.5 text-center text-gray-600 dark:text-gray-400">
+                        {{ grain.chargedFromDate | date:'M/d/yy' }} – {{ grain.chargedThruDate | date:'M/d/yy' }}
+                      </td>
+                      <td class="px-4 py-2.5 text-center text-gray-600 dark:text-gray-400">{{ grain.storageDays | number:'1.0-1' }}</td>
+                      <td class="px-4 py-2.5 text-center text-gray-600 dark:text-gray-400">${{ grain.storageRate.toFixed(3) }}</td>
+                      <td class="px-4 py-2.5 text-center font-medium text-scoular-red-accessible dark:text-scoular-red">
                         {{ getCost(grain.id) | currency:'USD':'symbol':'1.2-2' }}
                       </td>
                     </tr>
