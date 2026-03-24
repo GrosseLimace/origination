@@ -240,7 +240,7 @@ export class ActivitySummaryComponent {
       }
     }, 0) / validGrain.length;
 
-    return `Currently holding ${this._formatQuantity(totalStored, 'bushels')} in on-farm storage, averaging ${Math.floor(avgDays)} days in.`;
+    return `Currently holding ${this._formatQuantity(totalStored, 'bushels')} in Scoular facility storage, averaging ${Math.floor(avgDays)} days in.`;
   }
 
   private _generateDeliverySummary(): string {
