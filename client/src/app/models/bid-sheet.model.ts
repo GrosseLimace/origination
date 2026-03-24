@@ -1,5 +1,39 @@
-export interface BidSheetEntry {
+export interface BidSheetLocationBid {
   id: number;
+  locationId: number;
+  commodityCode: string;
+  commodityName?: string;
+  commodityCategory?: string;
+  cropYear: number;
+  bid: string;
+  createdBy: string;
+  createdAt: string;
+  modifiedBy?: string;
+  modifiedAt?: string;
+}
+
+export interface BidSheetLocation {
+  id: number;
+  name: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  latitude?: number;
+  longitude?: number;
+  elevatorCode?: string;
+  tradeUnitCode: string;
+  groupName?: string;
+  createdBy: string;
+  createdAt: string;
+  modifiedBy?: string;
+  modifiedAt?: string;
+  bids: BidSheetLocationBid[];
+}
+
+/** Flattened view of a BidSheetLocation + one of its bids — used internally by the bid sheet component. */
+export interface BidSheetEntry {
+  id: number;           // bid id
+  locationId: number;
   name: string;
   address?: string;
   city?: string;
@@ -18,15 +52,6 @@ export interface BidSheetEntry {
   createdAt: string;
   modifiedBy?: string;
   modifiedAt?: string;
-}
-
-export interface BidReference {
-  id: number;
-  userId: string;
-  tradeUnitCode: string;
-  commodityCode: string;
-  elevatorCode: string;
-  modifiedAt: string;
 }
 
 export interface Elevator {

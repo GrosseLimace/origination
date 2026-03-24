@@ -725,18 +725,21 @@ public class SqlDataService : IDataService
         return ContractStatus.Pending;
     }
 
-    public async Task<List<Contract>> GetContractsByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
+    public async Task<List<Contract>> GetContractsByCustomerAsync(long customerId, string? sourceCustomerId = null, CancellationToken cancellationToken = default)
     {
         try
         {
-            // Resolve SourceCustomerId via the ODS Customers view (PK-indexed on Id).
-            var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive, cancellationToken);
-            if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
+            // Resolve SourceCustomerId if not supplied by the caller (avoids a DB round-trip when the client already has it).
+            if (string.IsNullOrEmpty(sourceCustomerId))
             {
-                _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
-                return new List<Contract>();
+                var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive, cancellationToken);
+                if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
+                {
+                    _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
+                    return [];
+                }
+                sourceCustomerId = customer.SourceCustomerId;
             }
-            var sourceCustomerId = customer.SourceCustomerId;
 
             // Match contracts using CtrmCustomerId = sourceCustomerId (string matching)
             var contracts = await _context.Contracts
@@ -972,13 +975,6 @@ public class SqlDataService : IDataService
             _logger.LogInformation("Loaded {TicketCount} tickets — {WithContractId} have ContractId, {WithContractNumber} have CtrmContractNumber, {WithBoth} have both",
                 tickets.Count, ticketsWithContractId, ticketsWithContractNumber, ticketsWithBoth);
 
-            // Log first few tickets for debugging
-            foreach (var ticket in tickets.Take(3))
-            {
-                _logger.LogInformation("Sample Ticket #{TicketNumber}: ContractId={ContractId}, CtrmContractNumber={CtrmContractNumber}, CustomerId={TicketCustomerId}",
-                    ticket.TicketNumber, ticket.ContractId, ticket.CtrmContractNumber, ticket.CustomerId);
-            }
-
             return tickets;
         }
         catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
@@ -1008,18 +1004,21 @@ public class SqlDataService : IDataService
         }
     }
 
-    public async Task<List<Ticket>> GetTicketsByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
+    public async Task<List<Ticket>> GetTicketsByCustomerAsync(long customerId, string? sourceCustomerId = null, CancellationToken cancellationToken = default)
     {
         try
         {
-            // Resolve SourceCustomerId via the ODS Customers view (PK-indexed on Id).
-            var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive, cancellationToken);
-            if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
+            // Resolve SourceCustomerId if not supplied by the caller (avoids a DB round-trip when the client already has it).
+            if (string.IsNullOrEmpty(sourceCustomerId))
             {
-                _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
-                return new List<Ticket>();
+                var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive, cancellationToken);
+                if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
+                {
+                    _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
+                    return [];
+                }
+                sourceCustomerId = customer.SourceCustomerId;
             }
-            var sourceCustomerId = customer.SourceCustomerId;
 
             // Match tickets using CustomerCode = sourceCustomerId (string matching, like contracts)
             var tickets = await _context.Tickets
@@ -1524,8 +1523,11 @@ public class SqlDataService : IDataService
 
     // Each night run inserts a new copy of every receipt into vw_GNTA39D1.
     // Each receipt also has two rows per run: STATUS='F' (free days) and STATUS='S' (paid storage).
-    // The CTE deduplicates to exactly one row per receipt+location by taking the STATUS='S' row
-    // from the most recent REPORT_RUN_STAMP, eliminating both cross-run and F/S duplicates.
+    // A single receipt can also be split across multiple customers (e.g. ADELAG + ADELDI on the
+    // same receipt+location+timestamp), so CUSTOMER_ID is included in the partition to ensure
+    // each customer gets their own rn=1 row rather than one winning arbitrarily.
+    // The CTE deduplicates to exactly one row per receipt+location+customer by taking the STATUS='S'
+    // row from the most recent REPORT_RUN_STAMP, eliminating both cross-run and F/S duplicates.
     // Callers append "AND ..." (not "WHERE ...") since the base query already has WHERE rn = 1.
     private const string StoredGrainSql = """
         WITH LatestReceipts AS (
@@ -1538,8 +1540,12 @@ public class SqlDataService : IDataService
                 GROSS_QUANTITY,
                 INITIAL_STORAGE_DATE,
                 STORAGE_RATE,
+                RECEIVABLE_AMOUNT,
+                STORAGE_DAYS,
+                CHARGED_FROM_DATE,
+                CHARGED_THRU_DATE,
                 ROW_NUMBER() OVER (
-                    PARTITION BY WHR_RECEIPT_NUMBER, LOCATION_CODE
+                    PARTITION BY WHR_RECEIPT_NUMBER, LOCATION_CODE, CUSTOMER_ID
                     ORDER BY REPORT_RUN_STAMP DESC,
                              CASE WHEN STATUS = 'S' THEN 0 ELSE 1 END
                 ) AS rn
@@ -1556,7 +1562,11 @@ public class SqlDataService : IDataService
             ISNULL(sg.GROSS_QUANTITY, 0) AS GrossQuantity,
             ISNULL(sg.INITIAL_STORAGE_DATE, '1900-01-01') AS StorageStartDate,
             ISNULL(sg.STORAGE_RATE, 0) AS StorageRate,
-            ISNULL(sg.LOCATION_CODE, '') AS Bin
+            ISNULL(sg.LOCATION_CODE, '') AS Bin,
+            ISNULL(sg.RECEIVABLE_AMOUNT, 0) AS ReceivableAmount,
+            ISNULL(sg.STORAGE_DAYS, 0) AS StorageDays,
+            sg.CHARGED_FROM_DATE AS ChargedFromDate,
+            sg.CHARGED_THRU_DATE AS ChargedThruDate
         FROM LatestReceipts sg
         INNER JOIN originations.vw_CurrentCustomers c ON sg.CUSTOMER_ID = c.SourceCustomerId
         WHERE sg.rn = 1
@@ -1867,85 +1877,114 @@ public class SqlDataService : IDataService
         return await query.ToListAsync(cancellationToken);
     }
 
-    public async Task<List<BidSheetEntry>> GetBidSheetEntriesAsync(string tradeUnitCode, int? cropYear = null, string? commodityCode = null, CancellationToken cancellationToken = default)
+    public async Task<List<BidSheetLocation>> GetBidSheetLocationsAsync(string tradeUnitCode, CancellationToken cancellationToken = default)
     {
-        var query = _appContext.BidSheetEntries
+        return await _appContext.BidSheetLocations
             .AsNoTracking()
-            .Where(e => e.TradeUnitCode == tradeUnitCode);
-
-        if (cropYear.HasValue)
-            query = query.Where(e => e.CropYear == cropYear.Value);
-
-        if (!string.IsNullOrEmpty(commodityCode))
-            query = query.Where(e => e.CommodityCode == commodityCode);
-
-        return await query.OrderByDescending(e => e.CreatedAt).ToListAsync(cancellationToken);
+            .Include(l => l.Bids)
+            .Where(l => l.TradeUnitCode == tradeUnitCode)
+            .OrderBy(l => l.Name)
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<BidSheetEntry> CreateBidSheetEntryAsync(BidSheetEntry entry, CancellationToken cancellationToken = default)
+    public async Task<BidSheetLocation> CreateBidSheetLocationAsync(BidSheetLocation location, CancellationToken cancellationToken = default)
     {
-        _appContext.BidSheetEntries.Add(entry);
+        _appContext.BidSheetLocations.Add(location);
         await _appContext.SaveChangesAsync(cancellationToken);
-        return entry;
+        return location;
     }
 
-    public async Task<BidSheetEntry?> UpdateBidSheetEntryAsync(int id, BidSheetEntry entry, CancellationToken cancellationToken = default)
+    public async Task<BidSheetLocation?> UpdateBidSheetLocationAsync(int id, BidSheetLocation location, CancellationToken cancellationToken = default)
     {
-        var existing = await _appContext.BidSheetEntries.FindAsync([id], cancellationToken);
+        var existing = await _appContext.BidSheetLocations
+            .Include(l => l.Bids)
+            .FirstOrDefaultAsync(l => l.Id == id, cancellationToken);
         if (existing == null) return null;
 
-        existing.Name = entry.Name;
-        existing.Address = entry.Address;
-        existing.City = entry.City;
-        existing.State = entry.State;
-        existing.Latitude = entry.Latitude;
-        existing.Longitude = entry.Longitude;
-        existing.Bid = entry.Bid;
-        existing.ModifiedBy = entry.ModifiedBy;
+        existing.Name = location.Name;
+        existing.Address = location.Address;
+        existing.City = location.City;
+        existing.State = location.State;
+        existing.Latitude = location.Latitude;
+        existing.Longitude = location.Longitude;
+        existing.ModifiedBy = location.ModifiedBy;
         existing.ModifiedAt = DateTime.UtcNow;
 
         await _appContext.SaveChangesAsync(cancellationToken);
         return existing;
     }
 
-    public async Task DeleteBidSheetEntryAsync(int id, CancellationToken cancellationToken = default)
+    public async Task DeleteBidSheetLocationAsync(int id, CancellationToken cancellationToken = default)
     {
-        var existing = await _appContext.BidSheetEntries.FindAsync([id], cancellationToken);
+        var existing = await _appContext.BidSheetLocations.FindAsync([id], cancellationToken);
         if (existing != null)
         {
-            _appContext.BidSheetEntries.Remove(existing);
+            _appContext.BidSheetLocations.Remove(existing);
             await _appContext.SaveChangesAsync(cancellationToken);
         }
     }
 
-    public async Task BulkCreateBidSheetEntriesAsync(List<BidSheetEntry> entries, CancellationToken cancellationToken = default)
+    public async Task BulkUpsertBidSheetBidsAsync(
+        IEnumerable<GrainOriginatorPortal.Api.Models.Requests.UpsertBidSheetBidRequest> requests,
+        string tradeUnitCode,
+        string userId,
+        CancellationToken cancellationToken = default)
     {
-        if (entries.Count == 0) return;
-        await _appContext.BidSheetEntries.AddRangeAsync(entries, cancellationToken);
-        await _appContext.SaveChangesAsync(cancellationToken);
-    }
+        var now = DateTime.UtcNow;
 
-    public async Task<BidReference?> GetBidReferenceAsync(string userId, string tradeUnitCode, string commodityCode, CancellationToken cancellationToken = default)
-    {
-        return await _appContext.BidReferences
-            .AsNoTracking()
-            .FirstOrDefaultAsync(r => r.UserId == userId && r.TradeUnitCode == tradeUnitCode && r.CommodityCode == commodityCode, cancellationToken);
-    }
-
-    public async Task SetBidReferenceAsync(BidReference reference, CancellationToken cancellationToken = default)
-    {
-        var existing = await _appContext.BidReferences
-            .FirstOrDefaultAsync(r => r.UserId == reference.UserId && r.TradeUnitCode == reference.TradeUnitCode && r.CommodityCode == reference.CommodityCode, cancellationToken);
-
-        if (existing != null)
+        foreach (var req in requests)
         {
-            existing.ElevatorCode = reference.ElevatorCode;
-            existing.ModifiedAt = DateTime.UtcNow;
-        }
-        else
-        {
-            reference.ModifiedAt = DateTime.UtcNow;
-            _appContext.BidReferences.Add(reference);
+            // Find existing location by ElevatorCode (if set) or Name within the trade unit
+            BidSheetLocation? loc = null;
+            if (!string.IsNullOrEmpty(req.ElevatorCode))
+                loc = await _appContext.BidSheetLocations
+                    .FirstOrDefaultAsync(l => l.TradeUnitCode == tradeUnitCode && l.ElevatorCode == req.ElevatorCode, cancellationToken);
+
+            if (loc == null && !string.IsNullOrEmpty(req.Name))
+                loc = await _appContext.BidSheetLocations
+                    .FirstOrDefaultAsync(l => l.TradeUnitCode == tradeUnitCode && l.Name == req.Name, cancellationToken);
+
+            if (loc == null)
+            {
+                loc = new BidSheetLocation
+                {
+                    Name = req.Name ?? req.ElevatorCode ?? string.Empty,
+                    ElevatorCode = req.ElevatorCode,
+                    TradeUnitCode = tradeUnitCode,
+                    GroupName = req.GroupName,
+                    Latitude = req.Latitude,
+                    Longitude = req.Longitude,
+                    CreatedBy = userId,
+                    CreatedAt = now
+                };
+                _appContext.BidSheetLocations.Add(loc);
+                await _appContext.SaveChangesAsync(cancellationToken);
+            }
+
+            // Upsert bid by (LocationId, CommodityCode, CropYear)
+            var bid = await _appContext.BidSheetLocationBids
+                .FirstOrDefaultAsync(b => b.LocationId == loc.Id && b.CommodityCode == req.CommodityCode && b.CropYear == req.CropYear, cancellationToken);
+
+            if (bid != null)
+            {
+                bid.Bid = req.Bid;
+                bid.ModifiedBy = userId;
+                bid.ModifiedAt = now;
+            }
+            else
+            {
+                _appContext.BidSheetLocationBids.Add(new BidSheetLocationBid
+                {
+                    LocationId = loc.Id,
+                    CommodityCode = req.CommodityCode,
+                    CommodityName = req.CommodityName,
+                    CommodityCategory = req.CommodityCategory,
+                    CropYear = req.CropYear,
+                    Bid = req.Bid,
+                    CreatedBy = userId,
+                    CreatedAt = now
+                });
+            }
         }
 
         await _appContext.SaveChangesAsync(cancellationToken);
@@ -1953,10 +1992,10 @@ public class SqlDataService : IDataService
 
     public async Task<List<int>> GetBidCropYearsAsync(string tradeUnitCode, CancellationToken cancellationToken = default)
     {
-        return await _appContext.BidSheetEntries
+        return await _appContext.BidSheetLocationBids
             .AsNoTracking()
-            .Where(e => e.TradeUnitCode == tradeUnitCode)
-            .Select(e => e.CropYear)
+            .Where(b => b.Location.TradeUnitCode == tradeUnitCode)
+            .Select(b => b.CropYear)
             .Distinct()
             .OrderBy(y => y)
             .ToListAsync(cancellationToken);
@@ -1964,10 +2003,10 @@ public class SqlDataService : IDataService
 
     public async Task<List<string>> GetBidCommoditiesAsync(string tradeUnitCode, CancellationToken cancellationToken = default)
     {
-        return await _appContext.BidSheetEntries
+        return await _appContext.BidSheetLocationBids
             .AsNoTracking()
-            .Where(e => e.TradeUnitCode == tradeUnitCode)
-            .Select(e => e.CommodityCode)
+            .Where(b => b.Location.TradeUnitCode == tradeUnitCode)
+            .Select(b => b.CommodityCode)
             .Distinct()
             .OrderBy(c => c)
             .ToListAsync(cancellationToken);

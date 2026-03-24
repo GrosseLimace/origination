@@ -18,7 +18,8 @@ import {
   ContractPricingLine,
   RefinementFilters,
   BidSheetEntry,
-  BidReference,
+  BidSheetLocation,
+  BidSheetLocationBid,
   Elevator
 } from '@models';
 import { environment } from '@env/environment';
@@ -146,8 +147,10 @@ export class ApiService {
   }
 
   /** Fetches all contracts for a specific customer */
-  getContractsByCustomer(customerId: number): Observable<Contract[]> {
-    return this.http.get<Contract[]>(`${this.baseUrl}/contracts/customer/${customerId}`)
+  getContractsByCustomer(customerId: number, sourceCustomerId?: string): Observable<Contract[]> {
+    let params = new HttpParams();
+    if (sourceCustomerId) params = params.set('sourceCustomerId', sourceCustomerId);
+    return this.http.get<Contract[]>(`${this.baseUrl}/contracts/customer/${customerId}`, { params })
       .pipe(catchError(e => this.handleError(e)));
   }
 
@@ -183,8 +186,10 @@ export class ApiService {
   }
 
   /** Fetches all delivery tickets for a specific customer */
-  getTicketsByCustomer(customerId: number): Observable<Ticket[]> {
-    return this.http.get<Ticket[]>(`${this.baseUrl}/tickets/customer/${customerId}`)
+  getTicketsByCustomer(customerId: number, sourceCustomerId?: string): Observable<Ticket[]> {
+    let params = new HttpParams();
+    if (sourceCustomerId) params = params.set('sourceCustomerId', sourceCustomerId);
+    return this.http.get<Ticket[]>(`${this.baseUrl}/tickets/customer/${customerId}`, { params })
       .pipe(catchError(e => this.handleError(e)));
   }
 
@@ -462,60 +467,55 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Gets bid sheet entries for a trade unit */
-  getBidSheetEntries(tradeUnitCode: string, cropYear?: number, commodityCode?: string): Observable<BidSheetEntry[]> {
-    let params: any = { tradeUnitCode };
-    if (cropYear) params.cropYear = cropYear.toString();
-    if (commodityCode) params.commodityCode = commodityCode;
-    return this.http.get<BidSheetEntry[]>(`${this.baseUrl}/bidsheet/entries`, { params })
+  /** Gets bid sheet locations (with nested bids) for a trade unit */
+  getBidSheetLocations(tradeUnitCode: string): Observable<BidSheetLocation[]> {
+    return this.http.get<BidSheetLocation[]>(`${this.baseUrl}/bidsheet/locations`, { params: { tradeUnitCode } })
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Creates a new bid sheet entry */
-  createBidSheetEntry(entry: Partial<BidSheetEntry>): Observable<BidSheetEntry> {
-    return this.http.post<BidSheetEntry>(`${this.baseUrl}/bidsheet/entries`, entry)
+  /** Creates a new bid sheet location with initial bids */
+  createBidSheetLocation(location: {
+    name?: string; address?: string; city?: string; state?: string;
+    latitude?: number; longitude?: number; elevatorCode?: string;
+    tradeUnitCode?: string; groupName?: string;
+    bids: Array<{ commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string }>;
+  }): Observable<BidSheetLocation> {
+    return this.http.post<BidSheetLocation>(`${this.baseUrl}/bidsheet/locations`, location)
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Updates a bid sheet entry */
-  updateBidSheetEntry(id: number, entry: Partial<BidSheetEntry>): Observable<BidSheetEntry> {
-    return this.http.put<BidSheetEntry>(`${this.baseUrl}/bidsheet/entries/${id}`, entry)
+  /** Updates a bid sheet location's metadata */
+  updateBidSheetLocation(id: number, location: Partial<BidSheetLocation>): Observable<BidSheetLocation> {
+    return this.http.put<BidSheetLocation>(`${this.baseUrl}/bidsheet/locations/${id}`, location)
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Deletes a bid sheet entry */
-  deleteBidSheetEntry(id: number, tradeUnitCode: string): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/bidsheet/entries/${id}?tradeUnitCode=${encodeURIComponent(tradeUnitCode)}`)
+  /** Deletes a bid sheet location and all its bids */
+  deleteBidSheetLocation(id: number, tradeUnitCode: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/bidsheet/locations/${id}?tradeUnitCode=${encodeURIComponent(tradeUnitCode)}`)
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Bulk creates bid sheet entries */
-  bulkCreateBidSheetEntries(entries: Partial<BidSheetEntry>[]): Observable<void> {
-    return this.http.post<void>(`${this.baseUrl}/bidsheet/entries/bulk`, entries)
+  /** Bulk upserts bids (used by the edit-bids grid) */
+  bulkUpsertBidSheetBids(bids: Array<{
+    name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string;
+    latitude?: number; longitude?: number;
+    commodityCode: string; commodityName?: string; commodityCategory?: string;
+    cropYear: number; bid: string;
+  }>): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/bidsheet/bids/bulk`, bids)
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Gets distinct crop years from bid sheet entries for a trade unit */
+  /** Gets distinct crop years from bids for a trade unit */
   getBidCropYears(tradeUnitCode: string): Observable<number[]> {
     return this.http.get<number[]>(`${this.baseUrl}/bidsheet/cropyears`, { params: { tradeUnitCode } })
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Gets distinct commodity codes from bid sheet entries for a trade unit */
+  /** Gets distinct commodity codes from bids for a trade unit */
   getBidCommodities(tradeUnitCode: string): Observable<string[]> {
     return this.http.get<string[]>(`${this.baseUrl}/bidsheet/commodities`, { params: { tradeUnitCode } })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Gets the user's reference elevator for a trade unit + commodity */
-  getBidReference(tradeUnitCode: string, commodityCode: string): Observable<BidReference | null> {
-    return this.http.get<BidReference>(`${this.baseUrl}/bidsheet/reference`, { params: { tradeUnitCode, commodityCode } })
-      .pipe(catchError(() => of(null as BidReference | null)));
-  }
-
-  /** Sets or updates the user's reference elevator */
-  setBidReference(tradeUnitCode: string, commodityCode: string, elevatorCode: string): Observable<void> {
-    return this.http.put<void>(`${this.baseUrl}/bidsheet/reference`, { tradeUnitCode, commodityCode, elevatorCode })
       .pipe(catchError(e => this.handleError(e)));
   }
 

@@ -47,6 +47,7 @@ export class HeaderComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   readonly envName = environment.envName;
+  readonly bidSheetEnabled = environment.bidSheetEnabled;
 
   mobileMenuOpen = signal(false);
   profileMenuOpen = signal(false);

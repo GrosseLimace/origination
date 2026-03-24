@@ -1233,7 +1233,7 @@ export class NlqFilterService {
       const minCost = this.parseQuantity(storageCostMatch[1]);
       const customerCosts = new Map<number, number>();
       for (const sg of storedGrain) {
-        customerCosts.set(sg.customerId, (customerCosts.get(sg.customerId) || 0) + sg.accumulatedStorageCost);
+        customerCosts.set(sg.customerId, (customerCosts.get(sg.customerId) || 0) + sg.receivableAmount);
       }
       const ids = new Set(
         [...customerCosts.entries()].filter(([_, cost]) => cost >= minCost).map(([id]) => id)

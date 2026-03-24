@@ -27,21 +27,11 @@ export class StoredGrainTableComponent {
   searchQuery = signal('');
   expandedCommodities = signal(new Set<string>());
 
-  private readonly costCache = computed(() => {
-    const cache = new Map<string, { totalCost: number; monthsStored: number }>();
-    const now = new Date();
-    for (const grain of this.storedGrain()) {
-      const start = new Date(grain.storageStartDate);
-      const monthsStored = (now.getFullYear() - start.getFullYear()) * 12
-                         + (now.getMonth() - start.getMonth())
-                         + (now.getDate() / 30);
-      cache.set(grain.id, { totalCost: monthsStored * grain.storageRate * grain.quantity, monthsStored });
-    }
-    return cache;
-  });
+  private readonly grainById = computed(() =>
+    new Map(this.storedGrain().map(g => [g.id, g]))
+  );
 
   private readonly allCommodityGroups = computed<CommodityGroup[]>(() => {
-    const cache = this.costCache();
     const groupMap = new Map<string, CommodityGroup>();
 
     for (const grain of this.storedGrain()) {
@@ -58,7 +48,7 @@ export class StoredGrainTableComponent {
       const group = groupMap.get(key)!;
       group.receipts.push(grain);
       group.totalBushels += grain.quantity;
-      group.totalCost += cache.get(grain.id)?.totalCost ?? 0;
+      group.totalCost += grain.receivableAmount;
       const rowDate = new Date(grain.storageStartDate);
       if (rowDate < group.earliestDate) group.earliestDate = rowDate;
     }
@@ -83,12 +73,11 @@ export class StoredGrainTableComponent {
         this._formatDate(r.storageStartDate).includes(term)
       );
       if (matchedReceipts.length > 0) {
-        const cache = this.costCache();
         result.push({
           ...group,
           receipts: matchedReceipts,
           totalBushels: matchedReceipts.reduce((s, r) => s + r.quantity, 0),
-          totalCost: matchedReceipts.reduce((s, r) => s + (cache.get(r.id)?.totalCost ?? 0), 0)
+          totalCost: matchedReceipts.reduce((s, r) => s + r.receivableAmount, 0)
         });
       }
     }
@@ -105,11 +94,7 @@ export class StoredGrainTableComponent {
   }
 
   getCost(grainId: string): number {
-    return this.costCache().get(grainId)?.totalCost ?? 0;
-  }
-
-  getMonths(grainId: string): number {
-    return this.costCache().get(grainId)?.monthsStored ?? 0;
+    return this.grainById().get(grainId)?.receivableAmount ?? 0;
   }
 
   clearSearch(): void {
