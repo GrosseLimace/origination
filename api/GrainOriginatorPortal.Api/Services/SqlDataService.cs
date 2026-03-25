@@ -161,7 +161,7 @@ public class SqlDataService : IDataService
     {
         Id = snap.CustomerId,
         Name = snap.CustomerName,
-        SourceCustomerId = snap.SourceCustomerId,
+        SourceCustomerId = snap.SourceCustomerId?.Trim(),
         IndustryCode1 = snap.IndustryCode1,
         IsActive = snap.IsActive,
         EffectiveStartDate = snap.EffectiveStartDate,
@@ -928,11 +928,23 @@ public class SqlDataService : IDataService
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
-                var customerCodes = tuContracts.Select(c => c.CtrmCustomerId!).Distinct().ToList();
+                var contractCustomerCodes = tuContracts.Select(c => c.CtrmCustomerId!).ToHashSet();
                 var tuContractNumbers = tuContracts
                     .Select(c => c.SourceContractId)
                     .Where(n => n != null)
                     .ToHashSet();
+
+                // Also include customers in the snapshot for this TU who have no active contracts
+                // (e.g. spot-load-only customers). Union deduplicates shared customers.
+                var snapshotCustomerCodes = await _appContext.CustomerSnapshots
+                    .AsNoTracking()
+                    .Where(s => s.IsActive && s.SourceCustomerId != null
+                        && s.TradeUnit != null && tradeUnits!.Contains(s.TradeUnit))
+                    .Select(s => s.SourceCustomerId!)
+                    .Distinct()
+                    .ToListAsync(cancellationToken);
+
+                var customerCodes = contractCustomerCodes.Union(snapshotCustomerCodes).ToList();
 
                 var rawTickets = await _context.Tickets
                     .AsNoTracking()

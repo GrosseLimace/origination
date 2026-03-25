@@ -1,4 +1,4 @@
-import { Component, inject, input, signal, computed, ChangeDetectionStrategy, HostBinding, HostListener, DestroyRef, OnInit } from '@angular/core';
+import { Component, inject, input, output, signal, computed, ChangeDetectionStrategy, HostBinding, HostListener, DestroyRef, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ApiService } from '@core/services/api.service';
@@ -16,6 +16,13 @@ export class TradeUnitSelectorComponent implements OnInit {
    *  stacked=false (default): compact inline layout (page headers). */
   stacked = input(false);
 
+  /**
+   * deferred=true: changes are staged locally until Done is clicked.
+   * Outside-click or cancel discards changes without touching app state.
+   * Use this when the host component needs to control when the selection applies.
+   */
+  deferred = input(false);
+
   @HostBinding('class') get hostClass() {
     return this.stacked()
       ? 'block w-full space-y-3'
@@ -30,6 +37,15 @@ export class TradeUnitSelectorComponent implements OnInit {
   isGroupDropdownOpen = signal(false);
   groupsLoading = signal(false);
   groupsLoadError = signal(false);
+
+  // Draft selection used when deferred=true — null means dropdown is closed/no pending edit
+  private readonly _draftTradeUnits = signal<string[] | null>(null);
+
+  // Effective selection shown in the dropdown: draft when deferred+open, else app state
+  private readonly _effectiveTradeUnits = computed(() => {
+    const draft = this._draftTradeUnits();
+    return this.deferred() && draft !== null ? draft : this.appState.selectedTradeUnits();
+  });
 
   ngOnInit(): void {
     if (!this.appState.userGroupsLoaded()) {
@@ -145,31 +161,63 @@ export class TradeUnitSelectorComponent implements OnInit {
     this.isTradeUnitDropdownOpen.update(v => !v);
     if (this.isTradeUnitDropdownOpen()) {
       this.isGroupDropdownOpen.set(false);
+      // In deferred mode, snapshot current app state as the draft
+      if (this.deferred()) {
+        this._draftTradeUnits.set([...this.appState.selectedTradeUnits()]);
+      }
+    } else if (this.deferred()) {
+      // Closed without Done — discard draft
+      this._draftTradeUnits.set(null);
     }
   }
 
+  done = output<void>();
+
   closeDropdown(): void {
+    if (this.deferred()) {
+      this._draftTradeUnits.set(null); // Discard — revert to app state
+    }
     this.isTradeUnitDropdownOpen.set(false);
   }
 
+  confirmDone(): void {
+    if (this.deferred()) {
+      const draft = this._draftTradeUnits();
+      if (draft !== null) {
+        this.appState.setTradeUnits(draft);
+      }
+      this._draftTradeUnits.set(null);
+    }
+    this.isTradeUnitDropdownOpen.set(false);
+    this.done.emit();
+  }
+
   toggleTradeUnit(unit: string): void {
-    const current = this.appState.selectedTradeUnits();
-    const index = current.indexOf(unit);
-    const updated = index > -1 ? current.filter((_, i) => i !== index) : [...current, unit];
-    this.appState.setTradeUnits(updated);
+    if (this.deferred()) {
+      const current = this._draftTradeUnits() ?? [...this.appState.selectedTradeUnits()];
+      const index = current.indexOf(unit);
+      this._draftTradeUnits.set(index > -1 ? current.filter((_, i) => i !== index) : [...current, unit]);
+    } else {
+      const current = this.appState.selectedTradeUnits();
+      const index = current.indexOf(unit);
+      this.appState.setTradeUnits(index > -1 ? current.filter((_, i) => i !== index) : [...current, unit]);
+    }
   }
 
   clearAllTradeUnits(): void {
-    this.appState.setTradeUnits([]);
-    // Keep dropdown open so user can make new selections
+    if (this.deferred()) {
+      this._draftTradeUnits.set([]);
+    } else {
+      this.appState.setTradeUnits([]);
+    }
   }
 
   isTradeUnitSelected(unit: string): boolean {
-    return this.appState.selectedTradeUnits().includes(unit);
+    return this._effectiveTradeUnits().includes(unit);
   }
 
   getTradeUnitButtonText(): string {
-    const units = this.appState.selectedTradeUnits();
+    const units = this._effectiveTradeUnits();
     if (units.length === 0) {
       return 'Select Trade Units';
     } else if (units.length === 1) {
