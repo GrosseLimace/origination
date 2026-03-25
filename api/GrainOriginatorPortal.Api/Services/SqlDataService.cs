@@ -1709,31 +1709,32 @@ public class SqlDataService : IDataService
 
     public async Task<DashboardSummaryResponse> GetDashboardSummaryAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default)
     {
-        var estimatesTask = _appContext.DashboardPlantingEstimates
+        // EF Core DbContext is not thread-safe — run sequentially instead of Task.WhenAll.
+        // These are small app tables (< 20ms each), so sequential is still far faster
+        // than 3 separate HTTP round-trips from the client.
+        var estimates = await _appContext.DashboardPlantingEstimates
             .AsNoTracking()
             .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear)
             .OrderBy(e => e.Crop)
             .ToListAsync(cancellationToken);
 
-        var sharesTask = _appContext.DashboardMarketShares
+        var marketShares = await _appContext.DashboardMarketShares
             .AsNoTracking()
             .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear)
             .OrderBy(e => e.CropCategory)
             .ToListAsync(cancellationToken);
 
-        var harvestTask = _appContext.DashboardActualHarvests
+        var actualHarvest = await _appContext.DashboardActualHarvests
             .AsNoTracking()
             .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear - 1)
             .OrderBy(e => e.CropCategory)
             .ToListAsync(cancellationToken);
 
-        await Task.WhenAll(estimatesTask, sharesTask, harvestTask);
-
         return new DashboardSummaryResponse
         {
-            Estimates = estimatesTask.Result,
-            MarketShares = sharesTask.Result,
-            ActualHarvest = harvestTask.Result
+            Estimates = estimates,
+            MarketShares = marketShares,
+            ActualHarvest = actualHarvest
         };
     }
 

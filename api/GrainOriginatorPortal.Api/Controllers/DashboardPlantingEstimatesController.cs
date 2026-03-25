@@ -31,6 +31,7 @@ public class DashboardPlantingEstimatesController : ControllerBase
     // -------------------------------------------------------------------------
     /// <summary>Gets all three dashboard datasets (estimates, market shares, actual harvest) in a single request.</summary>
     [HttpGet("summary")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     [ProducesResponseType(typeof(DashboardSummaryResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<DashboardSummaryResponse>> GetSummary([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear, CancellationToken cancellationToken = default)
