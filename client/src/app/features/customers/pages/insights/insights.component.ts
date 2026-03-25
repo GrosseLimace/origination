@@ -118,6 +118,7 @@ export class InsightsComponent {
   readonly contracts = this.appState.contracts;
   readonly tickets = this.appState.tickets;
   readonly todaysTickets = this.appState.todaysTickets;
+  readonly commodities = this.appState.commodities;
   readonly isLoading = computed(() => this.appState.dataLoading());
   isBackgroundRefreshing = signal(false);
   private readonly _dataLoading$ = toObservable(this.appState.dataLoading);
@@ -174,6 +175,11 @@ export class InsightsComponent {
       if (!t.customerCode) continue;
       const arr = todayTicketsByCustomer.get(t.customerCode);
       if (arr) { arr.push(t); } else { todayTicketsByCustomer.set(t.customerCode, [t]); }
+    }
+    // Commodity code → name map for search (e.g. "YC" → "Yellow Corn")
+    const commodityNameByCode = new Map<string, string>();
+    for (const c of this.commodities()) {
+      if (c.code) commodityNameByCode.set(c.code.trim().toUpperCase(), c.name);
     }
 
     for (const customer of customers) {
@@ -233,7 +239,11 @@ export class InsightsComponent {
                 ...(bu ? [{ label: `${bu.toLocaleString()} bu`, style: 'quantity' as InsightTagStyle }] : []),
                 { label: 'Spot', style: 'warning' },
               ],
-              searchTerms: [ticket.ticketNumber, ticket.productCode].filter(Boolean) as string[]
+              searchTerms: [
+                ticket.ticketNumber,
+                ticket.productCode,
+                ticket.productCode ? commodityNameByCode.get(ticket.productCode.trim().toUpperCase()) : undefined,
+              ].filter(Boolean) as string[]
             });
           }
         }
@@ -457,6 +467,7 @@ export class InsightsComponent {
   selectInsight(insight: Insight): void {
     const params: Record<string, string | number> = { customerId: insight.customer.id };
     if (insight.contractId) params['contractId'] = insight.contractId;
+    if (insight.category === 'SpotLoads') params['tab'] = 'tickets';
     this.router.navigate(['/'], { queryParams: params });
   }
 

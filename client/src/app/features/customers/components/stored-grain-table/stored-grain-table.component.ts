@@ -1,4 +1,4 @@
-import { Component, input, computed, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, input, computed, signal, effect, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Customer, StoredGrain } from '@models';
@@ -26,6 +26,17 @@ export class StoredGrainTableComponent {
   showSearch = signal(false);
   searchQuery = signal('');
   expandedCommodities = signal(new Set<string>());
+
+  constructor() {
+    // Auto-expand the single commodity group so the user doesn't have to click
+    // to open it. With multiple groups, start collapsed so the summary is visible.
+    effect(() => {
+      const groups = this.allCommodityGroups();
+      this.expandedCommodities.set(
+        groups.length === 1 ? new Set([groups[0].crop]) : new Set()
+      );
+    });
+  }
 
   private readonly grainById = computed(() =>
     new Map(this.storedGrain().map(g => [g.id, g]))

@@ -64,6 +64,7 @@ export class CustomerProfileComponent {
   public linkedCustomers = input<Customer[]>([]);
   public onSelectLinkedCustomer = output<number>();
   public openContractId = input<number | null>(null);
+  public openTab = input<string | null>(null);
 
   @ViewChild(PlantingIntentionsTableComponent) private plantingTable?: PlantingIntentionsTableComponent;
   @ViewChild('tabsSection') private tabsSectionRef?: ElementRef<HTMLElement>;
@@ -85,6 +86,17 @@ export class CustomerProfileComponent {
       if (openContractId != null) {
         this.activeTab.set('contracts');
         // Defer scroll until after Angular renders the tab switch
+        setTimeout(() => {
+          this.tabsSectionRef?.nativeElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 50);
+      }
+    });
+
+    effect(() => {
+      // When arriving from Insights with a requested tab (e.g. 'tickets' for Spot Loads), switch to it
+      const tab = this.openTab();
+      if (tab) {
+        this.activeTab.set(tab);
         setTimeout(() => {
           this.tabsSectionRef?.nativeElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }, 50);
