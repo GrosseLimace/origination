@@ -113,6 +113,7 @@ export class BidSheetComponent {
   editBidsCrop = signal<string>('');
   editBidsRows = signal<EditBidsRow[]>([]);
   editBidsSaving = signal(false);
+  editBidsGridLoading = signal(false);
 
   readonly editBidsCrops = computed(() => {
     const filter = this.editBidsCrop();
@@ -331,7 +332,7 @@ export class BidSheetComponent {
     }
   }
 
-  private _loadBidData(tradeUnitCodes: string[]): void {
+  private _loadBidData(tradeUnitCodes: string[], onLoaded?: () => void): void {
     if (tradeUnitCodes.length === 0) return;
     this.isLoading.set(true);
 
@@ -364,6 +365,7 @@ export class BidSheetComponent {
         this.isLoading.set(false);
         this.filterBids();
         this._refreshMapMarkers();
+        onLoaded?.();
       },
       error: () => {
         this.isLoading.set(false);
@@ -414,6 +416,8 @@ export class BidSheetComponent {
       const isRef = code === refCode;
       const oldBid = this._getLatestBid(name, oldYr, crop);
       const newBid = this._getLatestBid(name, newYr, crop);
+      // When a crop is selected, hide elevators with no bid for that crop
+      if (crop && !newBid && !oldBid) continue;
 
       items.push({
         type: 'elevator',
@@ -699,9 +703,28 @@ export class BidSheetComponent {
     this.editBidsRows.set(rows);
   }
 
+  applyEditBidsTuFilter(): void {
+    const tus = this.activeTradeUnits();
+    if (tus.length === 0) return;
+    this.editBidsGridLoading.set(true);
+    const start = Date.now();
+    this._loadBidData(tus, () => {
+      const elapsed = Date.now() - start;
+      const remaining = Math.max(0, 1000 - elapsed);
+      setTimeout(() => {
+        this._buildEditGrid(this.editBidsYear());
+        this.editBidsGridLoading.set(false);
+      }, remaining);
+    });
+  }
+
   onEditBidsYearChange(year: number): void {
     this.editBidsYear.set(year);
-    this._buildEditGrid(year);
+    this.editBidsGridLoading.set(true);
+    setTimeout(() => {
+      this._buildEditGrid(year);
+      this.editBidsGridLoading.set(false);
+    }, 400);
   }
 
   updateBid(rowIndex: number, crop: string, value: string): void {
@@ -922,6 +945,8 @@ export class BidSheetComponent {
     const activeTus = this.activeTradeUnits();
     const hasTu = activeTus.length > 0;
     const zoom = this._map.getZoom();
+    const mapCrop = this.selectedCrop();
+    const mapNewYr = this.newYear();
 
     // Only render Scoular-owned elevators in the selected group/TUs; fall back to all Scoular when nothing selected
     const scoularOnly = (e: Elevator) => (e.ourFacility ?? '').trim() === 'Y';
@@ -962,7 +987,14 @@ export class BidSheetComponent {
       }
 
       // All elevators in this group are from the selected TU(s) — render as labeled markers
-      const tuGroup = group;
+      // When a crop is selected, hide elevators with no bid for that crop/year
+      const tuGroup = mapCrop
+        ? group.filter(e => {
+            const n = ((e.elevatorName ?? '') || (e.elevatorShortName ?? '')).trim() || (e.elevatorCode ?? '').trim();
+            return this._getLatestBid(n, mapNewYr, mapCrop) !== '';
+          })
+        : group;
+      if (tuGroup.length === 0) continue;
       const names = this._getGroupedNames(tuGroup);
       const linesHtml = names.map(n => {
         const elev = tuGroup.find(e => ((e.elevatorName ?? '') || (e.elevatorShortName ?? '')).trim().startsWith(n.split('\n')[0]));
@@ -1033,6 +1065,8 @@ export class BidSheetComponent {
               .filter(e => e.name === name && e.commodityCode === crop && e.cropYear === year)
               .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
           : null;
+        // When a crop filter is active, only show locations that have a bid for that crop/year
+        if (crop && !matched) continue;
         const label = matched ? matched.bid : name.slice(0, 10);
 
         // Color pin based on status relative to reference
@@ -1051,7 +1085,27 @@ export class BidSheetComponent {
           iconAnchor: [29, 36],
           popupAnchor: [0, -36]
         });
-        this._clusterGroup.addLayer(L.marker([rep.latitude!, rep.longitude!], { icon: divIcon }));
+
+        // Build popup: location name + all bids for this location in the selected year
+        const locationBids = this.bidEntries()
+          .filter(e => e.name === name && e.cropYear === year)
+          .sort((a, b) => (a.commodityName ?? a.commodityCode).localeCompare(b.commodityName ?? b.commodityCode));
+        const bidsHtml = locationBids.length > 0
+          ? locationBids.map(e =>
+              `<div style="display:flex;justify-content:space-between;gap:12px;padding:2px 0;">
+                <span style="color:#6b7280;font-size:11px;">${this._esc(e.commodityName ?? e.commodityCode)}</span>
+                <span style="font-weight:600;font-size:11px;">${this._esc(e.bid)}</span>
+              </div>`).join('')
+          : `<span style="color:#9ca3af;font-size:11px;">No bids for ${year}</span>`;
+        const popupHtml =
+          `<div style="min-width:140px;">
+            <div style="font-weight:700;font-size:13px;color:#111827;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid #e5e7eb;">${this._esc(name)}</div>
+            ${bidsHtml}
+          </div>`;
+
+        const bidMarker = L.marker([rep.latitude!, rep.longitude!], { icon: divIcon });
+        bidMarker.bindPopup(popupHtml, { closeButton: false });
+        this._clusterGroup.addLayer(bidMarker);
       }
     }
   }
