@@ -2,15 +2,6 @@ import { Injectable, signal, computed } from '@angular/core';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, Commodity, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, RefinementFilters, ContractPricingLine } from '@models';
 import { ProducerDetails } from '../../models/producer-details.model';
 
-export interface InsightsCacheEntry {
-  tradeUnitsKey: string; // sorted, comma-joined trade unit IDs — used to detect trade unit changes
-  customers: Customer[];
-  contracts: Contract[];
-  tickets: Ticket[];
-  notes: Note[];
-  loadedAt: Date;
-}
-
 export interface DashboardCacheEntry {
   tradeUnitsKey: string;
   customers: Customer[];
@@ -173,17 +164,6 @@ export class AppStateService {
     this.dataLoading.set(loading);
   }
 
-  // Insights cache — keyed by trade unit so navigating back shows data instantly
-  insightsCache = signal<InsightsCacheEntry | null>(null);
-
-  setInsightsCache(entry: InsightsCacheEntry): void {
-    this.insightsCache.set(entry);
-  }
-
-  clearInsightsCache(): void {
-    this.insightsCache.set(null);
-  }
-
   // Dashboard cache — keyed by trade unit so navigating back shows data instantly
   dashboardCache = signal<DashboardCacheEntry | null>(null);
 
@@ -261,7 +241,6 @@ export class AppStateService {
     this.producerDetails.set([]);
     this.buildListState.set(null);
     this.lastScrolledCustomerId.set(null);
-    this.insightsCache.set(null);
     this.dashboardCache.set(null);
     this.preloadedDashboardSummary.set(null);
     this.dataLoading.set(false);

@@ -153,6 +153,9 @@ export class InsightsComponent {
     if (customers.length === 0) return [] as Insight[];
     const contracts = this.contracts();
     const tickets = this.tickets();
+    // Skip the O(n) customer loop if no contracts or tickets have arrived yet —
+    // no insights can exist without at least one of these data sources.
+    if (contracts.length === 0 && tickets.length === 0) return [] as Insight[];
 
     const insights: Insight[] = [];
     const now = new Date();
@@ -378,13 +381,24 @@ export class InsightsComponent {
   }
 
   constructor() {
-    // Reset UI state and update loadedAt when insights data changes
+    // Reset expanded/search state only when trade units change — not when secondary
+    // data like tickets arrives after the initial render. Without this split, the
+    // single effect tracking allInsights() fired 3 times per load (customers,
+    // contracts, tickets) and collapsed any category the user had already opened.
     effect(() => {
-      this.allInsights(); // track dependency
+      this.appState.selectedTradeUnits(); // track TU changes
       untracked(() => {
         this.expandedCustomers.set(new Set());
+        this.expandedCategories.set(new Set());
         this.categorySearchRaw.set({});
         this.globalSearchRaw.set('');
+      });
+    });
+
+    // Update "Updated at X:XX" timestamp whenever insights data changes.
+    effect(() => {
+      this.allInsights(); // track data changes
+      untracked(() => {
         if (this.customers().length > 0) {
           this.loadedAt.set(new Date());
         }

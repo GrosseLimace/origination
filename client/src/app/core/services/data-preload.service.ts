@@ -76,7 +76,6 @@ export class DataPreloadService {
         }
 
         this.appState.setDataLoading(true);
-        this.appState.clearInsightsCache();
         this.appState.clearDashboardCache();
         this.appState.clearPreloadedDashboardSummary();
 
