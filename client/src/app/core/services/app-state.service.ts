@@ -83,6 +83,7 @@ export class AppStateService {
   // Data cache - persists across navigation
   customers = signal<Customer[]>([]);
   contracts = signal<Contract[]>([]);
+  todaysTickets = signal<Ticket[]>([]);
   tickets = signal<Ticket[]>([]);
   plantingIntentions = signal<PlantingIntention[]>([]);
   notes = signal<Note[]>([]);
@@ -123,6 +124,10 @@ export class AppStateService {
 
   setContracts(contracts: Contract[]): void {
     this.contracts.set(contracts);
+  }
+
+  setTodaysTickets(tickets: Ticket[]): void {
+    this.todaysTickets.set(tickets);
   }
 
   setTickets(tickets: Ticket[]): void {
@@ -244,5 +249,6 @@ export class AppStateService {
     this.dashboardCache.set(null);
     this.preloadedDashboardSummary.set(null);
     this.dataLoading.set(false);
+    this.todaysTickets.set([]);
   }
 }

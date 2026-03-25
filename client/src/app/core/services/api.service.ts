@@ -186,6 +186,17 @@ export class ApiService {
     );
   }
 
+  /** Fetches today's delivery tickets only — fast path for Spot Loads in Insights */
+  getTodaysTickets(tradeUnits?: string[]): Observable<Ticket[]> {
+    let params = new HttpParams();
+    tradeUnits?.forEach(tu => params = params.append('tradeUnits', tu));
+    const key = `tickets:today:${[...(tradeUnits ?? [])].sort().join(',')}`;
+    return this._dedupe(key,
+      this.http.get<Ticket[]>(`${this.baseUrl}/tickets/today`, { params })
+        .pipe(catchError(e => this.handleError(e)))
+    );
+  }
+
   /** Fetches all delivery tickets for a specific customer */
   getTicketsByCustomer(customerId: number, sourceCustomerId?: string): Observable<Ticket[]> {
     let params = new HttpParams();

@@ -1030,6 +1030,115 @@ public class SqlDataService : IDataService
         }
     }
 
+    public async Task<List<Ticket>> GetTodaysTicketsAsync(List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
+    {
+        var todayStr = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
+
+        try
+        {
+            List<Ticket> tickets;
+
+            if (!hasTradeUnitFilter)
+            {
+                var customerCodes = await _context.Customers
+                    .AsNoTracking()
+                    .Where(c => c.SourceCustomerId != null && (
+                        _context.Contracts.Any(ct => ct.IsActive && ct.CtrmCustomerId == c.SourceCustomerId) ||
+                        _context.Tickets.Any(t => t.IsActive && t.CustomerCode == c.SourceCustomerId)))
+                    .Take(15)
+                    .Select(c => c.SourceCustomerId!)
+                    .ToListAsync(cancellationToken);
+
+                tickets = await _context.Tickets
+                    .AsNoTracking()
+                    .Where(t => t.IsActive && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode) && t.Date == todayStr)
+                    .OrderByDescending(t => t.Date)
+                    .ToListAsync(cancellationToken);
+            }
+            else
+            {
+                var tuContracts = await _context.Contracts
+                    .AsNoTracking()
+                    .Where(c => c.IsActive && c.CtrmCustomerId != null
+                        && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
+                    .Select(c => new { c.CtrmCustomerId, c.SourceContractId })
+                    .Distinct()
+                    .ToListAsync(cancellationToken);
+
+                var contractCustomerCodes = tuContracts.Select(c => c.CtrmCustomerId!).ToHashSet();
+                var tuContractNumbers = tuContracts
+                    .Select(c => c.SourceContractId)
+                    .Where(n => n != null)
+                    .ToHashSet();
+
+                var snapshotCustomerCodes = await _appContext.CustomerSnapshots
+                    .AsNoTracking()
+                    .Where(s => s.IsActive && s.SourceCustomerId != null
+                        && s.TradeUnit != null && tradeUnits!.Contains(s.TradeUnit))
+                    .Select(s => s.SourceCustomerId!)
+                    .Distinct()
+                    .ToListAsync(cancellationToken);
+
+                var customerCodes = contractCustomerCodes.Union(snapshotCustomerCodes).ToList();
+
+                var rawTickets = await _context.Tickets
+                    .AsNoTracking()
+                    .Where(t => t.IsActive && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode) && t.Date == todayStr)
+                    .OrderByDescending(t => t.Date)
+                    .ToListAsync(cancellationToken);
+
+                tickets = rawTickets
+                    .Where(t => !t.IsApplied || tuContractNumbers.Contains(t.CtrmContractNumber!))
+                    .ToList();
+            }
+
+            _logger.LogInformation("Loaded {TicketCount} today's tickets (filtered: {IsFiltered}, date: {TodayStr})",
+                tickets.Count, hasTradeUnitFilter, todayStr);
+
+            // Load quality data
+            var ticketIds = tickets.Select(t => t.Id);
+            var qualityData = await _context.TicketQualities
+                .AsNoTracking()
+                .Where(q => ticketIds.Contains(q.TicketId))
+                .ToDictionaryAsync(q => q.TicketId, cancellationToken);
+
+            foreach (var ticket in tickets)
+            {
+                if (qualityData.TryGetValue(ticket.Id, out var quality))
+                {
+                    ticket.Moisture = quality.GradeFactorMoisturePercent;
+                    ticket.TestWeight = quality.GradeFactorTestWeightPercent;
+                    ticket.ProteinPercent = quality.GradeFactorProteinPercent;
+                }
+            }
+
+            return tickets;
+        }
+        catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
+        {
+            _logger.LogWarning(ex, "Tickets view not accessible in this environment — returning empty today's tickets. SQL {Number}: {Error} [{TraceId}]",
+                ex.Number, ex.Message, GetTraceId());
+            return [];
+        }
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
+        {
+            _logger.LogWarning(ex, "DB connection error retrieving today's tickets — returning empty list [{TraceId}]", GetTraceId());
+            return [];
+        }
+        catch (Exception ex) when (ex is InvalidCastException or InvalidOperationException or OverflowException)
+        {
+            _logger.LogWarning(ex, "EF Core mapping error retrieving today's tickets — returning empty list [{TraceId}]", GetTraceId());
+            return [];
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving today's tickets [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            throw;
+        }
+    }
+
     public async Task<List<Ticket>> GetTicketsByCustomerAsync(long customerId, string? sourceCustomerId = null, CancellationToken cancellationToken = default)
     {
         try
