@@ -29,6 +29,17 @@ public class DashboardPlantingEstimatesController : ControllerBase
         ?? "unknown";
 
     // -------------------------------------------------------------------------
+    /// <summary>Gets all three dashboard datasets (estimates, market shares, actual harvest) in a single request.</summary>
+    [HttpGet("summary")]
+    [ProducesResponseType(typeof(DashboardSummaryResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<DashboardSummaryResponse>> GetSummary([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear, CancellationToken cancellationToken = default)
+    {
+        ValidateDashboardParams(tradeUnitKey, plantingYear);
+        return Ok(await _dataService.GetDashboardSummaryAsync(tradeUnitKey, plantingYear, cancellationToken));
+    }
+
+    // -------------------------------------------------------------------------
     /// <summary>Gets planting estimates for a trade unit key and year.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(List<DashboardPlantingEstimate>), StatusCodes.Status200OK)]

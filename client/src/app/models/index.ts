@@ -13,6 +13,7 @@ export * from './producer-details.model';
 export * from './dashboard-planting-estimate.model';
 export * from './dashboard-market-share.model';
 export * from './dashboard-actual-harvest.model';
+export * from './dashboard-summary.model';
 export * from './contract-pricing-line.model';
 export * from './refine-filters.model';
 export * from './bid-sheet.model';

@@ -222,25 +222,29 @@ export class ActivitySummaryComponent {
   private _generateStorageSummary(): string {
     if (!this.storedGrain() || this.storedGrain().length === 0) return '';
 
-    const totalStored = this.storedGrain().reduce((sum, s) => sum + (s?.quantity || 0), 0);
+    // Group by crop, summing quantity and receivableAmount per commodity
+    const cropGroups = this.storedGrain().reduce((acc, s) => {
+      if (!s || !s.crop) return acc;
+      const crop = s.crop;
+      if (!acc[crop]) acc[crop] = { quantity: 0, receivableAmount: 0 };
+      acc[crop].quantity += s.quantity || 0;
+      acc[crop].receivableAmount += s.receivableAmount || 0;
+      return acc;
+    }, {} as Record<string, { quantity: number; receivableAmount: number }>);
 
-    // Average storage duration with date validation
-    const validGrain = this.storedGrain().filter(s => s && s.storageStartDate);
-    if (validGrain.length === 0) return '';
+    const entries = Object.entries(cropGroups);
+    if (entries.length === 0) return '';
 
-    const avgDays = validGrain.reduce((sum, s) => {
-      try {
-        const startDate = new Date(s.storageStartDate);
-        // Validate date is valid and not in the future
-        if (isNaN(startDate.getTime()) || startDate > new Date()) return sum;
-        const days = this._calculateDaysBetween(startDate, new Date());
-        return sum + Math.max(0, days); // Ensure non-negative
-      } catch {
-        return sum;
-      }
-    }, 0) / validGrain.length;
+    const parts = entries.map(([crop, data]) =>
+      `${this._formatQuantity(Math.round(data.quantity), 'bushels')} of ${crop} with an accumulated cost of ${this._formatCurrency(data.receivableAmount)}`
+    );
 
-    return `Currently holding ${this._formatQuantity(totalStored, 'bushels')} in Scoular facility storage, averaging ${Math.floor(avgDays)} days in.`;
+    if (parts.length === 1) {
+      return `Currently holding ${parts[0]}.`;
+    }
+    const last = parts[parts.length - 1];
+    const rest = parts.slice(0, -1).join(', ');
+    return `Currently holding ${rest}, and ${last}.`;
   }
 
   private _generateDeliverySummary(): string {

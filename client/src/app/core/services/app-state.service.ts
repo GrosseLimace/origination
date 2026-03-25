@@ -1,5 +1,5 @@
 import { Injectable, signal, computed } from '@angular/core';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, Commodity, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, RefinementFilters, ContractPricingLine } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, Commodity, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, RefinementFilters, ContractPricingLine } from '@models';
 import { ProducerDetails } from '../../models/producer-details.model';
 
 export interface InsightsCacheEntry {
@@ -195,6 +195,18 @@ export class AppStateService {
     this.dashboardCache.set(null);
   }
 
+  // Pre-fetched dashboard summary — DataPreloadService populates this for the current year
+  // so the dashboard component can render without waiting for its own API calls.
+  preloadedDashboardSummary = signal<(DashboardSummary & { tradeUnitsKey: string; year: number }) | null>(null);
+
+  setPreloadedDashboardSummary(tradeUnitsKey: string, year: number, summary: DashboardSummary): void {
+    this.preloadedDashboardSummary.set({ tradeUnitsKey, year, ...summary });
+  }
+
+  clearPreloadedDashboardSummary(): void {
+    this.preloadedDashboardSummary.set(null);
+  }
+
   // Geocode cache — plain Map (not a signal) so mutation is cheap and in-place
   // Capped at 500 entries to prevent unbounded memory growth (LRU-style: evict oldest on overflow)
   private readonly GEOCODE_CACHE_MAX = 500;
@@ -251,6 +263,7 @@ export class AppStateService {
     this.lastScrolledCustomerId.set(null);
     this.insightsCache.set(null);
     this.dashboardCache.set(null);
+    this.preloadedDashboardSummary.set(null);
     this.dataLoading.set(false);
   }
 }

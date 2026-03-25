@@ -215,6 +215,9 @@ public class ApimDataService : IDataService
     // Dashboard Planting Estimate Operations
     // =========================================================================
 
+    public Task<DashboardSummaryResponse> GetDashboardSummaryAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetDashboardSummary");
+
     public Task<List<DashboardPlantingEstimate>> GetDashboardPlantingEstimatesAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetDashboardPlantingEstimates");
 
@@ -271,4 +274,10 @@ public class ApimDataService : IDataService
 
     public Task<List<string>> GetBidCommoditiesAsync(string tradeUnitCode, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetBidCommodities");
+
+    public Task<BidSheetReference?> GetBidSheetReferenceAsync(string userId, string tradeUnitCode, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetBidSheetReference");
+
+    public Task SetBidSheetReferenceAsync(string userId, string tradeUnitCode, string elevatorCode, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for SetBidSheetReference");
 }

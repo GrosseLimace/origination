@@ -241,6 +241,12 @@ public interface IDataService
     // Dashboard Planting Estimate Operations
     // =========================================================================
 
+    /// <summary>Gets all three dashboard datasets (estimates, market shares, actual harvest) in a single round-trip.</summary>
+    /// <param name="tradeUnitKey">The trade unit key to filter by.</param>
+    /// <param name="plantingYear">The planting year to filter by (harvest uses year-1).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<DashboardSummaryResponse> GetDashboardSummaryAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default);
+
     /// <summary>Gets dashboard planting estimates for a trade unit and planting year.</summary>
     /// <param name="tradeUnitKey">The trade unit key to filter by.</param>
     /// <param name="plantingYear">The planting year to filter by.</param>
@@ -367,4 +373,10 @@ public interface IDataService
 
     /// <summary>Gets the distinct commodity codes that have bids for a trade unit.</summary>
     Task<List<string>> GetBidCommoditiesAsync(string tradeUnitCode, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets the reference elevator for a user and trade unit. Returns null if not set.</summary>
+    Task<BidSheetReference?> GetBidSheetReferenceAsync(string userId, string tradeUnitCode, CancellationToken cancellationToken = default);
+
+    /// <summary>Creates or updates the reference elevator for a user and trade unit.</summary>
+    Task SetBidSheetReferenceAsync(string userId, string tradeUnitCode, string elevatorCode, CancellationToken cancellationToken = default);
 }
