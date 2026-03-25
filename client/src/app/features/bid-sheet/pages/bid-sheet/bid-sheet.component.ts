@@ -86,10 +86,17 @@ export class BidSheetComponent {
     return years.length >= 1 ? years[years.length - 1] : null;
   });
 
-  // --- Reference ---
-  referenceElevatorCode = signal<string>('');
+  // --- Reference (per trade unit, persisted to DB) ---
+  // Map of tradeUnitCode → elevatorCode, loaded from API when TUs change.
+  private referenceByTu = signal<Map<string, string>>(new Map());
   showReferenceConfirm = signal<boolean>(false);
   pendingReferenceCode = signal<string>('');
+
+  // Elevator code for the currently active trade unit.
+  readonly referenceElevatorCode = computed(() => {
+    const tu = this.activeTradeUnit();
+    return this.referenceByTu().get(tu) ?? '';
+  });
 
   get referenceElevator(): Elevator | null {
     const code = this.referenceElevatorCode();
@@ -130,8 +137,15 @@ export class BidSheetComponent {
   // (commodityCode stores the category value, e.g. "CORN", "WHEAT")
   private _addLocationPin: any = null;
 
-  // TUs available for selection when adding a location — mirrors activeTradeUnits()
-  readonly addLocationTus = computed(() => this.activeTradeUnits());
+  // TUs available for selection when adding a location.
+  // Falls back to all TUs the user has access to when no TU/group is selected.
+  readonly addLocationTus = computed(() => {
+    const active = this.activeTradeUnits();
+    if (active.length > 0) return active;
+    const all = new Set<string>();
+    this.appState.userGroups().forEach(g => g.tradeUnitCodes.forEach(c => all.add(c.trim())));
+    return [...all].sort();
+  });
 
   private static readonly _excludedCommodityCategories = new Set([
     'CURRENCY', 'TRANSPORTATION', 'FEED & FERT INGREDIENTS', 'FEED &FERT INGREDIENTS'
@@ -269,8 +283,9 @@ export class BidSheetComponent {
       const tuSet = new Set(tus);
       const tuElevators = this.allElevators().filter(e => tuSet.has((e.tradeUnitCode ?? '').trim()));
       this.tradeUnitElevators.set(tuElevators);
-      // Load bid data for all active TUs
+      // Load bid data and references for all active TUs
       this._loadBidData(tus);
+      this._loadReferences(tus);
       this._zoomToTradeUnit(tuElevators);
       this.filterBids();
       this._refreshMapMarkers();
@@ -279,12 +294,28 @@ export class BidSheetComponent {
       this.bidLocations.set([]);
       this.cropYears.set([]);
       this.crops.set([]);
-      this.referenceElevatorCode.set('');
+      this.referenceByTu.set(new Map());
       this.filterBids();
       this._refreshMapMarkers();
       // Reset map to US overview
       if (this._map) this._map.setView([38.5, -98.0], 5);
     }
+  }
+
+  private _loadReferences(tus: string[]): void {
+    tus.forEach(tu => {
+      this.apiService.getBidSheetReference(tu).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(ref => {
+        const map = new Map(this.referenceByTu());
+        if (ref?.elevatorCode) {
+          map.set(tu, ref.elevatorCode);
+        } else {
+          map.delete(tu);
+        }
+        this.referenceByTu.set(map);
+        this.filterBids();
+        this._refreshMapMarkers();
+      });
+    });
   }
 
   private _zoomToTradeUnit(elevators: Elevator[]): void {
@@ -475,10 +506,6 @@ export class BidSheetComponent {
   // =========================================================================
 
   enterAddLocationMode(): void {
-    if (!this.activeTradeUnit()) {
-      this.toastService.error('Select a trade unit first');
-      return;
-    }
     this.addLocationMode.set(true);
     this.showPanel.set(false);
     // Clear existing markers to show clean map
@@ -514,8 +541,8 @@ export class BidSheetComponent {
     });
     this._addLocationPin = L.marker([lat, lng], { icon: pinIcon }).addTo(this._map);
 
-    // Auto-select TU if only one is active
-    const tus = this.activeTradeUnits();
+    // Auto-select TU if only one is available
+    const tus = this.addLocationTus();
     this.newLocationTu.set(tus.length === 1 ? tus[0] : '');
 
     // Open the form
@@ -762,7 +789,11 @@ export class BidSheetComponent {
 
   toggleReferenceLocation(elevatorCode: string): void {
     if (this.referenceElevatorCode() === elevatorCode) {
-      this.referenceElevatorCode.set('');
+      // Clear reference for this TU locally (no need to persist a null — just remove)
+      const tu = this.activeTradeUnit();
+      const map = new Map(this.referenceByTu());
+      map.delete(tu);
+      this.referenceByTu.set(map);
       this.filterBids();
       this._refreshMapMarkers();
     } else {
@@ -773,13 +804,22 @@ export class BidSheetComponent {
 
   confirmReferenceChange(): void {
     const code = this.pendingReferenceCode();
-    if (!code) return;
-    // Reference selection is session-only (BidReferences table removed)
-    this.referenceElevatorCode.set(code);
+    const tu = this.activeTradeUnit();
+    if (!code || !tu) return;
+
+    // Update local map immediately for instant feedback
+    const map = new Map(this.referenceByTu());
+    map.set(tu, code);
+    this.referenceByTu.set(map);
     this.pendingReferenceCode.set('');
     this.showReferenceConfirm.set(false);
     this.filterBids();
     this._refreshMapMarkers();
+
+    // Persist to DB
+    this.apiService.setBidSheetReference(tu, code).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      error: () => this.toastService.error('Failed to save reference')
+    });
   }
 
   cancelReferenceChange(): void {
@@ -813,7 +853,10 @@ export class BidSheetComponent {
   refreshBids(): void {
     this._loadAllElevators();
     const tus = this.activeTradeUnits();
-    if (tus.length > 0) this._loadBidData(tus);
+    if (tus.length > 0) {
+      this._loadBidData(tus);
+      this._loadReferences(tus);
+    }
     this._startRefreshTimer();
   }
 

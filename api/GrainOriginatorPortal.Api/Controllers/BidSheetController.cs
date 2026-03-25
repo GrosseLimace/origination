@@ -173,4 +173,30 @@ public class BidSheetController : ControllerBase
         await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
         return Ok(await _dataService.GetBidCommoditiesAsync(tradeUnitCode, ct));
     }
+
+    // -------------------------------------------------------------------------
+    // Reference
+    // -------------------------------------------------------------------------
+
+    /// <summary>Gets the reference elevator for the current user and a trade unit.</summary>
+    [HttpGet("reference")]
+    [ProducesResponseType(typeof(BidSheetReference), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<ActionResult<BidSheetReference>> GetReference([FromQuery] string tradeUnitCode, CancellationToken ct = default)
+    {
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
+        var reference = await _dataService.GetBidSheetReferenceAsync(CurrentUserId, tradeUnitCode, ct);
+        if (reference is null) return NoContent();
+        return Ok(reference);
+    }
+
+    /// <summary>Sets or updates the reference elevator for the current user and a trade unit.</summary>
+    [HttpPut("reference")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> SetReference([FromBody] SetBidSheetReferenceRequest request, CancellationToken ct = default)
+    {
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync([request.TradeUnitCode], ct);
+        await _dataService.SetBidSheetReferenceAsync(CurrentUserId, request.TradeUnitCode, request.ElevatorCode, ct);
+        return NoContent();
+    }
 }

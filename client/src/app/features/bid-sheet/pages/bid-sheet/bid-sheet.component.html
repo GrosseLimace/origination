@@ -139,10 +139,10 @@
               <table class="w-full border-collapse text-sm">
                 <thead class="sticky top-0 z-10">
                   <tr class="bg-gray-50 dark:bg-gray-800">
-                    <th class="px-3 py-2.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Location</th>
-                    <th class="px-3 py-2.5 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">{{ oldYear() || 'Old' }}</th>
-                    <th class="px-3 py-2.5 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">{{ newYear() || 'New' }}</th>
-                    <th class="px-3 py-2.5 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Status</th>
+                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Location</th>
+                    <th class="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">{{ oldYear() || 'Old' }}</th>
+                    <th class="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">{{ newYear() || 'New' }}</th>
+                    <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -154,7 +154,7 @@
                         ? 'bg-scoular-blue/5 dark:bg-scoular-blue/20 hover:bg-scoular-blue/10 dark:hover:bg-scoular-blue/30'
                         : 'hover:bg-gray-50 dark:hover:bg-gray-800'"
                     >
-                      <td class="px-3 py-2.5 text-xs text-gray-900 dark:text-white">
+                      <td class="px-3 py-3 text-sm text-gray-900 dark:text-white">
                         <div class="flex items-center gap-1.5">
                           {{ item.name }}
                           @if (item.isRef) {
@@ -162,8 +162,8 @@
                           }
                         </div>
                       </td>
-                      <td class="px-3 py-2.5 text-xs font-mono text-right text-gray-900 dark:text-white">{{ item.oldBid || '--' }}</td>
-                      <td class="px-3 py-2.5 text-xs font-mono text-right text-gray-900 dark:text-white">{{ item.newBid || '--' }}</td>
+                      <td class="px-3 py-3 text-sm font-mono text-right text-gray-900 dark:text-white">{{ item.oldBid || '--' }}</td>
+                      <td class="px-3 py-3 text-sm font-mono text-right text-gray-900 dark:text-white">{{ item.newBid || '--' }}</td>
                       <td class="px-3 py-2.5 text-center">
                         @if (item.status === 'reference') {
                           <span class="inline-flex px-1.5 py-0.5 text-xs font-medium rounded-full bg-scoular-blue/10 text-scoular-blue-medium dark:bg-scoular-blue/20 dark:text-scoular-blue">Ref</span>
@@ -253,6 +253,21 @@
                 <button (click)="cancelAddLocation()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800">
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                 </button>
+              </div>
+
+              <!-- Trade Unit (outside scroll container so dropdown opens downward unclipped) -->
+              <div class="shrink-0 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Trade Unit <span class="text-scoular-red">*</span></label>
+                @if (addLocationTus().length === 1) {
+                  <div class="text-sm font-medium text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2">{{ addLocationTus()[0] }}</div>
+                } @else {
+                  <select [ngModel]="newLocationTu()" (ngModelChange)="newLocationTu.set($event)" class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green">
+                    <option value="">Select Trade Unit…</option>
+                    @for (tu of addLocationTus(); track tu) {
+                      <option [value]="tu">{{ tu }}</option>
+                    }
+                  </select>
+                }
               </div>
 
               <!-- Body -->
@@ -355,21 +370,6 @@
                   }
                 </div>
 
-                <!-- Trade Unit -->
-                <div>
-                  <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Trade Unit <span class="text-scoular-red">*</span></label>
-                  @if (addLocationTus().length === 1) {
-                    <div class="text-sm font-medium text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2">{{ addLocationTus()[0] }}</div>
-                  } @else {
-                    <select [ngModel]="newLocationTu()" (ngModelChange)="newLocationTu.set($event)" class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green">
-                      <option value="">Select Trade Unit…</option>
-                      @for (tu of addLocationTus(); track tu) {
-                        <option [value]="tu">{{ tu }}</option>
-                      }
-                    </select>
-                  }
-                </div>
-
               </div>
 
               <!-- Footer -->
@@ -438,9 +438,9 @@
                 <table class="border-collapse text-sm" style="min-width: max-content; width: 100%;">
                   <thead>
                     <tr class="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-                      <th class="sticky top-0 left-0 z-30 px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-r border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 min-w-[220px]">Location</th>
+                      <th class="sticky top-0 left-0 z-30 px-4 py-3.5 text-left text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-r border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 min-w-[260px]">Location</th>
                       @for (crop of editBidsCrops(); track crop) {
-                        <th class="sticky top-0 z-20 px-3 py-3 text-center text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 min-w-[120px]">{{ crop }}</th>
+                        <th class="sticky top-0 z-20 px-4 py-3.5 text-center text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 min-w-[150px]">{{ crop }}</th>
                       }
                     </tr>
                   </thead>
@@ -448,24 +448,24 @@
                     @for (row of editBidsRows(); track row.name; let rowIdx = $index) {
                       <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors"
                           [ngClass]="row.type === 'elevator' ? 'bg-white dark:bg-gray-900' : 'bg-white dark:bg-gray-900'">
-                        <td class="sticky left-0 z-10 px-4 py-2 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+                        <td class="sticky left-0 z-10 px-4 py-3 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
                           <div class="flex items-center gap-2">
                             @if (row.type === 'elevator') {
-                              <span class="w-1.5 h-1.5 rounded-full bg-scoular-green-accessible shrink-0"></span>
+                              <span class="w-2 h-2 rounded-full bg-scoular-green-accessible shrink-0"></span>
                             } @else {
-                              <span class="w-1.5 h-1.5 rounded-full bg-gray-300 dark:bg-gray-600 shrink-0"></span>
+                              <span class="w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600 shrink-0"></span>
                             }
-                            <span class="text-xs font-medium text-gray-900 dark:text-white truncate" style="max-width: 180px;" [title]="row.name">{{ row.name }}</span>
+                            <span class="text-sm font-medium text-gray-900 dark:text-white truncate" style="max-width: 210px;" [title]="row.name">{{ row.name }}</span>
                           </div>
                         </td>
                         @for (crop of editBidsCrops(); track crop) {
-                          <td class="px-2 py-1.5">
+                          <td class="px-3 py-2.5">
                             <input
                               type="text"
                               [ngModel]="row.bids[crop]"
                               (ngModelChange)="updateBid(rowIdx, crop, $event)"
                               placeholder="—"
-                              class="w-full font-mono text-xs text-center rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
+                              class="w-full font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
                               [ngClass]="row.bids[crop] !== row.originalBids[crop]
                                 ? 'border-scoular-green-accessible bg-scoular-green-accessible/5 dark:bg-scoular-green-accessible/10 text-gray-900 dark:text-white'
                                 : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'"
