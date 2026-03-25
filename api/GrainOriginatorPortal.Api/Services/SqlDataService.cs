@@ -618,9 +618,9 @@ public class SqlDataService : IDataService
         {
             var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
 
-            // Two-path strategy to avoid SQL Server's 2100-parameter IN-clause limit:
-            // - Unfiltered: safe because Take(15) caps customer list at 15 items (well under 2100 params)
-            // - Filtered: use EXISTS subqueries (Any() → SQL EXISTS) — no parameter count regardless of data volume
+            // Two-path strategy:
+            // - Unfiltered: Take(15) caps customer list so the IN clause stays well under 2100 params
+            // - Filtered: TradeUnit IN (small list of TU codes) — fast indexed lookup on the ODS view
             List<Contract> contracts;
 
             if (!hasTradeUnitFilter)
@@ -643,21 +643,13 @@ public class SqlDataService : IDataService
             }
             else
             {
-                // Step 1: materialize CtrmCustomerIds from CustomerSnapshot (AppDb, indexed, ~200-300 rows)
-                // filtered by TradeUnit. Avoids scanning the large ODS contracts view to find customer IDs.
-                var ctrmIds = await _appContext.CustomerSnapshots
-                    .AsNoTracking()
-                    .Where(c => c.SourceCustomerId != null && c.IsActive && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
-                    .Select(c => c.SourceCustomerId!)
-                    .Distinct()
-                    .ToListAsync(cancellationToken);
-
-                // Step 2: load ALL active contracts for those customers — intentionally NOT re-filtering
-                // by trade unit so prior-year contracts (needed for pacing) are included even if
-                // they carry a different TradeUnit value than the current selection.
+                // Filter contracts directly by TradeUnit — same indexed column used by GetTicketsAsync.
+                // The previous approach (CustomerSnapshot → CtrmCustomerId IN list) caused 30+ second
+                // queries in dev because vw_CurrentContracts has no index on CtrmCustomerId.
+                // TradeUnit IS indexed on the view's underlying table, matching how ticket lookups work.
                 contracts = await _context.Contracts
                     .AsNoTracking()
-                    .Where(c => c.IsActive && c.CtrmCustomerId != null && ctrmIds.Contains(c.CtrmCustomerId))
+                    .Where(c => c.IsActive && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
                     .OrderByDescending(c => c.Id)
                     .ToListAsync(cancellationToken);
             }
