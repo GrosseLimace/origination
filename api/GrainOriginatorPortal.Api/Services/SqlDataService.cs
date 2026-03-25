@@ -1113,15 +1113,15 @@ public class SqlDataService : IDataService
             var tuList = tradeUnits?.Where(t => !string.IsNullOrEmpty(t)).ToList();
             if (tuList is { Count: > 0 })
             {
-                // Two-step: get customer codes from CustomerSnapshot (app DB, fast),
+                // Two-step: get customer codes from contracts in the selected TUs,
                 // then filter PIs by CustomerCode — avoids relying on the TradeUnit stamp
                 // which may be empty or stale when a PI is created without a TU selected.
-                // CustomerSnapshot already contains only producer customers.
-                var customerCodes = await _appContext.CustomerSnapshots
+                // TradeUnit is indexed on vw_CurrentContracts — fast lookup.
+                var customerCodes = await _context.Contracts
                     .AsNoTracking()
-                    .Where(c => c.SourceCustomerId != null && c.IsActive
+                    .Where(c => c.IsActive && c.CtrmCustomerId != null
                              && c.TradeUnit != null && tuList.Contains(c.TradeUnit))
-                    .Select(c => c.SourceCustomerId!)
+                    .Select(c => c.CtrmCustomerId!)
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
