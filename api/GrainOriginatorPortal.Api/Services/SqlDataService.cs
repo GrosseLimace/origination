@@ -643,15 +643,37 @@ public class SqlDataService : IDataService
             }
             else
             {
-                // Filter contracts directly by TradeUnit — same indexed column used by GetTicketsAsync.
-                // The previous approach (CustomerSnapshot → CtrmCustomerId IN list) caused 30+ second
-                // queries in dev because vw_CurrentContracts has no index on CtrmCustomerId.
-                // TradeUnit IS indexed on the view's underlying table, matching how ticket lookups work.
-                contracts = await _context.Contracts
+                // Step 1: get producer customer IDs from CustomerSnapshot (app DB, fast indexed lookup).
+                // CustomerSnapshot already contains only producer customers — no additional type filter needed.
+                var ctrmIds = await _appContext.CustomerSnapshots
                     .AsNoTracking()
-                    .Where(c => c.IsActive && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
-                    .OrderByDescending(c => c.Id)
+                    .Where(c => c.SourceCustomerId != null && c.IsActive
+                        && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
+                    .Select(c => c.SourceCustomerId!)
+                    .Distinct()
                     .ToListAsync(cancellationToken);
+
+                if (ctrmIds.Count == 0)
+                {
+                    contracts = [];
+                }
+                else
+                {
+                    // Step 2: load contracts for those producer customers.
+                    // STRING_SPLIT passes IDs as a single CSV parameter instead of 200+ individual
+                    // parameters — avoids the slow IN-clause plan on vw_CurrentContracts where
+                    // CtrmCustomerId has no index.
+                    var ctrmIdsCsv = string.Join(",", ctrmIds);
+                    contracts = await _context.Contracts
+                        .FromSqlInterpolated($@"
+                            SELECT c.* FROM base.vw_CurrentContracts c
+                            INNER JOIN STRING_SPLIT({ctrmIdsCsv}, ',') ids
+                                ON c.CtrmCustomerId = ids.value
+                            WHERE c.IsActive = 1")
+                        .AsNoTracking()
+                        .OrderByDescending(c => c.Id)
+                        .ToListAsync(cancellationToken);
+                }
             }
 
             _logger.LogInformation("Loaded {ContractCount} contracts for customers who have contracts or tickets (filtered: {IsFiltered}, tradeUnitCount: {TradeUnitCount})",
@@ -1091,14 +1113,15 @@ public class SqlDataService : IDataService
             var tuList = tradeUnits?.Where(t => !string.IsNullOrEmpty(t)).ToList();
             if (tuList is { Count: > 0 })
             {
-                // Two-step: get customer codes from contracts in the selected TUs,
+                // Two-step: get customer codes from CustomerSnapshot (app DB, fast),
                 // then filter PIs by CustomerCode — avoids relying on the TradeUnit stamp
                 // which may be empty or stale when a PI is created without a TU selected.
-                var customerCodes = await _context.Contracts
+                // CustomerSnapshot already contains only producer customers.
+                var customerCodes = await _appContext.CustomerSnapshots
                     .AsNoTracking()
-                    .Where(c => c.IsActive && c.CtrmCustomerId != null
+                    .Where(c => c.SourceCustomerId != null && c.IsActive
                              && c.TradeUnit != null && tuList.Contains(c.TradeUnit))
-                    .Select(c => c.CtrmCustomerId!)
+                    .Select(c => c.SourceCustomerId!)
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
