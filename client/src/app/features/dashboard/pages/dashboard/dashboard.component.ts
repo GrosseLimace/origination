@@ -8,7 +8,7 @@ import { catchError } from 'rxjs/operators';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService, DashboardCacheEntry } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
-import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, Commodity } from '@models';
+import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, Commodity } from '@models';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 
 @Component({
@@ -583,23 +583,20 @@ export class DashboardComponent {
     const year = this.selectedPlantingYear();
     this._localLoading.set(true);
 
-    // PI not yet loaded — fetch PI and dashboard APIs in parallel
+    // PI not yet loaded — fetch PI and combined dashboard summary in parallel
+    const emptySummary: DashboardSummary = { estimates: [], marketShares: [], actualHarvest: [] };
     forkJoin({
       pi: this.apiService.getPlantingIntentions(this.selectedTradeUnits)
         .pipe(catchError(() => of([] as PlantingIntention[]))),
-      estimates: key ? this.apiService.getDashboardPlantingEstimates(key, year)
-        .pipe(catchError(() => of([] as DashboardPlantingEstimate[]))) : of([] as DashboardPlantingEstimate[]),
-      shares: key ? this.apiService.getDashboardMarketShares(key, year)
-        .pipe(catchError(() => of([] as DashboardMarketShare[]))) : of([] as DashboardMarketShare[]),
-      harvest: key ? this.apiService.getDashboardActualHarvest(key, year - 1)
-        .pipe(catchError(() => of([] as DashboardActualHarvest[]))) : of([] as DashboardActualHarvest[]),
+      summary: key ? this.apiService.getDashboardSummary(key, year)
+        .pipe(catchError(() => of(emptySummary))) : of(emptySummary),
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: ({ pi, estimates, shares, harvest }) => {
+      next: ({ pi, summary }) => {
         if (requestId !== this._loadRequestId) return; // discard stale response
         this.appStateService.setPlantingIntentions(pi);
-        this.savedYieldEstimates.set(estimates);
-        this.savedMarketShares.set(shares);
-        this.savedActualHarvest.set(harvest);
+        this.savedYieldEstimates.set(summary.estimates);
+        this.savedMarketShares.set(summary.marketShares);
+        this.savedActualHarvest.set(summary.actualHarvest);
         this._calculateYieldRows();
         this._calculateCategoryRows();
         this._saveDashboardCache();
@@ -659,32 +656,46 @@ export class DashboardComponent {
         this.savedYieldEstimates.set([]);
         this.savedMarketShares.set([]);
         this.savedActualHarvest.set([]);
-        this._calculateYieldRows();
-        this._calculateCategoryRows();
         this._localLoading.set(false);
       });
       return;
     }
 
-    // Fetch commodities + 3 dashboard API calls in parallel (eliminates waterfall)
+    // If DataPreloadService already fetched the summary for this TU+year, use it
+    // and only wait for commodities (which are also likely already in AppState).
+    const preloadedSummary = this.appStateService.preloadedDashboardSummary();
+    const summaryReady = preloadedSummary && preloadedSummary.tradeUnitsKey === key && preloadedSummary.year === year;
+
+    if (summaryReady && preloaded.length > 0) {
+      // Both commodities and dashboard summary are already in memory — no HTTP calls needed
+      this.allCommodities.set(preloaded);
+      this.savedYieldEstimates.set(preloadedSummary!.estimates);
+      this.savedMarketShares.set(preloadedSummary!.marketShares);
+      this.savedActualHarvest.set(preloadedSummary!.actualHarvest);
+      this._calculateYieldRows();
+      this._calculateCategoryRows();
+      this._saveDashboardCache();
+      this._localLoading.set(false);
+      return;
+    }
+
+    // Fetch commodities + combined dashboard summary in parallel (eliminates waterfall)
+    const emptySummary: DashboardSummary = { estimates: [], marketShares: [], actualHarvest: [] };
+    const summary$ = summaryReady
+      ? of(preloadedSummary! as DashboardSummary)
+      : this.apiService.getDashboardSummary(key, year).pipe(catchError(() => of(emptySummary)));
+
     forkJoin({
       commodities: commodities$,
-      estimates: this.apiService.getDashboardPlantingEstimates(key, year)
-        .pipe(catchError(() => of([] as DashboardPlantingEstimate[]))),
-      shares: this.apiService.getDashboardMarketShares(key, year)
-        .pipe(catchError(() => of([] as DashboardMarketShare[]))),
-      harvest: this.apiService.getDashboardActualHarvest(key, year - 1)
-        .pipe(catchError(() => of([] as DashboardActualHarvest[])))
+      summary: summary$
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: ({ commodities, estimates, shares, harvest }) => {
+      next: ({ commodities, summary }) => {
         if (requestId !== this._loadRequestId) return; // discard stale response
         this.allCommodities.set(commodities);
         if (preloaded.length === 0) this.appStateService.setCommodities(commodities);
-        this.savedYieldEstimates.set(estimates);
-        this.savedMarketShares.set(shares);
-        this.savedActualHarvest.set(harvest);
-        this._calculateYieldRows();
-        this._calculateCategoryRows();
+        this.savedYieldEstimates.set(summary.estimates);
+        this.savedMarketShares.set(summary.marketShares);
+        this.savedActualHarvest.set(summary.actualHarvest);
         this._saveDashboardCache();
         this._localLoading.set(false);
       },
@@ -709,28 +720,39 @@ export class DashboardComponent {
       this._localLoading.set(false);
       return;
     }
+
+    // Use pre-fetched data from DataPreloadService if available and fresh (same TU + year)
+    const preloaded = this.appStateService.preloadedDashboardSummary();
+    if (preloaded && preloaded.tradeUnitsKey === key && preloaded.year === year) {
+      this.savedYieldEstimates.set(preloaded.estimates);
+      this.savedMarketShares.set(preloaded.marketShares);
+      this.savedActualHarvest.set(preloaded.actualHarvest);
+      this._calculateYieldRows();
+      this._calculateCategoryRows();
+      this._saveDashboardCache();
+      this._localLoading.set(false);
+      return;
+    }
+
     this._localLoading.set(true);
-    forkJoin({
-      estimates: this.apiService.getDashboardPlantingEstimates(key, year)
-        .pipe(catchError(() => of([] as DashboardPlantingEstimate[]))),
-      shares: this.apiService.getDashboardMarketShares(key, year)
-        .pipe(catchError(() => of([] as DashboardMarketShare[]))),
-      harvest: this.apiService.getDashboardActualHarvest(key, year - 1)
-        .pipe(catchError(() => of([] as DashboardActualHarvest[])))
-    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: ({ estimates, shares, harvest }) => {
-        this.savedYieldEstimates.set(estimates);
-        this.savedMarketShares.set(shares);
-        this.savedActualHarvest.set(harvest);
-        this._calculateYieldRows();
-        this._calculateCategoryRows();
-        this._saveDashboardCache();
-        this._localLoading.set(false);
-      },
-      error: () => {
-        this._localLoading.set(false);
-      }
-    });
+    this.apiService.getDashboardSummary(key, year)
+      .pipe(
+        catchError(() => of<DashboardSummary>({ estimates: [], marketShares: [], actualHarvest: [] })),
+        takeUntilDestroyed(this.destroyRef)
+      ).subscribe({
+        next: (summary) => {
+          this.savedYieldEstimates.set(summary.estimates);
+          this.savedMarketShares.set(summary.marketShares);
+          this.savedActualHarvest.set(summary.actualHarvest);
+          this._calculateYieldRows();
+          this._calculateCategoryRows();
+          this._saveDashboardCache();
+          this._localLoading.set(false);
+        },
+        error: () => {
+          this._localLoading.set(false);
+        }
+      });
   }
 
   private _calculateMetrics(): void {

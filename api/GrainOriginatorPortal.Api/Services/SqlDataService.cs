@@ -1707,6 +1707,36 @@ public class SqlDataService : IDataService
     // Dashboard Planting Estimate Operations
     // =========================================================================
 
+    public async Task<DashboardSummaryResponse> GetDashboardSummaryAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default)
+    {
+        var estimatesTask = _appContext.DashboardPlantingEstimates
+            .AsNoTracking()
+            .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear)
+            .OrderBy(e => e.Crop)
+            .ToListAsync(cancellationToken);
+
+        var sharesTask = _appContext.DashboardMarketShares
+            .AsNoTracking()
+            .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear)
+            .OrderBy(e => e.CropCategory)
+            .ToListAsync(cancellationToken);
+
+        var harvestTask = _appContext.DashboardActualHarvests
+            .AsNoTracking()
+            .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear - 1)
+            .OrderBy(e => e.CropCategory)
+            .ToListAsync(cancellationToken);
+
+        await Task.WhenAll(estimatesTask, sharesTask, harvestTask);
+
+        return new DashboardSummaryResponse
+        {
+            Estimates = estimatesTask.Result,
+            MarketShares = sharesTask.Result,
+            ActualHarvest = harvestTask.Result
+        };
+    }
+
     public async Task<List<DashboardPlantingEstimate>> GetDashboardPlantingEstimatesAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default)
     {
         return await _appContext.DashboardPlantingEstimates
@@ -1718,16 +1748,22 @@ public class SqlDataService : IDataService
 
     public async Task UpsertDashboardPlantingEstimatesAsync(List<UpsertDashboardEstimateRequest> estimates, string username, CancellationToken cancellationToken = default)
     {
+        if (estimates.Count == 0) return;
         var strategy = _appContext.Database.CreateExecutionStrategy();
         await strategy.ExecuteAsync(async () =>
         {
             await using var transaction = await _appContext.Database.BeginTransactionAsync(cancellationToken);
+
+            // Load all existing records for this TU+year in one query, then do in-memory lookup
+            var tuKey = estimates[0].TradeUnitKey;
+            var year = estimates[0].PlantingYear;
+            var existingMap = await _appContext.DashboardPlantingEstimates
+                .Where(e => e.TradeUnitKey == tuKey && e.PlantingYear == year)
+                .ToDictionaryAsync(e => e.Crop, cancellationToken);
+
             foreach (var req in estimates)
             {
-                var existing = await _appContext.DashboardPlantingEstimates
-                    .FirstOrDefaultAsync(e => e.TradeUnitKey == req.TradeUnitKey
-                                          && e.Crop == req.Crop
-                                          && e.PlantingYear == req.PlantingYear, cancellationToken);
+                existingMap.TryGetValue(req.Crop, out var existing);
                 if (req.YieldEstimate == null)
                 {
                     if (existing != null)
@@ -1768,16 +1804,21 @@ public class SqlDataService : IDataService
 
     public async Task UpsertDashboardMarketSharesAsync(List<UpsertDashboardMarketShareRequest> shares, string username, CancellationToken cancellationToken = default)
     {
+        if (shares.Count == 0) return;
         var strategy = _appContext.Database.CreateExecutionStrategy();
         await strategy.ExecuteAsync(async () =>
         {
             await using var transaction = await _appContext.Database.BeginTransactionAsync(cancellationToken);
+
+            var tuKey = shares[0].TradeUnitKey;
+            var year = shares[0].PlantingYear;
+            var existingMap = await _appContext.DashboardMarketShares
+                .Where(e => e.TradeUnitKey == tuKey && e.PlantingYear == year)
+                .ToDictionaryAsync(e => e.CropCategory, cancellationToken);
+
             foreach (var req in shares)
             {
-                var existing = await _appContext.DashboardMarketShares
-                    .FirstOrDefaultAsync(e => e.TradeUnitKey == req.TradeUnitKey
-                                          && e.CropCategory == req.CropCategory
-                                          && e.PlantingYear == req.PlantingYear, cancellationToken);
+                existingMap.TryGetValue(req.CropCategory, out var existing);
                 if (req.MarketSharePct == null)
                 {
                     if (existing != null)
@@ -1819,16 +1860,21 @@ public class SqlDataService : IDataService
 
     public async Task UpsertDashboardActualHarvestAsync(List<UpsertDashboardActualHarvestRequest> items, string username, CancellationToken cancellationToken = default)
     {
+        if (items.Count == 0) return;
         var strategy = _appContext.Database.CreateExecutionStrategy();
         await strategy.ExecuteAsync(async () =>
         {
             await using var transaction = await _appContext.Database.BeginTransactionAsync(cancellationToken);
+
+            var tuKey = items[0].TradeUnitKey;
+            var year = items[0].PlantingYear;
+            var existingMap = await _appContext.DashboardActualHarvests
+                .Where(e => e.TradeUnitKey == tuKey && e.PlantingYear == year)
+                .ToDictionaryAsync(e => e.CropCategory, cancellationToken);
+
             foreach (var req in items)
             {
-                var existing = await _appContext.DashboardActualHarvests
-                    .FirstOrDefaultAsync(e => e.TradeUnitKey == req.TradeUnitKey
-                                          && e.CropCategory == req.CropCategory
-                                          && e.PlantingYear == req.PlantingYear, cancellationToken);
+                existingMap.TryGetValue(req.CropCategory, out var existing);
                 if (existing != null)
                 {
                     existing.Bushels = req.Bushels;
@@ -2010,5 +2056,36 @@ public class SqlDataService : IDataService
             .Distinct()
             .OrderBy(c => c)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<BidSheetReference?> GetBidSheetReferenceAsync(string userId, string tradeUnitCode, CancellationToken cancellationToken = default)
+    {
+        return await _appContext.BidSheetReferences
+            .AsNoTracking()
+            .FirstOrDefaultAsync(r => r.UserId == userId && r.TradeUnitCode == tradeUnitCode, cancellationToken);
+    }
+
+    public async Task SetBidSheetReferenceAsync(string userId, string tradeUnitCode, string elevatorCode, CancellationToken cancellationToken = default)
+    {
+        var existing = await _appContext.BidSheetReferences
+            .FirstOrDefaultAsync(r => r.UserId == userId && r.TradeUnitCode == tradeUnitCode, cancellationToken);
+
+        if (existing is not null)
+        {
+            existing.ElevatorCode = elevatorCode;
+            existing.ModifiedAt = DateTime.UtcNow;
+        }
+        else
+        {
+            _appContext.BidSheetReferences.Add(new BidSheetReference
+            {
+                UserId = userId,
+                TradeUnitCode = tradeUnitCode,
+                ElevatorCode = elevatorCode,
+                ModifiedAt = DateTime.UtcNow
+            });
+        }
+
+        await _appContext.SaveChangesAsync(cancellationToken);
     }
 }

@@ -15,6 +15,7 @@ import {
   DashboardPlantingEstimate,
   DashboardMarketShare,
   DashboardActualHarvest,
+  DashboardSummary,
   ContractPricingLine,
   RefinementFilters,
   BidSheetEntry,
@@ -246,6 +247,13 @@ export class ApiService {
   /** Deletes a planting intention */
   deletePlantingIntention(id: number): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/plantingintentions/${id}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Gets all 3 dashboard datasets in one request (estimates + market shares + actual harvest) */
+  getDashboardSummary(tradeUnitKey: string, plantingYear: number): Observable<DashboardSummary> {
+    const params = new HttpParams().set('tradeUnitKey', tradeUnitKey).set('plantingYear', plantingYear);
+    return this.http.get<DashboardSummary>(`${this.baseUrl}/dashboardplantingestimates/summary`, { params })
       .pipe(catchError(e => this.handleError(e)));
   }
 
@@ -516,6 +524,18 @@ export class ApiService {
   /** Gets distinct commodity codes from bids for a trade unit */
   getBidCommodities(tradeUnitCode: string): Observable<string[]> {
     return this.http.get<string[]>(`${this.baseUrl}/bidsheet/commodities`, { params: { tradeUnitCode } })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Gets the reference elevator for the current user and a trade unit. Returns null if not set. */
+  getBidSheetReference(tradeUnitCode: string): Observable<{ tradeUnitCode: string; elevatorCode: string } | null> {
+    return this.http.get<{ tradeUnitCode: string; elevatorCode: string }>(`${this.baseUrl}/bidsheet/reference`, { params: { tradeUnitCode } })
+      .pipe(catchError(() => of(null)));
+  }
+
+  /** Sets or updates the reference elevator for the current user and a trade unit. */
+  setBidSheetReference(tradeUnitCode: string, elevatorCode: string): Observable<void> {
+    return this.http.put<void>(`${this.baseUrl}/bidsheet/reference`, { tradeUnitCode, elevatorCode })
       .pipe(catchError(e => this.handleError(e)));
   }
 

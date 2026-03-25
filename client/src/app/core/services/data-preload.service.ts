@@ -6,7 +6,7 @@ import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 import { ApiService } from './api.service';
 import { AppStateService } from './app-state.service';
-import { Customer, Contract, Ticket, Note, PlantingIntention, StoredGrain, SavedList, Commodity } from '@models';
+import { Customer, Contract, Ticket, Note, PlantingIntention, StoredGrain, SavedList, Commodity, DashboardSummary } from '@models';
 import { ProducerDetails } from '../../models/producer-details.model';
 
 @Injectable({ providedIn: 'root' })
@@ -78,6 +78,7 @@ export class DataPreloadService {
         this.appState.setDataLoading(true);
         this.appState.clearInsightsCache();
         this.appState.clearDashboardCache();
+        this.appState.clearPreloadedDashboardSummary();
 
         // Pre-wire _ticketPreload$ to this load cycle so ensureTicketsLoaded()
         // callers share this load's result instead of spawning a duplicate HTTP call.
@@ -163,7 +164,19 @@ export class DataPreloadService {
           })
         );
 
-        return merge(customers$, contracts$, tickets$, notes$, plantingIntentions$, storedGrain$, savedLists$, commodities$, producerDetails$);
+        // Pre-fetch dashboard summary for the current year so the Dashboard page
+        // renders immediately when the user navigates to it (no extra API round-trip).
+        const tuKey = [...tradeUnits].sort().join(',');
+        const currentYear = new Date().getFullYear();
+        const emptySummary: DashboardSummary = { estimates: [], marketShares: [], actualHarvest: [] };
+        const dashboardSummary$ = this.apiService.getDashboardSummary(tuKey, currentYear).pipe(
+          catchError(() => of(emptySummary)),
+          tap(summary => {
+            this.appState.setPreloadedDashboardSummary(tuKey, currentYear, summary);
+          })
+        );
+
+        return merge(customers$, contracts$, tickets$, notes$, plantingIntentions$, storedGrain$, savedLists$, commodities$, producerDetails$, dashboardSummary$);
       }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe();
