@@ -186,7 +186,7 @@ public class OriginationDbContext : DbContext
             entity.Property(e => e.CustomerCode).HasColumnName("CustomerCode").HasMaxLength(400).HasConversion(v => v, v => v != null ? v.Trim() : v);
 
             // Ticket identifiers
-            entity.Property(e => e.ProductCode).HasColumnName("ProductCode").HasMaxLength(100);
+            entity.Property(e => e.ProductCode).HasColumnName("ProductCode").HasMaxLength(100).HasConversion(v => v, v => v != null ? v.Trim() : v);
             entity.Property(e => e.TicketPrefix).HasColumnName("TicketPrefix").HasMaxLength(100);
             entity.Property(e => e.TicketNumber).HasColumnName("TicketNumber").HasMaxLength(100);
             entity.Property(e => e.TicketSuffix).HasColumnName("TicketSuffix").HasMaxLength(100);

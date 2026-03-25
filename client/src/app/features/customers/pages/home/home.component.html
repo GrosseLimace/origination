@@ -61,7 +61,8 @@
             (onTogglePin)="toggleNotePin($event)"
             (onSaveCustomer)="handleSaveCustomer($event)"
             (onSelectLinkedCustomer)="handleSelectLinkedCustomer($event)"
-            [openContractId]="pendingContractId()">
+            [openContractId]="pendingContractId()"
+            [openTab]="pendingTab()">
           </app-customer-profile>
         } @else {
           <!-- Empty state — shown on desktop when no customer is selected -->

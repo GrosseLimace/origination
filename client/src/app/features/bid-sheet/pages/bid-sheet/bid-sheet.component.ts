@@ -389,7 +389,7 @@ export class BidSheetComponent {
   }
 
   filterBids(): void {
-    if (this.activeTradeUnits().length === 0) { this.filteredBidItems.set([]); return; }
+    const hasTu = this.activeTradeUnits().length > 0;
 
     const crop = this.selectedCrop();
     const oldYr = this.oldYear();
@@ -407,8 +407,13 @@ export class BidSheetComponent {
 
     let items: any[] = [];
 
-    // Add trade unit elevators owned by Scoular (OurFacility = 'Y') only
-    for (const elev of this.tradeUnitElevators()) {
+    // When a TU is selected use tradeUnitElevators; otherwise fall back to all Scoular elevators
+    const elevSource = hasTu
+      ? this.tradeUnitElevators()
+      : this.allElevators().filter(e => (e.ourFacility ?? '').trim() === 'Y');
+
+    // Add Scoular-owned elevators
+    for (const elev of elevSource) {
       const code = (elev.elevatorCode ?? '').trim();
       if (!code) continue;
       if ((elev.ourFacility ?? '').trim() !== 'Y') continue;
@@ -972,17 +977,16 @@ export class BidSheetComponent {
       const lng = first.longitude!;
 
       if (!hasTu) {
-        // No TU/group selected — show all elevators as green dots
-        const count = group.length;
-        const dotIcon = L.divIcon({
+        // No TU selected — show location names only, no bids
+        const names = this._getGroupedNames(group);
+        const maxWidth = Math.max(80, ...names.map(n => n.length * 6 + 20));
+        const nameIcon = L.divIcon({
           className: 'custom-marker',
-          html: zoom < 8
-            ? `<div style="width:20px;height:20px;background:#00875F;border:2px solid #006B4C;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.3);">${count}</div>`
-            : this._buildStackedLabel(this._getGroupedNames(group), '#00875F', '#006B4C'),
-          iconSize: zoom < 8 ? [20, 20] : [Math.max(80, ...this._getGroupedNames(group).map(n => n.length * 6 + 20)), this._getGroupedNames(group).length * 22 + 8],
-          iconAnchor: zoom < 8 ? [10, 10] : [Math.max(80, ...this._getGroupedNames(group).map(n => n.length * 6 + 20)) / 2, this._getGroupedNames(group).length * 22 + 8]
+          html: this._buildStackedLabel(names, '#00875F', '#006B4C'),
+          iconSize: [maxWidth, names.length * 22 + 8],
+          iconAnchor: [maxWidth / 2, names.length * 22 + 8]
         });
-        this._clusterGroup.addLayer(L.marker([lat, lng], { icon: dotIcon }));
+        this._clusterGroup.addLayer(L.marker([lat, lng], { icon: nameIcon }));
         continue;
       }
 
@@ -1027,8 +1031,11 @@ export class BidSheetComponent {
       this._clusterGroup.addLayer(marker);
     }
 
-    // Show competitor entries on map — all entries with coordinates, one pin per location name
+    // Show added locations when any TU/group is active.
+    // Bid VALUES only appear when individual TUs are explicitly selected;
+    // with group-only selection, locations render as name labels.
     if (hasTu) {
+      const showBidValues = this.appState.selectedTradeUnits().length > 0;
       const crop = this.selectedCrop();
       const year = this.selectedYear();
 
@@ -1042,7 +1049,7 @@ export class BidSheetComponent {
         }
       }
 
-      // Compute reference bid once for status comparison
+      // Compute reference bid once for status comparison (only needed when showing values)
       const oldYr = this.oldYear();
       const newYr = this.newYear();
       const refElev = this.referenceElevator;
@@ -1059,7 +1066,26 @@ export class BidSheetComponent {
       };
 
       for (const [name, rep] of repByName) {
-        // Use the bid for the currently selected crop/year as the label, else fall back to location name
+        if (!showBidValues) {
+          // Group-only selection: apply crop/year filter but render as name label only
+          if (crop) {
+            const hasBid = this.bidEntries().some(
+              e => e.name === name && e.commodityCode === crop && e.cropYear === year
+            );
+            if (!hasBid) continue;
+          }
+          const maxWidth = Math.max(80, name.length * 6 + 20);
+          const nameIcon = L.divIcon({
+            className: 'custom-marker',
+            html: this._buildStackedLabel([name], '#9ca3af', '#6b7280'),
+            iconSize: [maxWidth, 30],
+            iconAnchor: [maxWidth / 2, 30]
+          });
+          this._clusterGroup.addLayer(L.marker([rep.latitude!, rep.longitude!], { icon: nameIcon }));
+          continue;
+        }
+
+        // Individual TU selected: show bid value label with crop filter
         const matched = crop
           ? this.bidEntries()
               .filter(e => e.name === name && e.commodityCode === crop && e.cropYear === year)
