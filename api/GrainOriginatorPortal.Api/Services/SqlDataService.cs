@@ -618,9 +618,9 @@ public class SqlDataService : IDataService
         {
             var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
 
-            // Two-path strategy to avoid SQL Server's 2100-parameter IN-clause limit:
-            // - Unfiltered: safe because Take(15) caps customer list at 15 items (well under 2100 params)
-            // - Filtered: use EXISTS subqueries (Any() → SQL EXISTS) — no parameter count regardless of data volume
+            // Two-path strategy:
+            // - Unfiltered: Take(15) caps customer list so the IN clause stays well under 2100 params
+            // - Filtered: TradeUnit IN (small list of TU codes) — fast indexed lookup on the ODS view
             List<Contract> contracts;
 
             if (!hasTradeUnitFilter)
@@ -643,23 +643,37 @@ public class SqlDataService : IDataService
             }
             else
             {
-                // Step 1: materialize CtrmCustomerIds from CustomerSnapshot (AppDb, indexed, ~200-300 rows)
-                // filtered by TradeUnit. Avoids scanning the large ODS contracts view to find customer IDs.
+                // Step 1: get producer customer IDs from CustomerSnapshot (app DB, fast indexed lookup).
+                // CustomerSnapshot already contains only producer customers — no additional type filter needed.
                 var ctrmIds = await _appContext.CustomerSnapshots
                     .AsNoTracking()
-                    .Where(c => c.SourceCustomerId != null && c.IsActive && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
+                    .Where(c => c.SourceCustomerId != null && c.IsActive
+                        && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
                     .Select(c => c.SourceCustomerId!)
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
-                // Step 2: load ALL active contracts for those customers — intentionally NOT re-filtering
-                // by trade unit so prior-year contracts (needed for pacing) are included even if
-                // they carry a different TradeUnit value than the current selection.
-                contracts = await _context.Contracts
-                    .AsNoTracking()
-                    .Where(c => c.IsActive && c.CtrmCustomerId != null && ctrmIds.Contains(c.CtrmCustomerId))
-                    .OrderByDescending(c => c.Id)
-                    .ToListAsync(cancellationToken);
+                if (ctrmIds.Count == 0)
+                {
+                    contracts = [];
+                }
+                else
+                {
+                    // Step 2: load contracts for those producer customers.
+                    // STRING_SPLIT passes IDs as a single CSV parameter instead of 200+ individual
+                    // parameters — avoids the slow IN-clause plan on vw_CurrentContracts where
+                    // CtrmCustomerId has no index.
+                    var ctrmIdsCsv = string.Join(",", ctrmIds);
+                    contracts = await _context.Contracts
+                        .FromSqlInterpolated($@"
+                            SELECT c.* FROM base.vw_CurrentContracts c
+                            INNER JOIN STRING_SPLIT({ctrmIdsCsv}, ',') ids
+                                ON c.CtrmCustomerId = ids.value
+                            WHERE c.IsActive = 1")
+                        .AsNoTracking()
+                        .OrderByDescending(c => c.Id)
+                        .ToListAsync(cancellationToken);
+                }
             }
 
             _logger.LogInformation("Loaded {ContractCount} contracts for customers who have contracts or tickets (filtered: {IsFiltered}, tradeUnitCount: {TradeUnitCount})",
@@ -1099,14 +1113,15 @@ public class SqlDataService : IDataService
             var tuList = tradeUnits?.Where(t => !string.IsNullOrEmpty(t)).ToList();
             if (tuList is { Count: > 0 })
             {
-                // Two-step: get customer codes from contracts in the selected TUs,
+                // Two-step: get customer codes from CustomerSnapshot (app DB, fast),
                 // then filter PIs by CustomerCode — avoids relying on the TradeUnit stamp
                 // which may be empty or stale when a PI is created without a TU selected.
-                var customerCodes = await _context.Contracts
+                // CustomerSnapshot already contains only producer customers.
+                var customerCodes = await _appContext.CustomerSnapshots
                     .AsNoTracking()
-                    .Where(c => c.IsActive && c.CtrmCustomerId != null
+                    .Where(c => c.SourceCustomerId != null && c.IsActive
                              && c.TradeUnit != null && tuList.Contains(c.TradeUnit))
-                    .Select(c => c.CtrmCustomerId!)
+                    .Select(c => c.SourceCustomerId!)
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
