@@ -31,6 +31,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
     public DbSet<BidSheetLocation> BidSheetLocations => Set<BidSheetLocation>();
     public DbSet<BidSheetLocationBid> BidSheetLocationBids => Set<BidSheetLocationBid>();
+    public DbSet<BidSheetReference> BidSheetReferences => Set<BidSheetReference>();
     public DbSet<ElevatorCache> ElevatorCaches => Set<ElevatorCache>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -316,6 +317,19 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ModifiedBy).HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.ModifiedAt).IsRequired(false);
             entity.HasIndex(e => new { e.LocationId, e.CommodityCode, e.CropYear }).IsUnique().HasDatabaseName("UQ_BidSheetLocationBids_Location_Commodity_Year");
+        });
+
+        modelBuilder.Entity<BidSheetReference>(entity =>
+        {
+            entity.ToTable("BidSheetReferences", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.TradeUnitCode).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.ElevatorCode).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.ModifiedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.HasIndex(e => new { e.UserId, e.TradeUnitCode }).IsUnique().HasDatabaseName("UQ_BidSheetReferences_User_TradeUnit");
+            entity.HasIndex(e => e.UserId).HasDatabaseName("IX_BidSheetReferences_UserId");
         });
     }
 }
