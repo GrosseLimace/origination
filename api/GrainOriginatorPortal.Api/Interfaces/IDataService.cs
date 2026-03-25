@@ -122,6 +122,11 @@ public interface IDataService
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<List<Ticket>> GetTicketsAsync(List<string>? tradeUnits = null, CancellationToken cancellationToken = default);
 
+    /// <summary>Gets today's delivery tickets only, optionally filtered by trade unit. Fast path for Spot Loads.</summary>
+    /// <param name="tradeUnits">Optional list of trade unit codes to filter by.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<Ticket>> GetTodaysTicketsAsync(List<string>? tradeUnits = null, CancellationToken cancellationToken = default);
+
     /// <summary>Gets all tickets for a specific customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>

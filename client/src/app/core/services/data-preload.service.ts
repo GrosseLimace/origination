@@ -88,18 +88,18 @@ export class DataPreloadService {
           this._ticketPreload$ = new ReplaySubject<void>(1);
         }
 
-        // Core group — each result streams into AppState as it arrives.
-        // dataLoading clears when customers + contracts are ready (enough for
-        // Insights to render Unconfirmed Contracts & Unshipped Bushels).
-        // Spot Loads populate when tickets + notes arrive shortly after.
-        let coreArrived = { customers: false, contracts: false };
+        // Core group — dataLoading clears when all three are ready so that
+        // Unconfirmed Contracts, Spot Loads, and Unshipped Bushels all appear
+        // simultaneously. todaysTickets$ is a fast query (today's date filter)
+        // and resolves in roughly the same time as customers + contracts.
+        let coreArrived = { customers: false, contracts: false, todaysTickets: false };
 
         const customers$ = this.apiService.getCustomers(tradeUnits).pipe(
           catchError(() => of([] as Customer[])),
           tap(data => {
             this.appState.setCustomers(data);
             coreArrived.customers = true;
-            if (coreArrived.contracts) this.appState.setDataLoading(false);
+            if (coreArrived.contracts && coreArrived.todaysTickets) this.appState.setDataLoading(false);
           })
         );
         const contracts$ = this.apiService.getContracts(tradeUnits).pipe(
@@ -107,7 +107,15 @@ export class DataPreloadService {
           tap(data => {
             this.appState.setContracts(data);
             coreArrived.contracts = true;
-            if (coreArrived.customers) this.appState.setDataLoading(false);
+            if (coreArrived.customers && coreArrived.todaysTickets) this.appState.setDataLoading(false);
+          })
+        );
+        const todaysTickets$ = this.apiService.getTodaysTickets(tradeUnits).pipe(
+          catchError(() => of([] as Ticket[])),
+          tap(data => {
+            this.appState.setTodaysTickets(data);
+            coreArrived.todaysTickets = true;
+            if (coreArrived.customers && coreArrived.contracts) this.appState.setDataLoading(false);
           })
         );
         const tickets$ = this.apiService.getTickets(tradeUnits).pipe(
@@ -175,7 +183,7 @@ export class DataPreloadService {
           })
         );
 
-        return merge(customers$, contracts$, tickets$, notes$, plantingIntentions$, storedGrain$, savedLists$, commodities$, producerDetails$, dashboardSummary$);
+        return merge(customers$, contracts$, todaysTickets$, tickets$, notes$, plantingIntentions$, storedGrain$, savedLists$, commodities$, producerDetails$, dashboardSummary$);
       }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe();

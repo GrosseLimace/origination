@@ -29,6 +29,16 @@ public class TicketsController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
+    /// <summary>Gets today's delivery tickets only, optionally filtered by trade units. Fast path for Spot Loads.</summary>
+    [HttpGet("today")]
+    [EnforceTradeUnitAccess]
+    [ProducesResponseType(typeof(List<Ticket>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<Ticket>>> GetToday([FromQuery] List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
+    {
+        return Ok(await _dataService.GetTodaysTicketsAsync(tradeUnits, cancellationToken));
+    }
+
+    // -------------------------------------------------------------------------
     /// <summary>Gets all delivery tickets for a specific customer.</summary>
     [HttpGet("customer/{customerId:long}")]
     [ProducesResponseType(typeof(List<Ticket>), StatusCodes.Status200OK)]

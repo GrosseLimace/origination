@@ -117,6 +117,7 @@ export class InsightsComponent {
   readonly customers = this.appState.customers;
   readonly contracts = this.appState.contracts;
   readonly tickets = this.appState.tickets;
+  readonly todaysTickets = this.appState.todaysTickets;
   readonly isLoading = computed(() => this.appState.dataLoading());
   isBackgroundRefreshing = signal(false);
   private readonly _dataLoading$ = toObservable(this.appState.dataLoading);
@@ -152,33 +153,32 @@ export class InsightsComponent {
     const customers = this.customers();
     if (customers.length === 0) return [] as Insight[];
     const contracts = this.contracts();
-    const tickets = this.tickets();
-    // Skip the O(n) customer loop if no contracts or tickets have arrived yet —
-    // no insights can exist without at least one of these data sources.
-    if (contracts.length === 0 && tickets.length === 0) return [] as Insight[];
+    const todaysTickets = this.todaysTickets();
+    // Skip the O(n) customer loop if neither contracts nor today's tickets have arrived yet.
+    if (contracts.length === 0 && todaysTickets.length === 0) return [] as Insight[];
 
     const insights: Insight[] = [];
     const now = new Date();
-    const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
-    const today = new Date(todayStr);
+    const today = new Date(`${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`);
 
-    // Pre-index contracts and tickets by customer ID for O(1) lookup
+    // Pre-index contracts by customer for O(1) lookup
     const contractsByCustomer = new Map<string, Contract[]>();
     for (const c of contracts) {
       if (!c.ctrmCustomerId) continue;
       const arr = contractsByCustomer.get(c.ctrmCustomerId);
       if (arr) { arr.push(c); } else { contractsByCustomer.set(c.ctrmCustomerId, [c]); }
     }
-    const ticketsByCustomer = new Map<string, Ticket[]>();
-    for (const t of tickets) {
+    // Pre-index today's tickets by customer for O(1) spot-load lookup
+    const todayTicketsByCustomer = new Map<string, Ticket[]>();
+    for (const t of todaysTickets) {
       if (!t.customerCode) continue;
-      const arr = ticketsByCustomer.get(t.customerCode);
-      if (arr) { arr.push(t); } else { ticketsByCustomer.set(t.customerCode, [t]); }
+      const arr = todayTicketsByCustomer.get(t.customerCode);
+      if (arr) { arr.push(t); } else { todayTicketsByCustomer.set(t.customerCode, [t]); }
     }
 
     for (const customer of customers) {
       const customerContracts = contractsByCustomer.get(customer.sourceCustomerId!) || [];
-      const customerTickets = ticketsByCustomer.get(customer.sourceCustomerId!) || [];
+      const customerTodayTickets = todayTicketsByCustomer.get(customer.sourceCustomerId!) || [];
 
       // --- 1. Unconfirmed Contracts ---
       for (const contract of customerContracts) {
@@ -209,11 +209,8 @@ export class InsightsComponent {
       }
 
       // --- 2. Spot Loads — Delivered Today, No Contract Coverage ---
-      // A spot load is a ticket delivered today where the customer has no active/pending
-      // contract whose delivery window (deliveryStart–deliveryEnd) covers today.
-      const todayTickets = customerTickets.filter(t => t.date === todayStr);
-
-      if (todayTickets.length > 0) {
+      // todayTicketsByCustomer is pre-filtered to today by the /api/tickets/today endpoint.
+      if (customerTodayTickets.length > 0) {
         const hasContractForToday = customerContracts.some(c => {
           if (c.status === 'Fulfilled' || c.status === 'Cancelled') return false;
           const start = new Date(c.deliveryStart);
@@ -222,7 +219,7 @@ export class InsightsComponent {
         });
 
         if (!hasContractForToday) {
-          for (const ticket of todayTickets) {
+          for (const ticket of customerTodayTickets) {
             const bu = ticket.unloadQuantity ? Math.round(ticket.unloadQuantity) : null;
             insights.push({
               customer,

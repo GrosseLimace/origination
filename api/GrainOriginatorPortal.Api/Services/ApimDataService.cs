@@ -112,6 +112,9 @@ public class ApimDataService : IDataService
     public Task<List<Ticket>> GetTicketsByFarmAsync(string farmId, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetTicketsByFarm");
 
+    public Task<List<Ticket>> GetTodaysTicketsAsync(List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
+        => Task.FromResult(new List<Ticket>());
+
     // =========================================================================
     // Planting Intention Operations
     // =========================================================================
