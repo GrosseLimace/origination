@@ -13,8 +13,9 @@ A step-by-step guide for publishing npm packages to the Scoular GHE Packages reg
 5. [Prepare Your Package](#prepare-your-package)
 6. [Publish](#publish)
 7. [Consuming Packages](#consuming-packages)
-8. [Version Updates](#version-updates)
-9. [Troubleshooting](#troubleshooting)
+8. [CI/CD Authentication (GitHub Actions)](#cicd-authentication-github-actions)
+9. [Version Updates](#version-updates)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -213,6 +214,72 @@ Then install normally:
 npm install @it/design-system
 npm install @it/angular-components
 ```
+
+---
+
+## CI/CD Authentication (GitHub Actions)
+
+When your GitHub Actions workflow needs to install `@it` scoped packages, use the built-in `GITHUB_TOKEN` rather than a Personal Access Token. This was validated on the SIMS repository in March 2026.
+
+### Why GITHUB_TOKEN over a PAT?
+
+| Factor | GITHUB_TOKEN | Classic PAT |
+|--------|-------------|-------------|
+| Lifecycle | Auto-generated per workflow run, expires when the job ends | Must be manually created and rotated |
+| Ownership | Scoped to the repository, not tied to a person | Tied to a person's GHE account and SAML session |
+| Secret management | Built-in — no repo secret needed | Must be stored as a repo/org secret |
+| Risk if person leaves | None | Token is revoked, CI breaks |
+
+### Prerequisites
+
+1. Both the consuming repo and the package source must be in the **IT** organization on `scoular.ghe.com`
+2. The project has an `.npmrc` checked into the repo with scope routing:
+
+```ini
+@it:registry=https://npm.scoular.ghe.com/
+```
+
+> This file tells npm where to find `@it` packages. It does **not** contain a token.
+
+### Workflow step
+
+Add this step **before** `npm ci` or `npm install`:
+
+```yaml
+    - name: Authenticate to GHE npm registry
+      shell: pwsh
+      working-directory: ./your-angular-directory
+      run: |
+        Add-Content -Path .npmrc -Value "//npm.scoular.ghe.com/:_authToken=$($env:GITHUB_TOKEN)"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+This appends the token to the project `.npmrc` at build time. The token is never committed — the file modification only exists for the duration of the job.
+
+### Complete example
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+
+  - name: Authenticate to GHE npm registry
+    shell: pwsh
+    working-directory: ./it-operations-angular
+    run: |
+      Add-Content -Path .npmrc -Value "//npm.scoular.ghe.com/:_authToken=$($env:GITHUB_TOKEN)"
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  - name: Install dependencies
+    working-directory: ./it-operations-angular
+    run: npm ci
+```
+
+### When you still need a PAT
+
+- **Cross-organization access**: `GITHUB_TOKEN` is scoped to the `IT` org. If a repo outside `IT` needs `@it` packages, use a classic PAT stored as a repository secret.
+- **Local development**: Developers still need a PAT in their `~/.npmrc` — see [Consuming Packages](#consuming-packages).
 
 ---
 
