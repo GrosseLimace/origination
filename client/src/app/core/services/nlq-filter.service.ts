@@ -70,6 +70,8 @@ export class NlqFilterService {
     for (const crop of this.grainCrops) {
       if (lower.includes(crop)) {
         const normalized = (crop === 'soybean' || crop === 'beans') ? 'soybeans' : crop;
+        // Skip 'beans' if 'soybeans' was already matched — avoid double-counting
+        if (crop === 'beans' && found.includes('soybeans')) continue;
         if (!found.includes(normalized)) found.push(normalized);
       }
     }
@@ -174,7 +176,11 @@ export class NlqFilterService {
     const lower = query.toLowerCase();
     // Check hardcoded crops first (fast, common case)
     for (const crop of this.grainCrops) {
-      if (lower.includes(crop)) return crop;
+      if (lower.includes(crop)) {
+        // Normalize: return 'soybeans' for any soybean variant; skip 'beans' if 'soybeans' already matched
+        if (crop === 'beans' && lower.includes('soybeans')) continue;
+        return (crop === 'soybean' || crop === 'beans') ? 'soybeans' : crop;
+      }
     }
     // Check dynamic commodity terms (codes and names from the DB)
     for (const term of this._allCommodityTerms) {
@@ -348,8 +354,23 @@ export class NlqFilterService {
     // Apply same synonym normalization as filterCustomers
     lowerQuery = lowerQuery.replace(/\bneed(?:s)?\s+(?:to\s+)?(?:call|contact|reach\s+out(?:\s+to)?)\b/g, 'not contacted in 30 days');
     lowerQuery = lowerQuery.replace(/\bneed(?:s)?\s+follow\s*-?\s*up\b/g, 'not contacted in 14 days');
+    lowerQuery = lowerQuery.replace(/\bwho\s+(?:do\s+i|should\s+i)\s+(?:call|follow\s+up|follow-up|contact|reach\s+out)\b/gi, 'not contacted in 30 days');
+    lowerQuery = lowerQuery.replace(/\bhaven'?t\s+(?:called|reached\s+out)\b/g, 'not contacted in 30 days');
+    lowerQuery = lowerQuery.replace(/\bnot\s+(?:been\s+)?called\b/g, 'not contacted in 30 days');
+    lowerQuery = lowerQuery.replace(/\bneed\s+(?:a\s+)?touchpoint\b/g, 'not contacted in 30 days');
+    lowerQuery = lowerQuery.replace(/\boverdue\s+for\s+(?:a\s+)?(?:call|contact|follow.?up)\b/g, 'not contacted in 30 days');
+    lowerQuery = lowerQuery.replace(/\bwho\s+(?:do\s+i|should\s+i)\s+follow\s*-?\s*up\b/g, 'not contacted in 14 days');
     lowerQuery = lowerQuery.replace(/\binactive\s+(?:customers?|producers?|growers?|farmers?)\b/g, 'no active contract');
+    lowerQuery = lowerQuery.replace(/\b(?:not\s+contracted|uncontracted|haven'?t\s+contracted|nothing\s+contracted|no\s+contracts)\b/g, 'no active contract');
+    lowerQuery = lowerQuery.replace(/\bhaven'?t\s+delivered\b/g, 'no deliveries');
+    lowerQuery = lowerQuery.replace(/\bnot\s+delivered\b/g, 'no deliveries');
+    lowerQuery = lowerQuery.replace(/\bnothing\s+delivered\b/g, 'no deliveries');
+    lowerQuery = lowerQuery.replace(/\bzero\s+deliveries\b/g, 'no deliveries');
     lowerQuery = lowerQuery.replace(/\bhigh\s*-?\s*value\s+(?:customers?|producers?|growers?|farmers?)\b/g, 'top 10 by contract value');
+    lowerQuery = lowerQuery.replace(/\bmy\s+biggest\s+(?:growers?|producers?|customers?|farmers?)\b/g, 'top 10 by acres');
+    lowerQuery = lowerQuery.replace(/\blargest\s+(?:producers?|customers?|growers?|farmers?|operations?)\b/g, 'top 10 by acres');
+    lowerQuery = lowerQuery.replace(/\b(?:most\s+active|best)\s+(?:customers?|producers?|growers?|farmers?)\b/g, 'top 10 by contract value');
+    lowerQuery = lowerQuery.replace(/\b(?:has\s+grain\s+in\s+storage|storing\s+grain|grain\s+on\s+hand)\b/g, 'in storage');
     const matched: string[] = [];
 
     // --- Location ---
@@ -425,6 +446,8 @@ export class NlqFilterService {
     if (/contract\s*(?:delivering|delivery|expir|ending)\s*(?:in|before|after|by|this|next|soon)/i.test(lowerQuery)) matched.push('contract_delivery_date');
     if (/crop\s*year\s*\d{4}|cy\s*\d{4}|\d{4}\s*crop\s*year/i.test(lowerQuery)) matched.push('contract_crop_year');
     if (/open\s*balance|unshipped\s*bushels?|remaining\s*bushels?/i.test(lowerQuery)) matched.push('contract_open_balance');
+    if (/(?:less than|under|more than|over|above|at least)\s*\d+\s*%\s*(?:delivered|fulfilled|complete)/i.test(lowerQuery) ||
+        lowerQuery.includes('half delivered') || lowerQuery.includes('half fulfilled')) matched.push('fulfillment_ratio');
     if (/booked\s*(?:in|since|after|before|this|last)|contracted\s*(?:in|since|after|before|this|last)/i.test(lowerQuery)) matched.push('contract_booked_date');
 
     // Commodity contracts (contract/sell/sold/market language)
@@ -524,11 +547,8 @@ export class NlqFilterService {
         lowerQuery.includes('not linked')) matched.push('no_linked_producers');
 
     // City/location search
-    if (/(?:in|from|near|around)\s+[a-z][a-z\s]{1,30}?(?:\s+(?:customers?|producers?|farmers?|growers?|area|region)|$)/.test(lowerQuery)) {
-      // Only if it's not a state name match (already handled)
-      const cityTestMatch = lowerQuery.match(/(?:in|from|near|around)\s+([a-z][a-z\s]{1,30}?)(?:\s+(?:customers?|producers?|farmers?|growers?|area|region)|$)/);
-      if (cityTestMatch && !this.stateNames[cityTestMatch[1].trim()]) matched.push('city_filter');
-    }
+    const cityTestMatch = lowerQuery.match(/(?:in|from|near|around)\s+([a-z][a-z\s]{1,25}?)(?=\s+(?:customers?|producers?|farmers?|growers?|area|region|with|who|and|that|having)|$)/);
+    if (cityTestMatch && !this.stateNames[cityTestMatch[1].trim()]) matched.push('city_filter');
 
     // Has/no bin capacity (boolean) — "has bin capacity", "with bin storage", "have bin capacity"
     const hasBin = /(?:has|have|with)\s+(?:a\s+)?(?:bin|storage)\s*(?:capacity|space)?/i.test(lowerQuery);
@@ -559,6 +579,10 @@ export class NlqFilterService {
     if (/top\s*\d+/.test(lowerQuery)) matched.push('top_n');
     if (/(?:bottom|smallest)\s*\d+/.test(lowerQuery)) matched.push('bottom_n');
     if (lowerQuery.includes('largest') || lowerQuery.includes('biggest')) matched.push('largest');
+    if (lowerQuery.includes('by open balance') || (lowerQuery.includes('open balance') && /top\s*\d+/.test(lowerQuery))) matched.push('top_n_open_balance');
+    if (lowerQuery.includes('by planting') || (lowerQuery.includes('planting') && /top\s*\d+/.test(lowerQuery))) matched.push('top_n_planting');
+    if (lowerQuery.includes('by storage') || (lowerQuery.includes('storage') && /top\s*\d+/.test(lowerQuery))) matched.push('top_n_storage');
+    if (lowerQuery.includes('most notes') || lowerQuery.includes('most engaged') || lowerQuery.includes('by notes')) matched.push('top_n_notes');
 
     // --- Customer name/ID search ---
     if (/(?:customer|producer|grower|farmer)\s+(?:named?\s+)?[A-Z]/.test(query) ||
@@ -614,10 +638,30 @@ export class NlqFilterService {
   private filterCustomers(query: string, context: NlqFilterContext, detectedState: string | null): Customer[] {
     // Normalize synonyms before pattern matching
     let lowerQuery = query.toLowerCase();
+    // -- Calling / follow-up synonyms --
     lowerQuery = lowerQuery.replace(/\bneed(?:s)?\s+(?:to\s+)?(?:call|contact|reach\s+out(?:\s+to)?)\b/g, 'not contacted in 30 days');
     lowerQuery = lowerQuery.replace(/\bneed(?:s)?\s+follow\s*-?\s*up\b/g, 'not contacted in 14 days');
+    lowerQuery = lowerQuery.replace(/\bwho\s+(?:do\s+i|should\s+i)\s+(?:call|follow\s+up|follow-up|contact|reach\s+out)\b/gi, 'not contacted in 30 days');
+    lowerQuery = lowerQuery.replace(/\bhaven'?t\s+(?:called|reached\s+out)\b/g, 'not contacted in 30 days');
+    lowerQuery = lowerQuery.replace(/\bnot\s+(?:been\s+)?called\b/g, 'not contacted in 30 days');
+    lowerQuery = lowerQuery.replace(/\bneed\s+(?:a\s+)?touchpoint\b/g, 'not contacted in 30 days');
+    lowerQuery = lowerQuery.replace(/\boverdue\s+for\s+(?:a\s+)?(?:call|contact|follow.?up)\b/g, 'not contacted in 30 days');
+    lowerQuery = lowerQuery.replace(/\bwho\s+(?:do\s+i|should\s+i)\s+follow\s*-?\s*up\b/g, 'not contacted in 14 days');
+    // -- Contract state synonyms --
     lowerQuery = lowerQuery.replace(/\binactive\s+(?:customers?|producers?|growers?|farmers?)\b/g, 'no active contract');
+    lowerQuery = lowerQuery.replace(/\b(?:not\s+contracted|uncontracted|haven'?t\s+contracted|nothing\s+contracted|no\s+contracts)\b/g, 'no active contract');
+    // -- Delivery state synonyms --
+    lowerQuery = lowerQuery.replace(/\bhaven'?t\s+delivered\b/g, 'no deliveries');
+    lowerQuery = lowerQuery.replace(/\bnot\s+delivered\b/g, 'no deliveries');
+    lowerQuery = lowerQuery.replace(/\bnothing\s+delivered\b/g, 'no deliveries');
+    lowerQuery = lowerQuery.replace(/\bzero\s+deliveries\b/g, 'no deliveries');
+    // -- High-value / priority synonyms --
     lowerQuery = lowerQuery.replace(/\bhigh\s*-?\s*value\s+(?:customers?|producers?|growers?|farmers?)\b/g, 'top 10 by contract value');
+    lowerQuery = lowerQuery.replace(/\bmy\s+biggest\s+(?:growers?|producers?|customers?|farmers?)\b/g, 'top 10 by acres');
+    lowerQuery = lowerQuery.replace(/\blargest\s+(?:producers?|customers?|growers?|farmers?|operations?)\b/g, 'top 10 by acres');
+    lowerQuery = lowerQuery.replace(/\b(?:most\s+active|best)\s+(?:customers?|producers?|growers?|farmers?)\b/g, 'top 10 by contract value');
+    // -- Storage synonyms --
+    lowerQuery = lowerQuery.replace(/\b(?:has\s+grain\s+in\s+storage|storing\s+grain|grain\s+on\s+hand)\b/g, 'in storage');
     let result = [...context.customers];
 
     // Pre-index: latest note per customer — O(notes) build, then O(1) lookup per customer.
@@ -648,7 +692,7 @@ export class NlqFilterService {
     result = this.applyQuarterDateFilter(lowerQuery, result, context.tickets);
     result = this.applyContractStatusOrFilter(lowerQuery, result, context.contracts);
     result = this.applyCrossEntityFilters(lowerQuery, result, context.contracts, context.tickets, context.plantingIntentions);
-    result = this.applyRankingFilters(lowerQuery, result, context.contracts, context.tickets);
+    result = this.applyRankingFilters(lowerQuery, result, context.contracts, context.tickets, context.plantingIntentions, context.storedGrain, context.notes);
 
     return result;
   }
@@ -1029,7 +1073,8 @@ export class NlqFilterService {
     }
 
     // City/location search — "in [city]", "from [city]", "near [city]", "[city] customers"
-    const cityMatch = lowerQuery.match(/(?:in|from|near|around)\s+([a-z][a-z\s]{1,30}?)(?:\s+(?:customers?|producers?|farmers?|growers?|area|region)|$)/);
+    // Lookahead allows trailing "with/who/and/having" without consuming them so other filters still fire.
+    const cityMatch = lowerQuery.match(/(?:in|from|near|around)\s+([a-z][a-z\s]{1,25}?)(?=\s+(?:customers?|producers?|farmers?|growers?|area|region|with|who|and|that|having)|$)/);
     if (cityMatch && !this.stateNames[cityMatch[1].trim()]) {
       const city = cityMatch[1].trim();
       result = result.filter(c => {
@@ -1101,7 +1146,11 @@ export class NlqFilterService {
                                 (lowerQuery.includes('contacted') && lowerQuery.includes('over') && lowerQuery.includes('days'));
 
     if (isNotContactedQuery) {
-      const notContactedMatch = lowerQuery.match(/(\d+)\s*days?/);
+      // Narrow pattern: only match a day count when it follows contact-related words,
+      // so "delivered more than 30 days ago" doesn't accidentally set a contact cutoff.
+      const notContactedMatch = lowerQuery.match(
+        /(?:not contacted|no contact|not called|no call|haven'?t (?:called|contacted|reached)|not spoken|not contacted in|contacted over)\s*(?:in|for|within)?\s*(?:the\s+)?(?:last|past)?\s*(?:over\s+)?(\d+)\s*days?/
+      ) || lowerQuery.match(/(\d+)\s*days?\s*(?:ago)?\s*(?:not\s+contacted|no\s+contact|without\s+contact)/);
       if (notContactedMatch) {
         const cutoffTime = Date.now() - parseInt(notContactedMatch[1]) * 86400000;
         result = result.filter(c => {
@@ -1531,6 +1580,28 @@ export class NlqFilterService {
       );
     }
 
+    // --- Delivery fulfillment ratio: "less than 50% delivered", "over 80% fulfilled", "half delivered" ---
+    const fulfillPctMatch = lowerQuery.match(/(?:less than|under|below)\s*(\d+)\s*%\s*(?:delivered|fulfilled|complete)/);
+    const fulfillPctOverMatch = lowerQuery.match(/(?:more than|over|above|at least)\s*(\d+)\s*%\s*(?:delivered|fulfilled|complete)/);
+    const halfDeliveredMatch = lowerQuery.includes('half delivered') || lowerQuery.includes('half fulfilled');
+    if (fulfillPctMatch || fulfillPctOverMatch || halfDeliveredMatch) {
+      const threshold = halfDeliveredMatch ? 50
+        : fulfillPctMatch ? parseFloat(fulfillPctMatch[1])
+        : parseFloat(fulfillPctOverMatch![1]);
+      const isUnder = !!fulfillPctMatch || halfDeliveredMatch;
+      result = result.filter(c => {
+        const cContracts = getCustomerContracts(c).filter(ct =>
+          ct.status === 'Active' || ct.status === 'Pending' || ct.status === 'Overdue'
+        );
+        if (cContracts.length === 0) return false;
+        const totalQty = cContracts.reduce((s, ct) => s + (ct.quantity || 0), 0);
+        if (totalQty === 0) return false;
+        const openBal = cContracts.reduce((s, ct) => s + (ct.openBalanceQuantity || 0), 0);
+        const deliveredPct = ((totalQty - openBal) / totalQty) * 100;
+        return isUnder ? deliveredPct < threshold : deliveredPct >= threshold;
+      });
+    }
+
     // --- Contract booked date: "booked this year", "contracted since January", "booked in 2025" ---
     const bookedThisYearMatch = /(?:booked|contracted)\s*(?:this\s+year|in\s+\d{4})/i.test(lowerQuery);
     if (bookedThisYearMatch) {
@@ -1851,7 +1922,15 @@ export class NlqFilterService {
   // RANKING FILTER (top/bottom/largest/smallest)
   // ============================================================
 
-  private applyRankingFilters(lowerQuery: string, result: Customer[], contracts?: Contract[], tickets?: Ticket[]): Customer[] {
+  private applyRankingFilters(
+    lowerQuery: string,
+    result: Customer[],
+    contracts?: Contract[],
+    tickets?: Ticket[],
+    plantingIntentions?: PlantingIntention[],
+    storedGrain?: StoredGrain[],
+    notes?: Note[]
+  ): Customer[] {
     const topMatch = lowerQuery.match(/top\s*(\d+)/);
     const bottomMatch = lowerQuery.match(/(?:bottom|smallest)\s*(\d+)/);
     const isTop = !!topMatch || lowerQuery.includes('largest') || lowerQuery.includes('biggest');
@@ -1861,7 +1940,52 @@ export class NlqFilterService {
     const n = topMatch ? parseInt(topMatch[1]) : (bottomMatch ? parseInt(bottomMatch[1]) : 10);
 
     // Determine sort criteria from query
-    if (lowerQuery.includes('by contract') || lowerQuery.includes('contract value') ||
+    if (lowerQuery.includes('by open balance') || lowerQuery.includes('open balance') && lowerQuery.includes('top')) {
+      // Sort by total open/unshipped balance
+      const openBalTotals = new Map<string, number>();
+      for (const c of (contracts || [])) {
+        if (!c.ctrmCustomerId) continue;
+        openBalTotals.set(c.ctrmCustomerId, (openBalTotals.get(c.ctrmCustomerId) || 0) + (c.openBalanceQuantity || 0));
+      }
+      result = [...result].sort((a, b) => {
+        const aVal = openBalTotals.get(a.sourceCustomerId!) || 0;
+        const bVal = openBalTotals.get(b.sourceCustomerId!) || 0;
+        return isTop ? bVal - aVal : aVal - bVal;
+      });
+    } else if (lowerQuery.includes('by planting') || (lowerQuery.includes('planting') && lowerQuery.includes('top'))) {
+      // Sort by total planting intention acres
+      const plantingTotals = new Map<number, number>();
+      for (const p of (plantingIntentions || [])) {
+        plantingTotals.set(p.customerId, (plantingTotals.get(p.customerId) || 0) + (p.acres || 0));
+      }
+      result = [...result].sort((a, b) => {
+        const aVal = plantingTotals.get(a.id) || 0;
+        const bVal = plantingTotals.get(b.id) || 0;
+        return isTop ? bVal - aVal : aVal - bVal;
+      });
+    } else if (lowerQuery.includes('by storage') || (lowerQuery.includes('storage') && lowerQuery.includes('top'))) {
+      // Sort by total stored grain quantity
+      const storageTotals = new Map<number, number>();
+      for (const s of (storedGrain || [])) {
+        storageTotals.set(s.customerId, (storageTotals.get(s.customerId) || 0) + (s.quantity || 0));
+      }
+      result = [...result].sort((a, b) => {
+        const aVal = storageTotals.get(a.id) || 0;
+        const bVal = storageTotals.get(b.id) || 0;
+        return isTop ? bVal - aVal : aVal - bVal;
+      });
+    } else if (lowerQuery.includes('most notes') || lowerQuery.includes('most engaged') || lowerQuery.includes('by notes')) {
+      // Sort by number of notes (engagement proxy)
+      const noteCounts = new Map<number, number>();
+      for (const note of (notes || [])) {
+        noteCounts.set(note.customerId, (noteCounts.get(note.customerId) || 0) + 1);
+      }
+      result = [...result].sort((a, b) => {
+        const aVal = noteCounts.get(a.id) || 0;
+        const bVal = noteCounts.get(b.id) || 0;
+        return isTop ? bVal - aVal : aVal - bVal;
+      });
+    } else if (lowerQuery.includes('by contract') || lowerQuery.includes('contract value') ||
         lowerQuery.includes('biggest buyer') || lowerQuery.includes('most contracted')) {
       // Sort by total contract volume
       const contractTotals = new Map<string, number>();

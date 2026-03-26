@@ -126,6 +126,14 @@ export class HomeComponent {
     this._lastTradeUnitKey = [...this.selectedTradeUnits()].sort().join(',');
     this._initialized = true;
 
+    // Keep notes in sync with appState — handles the case where the data-preload
+    // delivers notes after _restoreStateFromService() already ran (restore path skips
+    // _loadAllData so there is no notes subscription to pick up the arriving data).
+    effect(() => {
+      const stateNotes = this.appState.notes();
+      untracked(() => this.notes.set(stateNotes));
+    });
+
     // React to global trade unit changes made via TradeUnitSelectorComponent
     effect(() => {
       const tradeUnits = this.appState.selectedTradeUnits();
