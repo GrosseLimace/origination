@@ -195,6 +195,7 @@ export class BuildListComponent {
   loadingSavedLists = signal(false);
   detectedState = signal<string | null>(null);
   queryUnrecognized = signal(false);
+  queryReturnedNoMatches = signal(false);
   showRefinePanel = signal(false);
   pendingRefinements = signal<RefinementFilters>({});
   appliedRefinements = signal<RefinementFilters>({});
@@ -527,6 +528,7 @@ export class BuildListComponent {
     this.filteredCustomers.set([]);
     this.detectedState.set(null);
     this.queryUnrecognized.set(false);
+    this.queryReturnedNoMatches.set(false);
     this.showMap.set(false);
     this.showRefinePanel.set(false);
     this.pendingRefinements.set({});
@@ -541,26 +543,33 @@ export class BuildListComponent {
       this.filteredCustomers.set([]);
       this.detectedState.set(null);
       this.queryUnrecognized.set(false);
+      this.queryReturnedNoMatches.set(false);
     }
   }
 
   onQueryKeydown(event: KeyboardEvent): void {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      if (this.hasTradeUnits() && this.queryText().trim() && !this.isProcessing() && !this.loading()) {
-        this.processQuery();
+      if (this.hasTradeUnits() && this.queryText().trim() && !this.isProcessing()) {
+        if (!this.loading()) {
+          this.processQuery();
+        }
+        // If loading: text is staged; _loadData() auto-runs processQuery() on completion
       }
     }
   }
 
   useExampleQuery(example: string): void {
-    if (this.loading()) return;
     this.detectedState.set(null);
     this.hasGenerated.set(false);
     this.filteredCustomers.set([]);
     this.queryUnrecognized.set(false);
+    this.queryReturnedNoMatches.set(false);
     this.queryText.set(example);
-    this.processQuery();
+    if (!this.loading()) {
+      this.processQuery();
+    }
+    // If loading: text is staged; _loadData() auto-runs processQuery() on completion
   }
 
   processQuery(overrideTradeUnits?: string[]): void {
@@ -651,6 +660,7 @@ export class BuildListComponent {
     this.detectedState.set(result.detectedState);
     this.hasGenerated.set(true);
     this.queryUnrecognized.set(result.matchedPatterns.length === 0);
+    this.queryReturnedNoMatches.set(result.matchedPatterns.length > 0 && result.customers.length === 0);
 
     if (this.queryUnrecognized()) {
       // Unrecognized query: if other refinements are active use all customers as the

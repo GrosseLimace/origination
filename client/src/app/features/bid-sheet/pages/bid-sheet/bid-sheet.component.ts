@@ -3,8 +3,8 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
-import * as L from 'leaflet';
-import 'leaflet.markercluster';
+import type * as Leaflet from 'leaflet';
+declare const L: typeof Leaflet;
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
@@ -529,7 +529,7 @@ export class BidSheetComponent {
     this._refreshMapMarkers();
   }
 
-  private _onMapRightClick(e: any): void {
+  private _onMapClick(e: any): void {
     if (!this.addLocationMode()) return;
 
     // Remove previous pin
@@ -935,11 +935,11 @@ export class BidSheetComponent {
       // Re-render markers when zoom changes (dot vs label at different zoom levels)
       this._map.on('zoomend', () => this._refreshMapMarkers());
 
-      // Right-click to place pin in add-location mode
-      this._map.on('contextmenu', (e: any) => this._onMapRightClick(e));
+      // Left-click to place pin in add-location mode
+      this._map.on('click', (e: any) => this._onMapClick(e));
 
       this._refreshMapMarkers();
-    } catch { /* map init failed */ }
+    } catch (err) { console.error('Map initialization failed:', err); }
   }
 
   private _refreshMapMarkers(): void {
@@ -977,21 +977,32 @@ export class BidSheetComponent {
       const lng = first.longitude!;
 
       if (!hasTu) {
-        // No TU selected — show location names only, no bids
-        const names = this._getGroupedNames(group);
-        const maxWidth = Math.max(80, ...names.map(n => n.length * 6 + 20));
-        const nameIcon = L.divIcon({
-          className: 'custom-marker',
-          html: this._buildStackedLabel(names, '#00875F', '#006B4C'),
-          iconSize: [maxWidth, names.length * 22 + 8],
-          iconAnchor: [maxWidth / 2, names.length * 22 + 8]
-        });
-        this._clusterGroup.addLayer(L.marker([lat, lng], { icon: nameIcon }));
+        // Below zoom threshold: small dot; at or above: show name label
+        if (zoom < 11) {
+          const dotIcon = L.divIcon({
+            className: 'custom-marker',
+            html: `<div style="width:12px;height:12px;background:#00875F;border:2px solid #006B4C;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>`,
+            iconSize: [12, 12],
+            iconAnchor: [6, 6]
+          });
+          this._clusterGroup.addLayer(L.marker([lat, lng], { icon: dotIcon }));
+        } else {
+          const names = this._getGroupedNames(group);
+          const maxWidth = Math.max(80, ...names.map(n => n.length * 6 + 20));
+          const nameIcon = L.divIcon({
+            className: 'custom-marker',
+            html: this._buildStackedLabel(names, '#00875F', '#006B4C'),
+            iconSize: [maxWidth, names.length * 22 + 8],
+            iconAnchor: [maxWidth / 2, names.length * 22 + 8]
+          });
+          this._clusterGroup.addLayer(L.marker([lat, lng], { icon: nameIcon }));
+        }
         continue;
       }
 
       // All elevators in this group are from the selected TU(s) — render as labeled markers
-      // When a crop is selected, hide elevators with no bid for that crop/year
+      // When a crop is selected, hide elevators with no bid for that crop/year.
+      // Below zoom threshold render a dot instead of a name label.
       const tuGroup = mapCrop
         ? group.filter(e => {
             const n = ((e.elevatorName ?? '') || (e.elevatorShortName ?? '')).trim() || (e.elevatorCode ?? '').trim();
@@ -999,6 +1010,24 @@ export class BidSheetComponent {
           })
         : group;
       if (tuGroup.length === 0) continue;
+
+      // Below zoom threshold: small colored dot instead of name label
+      if (zoom < 11) {
+        const primaryElev = tuGroup[0];
+        const dotColor = (!!refCode && primaryElev.elevatorCode?.trim() === refCode) ? '#2563eb' : '#00875F';
+        const dotBorder = dotColor === '#2563eb' ? '#1d4ed8' : '#006B4C';
+        const dotIcon = L.divIcon({
+          className: 'custom-marker',
+          html: `<div style="width:12px;height:12px;background:${dotColor};border:2px solid ${dotBorder};border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>`,
+          iconSize: [12, 12],
+          iconAnchor: [6, 6]
+        });
+        const m = L.marker([lat, lng], { icon: dotIcon });
+        m.on('click', () => this.showPanel.set(true));
+        this._clusterGroup.addLayer(m);
+        continue;
+      }
+
       const names = this._getGroupedNames(tuGroup);
       const linesHtml = names.map(n => {
         const elev = tuGroup.find(e => ((e.elevatorName ?? '') || (e.elevatorShortName ?? '')).trim().startsWith(n.split('\n')[0]));
@@ -1009,9 +1038,9 @@ export class BidSheetComponent {
         if (isRef) { bg = '#2563eb'; border = '#1d4ed8'; }
         else if (isScoular) { bg = '#00875F'; border = '#006B4C'; }
         else { bg = '#9ca3af'; border = '#6b7280'; }
-        return `<div style="background:${bg};border:2px solid ${border};border-radius:4px;padding:3px 6px;font-size:9px;font-weight:700;color:#fff;white-space:nowrap;line-height:1.1;overflow:hidden;text-overflow:ellipsis;">${this._esc(n)}</div>`;
+        return `<div style="background:${bg};border:2px solid ${border};border-radius:4px;padding:3px 6px;font-size:9px;font-weight:700;color:#fff;white-space:nowrap;line-height:1.1;overflow:hidden;text-overflow:ellipsis;max-width:140px;">${this._esc(n)}</div>`;
       }).join('');
-      const maxWidth = Math.max(80, ...names.map(n => n.length * 6 + 20));
+      const maxWidth = Math.min(140, Math.max(80, ...names.map(n => n.length * 6 + 20)));
       const height = names.length * 22 + 8;
       const primaryElev = tuGroup[0];
       const primaryColor = (!!refCode && primaryElev.elevatorCode?.trim() === refCode) ? '#2563eb'
@@ -1065,82 +1094,125 @@ export class BidSheetComponent {
         none:     { bg: '#d1d5db', border: '#6b7280' }
       };
 
+      // Group competitor entries by location so co-located names (same address/PO box)
+      // render as one stacked marker instead of overlapping labels.
+      const repByLoc = new Map<string, { lat: number; lng: number; names: string[] }>();
       for (const [name, rep] of repByName) {
+        const key = locKey(rep.latitude!, rep.longitude!);
+        const existing = repByLoc.get(key);
+        if (existing) { existing.names.push(name); }
+        else { repByLoc.set(key, { lat: rep.latitude!, lng: rep.longitude!, names: [name] }); }
+      }
+
+      for (const [, { lat, lng, names }] of repByLoc) {
         if (!showBidValues) {
-          // Group-only selection: apply crop/year filter but render as name label only
-          if (crop) {
-            const hasBid = this.bidEntries().some(
-              e => e.name === name && e.commodityCode === crop && e.cropYear === year
-            );
-            if (!hasBid) continue;
+          // Group-only: filter by crop, then dot or stacked name label
+          const filteredNames = crop
+            ? names.filter(n => this.bidEntries().some(
+                e => e.name === n && e.commodityCode === crop && e.cropYear === year
+              ))
+            : names;
+          if (filteredNames.length === 0) continue;
+          if (zoom < 11) {
+            const dotIcon = L.divIcon({
+              className: 'custom-marker',
+              html: `<div style="width:10px;height:10px;background:#9ca3af;border:2px solid #6b7280;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>`,
+              iconSize: [10, 10], iconAnchor: [5, 5]
+            });
+            this._clusterGroup.addLayer(L.marker([lat, lng], { icon: dotIcon }));
+          } else {
+            const maxWidth = Math.max(80, ...filteredNames.map(n => n.length * 6 + 20));
+            const nameIcon = L.divIcon({
+              className: 'custom-marker',
+              html: this._buildStackedLabel(filteredNames, '#9ca3af', '#6b7280'),
+              iconSize: [maxWidth, filteredNames.length * 26 + 8],
+              iconAnchor: [maxWidth / 2, filteredNames.length * 26 + 8]
+            });
+            this._clusterGroup.addLayer(L.marker([lat, lng], { icon: nameIcon }));
           }
-          const maxWidth = Math.max(80, name.length * 6 + 20);
-          const nameIcon = L.divIcon({
-            className: 'custom-marker',
-            html: this._buildStackedLabel([name], '#9ca3af', '#6b7280'),
-            iconSize: [maxWidth, 30],
-            iconAnchor: [maxWidth / 2, 30]
-          });
-          this._clusterGroup.addLayer(L.marker([rep.latitude!, rep.longitude!], { icon: nameIcon }));
           continue;
         }
 
-        // Individual TU selected: show bid value label with crop filter
-        const matched = crop
-          ? this.bidEntries()
-              .filter(e => e.name === name && e.commodityCode === crop && e.cropYear === year)
-              .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
-          : null;
-        // When a crop filter is active, only show locations that have a bid for that crop/year
-        if (crop && !matched) continue;
-        const label = matched ? matched.bid : name.slice(0, 10);
+        // Individual TU: resolve bid/status for each name at this location
+        const bidItems = names
+          .map(n => {
+            const matched = crop
+              ? this.bidEntries()
+                  .filter(e => e.name === n && e.commodityCode === crop && e.cropYear === year)
+                  .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
+              : null;
+            if (crop && !matched) return null;
+            const label = matched ? matched.bid : n.slice(0, 10);
+            const newBidStr = matched?.bid ?? '';
+            const oldBidStr = this._getLatestBid(n, oldYr, crop);
+            const status = this._computeItemStatus(newBidStr, oldBidStr, false, refBid);
+            const { bg, border } = statusColors[status] ?? statusColors['none'];
+            return { name: n, label, bg, border };
+          })
+          .filter((x): x is NonNullable<typeof x> => x !== null);
 
-        // Color pin based on status relative to reference
-        const newBidStr = matched?.bid ?? '';
-        const oldBidStr = this._getLatestBid(name, oldYr, crop);
-        const status = this._computeItemStatus(newBidStr, oldBidStr, false, refBid);
-        const { bg, border } = statusColors[status] ?? statusColors['none'];
+        if (bidItems.length === 0) continue;
 
+        // Below zoom threshold: dot using first entry's color
+        if (zoom < 11) {
+          const { bg, border } = bidItems[0];
+          const dotIcon = L.divIcon({
+            className: 'custom-marker',
+            html: `<div style="width:10px;height:10px;background:${bg};border:2px solid ${border};border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>`,
+            iconSize: [10, 10], iconAnchor: [5, 5]
+          });
+          this._clusterGroup.addLayer(L.marker([lat, lng], { icon: dotIcon }));
+          continue;
+        }
+
+        // Stacked bid pills — one row per name at this location
+        const linesHtml = bidItems.map(({ label, bg, border }) =>
+          `<div style="background:${bg};border:2px solid ${border};border-radius:6px;padding:4px 3px;font-size:10px;font-weight:700;color:#fff;white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,0.3);line-height:1.1;">${this._esc(label)}</div>`
+        ).join('');
+        const maxWidth = Math.max(58, ...bidItems.map(({ label }) => label.length * 7 + 16));
+        const height = bidItems.length * 28 + 16;
+        const primaryBg = bidItems[0].bg;
         const divIcon = L.divIcon({
           className: 'custom-marker',
-          html: `<div style="position:relative;width:58px;text-align:center;">
-            <div style="background:${bg};border:2px solid ${border};border-radius:6px;padding:4px 3px;font-size:10px;font-weight:700;color:#fff;white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,0.3);line-height:1.1;">${this._esc(label)}</div>
-            <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid ${bg};margin:-1px auto 0;"></div>
+          html: `<div style="position:relative;width:${maxWidth}px;text-align:center;display:flex;flex-direction:column;gap:2px;align-items:center;">
+            ${linesHtml}
+            <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid ${primaryBg};margin:-1px auto 0;"></div>
           </div>`,
-          iconSize: [58, 36],
-          iconAnchor: [29, 36],
-          popupAnchor: [0, -36]
+          iconSize: [maxWidth, height],
+          iconAnchor: [maxWidth / 2, height],
+          popupAnchor: [0, -height]
         });
 
-        // Build popup: location name + all bids for this location in the selected year
-        const locationBids = this.bidEntries()
-          .filter(e => e.name === name && e.cropYear === year)
-          .sort((a, b) => (a.commodityName ?? a.commodityCode).localeCompare(b.commodityName ?? b.commodityCode));
-        const bidsHtml = locationBids.length > 0
-          ? locationBids.map(e =>
-              `<div style="display:flex;justify-content:space-between;gap:12px;padding:2px 0;">
-                <span style="color:#6b7280;font-size:11px;">${this._esc(e.commodityName ?? e.commodityCode)}</span>
-                <span style="font-weight:600;font-size:11px;">${this._esc(e.bid)}</span>
-              </div>`).join('')
-          : `<span style="color:#9ca3af;font-size:11px;">No bids for ${year}</span>`;
-        const popupHtml =
-          `<div style="min-width:140px;">
+        // Popup shows each name's bids at this location
+        const popupSections = bidItems.map(({ name }) => {
+          const locationBids = this.bidEntries()
+            .filter(e => e.name === name && e.cropYear === year)
+            .sort((a, b) => (a.commodityName ?? a.commodityCode).localeCompare(b.commodityName ?? b.commodityCode));
+          const bidsHtml = locationBids.length > 0
+            ? locationBids.map(e =>
+                `<div style="display:flex;justify-content:space-between;gap:12px;padding:2px 0;">
+                  <span style="color:#6b7280;font-size:11px;">${this._esc(e.commodityName ?? e.commodityCode)}</span>
+                  <span style="font-weight:600;font-size:11px;">${this._esc(e.bid)}</span>
+                </div>`).join('')
+            : `<span style="color:#9ca3af;font-size:11px;">No bids for ${year}</span>`;
+          return `<div style="${bidItems.length > 1 ? 'margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #f3f4f6;' : ''}">
             <div style="font-weight:700;font-size:13px;color:#111827;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid #e5e7eb;">${this._esc(name)}</div>
             ${bidsHtml}
           </div>`;
+        }).join('');
 
-        const bidMarker = L.marker([rep.latitude!, rep.longitude!], { icon: divIcon });
-        bidMarker.bindPopup(popupHtml, { closeButton: false });
+        const bidMarker = L.marker([lat, lng], { icon: divIcon });
+        bidMarker.bindPopup(`<div style="min-width:140px;">${popupSections}</div>`, { closeButton: false });
         this._clusterGroup.addLayer(bidMarker);
       }
     }
   }
 
   private _buildStackedLabel(names: string[], bg: string, border: string): string {
+    const maxWidth = Math.min(140, Math.max(80, ...names.map(n => n.length * 6 + 20)));
     const linesHtml = names.map(n =>
-      `<div style="background:${bg};border:2px solid ${border};border-radius:4px;padding:3px 6px;font-size:9px;font-weight:700;color:#fff;white-space:nowrap;line-height:1.1;overflow:hidden;text-overflow:ellipsis;">${this._esc(n)}</div>`
+      `<div style="background:${bg};border:2px solid ${border};border-radius:4px;padding:3px 6px;font-size:9px;font-weight:700;color:#fff;white-space:nowrap;line-height:1.1;overflow:hidden;text-overflow:ellipsis;max-width:${maxWidth}px;">${this._esc(n)}</div>`
     ).join('');
-    const maxWidth = Math.max(80, ...names.map(n => n.length * 6 + 20));
     return `<div style="position:relative;width:${maxWidth}px;text-align:center;display:flex;flex-direction:column;gap:2px;align-items:center;">
       ${linesHtml}
       <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid ${bg};margin:-1px auto 0;"></div>
