@@ -5,6 +5,7 @@ public class BidSheetReference
     public int Id { get; set; }
     public string UserId { get; set; } = string.Empty;
     public string TradeUnitCode { get; set; } = string.Empty;
-    public string ElevatorCode { get; set; } = string.Empty;
+    public int LocationId { get; set; }
+    public string Name { get; set; } = string.Empty;
     public DateTime ModifiedAt { get; set; }
 }

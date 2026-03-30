@@ -1032,7 +1032,7 @@ public class SqlDataService : IDataService
 
     public async Task<List<Ticket>> GetTodaysTicketsAsync(List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
-        var todayStr = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        var cutoffStr = DateTime.UtcNow.AddDays(-30).ToString("yyyy-MM-dd");
         var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
 
         try
@@ -1052,7 +1052,7 @@ public class SqlDataService : IDataService
 
                 tickets = await _context.Tickets
                     .AsNoTracking()
-                    .Where(t => t.IsActive && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode) && t.Date == todayStr)
+                    .Where(t => t.IsActive && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode) && t.Date != null && string.Compare(t.Date, cutoffStr) >= 0)
                     .OrderByDescending(t => t.Date)
                     .ToListAsync(cancellationToken);
             }
@@ -1084,7 +1084,7 @@ public class SqlDataService : IDataService
 
                 var rawTickets = await _context.Tickets
                     .AsNoTracking()
-                    .Where(t => t.IsActive && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode) && t.Date == todayStr)
+                    .Where(t => t.IsActive && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode) && t.Date != null && string.Compare(t.Date, cutoffStr) >= 0)
                     .OrderByDescending(t => t.Date)
                     .ToListAsync(cancellationToken);
 
@@ -1093,8 +1093,8 @@ public class SqlDataService : IDataService
                     .ToList();
             }
 
-            _logger.LogInformation("Loaded {TicketCount} today's tickets (filtered: {IsFiltered}, date: {TodayStr})",
-                tickets.Count, hasTradeUnitFilter, todayStr);
+            _logger.LogInformation("Loaded {TicketCount} recent tickets for spot loads (filtered: {IsFiltered}, cutoff: {CutoffStr})",
+                tickets.Count, hasTradeUnitFilter, cutoffStr);
 
             // Load quality data
             var ticketIds = tickets.Select(t => t.Id);
@@ -2070,6 +2070,15 @@ public class SqlDataService : IDataService
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<List<BidSheetLocation>> GetAllBidSheetLocationsAsync(CancellationToken cancellationToken = default)
+    {
+        return await _appContext.BidSheetLocations
+            .AsNoTracking()
+            .Include(l => l.Bids)
+            .OrderBy(l => l.Name)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<BidSheetLocation> CreateBidSheetLocationAsync(BidSheetLocation location, CancellationToken cancellationToken = default)
     {
         _appContext.BidSheetLocations.Add(location);
@@ -2125,7 +2134,7 @@ public class SqlDataService : IDataService
 
             if (loc == null && !string.IsNullOrEmpty(req.Name))
                 loc = await _appContext.BidSheetLocations
-                    .FirstOrDefaultAsync(l => l.TradeUnitCode == tradeUnitCode && l.Name == req.Name, cancellationToken);
+                    .FirstOrDefaultAsync(l => l.TradeUnitCode == tradeUnitCode && l.Name.Trim() == req.Name.Trim(), cancellationToken);
 
             if (loc == null)
             {
@@ -2202,14 +2211,15 @@ public class SqlDataService : IDataService
             .FirstOrDefaultAsync(r => r.UserId == userId && r.TradeUnitCode == tradeUnitCode, cancellationToken);
     }
 
-    public async Task SetBidSheetReferenceAsync(string userId, string tradeUnitCode, string elevatorCode, CancellationToken cancellationToken = default)
+    public async Task SetBidSheetReferenceAsync(string userId, string tradeUnitCode, int locationId, string name, CancellationToken cancellationToken = default)
     {
         var existing = await _appContext.BidSheetReferences
             .FirstOrDefaultAsync(r => r.UserId == userId && r.TradeUnitCode == tradeUnitCode, cancellationToken);
 
         if (existing is not null)
         {
-            existing.ElevatorCode = elevatorCode;
+            existing.LocationId = locationId;
+            existing.Name = name;
             existing.ModifiedAt = DateTime.UtcNow;
         }
         else
@@ -2218,11 +2228,24 @@ public class SqlDataService : IDataService
             {
                 UserId = userId,
                 TradeUnitCode = tradeUnitCode,
-                ElevatorCode = elevatorCode,
+                LocationId = locationId,
+                Name = name,
                 ModifiedAt = DateTime.UtcNow
             });
         }
 
         await _appContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task ClearBidSheetReferenceAsync(string userId, string tradeUnitCode, CancellationToken cancellationToken = default)
+    {
+        var existing = await _appContext.BidSheetReferences
+            .FirstOrDefaultAsync(r => r.UserId == userId && r.TradeUnitCode == tradeUnitCode, cancellationToken);
+
+        if (existing is not null)
+        {
+            _appContext.BidSheetReferences.Remove(existing);
+            await _appContext.SaveChangesAsync(cancellationToken);
+        }
     }
 }

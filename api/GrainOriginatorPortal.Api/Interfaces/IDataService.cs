@@ -361,6 +361,9 @@ public interface IDataService
     /// <summary>Gets bid sheet locations with their bids for a trade unit.</summary>
     Task<List<BidSheetLocation>> GetBidSheetLocationsAsync(string tradeUnitCode, CancellationToken cancellationToken = default);
 
+    /// <summary>Gets all bid sheet locations across all trade units (for map display).</summary>
+    Task<List<BidSheetLocation>> GetAllBidSheetLocationsAsync(CancellationToken cancellationToken = default);
+
     /// <summary>Creates a new bid sheet location with its initial bids.</summary>
     Task<BidSheetLocation> CreateBidSheetLocationAsync(BidSheetLocation location, CancellationToken cancellationToken = default);
 
@@ -382,6 +385,9 @@ public interface IDataService
     /// <summary>Gets the reference elevator for a user and trade unit. Returns null if not set.</summary>
     Task<BidSheetReference?> GetBidSheetReferenceAsync(string userId, string tradeUnitCode, CancellationToken cancellationToken = default);
 
-    /// <summary>Creates or updates the reference elevator for a user and trade unit.</summary>
-    Task SetBidSheetReferenceAsync(string userId, string tradeUnitCode, string elevatorCode, CancellationToken cancellationToken = default);
+    /// <summary>Creates or updates the reference location for a user and trade unit.</summary>
+    Task SetBidSheetReferenceAsync(string userId, string tradeUnitCode, int locationId, string name, CancellationToken cancellationToken = default);
+
+    /// <summary>Clears the reference location for a user and trade unit.</summary>
+    Task ClearBidSheetReferenceAsync(string userId, string tradeUnitCode, CancellationToken cancellationToken = default);
 }

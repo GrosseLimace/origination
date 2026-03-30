@@ -3,10 +3,19 @@
         <!-- Full-screen map -->
         <div id="bid-locations-map" style="height: 100%; width: 100%;"></div>
 
+        <!-- Loading overlay (map only, shifts left when panel is open) -->
+        @if (isRefreshing()) {
+          <div class="absolute top-0 left-0 bottom-0 z-[998] flex items-center justify-center bg-white/60 dark:bg-gray-900/60 backdrop-blur-sm transition-all duration-300"
+               [style.right]="showPanel() ? '420px' : '0'">
+            <div class="inline-block animate-spin rounded-full h-10 w-10 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green"></div>
+          </div>
+        }
+
         @if (!addLocationMode()) {
           <!-- Floating filter bar (top-left) -->
           <div class="absolute top-2.5 left-14 z-[1000] flex items-center gap-2 flex-wrap bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm p-2 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
             <app-trade-unit-selector />
+            @if (activeTradeUnits().length > 0) {
             <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
             <select [ngModel]="selectedCrop()" (ngModelChange)="selectedCrop.set($event); onMapCropChange()" class="px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
               @if (crops().length === 0) {
@@ -21,21 +30,27 @@
                 <option [value]="year">{{ year }}</option>
               }
             </select>
+            @if (hasIndividualTu()) {
             <select [ngModel]="selectedBasis()" (ngModelChange)="selectedBasis.set($event); onFilterChange()" class="px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
               <option value="all">All Status</option>
               <option value="matching">Matching</option>
               <option value="beating">Beating</option>
               <option value="changed">Changed</option>
             </select>
+            }
+            }
             <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
             <input
               type="text"
               [ngModel]="searchQuery()"
               (ngModelChange)="searchQuery.set($event)"
-              (input)="filterBids()"
+              (input)="onSearchInput()"
               placeholder="Search locations..."
               class="w-48 px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
             />
+            @if (activeTradeUnits().length > 0 || searchQuery()) {
+            <button (click)="clearAllFilters()" class="px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:text-scoular-red hover:bg-gray-100 dark:text-gray-400 dark:hover:text-scoular-red dark:hover:bg-gray-700 transition-colors">Clear</button>
+            }
           </div>
 
           <!-- Floating action buttons (bottom-left) -->
@@ -51,16 +66,17 @@
             </button>
             <button
               (click)="refreshBids()"
+              [disabled]="isRefreshing()"
               [title]="'Last refreshed: ' + timeSinceRefresh()"
-              class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-gray-700 hover:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500 rounded-lg shadow-lg transition-colors"
+              class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-gray-700 hover:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500 rounded-lg shadow-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class.animate-spin]="isRefreshing()">
                 <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
                 <path d="M21 3v5h-5"/>
                 <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
                 <path d="M8 16H3v5"/>
               </svg>
-              <span class="hidden sm:inline">{{ timeSinceRefresh() }}</span>
+              <span class="hidden sm:inline">{{ isRefreshing() ? 'Refreshing...' : timeSinceRefresh() }}</span>
             </button>
             <button
               (click)="togglePanel()"
@@ -84,16 +100,12 @@
                 <span class="text-sm text-gray-700 dark:text-gray-300">Reference</span>
               </div>
               <div class="flex items-center gap-2">
-                <div class="w-4 h-4 rounded shrink-0" style="background:#00875F; border:1.5px solid #006B4C;"></div>
-                <span class="text-sm text-gray-700 dark:text-gray-300">Scoular</span>
+                <div class="w-4 h-4 rounded shrink-0" style="background:#dc2626; border:1.5px solid #991b1b;"></div>
+                <span class="text-sm text-gray-700 dark:text-gray-300">Beating</span>
               </div>
               <div class="flex items-center gap-2">
                 <div class="w-4 h-4 rounded shrink-0" style="background:#eab308; border:1.5px solid #a16207;"></div>
                 <span class="text-sm text-gray-700 dark:text-gray-300">Matching</span>
-              </div>
-              <div class="flex items-center gap-2">
-                <div class="w-4 h-4 rounded shrink-0" style="background:#dc2626; border:1.5px solid #991b1b;"></div>
-                <span class="text-sm text-gray-700 dark:text-gray-300">Beating</span>
               </div>
               <div class="flex items-center gap-2">
                 <div class="w-4 h-4 rounded shrink-0" style="background:#22c55e; border:1.5px solid #15803d;"></div>
@@ -106,13 +118,106 @@
           <div class="absolute top-0 right-0 h-full w-[420px] z-[999] bg-white dark:bg-gray-900 shadow-2xl border-l border-gray-200 dark:border-gray-700 flex flex-col transition-transform duration-300 ease-in-out"
                [style.transform]="showPanel() ? 'translateX(0)' : 'translateX(100%)'">
 
+            @if (panelSelectedLocation()) {
+            <!-- ========== DETAIL VIEW ========== -->
+            <!-- Detail Header -->
+            <div class="shrink-0 flex items-center gap-2 px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[52px]">
+              <button (click)="panelGoBack()" title="Back to all locations" class="shrink-0 p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+              </button>
+              @if (editingLocationName()) {
+                <input
+                  type="text"
+                  [ngModel]="editLocationNameValue()"
+                  (ngModelChange)="editLocationNameValue.set($event)"
+                  (keydown.enter)="saveLocationName()"
+                  (keydown.escape)="cancelEditLocationName()"
+                  class="flex-1 text-sm font-semibold text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                />
+                <button (click)="saveLocationName()" title="Save" class="shrink-0 p-1 rounded text-scoular-green-accessible hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </button>
+                <button (click)="cancelEditLocationName()" title="Cancel" class="shrink-0 p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+              } @else {
+                <h3 class="text-sm font-semibold text-gray-900 dark:text-white truncate flex-1">{{ panelSelectedLocation() }}</h3>
+                <button (click)="startEditLocationName()" title="Edit location name" class="shrink-0 p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                <button (click)="togglePanel()" class="shrink-0 p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+              }
+            </div>
+
+            <!-- Detail Body -->
+            <div class="flex-1 overflow-auto">
+              <!-- Action buttons -->
+              <div class="flex items-center gap-2 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                @if (hasIndividualTu()) {
+                <button (click)="panelSetReference()" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors"
+                  [ngClass]="referenceLocationName() && getReferenceName() === panelSelectedLocation()
+                    ? 'bg-scoular-blue/10 text-scoular-blue-medium border-scoular-blue/30 dark:bg-scoular-blue/20 dark:text-scoular-blue dark:border-scoular-blue/40'
+                    : 'text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800'">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                  @if (referenceLocationName() && getReferenceName() === panelSelectedLocation()) {
+                    Reference
+                  } @else {
+                    Set as Reference
+                  }
+                </button>
+                }
+                @if (activeTradeUnits().length > 0) {
+                <button (click)="openEditBids()" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  Edit Bids
+                </button>
+                }
+              </div>
+
+              <!-- Crop / Bid rows -->
+              @if (panelLocationBids().length > 0) {
+              <table class="w-full border-collapse text-sm">
+                <thead class="sticky top-0 z-10">
+                  <tr class="bg-gray-50 dark:bg-gray-800">
+                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Crop</th>
+                    <th class="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">{{ oldYear() || 'Old' }}</th>
+                    <th class="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">{{ newYear() || 'New' }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of panelLocationBids(); track row.crop) {
+                    <tr class="border-b border-gray-200 dark:border-gray-700">
+                      <td class="px-3 py-3 text-sm font-medium text-gray-900 dark:text-white">{{ row.crop }}</td>
+                      <td class="px-3 py-3 text-sm font-mono text-right text-gray-900 dark:text-white">{{ row.oldBid || '--' }}</td>
+                      <td class="px-3 py-3 text-sm font-mono text-right text-gray-900 dark:text-white">{{ row.newBid || '--' }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+              } @else {
+              <div class="flex flex-col items-center justify-center py-12 px-6 text-center">
+                <p class="text-sm text-gray-400 dark:text-gray-500">No bids recorded for this location.</p>
+              </div>
+              }
+            </div>
+
+            } @else {
+            <!-- ========== LIST VIEW ========== -->
             <!-- Panel Header -->
             <div class="shrink-0 flex items-center gap-2 px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[52px]">
+              @if (activeTradeUnits().length > 0) {
               <button (click)="openEditBids()" title="Edit bids" class="shrink-0 p-1 rounded text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               </button>
+              }
               <h3 class="text-sm font-semibold text-gray-900 dark:text-white truncate flex-1">
-                Locations · {{ selectedCrop() || 'All Crops' }} · {{ selectedYear() }}
+                @if (activeTradeUnits().length > 0) {
+                  Locations · {{ selectedCrop() || 'All Crops' }} · {{ selectedYear() }}
+                } @else {
+                  Locations
+                }
               </h3>
               <button (click)="togglePanel()" class="shrink-0 p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
@@ -122,8 +227,18 @@
             <!-- Panel Body -->
             <div class="flex-1 overflow-auto">
 
-              <!-- No-reference warning -->
-              @if (!referenceElevatorCode()) {
+              @if (activeTradeUnits().length === 0) {
+                <div class="flex flex-col items-center justify-center h-full px-6 text-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-300 dark:text-gray-600 mb-4">
+                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
+                  </svg>
+                  <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">No location selected</p>
+                  <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">Select a location on the map or choose a trade unit from the filter to view bids.</p>
+                </div>
+              } @else {
+
+              <!-- No-reference warning (only when individual TU selected) -->
+              @if (hasIndividualTu() && !referenceLocationName()) {
                 <div class="flex items-start gap-3 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-700">
                   <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 mt-0.5 text-amber-500 dark:text-scoular-yellow">
                     <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
@@ -142,7 +257,6 @@
                     <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Location</th>
                     <th class="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">{{ oldYear() || 'Old' }}</th>
                     <th class="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">{{ newYear() || 'New' }}</th>
-                    <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -150,9 +264,7 @@
                     <tr
                       (click)="selectPanelItem(item)"
                       class="group border-b border-gray-200 dark:border-gray-700 cursor-pointer transition-colors"
-                      [ngClass]="item.isRef
-                        ? 'bg-scoular-blue/5 dark:bg-scoular-blue/20 hover:bg-scoular-blue/10 dark:hover:bg-scoular-blue/30'
-                        : 'hover:bg-gray-50 dark:hover:bg-gray-800'"
+                      [ngClass]="'hover:bg-gray-50 dark:hover:bg-gray-800'"
                     >
                       <td class="px-3 py-3 text-sm text-gray-900 dark:text-white">
                         <div class="flex items-center gap-1.5">
@@ -162,24 +274,27 @@
                           }
                         </div>
                       </td>
-                      <td class="px-3 py-3 text-sm font-mono text-right text-gray-900 dark:text-white">{{ item.oldBid || '--' }}</td>
-                      <td class="px-3 py-3 text-sm font-mono text-right text-gray-900 dark:text-white">{{ item.newBid || '--' }}</td>
-                      <td class="px-3 py-2.5 text-center">
-                        @if (item.status === 'reference') {
-                          <span class="inline-flex px-1.5 py-0.5 text-xs font-medium rounded-full bg-scoular-blue/10 text-scoular-blue-medium dark:bg-scoular-blue/20 dark:text-scoular-blue">Ref</span>
-                        } @else if (item.status !== 'none') {
-                          <span class="inline-flex px-1.5 py-0.5 text-xs font-medium rounded-full" [ngClass]="{
-                            'bg-scoular-yellow/20 text-scoular-yellow dark:bg-scoular-yellow/20 dark:text-scoular-yellow': item.status === 'matching',
-                            'bg-scoular-red/20 text-scoular-red-accessible dark:bg-scoular-red/20 dark:text-scoular-red': item.status === 'beating',
-                            'bg-scoular-green/20 text-scoular-green-accessible dark:bg-scoular-green/20 dark:text-scoular-green': item.status === 'changed'
-                          }">{{ item.status }}</span>
-                        }
-                      </td>
+                      <td class="px-3 py-3 text-base font-mono font-semibold text-right" [ngClass]="{
+                        'text-scoular-blue-medium dark:text-scoular-blue': item.oldStatus === 'reference',
+                        'text-scoular-yellow dark:text-scoular-yellow': item.oldStatus === 'matching',
+                        'text-scoular-red-accessible dark:text-scoular-red': item.oldStatus === 'beating',
+                        'text-scoular-green-accessible dark:text-scoular-green': item.oldStatus === 'changed',
+                        'text-gray-900 dark:text-white': item.oldStatus === 'none'
+                      }">{{ item.oldBid || '--' }}</td>
+                      <td class="px-3 py-3 text-base font-mono font-semibold text-right" [ngClass]="{
+                        'text-scoular-blue-medium dark:text-scoular-blue': item.newStatus === 'reference',
+                        'text-scoular-yellow dark:text-scoular-yellow': item.newStatus === 'matching',
+                        'text-scoular-red-accessible dark:text-scoular-red': item.newStatus === 'beating',
+                        'text-scoular-green-accessible dark:text-scoular-green': item.newStatus === 'changed',
+                        'text-gray-900 dark:text-white': item.newStatus === 'none'
+                      }">{{ item.newBid || '--' }}</td>
                     </tr>
                   }
                 </tbody>
               </table>
+              } <!-- end @else (TU active) -->
             </div>
+            } <!-- end list/detail toggle -->
           </div>
 
           <!-- Change Reference Location Confirmation -->
@@ -195,10 +310,18 @@
                     </div>
                     <div>
                       <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">
-                        {{ referenceElevatorCode() ? 'Change Reference Location?' : 'Set Reference Location?' }}
+                        @if (pendingClearReference()) {
+                          Clear Reference Location?
+                        } @else if (referenceLocationName()) {
+                          Change Reference Location?
+                        } @else {
+                          Set Reference Location?
+                        }
                       </h4>
                       <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                        @if (referenceElevatorCode()) {
+                        @if (pendingClearReference()) {
+                          Remove <span class="font-medium text-gray-700 dark:text-gray-300">{{ getPendingReferenceName() }}</span> as the reference? Bid statuses will no longer be compared against a reference.
+                        } @else if (referenceLocationName()) {
                           Replace <span class="font-medium text-gray-700 dark:text-gray-300">{{ getReferenceName() }}</span> with <span class="font-medium text-gray-700 dark:text-gray-300">{{ getPendingReferenceName() }}</span> as the reference? All statuses will update against its bid.
                         } @else {
                           Set <span class="font-medium text-gray-700 dark:text-gray-300">{{ getPendingReferenceName() }}</span> as the reference location? All other bids will be compared against it.
@@ -209,8 +332,15 @@
                 </div>
                 <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
                   <button (click)="cancelReferenceChange()" class="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
-                  <button (click)="confirmReferenceChange()" class="px-3 py-1.5 text-xs font-medium text-white bg-blue-500 hover:bg-scoular-blue rounded-lg transition-colors">
-                    {{ referenceElevatorCode() ? 'Change Reference' : 'Set as Reference' }}
+                  <button (click)="confirmReferenceChange()" class="px-3 py-1.5 text-xs font-medium text-white rounded-lg transition-colors"
+                    [ngClass]="pendingClearReference() ? 'bg-scoular-red-accessible hover:bg-scoular-red' : 'bg-blue-500 hover:bg-scoular-blue'">
+                    @if (pendingClearReference()) {
+                      Clear Reference
+                    } @else if (referenceLocationName()) {
+                      Change Reference
+                    } @else {
+                      Set as Reference
+                    }
                   </button>
                 </div>
               </div>
@@ -285,10 +415,16 @@
                   </div>
                 </div>
 
-                <!-- Name -->
-                <div>
-                  <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Location Name <span class="text-scoular-red">*</span></label>
-                  <input type="text" [ngModel]="newLocationName()" (ngModelChange)="newLocationName.set($event)" placeholder="e.g. Kansas West" class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
+                <!-- Name + Elevator Code -->
+                <div class="grid grid-cols-3 gap-3">
+                  <div class="col-span-2">
+                    <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Location Name <span class="text-scoular-red">*</span></label>
+                    <input type="text" [ngModel]="newLocationName()" (ngModelChange)="newLocationName.set($event)" placeholder="e.g. Kansas West" class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Elevator Code</label>
+                    <input type="text" [ngModel]="newLocationElevatorCode()" (ngModelChange)="newLocationElevatorCode.set($event)" placeholder="Optional" class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
+                  </div>
                 </div>
 
                 <!-- Address -->
@@ -297,13 +433,20 @@
                   <input type="text" [ngModel]="newLocationAddress()" (ngModelChange)="newLocationAddress.set($event)" placeholder="Optional" class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
                 </div>
 
-                <!-- City -->
-                <div>
-                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">City</label>
-                  <input type="text" [ngModel]="newLocationCity()" (ngModelChange)="newLocationCity.set($event)" placeholder="Optional" class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
+                <!-- City + State -->
+                <div class="grid grid-cols-3 gap-3">
+                  <div class="col-span-2">
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">City</label>
+                    <input type="text" [ngModel]="newLocationCity()" (ngModelChange)="newLocationCity.set($event)" placeholder="Optional" class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">State</label>
+                    <input type="text" [ngModel]="newLocationState()" (ngModelChange)="newLocationState.set($event)" placeholder="e.g. KS" maxlength="2" class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
+                  </div>
                 </div>
 
-                <!-- Crops & Bids -->
+                <!-- Crops & Bids — hidden when launched from Edit Bids screen -->
+                @if (addLocationOrigin() !== 'editBids') {
                 <div>
                   <div class="flex items-center justify-between mb-2">
                     <label class="text-xs font-medium text-gray-700 dark:text-gray-300">Crops & Bids <span class="text-scoular-red">*</span></label>
@@ -369,6 +512,7 @@
                     </div>
                   }
                 </div>
+                } <!-- end @if addLocationOrigin !== editBids -->
 
               </div>
 
@@ -452,6 +596,53 @@
                       @for (crop of editBidsCrops(); track crop) {
                         <th class="sticky top-0 z-20 px-4 py-3.5 text-center text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 min-w-[150px]">{{ crop }}</th>
                       }
+                      <th class="sticky top-0 z-20 px-3 py-3.5 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 w-12 relative">
+                        <button
+                          (click)="openAddCommodity()"
+                          title="Add commodity"
+                          class="flex items-center justify-center w-7 h-7 mx-auto rounded-lg text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M5 12h14"/><path d="M12 5v14"/>
+                          </svg>
+                        </button>
+                        @if (showAddCommoditySearch()) {
+                          <div class="fixed inset-0 z-40" (click)="closeAddCommoditySearch()"></div>
+                          <div class="absolute right-0 top-full mt-1 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50">
+                            <div class="p-2 border-b border-gray-100 dark:border-gray-700">
+                              <input
+                                type="text"
+                                [ngModel]="addCommodityQuery()"
+                                (ngModelChange)="addCommodityQuery.set($event)"
+                                placeholder="Search by name (Corn, Wheat…)"
+                                autofocus
+                                class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green placeholder-gray-400"
+                              />
+                            </div>
+                            @if (filteredCommodities(addCommodityQuery()).length > 0) {
+                              <div class="max-h-56 overflow-y-auto py-1">
+                                @for (c of filteredCommodities(addCommodityQuery()); track c.code) {
+                                  <button
+                                    type="button"
+                                    (mousedown)="selectEditBidCommodity(c)"
+                                    class="w-full text-left px-3 py-2 text-sm text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                    [class.opacity-40]="crops().includes(c.code)"
+                                  >
+                                    {{ c.name | titlecase }}
+                                    @if (crops().includes(c.code)) {
+                                      <span class="text-xs text-gray-400 dark:text-gray-500 ml-1">(already added)</span>
+                                    }
+                                  </button>
+                                }
+                              </div>
+                            } @else if (addCommodityQuery().length > 0) {
+                              <p class="px-3 py-2.5 text-sm text-gray-400 dark:text-gray-500">No crops found</p>
+                            } @else {
+                              <p class="px-3 py-2.5 text-sm text-gray-400 dark:text-gray-500">Type to search…</p>
+                            }
+                          </div>
+                        }
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -469,6 +660,7 @@
                           <td class="px-3 py-2.5">
                             <input
                               type="text"
+                              [attr.id]="'bid-' + rowIdx + '-' + crop"
                               [ngModel]="row.bids[crop]"
                               (ngModelChange)="updateBid(rowIdx, crop, $event)"
                               placeholder="—"
@@ -481,6 +673,20 @@
                         }
                       </tr>
                     }
+                    <tr
+                      (click)="addLocationFromEditBids()"
+                      class="border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors"
+                    >
+                      <td class="sticky left-0 z-10 px-4 py-3 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+                        <div class="flex items-center gap-1.5 text-sm text-gray-400 dark:text-gray-500 hover:text-scoular-green-accessible dark:hover:text-scoular-green transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M5 12h14"/><path d="M12 5v14"/>
+                          </svg>
+                          Add Location
+                        </div>
+                      </td>
+                      <td [attr.colspan]="editBidsCrops().length + 1"></td>
+                    </tr>
                   </tbody>
                 </table>
               </div>

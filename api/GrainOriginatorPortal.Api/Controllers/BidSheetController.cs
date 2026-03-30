@@ -44,13 +44,17 @@ public class BidSheetController : ControllerBase
     // Locations
     // -------------------------------------------------------------------------
 
-    /// <summary>Gets all bid sheet locations (with nested bids) for a trade unit.</summary>
+    /// <summary>Gets bid sheet locations. If tradeUnitCode is provided, filters to that TU; otherwise returns all.</summary>
     [HttpGet("locations")]
     [ProducesResponseType(typeof(List<BidSheetLocation>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<BidSheetLocation>>> GetLocations([FromQuery] string tradeUnitCode, CancellationToken ct = default)
+    public async Task<ActionResult<List<BidSheetLocation>>> GetLocations([FromQuery] string? tradeUnitCode = null, CancellationToken ct = default)
     {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
-        return Ok(await _dataService.GetBidSheetLocationsAsync(tradeUnitCode, ct));
+        if (!string.IsNullOrWhiteSpace(tradeUnitCode))
+        {
+            await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
+            return Ok(await _dataService.GetBidSheetLocationsAsync(tradeUnitCode, ct));
+        }
+        return Ok(await _dataService.GetAllBidSheetLocationsAsync(ct));
     }
 
     /// <summary>Creates a new bid sheet location with optional initial bids.</summary>
@@ -190,13 +194,23 @@ public class BidSheetController : ControllerBase
         return Ok(reference);
     }
 
-    /// <summary>Sets or updates the reference elevator for the current user and a trade unit.</summary>
+    /// <summary>Sets or updates the reference location for the current user and a trade unit.</summary>
     [HttpPut("reference")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> SetReference([FromBody] SetBidSheetReferenceRequest request, CancellationToken ct = default)
     {
         await _entitlementService.ValidateTradeUnitsOrThrowAsync([request.TradeUnitCode], ct);
-        await _dataService.SetBidSheetReferenceAsync(CurrentUserId, request.TradeUnitCode, request.ElevatorCode, ct);
+        await _dataService.SetBidSheetReferenceAsync(CurrentUserId, request.TradeUnitCode, request.LocationId, request.Name, ct);
+        return NoContent();
+    }
+
+    /// <summary>Clears the reference location for the current user and a trade unit.</summary>
+    [HttpDelete("reference")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> ClearReference([FromQuery] string tradeUnitCode, CancellationToken ct = default)
+    {
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
+        await _dataService.ClearBidSheetReferenceAsync(CurrentUserId, tradeUnitCode, ct);
         return NoContent();
     }
 }
