@@ -556,19 +556,17 @@ If this application has a mobile SPA, it deploys to Azure Static Web App via a s
           npm ci
           npm run build -- --configuration=dev
 
+      - name: Install SWA CLI
+        run: npm install -g @azure/static-web-apps-cli
+
       - name: Deploy to Static Web App
-        uses: azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.SWA_DEPLOYMENT_TOKEN }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          action: 'upload'
-          app_location: 'mobile/dist/browser'
-          skip_api_build: true
-          skip_app_build: true
+        run: swa deploy ./mobile/dist/browser --deployment-token ${{ secrets.SWA_DEPLOYMENT_TOKEN }} --env production
 ```
+
+**Important:** Do NOT use `azure/static-web-apps-deploy@v1` — it requires Docker which is not available on our self-hosted runners. Use the `@azure/static-web-apps-cli` (SWA CLI) instead, which runs natively on Node.js.
 
 **Note:** The SWA deployment token can be retrieved from the Azure portal or via CLI: `az staticwebapp secrets list --name swa-origination-dev-eus --query "properties.apiKey" -o tsv`. Store it as a GHE environment secret named `SWA_DEPLOYMENT_TOKEN`.
 
 ---
 
-*Document version: 1.2 | 2026-03-26*
+*Document version: 1.3 | 2026-03-30*
