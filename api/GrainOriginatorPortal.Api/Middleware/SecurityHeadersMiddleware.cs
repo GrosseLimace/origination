@@ -46,7 +46,7 @@ public class SecurityHeadersMiddleware
                     "script-src 'self'; " +
                     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
                     "font-src 'self' https://fonts.gstatic.com data:; " +
-                    "img-src 'self' data: https://*.tile.openstreetmap.org; " +
+                    "img-src 'self' data: blob: https://*.tile.openstreetmap.org; " +
                     "connect-src 'self' https://login.microsoftonline.com https://*.azurewebsites.net http://localhost:5000 https://localhost:* https://graph.microsoft.com; " +
                     "frame-src 'self' https://login.microsoftonline.com; " +
                     "object-src 'none'; " +
