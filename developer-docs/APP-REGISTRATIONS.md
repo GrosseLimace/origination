@@ -9,6 +9,7 @@ This document contains the configuration details for the Origination application
 - [Dev Environment](#dev-environment)
 - [QA Environment](#qa-environment)
 - [Production Environment](#production-environment)
+- [Mobile SPA (if mobile app enabled)](#mobile-spa-if-mobile-app-enabled)
 - [Application Configuration](#application-configuration)
 - [Access Management](#access-management)
 - [Client Secret Management](#client-secret-management)
@@ -231,6 +232,20 @@ User -> Origination SPA (Angular) -> Origination API (.NET Web API)
 **Access Groups:**
 - `Origination App Users` - End users for Production environment
 - `Azure - Origination App - Production Support` - Admins with infrastructure access
+
+### Mobile SPA (if mobile app enabled)
+
+| Environment | Name | Client ID |
+|-------------|------|-----------|
+| Dev | Origination Mobile - Dev | `` |
+| QA | Origination Mobile - QA | `` |
+| Prod | Origination Mobile | `` |
+
+**Redirect URIs:** Mobile SWA custom domain (e.g., `https://m-origination-dev.scoular.com`)
+
+**API Permissions:**
+- **Dev:** App's own API scope (`api://00078a10-3f3f-4d17-9350-fe90401125ae/Origination.Application.Dev`) — calls App Service directly
+- **QA/Prod:** APIM scope (provided by Data Integrations team) — calls APIM gateway
 
 ## Application Configuration
 
@@ -502,4 +517,4 @@ If you get "Forbidden" when accessing the Key Vault secret, ensure you are a mem
 
 ---
 
-*Document version: 1.1 | 2026-02-19*
+*Document version: 1.2 | 2026-03-26*

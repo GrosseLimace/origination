@@ -31,7 +31,7 @@ This is your starting point for understanding the Azure infrastructure behind Or
 Your Origination application runs on fully managed Azure infrastructure with private networking, automated SSL certificates, and enterprise security.
 
 ### Compute and Hosting
-- **App Service** (Linux, .NET 10.0, 64-bit, always-on)
+- **App Service** (Windows, .NET 10.0, 64-bit, always-on)
   - Dev/QA: B1 Basic (1 vCore, 1.75 GB RAM)
   - Prod: P1v3 Premium (2 vCores, 8 GB RAM, auto-scaling capable)
 
@@ -39,7 +39,7 @@ Your Origination application runs on fully managed Azure infrastructure with pri
 - **SQL Database** (Azure SQL, managed identity authentication)
   - Dev/QA: Serverless (2 vCores, auto-pause after 1 hour)
   - Prod: Hyperscale (2 vCores, always-on)
-- **Key Vault** — Secure storage for secrets with RBAC-based access
+- **Key Vault** — Secure storage for secrets with RBAC-based access, private endpoint, and audit logging
 
 ### Networking
 - **Private Endpoints** for App Service, Key Vault, and SQL
@@ -72,6 +72,16 @@ Your Origination application runs on fully managed Azure infrastructure with pri
 | Dev | https://origination-dev.scoular.com | app-origination-dev-eus.azurewebsites.net |
 | QA | https://origination-qa.scoular.com | app-origination-qa-eus.azurewebsites.net |
 | Prod | https://origination.scoular.com | app-origination-eus.azurewebsites.net |
+
+### Mobile App (if enabled)
+
+| Environment | Mobile SPA URL | SWA Resource |
+|-------------|---------------|--------------|
+| Dev | `https://m-origination-dev.scoular.com` | `swa-origination-dev-eus` |
+| QA | `https://m-origination-qa.scoular.com` | `swa-origination-qa-eus` |
+| Prod | `https://m-origination.scoular.com` | `swa-origination-eus` |
+
+Mobile SPA Client IDs are in [APP-REGISTRATIONS.md](APP-REGISTRATIONS.md).
 
 ## Environment Variables
 
@@ -163,4 +173,4 @@ For new developers joining the Origination team:
 
 ---
 
-*Document version: 1.1 | 2026-03-13*
+*Document version: 1.3 | 2026-03-26*

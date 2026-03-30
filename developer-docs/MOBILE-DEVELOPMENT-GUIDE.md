@@ -1,0 +1,302 @@
+# Origination - Mobile Development Guide
+
+This guide covers mobile accessibility for the Origination application. Mobile apps are delivered as separate Angular SPAs on Azure Static Web Apps, with API traffic routed through Azure API Management (APIM) -- the App Service remains fully private.
+
+## Contents
+
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Prerequisites](#prerequisites)
+- [Mobile API Specification](#mobile-api-specification)
+- [Building the Mobile Angular SPA](#building-the-mobile-angular-spa)
+- [Deploying to Static Web App](#deploying-to-static-web-app)
+- [Request Process](#request-process)
+- [Security Notes](#security-notes)
+
+## Overview
+
+What mobile accessibility means at Scoular:
+
+- Mobile apps are hosted on **Azure Static Web Apps (SWA)**, separate from the main App Service
+- API calls go through **Azure API Management (APIM)**, not directly to the App Service
+- The App Service stays **fully private** -- no internet exposure
+- Authentication uses the **same MSAL/Entra ID** as the desktop app
+- Access restricted to **company-managed devices** via Entra ID Conditional Access
+
+## Architecture
+
+```
+Mobile User (company-managed device)
+     |
+     | Entra ID CA policy (device compliance)
+     v
+Static Web App (mobile-only Angular SPA)
+  - Managed certificate (free, auto-renewed)
+  - Custom domain: m-origination.scoular.com
+     |
+     | MSAL auth token
+     v
+APIM (api{env}.scoular.com)
+  - Data Integrations team manages API operations
+  - App Gateway + WAF in front
+     |
+     | Private endpoint
+     v
+App Service (fully private)
+```
+
+---
+
+## Prerequisites
+
+Before requesting mobile access:
+
+1. **Identify which user workflows need mobile access** (field operations, quick data entry)
+2. **Determine the minimal API endpoint set** those workflows require
+3. **Generate an OpenAPI specification** for your mobile endpoints (see next section)
+4. **Coordinate with your team lead** -- mobile access requires infrastructure provisioning
+
+---
+
+## Mobile API Specification
+
+When you decide to add mobile support, produce an **OpenAPI specification** for your mobile endpoints. This is the contract document used by three teams and can be consumed by Azure APIOps tooling for automated APIM configuration.
+
+### What to Produce
+
+Create an `openapi/` directory in your repo root:
+
+```
+openapi/
+  specification.yaml    # OpenAPI 3.0 spec for mobile endpoints
+  README.md             # Summary of workflows and offline requirements
+```
+
+This is a **living document** — keep it updated as your mobile API evolves. Both the Infrastructure and Data Integrations teams reference this directory directly from your repo.
+
+### OpenAPI Specification (specification.yaml)
+
+Generate a standard OpenAPI 3.0 spec covering only the mobile-facing endpoints:
+
+```yaml
+openapi: 3.0.3
+info:
+  title: Origination Mobile API
+  version: '1.0'
+  description: Mobile-facing API endpoints for Origination field operations
+paths:
+  /transactions/transfer:
+    post:
+      operationId: submitTransfer
+      summary: Submit bin-to-bin grain transfer
+      tags: [transfers]
+      security:
+        - entraId: [api://{scope}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferRequest'
+      responses:
+        '201':
+          description: Transfer created
+        '202':
+          description: Transfer queued (offline)
+  /bins/{id}:
+    get:
+      operationId: getBin
+      summary: Get bin details
+      tags: [bins]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Bin details
+components:
+  securitySchemes:
+    entraId:
+      type: oauth2
+      flows:
+        implicit:
+          authorizationUrl: https://login.microsoftonline.com/1521f999-f722-4a4f-9747-166f93e9b0d1/oauth2/v2.0/authorize
+          scopes:
+            api://{scope}: Access Origination API
+```
+
+**Key points:**
+- Paths are relative to the APIM path prefix (e.g., `/transactions/transfer` not `/api/transactions/transfer`)
+- Include request/response schemas in `components/schemas` where possible
+- Include security scheme referencing Entra ID OAuth2
+- Only include endpoints needed for mobile — not the full API
+
+### README.md (Workflow and Offline Summary)
+
+Include a README in the `openapi/` directory summarizing workflows and offline behavior — information that doesn't fit in the OpenAPI spec:
+
+| Workflow | Description | Offline Behavior |
+|----------|-------------|------------------|
+| Bin Transfer | Submit bin-to-bin grain transfer | Queue in IndexedDB, sync when online |
+| Air Space Edit | Update bin air space measurement | Fail gracefully with error |
+| Bin Notes | Add/edit bin comments | Fail gracefully with error |
+| Dashboard | View location summary | Serve from cache |
+
+### Consumers
+
+| Team | What They Use |
+|------|---------------|
+| Infrastructure | Populates `mobileApp.mobileApiEndpoints` in app-config.json from the spec, creates SWA + WAF policy |
+| Data Integrations | Imports `specification.yaml` into APIM via APIOps or portal. Reviews and configures APIM policies (rate limiting, caching, transforms) |
+| App Dev (you) | Builds the mobile Angular SPA against these endpoints. Can use the OpenAPI spec to generate TypeScript API clients |
+
+---
+
+## Building the Mobile Angular SPA
+
+### Key Guidelines
+
+- **Separate build**: Create a separate Angular project or use a build configuration that only includes mobile routes/components. Do NOT serve the full desktop app.
+- **MSAL authentication**: Same Entra ID tenant (`1521f999-f722-4a4f-9747-166f93e9b0d1`). Uses a dedicated Mobile SPA app registration (`Origination Mobile - {Env}`).
+- **API base URL**: Varies by environment (see table below). The Angular app stores the base URL and appends each endpoint path (e.g., `${environment.apiBaseUrl}/transactions/transfer`).
+- **App Insights**: Use `@microsoft/applicationinsights-angularplugin-js` pointing to the existing App Insights instance. See [CLAUDE.md](CLAUDE.md) for setup details.
+- **Offline support**: Consider IndexedDB for queueing write operations and service workers for caching read-heavy data.
+
+### API Base URL by Environment
+
+| Environment | Base URL | Route | Why |
+|-------------|----------|-------|-----|
+| Local dev | `https://localhost:5001/api` | Direct to .NET API | Standard local development |
+| Dev (SWA) | `https://origination-dev.scoular.com/api` | Direct to App Service | No APIM in dev -- keep dev endpoints private |
+| QA (SWA) | `https://apiqa.scoular.com/{apimPathPrefix}` | Through APIM | External access via APIM gateway |
+| Prod (SWA) | `https://api.scoular.com/{apimPathPrefix}` | Through APIM | External access via APIM gateway |
+
+**Dev calls the App Service directly** -- not APIM. Dev API endpoints should not be added to APIM. The dev SWA (`m-origination-dev.scoular.com`) calls the App Service custom domain, which requires CORS configuration (the mobile SPA is cross-origin to the App Service).
+
+**QA/Prod call APIM** -- the Data Integrations team creates API operations at the APIM path prefix (e.g., `/external/origination/v1`). The APIM path prefix will differ from the app's internal `/api` path structure.
+
+### CORS for Dev Environment
+
+The dev App Service needs to allow the mobile SWA origin. Add `m-origination-dev.scoular.com` to the allowed origins in `appsettings.Development.json` (or the environment-specific app settings):
+
+```json
+{
+  "AllowedOrigins": [
+    "http://localhost:4200",
+    "https://m-origination-dev.scoular.com"
+  ]
+}
+```
+
+### Example Environment Files
+
+**`environment.ts`** (local dev -- `ng serve`):
+```typescript
+export const environment = {
+  production: false,
+  apiBaseUrl: 'https://localhost:5001/api',
+  msalConfig: {
+    auth: {
+      clientId: '<DEV_MOBILE_SPA_CLIENT_ID>',
+      authority: 'https://login.microsoftonline.com/1521f999-f722-4a4f-9747-166f93e9b0d1',
+      redirectUri: 'http://localhost:4200',
+    }
+  },
+  apiConfig: {
+    scopes: ['api://00078a10-3f3f-4d17-9350-fe90401125ae/Origination.Application.Dev'],
+    uri: 'https://localhost:5001/api'
+  }
+};
+```
+
+**`environment.dev.ts`** (deployed dev SWA -- direct to App Service):
+```typescript
+export const environment = {
+  production: true,
+  apiBaseUrl: 'https://origination-dev.scoular.com/api',
+  msalConfig: {
+    auth: {
+      clientId: '<DEV_MOBILE_SPA_CLIENT_ID>',
+      authority: 'https://login.microsoftonline.com/1521f999-f722-4a4f-9747-166f93e9b0d1',
+      redirectUri: 'https://m-origination-dev.scoular.com',
+    }
+  },
+  apiConfig: {
+    scopes: ['api://00078a10-3f3f-4d17-9350-fe90401125ae/Origination.Application.Dev'],
+    uri: 'https://origination-dev.scoular.com/api'
+  }
+};
+```
+
+**`environment.qa.ts`** (deployed QA SWA -- through APIM):
+```typescript
+export const environment = {
+  production: true,
+  apiBaseUrl: 'https://apiqa.scoular.com/{apimPathPrefix}',
+  msalConfig: {
+    auth: {
+      clientId: '<QA_MOBILE_SPA_CLIENT_ID>',
+      authority: 'https://login.microsoftonline.com/1521f999-f722-4a4f-9747-166f93e9b0d1',
+      redirectUri: 'https://m-origination-qa.scoular.com',
+    }
+  },
+  apiConfig: {
+    scopes: ['api://<APIM_SCOPE>/<scope-name>'],
+    uri: 'https://apiqa.scoular.com/{apimPathPrefix}'
+  }
+};
+```
+
+---
+
+## Deploying to Static Web App
+
+Deployment uses GitHub Actions with the same OIDC workload identity federation as the main app:
+
+- The GitHub Actions service principal has **Contributor** on the SWA resource
+- Use `azure/login@v2` with the same OIDC credentials
+- Use `azure/static-web-apps-deploy@v1` action
+
+### Sample Workflow Step
+
+```yaml
+- name: Deploy to Static Web App
+  uses: azure/static-web-apps-deploy@v1
+  with:
+    azure_static_web_apps_api_token: ${{ secrets.SWA_DEPLOYMENT_TOKEN }}
+    repo_token: ${{ secrets.GITHUB_TOKEN }}
+    action: 'upload'
+    app_location: 'mobile/dist'
+    skip_api_build: true
+    skip_app_build: true
+```
+
+---
+
+## Request Process
+
+Steps to request mobile access for Origination:
+
+1. **Create the `openapi/` directory** with your OpenAPI spec and commit to your repo
+2. **Notify the Infrastructure team** (they will add `mobileApp` config to app-config.json)
+3. **Infrastructure creates**: SWA resource, Mobile SPA app registration, WAF policy
+4. **Data Integrations creates**: APIM operations from your endpoint spec
+5. **Infrastructure provides**: Mobile SPA Client ID, SWA deployment token, APIM path prefix
+6. **You build and deploy** the mobile Angular SPA to the SWA
+
+---
+
+## Security Notes
+
+- The App Service is **NEVER** exposed to the internet for mobile access
+- APIM provides the first authentication layer (OAuth2 validation) before requests reach your API
+- WAF (App Gateway) provides DDoS protection and managed rule sets in front of APIM
+- Entra ID Conditional Access enforces device compliance (company-managed devices only)
+- The App Insights connection string is write-only and visible in the browser bundle -- do not include PII in custom telemetry
+
+---
+
+*Document version: 1.2 | 2026-03-26*

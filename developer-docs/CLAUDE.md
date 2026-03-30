@@ -55,7 +55,7 @@ These are automatically deployed - do NOT tell developers to add them:
 ```typescript
 export const environment = {
   production: false,
-  apiBaseUrl: 'http://localhost:5000/api',
+  apiUrl: 'https://localhost:5001/api/v1',
   msalConfig: {
     auth: {
       clientId: '<DEV_SPA_CLIENT_ID>',
@@ -66,47 +66,27 @@ export const environment = {
   },
   apiConfig: {
     scopes: ['api://<DEV_API_CLIENT_ID>/Origination.Application.Dev'],
-    uri: 'http://localhost:5000/api/*'
+    uri: 'https://localhost:5001/api/v1'
   }
 };
 ```
 
-`environment.dev.ts` / `environment.qa.ts` (deployed non-production - relative URL, same origin):
+`environment.dev.ts` / `environment.qa.ts` / `environment.prod.ts` (deployed - relative URL, same origin):
 ```typescript
 export const environment = {
-  production: false,  // dev and qa are non-production; only environment.prod.ts uses true
-  apiBaseUrl: '/api',
+  production: true,
+  apiUrl: '/api/v1',
   msalConfig: {
     auth: {
       clientId: '<SPA_CLIENT_ID>',
       authority: 'https://login.microsoftonline.com/1521f999-f722-4a4f-9747-166f93e9b0d1',
-      redirectUri: 'https://origination-dev.scoular.com', // or -qa for QA
-      postLogoutRedirectUri: 'https://origination-dev.scoular.com', // or -qa for QA
+      redirectUri: 'https://origination-dev.scoular.com', // or -qa / no suffix for prod
+      postLogoutRedirectUri: 'https://origination-dev.scoular.com', // or -qa / no suffix for prod
     }
   },
   apiConfig: {
-    scopes: ['api://<API_CLIENT_ID>/Origination.Application.Dev'], // .QA for QA env
-    uri: '/api/*'
-  }
-};
-```
-
-`environment.prod.ts` (production):
-```typescript
-export const environment = {
-  production: true,
-  apiBaseUrl: '/api',
-  msalConfig: {
-    auth: {
-      clientId: '<PROD_SPA_CLIENT_ID>',
-      authority: 'https://login.microsoftonline.com/1521f999-f722-4a4f-9747-166f93e9b0d1',
-      redirectUri: 'https://origination.scoular.com',
-      postLogoutRedirectUri: 'https://origination.scoular.com',
-    }
-  },
-  apiConfig: {
-    scopes: ['api://<PROD_API_CLIENT_ID>/Origination.Application.Prod'],
-    uri: '/api/*'
+    scopes: ['api://<API_CLIENT_ID>/Origination.Application.Dev'], // .QA or .Prod for other envs
+    uri: '/api/v1'
   }
 };
 ```
@@ -126,23 +106,18 @@ Use SPA Client ID for `clientId` and API Client ID for scopes (see table above).
 Add `fileReplacements` under `configurations` for each deployed environment to swap environment files at build time.
 
 **App bootstrap** (`main.ts` for standalone Angular apps):
-
-The app uses `APP_INITIALIZER` to await MSAL initialization and process any returning redirect **before** route guards run. This prevents the login redirect loop where `MsalGuard` fires before MSAL has processed the auth code.
-
 ```typescript
-import { APP_INITIALIZER, ErrorHandler, provideZonelessChangeDetection } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
-import { bootstrapApplication } from '@angular/platform-browser';
-import { provideRouter } from '@angular/router';
-import { provideHttpClient, withInterceptorsFromDi, HTTP_INTERCEPTORS } from '@angular/common/http';
-import {
-  MsalInterceptor, MsalGuard, MsalBroadcastService, MsalService,
-  MSAL_GUARD_CONFIG, MSAL_INSTANCE, MSAL_INTERCEPTOR_CONFIG,
-} from '@azure/msal-angular';
+import { MsalGuard, MsalInterceptor, MsalBroadcastService, MsalService, MsalRedirectComponent, MSAL_GUARD_CONFIG, MSAL_INSTANCE, MSAL_INTERCEPTOR_CONFIG } from '@azure/msal-angular';
 import { PublicClientApplication, InteractionType, BrowserCacheLocation } from '@azure/msal-browser';
+import { HTTP_INTERCEPTORS, provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
+import { APP_INITIALIZER } from '@angular/core';
 
+// Create MSAL instance before bootstrap so APP_INITIALIZER can reference it
 const msalInstance = new PublicClientApplication({
-  auth: { ...environment.msalConfig.auth },
+  auth: {
+    ...environment.msalConfig.auth,
+    navigateToLoginRequestUrl: true,
+  },
   cache: {
     // SessionStorage: tokens cleared on tab close, tab-isolated (not shared across tabs)
     cacheLocation: BrowserCacheLocation.SessionStorage,
@@ -151,23 +126,14 @@ const msalInstance = new PublicClientApplication({
 
 bootstrapApplication(AppComponent, {
   providers: [
-    provideZonelessChangeDetection(),
     provideRouter(routes),
     provideHttpClient(withInterceptorsFromDi()),
     { provide: MSAL_INSTANCE, useValue: msalInstance },
     {
-      // Initialize MSAL and process any returning redirect BEFORE guards run.
-      // Without awaiting handleRedirectObservable(), the auth code from Azure AD
-      // is unprocessed when guards execute, causing a login redirect loop.
+      // Initialize MSAL and process any returning redirect BEFORE the app renders.
+      // This prevents the brief flash of unauthenticated content.
       provide: APP_INITIALIZER,
-      useFactory: (msalService: MsalService) => async () => {
-        await msalService.instance.initialize();
-        try {
-          await firstValueFrom(msalService.handleRedirectObservable());
-        } catch {
-          // Auth errors are handled via MsalBroadcastService; don't block bootstrap.
-        }
-      },
+      useFactory: (msalService: MsalService) => () => msalService.instance.initialize(),
       deps: [MsalService],
       multi: true
     },
@@ -195,42 +161,27 @@ bootstrapApplication(AppComponent, {
 });
 ```
 
-**Route guard** — wait for MSAL interaction to complete before calling `MsalGuard`:
-
-The guard must wait for `InteractionStatus.None` before invoking `MsalGuard.canActivate()`. If the guard fires while MSAL is still in `HandleRedirect` status (processing the auth code), it sees no account and triggers another login redirect.
-
+**Route configuration** - use `MsalGuard` on routes and `MsalRedirectComponent` for auth callback:
 ```typescript
-import { inject } from '@angular/core';
-import { CanActivateFn } from '@angular/router';
-import { MsalGuard, MsalBroadcastService } from '@azure/msal-angular';
-import { InteractionStatus } from '@azure/msal-browser';
-import { filter, take, switchMap } from 'rxjs/operators';
+import { MsalRedirectComponent } from '@azure/msal-angular';
 
-export const authGuard: CanActivateFn = (...args) => {
-  const broadcastService = inject(MsalBroadcastService);
-  const msalGuard = inject(MsalGuard);
-
-  return broadcastService.inProgress$.pipe(
-    filter(status => status === InteractionStatus.None),
-    take(1),
-    switchMap(() => msalGuard.canActivate(...args))
-  );
-};
-```
-
-**Route configuration** — use `authGuard` on protected routes:
-```typescript
 export const routes: Routes = [
-  {
-    path: '',
-    canActivate: [authGuard],
-    loadComponent: () => import('./features/home/home.component').then(m => m.HomeComponent)
-  },
-  { path: '**', redirectTo: '' }
+  // MsalRedirectComponent processes the auth redirect before the app renders.
+  // Without this, the app briefly flashes unauthenticated content.
+  { path: 'auth', component: MsalRedirectComponent },
+  { path: 'dashboard', component: DashboardComponent, canActivate: [MsalGuard] }
 ];
 ```
 
-> **Note:** `MsalRedirectComponent` is NOT used in this app. The `APP_INITIALIZER` + `inProgress$`-aware guard pattern handles all redirect scenarios without a dedicated auth route.
+**Root component** - subscribe to MSAL events (redirect is handled by `MsalRedirectComponent`):
+```typescript
+export class AppComponent implements OnInit {
+  constructor(private msalService: MsalService) {}
+  ngOnInit(): void {
+    this.msalService.handleRedirectObservable().subscribe();
+  }
+}
+```
 
 ### .NET API Authentication Setup
 
@@ -275,7 +226,7 @@ app.MapFallbackToFile("index.html");  // SPA fallback for Angular routing
 ```csharp
 [ApiController]
 [Authorize]
-[Route("api/[controller]")]
+[Route("api/v1/[controller]")]
 public class MyController : ControllerBase { }
 ```
 
@@ -291,7 +242,7 @@ If using SignalR, the WebSocket handshake cannot send HTTP headers. Pass the tok
 **Angular client:**
 ```typescript
 const connection = new signalR.HubConnectionBuilder()
-  .withUrl(`${environment.apiBaseUrl}/myhub`, {
+  .withUrl(`${environment.apiUrl}/myhub`, {
     accessTokenFactory: () => this.msalService.acquireTokenSilent({
       scopes: environment.apiConfig.scopes
     }).then(result => result.accessToken)
@@ -312,7 +263,7 @@ options.Events = new JwtBearerEvents
     {
         var accessToken = context.Request.Query["access_token"];
         var path = context.HttpContext.Request.Path;
-        if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/api/myhub"))
+        if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/api/v1/myhub"))
         {
             context.Token = accessToken;
         }
@@ -404,7 +355,11 @@ if (!string.IsNullOrEmpty(keyVaultUrl))
 
 **Store**: API keys, client secrets, encryption keys. **Don't store**: non-sensitive config.
 
+**Security**: Key Vault access is restricted to private endpoints. All operations are audit-logged to Log Analytics (AuditEvent category). RBAC authorization is enforced — no legacy access policies.
+
 ## Application Insights
+
+### .NET (Server-Side)
 
 Auto-configured via `APPLICATIONINSIGHTS_CONNECTION_STRING` (pre-configured in App Settings). Just use `ILogger`:
 
@@ -416,6 +371,48 @@ public class MyService(ILogger<MyService> logger)
 ```
 
 **Don't log**: passwords, tokens, PII, connection strings.
+
+### Angular (Client-Side)
+
+Add client-side telemetry to capture page views, JavaScript errors, and API call performance in the same App Insights instance as the .NET backend.
+
+**Required packages:**
+```
+@microsoft/applicationinsights-web @microsoft/applicationinsights-angularplugin-js
+```
+
+**Setup** (in `app.config.ts` or bootstrap):
+```typescript
+import { ApplicationInsights } from '@microsoft/applicationinsights-web';
+import { AngularPlugin } from '@microsoft/applicationinsights-angularplugin-js';
+
+const angularPlugin = new AngularPlugin();
+const appInsights = new ApplicationInsights({
+  config: {
+    connectionString: environment.appInsightsConnectionString,
+    extensions: [angularPlugin],
+    extensionConfig: {
+      [angularPlugin.identifier]: { router: router }
+    }
+  }
+});
+appInsights.loadAppInsights();
+```
+
+**What it captures automatically:**
+- Angular route changes (SPA page views)
+- Unhandled JavaScript exceptions
+- XMLHttpRequest/fetch dependency calls (durations, failures, response codes)
+- Browser and device metrics
+
+**Custom events** (optional):
+```typescript
+appInsights.trackEvent({ name: 'TransferSubmitted', properties: { locationId: '42' } });
+```
+
+**Connection string source:** The `APPLICATIONINSIGHTS_CONNECTION_STRING` is available as an App Setting. For Angular, pass it via the .NET backend's runtime configuration endpoint or embed it in the environment file at build time. The connection string is not a secret — it only allows writing telemetry, not reading it.
+
+**Security note:** The App Insights connection string is visible in the browser JS bundle. This is by design (Microsoft considers it semi-public for client-side SDKs). An attacker with the connection string can only *send* telemetry, not read existing data. Do not include sensitive data (PII, tokens) in custom event properties.
 
 ## Startup Performance
 
@@ -474,6 +471,8 @@ on:
       - '*.md'
 ```
 
+**npm @it packages:** If the Angular app uses `@it` scoped packages, authenticate to the GHE npm registry with `GITHUB_TOKEN` before `npm ci`. See `developer-docs/GITHUB-ACTIONS-CICD.md` for the workflow step.
+
 **Subscription selection:** Use `AZURE_SUBSCRIPTION_ID_NONPROD` for dev/qa, `AZURE_SUBSCRIPTION_ID_PROD` for prod.
 
 **SQL migrations:** The workflow identity has db_datareader, db_datawriter, db_ddladmin on Origination.
@@ -494,42 +493,32 @@ See `developer-docs/GITHUB-ACTIONS-CICD.md` for the full CI/CD guide.
 
 ---
 
-*Document version: 1.4 | 2026-03-16*
+## Mobile Accessibility
+
+To add mobile access to this application, produce an OpenAPI specification for your mobile endpoints. See `developer-docs/MOBILE-DEVELOPMENT-GUIDE.md` for the full guide.
+
+**What Claude Code should do when asked to add mobile support:**
+
+1. Analyze the codebase for mobile-suitable workflows (field operations, quick data entry, read-heavy dashboards accessible on small screens)
+2. Identify the minimal set of API endpoints those workflows require
+3. Create an `openapi/` directory in the repo root with:
+   - `specification.yaml` — OpenAPI 3.0 spec covering only mobile-facing endpoints
+   - `README.md` — workflow summary and offline requirements table
+
+4. The OpenAPI spec is consumed by three teams:
+   - **Infrastructure** — populates `mobileApp.mobileApiEndpoints` in app-config.json
+   - **Data Integrations** — imports into APIM via APIOps tooling or portal
+   - **App Dev (you)** — builds the mobile Angular SPA (can generate TypeScript clients from the spec)
+
+5. The mobile SPA is a separate Angular build targeting Azure Static Web App:
+   - Calls APIM (not the App Service directly): `https://api{env}.scoular.com/{apimPathPrefix}/...`
+   - Uses MSAL with a dedicated mobile SPA app registration
+   - **Dev**: API scope is the app's own scope (`api://{API_CLIENT_ID}/{AppName}.Application.Dev`) — calls App Service directly
+   - **QA/Prod**: API scope is the APIM scope from Data Integrations — calls APIM gateway
+   - Same Entra ID tenant, managed device enforcement via Conditional Access
+
+Do NOT expose the App Service to the internet. Mobile access goes through APIM.
 
 ---
 
-## Software Bill of Materials (SBOM)
-
-Last Updated: 2026-03-19
-
-### Backend Dependencies (C# / .NET 10)
-
-| Package | Version | License | Purpose |
-|---------|---------|---------|---------|
-| Azure.Extensions.AspNetCore.Configuration.Secrets | 1.5.0 | MIT | Azure Key Vault config provider |
-| Azure.Identity | 1.18.0 | MIT | Managed Identity / Key Vault authentication |
-| Microsoft.AspNetCore.OpenApi | 10.0.1 | MIT | Swagger / OpenAPI support |
-| Microsoft.Data.SqlClient | 6.1.4 | MIT | SQL Server driver |
-| Microsoft.EntityFrameworkCore.SqlServer | 10.0.1 | MIT | EF Core ORM for SQL Server |
-| Microsoft.EntityFrameworkCore.Design | 10.0.1 | MIT | EF Core design-time tools (dev only) |
-| Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore | 10.0.3 | MIT | EF Core health check endpoint |
-| Microsoft.Extensions.Http.Resilience | 10.3.0 | MIT | HTTP retry / resilience policies |
-| Microsoft.Identity.Web | 3.8.4 | MIT | Azure AD / JWT Bearer authentication |
-
-### Frontend Dependencies (Angular 21 / TypeScript)
-
-| Package | Version | License | Purpose |
-|---------|---------|---------|---------|
-| @angular/core | 21.2.1 | MIT | UI framework |
-| @angular/router | 21.2.1 | MIT | Client-side routing |
-| @angular/forms | 21.2.1 | MIT | Reactive forms |
-| @angular/animations | 21.2.1 | MIT | Animation support |
-| @azure/msal-angular | 5.1.1 | MIT | Azure AD authentication (Angular) |
-| @azure/msal-browser | 5.4.0 | MIT | MSAL browser runtime |
-| @it/design-system | 0.1.1 | Internal | Scoular IT design system components |
-| leaflet | 1.9.4 | BSD-2-Clause | Interactive map rendering |
-| leaflet.markercluster | ~1.5.3 | MIT | Leaflet marker clustering |
-| rxjs | 7.8.2 | Apache-2.0 | Reactive programming (Observables) |
-| tslib | 2.8.1 | 0BSD | TypeScript runtime helpers |
-| zone.js | 0.15.1 | MIT | Angular change detection zone |
-| tailwindcss | 4.2.1 | MIT | Utility-first CSS framework |
+*Document version: 1.8 | 2026-03-26*

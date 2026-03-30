@@ -11,8 +11,10 @@ This guide covers the GitHub Actions CI/CD pipeline for the Origination applicat
 - [Repository Secrets](#repository-secrets)
 - [Environments and Deployment Approvals](#environments-and-deployment-approvals)
 - [Azure Permissions (What Your Workflow Can Do)](#azure-permissions-what-your-workflow-can-do)
+- [npm Registry Authentication (@it packages)](#npm-registry-authentication-it-packages)
 - [Troubleshooting](#troubleshooting)
 - [References](#references)
+- [Mobile SWA Deployment](#mobile-swa-deployment)
 
 ## Overview
 
@@ -445,6 +447,42 @@ These secrets are configured at the repository level by the infrastructure team.
 
 ---
 
+## npm Registry Authentication (@it packages)
+
+If your application consumes `@it` scoped npm packages (e.g., `@it/design-system`, `@it/angular-components`) from the GHE Packages registry, your workflow needs to authenticate before `npm ci`.
+
+### Setup
+
+1. **Commit an `.npmrc`** to your Angular/frontend project directory with scope routing:
+
+```ini
+@it:registry=https://npm.scoular.ghe.com/
+```
+
+2. **Add a workflow step** before `npm ci` to inject the `GITHUB_TOKEN`:
+
+```yaml
+    - name: Authenticate to GHE npm registry
+      shell: pwsh
+      working-directory: ./your-frontend-directory
+      run: |
+        Add-Content -Path .npmrc -Value "//npm.scoular.ghe.com/:_authToken=$($env:GITHUB_TOKEN)"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Install dependencies
+      working-directory: ./your-frontend-directory
+      run: npm ci
+```
+
+The `GITHUB_TOKEN` is auto-generated per workflow run — no PAT creation, rotation, or repo secrets required. The token injection only exists for the duration of the job and is never committed.
+
+> **Requirement**: Both the consuming repo and the npm package source must be in the **IT** organization on `scoular.ghe.com`. For cross-org scenarios, use a classic PAT stored as a repository secret.
+
+For full details on the GHE npm registry (publishing, consuming, troubleshooting), see the [npm Packages Guide](style-guides/npm-packages-guide.md).
+
+---
+
 ## Troubleshooting
 
 ### "AADSTS700024: Client assertion is not within its valid time range"
@@ -481,4 +519,56 @@ This means a token was obtained but SQL Server could not map it to a database us
 
 ---
 
-*Document version: 1.1 | 2026-02-20*
+## Mobile SWA Deployment
+
+If this application has a mobile SPA, it deploys to Azure Static Web App via a separate workflow or job.
+
+### SWA Resource Names
+
+| Environment | Static Web App | Custom Domain |
+|-------------|---------------|---------------|
+| Dev | `swa-origination-dev-eus` | `m-origination-dev.scoular.com` |
+| QA | `swa-origination-qa-eus` | `m-origination-qa.scoular.com` |
+| Prod | `swa-origination-eus` | `m-origination.scoular.com` |
+
+### Sample SWA Deploy Workflow
+
+```yaml
+  deploy-mobile-swa:
+    runs-on: self-hosted
+    environment: dev
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_NONPROD }}
+
+      - name: Build Mobile SPA
+        run: |
+          cd mobile
+          npm ci
+          npm run build -- --configuration=dev
+
+      - name: Deploy to Static Web App
+        uses: azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.SWA_DEPLOYMENT_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: 'upload'
+          app_location: 'mobile/dist/browser'
+          skip_api_build: true
+          skip_app_build: true
+```
+
+**Note:** The SWA deployment token can be retrieved from the Azure portal or via CLI: `az staticwebapp secrets list --name swa-origination-dev-eus --query "properties.apiKey" -o tsv`. Store it as a GHE environment secret named `SWA_DEPLOYMENT_TOKEN`.
+
+---
+
+*Document version: 1.2 | 2026-03-26*
