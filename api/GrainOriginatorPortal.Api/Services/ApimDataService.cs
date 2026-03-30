@@ -260,6 +260,9 @@ public class ApimDataService : IDataService
     public Task<List<BidSheetLocation>> GetBidSheetLocationsAsync(string tradeUnitCode, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetBidSheetLocations");
 
+    public Task<List<BidSheetLocation>> GetAllBidSheetLocationsAsync(CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetAllBidSheetLocations");
+
     public Task<BidSheetLocation> CreateBidSheetLocationAsync(BidSheetLocation location, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for CreateBidSheetLocation");
 
@@ -281,6 +284,9 @@ public class ApimDataService : IDataService
     public Task<BidSheetReference?> GetBidSheetReferenceAsync(string userId, string tradeUnitCode, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetBidSheetReference");
 
-    public Task SetBidSheetReferenceAsync(string userId, string tradeUnitCode, string elevatorCode, CancellationToken cancellationToken = default)
+    public Task SetBidSheetReferenceAsync(string userId, string tradeUnitCode, int locationId, string name, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for SetBidSheetReference");
+
+    public Task ClearBidSheetReferenceAsync(string userId, string tradeUnitCode, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for ClearBidSheetReference");
 }

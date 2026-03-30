@@ -326,7 +326,8 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
             entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
             entity.Property(e => e.TradeUnitCode).HasMaxLength(100).IsRequired();
-            entity.Property(e => e.ElevatorCode).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.LocationId).IsRequired();
+            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
             entity.Property(e => e.ModifiedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.HasIndex(e => new { e.UserId, e.TradeUnitCode }).IsUnique().HasDatabaseName("UQ_BidSheetReferences_User_TradeUnit");
             entity.HasIndex(e => e.UserId).HasDatabaseName("IX_BidSheetReferences_UserId");

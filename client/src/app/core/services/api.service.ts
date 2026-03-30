@@ -492,6 +492,12 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
+  /** Gets all bid sheet locations across all trade units (for map display) */
+  getAllBidSheetLocations(): Observable<BidSheetLocation[]> {
+    return this.http.get<BidSheetLocation[]>(`${this.baseUrl}/bidsheet/locations`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
   /** Creates a new bid sheet location with initial bids */
   createBidSheetLocation(location: {
     name?: string; address?: string; city?: string; state?: string;
@@ -538,15 +544,21 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Gets the reference elevator for the current user and a trade unit. Returns null if not set. */
-  getBidSheetReference(tradeUnitCode: string): Observable<{ tradeUnitCode: string; elevatorCode: string } | null> {
-    return this.http.get<{ tradeUnitCode: string; elevatorCode: string }>(`${this.baseUrl}/bidsheet/reference`, { params: { tradeUnitCode } })
+  /** Gets the reference location for the current user and a trade unit. Returns null if not set. */
+  getBidSheetReference(tradeUnitCode: string): Observable<{ tradeUnitCode: string; locationId: number; name: string } | null> {
+    return this.http.get<{ tradeUnitCode: string; locationId: number; name: string }>(`${this.baseUrl}/bidsheet/reference`, { params: { tradeUnitCode } })
       .pipe(catchError(() => of(null)));
   }
 
-  /** Sets or updates the reference elevator for the current user and a trade unit. */
-  setBidSheetReference(tradeUnitCode: string, elevatorCode: string): Observable<void> {
-    return this.http.put<void>(`${this.baseUrl}/bidsheet/reference`, { tradeUnitCode, elevatorCode })
+  /** Sets or updates the reference location for the current user and a trade unit. */
+  setBidSheetReference(tradeUnitCode: string, locationId: number, name: string): Observable<void> {
+    return this.http.put<void>(`${this.baseUrl}/bidsheet/reference`, { tradeUnitCode, locationId, name })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Clears the reference location for the current user and a trade unit. */
+  clearBidSheetReference(tradeUnitCode: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/bidsheet/reference`, { params: { tradeUnitCode } })
       .pipe(catchError(e => this.handleError(e)));
   }
 

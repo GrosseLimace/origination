@@ -15,7 +15,7 @@ import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 
 // RxJS
-import { EMPTY, filter, switchMap, take } from 'rxjs';
+import { EMPTY, filter, from, switchMap, take } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
@@ -66,11 +66,22 @@ export class HeaderComponent {
     this.msalBroadcast.inProgress$.pipe(
       filter(status => status === InteractionStatus.None),
       take(1),
-      switchMap(() => this.http.get('https://graph.microsoft.com/v1.0/me/photo/$value', { responseType: 'blob' }).pipe(
-        catchError(() => EMPTY)
-      )),
+      switchMap(() => {
+        const account = this._getAccount();
+        if (!account) return EMPTY;
+        return from(this.msalService.instance.acquireTokenSilent({
+          scopes: ['User.Read'],
+          account
+        })).pipe(
+          catchError(() => EMPTY),
+          switchMap(result => this.http.get('https://graph.microsoft.com/v1.0/me/photo/$value', {
+            responseType: 'blob',
+            headers: { Authorization: `Bearer ${result.accessToken}` }
+          }).pipe(catchError(() => EMPTY)))
+        );
+      }),
       takeUntilDestroyed(this.destroyRef)
-    ).subscribe((blob) => {
+    ).subscribe((blob: Blob) => {
       const url = URL.createObjectURL(blob);
       this.profilePhotoUrl.set(url);
       this.destroyRef.onDestroy(() => URL.revokeObjectURL(url));

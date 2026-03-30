@@ -30,6 +30,7 @@ interface Insight {
   contractId?: number;
   searchTerms?: string[];
   quantity?: number;
+  sortDate?: string; // yyyy-MM-dd, used to sort SpotLoads newest-first
 }
 
 interface CustomerGroup {
@@ -60,7 +61,7 @@ const CATEGORY_META: Record<InsightCategory, {
     searchPlaceholder: 'Search by customer, contract, or commodity...',
   },
   SpotLoads: {
-    title: 'Spot Loads — Delivered Today, No Contract',
+    title: 'Spot Loads — Delivered, No Contract (Last 30 Days)',
     headerClass: 'bg-scoular-yellow/5 dark:bg-scoular-yellow/20 border-b border-scoular-yellow/20 dark:border-scoular-yellow',
     iconClass: 'text-scoular-yellow dark:text-scoular-yellow',
     titleClass: 'text-scoular-yellow dark:text-white',
@@ -169,12 +170,12 @@ export class InsightsComponent {
       const arr = contractsByCustomer.get(c.ctrmCustomerId);
       if (arr) { arr.push(c); } else { contractsByCustomer.set(c.ctrmCustomerId, [c]); }
     }
-    // Pre-index today's tickets by customer for O(1) spot-load lookup
-    const todayTicketsByCustomer = new Map<string, Ticket[]>();
+    // Pre-index recent tickets (last 30 days) by customer for O(1) spot-load lookup
+    const recentTicketsByCustomer = new Map<string, Ticket[]>();
     for (const t of todaysTickets) {
       if (!t.customerCode) continue;
-      const arr = todayTicketsByCustomer.get(t.customerCode);
-      if (arr) { arr.push(t); } else { todayTicketsByCustomer.set(t.customerCode, [t]); }
+      const arr = recentTicketsByCustomer.get(t.customerCode);
+      if (arr) { arr.push(t); } else { recentTicketsByCustomer.set(t.customerCode, [t]); }
     }
     // Commodity code → name map for search (e.g. "YC" → "Yellow Corn")
     const commodityNameByCode = new Map<string, string>();
@@ -184,7 +185,7 @@ export class InsightsComponent {
 
     for (const customer of customers) {
       const customerContracts = contractsByCustomer.get(customer.sourceCustomerId!) || [];
-      const customerTodayTickets = todayTicketsByCustomer.get(customer.sourceCustomerId!) || [];
+      const customerRecentTickets = recentTicketsByCustomer.get(customer.sourceCustomerId!) || [];
 
       // --- 1. Unconfirmed Contracts ---
       for (const contract of customerContracts) {
@@ -214,38 +215,40 @@ export class InsightsComponent {
         }
       }
 
-      // --- 2. Spot Loads — Delivered Today, No Contract Coverage ---
-      // todayTicketsByCustomer is pre-filtered to today by the /api/tickets/today endpoint.
-      if (customerTodayTickets.length > 0) {
-        const hasContractForToday = customerContracts.some(c => {
+      // --- 2. Spot Loads — No Contract Coverage (Last 30 Days) ---
+      // Each ticket is checked individually: if no active contract covers its delivery date, it's a spot load.
+      for (const ticket of customerRecentTickets) {
+        if (!ticket.date) continue;
+        const ticketDate = new Date(ticket.date);
+        const hasContractCoverage = customerContracts.some(c => {
           if (c.status === 'Fulfilled' || c.status === 'Cancelled') return false;
           const start = new Date(c.deliveryStart);
           const end = new Date(c.deliveryEnd);
-          return start <= today && end >= today;
+          return start <= ticketDate && end >= ticketDate;
         });
-
-        if (!hasContractForToday) {
-          for (const ticket of customerTodayTickets) {
-            const bu = ticket.unloadQuantity ? Math.round(ticket.unloadQuantity) : null;
-            insights.push({
-              customer,
-              category: 'SpotLoads',
-              priority: 'Urgent',
-              message: `Ticket #${ticket.ticketNumber}${ticket.productCode ? ' — ' + ticket.productCode : ''}${bu ? ', ' + bu.toLocaleString() + ' bu' : ''}`,
-              quantity: bu ?? 0,
-              tags: [
-                { label: `#${ticket.ticketNumber}`, style: 'default' },
-                ...(ticket.productCode ? [{ label: ticket.productCode, style: 'commodity' as InsightTagStyle }] : []),
-                ...(bu ? [{ label: `${bu.toLocaleString()} bu`, style: 'quantity' as InsightTagStyle }] : []),
-                { label: 'Spot', style: 'warning' },
-              ],
-              searchTerms: [
-                ticket.ticketNumber,
-                ticket.productCode,
-                ticket.productCode ? commodityNameByCode.get(ticket.productCode.trim().toUpperCase()) : undefined,
-              ].filter(Boolean) as string[]
-            });
-          }
+        if (!hasContractCoverage) {
+          const bu = ticket.unloadQuantity ? Math.round(ticket.unloadQuantity) : null;
+          const dateLabel = ticketDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          insights.push({
+            customer,
+            category: 'SpotLoads',
+            priority: 'Urgent',
+            message: `Ticket #${ticket.ticketNumber}${ticket.productCode ? ' — ' + ticket.productCode : ''}${bu ? ', ' + bu.toLocaleString() + ' bu' : ''}`,
+            sortDate: ticket.date,
+            quantity: bu ?? 0,
+            tags: [
+              { label: `#${ticket.ticketNumber}`, style: 'default' },
+              ...(ticket.productCode ? [{ label: ticket.productCode, style: 'commodity' as InsightTagStyle }] : []),
+              ...(bu ? [{ label: `${bu.toLocaleString()} bu`, style: 'quantity' as InsightTagStyle }] : []),
+              { label: dateLabel, style: 'default' },
+              { label: 'Spot', style: 'warning' },
+            ],
+            searchTerms: [
+              ticket.ticketNumber,
+              ticket.productCode,
+              ticket.productCode ? commodityNameByCode.get(ticket.productCode.trim().toUpperCase()) : undefined,
+            ].filter(Boolean) as string[]
+          });
         }
       }
 
@@ -281,7 +284,15 @@ export class InsightsComponent {
     }
 
     const priorityOrder: Record<InsightPriority, number> = { 'Urgent': 0, 'Warning': 1, 'Info': 2 };
-    return insights.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
+    return insights.sort((a, b) => {
+      const pDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
+      if (pDiff !== 0) return pDiff;
+      // Within SpotLoads, sort newest ticket first
+      if (a.category === 'SpotLoads' && b.category === 'SpotLoads' && a.sortDate && b.sortDate) {
+        return b.sortDate.localeCompare(a.sortDate);
+      }
+      return 0;
+    });
   });
 
   // Memoized customer groups per category with pre-computed summaries.

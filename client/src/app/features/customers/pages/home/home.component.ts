@@ -24,7 +24,7 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
     CardHeaderComponent,
     CardTitleComponent
   ],
-  templateUrl: './home.component.html'
+  templateUrl: './home.component.html',
 })
 export class HomeComponent {
   private readonly apiService = inject(ApiService);
