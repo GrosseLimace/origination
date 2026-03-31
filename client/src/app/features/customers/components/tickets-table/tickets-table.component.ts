@@ -12,7 +12,7 @@ interface TicketGroup {
   tickets: Ticket[];
   ticketCount: number;
   avgDate: Date | null;
-  avgNetWeight: number;
+  totalNetWeight: number;
   avgMoisture: number;
   avgTestWeight: number | null;
   avgProtein: number | null;
@@ -133,7 +133,7 @@ export class TicketsTableComponent {
         tickets: sorted,
         ticketCount: ticketsForAvg.length,
         avgDate: validDateMs.length ? new Date(validDateMs.reduce((s, d) => s + d, 0) / validDateMs.length) : null,
-        avgNetWeight: ticketsForAvg.reduce((s, t) => s + (t.appliedDockQuantity || 0), 0) / ticketsForAvg.length,
+        totalNetWeight: ticketsForAvg.reduce((s, t) => s + (t.appliedDockQuantity || 0), 0),
         avgMoisture: validMoisture.length ? validMoisture.reduce((s, t) => s + (t.moisture || 0), 0) / validMoisture.length : 0,
         avgTestWeight: validTestWeight.length ? validTestWeight.reduce((s, t) => s + (t.testWeight || 0), 0) / validTestWeight.length : null,
         avgProtein: validProtein.length ? validProtein.reduce((s, t) => s + (t.proteinPercent || 0), 0) / validProtein.length : null,
@@ -270,9 +270,17 @@ export class TicketsTableComponent {
   }
 
   get hasWheatTickets(): boolean {
-    // Show protein column if any ticket actually has protein data, or if any contract is wheat
-    return this.unappliedTickets.some(t => typeof t.proteinPercent === 'number' && t.proteinPercent > 0)
-      || this.contracts().some(c => this.isWheatCommodity(c.commodityGroup, c.commodityDescription));
+    // Show protein column only if unapplied tickets have protein data or are wheat by product code
+    return this.unappliedTickets.some(t =>
+      (typeof t.proteinPercent === 'number' && t.proteinPercent > 0)
+      || this.isWheatProductCode(t.productCode)
+    );
+  }
+
+  isWheatProductCode(productCode?: string | null): boolean {
+    if (!productCode) return false;
+    const upper = productCode.toUpperCase().trim();
+    return upper.includes('WHEAT') || upper.includes('WW') || upper === 'HRW' || upper === 'SRW' || upper === 'DUR';
   }
 
   isWheatCommodity(commodityGroup: string | undefined, commodityDescription?: string | undefined): boolean {

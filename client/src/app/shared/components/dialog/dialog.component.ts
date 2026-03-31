@@ -6,10 +6,10 @@ import { Component, input, output, inject, DestroyRef, effect } from '@angular/c
   template: `
     @if (isOpen()) {
       <!-- Backdrop -->
-      <div class="fixed inset-0 bg-black/55 z-40" (click)="onBackdropClick()"></div>
+      <div class="fixed inset-0 bg-black/55 z-[60]" (click)="onBackdropClick()"></div>
 
       <!-- Dialog wrapper -->
-      <div class="fixed inset-0 z-50 flex items-center justify-center py-8 px-4 overflow-y-auto" (click)="onBackdropClick()">
+      <div class="fixed inset-0 z-[60] flex items-center justify-center py-8 px-4 overflow-y-auto" (click)="onBackdropClick()">
         <div
           class="relative w-full bg-white dark:bg-gray-800 rounded-lg shadow-xl max-h-[calc(100vh-4rem)] overflow-y-auto border border-gray-200 dark:border-gray-700"
           [class]="sizeClass"
@@ -34,7 +34,7 @@ import { Component, input, output, inject, DestroyRef, effect } from '@angular/c
 })
 export class DialogComponent {
   public isOpen = input<boolean>(false);
-  public size = input<'sm' | 'md' | 'lg' | 'xl'>('md');
+  public size = input<'sm' | 'md' | 'lg' | 'xl' | '2xl'>('md');
   public closeOnBackdrop = input<boolean>(true);
   public showCloseButton = input<boolean>(true);
   public close = output<void>();
@@ -56,7 +56,8 @@ export class DialogComponent {
       sm: 'max-w-sm',
       md: 'max-w-3xl',
       lg: 'max-w-4xl',
-      xl: 'max-w-5xl'
+      xl: 'max-w-5xl',
+      '2xl': 'max-w-7xl'
     };
     return sizes[this.size()];
   }

@@ -4,7 +4,6 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 import type * as Leaflet from 'leaflet';
-declare const L: typeof Leaflet;
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
@@ -27,7 +26,8 @@ interface EditBidsRow {
   standalone: true,
   imports: [CommonModule, FormsModule, TradeUnitSelectorComponent],
   templateUrl: './bid-sheet.component.html',
-  changeDetection: ChangeDetectionStrategy.OnPush
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { style: 'display:block;height:calc(100vh - 130px);' }
 })
 export class BidSheetComponent {
   private readonly destroyRef = inject(DestroyRef);
@@ -80,15 +80,26 @@ export class BidSheetComponent {
   isLoading = signal<boolean>(false);
   isRefreshing = signal<boolean>(false);
 
-  // --- Old/New year logic (data-driven) ---
+  // --- Old/New year logic (data-driven, navigable) ---
+  // yearOffset 0 = latest two years, -1 = shift one year earlier, etc.
+  yearOffset = signal(0);
   oldYear = computed(() => {
     const years = this.cropYears();
-    return years.length >= 2 ? years[years.length - 2] : null;
+    if (years.length < 2) return null;
+    const idx = years.length - 2 + this.yearOffset();
+    return idx >= 0 && idx < years.length ? years[idx] : null;
   });
   newYear = computed(() => {
     const years = this.cropYears();
-    return years.length >= 1 ? years[years.length - 1] : null;
+    if (years.length < 1) return null;
+    const idx = years.length - 1 + this.yearOffset();
+    return idx >= 0 && idx < years.length ? years[idx] : null;
   });
+  canShiftYearsBack = computed(() => {
+    const years = this.cropYears();
+    return years.length >= 2 && (years.length - 2 + this.yearOffset()) > 0;
+  });
+  canShiftYearsForward = computed(() => this.yearOffset() < 0);
 
   // --- Reference (per trade unit, persisted to DB) ---
   // Map of tradeUnitCode → { locationId, name }, loaded from API when TUs change.
@@ -113,6 +124,7 @@ export class BidSheetComponent {
   filteredBidItems = signal<any[]>([]);
   selectedLocationName = signal<string>('');
   panelSelectedLocation = signal<string>('');
+  showDeleteLocationConfirm = signal(false);
   editingLocationName = signal(false);
   editLocationNameValue = signal('');
 
@@ -283,7 +295,7 @@ export class BidSheetComponent {
     });
 
     this._startRefreshTimer();
-    setTimeout(() => this._initializeMap(), 500);
+    this._initializeMapWhenReady();
 
     this.destroyRef.onDestroy(() => {
       this._destroyMap();
@@ -334,6 +346,7 @@ export class BidSheetComponent {
       this.referenceByTu.set(new Map());
       this.crops.set([]);
       this.cropYears.set([]);
+      this.yearOffset.set(0);
       this.selectedCrop.set('');
       this.selectedBasis.set('all');
       this.filterBids();
@@ -367,7 +380,7 @@ export class BidSheetComponent {
     if (locs.length === 1) {
       this._map.setView([locs[0].latitude!, locs[0].longitude!], 10);
     } else {
-      const bounds = L.latLngBounds(locs.map(l => [l.latitude!, l.longitude!] as L.LatLngTuple));
+      const bounds = this._L!.latLngBounds(locs.map(l => [l.latitude!, l.longitude!] as [number, number]));
       this._map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
     }
   }
@@ -398,6 +411,7 @@ export class BidSheetComponent {
         const currentYear = new Date().getFullYear();
         if (cropYears.length === 0) cropYears = [currentYear];
         this.cropYears.set(cropYears);
+        this.yearOffset.set(0);
         if (!cropYears.includes(this.selectedYear())) {
           this.selectedYear.set(cropYears.includes(currentYear) ? currentYear : cropYears[cropYears.length - 1]);
         }
@@ -426,6 +440,20 @@ export class BidSheetComponent {
 
   onMapCropChange(): void {
     this.onFilterChange();
+  }
+
+  shiftYearsBack(): void {
+    if (this.canShiftYearsBack()) {
+      this.yearOffset.update(o => o - 1);
+      this.onFilterChange();
+    }
+  }
+
+  shiftYearsForward(): void {
+    if (this.canShiftYearsForward()) {
+      this.yearOffset.update(o => o + 1);
+      this.onFilterChange();
+    }
   }
 
   /** Search input only filters map pins — panel stays full */
@@ -504,6 +532,27 @@ export class BidSheetComponent {
           newStatus: isRef ? 'reference' : (hasIndividualTu ? this._computeItemStatus(newBid, false, newRefBid, newEntry?.modifiedAt) : 'none'),
           status: isRef ? 'reference' : (hasIndividualTu ? this._computeItemStatus(newBid, false, newRefBid, newEntry?.modifiedAt) : 'none')
         });
+      }
+
+      // Include locations with no bids yet (only when no crop filter is active)
+      if (!crop) {
+        for (const loc of this.bidLocations()) {
+          if (uniqueNames.has(loc.name)) continue;
+          const isRef = hasIndividualTu && loc.name === refName;
+          items.push({
+            type: 'entry',
+            name: loc.name,
+            isScoular: false,
+            isRef,
+            latitude: loc.latitude ?? null,
+            longitude: loc.longitude ?? null,
+            oldBid: '',
+            newBid: '',
+            oldStatus: 'none',
+            newStatus: 'none',
+            status: isRef ? 'reference' : 'none'
+          });
+        }
       }
     }
 
@@ -621,7 +670,8 @@ export class BidSheetComponent {
     this.newLocationLat.set(lat);
     this.newLocationLng.set(lng);
 
-    const pinIcon = L.divIcon({
+    const _L = this._L!;
+    const pinIcon = _L.divIcon({
       className: 'custom-marker',
       html: `<div style="width:28px;height:28px;background:#EF4623;border:3px solid #DF3410;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.4);">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
@@ -629,7 +679,7 @@ export class BidSheetComponent {
       iconSize: [28, 28],
       iconAnchor: [14, 14]
     });
-    this._addLocationPin = L.marker([lat, lng], { icon: pinIcon }).addTo(this._map);
+    this._addLocationPin = _L.marker([lat, lng], { icon: pinIcon }).addTo(this._map);
 
     // Auto-select TU if only one is available
     const tus = this.addLocationTus();
@@ -733,7 +783,9 @@ export class BidSheetComponent {
         this.filterBids();
         if (fromEditBids) { this.openEditBids(); }
       },
-      error: () => this.toastService.error('Failed to add location')
+      error: () => {
+        this.toastService.error('Failed to add location');
+      }
     });
   }
 
@@ -789,9 +841,12 @@ export class BidSheetComponent {
     const entries = this.bidEntries().filter(e => e.cropYear === year);
     const crops = this.crops();
     const rows: EditBidsRow[] = [];
+    const addedNames = new Set<string>();
 
+    // Add locations that have bid entries
     const uniqueNames = [...new Set(this.bidEntries().map(e => e.name))];
     for (const name of uniqueNames) {
+      addedNames.add(name);
       const rep = this.bidEntries().find(e => e.name === name);
       const bids: Record<string, string> = {};
       for (const crop of crops) {
@@ -801,6 +856,15 @@ export class BidSheetComponent {
         bids[crop] = latest?.bid ?? '';
       }
       rows.push({ name, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids } });
+    }
+
+    // Also include locations with no bids yet (e.g. just added from Edit Bids)
+    for (const loc of this.bidLocations()) {
+      if (addedNames.has(loc.name)) continue;
+      addedNames.add(loc.name);
+      const bids: Record<string, string> = {};
+      for (const crop of crops) { bids[crop] = ''; }
+      rows.push({ name: loc.name, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids } });
     }
 
     this.editBidsRows.set(rows);
@@ -1003,7 +1067,33 @@ export class BidSheetComponent {
   panelGoBack(): void {
     this.panelSelectedLocation.set('');
     this.selectedLocationName.set('');
+    this.showDeleteLocationConfirm.set(false);
     this._refreshMapMarkers();
+  }
+
+  confirmDeleteLocation(): void {
+    const name = this.panelSelectedLocation();
+    if (!name) return;
+    const loc = this.allMapLocations().find(l => l.name === name);
+    if (!loc) return;
+    const tu = loc.tradeUnitCode ?? this.activeTradeUnit();
+
+    this.apiService.deleteBidSheetLocation(loc.id, tu).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: () => {
+        this.bidLocations.update(locs => locs.filter(l => l.id !== loc.id));
+        this.allMapLocations.update(locs => locs.filter(l => l.id !== loc.id));
+        this.showDeleteLocationConfirm.set(false);
+        this.panelSelectedLocation.set('');
+        this.selectedLocationName.set('');
+        this.toastService.success(`Deleted ${name}`);
+        this.filterBids();
+        this._refreshMapMarkers();
+      },
+      error: () => {
+        this.showDeleteLocationConfirm.set(false);
+        this.toastService.error('Failed to delete location');
+      }
+    });
   }
 
   startEditLocationName(): void {
@@ -1153,13 +1243,39 @@ export class BidSheetComponent {
   // Map
   // =========================================================================
 
-  private _initializeMap(): void {
+  private _mapRetries = 0;
+  private _resizeObserver: ResizeObserver | null = null;
+  private _L: typeof Leaflet | null = null;
+
+  private async _initializeMapWhenReady(): Promise<void> {
     if (this._isMapInitialized) return;
+
+    // Dynamically import leaflet + markercluster (only once)
+    if (!this._L) {
+      try {
+        const leaflet = await import('leaflet');
+        await import('leaflet.markercluster');
+        this._L = leaflet.default ?? leaflet;
+      } catch {
+        return;
+      }
+    }
+
     const mapElement = document.getElementById('bid-locations-map');
-    if (!mapElement) return;
+    if (mapElement && mapElement.offsetHeight > 0) {
+      this._initializeMap(mapElement);
+    } else if (this._mapRetries < 30) {
+      this._mapRetries++;
+      setTimeout(() => this._initializeMapWhenReady(), 200);
+    }
+  }
+
+  private _initializeMap(mapElement: HTMLElement): void {
+    if (this._isMapInitialized || !this._L) return;
+    const L = this._L;
 
     try {
-      this._map = L.map('bid-locations-map').setView([38.5, -98.0], 6);
+      this._map = L.map(mapElement).setView([38.5, -98.0], 6);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors'
       }).addTo(this._map);
@@ -1173,7 +1289,12 @@ export class BidSheetComponent {
       this._map.addLayer(this._clusterGroup);
 
       this._isMapInitialized = true;
-      setTimeout(() => { if (this._map) this._map.invalidateSize(); }, 100);
+
+      // Watch for container resize and tell Leaflet to recalculate
+      this._resizeObserver = new ResizeObserver(() => {
+        if (this._map) this._map.invalidateSize();
+      });
+      this._resizeObserver.observe(mapElement);
 
       // Re-render markers when zoom changes (dot vs label at different zoom levels)
       this._map.on('zoomend', () => this._refreshMapMarkers());
@@ -1182,11 +1303,12 @@ export class BidSheetComponent {
       this._map.on('click', (e: any) => this._onMapClick(e));
 
       this._refreshMapMarkers();
-    } catch (err) { console.error('Map initialization failed:', err); }
+    } catch { /* map init failed — will retry on next navigation */ }
   }
 
   private _refreshMapMarkers(): void {
-    if (!this._map || !this._clusterGroup) return;
+    if (!this._map || !this._clusterGroup || !this._L) return;
+    const L = this._L;
     this._clusterGroup.clearLayers();
     // Keep map clean during add-location mode
     if (this.addLocationMode()) return;
@@ -1211,7 +1333,7 @@ export class BidSheetComponent {
       beating:   { bg: '#dc2626', border: '#991b1b' },
       matching:  { bg: '#eab308', border: '#a16207' },
       changed:   { bg: '#22c55e', border: '#15803d' },
-      none:      { bg: '#d1d5db', border: '#6b7280' }
+      none:      { bg: '#6b7280', border: '#4b5563' }
     };
 
     // Search query — only filter map pins, panel stays full
@@ -1285,8 +1407,8 @@ export class BidSheetComponent {
         const border = isRef ? '#1d4ed8' : (isActiveTu && hasIndividualTu) ? '#006B4C' : '#6b7280';
         const dotIcon = L.divIcon({
           className: 'custom-marker',
-          html: `<div style="width:10px;height:10px;background:${color};border:2px solid ${border};border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.3);cursor:pointer;"></div>`,
-          iconSize: [10, 10], iconAnchor: [5, 5]
+          html: `<div style="width:14px;height:14px;background:${color};border:2px solid ${border};border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.3);cursor:pointer;"></div>`,
+          iconSize: [14, 14], iconAnchor: [7, 7]
         });
         const m = L.marker([lat, lng], { icon: dotIcon });
         m.on('click', () => this._selectMapLocation(locs[0]));
@@ -1318,9 +1440,12 @@ export class BidSheetComponent {
           .filter((x): x is NonNullable<typeof x> => x !== null);
 
         if (bidItems.length > 0) {
-          const linesHtml = bidItems.map(({ label, bg, border }) =>
-            `<div style="background:${bg};border:2px solid ${border};border-radius:6px;padding:4px 3px;font-size:10px;font-weight:700;color:#fff;white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,0.3);line-height:1.1;cursor:pointer;">${this._esc(label)}</div>`
-          ).join('');
+          const linesHtml = bidItems.map(({ label, bg, border }) => {
+            const isGrey = bg === '#d1d5db';
+            const pillBg = isGrey ? '#6b7280' : bg;
+            const pillBorder = isGrey ? '#4b5563' : border;
+            return `<div style="background:${pillBg};border:2px solid ${pillBorder};border-radius:6px;padding:5px 6px;font-size:11px;font-weight:700;color:#fff;white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,0.3);line-height:1.2;cursor:pointer;">${this._esc(label)}</div>`;
+          }).join('');
           const maxWidth = Math.max(58, ...bidItems.map(({ label }) => label.length * 7 + 16));
           const height = bidItems.length * 28 + 16;
           const primaryBg = bidItems[0].bg;
@@ -1357,13 +1482,17 @@ export class BidSheetComponent {
   }
 
   private _buildStackedLabel(names: string[], bg: string, border: string): string {
-    const maxWidth = Math.min(140, Math.max(80, ...names.map(n => n.length * 6 + 20)));
+    const isGrey = bg === '#d1d5db' || bg === '#9ca3af';
+    const textColor = '#fff';
+    const labelBg = isGrey ? '#6b7280' : bg;
+    const labelBorder = isGrey ? '#4b5563' : border;
+    const maxWidth = Math.min(150, Math.max(85, ...names.map(n => n.length * 7 + 22)));
     const linesHtml = names.map(n =>
-      `<div style="background:${bg};border:2px solid ${border};border-radius:4px;padding:3px 6px;font-size:9px;font-weight:700;color:#fff;white-space:nowrap;line-height:1.1;overflow:hidden;text-overflow:ellipsis;max-width:${maxWidth}px;">${this._esc(n)}</div>`
+      `<div style="background:${labelBg};border:2px solid ${labelBorder};border-radius:5px;padding:4px 8px;font-size:11px;font-weight:700;color:${textColor};white-space:nowrap;line-height:1.2;overflow:hidden;text-overflow:ellipsis;max-width:${maxWidth}px;">${this._esc(n)}</div>`
     ).join('');
     return `<div style="position:relative;width:${maxWidth}px;text-align:center;display:flex;flex-direction:column;gap:2px;align-items:center;">
       ${linesHtml}
-      <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid ${bg};margin:-1px auto 0;"></div>
+      <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid ${labelBorder};margin:-1px auto 0;"></div>
     </div>`;
   }
 
@@ -1374,6 +1503,10 @@ export class BidSheetComponent {
   }
 
   private _destroyMap(): void {
+    if (this._resizeObserver) {
+      this._resizeObserver.disconnect();
+      this._resizeObserver = null;
+    }
     if (this._map) {
       this._map.remove();
       this._map = null;

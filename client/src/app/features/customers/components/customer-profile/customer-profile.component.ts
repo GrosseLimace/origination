@@ -10,6 +10,7 @@ import { ContractPacingCardComponent } from '../contract-pacing-card/contract-pa
 import { AIGrowthForecastComponent } from '../ai-growth-forecast/ai-growth-forecast.component';
 import { ActivitySummaryComponent } from '../activity-summary/activity-summary.component';
 import { EditCustomerDialogComponent } from '../edit-customer-dialog/edit-customer-dialog.component';
+import { CustomerPrintReportComponent } from '../customer-print-report/customer-print-report.component';
 import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity } from '@models';
 
 @Component({
@@ -26,7 +27,8 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, Contr
     ContractPacingCardComponent,
     AIGrowthForecastComponent,
     ActivitySummaryComponent,
-    EditCustomerDialogComponent
+    EditCustomerDialogComponent,
+    CustomerPrintReportComponent
   ],
   templateUrl: './customer-profile.component.html'
 })
@@ -76,6 +78,7 @@ export class CustomerProfileComponent {
   showProducerInsights = signal(false);
   showESignRecipients = signal(false);
   showEditDialog = signal(false);
+  showPrintReport = signal(false);
   selectedPlantingYear = signal(0); // 0 = auto (newest)
   private _yearUserSelected = false; // true only when user explicitly clicks a year tab
 

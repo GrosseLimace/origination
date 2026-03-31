@@ -23,7 +23,7 @@ export class ButtonComponent {
   public onClick = output<MouseEvent>();
 
   public getClasses(): string {
-    const base = 'inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-green disabled:pointer-events-none disabled:opacity-50';
+    const base = 'inline-flex items-center justify-center whitespace-nowrap rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-green disabled:pointer-events-none disabled:opacity-50';
 
     const variantMap: Record<string, string> = {
       default:     'bg-scoular-green-accessible text-white hover:bg-scoular-green',

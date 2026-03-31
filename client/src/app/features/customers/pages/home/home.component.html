@@ -1,4 +1,4 @@
-<div class="grid grid-cols-1 lg:grid-cols-[33.3%_66.7%] xl:grid-cols-[25%_75%] 2xl:grid-cols-[22%_78%] gap-4 lg:gap-4 h-full overflow-hidden">
+<div class="grid grid-cols-1 lg:grid-cols-[33.3%_66.7%] xl:grid-cols-[25%_75%] 2xl:grid-cols-[22%_78%] gap-4 lg:gap-4 h-full overflow-auto lg:overflow-hidden pr-1 lg:pr-0">
   <!-- Customer List - Precisely sized for optimal space usage (22% on 2xl) -->
   <div class="lg:overflow-auto lg:max-h-full lg:pb-2" [class.hidden]="selectedCustomer() && isMobile()" [class.lg:block]="true">
     <app-customer-list
@@ -14,7 +14,7 @@
   </div>
 
   <!-- Profile and Notes Container - Optimized content display (78% on 2xl) -->
-  <div [class.hidden]="!selectedCustomer() && isMobile()" [class.lg:block]="true" class="lg:overflow-auto lg:max-h-full lg:pb-2">
+  <div [class.hidden]="!selectedCustomer() && isMobile()" [class.lg:block]="true" class="lg:overflow-auto lg:max-h-full lg:pb-2 lg:pr-1">
     <div class="xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(320px,440px)] 2xl:grid-cols-[minmax(0,1fr)_minmax(360px,500px)] xl:gap-3 space-y-6 xl:space-y-0">
       <!-- Profile Section - Optimized for data visibility, minmax(0,1fr) prevents overflow -->
       <div class="space-y-6 min-w-0">

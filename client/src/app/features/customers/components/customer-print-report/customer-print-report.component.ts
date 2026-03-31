@@ -1,0 +1,501 @@
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { MsalService } from '@azure/msal-angular';
+import { ToastService } from '@core/services/toast.service';
+import { AppStateService } from '@core/services/app-state.service';
+import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '@shared/components/dialog/dialog.component';
+import { ButtonComponent } from '@shared/components/button/button.component';
+import { Customer, Contract, PlantingIntention, StoredGrain, Note, Commodity, DashboardPlantingEstimate } from '@models';
+
+@Component({
+  selector: 'app-customer-print-report',
+  standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [
+    CommonModule,
+    FormsModule,
+    DialogComponent,
+    DialogHeaderComponent,
+    DialogTitleComponent,
+    DialogDescriptionComponent,
+    DialogContentComponent,
+    DialogFooterComponent,
+    ButtonComponent
+  ],
+  templateUrl: './customer-print-report.component.html'
+})
+export class CustomerPrintReportComponent {
+  private readonly msalService = inject(MsalService);
+  private readonly toastService = inject(ToastService);
+  private readonly appState = inject(AppStateService);
+
+  readonly noTradeUnit = computed(() => this.appState.selectedTradeUnits().length === 0);
+
+  // Inputs
+  public isOpen = input(false);
+  public customer = input.required<Customer>();
+  public contracts = input<Contract[]>([]);
+  public plantingIntentions = input<PlantingIntention[]>([]);
+  public storedGrain = input<StoredGrain[]>([]);
+  public notes = input<Note[]>([]);
+  public commodities = input<Commodity[]>([]);
+  public yieldEstimates = input<DashboardPlantingEstimate[]>([]);
+  public linkedCustomers = input<Customer[]>([]);
+
+  // Output
+  public close = output<void>();
+
+  // Section toggles — initialized in the effect when dialog opens
+  showTotalAcres = signal(true);
+  showTotalContracted = signal(true);
+  showBinCapacity = signal(true);
+  showContracts = signal(true);
+  showPlanting = signal(true);
+  showStorage = signal(true);
+  showLinkedProducers = signal(true);
+
+  // Originator info
+  originatorName = signal('');
+  originatorTitle = signal('');
+  originatorPhone = signal('');
+  originatorEmail = signal('');
+
+  // Accent color
+  accentColor = signal('#00875F');
+  readonly accentPresets = [
+    { name: 'Scoular Green', color: '#00875F' },
+    { name: 'Scoular Green Accessible', color: '#00A36F' },
+    { name: 'Scoular Yellow', color: '#E8B30D' },
+    { name: 'Scoular Yellow Bright', color: '#FFD400' },
+    { name: 'Scoular Teal', color: '#1CB3B4' },
+    { name: 'Scoular Red', color: '#DF3410' },
+    { name: 'Scoular Gray', color: '#576269' },
+    { name: 'Black', color: '#1a1a1a' },
+  ];
+  readonly accentLight = computed(() => this.accentColor() + '18');
+  private _defaultsApplied = false;
+
+  constructor() {
+    effect(() => {
+      const open = this.isOpen();
+      if (open && !this._defaultsApplied) {
+        this._defaultsApplied = true;
+        const account = this.msalService.instance.getActiveAccount()
+          ?? this.msalService.instance.getAllAccounts()[0];
+        if (account) {
+          this.originatorName.set(account.name ?? '');
+          const username = account.username ?? '';
+          this.originatorEmail.set(
+            username && !username.includes('@') ? `${username}@scoular.com` : username
+          );
+        }
+        // Default KPI toggles off when value is 0
+        untracked(() => {
+          this.showTotalAcres.set((this.customer().totalAcres ?? 0) > 0);
+          this.showTotalContracted.set(this.totalContracted() > 0);
+          this.showBinCapacity.set((this.customer().binCapacity ?? 0) > 0);
+          this.showContracts.set(this.contracts().filter(c => c.status === 'Active' || c.status === 'Pending').length > 0);
+          this.showPlanting.set(this.plantingIntentions().length > 0);
+          this.showStorage.set(this.storedGrain().length > 0);
+          this.showLinkedProducers.set(this.linkedCustomers().length > 0);
+        });
+      } else if (!open) {
+        this._defaultsApplied = false;
+      }
+    });
+  }
+
+  // Computed data
+  readonly activeContracts = computed(() =>
+    this.contracts().filter(c => c.status === 'Active' || c.status === 'Pending')
+  );
+
+  readonly totalContracted = computed(() =>
+    this.activeContracts().reduce((sum, c) => sum + (c.quantity ?? 0), 0)
+  );
+
+  readonly totalStored = computed(() =>
+    this.storedGrain().reduce((sum, g) => sum + (g.quantity ?? 0), 0)
+  );
+
+  readonly projectedProductionBu = computed(() => {
+    const intentions = this.plantingIntentions();
+    const commodities = this.commodities();
+    const yieldEstimates = this.yieldEstimates();
+    if (intentions.length === 0) return 0;
+    return intentions.reduce((sum, pi) => {
+      const commodity = commodities.find(c => c.code === pi.crop);
+      const category = commodity?.category || pi.crop;
+      const cropKey = [pi.type, category].filter(Boolean).join(' ');
+      const est = yieldEstimates.find(ye => ye.crop === cropKey)
+        || yieldEstimates.find(ye => ye.crop === category);
+      return sum + (pi.acres ?? 0) * (est?.yieldEstimate ?? 0);
+    }, 0);
+  });
+
+  readonly kpis = computed(() => {
+    const items: { label: string; value: string; sub: string }[] = [];
+    if (this.showTotalAcres()) {
+      const acres = this.customer().totalAcres ?? 0;
+      items.push({ label: 'Total Acres', value: acres > 0 ? acres.toLocaleString() : '0', sub: '' });
+    }
+    if (this.showTotalContracted()) {
+      const contracted = this.totalContracted();
+      const totalValue = this.activeContracts().reduce((sum, c) => sum + (c.totalValue ?? 0), 0);
+      items.push({ label: 'Total Contracted', value: contracted > 0 ? this.formatBu(contracted) : '0 bu', sub: totalValue > 0 ? this.formatCurrency(totalValue) : '' });
+    }
+    if (this.showBinCapacity()) {
+      const binCapacity = this.customer().binCapacity ?? 0;
+      items.push({ label: 'Bin Capacity', value: binCapacity > 0 ? this.formatBu(binCapacity) : '0 bu', sub: '' });
+    }
+    return items;
+  });
+
+  readonly cropBreakdown = computed(() => {
+    const intentions = this.plantingIntentions();
+    const contracts = this.contracts().filter(c => c.status !== 'Cancelled');
+    const commodities = this.commodities();
+    const yieldEstimates = this.yieldEstimates();
+    const cropMap = new Map<string, { acres: number; projected: number; contracted: number }>();
+
+    // Build a lookup: code → display name (category or name)
+    const codeToName = new Map<string, string>();
+    for (const cm of commodities) {
+      codeToName.set(cm.code, cm.category || cm.name || cm.code);
+    }
+
+    for (const pi of intentions) {
+      const displayName = codeToName.get(pi.crop) || pi.crop || 'Unknown';
+      const entry = cropMap.get(displayName) ?? { acres: 0, projected: 0, contracted: 0 };
+      entry.acres += pi.acres ?? 0;
+      const commodity = commodities.find(c => c.code === pi.crop);
+      const category = commodity?.category || pi.crop;
+      const cropKey = [pi.type, category].filter(Boolean).join(' ');
+      const est = yieldEstimates.find(ye => ye.crop === cropKey)
+        || yieldEstimates.find(ye => ye.crop === category);
+      entry.projected += (pi.acres ?? 0) * (est?.yieldEstimate ?? 0);
+      cropMap.set(displayName, entry);
+    }
+    for (const c of contracts) {
+      const displayName = codeToName.get(c.commodityCode || '') || c.commodityDescription || c.commodityCode || 'Unknown';
+      const entry = cropMap.get(displayName) ?? { acres: 0, projected: 0, contracted: 0 };
+      entry.contracted += c.quantity ?? 0;
+      cropMap.set(displayName, entry);
+    }
+    return [...cropMap.entries()]
+      .map(([crop, data]) => ({ crop, ...data }))
+      .sort((a, b) => b.contracted - a.contracted);
+  });
+
+  readonly cropTotals = computed(() => {
+    const rows = this.cropBreakdown();
+    return {
+      acres: rows.reduce((s, r) => s + r.acres, 0),
+      projected: rows.reduce((s, r) => s + r.projected, 0),
+      contracted: rows.reduce((s, r) => s + r.contracted, 0)
+    };
+  });
+
+  readonly storageGroups = computed(() => {
+    const groupMap = new Map<string, { crop: string; totalBushels: number; totalCost: number; earliestDate: Date; totalDays: number }>();
+    for (const g of this.storedGrain()) {
+      const key = g.crop || 'Unknown';
+      if (!groupMap.has(key)) {
+        groupMap.set(key, { crop: key, totalBushels: 0, totalCost: 0, earliestDate: new Date(g.storageStartDate), totalDays: 0 });
+      }
+      const group = groupMap.get(key)!;
+      group.totalBushels += g.quantity ?? 0;
+      group.totalCost += g.receivableAmount ?? 0;
+      group.totalDays = Math.max(group.totalDays, g.storageDays ?? 0);
+      const rowDate = new Date(g.storageStartDate);
+      if (rowDate < group.earliestDate) group.earliestDate = rowDate;
+    }
+    return [...groupMap.values()].sort((a, b) => a.crop.localeCompare(b.crop));
+  });
+
+  readonly reportNotes = computed(() => {
+    const allNotes = this.notes();
+    const pinned = allNotes.filter(n => n.isPinned).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const unpinned = allNotes.filter(n => !n.isPinned).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return [...pinned, ...unpinned].slice(0, 10);
+  });
+
+  readonly today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+  // Helpers
+  formatBu(val: number): string {
+    if (val >= 1000) return `${(val / 1000).toFixed(0)}K bu`;
+    return `${val.toLocaleString()} bu`;
+  }
+
+  formatCurrency(val: number): string {
+    return '$' + val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  formatDate(d: string | Date | undefined | null): string {
+    if (!d) return '—';
+    return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  getDeliveredBu(ct: Contract): number {
+    const total = ct.quantity ?? 0;
+    const open = ct.openBalanceQuantity ?? 0;
+    return Math.max(0, total - open);
+  }
+
+  getDeliveryPct(ct: Contract): number {
+    const total = ct.quantity ?? 0;
+    if (total === 0) return 0;
+    return Math.round((this.getDeliveredBu(ct) / total) * 100);
+  }
+
+  getPlantingYield(pi: PlantingIntention): number {
+    const commodities = this.commodities();
+    const yieldEstimates = this.yieldEstimates();
+    const commodity = commodities.find(c => c.code === pi.crop);
+    const category = commodity?.category || pi.crop;
+    const cropKey = [pi.type, category].filter(Boolean).join(' ');
+    const est = yieldEstimates.find(ye => ye.crop === cropKey)
+      || yieldEstimates.find(ye => ye.crop === category);
+    return Math.round((pi.acres ?? 0) * (est?.yieldEstimate ?? 0));
+  }
+
+  formatDeliveryPeriod(start?: Date | string, end?: Date | string): string {
+    if (!start && !end) return '—';
+    const fmt = (d: Date | string) => new Date(d).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    if (start && end) return `${fmt(start)} – ${fmt(end)}`;
+    if (start) return `From ${fmt(start)}`;
+    return `Until ${fmt(end!)}`;
+  }
+
+  getCustomerPhone(): string {
+    const c = this.customer();
+    return (c.phone && c.phone.trim()) || (c.extendedPrimaryPhone && c.extendedPrimaryPhone.trim()) || '';
+  }
+
+  getCustomerEmail(): string {
+    const c = this.customer();
+    return (c.email && c.email.trim()) || (c.supplementalEmail && c.supplementalEmail.trim()) || '';
+  }
+
+  getCustomerLocation(): string {
+    const c = this.customer();
+    const parts = [c.location, c.stateProvince].filter(Boolean);
+    return parts.join(', ') || '—';
+  }
+
+  // Security
+  private _esc(str: string | undefined | null): string {
+    if (!str) return '';
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  // Print
+  printReport(): void {
+    const html = this._buildPrintHtml();
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(html);
+      printWindow.document.close();
+      printWindow.onload = () => printWindow.print();
+      this.toastService.success('Print dialog opened');
+    } else {
+      this.toastService.warning('Unable to open print window. Check pop-up blocker settings.');
+    }
+  }
+
+  private _buildPrintHtml(): string {
+    const c = this.customer();
+    const accent = this.accentColor();
+    const accentLight = accent + '18';
+
+    let html = `<!DOCTYPE html><html><head>
+      <title>Producer Report - ${this._esc(c.name)}</title>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Open Sans', 'Segoe UI', system-ui, sans-serif; color: #1a1a1a; line-height: 1.5; padding: 0.5in; }
+        @page { margin: 0.5in; size: letter; }
+        @media print { body { padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th { text-align: left; padding: 10px 14px; font-weight: 600; color: #374151; }
+        td { padding: 10px 14px; }
+        .section { margin-bottom: 28px; page-break-inside: avoid; }
+        .section-title { font-size: 14px; font-weight: 700; color: ${accent}; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 14px; }
+        .table-wrap { border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
+        .table-header { background: ${accentLight}; }
+        .table-row-border { border-top: 1px solid #f3f4f6; }
+        .kpi-box { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px 16px; border-top: 3px solid ${accent}; }
+        .note-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 14px; border-left: 3px solid ${accent}; margin-bottom: 10px; }
+      </style>
+    </head><body>`;
+
+    // Header
+    const logoUrl = `${window.location.origin}/assets/images/scoular-logo-dark.webp`;
+    html += `<div style="border-bottom: 3px solid ${accent}; padding-bottom: 24px; margin-bottom: 28px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
+        <img src="${logoUrl}" alt="Scoular" style="height: 44px; object-fit: contain;" />
+        <div style="text-align: right; font-size: 11px; color: #6b7280;">
+          <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: ${accent}; font-weight: 600; margin-bottom: 4px;">Producer Summary Report</div>
+          <div>${this._esc(this.today)}</div>
+          <div style="margin-top: 6px;">Prepared by ${this._esc(this.originatorName())}</div>
+          ${this.originatorTitle() ? `<div>${this._esc(this.originatorTitle())}</div>` : ''}
+        </div>
+      </div>
+      <div style="background: ${accentLight}; border-radius: 10px; padding: 18px 22px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <div>
+          <div style="font-size: 24px; font-weight: 700; color: #111;">${this._esc(c.name)}</div>
+          ${c.farm ? `<div style="font-size: 14px; color: #4b5563; margin-top: 2px;">${this._esc(c.farm)}</div>` : ''}
+        </div>
+        <div style="display: flex; gap: 24px; font-size: 12px; color: #4b5563;">
+          <div>
+            <div style="font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: 1px;">Location</div>
+            <div>${this._esc(this.getCustomerLocation())}</div>
+          </div>
+          ${this.getCustomerPhone() ? `<div>
+            <div style="font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: 1px;">Phone</div>
+            <div>${this._esc(this.getCustomerPhone())}</div>
+          </div>` : ''}
+          ${this.getCustomerEmail() ? `<div>
+            <div style="font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: 1px;">Email</div>
+            <div>${this._esc(this.getCustomerEmail())}</div>
+          </div>` : ''}
+        </div>
+      </div>
+    </div>`;
+
+    // Executive Summary KPIs (reuse the computed signal)
+    const kpiItems = this.kpis();
+    if (kpiItems.length > 0) {
+      html += `<div class="section">
+        <div class="section-title">Executive Summary</div>
+        <div style="display: grid; grid-template-columns: repeat(${kpiItems.length}, 1fr); gap: 14px;">
+          ${kpiItems.map(k => `<div class="kpi-box">
+            <div style="font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;">${this._esc(k.label)}</div>
+            <div style="font-size: 22px; font-weight: 700; color: #111;">${this._esc(k.value)}</div>
+            ${k.sub ? `<div style="font-size: 11px; color: #6b7280; margin-top: 2px;">${this._esc(k.sub)}</div>` : ''}
+          </div>`).join('')}
+        </div>
+      </div>`;
+    }
+
+
+
+    // Active Contracts
+    if (this.showContracts() && this.activeContracts().length > 0) {
+      html += `<div class="section">
+        <div class="section-title">Active Contracts</div>
+        <div class="table-wrap"><table>
+          <thead><tr class="table-header">
+            <th>Contract #</th><th>Crop</th><th style="text-align:right;">Quantity</th><th style="text-align:right;">Price</th><th style="text-align:right;">Value</th><th style="text-align:center;min-width:100px;">Delivery Progress</th><th>Delivery Window</th><th style="text-align:center;">Status</th>
+          </tr></thead>
+          <tbody>
+            ${this.activeContracts().map((ct, i) => {
+              const statusBg = ct.status === 'Active' ? '#dcfce7' : '#fef3c7';
+              const statusColor = ct.status === 'Active' ? '#166534' : '#92400e';
+              const delivered = this.getDeliveredBu(ct);
+              const pct = this.getDeliveryPct(ct);
+              const progressColor = pct >= 100 ? '#16a34a' : pct >= 50 ? '#00875F' : '#d97706';
+              return `<tr${i > 0 ? ' class="table-row-border"' : ''}>
+                <td style="font-weight:500;">${this._esc(ct.contractNumber)}</td>
+                <td>${this._esc(ct.commodityDescription || ct.commodityCode || '')}</td>
+                <td style="text-align:right;">${(ct.quantity ?? 0).toLocaleString()} bu</td>
+                <td style="text-align:right;">${ct.price != null ? this.formatCurrency(ct.price) : '—'}</td>
+                <td style="text-align:right;font-weight:600;">${ct.totalValue != null ? this.formatCurrency(ct.totalValue) : '—'}</td>
+                <td style="padding:10px 14px;"><div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><div style="width:100%;height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden;"><div style="width:${Math.min(pct, 100)}%;height:100%;background:${progressColor};border-radius:4px;"></div></div><div style="font-size:10px;color:#6b7280;">${delivered.toLocaleString()} / ${(ct.quantity ?? 0).toLocaleString()} bu (${pct}%)</div></div></td>
+                <td style="font-size:11px;">${this._esc(this.formatDeliveryPeriod(ct.deliveryStart, ct.deliveryEnd))}</td>
+                <td style="text-align:center;"><span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:10px;font-weight:600;background:${statusBg};color:${statusColor};">${this._esc(ct.status)}</span></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table></div>
+      </div>`;
+    }
+
+    // Planting Intentions
+    if (this.showPlanting() && this.plantingIntentions().length > 0) {
+      html += `<div class="section">
+        <div class="section-title">Planting Intentions</div>
+        <div class="table-wrap"><table>
+          <thead><tr class="table-header">
+            <th>Crop</th><th>Type</th><th style="text-align:right;">Acres</th>
+          </tr></thead>
+          <tbody>
+            ${this.plantingIntentions().map((pi, i) => {
+              return `<tr${i > 0 ? ' class="table-row-border"' : ''}>
+              <td style="font-weight:500;">${this._esc(pi.crop)}</td>
+              <td>${this._esc(pi.type || '')}</td>
+              <td style="text-align:right;">${(pi.acres ?? 0).toLocaleString()}</td>
+            </tr>`;
+            }).join('')}
+          </tbody>
+        </table></div>
+      </div>`;
+    }
+
+    // Stored Grain (grouped by crop)
+    const storageGrps = this.storageGroups();
+    if (this.showStorage() && storageGrps.length > 0) {
+      html += `<div class="section">
+        <div class="section-title">Grain in Storage</div>
+        <div class="table-wrap"><table>
+          <thead><tr class="table-header">
+            <th style="text-align:center;">Crop</th><th style="text-align:center;">Quantity</th><th style="text-align:center;">Storage Since</th><th style="text-align:center;">Storage Days</th><th style="text-align:center;">Accumulated Cost</th>
+          </tr></thead>
+          <tbody>
+            ${storageGrps.map((g, i) => `<tr${i > 0 ? ' class="table-row-border"' : ''}>
+              <td style="text-align:center;font-weight:500;">${this._esc(g.crop)}</td>
+              <td style="text-align:center;">${g.totalBushels.toLocaleString()} bu</td>
+              <td style="text-align:center;">${this.formatDate(g.earliestDate)}</td>
+              <td style="text-align:center;">${g.totalDays}</td>
+              <td style="text-align:center;">${this.formatCurrency(g.totalCost)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div>
+      </div>`;
+    }
+
+    // Linked Producers
+    const linked = this.linkedCustomers();
+    if (this.showLinkedProducers() && linked.length > 0) {
+      html += `<div class="section">
+        <div class="section-title">Linked Producers</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;">
+          ${linked.map(lc => `<div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;border-left:3px solid ${accent};">
+            <div style="font-size:13px;font-weight:600;color:#111;">${this._esc(lc.name)}</div>
+            ${lc.farm ? `<div style="font-size:11px;color:#6b7280;margin-top:2px;">${this._esc(lc.farm)}</div>` : ''}
+            <div style="font-size:11px;color:#6b7280;margin-top:4px;">
+              ${lc.location || lc.stateProvince ? `<div>${this._esc(lc.stateProvince ? lc.location + ', ' + lc.stateProvince : lc.location)}</div>` : ''}
+              ${lc.totalAcres ? `<div>${lc.totalAcres.toLocaleString()} acres</div>` : ''}
+              ${lc.phone?.trim() ? `<div>${this._esc(lc.phone)}</div>` : ''}
+            </div>
+          </div>`).join('')}
+        </div>
+      </div>`;
+    }
+
+    // Footer
+    html += `<div style="border-top: 2px solid ${accent}; padding-top: 16px; margin-top: 32px; display: flex; justify-content: space-between; align-items: flex-end;">
+      <div style="font-size: 11px; color: #6b7280;">
+        <div style="font-weight: 600; color: #374151;">The Scoular Company</div>
+        <div>Grain Origination</div>
+        <div style="margin-top: 6px;">Report generated ${this._esc(this.today)}</div>
+        <div style="font-size: 10px; color: #9ca3af; margin-top: 4px;">This report is confidential and intended for the named recipient only.</div>
+      </div>
+      <div style="text-align: right; font-size: 11px; color: #6b7280;">
+        <div style="font-weight: 600; color: #374151;">${this._esc(this.originatorName())}</div>
+        ${this.originatorTitle() ? `<div>${this._esc(this.originatorTitle())}</div>` : ''}
+        ${this.originatorPhone() ? `<div>${this._esc(this.originatorPhone())}</div>` : ''}
+        <div>${this._esc(this.originatorEmail())}</div>
+      </div>
+    </div>`;
+
+    html += `</body></html>`;
+    return html;
+  }
+}

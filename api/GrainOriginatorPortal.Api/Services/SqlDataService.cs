@@ -915,27 +915,15 @@ public class SqlDataService : IDataService
             }
             else
             {
-                // Two-step approach: resolve customer codes AND contract numbers via the contracts
-                // TradeUnit index (fast), then load tickets by CustomerCode. OrganizationCode on
-                // vw_CurrentTickets has no usable index and caused full-scan queries taking 80+ seconds.
-                // Contract numbers are retained so we can post-filter tickets to only those belonging
-                // to this trade unit's contracts — prevents cross-TU ticket leakage for shared customers.
+                // Step 1: Find customer codes from TU contracts and TU snapshot
                 var tuContracts = await _context.Contracts
                     .AsNoTracking()
                     .Where(c => c.IsActive && c.CtrmCustomerId != null
                         && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
-                    .Select(c => new { c.CtrmCustomerId, c.SourceContractId })
+                    .Select(c => c.CtrmCustomerId!)
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
-                var contractCustomerCodes = tuContracts.Select(c => c.CtrmCustomerId!).ToHashSet();
-                var tuContractNumbers = tuContracts
-                    .Select(c => c.SourceContractId)
-                    .Where(n => n != null)
-                    .ToHashSet();
-
-                // Also include customers in the snapshot for this TU who have no active contracts
-                // (e.g. spot-load-only customers). Union deduplicates shared customers.
                 var snapshotCustomerCodes = await _appContext.CustomerSnapshots
                     .AsNoTracking()
                     .Where(s => s.IsActive && s.SourceCustomerId != null
@@ -944,20 +932,29 @@ public class SqlDataService : IDataService
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
-                var customerCodes = contractCustomerCodes.Union(snapshotCustomerCodes).ToList();
+                var customerCodes = tuContracts.Union(snapshotCustomerCodes).ToList();
 
+                // Step 2: Get ALL contract numbers for these customers (cross-TU) so applied
+                // tickets from any TU are included if they match a loaded contract.
+                var allContractNumbers = await _context.Contracts
+                    .AsNoTracking()
+                    .Where(c => c.IsActive && c.CtrmCustomerId != null && customerCodes.Contains(c.CtrmCustomerId)
+                        && c.SourceContractId != null)
+                    .Select(c => c.SourceContractId!)
+                    .Distinct()
+                    .ToListAsync(cancellationToken);
+                var contractNumberSet = allContractNumbers.ToHashSet();
+
+                // Step 3: Load all tickets for these customers
                 var rawTickets = await _context.Tickets
                     .AsNoTracking()
                     .Where(t => t.IsActive && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode))
                     .OrderByDescending(t => t.Date)
                     .ToListAsync(cancellationToken);
 
-                // Post-filter: keep all unapplied tickets (not linked to a purchase/sale contract —
-                // includes null/empty and non-P/S prefix tickets like unload 'U12345') plus applied
-                // tickets that belong to this TU's contracts. Prevents cross-TU leakage for shared
-                // customers while including all unapplied tickets regardless of prefix.
+                // Keep unapplied tickets + applied tickets that match ANY contract for these customers
                 tickets = rawTickets
-                    .Where(t => !t.IsApplied || tuContractNumbers.Contains(t.CtrmContractNumber!))
+                    .Where(t => !t.IsApplied || contractNumberSet.Contains(t.CtrmContractNumber!))
                     .ToList();
             }
 
@@ -993,6 +990,9 @@ public class SqlDataService : IDataService
             _logger.LogInformation("Quality data: {TicketsWithProtein} tickets have protein data, {WheatTickets} wheat tickets found",
                 ticketsWithProtein, wheatTickets);
 
+            // Populate elevator city/state from ElevatorCache lookup
+            await PopulateElevatorLocations(tickets, cancellationToken);
+
             // Log diagnostic info about ticket-contract relationships
             var ticketsWithContractId = tickets.Count(t => t.ContractId.HasValue);
             var ticketsWithContractNumber = tickets.Count(t => !string.IsNullOrEmpty(t.CtrmContractNumber));
@@ -1027,6 +1027,59 @@ public class SqlDataService : IDataService
             _logger.LogError(ex, "Error retrieving tickets [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
                 GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
+        }
+    }
+
+    private async Task PopulateElevatorLocations(List<Ticket> tickets, CancellationToken cancellationToken)
+    {
+        // Collect unique (ElevatorCode, UnloadOrganizationCode) pairs from tickets
+        var elevatorCodes = tickets
+            .Where(t => !string.IsNullOrEmpty(t.ElevatorCode))
+            .Select(t => t.ElevatorCode!)
+            .Distinct()
+            .ToList();
+        if (elevatorCodes.Count == 0) return;
+
+        try
+        {
+            // Load matching elevators from vw_GNP026
+            // Join: ticket.ElevatorCode = Elevator_Code AND ticket.UnloadOrganizationCode = Elevator_Location_Code
+            var elevatorList = await _context.Set<Elevator>()
+                .AsNoTracking()
+                .Where(e => e.ElevatorCode != null && elevatorCodes.Contains(e.ElevatorCode))
+                .ToListAsync(cancellationToken);
+
+            // Build lookup keyed by (ElevatorCode, ElevatorLocationCode) for precise matching
+            var elevatorLookup = new Dictionary<string, Elevator>();
+            foreach (var e in elevatorList)
+            {
+                if (e.ElevatorCode == null) continue;
+                var compositeKey = $"{e.ElevatorCode.Trim()}|{(e.ElevatorLocationCode ?? "").Trim()}";
+                if (!elevatorLookup.ContainsKey(compositeKey))
+                    elevatorLookup[compositeKey] = e;
+                // Also store by ElevatorCode alone as fallback
+                if (!elevatorLookup.ContainsKey(e.ElevatorCode.Trim()))
+                    elevatorLookup[e.ElevatorCode.Trim()] = e;
+            }
+
+            foreach (var ticket in tickets)
+            {
+                if (string.IsNullOrEmpty(ticket.ElevatorCode)) continue;
+                var code = ticket.ElevatorCode.Trim();
+                var locCode = (ticket.UnloadOrganizationCode ?? "").Trim();
+
+                // Try precise match first (ElevatorCode + LocationCode), then fallback to ElevatorCode only
+                if (elevatorLookup.TryGetValue($"{code}|{locCode}", out var elev)
+                    || elevatorLookup.TryGetValue(code, out elev))
+                {
+                    ticket.ElevatorCity = elev.City?.Trim();
+                    ticket.ElevatorState = elev.State?.Trim();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Elevator lookup from vw_GNP026 failed — tickets will load without location data [{TraceId}]", GetTraceId());
         }
     }
 
@@ -1113,6 +1166,8 @@ public class SqlDataService : IDataService
                 }
             }
 
+            await PopulateElevatorLocations(tickets, cancellationToken);
+
             return tickets;
         }
         catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
@@ -1182,6 +1237,8 @@ public class SqlDataService : IDataService
                 }
             }
 
+            await PopulateElevatorLocations(tickets, cancellationToken);
+
             _logger.LogInformation("Found {TicketCount} tickets for customer {CustomerId} (SourceCustomerId: {SourceCustomerId})",
                 tickets.Count, customerId, sourceCustomerId);
             return tickets;
@@ -1234,11 +1291,8 @@ public class SqlDataService : IDataService
             var tuList = tradeUnits?.Where(t => !string.IsNullOrEmpty(t)).ToList();
             if (tuList is { Count: > 0 })
             {
-                // Two-step: get customer codes from contracts in the selected TUs,
-                // then filter PIs by CustomerCode — avoids relying on the TradeUnit stamp
-                // which may be empty or stale when a PI is created without a TU selected.
-                // TradeUnit is indexed on vw_CurrentContracts — fast lookup.
-                var customerCodes = await _context.Contracts
+                // Find customer codes from TU contracts + snapshot, then load ALL their planting
+                var contractCustomerCodes = await _context.Contracts
                     .AsNoTracking()
                     .Where(c => c.IsActive && c.CtrmCustomerId != null
                              && c.TradeUnit != null && tuList.Contains(c.TradeUnit))
@@ -1246,6 +1300,15 @@ public class SqlDataService : IDataService
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
+                var snapshotCustomerCodes = await _appContext.CustomerSnapshots
+                    .AsNoTracking()
+                    .Where(s => s.IsActive && s.SourceCustomerId != null
+                        && s.TradeUnit != null && tuList.Contains(s.TradeUnit))
+                    .Select(s => s.SourceCustomerId!)
+                    .Distinct()
+                    .ToListAsync(cancellationToken);
+
+                var customerCodes = contractCustomerCodes.Union(snapshotCustomerCodes).ToList();
                 query = query.Where(p => customerCodes.Contains(p.CustomerCode));
             }
             if (plantingYear.HasValue)
@@ -1715,11 +1778,21 @@ public class SqlDataService : IDataService
             var tuList = tradeUnits?.ToList();
             if (tuList is { Count: > 0 })
             {
-                var paramNames = tuList.Select((_, i) => $"@tu{i}").ToArray();
-                var sql = StoredGrainSql + $" AND c.TradeUnit IN ({string.Join(", ", paramNames)})";
-                var sqlParams = tuList.Select((tu, i) => new SqlParameter($"@tu{i}", tu)).ToArray<object>();
+                // Find customer codes in these TUs, then load ALL their storage (cross-TU)
+                var customerCodes = await _appContext.CustomerSnapshots
+                    .AsNoTracking()
+                    .Where(s => s.IsActive && s.SourceCustomerId != null
+                        && s.TradeUnit != null && tuList.Contains(s.TradeUnit))
+                    .Select(s => s.SourceCustomerId!)
+                    .Distinct()
+                    .ToListAsync(cancellationToken);
+
+                if (customerCodes.Count == 0) return [];
+
+                var csv = string.Join(",", customerCodes.Select(c => c.Replace("'", "''")));
+                var sql = StoredGrainSql + $" AND sg.CUSTOMER_ID IN (SELECT value FROM STRING_SPLIT('{csv}', ','))";
                 return await _context.Database
-                    .SqlQueryRaw<StoredGrain>(sql, sqlParams)
+                    .SqlQueryRaw<StoredGrain>(sql)
                     .ToListAsync(cancellationToken);
             }
             return await _context.Database

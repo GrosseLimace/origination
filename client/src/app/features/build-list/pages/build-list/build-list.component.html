@@ -384,7 +384,8 @@
         </app-card>
       }
 
-      <!-- Saved Lists Section - Always visible -->
+      <!-- Saved Lists Section - Only visible when matching saved lists exist -->
+      @if (visibleSavedLists().length > 0) {
       <app-card>
         <app-card-header>
           <app-card-title>
@@ -401,7 +402,7 @@
               <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green mb-4"></div>
               <p class="text-gray-500 dark:text-gray-400 font-medium">Loading saved lists...</p>
             </div>
-          } @else if (savedLists().length === 0) {
+          } @else if (visibleSavedLists().length === 0) {
             <div class="text-center py-8">
               <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 text-gray-300 dark:text-gray-600">
                 <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
@@ -411,7 +412,7 @@
             </div>
           } @else {
             <div class="space-y-2 pb-2">
-              @for (list of savedLists(); track list.id) {
+              @for (list of visibleSavedLists(); track list.id) {
                 <div class="flex items-center justify-between gap-4 p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                   <button type="button" (click)="loadSavedList(list)" class="flex-1 text-left min-w-0">
                     <div class="flex items-center gap-2">
@@ -440,6 +441,7 @@
           }
         </app-card-content>
       </app-card>
+      }
 
       <!-- Save / Update List Dialog -->
       <app-dialog [isOpen]="showSaveDialog()" (close)="closeSaveDialog()" size="sm">

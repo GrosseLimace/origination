@@ -84,7 +84,7 @@
               <button
                 type="button"
                 class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-colors"
-                (click)="printCustomerInfo()"
+                (click)="showPrintReport.set(true)"
                 title="Print"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -347,7 +347,22 @@
       [tickets]="tickets()"
       [contracts]="allCustomerContracts()"
       [allCustomers]="allCustomers()"
+      [linkedCustomers]="linkedCustomers()"
       [selectedTradeUnits]="selectedTradeUnits()"
       (close)="closeEditDialog()"
       (save)="handleSaveCustomer($event)">
     </app-edit-customer-dialog>
+
+    <!-- Print Report Dialog -->
+    <app-customer-print-report
+      [isOpen]="showPrintReport()"
+      [customer]="customer()"
+      [contracts]="contracts()"
+      [plantingIntentions]="plantingIntentions()"
+      [storedGrain]="storedGrain()"
+      [notes]="notes()"
+      [commodities]="commodities()"
+      [yieldEstimates]="yieldEstimates()"
+      [linkedCustomers]="linkedCustomers()"
+      (close)="showPrintReport.set(false)">
+    </app-customer-print-report>

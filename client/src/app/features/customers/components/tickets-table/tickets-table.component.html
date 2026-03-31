@@ -104,6 +104,9 @@
                   </span>
                 </span>
               </app-table-head>
+              <app-table-head>
+                <span class="flex items-center justify-center">Location</span>
+              </app-table-head>
               <app-table-head [sortable]="true" (click)="handleSort('appliedDockQuantity')">
                 <span class="flex items-center justify-center gap-1">
                   Net Bu
@@ -195,6 +198,7 @@
                   <app-table-cell class="text-center">{{ ticket.ticketNumber }}</app-table-cell>
                   <app-table-cell class="text-center">{{ ticket.date | date:'M/d/yyyy' }}</app-table-cell>
                   <app-table-cell class="text-center">{{ ticket.productCode }}</app-table-cell>
+                  <app-table-cell class="text-center text-xs">{{ ticket.elevatorCity && ticket.elevatorState ? ticket.elevatorCity + ', ' + ticket.elevatorState : ticket.elevatorCity || ticket.elevatorState || '—' }}</app-table-cell>
                   <app-table-cell class="text-center">{{ toBushels(ticket.appliedDockQuantity, ticket.productCode) | number:'1.0-0' }}</app-table-cell>
                   <app-table-cell class="text-center">{{ ticket.moisture | number:'1.1-1' }}%</app-table-cell>
                   <app-table-cell class="text-center">
@@ -231,8 +235,12 @@
                 <app-table-cell class="text-center">
                   <span class="text-sm font-medium text-gray-900 dark:text-gray-100">{{ group.productCode }}</span>
                 </app-table-cell>
+                <app-table-cell></app-table-cell>
                 <app-table-cell class="text-center">
-                  <span class="font-bold text-gray-800 dark:text-gray-100">{{ toBushels(group.avgNetWeight, group.productCode) | number:'1.0-0' }}</span>
+                  <div class="relative inline-block">
+                    <span class="font-bold text-gray-800 dark:text-gray-100">{{ toBushels(group.totalNetWeight, group.productCode) | number:'1.0-0' }}</span>
+                    <div class="absolute left-1/2 -translate-x-1/2 top-full text-[10px] text-gray-400 dark:text-gray-500 whitespace-nowrap">(total)</div>
+                  </div>
                 </app-table-cell>
                 <app-table-cell class="text-center">
                   <span class="font-bold text-gray-800 dark:text-gray-100">{{ group.avgMoisture | number:'1.1-1' }}%</span>
