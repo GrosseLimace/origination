@@ -504,7 +504,7 @@
                         <div class="flex-1 relative">
                           @if (crop.commodityCode) {
                             <div class="flex items-center w-full text-sm text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-2.5 py-1.5">
-                              <span class="flex-1 truncate">{{ (crop.searchQuery || crop.commodityCode) | titlecase }}</span>
+                              <span class="flex-1 truncate">{{ (crop.searchQuery || crop.commodityCode) }}</span>
                               <button type="button" (click)="clearCropSelection(rowIndex)" class="ml-1 text-gray-400 hover:text-scoular-red transition-colors shrink-0">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
                               </button>
@@ -516,7 +516,7 @@
                               (ngModelChange)="onCropSearchInput(rowIndex, $event)"
                               (focus)="crop.searchQuery ? onCropSearchInput(rowIndex, crop.searchQuery) : null"
                               (blur)="hideCropDropdownDelayed()"
-                              placeholder="Search by name (Corn, Wheat…)"
+                              placeholder="Search by Code or Name"
                               class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"
                             />
                           }
@@ -528,7 +528,7 @@
                                   class="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white transition-colors"
                                   (mousedown)="selectCommodity(rowIndex, c)"
                                 >
-                                  <span class="font-medium">{{ c.name | titlecase }}</span>
+                                  <span class="font-medium">{{ c.name }}</span>
                                 </button>
                               }
                             </div>
@@ -622,10 +622,14 @@
                 </svg>
                 <p class="text-sm">Loading bids…</p>
               </div>
-            } @else if (editBidsRows().length === 0 || crops().length === 0) {
+            } @else if (editBidsRows().length === 0) {
               <div class="flex-1 flex flex-col items-center justify-center gap-3 text-gray-400 dark:text-gray-500">
                 <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="opacity-40"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
                 <p class="text-sm">No locations or crops found for this trade unit.</p>
+                <button (click)="addLocationFromEditBids()" class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors mt-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                  Add Location
+                </button>
               </div>
             } @else {
               <div class="flex-1 overflow-auto">
@@ -654,7 +658,7 @@
                                 type="text"
                                 [ngModel]="addCommodityQuery()"
                                 (ngModelChange)="addCommodityQuery.set($event)"
-                                placeholder="Search by name (Corn, Wheat…)"
+                                placeholder="Search by Code or Name"
                                 autofocus
                                 class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green placeholder-gray-400"
                               />
@@ -668,7 +672,7 @@
                                     class="w-full text-left px-3 py-2 text-sm text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                                     [class.opacity-40]="crops().includes(c.code)"
                                   >
-                                    {{ c.name | titlecase }}
+                                    {{ c.name }}
                                     @if (crops().includes(c.code)) {
                                       <span class="text-xs text-gray-400 dark:text-gray-500 ml-1">(already added)</span>
                                     }

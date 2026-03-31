@@ -264,7 +264,7 @@ public class DiagnosticsController : ControllerBase
 
         // Get distinct commodity codes from ODS contracts
         var odsContracts = await _context.Contracts.AsNoTracking()
-            .Where(c => c.CommodityCode != null && c.CommodityCode != ""
+            .Where(c => c.ContractPrefixType == "P" && c.CommodityCode != null && c.CommodityCode != ""
                      && c.CommodityDescription != null && c.CommodityDescription != "")
             .Select(c => new { c.CommodityCode, c.CommodityDescription })
             .Distinct()

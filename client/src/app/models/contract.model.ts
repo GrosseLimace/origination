@@ -7,6 +7,7 @@ export interface Contract {
   sourceContractId?: string; // Used to match with ticket ctrmContractNumber
   farmId: string;
   contractNumber: string;
+  contractPrefixType?: string; // P = Purchase, S = Sale
   commodityCode?: string;
   commodityDescription?: string; // Grain type (Corn, Soybeans, Wheat)
   commodityGroup?: string; // Commodity group (e.g., "Wheat", "Corn", "Soybeans")
@@ -23,5 +24,6 @@ export interface Contract {
   deliveryEnd: Date;
   status: ContractStatus;
   signed: boolean;
+  priceTypeCode?: string; // ODS PriceTypeCode (e.g. "P" = priced, "U" = unpriced)
   customerConfirmStatus?: string; // ODS CustomerConfirmStatus (e.g. "Confirmed", "Pending", null)
 }

@@ -87,7 +87,7 @@
 
           <!-- Generate Button -->
           <div class="mb-6">
-            <app-button variant="default" (onClick)="processQuery()" [disabled]="!hasTradeUnits() || !queryText().trim() || isProcessing() || (loading() && !queryText().trim())">
+            <app-button variant="default" (onClick)="processQuery()" [disabled]="!hasTradeUnits() || !queryText().trim() || isProcessing() || loading()">
               @if (isProcessing()) {
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2 animate-spin">
                   <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
@@ -115,8 +115,8 @@
               @for (example of exampleQueries; track example) {
                 <button
                   type="button"
-                  (click)="hasTradeUnits() && useExampleQuery(example)"
-                  [disabled]="!hasTradeUnits()"
+                  (click)="hasTradeUnits() && !loading() && !isProcessing() && useExampleQuery(example)"
+                  [disabled]="!hasTradeUnits() || loading() || isProcessing()"
                   class="px-3 py-1.5 text-sm rounded-full border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                 >
                   {{ example }}
@@ -196,7 +196,7 @@
                       <span class="ml-1.5 inline-flex items-center justify-center w-4 h-4 text-xs font-bold rounded-full bg-gray-600 dark:bg-gray-400 text-white dark:text-gray-900">{{ refinementCount }}</span>
                     }
                   </app-button>
-                  <app-button variant="outline" (onClick)="openSaveDialog()">
+                  <app-button variant="outline" (onClick)="openSaveDialog()" [disabled]="isProcessing()">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2">
                       <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
                     </svg>

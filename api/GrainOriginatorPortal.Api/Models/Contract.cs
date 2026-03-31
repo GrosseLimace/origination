@@ -15,6 +15,7 @@ public class Contract
     public string FarmId { get; set; } = string.Empty;
     public string? SourceContractId { get; set; }
     public string ContractNumber { get; set; } = string.Empty;
+    public string? ContractPrefixType { get; set; } // P = Purchase, S = Sale, etc.
 
     // Customer info (denormalized in ODS)
     public string? CustomerName { get; set; }
@@ -48,6 +49,9 @@ public class Contract
     // Status
     public ContractStatus Status { get; set; } = ContractStatus.Pending;
     public bool Signed { get; set; }
+
+    // Pricing type code from ODS (e.g. "P" = priced, "U" = unpriced)
+    public string? PriceTypeCode { get; set; }
 
     // Customer confirmation status from ODS (e.g. "Confirmed", "Pending", null)
     public string? CustomerConfirmStatus { get; set; }

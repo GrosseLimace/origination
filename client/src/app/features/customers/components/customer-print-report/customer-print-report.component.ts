@@ -62,17 +62,7 @@ export class CustomerPrintReportComponent {
   originatorEmail = signal('');
 
   // Accent color
-  accentColor = signal('#00875F');
-  readonly accentPresets = [
-    { name: 'Scoular Green', color: '#00875F' },
-    { name: 'Scoular Green Accessible', color: '#00A36F' },
-    { name: 'Scoular Yellow', color: '#E8B30D' },
-    { name: 'Scoular Yellow Bright', color: '#FFD400' },
-    { name: 'Scoular Teal', color: '#1CB3B4' },
-    { name: 'Scoular Red', color: '#DF3410' },
-    { name: 'Scoular Gray', color: '#576269' },
-    { name: 'Black', color: '#1a1a1a' },
-  ];
+  readonly accentColor = signal('#00875F');
   readonly accentLight = computed(() => this.accentColor() + '18');
   private _defaultsApplied = false;
 

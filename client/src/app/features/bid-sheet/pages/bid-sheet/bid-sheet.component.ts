@@ -27,7 +27,7 @@ interface EditBidsRow {
   imports: [CommonModule, FormsModule, TradeUnitSelectorComponent],
   templateUrl: './bid-sheet.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { style: 'display:block;height:calc(100vh - 130px);' }
+  host: { style: 'display:block;height:calc(100vh - 160px);' }
 })
 export class BidSheetComponent {
   private readonly destroyRef = inject(DestroyRef);
@@ -199,11 +199,13 @@ export class BidSheetComponent {
     const seen = new Set<string>();
     const results: { code: string; name: string }[] = [];
     for (const c of this.allCommodities()) {
+      const code = (c.code ?? '').trim();
       const cat = (c.category ?? '').trim().toUpperCase();
-      if (!cat || seen.has(cat) || BidSheetComponent._excludedCommodityCategories.has(cat)) continue;
-      if (cat.toLowerCase().includes(q)) {
-        seen.add(cat);
-        results.push({ code: cat, name: cat });
+      const desc = (c.name ?? '').trim();
+      if (!code || seen.has(code) || BidSheetComponent._excludedCommodityCategories.has(cat)) continue;
+      if (code.toLowerCase().includes(q) || desc.toLowerCase().includes(q) || cat.toLowerCase().includes(q)) {
+        seen.add(code);
+        results.push({ code, name: `${(desc || cat).toUpperCase()} (${code.toUpperCase()})` });
       }
     }
     return results.sort((a, b) => a.name.localeCompare(b.name)).slice(0, 20);
@@ -765,6 +767,7 @@ export class BidSheetComponent {
       bids
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (saved) => {
+        // Immediately update local state so UI reflects the new location
         this.bidLocations.update(locs => [saved, ...locs]);
         this.allMapLocations.update(locs => [saved, ...locs]);
         for (const b of saved.bids ?? []) {
@@ -780,8 +783,21 @@ export class BidSheetComponent {
         }
         this.toastService.success(`Added ${name}`);
         this.exitAddLocationMode();
-        this.filterBids();
-        if (fromEditBids) { this.openEditBids(); }
+
+        // Reload all data so panel, map, and edit grid are fully in sync
+        this._loadAllMapLocations();
+        const tus = this.activeTradeUnits();
+        if (tus.length > 0) {
+          this._loadBidData(tus, () => {
+            this.filterBids();
+            this._refreshMapMarkers();
+            if (fromEditBids) { this.openEditBids(); }
+          });
+        } else {
+          this.filterBids();
+          this._refreshMapMarkers();
+          if (fromEditBids) { this.openEditBids(); }
+        }
       },
       error: () => {
         this.toastService.error('Failed to add location');
