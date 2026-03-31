@@ -408,7 +408,7 @@ public class SqlDataService : IDataService
         // Get unique trade units from contracts
         var contractTradeUnits = await _context.Contracts
             .AsNoTracking()
-            .Where(c => c.IsActive && !string.IsNullOrEmpty(c.TradeUnit))
+            .Where(c => c.IsActive && c.ContractPrefixType == "P" && !string.IsNullOrEmpty(c.TradeUnit))
             .Select(c => c.TradeUnit!)
             .Distinct()
             .ToListAsync(cancellationToken);
@@ -471,7 +471,7 @@ public class SqlDataService : IDataService
             // Pull all commodity data from contracts (Code, Name, Category)
             var contractCommodities = await _context.Contracts
                 .AsNoTracking()
-                .Where(c => c.IsActive
+                .Where(c => c.IsActive && c.ContractPrefixType == "P"
                     && !string.IsNullOrEmpty(c.CommodityCode)
                     && !string.IsNullOrEmpty(c.CommodityDescription))
                 .Select(c => new { c.CommodityCode, c.CommodityDescription, c.CommodityGroup })
@@ -629,7 +629,7 @@ public class SqlDataService : IDataService
                 var customerCtrmIds = await _context.Customers
                     .AsNoTracking()
                     .Where(c => c.SourceCustomerId != null && (
-                        _context.Contracts.Any(ct => ct.IsActive && ct.CtrmCustomerId == c.SourceCustomerId) ||
+                        _context.Contracts.Any(ct => ct.IsActive && ct.ContractPrefixType == "P" && ct.CtrmCustomerId == c.SourceCustomerId) ||
                         _context.Tickets.Any(t => t.IsActive && t.CustomerId == c.Id)))
                     .Take(15)
                     .Select(c => c.SourceCustomerId)
@@ -637,7 +637,7 @@ public class SqlDataService : IDataService
 
                 contracts = await _context.Contracts
                     .AsNoTracking()
-                    .Where(c => c.IsActive && c.CtrmCustomerId != null && customerCtrmIds.Contains(c.CtrmCustomerId))
+                    .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId != null && customerCtrmIds.Contains(c.CtrmCustomerId))
                     .OrderByDescending(c => c.Id)
                     .ToListAsync(cancellationToken);
             }
@@ -669,7 +669,7 @@ public class SqlDataService : IDataService
                             SELECT c.* FROM base.vw_CurrentContracts c
                             INNER JOIN STRING_SPLIT({ctrmIdsCsv}, ',') ids
                                 ON c.CtrmCustomerId = ids.value
-                            WHERE c.IsActive = 1")
+                            WHERE c.IsActive = 1 AND c.ContractPrefixType = 'P'")
                         .AsNoTracking()
                         .OrderByDescending(c => c.Id)
                         .ToListAsync(cancellationToken);
@@ -755,10 +755,10 @@ public class SqlDataService : IDataService
                 sourceCustomerId = customer.SourceCustomerId;
             }
 
-            // Match contracts using CtrmCustomerId = sourceCustomerId (string matching)
+            // Match contracts using CtrmCustomerId = sourceCustomerId (string matching), purchase contracts only
             var contracts = await _context.Contracts
                 .AsNoTracking()
-                .Where(c => c.IsActive && c.CtrmCustomerId == sourceCustomerId)
+                .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId == sourceCustomerId)
                 .OrderByDescending(c => c.Id)
                 .ToListAsync(cancellationToken);
 
@@ -817,7 +817,7 @@ public class SqlDataService : IDataService
         {
             var contracts = await _context.Contracts
                 .AsNoTracking()
-                .Where(c => c.SourceContractId == sourceContractId)
+                .Where(c => c.SourceContractId == sourceContractId && c.ContractPrefixType == "P")
                 .ToListAsync(cancellationToken);
 
             var today = DateTime.Today;
@@ -858,7 +858,7 @@ public class SqlDataService : IDataService
             // base.vw_ContractPricing has no customer_id column — resolve via contracts
             var sourceContractIds = await _context.Contracts
                 .AsNoTracking()
-                .Where(c => c.CtrmCustomerId == sourceCustomerId)
+                .Where(c => c.CtrmCustomerId == sourceCustomerId && c.ContractPrefixType == "P")
                 .Select(c => c.SourceContractId)
                 .Where(id => id != null)
                 .ToListAsync(cancellationToken);
@@ -901,7 +901,7 @@ public class SqlDataService : IDataService
                 var customerCodes = await _context.Customers
                     .AsNoTracking()
                     .Where(c => c.SourceCustomerId != null && (
-                        _context.Contracts.Any(ct => ct.IsActive && ct.CtrmCustomerId == c.SourceCustomerId) ||
+                        _context.Contracts.Any(ct => ct.IsActive && ct.ContractPrefixType == "P" && ct.CtrmCustomerId == c.SourceCustomerId) ||
                         _context.Tickets.Any(t => t.IsActive && t.CustomerCode == c.SourceCustomerId)))
                     .Take(15)
                     .Select(c => c.SourceCustomerId!)
@@ -915,10 +915,10 @@ public class SqlDataService : IDataService
             }
             else
             {
-                // Step 1: Find customer codes from TU contracts and TU snapshot
-                var tuContracts = await _context.Contracts
+                // Step 1: Find customer codes from TU contracts (purchase only) and TU snapshot
+                var contractCustomerCodes = await _context.Contracts
                     .AsNoTracking()
-                    .Where(c => c.IsActive && c.CtrmCustomerId != null
+                    .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId != null
                         && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
                     .Select(c => c.CtrmCustomerId!)
                     .Distinct()
@@ -932,13 +932,13 @@ public class SqlDataService : IDataService
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
-                var customerCodes = tuContracts.Union(snapshotCustomerCodes).ToList();
+                var customerCodes = contractCustomerCodes.Union(snapshotCustomerCodes).ToList();
 
                 // Step 2: Get ALL contract numbers for these customers (cross-TU) so applied
                 // tickets from any TU are included if they match a loaded contract.
                 var allContractNumbers = await _context.Contracts
                     .AsNoTracking()
-                    .Where(c => c.IsActive && c.CtrmCustomerId != null && customerCodes.Contains(c.CtrmCustomerId)
+                    .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId != null && customerCodes.Contains(c.CtrmCustomerId)
                         && c.SourceContractId != null)
                     .Select(c => c.SourceContractId!)
                     .Distinct()
@@ -1097,7 +1097,7 @@ public class SqlDataService : IDataService
                 var customerCodes = await _context.Customers
                     .AsNoTracking()
                     .Where(c => c.SourceCustomerId != null && (
-                        _context.Contracts.Any(ct => ct.IsActive && ct.CtrmCustomerId == c.SourceCustomerId) ||
+                        _context.Contracts.Any(ct => ct.IsActive && ct.ContractPrefixType == "P" && ct.CtrmCustomerId == c.SourceCustomerId) ||
                         _context.Tickets.Any(t => t.IsActive && t.CustomerCode == c.SourceCustomerId)))
                     .Take(15)
                     .Select(c => c.SourceCustomerId!)
@@ -1113,7 +1113,7 @@ public class SqlDataService : IDataService
             {
                 var tuContracts = await _context.Contracts
                     .AsNoTracking()
-                    .Where(c => c.IsActive && c.CtrmCustomerId != null
+                    .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId != null
                         && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
                     .Select(c => new { c.CtrmCustomerId, c.SourceContractId })
                     .Distinct()
@@ -1294,7 +1294,7 @@ public class SqlDataService : IDataService
                 // Find customer codes from TU contracts + snapshot, then load ALL their planting
                 var contractCustomerCodes = await _context.Contracts
                     .AsNoTracking()
-                    .Where(c => c.IsActive && c.CtrmCustomerId != null
+                    .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId != null
                              && c.TradeUnit != null && tuList.Contains(c.TradeUnit))
                     .Select(c => c.CtrmCustomerId!)
                     .Distinct()

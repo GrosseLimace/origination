@@ -20,6 +20,14 @@ export interface NlqFilterResult {
 @Injectable({ providedIn: 'root' })
 export class NlqFilterService {
 
+  /** Returns true if the query involves ticket-related patterns that require ticket data. */
+  queryInvolvesTickets(query: string): boolean {
+    const q = query.toLowerCase();
+    return q.includes('unapplied') || q.includes('ticket') || q.includes('delivered')
+      || q.includes('delivery') || q.includes('deliveries') || q.includes('spot load')
+      || q.includes('unsettled') || q.includes('settled') || q.includes('unmatched');
+  }
+
   // ============================================================
   // Shared constants & utilities
   // ============================================================

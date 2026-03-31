@@ -32,8 +32,13 @@ export class ContractsTableComponent {
 
   expandedRows = new Set<number>();
   expandedTicketSections = new Set<number>();
+  pricingLinesLoaded = computed(() => this.pricingLines() !== undefined);
   pricingLinesMap = computed(() => {
     const map = new Map<string, ContractPricingLine[]>();
+    // Initialize empty arrays for all contracts so "no lines" !== "not loaded"
+    for (const c of this.contracts()) {
+      if (c.sourceContractId) map.set(c.sourceContractId, []);
+    }
     for (const line of this.pricingLines()) {
       if (!line.contractId) continue;
       if (!map.has(line.contractId)) map.set(line.contractId, []);
@@ -271,37 +276,88 @@ export class ContractsTableComponent {
     return unit.endsWith('s') ? unit.slice(0, -1) : unit;
   }
 
-  getPricingInfo(contract: Contract): { status: 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'CASH' | 'LOADING'; cashPrice?: number } {
+  // --- NEW: Pricing logic based on PriceTypeCode + pricing lines ---
+  // Reference logic from CTRM:
+  //   PriceTypeCode 'P' + no pricing line = FLAT (show price)
+  //   PriceTypeCode 'P' + pricing line    = FLAT (show price)
+  //   PriceTypeCode 'U' = UNPRICED
+  //   PriceTypeCode 'D' = DEFERRED
+  //   Pricing line exists, priceSequence > 0 = PRICED
+  //   Pricing line exists, priceSequence = 0 = PRICED (all)
+  getPricingInfo(contract: Contract): { status: 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'FLAT' | 'DEFERRED' | 'LOADING' | 'ERROR'; cashPrice?: number } {
+    const ptc = (contract.priceTypeCode ?? '').trim().toUpperCase();
     const key = contract.sourceContractId;
     const lines = key ? this.pricingLinesMap().get(key) : undefined;
 
-    if (lines !== undefined) {
-      if (lines.length === 0) return { status: 'UNPRICED' };
+    // Pricing lines not loaded yet — wait
+    if (lines === undefined && !this.pricingLinesLoaded()) return { status: 'LOADING' };
+    const safeLines = lines ?? [];
+    const hasLines = safeLines.length > 0;
 
-      // Single line with a flat price — show the cash price regardless of quantity allocation
-      if (lines.length === 1 && lines[0].cashPrice != null) {
-        return { status: 'CASH', cashPrice: lines[0].cashPrice };
+    // Flat pricing — PriceTypeCode is 'P', show the cash price from pricing line if available
+    if (ptc === 'P') {
+      if (hasLines && safeLines[0].flatPrice != null) {
+        return { status: 'FLAT', cashPrice: safeLines[0].flatPrice };
       }
-
-      const totalPricedQty = lines.reduce((sum, l) => sum + (l.priceQuantity ?? 0), 0);
-      const contractQty = contract.quantity ?? 0;
-
-      if (totalPricedQty === 0) return { status: 'UNPRICED' };
-      if (totalPricedQty < contractQty) return { status: 'PARTIAL' };
-      if (lines.length > 1) return { status: 'PRICED' };
       return { status: 'PRICED' };
     }
 
-    // Fallback: use contract fields before lines are loaded
-    if (contract.price != null) return { status: 'CASH', cashPrice: contract.price };
+    // Deferred pricing — special type
+    if (ptc === 'D') {
+      return { status: 'DEFERRED' };
+    }
 
-    const pricedQty = contract.pricedQuantity ?? 0;
-    const totalQty = contract.quantity ?? 0;
+    // Unpriced — check if pricing has started via pricing lines with sequence > 0
+    if (ptc === 'U') {
+      if (hasLines) {
+        const hasSequence = safeLines.some(l => (l.priceSequence ?? 0) > 0);
+        if (hasSequence) {
+          const totalPricedQty = safeLines.reduce((sum, l) => sum + (l.priceQuantity ?? 0), 0);
+          const contractQty = contract.quantity ?? 0;
+          if (totalPricedQty > 0 && totalPricedQty < contractQty) return { status: 'PARTIAL' };
+          if (totalPricedQty >= contractQty) return { status: 'PRICED' };
+        }
+      }
+      return { status: 'UNPRICED' };
+    }
 
-    if (pricedQty === 0) return { status: 'UNPRICED' };
-    if (pricedQty < totalQty) return { status: 'PARTIAL' };
-    return { status: 'PRICED' };
+    // No PriceTypeCode (NULL) — rare, default to unpriced
+    return { status: 'UNPRICED' };
   }
+
+  // --- PREVIOUS logic (kept for reference) ---
+  // getPricingInfo_old(contract: Contract): { status: 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'CASH' | 'LOADING'; cashPrice?: number } {
+  //   const key = contract.sourceContractId;
+  //   const lines = key ? this.pricingLinesMap().get(key) : undefined;
+  //
+  //   if (lines !== undefined) {
+  //     if (lines.length === 0) return { status: 'UNPRICED' };
+  //
+  //     // Single line — check PriceTypeCode: "U" means unpriced (will be priced later)
+  //     if (lines.length === 1 && lines[0].cashPrice != null) {
+  //       const ptc = (contract.priceTypeCode ?? '').trim().toUpperCase();
+  //       if (ptc === 'U') return { status: 'UNPRICED' };
+  //       return { status: 'CASH', cashPrice: lines[0].cashPrice };
+  //     }
+  //
+  //     const totalPricedQty = lines.reduce((sum, l) => sum + (l.priceQuantity ?? 0), 0);
+  //     const contractQty = contract.quantity ?? 0;
+  //
+  //     if (totalPricedQty === 0) return { status: 'UNPRICED' };
+  //     if (totalPricedQty < contractQty) return { status: 'PARTIAL' };
+  //     return { status: 'PRICED' };
+  //   }
+  //
+  //   // Fallback: use contract fields before lines are loaded
+  //   if (contract.price != null) return { status: 'CASH', cashPrice: contract.price };
+  //
+  //   const pricedQty = contract.pricedQuantity ?? 0;
+  //   const totalQty = contract.quantity ?? 0;
+  //
+  //   if (pricedQty === 0) return { status: 'UNPRICED' };
+  //   if (pricedQty < totalQty) return { status: 'PARTIAL' };
+  //   return { status: 'PRICED' };
+  // }
 
   getDeliveryWindowStatus(contract: Contract): string {
     const now = new Date();

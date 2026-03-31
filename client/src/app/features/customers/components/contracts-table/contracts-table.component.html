@@ -224,18 +224,22 @@
                 </app-table-cell>
                 <app-table-cell>
                   @if (getPricingInfo(contract); as info) {
-                    @if (info.status === 'UNPRICED') {
-                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">Unpriced</span>
-                    } @else if (info.status === 'PARTIAL') {
-                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-scoular-yellow/10 text-scoular-yellow dark:bg-scoular-yellow/20 dark:text-scoular-yellow">Partial</span>
+                    @if (info.status === 'FLAT' && info.cashPrice != null) {
+                      <span [class]="!contract.signed ? 'text-scoular-red-accessible dark:text-scoular-red' : ''">{{ info.cashPrice | currency:'USD':'symbol':'1.2-2' }}/{{ getSingularUnit(contract.unit) }}</span>
+                    } @else if (info.status === 'FLAT') {
+                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Priced</span>
                     } @else if (info.status === 'PRICED') {
                       <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Priced</span>
-                    } @else if (info.status === 'CASH' && info.cashPrice != null) {
-                      <span [class]="!contract.signed ? 'text-scoular-red-accessible dark:text-scoular-red' : ''">{{ info.cashPrice | currency:'USD':'symbol':'1.2-2' }}/{{ getSingularUnit(contract.unit) }}</span>
+                    } @else if (info.status === 'PARTIAL') {
+                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-scoular-yellow/10 text-scoular-yellow dark:bg-scoular-yellow/20 dark:text-scoular-yellow">Partial</span>
+                    } @else if (info.status === 'UNPRICED') {
+                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">Unpriced</span>
+                    } @else if (info.status === 'DEFERRED') {
+                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Deferred</span>
                     } @else if (info.status === 'LOADING') {
                       <span class="text-gray-400 text-xs">...</span>
-                    } @else {
-                      <span class="text-gray-400">N/A</span>
+                    } @else if (info.status === 'ERROR') {
+                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-scoular-red/10 text-scoular-red-accessible dark:bg-scoular-red/20 dark:text-scoular-red">Error</span>
                     }
                   }
                 </app-table-cell>
@@ -284,14 +288,18 @@
                             <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Price per Bushel</span>
                             <span class="font-medium text-gray-900 dark:text-gray-100">
                               @if (getPricingInfo(contract); as info) {
-                                @if (info.status === 'UNPRICED') {
-                                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">Unpriced</span>
-                                } @else if (info.status === 'PARTIAL') {
-                                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-scoular-yellow/10 text-scoular-yellow dark:bg-scoular-yellow/20 dark:text-scoular-yellow">Partial</span>
+                                @if (info.status === 'FLAT' && info.cashPrice != null) {
+                                  {{ info.cashPrice | currency:'USD':'symbol':'1.4-4' }}
+                                } @else if (info.status === 'FLAT') {
+                                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Priced</span>
                                 } @else if (info.status === 'PRICED') {
                                   <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Priced</span>
-                                } @else if (info.status === 'CASH' && info.cashPrice != null) {
-                                  {{ info.cashPrice | currency:'USD':'symbol':'1.4-4' }}
+                                } @else if (info.status === 'PARTIAL') {
+                                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-scoular-yellow/10 text-scoular-yellow dark:bg-scoular-yellow/20 dark:text-scoular-yellow">Partial</span>
+                                } @else if (info.status === 'UNPRICED') {
+                                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">Unpriced</span>
+                                } @else if (info.status === 'DEFERRED') {
+                                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Deferred</span>
                                 } @else if (info.status === 'LOADING') {
                                   <span class="text-gray-400 text-xs">Loading...</span>
                                 } @else {

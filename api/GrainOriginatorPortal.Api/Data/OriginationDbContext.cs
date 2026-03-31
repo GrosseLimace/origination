@@ -121,6 +121,7 @@ public class OriginationDbContext : DbContext
             entity.Property(e => e.CtrmCustomerId).HasColumnName("CtrmCustomerId").HasMaxLength(400).IsRequired(false).HasConversion(v => v, v => v != null ? v.Trim() : v); // Used for saved lists
             entity.Property(e => e.SourceContractId).HasColumnName("SourceContractId").HasMaxLength(64).IsRequired(false);
             entity.Property(e => e.ContractNumber).HasColumnName("ContractNumber").HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.ContractPrefixType).HasColumnName("ContractPrefixType").HasMaxLength(10).IsRequired(false);
 
             // Customer and commodity info
             entity.Property(e => e.CustomerName).HasColumnName("CustomerName").HasMaxLength(500).IsRequired(false);
@@ -147,6 +148,9 @@ public class OriginationDbContext : DbContext
             // Crop year and open balance
             entity.Property(e => e.CropYear).HasColumnName("CropYear").IsRequired(false);
             entity.Property(e => e.OpenBalanceQuantity).HasColumnName("OpenBalanceQuantity").HasColumnType("decimal(18,6)").IsRequired(false);
+
+            // Pricing
+            entity.Property(e => e.PriceTypeCode).HasColumnName("PriceTypeCode").HasMaxLength(10).IsRequired(false);
 
             // Customer confirmation status
             entity.Property(e => e.CustomerConfirmStatus).HasColumnName("CustomerConfirmStatus").HasMaxLength(100).IsRequired(false);
