@@ -193,6 +193,10 @@ public class OriginationDbContext : DbContext
             entity.Property(e => e.ShipmentTicketNumber).HasColumnName("ShipmentTicketNumber").HasMaxLength(100);
             entity.Property(e => e.CtrmContractNumber).HasColumnName("ContractNumber").HasMaxLength(100);
             entity.Property(e => e.OrganizationCode).HasColumnName("OrganizationCode").HasMaxLength(100);
+            entity.Property(e => e.ElevatorCode).HasColumnName("ElevatorCode").HasMaxLength(20).IsRequired(false);
+            entity.Property(e => e.UnloadOrganizationCode).HasColumnName("UnloadOrganizationCode").HasMaxLength(20).IsRequired(false);
+            entity.Ignore(e => e.ElevatorCity);   // Populated in-memory from elevator lookup
+            entity.Ignore(e => e.ElevatorState);  // Populated in-memory from elevator lookup
 
             // Dates - using TicketBlDate and FinalSettledDate from view
             entity.Property(e => e.Date).HasColumnName("TicketBlDate");

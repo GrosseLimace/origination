@@ -29,6 +29,7 @@ export class EditCustomerDialogComponent {
   public tickets = input<Ticket[]>([]);
   public contracts = input<Contract[]>([]);
   public allCustomers = input<Customer[]>([]);
+  public linkedCustomers = input<Customer[]>([]);
   public selectedTradeUnits = input<string[]>([]);
 
   public close = output<void>();
@@ -266,6 +267,7 @@ export class EditCustomerDialogComponent {
 
   getProducerById(producerId: string): Customer | undefined {
     return this._producerPool.find(c => c.sourceCustomerId === producerId)
+      ?? this.linkedCustomers().find(c => c.sourceCustomerId === producerId)
       ?? this.allCustomers().find(c => c.sourceCustomerId === producerId);
   }
 

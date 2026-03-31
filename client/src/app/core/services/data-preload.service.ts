@@ -130,7 +130,7 @@ export class DataPreloadService {
             }
           })
         );
-        const notes$ = this.apiService.getNotes(tradeUnits).pipe(
+        const notes$ = this.apiService.getNotes().pipe(
           catchError(() => of([] as Note[])),
           tap(data => {
             this.appState.setNotes(data);

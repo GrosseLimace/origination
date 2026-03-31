@@ -73,9 +73,8 @@ export class BuildListComponent {
     }
     untracked(() => {
       this.clearQuery();
-      // Reset the load guard and reload data for the new trade units.
-      // Without this, _dataLoadStarted blocks reloading and the local
-      // signals stay stale (or loading stays true if initial load hasn't finished).
+      // Clear cached customers so _loadData fetches fresh data for the new TU
+      this.appState.setCustomers([]);
       this._dataLoadStarted = false;
       this._loadData();
     });
@@ -96,6 +95,18 @@ export class BuildListComponent {
   });
 
   readonly hasTradeUnits = computed(() => this.effectiveTradeUnits().length > 0);
+
+  /** Only show saved lists whose trade units match the currently selected TUs. */
+  readonly visibleSavedLists = computed(() => {
+    const selectedTus = this.appState.selectedTradeUnits();
+    if (selectedTus.length === 0) return [];
+    const tuSet = new Set(selectedTus);
+    return this.savedLists().filter(list => {
+      if (!list.tradeUnits) return false;
+      const listTus = list.tradeUnits.split(',').map(t => t.trim()).filter(Boolean);
+      return listTus.length > 0 && listTus.every(tu => tuSet.has(tu));
+    });
+  });
 
   readonly activeRefinementCount = computed(() => {
     const r = this.appliedRefinements();
@@ -254,6 +265,16 @@ export class BuildListComponent {
       intentionCropsByCustomer.get(p.customerId)!.add(p.crop);
     }
 
+    // Pre-index ticket product codes by customerId
+    const ticketCropsByCustomer = new Map<number, Set<string>>();
+    for (const t of this.tickets()) {
+      if (!t.customerId || !t.productCode) continue;
+      if (!ticketCropsByCustomer.has(t.customerId)) {
+        ticketCropsByCustomer.set(t.customerId, new Set());
+      }
+      ticketCropsByCustomer.get(t.customerId)!.add(t.productCode);
+    }
+
     for (const customer of this.customers()) {
       const detailCrops = customer.commodities?.length ? [...customer.commodities] : [];
       const contractCrops = customer.sourceCustomerId
@@ -264,7 +285,8 @@ export class BuildListComponent {
           )]
         : [];
       const intentionCrops = [...(intentionCropsByCustomer.get(customer.id) || [])];
-      map.set(customer.id, [...new Set([...detailCrops, ...contractCrops, ...intentionCrops])].slice(0, 5));
+      const ticketCrops = [...(ticketCropsByCustomer.get(customer.id) || [])];
+      map.set(customer.id, [...new Set([...detailCrops, ...contractCrops, ...intentionCrops, ...ticketCrops])].slice(0, 5));
     }
     return map;
   });
@@ -351,88 +373,65 @@ export class BuildListComponent {
   private _loadData(): void {
     if (this._dataLoadStarted) return;
     this._dataLoadStarted = true;
-    this.loading.set(true);
 
-    // Use cached core data from AppState if available (populated by DataPreloadService)
-    const cachedCustomers = this.appState.customers();
-    if (cachedCustomers.length > 0) {
-      this._syncFromAppState();
+    // Restore UI state so the user sees their previous query/results immediately
+    this._restoreUIState();
 
-      // Core data is available — only fetch secondary signals if missing
-      const missing: Record<string, any> = {};
-      if (this.appState.plantingIntentions().length === 0) {
-        const tuParam = this.effectiveTradeUnits().length > 0 ? this.effectiveTradeUnits() : undefined;
-        missing['plantingIntentions'] = this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[])));
-      }
-      if (this.appState.storedGrain().length === 0) {
-        missing['storedGrain'] = this.apiService.getStoredGrain().pipe(catchError(() => of([] as StoredGrain[])));
-      }
-      if (this.appState.producerDetails().length === 0) {
-        missing['producerDetails'] = this.apiService.getAllProducerDetails().pipe(catchError(() => of([] as ProducerDetails[])));
-      }
+    const tradeUnits = this.effectiveTradeUnits();
+    const tuParam = tradeUnits.length > 0 ? tradeUnits : undefined;
 
-      if (Object.keys(missing).length > 0) {
-        forkJoin(missing).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-          next: (data: any) => {
-            if (data.plantingIntentions) { this.plantingIntentions.set(data.plantingIntentions); this.appState.setPlantingIntentions(data.plantingIntentions); }
-            if (data.storedGrain) { this.storedGrain.set(data.storedGrain); this.appState.setStoredGrain(data.storedGrain); }
-            if (data.producerDetails) { this._mergeProducerDetails(data.producerDetails); this.appState.setProducerDetails(data.producerDetails); this.appState.setCustomers(this.customers()); }
-          }
-        });
-      } else {
-        this._mergeProducerDetails(this.appState.producerDetails());
-      }
+    // Sync whatever appState has right now (may be complete or partial)
+    this._syncFromAppState();
+    if (this.appState.producerDetails().length > 0) {
+      this._mergeProducerDetails(this.appState.producerDetails());
+    }
 
-      // Pre-load tickets in the background if missing — survives navigation via DataPreloadService.
-      if (this.appState.tickets().length === 0) {
-        this.dataPreloadService.ensureTicketsLoaded(this.effectiveTradeUnits())
-          .pipe(takeUntilDestroyed(this.destroyRef))
-          .subscribe(() => this.tickets.set(this.appState.tickets()));
-      }
+    // If we have saved results and customers, show them instantly
+    const saved = this.appState.buildListState();
+    if (saved?.hasGenerated && saved.filteredCustomerIds.length > 0 && this.customers().length > 0) {
+      const idSet = new Set(saved.filteredCustomerIds);
+      this.filteredCustomers.set(this.customers().filter(c => idSet.has(c.id)));
+    }
 
-      this._restoreUIState();
+    // Determine what's missing — only fetch what appState doesn't have
+    const missing: Record<string, any> = {};
+    if (this.appState.customers().length === 0) missing['customers'] = this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[])));
+    if (this.appState.contracts().length === 0) missing['contracts'] = this.apiService.getContracts(tuParam).pipe(catchError(() => of([] as Contract[])));
+    if (this.appState.tickets().length === 0) missing['tickets'] = this.apiService.getTickets(tuParam).pipe(catchError(() => of([] as Ticket[])));
+    if (this.appState.plantingIntentions().length === 0) missing['plantingIntentions'] = this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[])));
+    if (this.appState.notes().length === 0) missing['notes'] = this.apiService.getNotes().pipe(catchError(() => of([] as Note[])));
+    if (this.appState.storedGrain().length === 0) missing['storedGrain'] = this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[])));
+    if (this.appState.savedLists().length === 0) missing['savedLists'] = this.apiService.getSavedLists().pipe(catchError(() => of([] as SavedList[])));
+    if (this.appState.producerDetails().length === 0) missing['producerDetails'] = this.apiService.getAllProducerDetails().pipe(catchError(() => of([] as ProducerDetails[])));
+
+    // Nothing missing — data is complete, run query immediately
+    if (Object.keys(missing).length === 0) {
       this.loading.set(false);
-      // If the user navigated away while a query was in-flight, auto-resume it.
       if (this.queryText().trim() && !this.hasGenerated()) {
         this.processQuery();
       }
       return;
     }
 
-    // No cache — load ALL data in one parallel forkJoin
-    const tradeUnits = this.effectiveTradeUnits();
-    const tuParam = tradeUnits.length > 0 ? tradeUnits : undefined;
-    forkJoin({
-      customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
-      contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => of([] as Contract[]))),
-      tickets: this.apiService.getTickets(tuParam).pipe(catchError(() => of([] as Ticket[]))),
-      plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[]))),
-      notes: this.apiService.getNotes(tuParam).pipe(catchError(() => of([] as Note[]))),
-      storedGrain: this.apiService.getStoredGrain().pipe(catchError(() => of([] as StoredGrain[]))),
-      savedLists: this.apiService.getSavedLists().pipe(catchError(() => of([] as SavedList[]))),
-      producerDetails: this.apiService.getAllProducerDetails().pipe(catchError(() => of([] as ProducerDetails[])))
-    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (data) => {
-        this.contracts.set(data.contracts);
-        this.tickets.set(data.tickets);
-        this.plantingIntentions.set(data.plantingIntentions);
-        this.notes.set(data.notes);
-        this.storedGrain.set(data.storedGrain);
-        this.savedLists.set(data.savedLists);
-        this.appState.setContracts(data.contracts);
-        this.appState.setTickets(data.tickets);
-        this.appState.setPlantingIntentions(data.plantingIntentions);
-        this.appState.setNotes(data.notes);
-        this.appState.setStoredGrain(data.storedGrain);
-        this.appState.setSavedLists(data.savedLists);
-        if (data.producerDetails.length > 0) this.appState.setProducerDetails(data.producerDetails);
-        this.customers.set(data.customers);
-        this._mergeProducerDetails(data.producerDetails);
-        this.appState.setCustomers(this.customers());
-        this._restoreUIState();
+    // Some data missing — show loading only if we don't have results to show
+    if (this.filteredCustomers().length === 0) {
+      this.loading.set(true);
+    }
+
+    forkJoin(missing).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (data: any) => {
+        if (data.customers) { this.customers.set(data.customers); this.appState.setCustomers(data.customers); }
+        if (data.contracts) { this.contracts.set(data.contracts); this.appState.setContracts(data.contracts); }
+        if (data.tickets) { this.tickets.set(data.tickets); this.appState.setTickets(data.tickets); }
+        if (data.plantingIntentions) { this.plantingIntentions.set(data.plantingIntentions); this.appState.setPlantingIntentions(data.plantingIntentions); }
+        if (data.notes) { this.notes.set(data.notes); this.appState.setNotes(data.notes); }
+        if (data.storedGrain) { this.storedGrain.set(data.storedGrain); this.appState.setStoredGrain(data.storedGrain); }
+        if (data.savedLists) { this.savedLists.set(data.savedLists); this.appState.setSavedLists(data.savedLists); }
+        if (data.producerDetails) { this._mergeProducerDetails(data.producerDetails); this.appState.setProducerDetails(data.producerDetails); this.appState.setCustomers(this.customers()); }
         this.loading.set(false);
-        // If the user navigated away while a query was in-flight, auto-resume it.
-        if (this.queryText().trim() && !this.hasGenerated()) {
+
+        // Re-run query with fresh complete data
+        if (this.queryText().trim()) {
           this.processQuery();
         }
       },
@@ -534,6 +533,7 @@ export class BuildListComponent {
     this.pendingRefinements.set({});
     this.appliedRefinements.set({});
     this.notContactedDaysInput.set('');
+    this.activeSavedList.set(null);
     this.appState.clearBuildListState();
   }
 
@@ -577,18 +577,9 @@ export class BuildListComponent {
 
     this.isProcessing.set(true);
 
-    // If loading a saved list with different trade units, we must re-fetch for those TUs.
-    // But skip the fetch if the saved list TUs match the currently loaded data.
+    // Saved lists always re-fetch to ensure fresh data (notes, contracts, etc.
+    // may have changed since the list was last loaded or the user navigated away).
     if (overrideTradeUnits && overrideTradeUnits.length > 0) {
-      const currentKey = [...this.effectiveTradeUnits()].sort().join(',');
-      const overrideKey = [...overrideTradeUnits].sort().join(',');
-      if (overrideKey === currentKey && this.customers().length > 0) {
-        // TUs match and data is already loaded — skip re-fetch
-        this._syncFromAppState();
-        this._applyNlqFilter();
-        this.isProcessing.set(false);
-        return;
-      }
       this._fetchAndFilter(overrideTradeUnits);
       return;
     }
@@ -616,13 +607,14 @@ export class BuildListComponent {
   /** Fetches fresh data for specific trade units and runs the NLQ filter. */
   private _fetchAndFilter(tradeUnits: string[]): void {
     const tuParam = tradeUnits.length > 0 ? tradeUnits : undefined;
+    // TU filter for customers and operational data. Notes global for accurate "last contacted".
     forkJoin({
       customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
       contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => of([] as Contract[]))),
       tickets: this.apiService.getTickets(tuParam).pipe(catchError(() => of([] as Ticket[]))),
       plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[]))),
-      notes: this.apiService.getNotes(tuParam).pipe(catchError(() => of([] as Note[]))),
-      storedGrain: this.apiService.getStoredGrain().pipe(catchError(() => of([] as StoredGrain[]))),
+      notes: this.apiService.getNotes().pipe(catchError(() => of([] as Note[]))),
+      storedGrain: this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
       producerDetails: (this.appState.producerDetails().length > 0 ? of(this.appState.producerDetails()) : this.apiService.getAllProducerDetails()).pipe(catchError(() => of([] as ProducerDetails[])))
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {

@@ -13,6 +13,9 @@ export interface Ticket {
   shipmentTicketNumber?: string; // Full shipment ticket number from ODS
   ctrmContractNumber?: string; // Contract number from CTRM system
   organizationCode?: string; // Organization code / trade unit
+  elevatorCode?: string;     // Elevator code from ODS ticket
+  elevatorCity?: string;     // City from elevator lookup
+  elevatorState?: string;    // State from elevator lookup
 
   // Dates
   date: string;           // TicketBlDate - stored as string in ODS

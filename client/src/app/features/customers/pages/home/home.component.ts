@@ -1,6 +1,6 @@
 import { Component, inject, signal, computed, DestroyRef, effect, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { ApiService } from '@core/services/api.service';
@@ -33,6 +33,7 @@ export class HomeComponent {
   private readonly nlqFilterService = inject(NlqFilterService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   private readonly _resizeHandler = () => this._checkMobile();
   private _isLoading = false;
@@ -170,6 +171,17 @@ export class HomeComponent {
       this.savedLists.set(this.appState.savedLists());
       this._enrichSavedLists();
 
+      // Stored grain may not have been preloaded yet — fetch if empty
+      if (this.appState.storedGrain().length === 0) {
+        this.apiService.getStoredGrain().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+          next: (data) => {
+            this.storedGrain.set(data);
+            this.appState.setStoredGrain(data);
+          },
+          error: () => {}
+        });
+      }
+
       const stateSelectedCustomer = this.appState.selectedCustomer();
       if (stateSelectedCustomer) {
         this.selectedCustomer.set(stateSelectedCustomer);
@@ -270,7 +282,7 @@ export class HomeComponent {
       error: () => {}
     });
 
-    this.apiService.getPlantingIntentions(this.selectedTradeUnits()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.apiService.getPlantingIntentions(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this.plantingIntentions.set(data);
         this.appState.setPlantingIntentions(data);
@@ -279,7 +291,7 @@ export class HomeComponent {
       error: () => { this.isLoadingPlanting.set(false); }
     });
 
-    this.apiService.getNotes(this.selectedTradeUnits()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.apiService.getNotes().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this.notes.set(data);
         this.appState.setNotes(data);
@@ -444,6 +456,7 @@ export class HomeComponent {
   handleClearSelection(): void {
     this.selectedCustomer.set(null);
     this.appState.selectCustomer(null);
+    this.router.navigate([], { queryParams: {}, replaceUrl: true });
   }
 
   private _onTradeUnitsChanged(tradeUnits: string[]): void {

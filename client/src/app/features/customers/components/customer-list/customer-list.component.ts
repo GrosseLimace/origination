@@ -2,8 +2,9 @@ import { Component, input, output, effect, inject, untracked, ChangeDetectionStr
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Subject, of } from 'rxjs';
+import { Subject, of, forkJoin } from 'rxjs';
 import { catchError, debounceTime, distinctUntilChanged, switchMap } from 'rxjs/operators';
+import { StoredGrain, Ticket, PlantingIntention } from '@models';
 import { Customer, SavedList, Note, ProducerDetails } from '@models';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
@@ -49,6 +50,7 @@ export class CustomerListComponent {
   // component dirty and does not re-render the customer list on each keystroke.
   searchInputValue = '';
   selectedListId = signal('all');
+  savedListLoading = signal(false);
   filteredCustomers = signal<Customer[]>([]);
   readonly hasTradeUnitSelection = computed(() =>
     this.appStateService.selectedTradeUnits().length > 0 || this.appStateService.selectedGroupNames().length > 0
@@ -174,7 +176,10 @@ export class CustomerListComponent {
       this.appStateService.selectedTradeUnits();
       this.appStateService.selectedGroupNames();
       if (!_tuInitialized) { _tuInitialized = true; return; }
-      untracked(() => { if (this.searchInputValue) this.clearSearch(); });
+      untracked(() => {
+        if (this.searchInputValue) this.clearSearch();
+        this._savedListDataFetched = false;
+      });
     });
 
     // React to selectedCustomer changes — scroll into view
@@ -269,58 +274,95 @@ export class CustomerListComponent {
     // Apply saved list filter (skip for "all" which means show all customers)
     if (this.selectedListId() && this.selectedListId() !== 'all') {
       const savedList = this.savedLists().find(l => String(l.id) === this.selectedListId());
-      if (savedList && savedList.customerIds?.length) {
-        result = result.filter(c => savedList.customerIds!.includes(c.id));
+      if (savedList) {
+        this._runSavedListNlq(savedList);
+        if (savedList.customerIds?.length) {
+          result = result.filter(c => savedList.customerIds!.includes(c.id));
+        }
       }
     }
 
     this.filteredCustomers.set(result);
   }
 
-  /** Returns saved lists whose trade units overlap with the currently selected trade units. */
+  /** Returns saved lists whose trade units all match the currently selected trade units. */
   getVisibleSavedLists(): SavedList[] {
     const selectedTU = this.appStateService.selectedTradeUnits();
-    if (selectedTU.length === 0) return this.savedLists();
+    if (selectedTU.length === 0) return [];
     return this.savedLists().filter(list => {
-      if (!list.tradeUnits) return true; // Legacy lists without trade units show everywhere
-      const listUnits = list.tradeUnits.split(',').map(u => u.trim());
-      return listUnits.some(u => selectedTU.includes(u));
+      if (!list.tradeUnits) return false;
+      const listUnits = list.tradeUnits.split(',').map(u => u.trim()).filter(Boolean);
+      return listUnits.length > 0 && listUnits.every(u => selectedTU.includes(u));
     });
   }
 
-  /** Called when the user selects a saved list from the dropdown. Runs the NLQ query dynamically. */
+  /** Called when the user selects a saved list from the dropdown. */
   onSavedListChange(): void {
     this.appStateService.setSelectedSavedListId(this.selectedListId());
+    if (this.selectedListId() && this.selectedListId() !== 'all') {
+      this.savedListLoading.set(true);
+    }
+    this.applyFilters();
+  }
 
-    if (!this.selectedListId() || this.selectedListId() === 'all') {
-      this.applyFilters();
+  private _savedListDataFetched = false;
+
+  /** Runs the NLQ for the active saved list. Fetches missing data on-demand if not cached. */
+  private _runSavedListNlq(savedList: SavedList): void {
+    const storedGrain = this.appStateService.storedGrain();
+    const tickets = this.appStateService.tickets();
+    const plantingIntentions = this.appStateService.plantingIntentions();
+
+    // If any NLQ-critical data is missing and we haven't tried fetching, fetch it.
+    // Use TU-filtered calls so they dedupe with DataPreloadService's in-flight requests.
+    const selectedTU = this.appStateService.selectedTradeUnits();
+    const tuParam = selectedTU.length > 0 ? selectedTU : undefined;
+    const missing: Record<string, any> = {};
+    if (storedGrain.length === 0) missing['storedGrain'] = this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[])));
+    if (tickets.length === 0) missing['tickets'] = this.apiService.getTickets(tuParam).pipe(catchError(() => of([] as Ticket[])));
+    if (plantingIntentions.length === 0) missing['plantingIntentions'] = this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[])));
+
+    const keys = Object.keys(missing);
+    if (keys.length > 0 && !this._savedListDataFetched) {
+      this._savedListDataFetched = true;
+      forkJoin(missing).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: (results: any) => {
+          if (results.storedGrain) this.appStateService.setStoredGrain(results.storedGrain);
+          if (results.tickets) this.appStateService.setTickets(results.tickets);
+          if (results.plantingIntentions) this.appStateService.setPlantingIntentions(results.plantingIntentions);
+          this._executeNlq(savedList);
+          this.savedListLoading.set(false);
+          this.applyFilters();
+        },
+        error: () => {
+          this.savedListLoading.set(false);
+          this._executeNlq(savedList);
+          this.applyFilters();
+        }
+      });
       return;
     }
 
-    const savedList = this.savedLists().find(l => String(l.id) === this.selectedListId());
-    if (!savedList) {
-      this.applyFilters();
-      return;
-    }
+    this._executeNlq(savedList);
+    this.savedListLoading.set(false);
+  }
 
-    // Build NLQ context from AppStateService cache
+  private _executeNlq(savedList: SavedList): void {
+    const contracts = this.appStateService.contracts();
+    const notes = this.appStateService.notes();
     const context: NlqFilterContext = {
       customers: this.customers(),
-      contracts: this.appStateService.contracts(),
+      contracts,
       tickets: this.appStateService.tickets(),
-      notes: this.appStateService.notes(),
+      notes,
       plantingIntentions: this.appStateService.plantingIntentions(),
       storedGrain: this.appStateService.storedGrain()
     };
-
-    // Run the NLQ query, then apply refinement filters, and populate customerIds
-    const nlqCustomers = this.nlqFilterService.parseAndFilter(savedList.query, context).customers;
+    const result = this.nlqFilterService.parseAndFilter(savedList.query, context);
     const refined = savedList.filters
-      ? this.nlqFilterService.applyRefinementFilters(nlqCustomers, savedList.filters, this.appStateService.contracts(), this.appStateService.notes())
-      : nlqCustomers;
+      ? this.nlqFilterService.applyRefinementFilters(result.customers, savedList.filters, contracts, notes)
+      : result.customers;
     savedList.customerIds = refined.map(c => c.id);
-
-    this.applyFilters();
   }
 
   clearSearch(): void {

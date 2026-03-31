@@ -1266,11 +1266,14 @@ export class NlqFilterService {
     const storageDaysMatch = lowerQuery.match(/(?:stored|storage|in storage)\s*(?:for\s+)?(?:over|more than|longer than)\s*(\d+)\s*days/);
     if (storageDaysMatch) {
       const minDays = parseInt(storageDaysMatch[1]);
-      const cutoff = Date.now() - minDays * 86400000;
       const ids = new Set<number>(
         storedGrain.filter(s => {
+          // Use storageDays from ODS if available, otherwise calculate from storageStartDate
+          if (s.storageDays != null && s.storageDays > 0) {
+            return s.storageDays >= minDays;
+          }
           const d = this.parseDate(s.storageStartDate);
-          return d && d.getTime() < cutoff;
+          return d && d.getTime() < (Date.now() - minDays * 86400000);
         }).map(s => s.customerId)
       );
       result = result.filter(c => ids.has(c.id));

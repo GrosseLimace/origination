@@ -30,6 +30,12 @@ public class Ticket
     // Organization / trade unit
     public string? OrganizationCode { get; set; }
 
+    // Elevator / location
+    public string? ElevatorCode { get; set; }
+    public string? UnloadOrganizationCode { get; set; }
+    public string? ElevatorCity { get; set; }   // Populated from vw_GNP026 join
+    public string? ElevatorState { get; set; }  // Populated from vw_GNP026 join
+
     // Dates - different types in ODS view
     public string? Date { get; set; } // Maps to TicketBlDate (stored as string in DB)
     public DateTime? FinalSettledDate { get; set; } // Stored as DateTime in DB

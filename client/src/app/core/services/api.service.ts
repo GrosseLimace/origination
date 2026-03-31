@@ -364,8 +364,10 @@ export class ApiService {
 
   /** Fetches all producer details records */
   getAllProducerDetails(): Observable<ProducerDetails[]> {
-    return this.http.get<ProducerDetails[]>(`${this.baseUrl}/producerdetails`)
-      .pipe(catchError(e => this.handleError(e)));
+    return this._dedupe('producerdetails',
+      this.http.get<ProducerDetails[]>(`${this.baseUrl}/producerdetails`)
+        .pipe(catchError(e => this.handleError(e)))
+    );
   }
 
   /** Fetches producer details for a specific customer */

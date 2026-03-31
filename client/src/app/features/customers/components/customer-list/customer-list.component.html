@@ -73,7 +73,12 @@
         <!-- Customer List -->
         <div #scrollContainer class="divide-y divide-gray-200 dark:divide-gray-700 overflow-y-auto" [style.max-height]="listMaxHeight()"
         >
-          @if (loading() && selectedTradeUnits.length > 0) {
+          @if (savedListLoading()) {
+            <div class="p-8 text-center">
+              <div class="inline-block animate-spin rounded-full h-10 w-10 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green mb-3"></div>
+              <p class="text-gray-500 dark:text-gray-400 font-medium text-sm">Running saved list...</p>
+            </div>
+          } @else if (loading() && selectedTradeUnits.length > 0) {
             <div class="p-8 text-center">
               <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green mb-4"></div>
               <p class="text-gray-500 dark:text-gray-400 font-medium">Loading customers...</p>
