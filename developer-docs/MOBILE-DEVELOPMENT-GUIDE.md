@@ -254,25 +254,23 @@ export const environment = {
 
 ## Deploying to Static Web App
 
-Deployment uses GitHub Actions with the same OIDC workload identity federation as the main app:
+Deployment uses GitHub Actions with the SWA CLI (not the Docker-based `azure/static-web-apps-deploy@v1` action, which requires Docker and is incompatible with our self-hosted runners):
 
 - The GitHub Actions service principal has **Contributor** on the SWA resource
-- Use `azure/login@v2` with the same OIDC credentials
-- Use `azure/static-web-apps-deploy@v1` action
+- Use the `@azure/static-web-apps-cli` npm package (`swa deploy`)
+- SWA deployment token stored as GHE environment secret `SWA_DEPLOYMENT_TOKEN`
 
 ### Sample Workflow Step
 
 ```yaml
+- name: Install SWA CLI
+  run: npm install -g @azure/static-web-apps-cli
+
 - name: Deploy to Static Web App
-  uses: azure/static-web-apps-deploy@v1
-  with:
-    azure_static_web_apps_api_token: ${{ secrets.SWA_DEPLOYMENT_TOKEN }}
-    repo_token: ${{ secrets.GITHUB_TOKEN }}
-    action: 'upload'
-    app_location: 'mobile/dist'
-    skip_api_build: true
-    skip_app_build: true
+  run: swa deploy ./mobile/dist/browser --deployment-token ${{ secrets.SWA_DEPLOYMENT_TOKEN }} --env production
 ```
+
+**Retrieve the deployment token:** `az staticwebapp secrets list --name swa-origination-dev-eus --query "properties.apiKey" -o tsv`
 
 ---
 
@@ -299,4 +297,4 @@ Steps to request mobile access for Origination:
 
 ---
 
-*Document version: 1.2 | 2026-03-26*
+*Document version: 1.3 | 2026-03-30*
