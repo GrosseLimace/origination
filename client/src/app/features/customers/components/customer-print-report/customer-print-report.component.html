@@ -99,15 +99,15 @@
                       <tr [style.border-top]="i > 0 ? '1px solid #f3f4f6' : 'none'">
                         <td style="padding: 8px 10px; font-weight: 500;">{{ ct.contractNumber }}</td>
                         <td style="padding: 8px 10px;">{{ ct.commodityDescription || ct.commodityCode }}</td>
-                        <td style="padding: 8px 10px; text-align: right;">{{ (ct.quantity ?? 0).toLocaleString() }} bu</td>
-                        <td style="padding: 8px 10px; text-align: right;">{{ ct.price != null ? formatCurrency(ct.price) : '—' }}</td>
+                        <td style="padding: 8px 10px; text-align: right;">{{ ct.quantity.toLocaleString() }} bu</td>
+                        <td style="padding: 8px 10px; text-align: right;">{{ getContractPrice(ct) }}</td>
                         <td style="padding: 8px 10px; text-align: right; font-weight: 600;">{{ ct.totalValue != null ? formatCurrency(ct.totalValue) : '—' }}</td>
                         <td style="padding: 8px 10px;">
                           <div style="display: flex; flex-direction: column; align-items: center; gap: 2px;">
                             <div style="width: 100%; height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden;">
                               <div [style.width.%]="getDeliveryPct(ct)" [style.background]="getDeliveryPct(ct) >= 100 ? '#16a34a' : getDeliveryPct(ct) >= 50 ? accentColor() : '#d97706'" style="height: 100%; border-radius: 3px;"></div>
                             </div>
-                            <div style="font-size: 9px; color: #6b7280;">{{ getDeliveredBu(ct).toLocaleString() }} / {{ (ct.quantity ?? 0).toLocaleString() }} bu ({{ getDeliveryPct(ct) }}%)</div>
+                            <div style="font-size: 9px; color: #6b7280;">{{ getDeliveredBu(ct).toLocaleString() }} / {{ ct.quantity.toLocaleString() }} bu ({{ getDeliveryPct(ct) }}%)</div>
                           </div>
                         </td>
                         <td style="padding: 8px 10px; font-size: 10px;">{{ formatDeliveryPeriod(ct.deliveryStart, ct.deliveryEnd) }}</td>
@@ -144,7 +144,7 @@
                       <tr [style.border-top]="i > 0 ? '1px solid #f3f4f6' : 'none'">
                         <td style="padding: 8px 12px; font-weight: 500;">{{ pi.crop }}</td>
                         <td style="padding: 8px 12px;">{{ pi.type || '' }}</td>
-                        <td style="padding: 8px 12px; text-align: right;">{{ (pi.acres ?? 0).toLocaleString() }}</td>
+                        <td style="padding: 8px 12px; text-align: right;">{{ pi.acres.toLocaleString() }}</td>
                       </tr>
                     }
                   </tbody>

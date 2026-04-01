@@ -223,6 +223,11 @@ export class BidSheetComponent {
       i === index ? { ...r, searchQuery: value, commodityCode: '', showDropdown: true } : r
     ));
     this.cropDropdownIndex.set(index);
+    // Auto-scroll the form container so the dropdown is visible
+    setTimeout(() => {
+      const container = document.querySelector('.add-location-scroll');
+      if (container) container.scrollTop = container.scrollHeight;
+    }, 50);
   }
 
   cropDropdownIndex = signal<number>(-1);
@@ -338,7 +343,13 @@ export class BidSheetComponent {
       const tuElevators = this.allElevators().filter(e => tuSet.has((e.tradeUnitCode ?? '').trim()));
       this.tradeUnitElevators.set(tuElevators);
       // Load bid data and references for all active TUs
-      this._loadBidData(tus, () => this._zoomToBidLocations());
+      this._loadBidData(tus, () => {
+        this._zoomToBidLocations();
+        // If edit bids is open, rebuild the grid with new data
+        if (this.editBidsMode()) {
+          this._buildEditGrid(this.editBidsYear());
+        }
+      });
       this._loadReferences(tus);
       this.filterBids();
       this._refreshMapMarkers();
@@ -375,15 +386,25 @@ export class BidSheetComponent {
   }
 
   private _zoomToBidLocations(): void {
-    if (!this._map) return;
+    if (!this._map || !this._L) return;
     const locs = this.bidLocations().filter(l => l.latitude && l.longitude);
-    if (locs.length === 0) return; // no locations yet — keep current view
+    if (locs.length === 0) return;
 
-    if (locs.length === 1) {
-      this._map.setView([locs[0].latitude!, locs[0].longitude!], 10);
+    // Prioritize: reference location → first location
+    const refName = this.referenceLocationName();
+    const refLoc = refName ? locs.find(l => l.name === refName) : null;
+    const panelOpen = this.showPanel();
+    const rightPad = panelOpen ? 440 : 50;
+
+    if (refLoc) {
+      this._map.setView([refLoc.latitude!, refLoc.longitude!], 10, { animate: true });
+      if (panelOpen) setTimeout(() => this._map?.panBy([-(rightPad / 2), 0]), 300);
+    } else if (locs.length === 1) {
+      this._map.setView([locs[0].latitude!, locs[0].longitude!], 10, { animate: true });
+      if (panelOpen) setTimeout(() => this._map?.panBy([-(rightPad / 2), 0]), 300);
     } else {
-      const bounds = this._L!.latLngBounds(locs.map(l => [l.latitude!, l.longitude!] as [number, number]));
-      this._map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
+      const bounds = this._L.latLngBounds(locs.map(l => [l.latitude!, l.longitude!] as [number, number]));
+      this._map.fitBounds(bounds, { paddingTopLeft: [50, 50], paddingBottomRight: [rightPad, 50], maxZoom: 12 });
     }
   }
 
@@ -447,6 +468,8 @@ export class BidSheetComponent {
   shiftYearsBack(): void {
     if (this.canShiftYearsBack()) {
       this.yearOffset.update(o => o - 1);
+      const yr = this.newYear();
+      if (yr) this.selectedYear.set(yr);
       this.onFilterChange();
     }
   }
@@ -454,6 +477,8 @@ export class BidSheetComponent {
   shiftYearsForward(): void {
     if (this.canShiftYearsForward()) {
       this.yearOffset.update(o => o + 1);
+      const yr = this.newYear();
+      if (yr) this.selectedYear.set(yr);
       this.onFilterChange();
     }
   }
@@ -890,6 +915,7 @@ export class BidSheetComponent {
     const tus = this.activeTradeUnits();
     if (tus.length === 0) return;
     this.editBidsGridLoading.set(true);
+    this._loadReferences(tus);
     const start = Date.now();
     this._loadBidData(tus, () => {
       const elapsed = Date.now() - start;
@@ -897,6 +923,8 @@ export class BidSheetComponent {
       setTimeout(() => {
         this._buildEditGrid(this.editBidsYear());
         this.editBidsGridLoading.set(false);
+        this.filterBids();
+        this._refreshMapMarkers();
       }, remaining);
     });
   }
@@ -1077,6 +1105,15 @@ export class BidSheetComponent {
     this.panelSelectedLocation.set(alreadySelected ? '' : item.name);
     this.selectedLocationName.set(alreadySelected ? '' : item.name);
     this.showPanel.set(true);
+
+    // Auto-select the location's TU if no individual TU is selected (enables reference + status features)
+    if (!alreadySelected && !this.hasIndividualTu() && item.latitude != null) {
+      const loc = this.allMapLocations().find(l => l.name === item.name);
+      if (loc?.tradeUnitCode) {
+        this.appState.setTradeUnits([loc.tradeUnitCode]);
+      }
+    }
+
     this._refreshMapMarkers();
   }
 
@@ -1172,9 +1209,12 @@ export class BidSheetComponent {
     if (item.type === 'entry') {
       this.selectItemFromTable(item);
     }
-    // Pan map to the selected location
+    // Pan map to the selected location, offset left if panel is open
     if (this._map && item.latitude != null && item.longitude != null) {
       this._map.flyTo([item.latitude, item.longitude], Math.max(this._map.getZoom(), 11));
+      if (this.showPanel()) {
+        setTimeout(() => this._map?.panBy([-200, 0]), 300);
+      }
     }
   }
 
@@ -1199,9 +1239,10 @@ export class BidSheetComponent {
       this.appState.setTradeUnits([tu]);
     }
 
-    // Zoom to location
+    // Zoom to location, offset left to account for panel opening
     if (this._map && loc.latitude && loc.longitude) {
       this._map.flyTo([loc.latitude, loc.longitude], Math.max(this._map.getZoom(), 11));
+      setTimeout(() => this._map?.panBy([-200, 0]), 300);
     }
 
     this.panelSelectedLocation.set(loc.name);

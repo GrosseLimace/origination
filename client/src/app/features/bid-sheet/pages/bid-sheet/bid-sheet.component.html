@@ -187,16 +187,26 @@
                 <thead class="sticky top-0 z-10">
                   <tr class="bg-gray-50 dark:bg-gray-800">
                     <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Crop</th>
-                    <th class="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">{{ oldYear() || 'Old' }}</th>
-                    <th class="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">{{ newYear() || 'New' }}</th>
+                    <th class="py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 relative">
+                      <button (click)="shiftYearsBack()" class="absolute left-0 top-1/2 -translate-y-1/2 p-0.5 rounded transition-colors" [class]="canShiftYearsBack() ? 'text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 cursor-pointer' : 'invisible'">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                      </button>
+                      {{ oldYear() || 'Old' }}
+                    </th>
+                    <th class="py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 relative">
+                      {{ newYear() || 'New' }}
+                      <button (click)="shiftYearsForward()" class="absolute right-0 top-1/2 -translate-y-1/2 p-0.5 rounded transition-colors" [class]="canShiftYearsForward() ? 'text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 cursor-pointer' : 'invisible'">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                      </button>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   @for (row of panelLocationBids(); track row.crop) {
                     <tr class="border-b border-gray-200 dark:border-gray-700">
                       <td class="px-3 py-3 text-sm font-medium text-gray-900 dark:text-white">{{ row.crop }}</td>
-                      <td class="px-3 py-3 text-sm font-mono text-right text-gray-900 dark:text-white">{{ row.oldBid || '--' }}</td>
-                      <td class="px-3 py-3 text-sm font-mono text-right text-gray-900 dark:text-white">{{ row.newBid || '--' }}</td>
+                      <td class="px-1 py-3 text-base font-mono font-semibold text-center text-gray-900 dark:text-white">{{ row.oldBid || '--' }}</td>
+                      <td class="px-1 py-3 text-base font-mono font-semibold text-center text-gray-900 dark:text-white">{{ row.newBid || '--' }}</td>
                     </tr>
                   }
                 </tbody>
@@ -239,6 +249,20 @@
                   </svg>
                   <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">No location selected</p>
                   <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">Select a location on the map or choose a trade unit from the filter to view bids.</p>
+                </div>
+              } @else {
+
+              @if (filteredBidItems().length === 0) {
+                <div class="flex flex-col items-center justify-center h-full px-6 text-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-300 dark:text-gray-600 mb-4">
+                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
+                  </svg>
+                  <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">No locations found</p>
+                  <p class="text-xs text-gray-400 dark:text-gray-500 leading-relaxed mb-3">Add a location to start tracking bids.</p>
+                  <button (click)="enterAddLocationMode(); showPanel.set(false)" class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    Add Location
+                  </button>
                 </div>
               } @else {
 
@@ -307,6 +331,7 @@
                   }
                 </tbody>
               </table>
+              } <!-- end @else has locations -->
               } <!-- end @else (TU active) -->
             </div>
             } <!-- end list/detail toggle -->
@@ -443,7 +468,7 @@
               </div>
 
               <!-- Body -->
-              <div class="px-4 py-3 space-y-3 overflow-y-auto flex-1 min-h-0">
+              <div class="px-4 py-3 space-y-3 overflow-y-auto flex-1 min-h-0 add-location-scroll">
 
                 <!-- Coordinates (read-only) -->
                 <div class="flex gap-2">
