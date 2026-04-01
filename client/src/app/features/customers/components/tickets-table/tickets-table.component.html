@@ -203,7 +203,7 @@
                   <app-table-cell class="text-center">{{ ticket.moisture | number:'1.1-1' }}%</app-table-cell>
                   <app-table-cell class="text-center">
                     @if (ticket.testWeight !== null && ticket.testWeight !== undefined) {
-                      {{ ticket.testWeight | number:'1.1-1' }}
+                      {{ ticket.testWeight | number:'1.1-1' }}%
                     } @else {
                       -
                     }
@@ -248,7 +248,7 @@
                 <app-table-cell class="text-center">
                   <span class="font-bold text-gray-800 dark:text-gray-100">
                     @if (group.avgTestWeight !== null) {
-                      {{ group.avgTestWeight | number:'1.1-1' }}
+                      {{ group.avgTestWeight | number:'1.1-1' }}%
                     } @else {
                       —
                     }
