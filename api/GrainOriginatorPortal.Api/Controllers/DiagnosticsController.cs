@@ -68,13 +68,13 @@ public class DiagnosticsController : ControllerBase
                 result = raw?.ToString();
                 return new { name, status = "OK", database = dbName, result };
             }
-            catch (SqlException ex)
+            catch (SqlException)
             {
-                return new { name, status = "FAILED", errorNumber = ex.Number, errorState = ex.State, message = ex.Message };
+                return new { name, status = "FAILED", message = "Database connection failed" };
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return new { name, status = "FAILED", errorNumber = (int?)null, errorState = (byte?)null, message = ex.Message };
+                return new { name, status = "FAILED", message = "Connection test failed" };
             }
         }
 
