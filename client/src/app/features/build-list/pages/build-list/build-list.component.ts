@@ -612,7 +612,11 @@ export class BuildListComponent {
   processQuery(overrideTradeUnits?: string[]): void {
     if (!this.queryText().trim()) return;
     // Don't run if core data hasn't loaded yet — the staged query will auto-run when data arrives
-    if (this.customers().length === 0) return;
+    // (hasGenerated stays false so _loadFresh's auto-run at completion picks it up)
+    if (this.customers().length === 0) {
+      this.hasGenerated.set(false);
+      return;
+    }
 
     const queryGen = ++this._queryGenId;
     this.isProcessing.set(true);
