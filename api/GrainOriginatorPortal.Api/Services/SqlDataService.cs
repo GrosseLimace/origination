@@ -30,6 +30,11 @@ public class SqlDataService : IDataService
         ?? _httpContextAccessor.HttpContext?.TraceIdentifier
         ?? "no-trace";
 
+    /// <summary>Sanitizes a list of ID strings for safe use in STRING_SPLIT CSV parameters.
+    /// Strips any character that isn't alphanumeric, hyphen, or underscore.</summary>
+    private static string SanitizeCsv(IEnumerable<string> values) =>
+        string.Join(",", values.Select(v => System.Text.RegularExpressions.Regex.Replace(v, @"[^a-zA-Z0-9\-_]", "")));
+
     private string GetCurrentUser()
     {
         var user = _httpContextAccessor.HttpContext?.User;
@@ -663,7 +668,7 @@ public class SqlDataService : IDataService
                     // STRING_SPLIT passes IDs as a single CSV parameter instead of 200+ individual
                     // parameters — avoids the slow IN-clause plan on vw_CurrentContracts where
                     // CtrmCustomerId has no index.
-                    var ctrmIdsCsv = string.Join(",", ctrmIds);
+                    var ctrmIdsCsv = SanitizeCsv(ctrmIds);
                     contracts = await _context.Contracts
                         .FromSqlInterpolated($@"
                             SELECT c.* FROM base.vw_CurrentContracts c
@@ -1789,10 +1794,10 @@ public class SqlDataService : IDataService
 
                 if (customerCodes.Count == 0) return [];
 
-                var csv = string.Join(",", customerCodes.Select(c => c.Replace("'", "''")));
-                var sql = StoredGrainSql + $" AND sg.CUSTOMER_ID IN (SELECT value FROM STRING_SPLIT('{csv}', ','))";
+                var csv = SanitizeCsv(customerCodes);
+                var sql = StoredGrainSql + " AND sg.CUSTOMER_ID IN (SELECT value FROM STRING_SPLIT(@customerCsv, ','))";
                 return await _context.Database
-                    .SqlQueryRaw<StoredGrain>(sql)
+                    .SqlQueryRaw<StoredGrain>(sql, new SqlParameter("@customerCsv", csv))
                     .ToListAsync(cancellationToken);
             }
             return await _context.Database
