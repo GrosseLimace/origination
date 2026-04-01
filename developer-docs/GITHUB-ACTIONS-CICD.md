@@ -14,7 +14,7 @@ This guide covers the GitHub Actions CI/CD pipeline for the Origination applicat
 - [npm Registry Authentication (@it packages)](#npm-registry-authentication-it-packages)
 - [Troubleshooting](#troubleshooting)
 - [References](#references)
-- [Mobile SWA Deployment](#mobile-swa-deployment)
+- [External SPA Deployment](#external-spa-deployment)
 
 ## Overview
 
@@ -519,22 +519,22 @@ This means a token was obtained but SQL Server could not map it to a database us
 
 ---
 
-## Mobile SWA Deployment
+## External SPA Deployment
 
-If this application has a mobile SPA, it deploys to Azure Static Web App via a separate workflow or job.
+If this application has an external SPA, it deploys to Azure Static Web App via a separate workflow or job.
 
 ### SWA Resource Names
 
-| Environment | Static Web App | Custom Domain |
-|-------------|---------------|---------------|
-| Dev | `swa-origination-dev-eus` | `m-origination-dev.scoular.com` |
-| QA | `swa-origination-qa-eus` | `m-origination-qa.scoular.com` |
-| Prod | `swa-origination-eus` | `m-origination.scoular.com` |
+| Environment | Static Web App | ext- Domain (testing) | Public Domain (QA/Prod only) |
+|-------------|---------------|---------------------|---------------------------|
+| Dev | `swa-origination-dev-eus` | `ext-origination-dev.scoular.com` | *(dev is internal only)* |
+| QA | `swa-origination-qa-eus` | `ext-origination-qa.scoular.com` | `origination-qa.scoular.com` |
+| Prod | `swa-origination-eus` | `ext-origination.scoular.com` | `origination.scoular.com` |
 
 ### Sample SWA Deploy Workflow
 
 ```yaml
-  deploy-mobile-swa:
+  deploy-external-swa:
     runs-on: self-hosted
     environment: dev
     permissions:
@@ -550,9 +550,9 @@ If this application has a mobile SPA, it deploys to Azure Static Web App via a s
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_NONPROD }}
 
-      - name: Build Mobile SPA
+      - name: Build External SPA
         run: |
-          cd mobile
+          cd external
           npm ci
           npm run build -- --configuration=dev
 
@@ -560,13 +560,17 @@ If this application has a mobile SPA, it deploys to Azure Static Web App via a s
         run: npm install -g @azure/static-web-apps-cli
 
       - name: Deploy to Static Web App
-        run: swa deploy ./mobile/dist/browser --deployment-token ${{ secrets.SWA_DEPLOYMENT_TOKEN }} --env production
+        run: |
+          swa deploy ./external/dist/browser \
+            --resource-group rg-origination-dev-eus \
+            --app-name swa-origination-dev-eus \
+            --env production
 ```
+
+**Authentication:** The SWA deploy uses the same OIDC workload identity as App Service deployments — no deployment token needed. The `azure/login@v2` step authenticates, and the SWA CLI uses that context with `--resource-group` and `--app-name` instead of a token. The GitHub Actions service principal has Contributor on the SWA resource.
 
 **Important:** Do NOT use `azure/static-web-apps-deploy@v1` — it requires Docker which is not available on our self-hosted runners. Use the `@azure/static-web-apps-cli` (SWA CLI) instead, which runs natively on Node.js.
 
-**Note:** The SWA deployment token can be retrieved from the Azure portal or via CLI: `az staticwebapp secrets list --name swa-origination-dev-eus --query "properties.apiKey" -o tsv`. Store it as a GHE environment secret named `SWA_DEPLOYMENT_TOKEN`.
-
 ---
 
-*Document version: 1.3 | 2026-03-30*
+*Document version: 1.6 | 2026-03-31*
