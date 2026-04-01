@@ -493,32 +493,32 @@ See `developer-docs/GITHUB-ACTIONS-CICD.md` for the full CI/CD guide.
 
 ---
 
-## Mobile Accessibility
+## External SPA
 
-To add mobile access to this application, produce an OpenAPI specification for your mobile endpoints. See `developer-docs/MOBILE-DEVELOPMENT-GUIDE.md` for the full guide.
+To add external access to this application, produce an OpenAPI specification for your external endpoints. See `developer-docs/EXTERNAL-SPA-GUIDE.md` for the full guide.
 
-**What Claude Code should do when asked to add mobile support:**
+**What Claude Code should do when asked to add external SPA support:**
 
-1. Analyze the codebase for mobile-suitable workflows (field operations, quick data entry, read-heavy dashboards accessible on small screens)
+1. Analyze the codebase for externally-suitable workflows (field operations, quick data entry, read-heavy dashboards accessible on small screens)
 2. Identify the minimal set of API endpoints those workflows require
 3. Create an `openapi/` directory in the repo root with:
-   - `specification.yaml` — OpenAPI 3.0 spec covering only mobile-facing endpoints
+   - `specification.yaml` — OpenAPI 3.0 spec covering only external-facing endpoints
    - `README.md` — workflow summary and offline requirements table
 
 4. The OpenAPI spec is consumed by three teams:
-   - **Infrastructure** — populates `mobileApp.mobileApiEndpoints` in app-config.json
+   - **Infrastructure** — populates `externalApp.externalApiEndpoints` in app-config.json
    - **Data Integrations** — imports into APIM via APIOps tooling or portal
-   - **App Dev (you)** — builds the mobile Angular SPA (can generate TypeScript clients from the spec)
+   - **App Dev (you)** — builds the external Angular SPA (can generate TypeScript clients from the spec)
 
-5. The mobile SPA is a separate Angular build targeting Azure Static Web App:
+5. The external SPA is a separate Angular build targeting Azure Static Web App:
    - Calls APIM (not the App Service directly): `https://api{env}.scoular.com/{apimPathPrefix}/...`
-   - Uses MSAL with a dedicated mobile SPA app registration
+   - Uses MSAL with a dedicated external SPA app registration
    - **Dev**: API scope is the app's own scope (`api://{API_CLIENT_ID}/{AppName}.Application.Dev`) — calls App Service directly
    - **QA/Prod**: API scope is the APIM scope from Data Integrations — calls APIM gateway
    - Same Entra ID tenant, managed device enforcement via Conditional Access
 
-Do NOT expose the App Service to the internet. Mobile access goes through APIM.
+Do NOT expose the App Service to the internet. External access goes through APIM.
 
 ---
 
-*Document version: 1.8 | 2026-03-26*
+*Document version: 1.9 | 2026-03-31*

@@ -25,15 +25,18 @@ This is your starting point for understanding the Azure infrastructure behind Or
 | [ACCESS-PACKAGES-APPROVER-GUIDE.md](ACCESS-PACKAGES-APPROVER-GUIDE.md) | How to approve access requests and manage assignments |
 | [GITHUB-ACTIONS-CICD.md](GITHUB-ACTIONS-CICD.md) | CI/CD pipeline setup, OIDC authentication, deployment workflows |
 | [deploy-workflow.yml.sample](deploy-workflow.yml.sample) | Sample GitHub Actions workflow ready to customize |
+| [EXTERNAL-SPA-GUIDE.md](EXTERNAL-SPA-GUIDE.md) | External SPA architecture (Static Web App + APIM) |
+| [CUSTOM-DOMAINS.md](../CUSTOM-DOMAINS.md) | Custom domain and SSL certificate configuration |
 
 ## What You Get
 
 Your Origination application runs on fully managed Azure infrastructure with private networking, automated SSL certificates, and enterprise security.
 
 ### Compute and Hosting
-- **App Service** (Windows, .NET 10.0, 64-bit, always-on)
-  - Dev/QA: B1 Basic (1 vCore, 1.75 GB RAM)
-  - Prod: P1v3 Premium (2 vCores, 8 GB RAM, auto-scaling capable)
+- **App Service** (Linux, .NET 10.0, 64-bit, always-on)
+  - Dev: Shared P2v4 App Service Plan (2 vCores, 8 GB RAM, shared across multiple apps)
+  - QA: B1 (dedicated App Service Plan)
+  - Prod: P1v3 (dedicated App Service Plan)
 
 ### Data and Storage
 - **SQL Database** (Azure SQL, managed identity authentication)
@@ -73,15 +76,15 @@ Your Origination application runs on fully managed Azure infrastructure with pri
 | QA | https://origination-qa.scoular.com | app-origination-qa-eus.azurewebsites.net |
 | Prod | https://origination.scoular.com | app-origination-eus.azurewebsites.net |
 
-### Mobile App (if enabled)
+### External SPA (if enabled)
 
-| Environment | Mobile SPA URL | SWA Resource |
-|-------------|---------------|--------------|
-| Dev | `https://m-origination-dev.scoular.com` | `swa-origination-dev-eus` |
-| QA | `https://m-origination-qa.scoular.com` | `swa-origination-qa-eus` |
-| Prod | `https://m-origination.scoular.com` | `swa-origination-eus` |
+| Environment | External SPA URL (testing) | External SPA URL (public) | SWA Resource |
+|-------------|--------------------------|--------------------------|--------------|
+| Dev | `https://ext-origination-dev.scoular.com` | *(dev is internal only)* | `swa-origination-dev-eus` |
+| QA | `https://ext-origination-qa.scoular.com` | `https://origination-qa.scoular.com` | `swa-origination-qa-eus` |
+| Prod | `https://ext-origination.scoular.com` | `https://origination.scoular.com` | `swa-origination-eus` |
 
-Mobile SPA Client IDs are in [APP-REGISTRATIONS.md](APP-REGISTRATIONS.md).
+External SPA Client IDs are in [APP-REGISTRATIONS.md](APP-REGISTRATIONS.md).
 
 ## Environment Variables
 
@@ -173,4 +176,4 @@ For new developers joining the Origination team:
 
 ---
 
-*Document version: 1.3 | 2026-03-26*
+*Document version: 1.6 | 2026-03-31*
