@@ -249,16 +249,16 @@
       <!-- Tabs Section - Below Summary -->
       <div #tabsSection>
         <!-- Pill-style tab navigation -->
-        <div class="w-full bg-gray-100 dark:bg-gray-800 rounded-full p-0.5 sm:p-1 mb-6">
-          <div class="flex">
+        <div class="w-full bg-gray-100 dark:bg-gray-800 rounded-full p-0.5 sm:p-1 mb-6 overflow-x-auto">
+          <div class="flex min-w-0">
             @for (tab of tabs; track tab.id) {
               <button
                 type="button"
                 [class]="getTabClass(tab.id)"
                 (click)="selectTab(tab.id)"
               >
-                <span class="hidden sm:inline">{{ tab.label }} ({{ tab.count }})</span>
-                <span class="sm:hidden">{{ tab.shortLabel }} ({{ tab.count }})</span>
+                <span class="hidden sm:inline whitespace-nowrap">{{ tab.label }} ({{ tab.count }})</span>
+                <span class="sm:hidden whitespace-nowrap">{{ tab.shortLabel }} ({{ tab.count }})</span>
               </button>
             }
           </div>
@@ -358,6 +358,7 @@
       [isOpen]="showPrintReport()"
       [customer]="customer()"
       [contracts]="contracts()"
+      [pricingLines]="pricingLines()"
       [plantingIntentions]="plantingIntentions()"
       [storedGrain]="storedGrain()"
       [notes]="notes()"

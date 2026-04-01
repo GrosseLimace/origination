@@ -436,6 +436,10 @@ export class HomeComponent {
 
   private _enrichSavedLists(): void {
     if (!this.savedLists().length || !this.customers().length) return;
+    // Skip lists that already have cached customerIds (resolved by a previous run)
+    const needsEnrich = this.savedLists().some(l => !l.customerIds?.length);
+    if (!needsEnrich) return;
+
     const context: NlqFilterContext = {
       customers: this.customers(),
       contracts: this.contracts(),
@@ -445,6 +449,7 @@ export class HomeComponent {
       storedGrain: this.storedGrain()
     };
     this.savedLists.set(this.savedLists().map(list => {
+      if (list.customerIds?.length) return list; // Already resolved
       const nlqCustomers = this.nlqFilterService.parseAndFilter(list.query, context).customers;
       const refined = list.filters
         ? this.nlqFilterService.applyRefinementFilters(nlqCustomers, list.filters, this.contracts(), this.notes())

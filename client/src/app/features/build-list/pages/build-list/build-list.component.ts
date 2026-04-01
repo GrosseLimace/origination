@@ -56,7 +56,6 @@ export class BuildListComponent {
   // Trade units captured at init — used to detect changes on destroy
   private _initTradeUnits: string[] = [];
   private _initialized = false;
-  private _dataLoading = false;
   private _ticketsReady = false;
   private _loadRequestId = 0;
   private _queryGenId = 0;
@@ -72,8 +71,9 @@ export class BuildListComponent {
     untracked(() => {
       this.clearQuery();
       const tus = this.appState.selectedTradeUnits();
+      this._initTradeUnits = tus.slice(); // Update so destroy handler saves state correctly
       if (tus.length > 0) {
-        this._loadFresh();
+        this._loadFresh(true); // TU changed — clear stale data
       }
     });
   });
@@ -95,15 +95,16 @@ export class BuildListComponent {
 
   readonly hasTradeUnits = computed(() => this.effectiveTradeUnits().length > 0);
 
-  /** Only show saved lists whose trade units match the currently selected TUs. */
+  /** Only show saved lists whose trade units exactly match the currently selected TUs. */
   readonly visibleSavedLists = computed(() => {
     const selectedTus = this.appState.selectedTradeUnits();
     if (selectedTus.length === 0) return [];
-    const tuSet = new Set(selectedTus);
+    const selectedSet = new Set(selectedTus);
     return this.savedLists().filter(list => {
       if (!list.tradeUnits) return false;
       const listTus = list.tradeUnits.split(',').map(t => t.trim()).filter(Boolean);
-      return listTus.length > 0 && listTus.every(tu => tuSet.has(tu));
+      if (listTus.length !== selectedSet.size) return false;
+      return listTus.every(tu => selectedSet.has(tu));
     });
   });
 
@@ -329,10 +330,6 @@ export class BuildListComponent {
           g.tradeUnitCodes.forEach(u => units.add(u));
         }
         this._allUserTradeUnits.set([...units].sort());
-        // Only auto-load if explicit TUs are selected
-        if (this.customers().length === 0 && !this._dataLoading && this.appState.selectedTradeUnits().length > 0) {
-          this._loadFresh();
-        }
       }
     });
 
@@ -369,9 +366,12 @@ export class BuildListComponent {
   // Data Loading — Two clear paths: _initLoad (restore) and _loadFresh (fetch)
   // =========================================================================
 
-  /** Called once on mount. Restores from saved build list state or fetches fresh. */
+  /** Called once on mount. Restores UI state, shows cached results, then fetches fresh data. */
   private _initLoad(): void {
-    // Only restore if we have saved build list state with matching TUs
+    // Restore UI state (query text, refinements, etc.) — this is safe, never corrupted
+    this._restoreUIState();
+
+    // If we have saved results, show them instantly while fresh data loads
     const saved = this.appState.buildListState();
     const currentTus = this.appState.selectedTradeUnits();
     const savedTus = saved?.tradeUnits ?? [];
@@ -379,51 +379,54 @@ export class BuildListComponent {
       && currentTus.length === savedTus.length
       && currentTus.every(tu => savedTus.includes(tu));
 
-    if (tusMatch && this.appState.customers().length > 0) {
-      // Path 1: Restore — saved state exists for the same TUs, use appState data instantly
-      this.customers.set(this.appState.customers());
-      this.contracts.set(this.appState.contracts());
-      this.tickets.set(this.appState.tickets());
-      this.plantingIntentions.set(this.appState.plantingIntentions());
-      this.notes.set(this.appState.notes());
-      this.storedGrain.set(this.appState.storedGrain());
-      const lists = this.appState.savedLists();
-      if (lists.length > 0) this.savedLists.set(lists);
-      if (this.appState.producerDetails().length > 0) {
-        this._mergeProducerDetails(this.appState.producerDetails());
+    if (tusMatch && saved?.hasGenerated && saved.filteredCustomerIds.length > 0) {
+      // Temporarily restore data signals from appState so computed properties
+      // (cropsByCustomer, lastContactByCustomer, etc.) work while cached results display.
+      // _loadFresh will overwrite these with fresh data when it completes.
+      const cachedCustomers = this.appState.customers();
+      if (cachedCustomers.length > 0) {
+        this.customers.set(cachedCustomers);
+        this.contracts.set(this.appState.contracts());
+        this.tickets.set(this.appState.tickets());
+        this.plantingIntentions.set(this.appState.plantingIntentions());
+        this.notes.set(this.appState.notes());
+        this.storedGrain.set(this.appState.storedGrain());
+        this._ticketsReady = this.appState.tickets().length > 0;
+        if (this.appState.producerDetails().length > 0) {
+          this._mergeProducerDetails(this.appState.producerDetails());
+        }
+        const idSet = new Set(saved.filteredCustomerIds);
+        this.filteredCustomers.set(this.customers().filter(c => idSet.has(c.id)));
       }
-      this._ticketsReady = this.appState.tickets().length > 0;
-      this._restoreUIState();
-      this.loading.set(false);
+    }
 
-      // Re-run query if one was staged
-      if (this.queryText().trim() && !this.hasGenerated()) {
-        this.processQuery();
-      }
-    } else if (currentTus.length > 0) {
-      // Path 2: TUs selected but no matching saved state — fetch fresh
+    // Always fetch fresh data — appState may have been corrupted by the home page
+    if (currentTus.length > 0) {
       this._loadFresh();
     } else {
-      // No TUs or group selected — wait for user to pick one
       this.loading.set(false);
     }
   }
 
-  /** Fetches all data fresh from the API for the current trade units. */
-  private _loadFresh(): void {
+  /** Fetches all data fresh from the API for the current trade units.
+   *  @param clearSignals If true, clears data signals immediately (TU change). If false, keeps them for display (background refresh). */
+  private _loadFresh(clearSignals = false): void {
     const requestId = ++this._loadRequestId;
-    this._dataLoading = true;
     this._ticketsReady = false;
-    this.loading.set(true);
 
-    // Clear local signals to prevent stale data from previous TU
-    this.customers.set([]);
-    this.contracts.set([]);
-    this.tickets.set([]);
-    this.plantingIntentions.set([]);
-    this.notes.set([]);
-    this.storedGrain.set([]);
-    this.filteredCustomers.set([]);
+    if (clearSignals) {
+      // TU changed — clear everything to prevent stale data from previous TU
+      this.customers.set([]);
+      this.contracts.set([]);
+      this.tickets.set([]);
+      this.plantingIntentions.set([]);
+      this.notes.set([]);
+      this.storedGrain.set([]);
+      this.loading.set(true);
+    } else if (this.customers().length === 0) {
+      // No cached data to display — show loading
+      this.loading.set(true);
+    }
 
     // Use explicitly selected TUs only
     const tus = this.appState.selectedTradeUnits();
@@ -460,32 +463,32 @@ export class BuildListComponent {
         this.appState.setStoredGrain(data.storedGrain);
         this.appState.setSavedLists(data.savedLists);
 
-        this._dataLoading = false;
         this.loading.set(false);
 
-        // Auto-run staged query now that core data is ready
+        // Auto-run query if not already showing results.
+        // If hasGenerated is true, results are cached from a previous run (possibly a saved list
+        // with different TUs) — don't overwrite with a re-run against current TUs.
         if (this.queryText().trim() && !this.hasGenerated()) {
           this.processQuery();
         }
       },
       error: () => {
         if (requestId !== this._loadRequestId) return;
-        this._dataLoading = false;
         this.loading.set(false);
         this.toastService.error('Failed to load data');
       }
     });
 
-    // Clear appState tickets so ensureTicketsLoaded fetches fresh for the new TU
-    this.appState.setTickets([]);
     // Tickets load in background — processQuery waits for them only if the query needs tickets
-    this.dataPreloadService.ensureTicketsLoaded(tuParam ?? [])
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => {
-        if (requestId !== this._loadRequestId) return;
-        this.tickets.set(this.appState.tickets());
-        this._ticketsReady = true;
-      });
+    this.apiService.getTickets(tuParam).pipe(
+      catchError(() => of([] as Ticket[])),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe(tickets => {
+      if (requestId !== this._loadRequestId) return;
+      this.tickets.set(tickets);
+      this.appState.setTickets(tickets);
+      this._ticketsReady = true;
+    });
   }
 
   /** Merge ProducerDetails into customer objects (commodities, bin capacity, etc.). */
@@ -520,10 +523,11 @@ export class BuildListComponent {
 
     // If trade units changed since state was saved, clear everything —
     // the user must re-enter and regenerate for the new selection.
-    const currentTus = this.effectiveTradeUnits();
+    const currentTus = this.appState.selectedTradeUnits();
     const savedTus = saved.tradeUnits ?? [];
-    const tradeUnitsMatch = currentTus.length === savedTus.length &&
-      currentTus.every(tu => savedTus.includes(tu));
+    const tradeUnitsMatch = currentTus.length > 0 && savedTus.length > 0
+      && currentTus.length === savedTus.length
+      && currentTus.every(tu => savedTus.includes(tu));
 
     if (!tradeUnitsMatch) {
       this.appState.clearBuildListState();
@@ -541,10 +545,7 @@ export class BuildListComponent {
     }
     if (saved.notContactedDaysInput) this.notContactedDaysInput.set(saved.notContactedDaysInput);
     if (saved.showRefinePanel) this.showRefinePanel.set(saved.showRefinePanel);
-    if (saved.hasGenerated && saved.filteredCustomerIds.length > 0) {
-      const idSet = new Set(saved.filteredCustomerIds);
-      this.filteredCustomers.set(this.customers().filter(c => idSet.has(c.id)));
-    }
+    // Note: filteredCustomers are restored by _initLoad after data signals are set
   }
 
   toggleMap(): void {
@@ -596,7 +597,6 @@ export class BuildListComponent {
   }
 
   useExampleQuery(example: string): void {
-    if (this.isProcessing() || this.loading()) return;
     this.detectedState.set(null);
     this.hasGenerated.set(false);
     this.filteredCustomers.set([]);
@@ -606,7 +606,7 @@ export class BuildListComponent {
     if (!this.loading()) {
       this.processQuery();
     }
-    // If loading: text is staged; _loadData() auto-runs processQuery() on completion
+    // If loading: text is staged; _loadFresh auto-runs processQuery() on completion
   }
 
   processQuery(overrideTradeUnits?: string[]): void {
@@ -624,25 +624,20 @@ export class BuildListComponent {
     }
 
     // If query involves tickets and tickets haven't loaded yet, wait for them
-    if (this.nlqFilterService.queryInvolvesTickets(this.queryText()) && !this._ticketsReady) {
-      this.dataPreloadService.ensureTicketsLoaded(this.effectiveTradeUnits())
-        .pipe(
-          timeout(60000),
-          catchError(() => of(void 0)),
-          takeUntilDestroyed(this.destroyRef)
-        )
-        .subscribe(() => {
-          if (queryGen !== this._queryGenId) return;
-          this.tickets.set(this.appState.tickets());
-          this._ticketsReady = true;
-          if (this.appState.tickets().length === 0) {
-            this.isProcessing.set(false);
-            this.toastService.warning('Ticket data is still loading. Try again in a moment.');
-            return;
-          }
-          this._applyNlqFilter();
-          this.isProcessing.set(false);
-        });
+    const needsTickets = this.nlqFilterService.queryInvolvesTickets(this.queryText());
+    if (needsTickets && (!this._ticketsReady || this.tickets().length === 0)) {
+      const tuParam = this.appState.selectedTradeUnits();
+      this.apiService.getTickets(tuParam.length > 0 ? tuParam : undefined).pipe(
+        timeout(60000),
+        catchError(() => of([] as Ticket[])),
+        takeUntilDestroyed(this.destroyRef)
+      ).subscribe(tickets => {
+        if (queryGen !== this._queryGenId) return;
+        this.tickets.set(tickets);
+        this._ticketsReady = true;
+        this._applyNlqFilter();
+        this.isProcessing.set(false);
+      });
       return;
     }
 
@@ -699,7 +694,9 @@ export class BuildListComponent {
     this.detectedState.set(result.detectedState);
     this.hasGenerated.set(true);
     this.queryUnrecognized.set(result.matchedPatterns.length === 0);
-    this.queryReturnedNoMatches.set(result.matchedPatterns.length > 0 && result.customers.length === 0);
+    // Don't show "no match" if tickets are still loading and the query needs them
+    const ticketsPending = this.nlqFilterService.queryInvolvesTickets(this.queryText()) && !this._ticketsReady;
+    this.queryReturnedNoMatches.set(result.matchedPatterns.length > 0 && result.customers.length === 0 && !ticketsPending);
 
     if (this.queryUnrecognized()) {
       // Unrecognized query: if other refinements are active use all customers as the

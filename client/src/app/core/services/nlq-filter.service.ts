@@ -28,6 +28,20 @@ export class NlqFilterService {
       || q.includes('unsettled') || q.includes('settled') || q.includes('unmatched');
   }
 
+  /** Returns true if the query involves storage-related patterns that require stored grain data. */
+  queryInvolvesStorage(query: string): boolean {
+    const q = query.toLowerCase();
+    return q.includes('storage') || q.includes('stored') || q.includes('storing')
+      || q.includes('grain on hand') || q.includes('in storage');
+  }
+
+  /** Returns true if the query involves planting-related patterns that require planting intentions data. */
+  queryInvolvesPlanting(query: string): boolean {
+    const q = query.toLowerCase();
+    return q.includes('planting') || q.includes('planted') || q.includes('planting intention')
+      || q.includes('projected') || q.includes('irrigated') || q.includes('dryland');
+  }
+
   // ============================================================
   // Shared constants & utilities
   // ============================================================
@@ -1885,17 +1899,11 @@ export class NlqFilterService {
       );
     }
 
-    // --- Ticket type (purchase/inbound vs sale/outbound) ---
+    // --- Ticket type (purchase/inbound only — S and L ticket types are not loaded) ---
     if (lowerQuery.includes('purchase ticket') || lowerQuery.includes('inbound ticket') ||
         lowerQuery.includes('inbound delivery') || lowerQuery.includes('inbound deliveries')) {
       result = result.filter(c =>
         getCustomerTickets(c).some(t => t.ticketType === 'P' || t.ticketType === 'U')
-      );
-    }
-    if (lowerQuery.includes('sale ticket') || lowerQuery.includes('outbound ticket') ||
-        lowerQuery.includes('outbound delivery') || lowerQuery.includes('loadout')) {
-      result = result.filter(c =>
-        getCustomerTickets(c).some(t => t.ticketType === 'S' || t.ticketType === 'L')
       );
     }
 

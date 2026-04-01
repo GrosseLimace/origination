@@ -421,7 +421,7 @@ public class SqlDataService : IDataService
         // Get unique organization codes from tickets
         var ticketOrgCodes = await _context.Tickets
             .AsNoTracking()
-            .Where(t => t.IsActive && !string.IsNullOrEmpty(t.OrganizationCode))
+            .Where(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && !string.IsNullOrEmpty(t.OrganizationCode))
             .Select(t => t.OrganizationCode!)
             .Distinct()
             .ToListAsync(cancellationToken);
@@ -486,7 +486,7 @@ public class SqlDataService : IDataService
             // Pull all distinct product codes from tickets
             var ticketProductCodes = await _context.Tickets
                 .AsNoTracking()
-                .Where(t => t.IsActive && !string.IsNullOrEmpty(t.ProductCode))
+                .Where(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && !string.IsNullOrEmpty(t.ProductCode))
                 .Select(t => t.ProductCode!)
                 .Distinct()
                 .ToListAsync(cancellationToken);
@@ -635,7 +635,7 @@ public class SqlDataService : IDataService
                     .AsNoTracking()
                     .Where(c => c.SourceCustomerId != null && (
                         _context.Contracts.Any(ct => ct.IsActive && ct.ContractPrefixType == "P" && ct.CtrmCustomerId == c.SourceCustomerId) ||
-                        _context.Tickets.Any(t => t.IsActive && t.CustomerId == c.Id)))
+                        _context.Tickets.Any(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerId == c.Id)))
                     .Take(15)
                     .Select(c => c.SourceCustomerId)
                     .ToListAsync(cancellationToken);
@@ -907,14 +907,14 @@ public class SqlDataService : IDataService
                     .AsNoTracking()
                     .Where(c => c.SourceCustomerId != null && (
                         _context.Contracts.Any(ct => ct.IsActive && ct.ContractPrefixType == "P" && ct.CtrmCustomerId == c.SourceCustomerId) ||
-                        _context.Tickets.Any(t => t.IsActive && t.CustomerCode == c.SourceCustomerId)))
+                        _context.Tickets.Any(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerCode == c.SourceCustomerId)))
                     .Take(15)
                     .Select(c => c.SourceCustomerId!)
                     .ToListAsync(cancellationToken);
 
                 tickets = await _context.Tickets
                     .AsNoTracking()
-                    .Where(t => t.IsActive && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode))
+                    .Where(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode))
                     .OrderByDescending(t => t.Date)
                     .ToListAsync(cancellationToken);
             }
@@ -953,7 +953,7 @@ public class SqlDataService : IDataService
                 // Step 3: Load all tickets for these customers
                 var rawTickets = await _context.Tickets
                     .AsNoTracking()
-                    .Where(t => t.IsActive && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode))
+                    .Where(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode))
                     .OrderByDescending(t => t.Date)
                     .ToListAsync(cancellationToken);
 
@@ -1103,14 +1103,14 @@ public class SqlDataService : IDataService
                     .AsNoTracking()
                     .Where(c => c.SourceCustomerId != null && (
                         _context.Contracts.Any(ct => ct.IsActive && ct.ContractPrefixType == "P" && ct.CtrmCustomerId == c.SourceCustomerId) ||
-                        _context.Tickets.Any(t => t.IsActive && t.CustomerCode == c.SourceCustomerId)))
+                        _context.Tickets.Any(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerCode == c.SourceCustomerId)))
                     .Take(15)
                     .Select(c => c.SourceCustomerId!)
                     .ToListAsync(cancellationToken);
 
                 tickets = await _context.Tickets
                     .AsNoTracking()
-                    .Where(t => t.IsActive && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode) && t.Date != null && string.Compare(t.Date, cutoffStr) >= 0)
+                    .Where(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode) && t.Date != null && string.Compare(t.Date, cutoffStr) >= 0)
                     .OrderByDescending(t => t.Date)
                     .ToListAsync(cancellationToken);
             }
@@ -1142,7 +1142,7 @@ public class SqlDataService : IDataService
 
                 var rawTickets = await _context.Tickets
                     .AsNoTracking()
-                    .Where(t => t.IsActive && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode) && t.Date != null && string.Compare(t.Date, cutoffStr) >= 0)
+                    .Where(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode) && t.Date != null && string.Compare(t.Date, cutoffStr) >= 0)
                     .OrderByDescending(t => t.Date)
                     .ToListAsync(cancellationToken);
 
@@ -1218,7 +1218,7 @@ public class SqlDataService : IDataService
             // Match tickets using CustomerCode = sourceCustomerId (string matching, like contracts)
             var tickets = await _context.Tickets
                 .AsNoTracking()
-                .Where(t => t.IsActive && t.CustomerCode == sourceCustomerId)
+                .Where(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerCode == sourceCustomerId)
                 .OrderByDescending(t => t.Date)
                 .ToListAsync(cancellationToken);
 

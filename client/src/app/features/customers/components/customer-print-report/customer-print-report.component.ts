@@ -6,7 +6,7 @@ import { ToastService } from '@core/services/toast.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '@shared/components/dialog/dialog.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
-import { Customer, Contract, PlantingIntention, StoredGrain, Note, Commodity, DashboardPlantingEstimate } from '@models';
+import { Customer, Contract, ContractPricingLine, PlantingIntention, StoredGrain, Note, Commodity, DashboardPlantingEstimate } from '@models';
 
 @Component({
   selector: 'app-customer-print-report',
@@ -41,6 +41,7 @@ export class CustomerPrintReportComponent {
   public notes = input<Note[]>([]);
   public commodities = input<Commodity[]>([]);
   public yieldEstimates = input<DashboardPlantingEstimate[]>([]);
+  public pricingLines = input<ContractPricingLine[]>([]);
   public linkedCustomers = input<Customer[]>([]);
 
   // Output
@@ -94,6 +95,34 @@ export class CustomerPrintReportComponent {
         this._defaultsApplied = false;
       }
     });
+  }
+
+  // Pricing lines indexed by sourceContractId
+  readonly pricingLinesMap = computed(() => {
+    const map = new Map<string, ContractPricingLine[]>();
+    for (const c of this.contracts()) {
+      if (c.sourceContractId) map.set(c.sourceContractId, []);
+    }
+    for (const line of this.pricingLines()) {
+      if (!line.contractId) continue;
+      if (!map.has(line.contractId)) map.set(line.contractId, []);
+      map.get(line.contractId)!.push(line);
+    }
+    return map;
+  });
+
+  getContractPrice(ct: Contract): string {
+    const ptc = (ct.priceTypeCode ?? '').trim().toUpperCase();
+    const lines = ct.sourceContractId ? this.pricingLinesMap().get(ct.sourceContractId) : undefined;
+    const hasLines = (lines?.length ?? 0) > 0;
+
+    if (ptc === 'P' && hasLines && lines![0].flatPrice != null) {
+      return this.formatCurrency(lines![0].flatPrice!);
+    }
+    if (ptc === 'P') return 'Priced';
+    if (ptc === 'D') return 'Deferred';
+    if (ptc === 'U') return 'Unpriced';
+    return '—';
   }
 
   // Computed data
@@ -395,7 +424,7 @@ export class CustomerPrintReportComponent {
                 <td style="font-weight:500;">${this._esc(ct.contractNumber)}</td>
                 <td>${this._esc(ct.commodityDescription || ct.commodityCode || '')}</td>
                 <td style="text-align:right;">${(ct.quantity ?? 0).toLocaleString()} bu</td>
-                <td style="text-align:right;">${ct.price != null ? this.formatCurrency(ct.price) : '—'}</td>
+                <td style="text-align:right;">${this._esc(this.getContractPrice(ct))}</td>
                 <td style="text-align:right;font-weight:600;">${ct.totalValue != null ? this.formatCurrency(ct.totalValue) : '—'}</td>
                 <td style="padding:10px 14px;"><div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><div style="width:100%;height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden;"><div style="width:${Math.min(pct, 100)}%;height:100%;background:${progressColor};border-radius:4px;"></div></div><div style="font-size:10px;color:#6b7280;">${delivered.toLocaleString()} / ${(ct.quantity ?? 0).toLocaleString()} bu (${pct}%)</div></div></td>
                 <td style="font-size:11px;">${this._esc(this.formatDeliveryPeriod(ct.deliveryStart, ct.deliveryEnd))}</td>
