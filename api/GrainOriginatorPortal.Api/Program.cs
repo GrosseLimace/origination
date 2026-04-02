@@ -342,6 +342,15 @@ builder.Services.AddRateLimiter(options =>
 });
 
 // =============================================================================
+// RESPONSE COMPRESSION — gzip JSON responses (5-10x smaller over the wire).
+// Especially benefits large payloads like GET /api/customers.
+// =============================================================================
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+});
+
+// =============================================================================
 // HEALTH CHECKS (§8 — /health/live and /health/ready)
 // =============================================================================
 builder.Services.AddHealthChecks()
@@ -403,6 +412,9 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi().RequireAuthorization();
 }
+
+// Response compression — gzip large JSON payloads. Must be before any middleware that writes response bodies.
+app.UseResponseCompression();
 
 // Global exception handling — must be first in the middleware pipeline
 app.UseExceptionHandler();

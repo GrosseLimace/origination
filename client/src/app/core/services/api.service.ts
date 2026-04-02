@@ -21,7 +21,9 @@ import {
   BidSheetEntry,
   BidSheetLocation,
   BidSheetLocationBid,
-  Elevator
+  Elevator,
+  CommodityConversion,
+  HarvestWindow
 } from '@models';
 import { environment } from '@env/environment';
 import { ToastService } from '@core/services/toast.service';
@@ -433,6 +435,22 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
+  /** Fetches commodity conversion factors (lbs per bushel) from ODS */
+  getCommodityConversions(): Observable<CommodityConversion[]> {
+    return this._dedupe('commodity-conversions',
+      this.http.get<CommodityConversion[]>(`${this.baseUrl}/commodities/conversions`)
+        .pipe(catchError(e => this.handleError(e)))
+    );
+  }
+
+  /** Fetches harvest delivery windows per commodity */
+  getHarvestWindows(): Observable<HarvestWindow[]> {
+    return this._dedupe('harvest-windows',
+      this.http.get<HarvestWindow[]>(`${this.baseUrl}/commodities/harvest-windows`)
+        .pipe(catchError(e => this.handleError(e)))
+    );
+  }
+
   // ==========================================================================
   // Saved List Operations (Customer query lists)
   // ==========================================================================
@@ -484,20 +502,26 @@ export class ApiService {
   getElevators(tradeUnitCode?: string): Observable<Elevator[]> {
     const params: any = {};
     if (tradeUnitCode) params.tradeUnitCode = tradeUnitCode;
-    return this.http.get<Elevator[]>(`${this.baseUrl}/bidsheet/elevators`, { params })
-      .pipe(catchError(e => this.handleError(e)));
+    return this._dedupe(`bidsheet-elevators-${tradeUnitCode ?? 'all'}`,
+      this.http.get<Elevator[]>(`${this.baseUrl}/bidsheet/elevators`, { params })
+        .pipe(catchError(e => this.handleError(e)))
+    );
   }
 
   /** Gets bid sheet locations (with nested bids) for a trade unit */
   getBidSheetLocations(tradeUnitCode: string): Observable<BidSheetLocation[]> {
-    return this.http.get<BidSheetLocation[]>(`${this.baseUrl}/bidsheet/locations`, { params: { tradeUnitCode } })
-      .pipe(catchError(e => this.handleError(e)));
+    return this._dedupe(`bidsheet-locations-${tradeUnitCode}`,
+      this.http.get<BidSheetLocation[]>(`${this.baseUrl}/bidsheet/locations`, { params: { tradeUnitCode } })
+        .pipe(catchError(e => this.handleError(e)))
+    );
   }
 
   /** Gets all bid sheet locations across all trade units (for map display) */
   getAllBidSheetLocations(): Observable<BidSheetLocation[]> {
-    return this.http.get<BidSheetLocation[]>(`${this.baseUrl}/bidsheet/locations`)
-      .pipe(catchError(e => this.handleError(e)));
+    return this._dedupe('bidsheet-all-locations',
+      this.http.get<BidSheetLocation[]>(`${this.baseUrl}/bidsheet/locations`)
+        .pipe(catchError(e => this.handleError(e)))
+    );
   }
 
   /** Creates a new bid sheet location with initial bids */
@@ -523,6 +547,12 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
+  /** Deletes all bids for a specific commodity on a location */
+  deleteBidSheetBids(locationId: number, commodityCode: string, tradeUnitCode: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/bidsheet/locations/${locationId}/bids/${encodeURIComponent(commodityCode)}?tradeUnitCode=${encodeURIComponent(tradeUnitCode)}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
   /** Bulk upserts bids (used by the edit-bids grid) */
   bulkUpsertBidSheetBids(bids: Array<{
     name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string;
@@ -536,20 +566,26 @@ export class ApiService {
 
   /** Gets distinct crop years from bids for a trade unit */
   getBidCropYears(tradeUnitCode: string): Observable<number[]> {
-    return this.http.get<number[]>(`${this.baseUrl}/bidsheet/cropyears`, { params: { tradeUnitCode } })
-      .pipe(catchError(e => this.handleError(e)));
+    return this._dedupe(`bidsheet-cropyears-${tradeUnitCode}`,
+      this.http.get<number[]>(`${this.baseUrl}/bidsheet/cropyears`, { params: { tradeUnitCode } })
+        .pipe(catchError(e => this.handleError(e)))
+    );
   }
 
   /** Gets distinct commodity codes from bids for a trade unit */
   getBidCommodities(tradeUnitCode: string): Observable<string[]> {
-    return this.http.get<string[]>(`${this.baseUrl}/bidsheet/commodities`, { params: { tradeUnitCode } })
-      .pipe(catchError(e => this.handleError(e)));
+    return this._dedupe(`bidsheet-commodities-${tradeUnitCode}`,
+      this.http.get<string[]>(`${this.baseUrl}/bidsheet/commodities`, { params: { tradeUnitCode } })
+        .pipe(catchError(e => this.handleError(e)))
+    );
   }
 
   /** Gets the reference location for the current user and a trade unit. Returns null if not set. */
   getBidSheetReference(tradeUnitCode: string): Observable<{ tradeUnitCode: string; locationId: number; name: string } | null> {
-    return this.http.get<{ tradeUnitCode: string; locationId: number; name: string }>(`${this.baseUrl}/bidsheet/reference`, { params: { tradeUnitCode } })
-      .pipe(catchError(() => of(null)));
+    return this._dedupe(`bidsheet-reference-${tradeUnitCode}`,
+      this.http.get<{ tradeUnitCode: string; locationId: number; name: string }>(`${this.baseUrl}/bidsheet/reference`, { params: { tradeUnitCode } })
+        .pipe(catchError(() => of(null)))
+    );
   }
 
   /** Sets or updates the reference location for the current user and a trade unit. */
@@ -561,6 +597,20 @@ export class ApiService {
   /** Clears the reference location for the current user and a trade unit. */
   clearBidSheetReference(tradeUnitCode: string): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/bidsheet/reference`, { params: { tradeUnitCode } })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Gets the saved location order for the current user and a trade unit key. Returns null if not set. */
+  getBidSheetLocationOrder(tradeUnitKey: string): Observable<{ locationOrder: string } | null> {
+    return this._dedupe(`bidsheet-location-order-${tradeUnitKey}`,
+      this.http.get<{ locationOrder: string }>(`${this.baseUrl}/bidsheet/location-order`, { params: { tradeUnitKey } })
+        .pipe(catchError(() => of(null)))
+    );
+  }
+
+  /** Saves the location order for the current user and a trade unit key. */
+  setBidSheetLocationOrder(tradeUnitKey: string, locationOrder: string): Observable<void> {
+    return this.http.put<void>(`${this.baseUrl}/bidsheet/location-order`, { tradeUnitKey, locationOrder })
       .pipe(catchError(e => this.handleError(e)));
   }
 

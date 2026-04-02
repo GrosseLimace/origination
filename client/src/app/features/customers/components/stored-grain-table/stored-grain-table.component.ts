@@ -1,6 +1,7 @@
 import { Component, input, computed, signal, effect, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
 import { Customer, StoredGrain } from '@models';
 
 export interface CommodityGroup {
@@ -15,7 +16,7 @@ export interface CommodityGroup {
   selector: 'app-stored-grain-table',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent],
   templateUrl: './stored-grain-table.component.html'
 })
 export class StoredGrainTableComponent {
@@ -27,6 +28,9 @@ export class StoredGrainTableComponent {
   searchQuery = signal('');
   expandedCommodities = signal(new Set<string>());
 
+  currentSortColumn: string | null = null;
+  currentSortDirection: 'none' | 'asc' | 'desc' = 'none';
+
   constructor() {
     // Auto-expand the single commodity group so the user doesn't have to click
     // to open it. With multiple groups, start collapsed so the summary is visible.
@@ -35,6 +39,7 @@ export class StoredGrainTableComponent {
       this.expandedCommodities.set(
         groups.length === 1 ? new Set([groups[0].crop]) : new Set()
       );
+      this.searchQuery.set('');
     });
   }
 
@@ -132,5 +137,39 @@ export class StoredGrainTableComponent {
 
   isExpanded(crop: string): boolean {
     return this.expandedCommodities().has(crop);
+  }
+
+  handleSort(column: string): void {
+    if (this.currentSortColumn === column) {
+      if (this.currentSortDirection === 'asc') this.currentSortDirection = 'desc';
+      else if (this.currentSortDirection === 'desc') { this.currentSortColumn = null; this.currentSortDirection = 'none'; }
+      else this.currentSortDirection = 'asc';
+    } else {
+      this.currentSortColumn = column;
+      this.currentSortDirection = 'asc';
+    }
+  }
+
+  getSortIconClass(column: string): string {
+    return this.currentSortColumn === column ? 'text-gray-600 dark:text-gray-300' : 'text-gray-400 dark:text-gray-600';
+  }
+
+  sortedReceipts(receipts: StoredGrain[]): StoredGrain[] {
+    if (!this.currentSortColumn || this.currentSortDirection === 'none') return receipts;
+    const sorted = [...receipts].sort((a, b) => {
+      let cmp = 0;
+      switch (this.currentSortColumn) {
+        case 'ticket': cmp = a.receiptNumber.localeCompare(b.receiptNumber); break;
+        case 'commodity': cmp = (a.crop || '').localeCompare(b.crop || ''); break;
+        case 'grossBu': cmp = (a.grossQuantity || 0) - (b.grossQuantity || 0); break;
+        case 'netBu': cmp = (a.quantity || 0) - (b.quantity || 0); break;
+        case 'charged': cmp = new Date(a.chargedFromDate || 0).getTime() - new Date(b.chargedFromDate || 0).getTime(); break;
+        case 'storageDays': cmp = (a.storageDays || 0) - (b.storageDays || 0); break;
+        case 'rate': cmp = (a.storageRate || 0) - (b.storageRate || 0); break;
+        case 'amount': cmp = (a.receivableAmount || 0) - (b.receivableAmount || 0); break;
+      }
+      return cmp;
+    });
+    return this.currentSortDirection === 'desc' ? sorted.reverse() : sorted;
   }
 }

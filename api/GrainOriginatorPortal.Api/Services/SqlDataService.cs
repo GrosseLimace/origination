@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Caching.Memory;
 using GrainOriginatorPortal.Api.Data;
 using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Models;
@@ -16,13 +17,15 @@ public class SqlDataService : IDataService
     private readonly ApplicationDbContext _appContext;
     private readonly ILogger<SqlDataService> _logger;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IMemoryCache _cache;
 
-    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor)
+    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor, IMemoryCache cache)
     {
         _context = context;
         _appContext = appContext;
         _logger = logger;
         _httpContextAccessor = httpContextAccessor;
+        _cache = cache;
     }
 
     private string GetTraceId() =>
@@ -56,18 +59,50 @@ public class SqlDataService : IDataService
             var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
             var filterMsg = hasTradeUnitFilter ? $" (filtered by {tradeUnits!.Count} trade units: {string.Join(", ", tradeUnits)})" : "";
 
-            var query = _appContext.CustomerSnapshots.AsNoTracking().Where(s => s.IsActive);
+            // --- PERF: SQL-side dedup via ROW_NUMBER so only one row per customer crosses the wire.
+            // Previously pulled ALL snapshot rows (one per customer-trade-unit pair) into memory
+            // and deduplicated with GroupBy in C#, transferring ~Nx the needed rows.
+            // Old code:
+            //   var query = _appContext.CustomerSnapshots.AsNoTracking().Where(s => s.IsActive);
+            //   if (hasTradeUnitFilter)
+            //       query = query.Where(s => s.TradeUnit != null && tradeUnits!.Contains(s.TradeUnit));
+            //   var snapshots = await query.OrderBy(s => s.CustomerName).ToListAsync(cancellationToken);
+            //   var customers = snapshots
+            //       .GroupBy(s => s.CustomerId)
+            //       .Select(g => MapSnapshotToCustomer(g.First()))
+            //       .OrderBy(c => c.Name)   // <-- redundant sort (SQL already sorted)
+            //       .ToList();
+            //   await EnrichCustomersWithESignAsync(customers, cancellationToken);
+
+            // Build WHERE clause and parameters for raw SQL dedup query
+            var whereClauses = new List<string> { "IsActive = 1" };
+            var parameters = new List<SqlParameter>();
+
             if (hasTradeUnitFilter)
-                query = query.Where(s => s.TradeUnit != null && tradeUnits!.Contains(s.TradeUnit));
+            {
+                var csv = SanitizeCsv(tradeUnits!);
+                whereClauses.Add("TradeUnit IN (SELECT value FROM STRING_SPLIT(@tradeUnits, ','))");
+                parameters.Add(new SqlParameter("@tradeUnits", csv));
+            }
 
-            var snapshots = await query.OrderBy(s => s.CustomerName).ToListAsync(cancellationToken);
+            var where = string.Join(" AND ", whereClauses);
+            var sql = $@"
+                SELECT * FROM (
+                    SELECT *, ROW_NUMBER() OVER (PARTITION BY CustomerId ORDER BY CustomerName) AS rn
+                    FROM dbo.CustomerSnapshot
+                    WHERE {where}
+                ) t WHERE rn = 1
+                ORDER BY CustomerName";
 
-            // Deduplicate: one Customer per CustomerId (snapshot has one row per customer per trade unit)
-            var customers = snapshots
-                .GroupBy(s => s.CustomerId)
-                .Select(g => MapSnapshotToCustomer(g.First()))
-                .OrderBy(c => c.Name)
-                .ToList();
+            // NOTE: Cannot parallelize customer + eSign queries via Task.WhenAll because
+            // both use the same _appContext DbContext, and EF Core forbids concurrent operations
+            // on a single DbContext instance. The SQL dedup + indexes are the main perf wins here.
+            var snapshots = await _appContext.CustomerSnapshots
+                .FromSqlRaw(sql, parameters.ToArray())
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+
+            var customers = snapshots.Select(MapSnapshotToCustomer).ToList();
 
             await EnrichCustomersWithESignAsync(customers, cancellationToken);
             _logger.LogInformation("Returning {Count} customers from CustomerSnapshot{Filter}", customers.Count, filterMsg);
@@ -104,27 +139,58 @@ public class SqlDataService : IDataService
                                         .Where(w => w.Length > 0)
                                         .ToList();
 
-            var query = _appContext.CustomerSnapshots.AsNoTracking().Where(s => s.IsActive).AsQueryable();
+            if (searchWords.Count == 0)
+                return [];
+
+            // --- PERF: Raw SQL with ROW_NUMBER dedup (same approach as GetCustomersAsync).
+            // Old code used EF LINQ Contains which generates LIKE '%word%' per column per word,
+            // then pulled up to 1000 duplicate TU rows and deduped in C#.
+            // New approach: single raw SQL query with dedup built in, returns max 200 unique customers.
+            var whereClauses = new List<string> { "IsActive = 1" };
+            var parameters = new List<SqlParameter>();
 
             if (hasTradeUnitFilter)
-                query = query.Where(s => s.TradeUnit != null && tradeUnits!.Contains(s.TradeUnit));
+            {
+                var csv = SanitizeCsv(tradeUnits!);
+                whereClauses.Add("TradeUnit IN (SELECT value FROM STRING_SPLIT(@tradeUnits, ','))");
+                parameters.Add(new SqlParameter("@tradeUnits", csv));
+            }
 
-            // All search words must match name, source customer ID, or phone number
-            foreach (var word in searchWords)
-                query = query.Where(s => s.CustomerName.Contains(word)
-                    || (s.SourceCustomerId != null && s.SourceCustomerId.Contains(word))
-                    || (s.MerchandisingPhone != null && s.MerchandisingPhone.Contains(word))
-                    || (s.ExtendedPrimaryPhone != null && s.ExtendedPrimaryPhone.Contains(word)));
+            // Each search word must match at least one searchable field (AND across words).
+            // State uses exact match to avoid false positives on short abbreviations like "CO".
+            for (int i = 0; i < searchWords.Count; i++)
+            {
+                var paramName = $"@w{i}";
+                var word = searchWords[i];
+                parameters.Add(new SqlParameter(paramName, word));
 
-            var snapshots = await query.Take(1000).ToListAsync(cancellationToken);
+                whereClauses.Add($@"(
+                    CustomerName LIKE '%' + {paramName} + '%'
+                    OR SourceCustomerId LIKE '%' + {paramName} + '%'
+                    OR MerchandisingPhone LIKE '%' + {paramName} + '%'
+                    OR ExtendedPrimaryPhone LIKE '%' + {paramName} + '%'
+                    OR MerchandisingCity LIKE '%' + {paramName} + '%'
+                    OR MerchandisingStateProvince = {paramName}
+                )");
+            }
 
-            // Deduplicate by CustomerId, then score by relevance
-            var candidates = snapshots
-                .GroupBy(s => s.CustomerId)
-                .Select(g => MapSnapshotToCustomer(g.First()))
-                .ToList();
+            var where = string.Join(" AND ", whereClauses);
+            var sql = $@"
+                SELECT * FROM (
+                    SELECT *, ROW_NUMBER() OVER (PARTITION BY CustomerId ORDER BY CustomerName) AS rn
+                    FROM dbo.CustomerSnapshot
+                    WHERE {where}
+                ) t WHERE rn = 1";
 
-            var scoredCustomers = candidates.Select(c => new
+            var snapshots = await _appContext.CustomerSnapshots
+                .FromSqlRaw(sql, parameters.ToArray())
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+
+            var customers = snapshots.Select(MapSnapshotToCustomer).ToList();
+
+            // Score by relevance so best matches appear first
+            var scoredCustomers = customers.Select(c => new
             {
                 Customer = c,
                 Score = CalculateRelevanceScore(c.Name, searchWords, searchTerm)
@@ -192,6 +258,7 @@ public class SqlDataService : IDataService
     /// <summary>
     /// Looks up eSign enrollment records for the given customers and populates
     /// ESignEnabled and ScoularViewRecipients from dbo.eSignEnrollment.
+    /// Async version — queries the DB. Used by callers that don't pre-fetch eSign data.
     /// </summary>
     private async Task EnrichCustomersWithESignAsync(List<Customer> customers, CancellationToken cancellationToken = default)
     {
@@ -208,6 +275,17 @@ public class SqlDataService : IDataService
             .AsNoTracking()
             .Where(e => codes.Contains(e.CustomerCode))
             .ToListAsync(cancellationToken);
+
+        EnrichCustomersWithESign(customers, enrollmentList);
+    }
+
+    /// <summary>
+    /// Enriches customers with eSign data from an already-loaded enrollment list.
+    /// Used by GetCustomersAsync/SearchCustomersAsync which pre-fetch eSign in parallel.
+    /// </summary>
+    private static void EnrichCustomersWithESign(List<Customer> customers, List<ESignEnrollment> enrollmentList)
+    {
+        if (customers.Count == 0) return;
 
         // For duplicates: find the first row with real ScoularViewRecipients
         // (not null, empty, or "No"). If none have recipients, value stays null.
@@ -441,14 +519,25 @@ public class SqlDataService : IDataService
 
     public async Task<List<Commodity>> GetCommoditiesAsync(CancellationToken cancellationToken = default)
     {
+        const string cacheKey = "commodities:active";
+        if (_cache.TryGetValue(cacheKey, out List<Commodity>? cached) && cached is not null)
+            return cached;
+
         try
         {
             // Fast read-only query — sync runs at startup via SyncCommoditiesAsync
-            return await _appContext.Commodities
+            var result = await _appContext.Commodities
                 .AsNoTracking()
                 .Where(c => c.IsActive)
                 .OrderBy(c => c.Name)
                 .ToListAsync(cancellationToken);
+
+            _cache.Set(cacheKey, result, new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10),
+                Size = 1
+            });
+            return result;
         }
         catch (Exception ex)
         {
@@ -456,6 +545,44 @@ public class SqlDataService : IDataService
                 GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
+    }
+
+    public async Task<List<CommodityConversion>> GetCommodityConversionsAsync(CancellationToken cancellationToken = default)
+    {
+        const string cacheKey = "commodity-conversions";
+        if (_cache.TryGetValue(cacheKey, out List<CommodityConversion>? cached) && cached is not null)
+            return cached;
+
+        var result = await _context.CommodityConversions
+            .AsNoTracking()
+            .Where(c => c.LbsPerUnit > 0)
+            .ToListAsync(cancellationToken);
+
+        _cache.Set(cacheKey, result, new MemoryCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(1),
+            Size = 1
+        });
+        return result;
+    }
+
+    public async Task<List<HarvestWindow>> GetHarvestWindowsAsync(CancellationToken cancellationToken = default)
+    {
+        const string cacheKey = "harvest-windows";
+        if (_cache.TryGetValue(cacheKey, out List<HarvestWindow>? cached) && cached is not null)
+            return cached;
+
+        var result = await _appContext.HarvestWindows
+            .AsNoTracking()
+            .Where(h => h.IsActive)
+            .ToListAsync(cancellationToken);
+
+        _cache.Set(cacheKey, result, new MemoryCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(1),
+            Size = 1
+        });
+        return result;
     }
 
     /// <summary>
@@ -2130,12 +2257,22 @@ public class SqlDataService : IDataService
 
     public async Task<List<ElevatorCache>> GetElevatorsAsync(string? tradeUnitCode = null, CancellationToken cancellationToken = default)
     {
+        var cacheKey = $"elevators:{tradeUnitCode ?? "all"}";
+        if (_cache.TryGetValue(cacheKey, out List<ElevatorCache>? cached) && cached is not null)
+            return cached;
+
         var query = _appContext.ElevatorCaches.AsNoTracking().Where(e => e.IsActive);
 
         if (!string.IsNullOrEmpty(tradeUnitCode))
             query = query.Where(e => e.TradeUnitCode == tradeUnitCode);
 
-        return await query.ToListAsync(cancellationToken);
+        var result = await query.ToListAsync(cancellationToken);
+        _cache.Set(cacheKey, result, new MemoryCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10),
+            Size = 1
+        });
+        return result;
     }
 
     public async Task<List<BidSheetLocation>> GetBidSheetLocationsAsync(string tradeUnitCode, CancellationToken cancellationToken = default)
@@ -2152,7 +2289,6 @@ public class SqlDataService : IDataService
     {
         return await _appContext.BidSheetLocations
             .AsNoTracking()
-            .Include(l => l.Bids)
             .OrderBy(l => l.Name)
             .ToListAsync(cancellationToken);
     }
@@ -2194,6 +2330,19 @@ public class SqlDataService : IDataService
         }
     }
 
+    public async Task DeleteBidSheetBidsAsync(int locationId, string commodityCode, CancellationToken cancellationToken = default)
+    {
+        var bids = await _appContext.BidSheetLocationBids
+            .Where(b => b.LocationId == locationId && b.CommodityCode == commodityCode)
+            .ToListAsync(cancellationToken);
+
+        if (bids.Count > 0)
+        {
+            _appContext.BidSheetLocationBids.RemoveRange(bids);
+            await _appContext.SaveChangesAsync(cancellationToken);
+        }
+    }
+
     public async Task BulkUpsertBidSheetBidsAsync(
         IEnumerable<GrainOriginatorPortal.Api.Models.Requests.UpsertBidSheetBidRequest> requests,
         string tradeUnitCode,
@@ -2201,41 +2350,79 @@ public class SqlDataService : IDataService
         CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;
+        var requestList = requests.ToList();
 
-        foreach (var req in requests)
+        // Batch-load all locations for the trade unit (1 query instead of N)
+        var allLocations = await _appContext.BidSheetLocations
+            .Where(l => l.TradeUnitCode == tradeUnitCode)
+            .ToListAsync(cancellationToken);
+
+        var byElevator = allLocations
+            .Where(l => !string.IsNullOrEmpty(l.ElevatorCode))
+            .ToDictionary(l => l.ElevatorCode!, l => l);
+        var byName = allLocations
+            .ToDictionary(l => l.Name.Trim(), l => l, StringComparer.OrdinalIgnoreCase);
+
+        // First pass: create any missing locations in batch
+        var newLocations = new List<BidSheetLocation>();
+        foreach (var req in requestList)
         {
-            // Find existing location by ElevatorCode (if set) or Name within the trade unit
             BidSheetLocation? loc = null;
             if (!string.IsNullOrEmpty(req.ElevatorCode))
-                loc = await _appContext.BidSheetLocations
-                    .FirstOrDefaultAsync(l => l.TradeUnitCode == tradeUnitCode && l.ElevatorCode == req.ElevatorCode, cancellationToken);
-
+                byElevator.TryGetValue(req.ElevatorCode, out loc);
             if (loc == null && !string.IsNullOrEmpty(req.Name))
-                loc = await _appContext.BidSheetLocations
-                    .FirstOrDefaultAsync(l => l.TradeUnitCode == tradeUnitCode && l.Name.Trim() == req.Name.Trim(), cancellationToken);
+                byName.TryGetValue(req.Name.Trim(), out loc);
 
             if (loc == null)
             {
-                loc = new BidSheetLocation
+                var name = (req.Name ?? req.ElevatorCode ?? string.Empty).Trim();
+                // Check if we already queued a new location with this name
+                if (!byName.TryGetValue(name, out loc))
                 {
-                    Name = req.Name ?? req.ElevatorCode ?? string.Empty,
-                    ElevatorCode = req.ElevatorCode,
-                    TradeUnitCode = tradeUnitCode,
-                    GroupName = req.GroupName,
-                    Latitude = req.Latitude,
-                    Longitude = req.Longitude,
-                    CreatedBy = userId,
-                    CreatedAt = now
-                };
-                _appContext.BidSheetLocations.Add(loc);
-                await _appContext.SaveChangesAsync(cancellationToken);
+                    loc = new BidSheetLocation
+                    {
+                        Name = name,
+                        ElevatorCode = req.ElevatorCode,
+                        TradeUnitCode = tradeUnitCode,
+                        GroupName = req.GroupName,
+                        Latitude = req.Latitude,
+                        Longitude = req.Longitude,
+                        CreatedBy = userId,
+                        CreatedAt = now
+                    };
+                    _appContext.BidSheetLocations.Add(loc);
+                    newLocations.Add(loc);
+                    byName[name] = loc;
+                    if (!string.IsNullOrEmpty(req.ElevatorCode))
+                        byElevator[req.ElevatorCode] = loc;
+                }
             }
+        }
 
-            // Upsert bid by (LocationId, CommodityCode, CropYear)
-            var bid = await _appContext.BidSheetLocationBids
-                .FirstOrDefaultAsync(b => b.LocationId == loc.Id && b.CommodityCode == req.CommodityCode && b.CropYear == req.CropYear, cancellationToken);
+        // Single SaveChanges to persist all new locations and get their IDs
+        if (newLocations.Count > 0)
+            await _appContext.SaveChangesAsync(cancellationToken);
 
-            if (bid != null)
+        // Batch-load all existing bids for the affected locations (1 query instead of N)
+        var locationIds = allLocations.Concat(newLocations).Select(l => l.Id).ToHashSet();
+        var existingBids = await _appContext.BidSheetLocationBids
+            .Where(b => locationIds.Contains(b.LocationId))
+            .ToListAsync(cancellationToken);
+        var bidLookup = existingBids
+            .ToDictionary(b => (b.LocationId, b.CommodityCode, b.CropYear), b => b);
+
+        // Second pass: upsert bids using in-memory lookups (0 queries)
+        foreach (var req in requestList)
+        {
+            BidSheetLocation? loc = null;
+            if (!string.IsNullOrEmpty(req.ElevatorCode))
+                byElevator.TryGetValue(req.ElevatorCode, out loc);
+            if (loc == null && !string.IsNullOrEmpty(req.Name))
+                byName.TryGetValue(req.Name.Trim(), out loc);
+            if (loc == null) continue;
+
+            var key = (loc.Id, req.CommodityCode, req.CropYear);
+            if (bidLookup.TryGetValue(key, out var bid))
             {
                 bid.Bid = req.Bid;
                 bid.ModifiedBy = userId;
@@ -2243,7 +2430,7 @@ public class SqlDataService : IDataService
             }
             else
             {
-                _appContext.BidSheetLocationBids.Add(new BidSheetLocationBid
+                var newBid = new BidSheetLocationBid
                 {
                     LocationId = loc.Id,
                     CommodityCode = req.CommodityCode,
@@ -2253,10 +2440,13 @@ public class SqlDataService : IDataService
                     Bid = req.Bid,
                     CreatedBy = userId,
                     CreatedAt = now
-                });
+                };
+                _appContext.BidSheetLocationBids.Add(newBid);
+                bidLookup[key] = newBid;
             }
         }
 
+        // Single final SaveChanges for all bid upserts
         await _appContext.SaveChangesAsync(cancellationToken);
     }
 
@@ -2325,5 +2515,40 @@ public class SqlDataService : IDataService
             _appContext.BidSheetReferences.Remove(existing);
             await _appContext.SaveChangesAsync(cancellationToken);
         }
+    }
+
+    // =========================================================================
+    // Bid Sheet Location Order (drag-to-reorder persistence)
+    // =========================================================================
+
+    public async Task<BidSheetLocationOrder?> GetBidSheetLocationOrderAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken = default)
+    {
+        return await _appContext.BidSheetLocationOrders
+            .AsNoTracking()
+            .FirstOrDefaultAsync(r => r.UserId == userId && r.TradeUnitKey == tradeUnitKey, cancellationToken);
+    }
+
+    public async Task SetBidSheetLocationOrderAsync(string userId, string tradeUnitKey, string locationOrderJson, CancellationToken cancellationToken = default)
+    {
+        var existing = await _appContext.BidSheetLocationOrders
+            .FirstOrDefaultAsync(r => r.UserId == userId && r.TradeUnitKey == tradeUnitKey, cancellationToken);
+
+        if (existing is not null)
+        {
+            existing.LocationOrder = locationOrderJson;
+            existing.ModifiedAt = DateTime.UtcNow;
+        }
+        else
+        {
+            _appContext.BidSheetLocationOrders.Add(new BidSheetLocationOrder
+            {
+                UserId = userId,
+                TradeUnitKey = tradeUnitKey,
+                LocationOrder = locationOrderJson,
+                ModifiedAt = DateTime.UtcNow
+            });
+        }
+
+        await _appContext.SaveChangesAsync(cancellationToken);
     }
 }

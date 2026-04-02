@@ -309,6 +309,12 @@ public interface IDataService
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<List<Commodity>> GetCommoditiesAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>Gets commodity conversion factors (lbs per unit) from ODS.</summary>
+    Task<List<CommodityConversion>> GetCommodityConversionsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Gets harvest delivery windows per commodity.</summary>
+    Task<List<HarvestWindow>> GetHarvestWindowsAsync(CancellationToken cancellationToken = default);
+
     // =========================================================================
     // Storage Operations
     // =========================================================================
@@ -373,6 +379,9 @@ public interface IDataService
     /// <summary>Deletes a bid sheet location and all its bids.</summary>
     Task DeleteBidSheetLocationAsync(int id, CancellationToken cancellationToken = default);
 
+    /// <summary>Deletes all bids for a specific commodity on a location.</summary>
+    Task DeleteBidSheetBidsAsync(int locationId, string commodityCode, CancellationToken cancellationToken = default);
+
     /// <summary>Bulk upserts bids by finding or creating locations, then upserting each bid by (LocationId, CommodityCode, CropYear).</summary>
     Task BulkUpsertBidSheetBidsAsync(IEnumerable<GrainOriginatorPortal.Api.Models.Requests.UpsertBidSheetBidRequest> requests, string tradeUnitCode, string userId, CancellationToken cancellationToken = default);
 
@@ -390,4 +399,10 @@ public interface IDataService
 
     /// <summary>Clears the reference location for a user and trade unit.</summary>
     Task ClearBidSheetReferenceAsync(string userId, string tradeUnitCode, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets the saved location order for a user and trade unit key. Returns null if not set.</summary>
+    Task<BidSheetLocationOrder?> GetBidSheetLocationOrderAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken = default);
+
+    /// <summary>Creates or updates the location order for a user and trade unit key.</summary>
+    Task SetBidSheetLocationOrderAsync(string userId, string tradeUnitKey, string locationOrderJson, CancellationToken cancellationToken = default);
 }

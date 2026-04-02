@@ -16,31 +16,25 @@
 
     <!-- Search toolbar -->
     <div class="flex items-center border-b border-gray-100 dark:border-gray-800 px-3 py-1.5">
-      @if (showSearch()) {
-        <div class="flex items-center w-full gap-2">
-          <svg class="w-4 h-4 text-gray-500 dark:text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
-          </svg>
-          <input
-            type="text"
-            [ngModel]="searchQuery()"
-            (ngModelChange)="searchQuery.set($event)"
-            placeholder="Search by commodity, ticket #, or date..."
-            class="flex-1 py-1 text-sm bg-transparent focus:outline-none text-gray-900 dark:text-white placeholder-gray-400"
-          />
-          <button (click)="clearSearch()" title="Clear search" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0">
+      <div class="flex items-center w-full gap-2">
+        <svg class="w-4 h-4 text-gray-500 dark:text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+        </svg>
+        <input
+          type="text"
+          [ngModel]="searchQuery()"
+          (ngModelChange)="searchQuery.set($event)"
+          placeholder="Search storage..."
+          class="flex-1 py-1 text-sm bg-transparent focus:outline-none text-gray-900 dark:text-white placeholder-gray-400"
+        />
+        @if (searchQuery()) {
+          <button (click)="searchQuery.set('')" title="Clear search" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
             </svg>
           </button>
-        </div>
-      } @else {
-        <button (click)="showSearch.set(true)" title="Search storage" class="ml-auto p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
-          </svg>
-        </button>
-      }
+        }
+      </div>
     </div>
 
     <!-- Commodity Groups -->
@@ -73,11 +67,11 @@
               </div>
             </div>
             <div class="flex items-center gap-4 flex-shrink-0">
-              <div class="w-24 text-right">
+              <div class="w-24 text-center">
                 <p class="text-xs text-gray-500 dark:text-gray-400">Bushels</p>
                 <p class="text-sm font-medium text-gray-900 dark:text-white">{{ group.totalBushels | number:'1.0-0' }} bu</p>
               </div>
-              <div class="w-32 text-right">
+              <div class="w-32 text-center">
                 <p class="text-xs text-gray-500 dark:text-gray-400">Accumulated Cost</p>
                 <p class="text-sm font-medium text-scoular-red-accessible dark:text-scoular-red">{{ group.totalCost | currency:'USD':'symbol':'1.2-2' }}</p>
               </div>
@@ -86,68 +80,91 @@
 
           <!-- Expanded: Individual Tickets -->
           @if (isExpanded(group.crop)) {
-
-            <!-- Mobile -->
-            <div class="md:hidden divide-y divide-gray-100 dark:divide-gray-700/50">
-              @for (grain of group.receipts; track grain.id) {
-                <div class="px-4 py-3 bg-white dark:bg-gray-800">
-                  <div class="flex items-center justify-between mb-2">
-                    <div>
-                      <span class="font-medium text-sm text-gray-900 dark:text-white">Ticket #{{ grain.receiptNumber }}</span>
-                      <span class="ml-2 text-xs text-gray-500 dark:text-gray-400">{{ grain.crop }}</span>
-                    </div>
-                    <span class="text-sm font-medium text-scoular-red-accessible dark:text-scoular-red">
-                      {{ getCost(grain.id) | currency:'USD':'symbol':'1.2-2' }}
-                    </span>
-                  </div>
-                  <div class="grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
-                    <div><span class="font-medium">Gross Bu:</span> {{ grain.grossQuantity | number }}</div>
-                    <div><span class="font-medium">Net Bu:</span> {{ grain.quantity | number }}</div>
-                    <div class="col-span-2">
-                      <span class="font-medium">Charged:</span>
-                      {{ grain.chargedFromDate | date:'M/d/yy' }} – {{ grain.chargedThruDate | date:'M/d/yy' }}
-                    </div>
-                    <div><span class="font-medium">Storage Days:</span> {{ grain.storageDays | number:'1.0-1' }}</div>
-                    <div><span class="font-medium">Rate:</span> ${{ grain.storageRate.toFixed(3) }}</div>
-                  </div>
-                </div>
-              }
-            </div>
-
-            <!-- Desktop Table -->
-            <div class="hidden md:block overflow-x-auto">
-              <table class="w-full text-sm">
-                <thead>
-                  <tr class="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Ticket #</th>
-                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Commodity</th>
-                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Gross Bu</th>
-                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Net Bu</th>
-                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Charged From – Thru</th>
-                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Storage Days</th>
-                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Rate</th>
-                    <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Storage Amount</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50 bg-white dark:bg-gray-800">
-                  @for (grain of group.receipts; track grain.id) {
-                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                      <td class="px-4 py-2.5 text-center font-medium text-gray-900 dark:text-white">{{ grain.receiptNumber }}</td>
-                      <td class="px-4 py-2.5 text-center text-gray-600 dark:text-gray-400">{{ grain.crop }}</td>
-                      <td class="px-4 py-2.5 text-center text-gray-900 dark:text-white">{{ grain.grossQuantity | number }}</td>
-                      <td class="px-4 py-2.5 text-center text-gray-900 dark:text-white">{{ grain.quantity | number }}</td>
-                      <td class="px-4 py-2.5 text-center text-gray-600 dark:text-gray-400">
-                        {{ grain.chargedFromDate | date:'M/d/yy' }} – {{ grain.chargedThruDate | date:'M/d/yy' }}
-                      </td>
-                      <td class="px-4 py-2.5 text-center text-gray-600 dark:text-gray-400">{{ grain.storageDays | number:'1.0-1' }}</td>
-                      <td class="px-4 py-2.5 text-center text-gray-600 dark:text-gray-400">${{ grain.storageRate.toFixed(3) }}</td>
-                      <td class="px-4 py-2.5 text-center font-medium text-scoular-red-accessible dark:text-scoular-red">
-                        {{ getCost(grain.id) | currency:'USD':'symbol':'1.2-2' }}
-                      </td>
-                    </tr>
+            <div class="overflow-x-auto">
+              <app-table>
+                <app-table-header>
+                  <app-table-row>
+                    <app-table-head [sortable]="true" (click)="handleSort('ticket')">
+                      <span class="flex items-center justify-center gap-1">Ticket #
+                        <svg class="w-3.5 h-3.5" [class]="getSortIconClass('ticket')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          @if (currentSortColumn === 'ticket' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                          @else if (currentSortColumn === 'ticket' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                          @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
+                        </svg>
+                      </span>
+                    </app-table-head>
+                    <app-table-head><span class="flex items-center justify-center">Commodity</span></app-table-head>
+                    <app-table-head [sortable]="true" (click)="handleSort('grossBu')">
+                      <span class="flex items-center justify-center gap-1">Gross Bu
+                        <svg class="w-3.5 h-3.5" [class]="getSortIconClass('grossBu')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          @if (currentSortColumn === 'grossBu' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                          @else if (currentSortColumn === 'grossBu' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                          @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
+                        </svg>
+                      </span>
+                    </app-table-head>
+                    <app-table-head [sortable]="true" (click)="handleSort('netBu')">
+                      <span class="flex items-center justify-center gap-1">Net Bu
+                        <svg class="w-3.5 h-3.5" [class]="getSortIconClass('netBu')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          @if (currentSortColumn === 'netBu' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                          @else if (currentSortColumn === 'netBu' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                          @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
+                        </svg>
+                      </span>
+                    </app-table-head>
+                    <app-table-head [sortable]="true" (click)="handleSort('charged')">
+                      <span class="flex items-center justify-center gap-1">Charged From – Thru
+                        <svg class="w-3.5 h-3.5" [class]="getSortIconClass('charged')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          @if (currentSortColumn === 'charged' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                          @else if (currentSortColumn === 'charged' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                          @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
+                        </svg>
+                      </span>
+                    </app-table-head>
+                    <app-table-head [sortable]="true" (click)="handleSort('storageDays')">
+                      <span class="flex items-center justify-center gap-1">Storage Days
+                        <svg class="w-3.5 h-3.5" [class]="getSortIconClass('storageDays')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          @if (currentSortColumn === 'storageDays' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                          @else if (currentSortColumn === 'storageDays' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                          @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
+                        </svg>
+                      </span>
+                    </app-table-head>
+                    <app-table-head [sortable]="true" (click)="handleSort('rate')">
+                      <span class="flex items-center justify-center gap-1">Rate
+                        <svg class="w-3.5 h-3.5" [class]="getSortIconClass('rate')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          @if (currentSortColumn === 'rate' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                          @else if (currentSortColumn === 'rate' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                          @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
+                        </svg>
+                      </span>
+                    </app-table-head>
+                    <app-table-head [sortable]="true" (click)="handleSort('amount')">
+                      <span class="flex items-center justify-center gap-1">Storage Amount
+                        <svg class="w-3.5 h-3.5" [class]="getSortIconClass('amount')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          @if (currentSortColumn === 'amount' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                          @else if (currentSortColumn === 'amount' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                          @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
+                        </svg>
+                      </span>
+                    </app-table-head>
+                  </app-table-row>
+                </app-table-header>
+                <app-table-body>
+                  @for (grain of sortedReceipts(group.receipts); track grain.id) {
+                    <app-table-row>
+                      <app-table-cell class="text-center">{{ grain.receiptNumber }}</app-table-cell>
+                      <app-table-cell class="text-center">{{ grain.crop }}</app-table-cell>
+                      <app-table-cell class="text-center">{{ grain.grossQuantity | number }}</app-table-cell>
+                      <app-table-cell class="text-center">{{ grain.quantity | number }}</app-table-cell>
+                      <app-table-cell class="text-center">{{ grain.chargedFromDate | date:'M/d/yy' }} – {{ grain.chargedThruDate | date:'M/d/yy' }}</app-table-cell>
+                      <app-table-cell class="text-center">{{ grain.storageDays | number:'1.0-1' }}</app-table-cell>
+                      <app-table-cell class="text-center">${{ grain.storageRate.toFixed(3) }}</app-table-cell>
+                      <app-table-cell class="text-center text-scoular-red-accessible dark:text-scoular-red font-medium">{{ getCost(grain.id) | currency:'USD':'symbol':'1.2-2' }}</app-table-cell>
+                    </app-table-row>
                   }
-                </tbody>
-              </table>
+                </app-table-body>
+              </app-table>
             </div>
           }
 

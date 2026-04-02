@@ -95,6 +95,7 @@ export class TableBodyComponent {}
   host: { style: 'display: contents' },
   template: `
     <tr
+      [attr.id]="rowId()"
       [class]="getRowClasses()"
       (click)="rowClick.emit()"
     >
@@ -106,6 +107,7 @@ export class TableRowComponent {
   public clickable = input<boolean>(false);
   public highlighted = input<boolean>(false);
   public class = input<string>('');
+  public rowId = input<string | null>(null);
   public rowClick = output<void>();
 
   getRowClasses(): string {

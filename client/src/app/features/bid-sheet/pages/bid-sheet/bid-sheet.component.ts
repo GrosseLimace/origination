@@ -2,7 +2,8 @@ import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, signal,
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { forkJoin } from 'rxjs';
+import { forkJoin, map, Subject, switchMap } from 'rxjs';
+import { CdkDragDrop, CdkDrag, CdkDropList, CdkDragHandle, moveItemInArray } from '@angular/cdk/drag-drop';
 import type * as Leaflet from 'leaflet';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
@@ -24,10 +25,11 @@ interface EditBidsRow {
 @Component({
   selector: 'app-bid-sheet',
   standalone: true,
-  imports: [CommonModule, FormsModule, TradeUnitSelectorComponent],
+  imports: [CommonModule, FormsModule, TradeUnitSelectorComponent, CdkDropList, CdkDrag, CdkDragHandle],
   templateUrl: './bid-sheet.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { style: 'display:block;height:calc(100vh - 160px);' }
+  host: { style: 'display:block;height:calc(100vh - 160px);' },
+  styles: [`:host ::ng-deep .cdk-drag-placeholder { opacity: 0.3; } :host ::ng-deep .cdk-drag-preview { background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-radius: 4px; }`]
 })
 export class BidSheetComponent {
   private readonly destroyRef = inject(DestroyRef);
@@ -36,7 +38,8 @@ export class BidSheetComponent {
   private readonly toastService = inject(ToastService);
 
   // --- Filters ---
-  readonly hasIndividualTu = computed(() => this.appState.selectedTradeUnits().length > 0);
+  /** True when any TUs are active — either via individual checkboxes or group selection. Enables bid values, statuses, and reference features. */
+  readonly hasIndividualTu = computed(() => this.activeTradeUnits().length > 0);
   selectedYear = signal<number>(new Date().getFullYear());
   selectedCrop = signal<string>('');
   searchQuery = signal<string>('');
@@ -75,6 +78,18 @@ export class BidSheetComponent {
       }))
     );
   });
+  /** Pre-computed lookup: "name|commodityCode|cropYear" → latest BidSheetEntry (by modifiedAt then createdAt). O(1) lookups instead of repeated filter+sort. */
+  private readonly bidLookup = computed(() => {
+    const lookup = new Map<string, BidSheetEntry>();
+    for (const e of this.bidEntries()) {
+      const key = `${e.name}|${e.commodityCode}|${e.cropYear}`;
+      const existing = lookup.get(key);
+      if (!existing || new Date(e.modifiedAt || e.createdAt).getTime() > new Date(existing.modifiedAt || existing.createdAt).getTime()) {
+        lookup.set(key, e);
+      }
+    }
+    return lookup;
+  });
   cropYears = signal<number[]>([]);
   crops = signal<string[]>([]);
   isLoading = signal<boolean>(false);
@@ -104,19 +119,20 @@ export class BidSheetComponent {
   // --- Reference (per trade unit, persisted to DB) ---
   // Map of tradeUnitCode → { locationId, name }, loaded from API when TUs change.
   private referenceByTu = signal<Map<string, { locationId: number; name: string }>>(new Map());
+  private locationOrderByTu = signal<Map<string, string[]>>(new Map());
   showReferenceConfirm = signal<boolean>(false);
   pendingReferenceName = signal<string>('');
   pendingReferenceLocId = signal<number>(0);
 
-  // Reference location name for the currently active trade unit.
+  // Reference location name for the current TU combination.
   readonly referenceLocationName = computed(() => {
-    const tu = this.activeTradeUnit();
-    return this.referenceByTu().get(tu)?.name ?? '';
+    const key = this.activeTradeUnitKey();
+    return this.referenceByTu().get(key)?.name ?? '';
   });
 
   readonly referenceLocationId = computed(() => {
-    const tu = this.activeTradeUnit();
-    return this.referenceByTu().get(tu)?.locationId ?? 0;
+    const key = this.activeTradeUnitKey();
+    return this.referenceByTu().get(key)?.locationId ?? 0;
   });
 
   // --- Panel ---
@@ -125,6 +141,9 @@ export class BidSheetComponent {
   selectedLocationName = signal<string>('');
   panelSelectedLocation = signal<string>('');
   showDeleteLocationConfirm = signal(false);
+  deleteMode = signal(false);
+  showDeleteCropConfirm = signal(false);
+  pendingDeleteCrop = signal<string>('');
   editingLocationName = signal(false);
   editLocationNameValue = signal('');
 
@@ -255,6 +274,11 @@ export class BidSheetComponent {
   private _clusterGroup: any = null;
   private _isMapInitialized = false;
   private _lastTuSet = '';
+  private _searchDebounceTimer: any = null;
+  private _zoomDebounceTimer: any = null;
+
+  /** Emits to cancel the previous _loadBidData subscription when TU selection changes rapidly. */
+  private readonly _loadBidData$ = new Subject<{ tus: string[]; onLoaded?: () => void }>();
 
   // Geocode cache removed — coordinates now come from API (dbo.ElevatorCoordinates)
 
@@ -282,6 +306,10 @@ export class BidSheetComponent {
     return this.activeTradeUnits()[0] ?? '';
   });
 
+  /** Sorted, comma-joined key for the current TU selection. Used as the reference lookup key.
+   *  E.g. "2040" or "2040,2050" — same key regardless of whether TUs came from group or individual checkboxes. */
+  readonly activeTradeUnitKey = computed(() => [...this.activeTradeUnits()].sort().join(','));
+
   constructor() {
     // Load all bid sheet locations for map display (once)
     this._loadAllMapLocations();
@@ -292,134 +320,21 @@ export class BidSheetComponent {
       error: () => {}
     });
 
-    // React to trade unit / group changes — skip if same set (prevents re-zoom on nav back)
-    effect(() => {
-      const tus = this.activeTradeUnits();
-      const key = [...tus].sort().join(',');
-      if (key === this._lastTuSet) return;
-      this._lastTuSet = key;
-      this._onTradeUnitsChanged(tus);
-    });
-
-    this._startRefreshTimer();
-    this._initializeMapWhenReady();
-
-    this.destroyRef.onDestroy(() => {
-      this._destroyMap();
-      if (this._refreshTimer) clearInterval(this._refreshTimer);
-    });
-  }
-
-  // =========================================================================
-  // Data Loading
-
-  private _loadAllMapLocations(): void {
-    this.apiService.getAllBidSheetLocations().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (locs) => {
-        this.allMapLocations.set(locs);
-        if (this.activeTradeUnits().length === 0) {
-          this.filterBids();
-        }
-        this._refreshMapMarkers();
-      },
-      error: () => {}
-    });
-  }
-
-  // =========================================================================
-
-  private _onTradeUnitsChanged(tus: string[]): void {
-    if (tus.length > 0) {
-      // If a TU is selected but no group, auto-select the parent group
-      if (this.appState.selectedGroupNames().length === 0) {
-        const groups = this.appState.userGroups();
-        const matchingGroup = groups.find(g => g.tradeUnitCodes.some(c => tus.includes(c.trim())));
-        if (matchingGroup) {
-          this.appState.setSelectedGroupNames([matchingGroup.groupName]);
-        }
-      }
-      // Filter all elevators to any of the active TU codes (kept for add-location / reference lookup)
-      const tuSet = new Set(tus);
-      const tuElevators = this.allElevators().filter(e => tuSet.has((e.tradeUnitCode ?? '').trim()));
-      this.tradeUnitElevators.set(tuElevators);
-      // Load bid data and references for all active TUs
-      this._loadBidData(tus, () => {
-        this._zoomToBidLocations();
-        // If edit bids is open, rebuild the grid with new data
-        if (this.editBidsMode()) {
-          this._buildEditGrid(this.editBidsYear());
-        }
-      });
-      this._loadReferences(tus);
-      this.filterBids();
-      this._refreshMapMarkers();
-    } else {
-      this.tradeUnitElevators.set([]);
-      this.bidLocations.set([]);
-      this.referenceByTu.set(new Map());
-      this.crops.set([]);
-      this.cropYears.set([]);
-      this.yearOffset.set(0);
-      this.selectedCrop.set('');
-      this.selectedBasis.set('all');
-      this.filterBids();
-      this._refreshMapMarkers();
-      // Reset map to US overview
-      if (this._map) this._map.setView([38.5, -98.0], 5);
-    }
-  }
-
-  private _loadReferences(tus: string[]): void {
-    tus.forEach(tu => {
-      this.apiService.getBidSheetReference(tu).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(ref => {
-        const map = new Map(this.referenceByTu());
-        if (ref?.locationId && ref?.name) {
-          map.set(tu, { locationId: ref.locationId, name: ref.name });
-        } else {
-          map.delete(tu);
-        }
-        this.referenceByTu.set(map);
-        this.filterBids();
-        this._refreshMapMarkers();
-      });
-    });
-  }
-
-  private _zoomToBidLocations(): void {
-    if (!this._map || !this._L) return;
-    const locs = this.bidLocations().filter(l => l.latitude && l.longitude);
-    if (locs.length === 0) return;
-
-    // Prioritize: reference location → first location
-    const refName = this.referenceLocationName();
-    const refLoc = refName ? locs.find(l => l.name === refName) : null;
-    const panelOpen = this.showPanel();
-    const rightPad = panelOpen ? 440 : 50;
-
-    if (refLoc) {
-      this._map.setView([refLoc.latitude!, refLoc.longitude!], 10, { animate: true });
-      if (panelOpen) setTimeout(() => this._map?.panBy([-(rightPad / 2), 0]), 300);
-    } else if (locs.length === 1) {
-      this._map.setView([locs[0].latitude!, locs[0].longitude!], 10, { animate: true });
-      if (panelOpen) setTimeout(() => this._map?.panBy([-(rightPad / 2), 0]), 300);
-    } else {
-      const bounds = this._L.latLngBounds(locs.map(l => [l.latitude!, l.longitude!] as [number, number]));
-      this._map.fitBounds(bounds, { paddingTopLeft: [50, 50], paddingBottomRight: [rightPad, 50], maxZoom: 12 });
-    }
-  }
-
-  private _loadBidData(tradeUnitCodes: string[], onLoaded?: () => void): void {
-    if (tradeUnitCodes.length === 0) return;
-    this.isLoading.set(true);
-
-    forkJoin(
-      tradeUnitCodes.map(tu => forkJoin({
-        locations: this.apiService.getBidSheetLocations(tu),
-        cropYears: this.apiService.getBidCropYears(tu),
-        bidCommodities: this.apiService.getBidCommodities(tu)
-      }))
-    ).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (results) => {
+    // switchMap pipeline: cancels the previous _loadBidData request when TU selection changes rapidly
+    this._loadBidData$.pipe(
+      switchMap(({ tus, onLoaded }) => {
+        this.isLoading.set(true);
+        return forkJoin(
+          tus.map(tu => forkJoin({
+            locations: this.apiService.getBidSheetLocations(tu),
+            cropYears: this.apiService.getBidCropYears(tu),
+            bidCommodities: this.apiService.getBidCommodities(tu)
+          }))
+        ).pipe(map(results => ({ results, onLoaded })));
+      }),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe({
+      next: ({ results, onLoaded }) => {
         const allLocations = results.flatMap(r => r.locations);
         let cropYears = [...new Set(results.flatMap(r => r.cropYears))].sort((a, b) => a - b);
         const bidCommodities = [...new Set(results.flatMap(r => r.bidCommodities))].sort();
@@ -449,6 +364,147 @@ export class BidSheetComponent {
         this.toastService.error('Failed to load bid data');
       }
     });
+
+    // React to trade unit / group changes — skip if same set (prevents re-zoom on nav back)
+    effect(() => {
+      const tus = this.activeTradeUnits();
+      const key = [...tus].sort().join(',');
+      if (key === this._lastTuSet) return;
+      this._lastTuSet = key;
+      this._onTradeUnitsChanged(tus);
+    });
+
+    this._startRefreshTimer();
+    this._initializeMapWhenReady();
+
+    this.destroyRef.onDestroy(() => {
+      this._destroyMap();
+      if (this._refreshTimer) clearInterval(this._refreshTimer);
+      if (this._searchDebounceTimer) clearTimeout(this._searchDebounceTimer);
+      if (this._zoomDebounceTimer) clearTimeout(this._zoomDebounceTimer);
+    });
+  }
+
+  // =========================================================================
+  // Data Loading
+
+  private _loadAllMapLocations(): void {
+    this.apiService.getAllBidSheetLocations().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (locs) => {
+        this.allMapLocations.set(locs);
+        if (this.activeTradeUnits().length === 0) {
+          this.filterBids();
+        }
+        this._refreshMapMarkers();
+      },
+      error: () => this.toastService.error('Failed to load map locations')
+    });
+  }
+
+  // =========================================================================
+
+  private _onTradeUnitsChanged(tus: string[]): void {
+    if (tus.length > 0) {
+      // If a TU is selected but no group, auto-select the parent group
+      if (this.appState.selectedGroupNames().length === 0) {
+        const groups = this.appState.userGroups();
+        const matchingGroup = groups.find(g => g.tradeUnitCodes.some(c => tus.includes(c.trim())));
+        if (matchingGroup) {
+          this.appState.setSelectedGroupNames([matchingGroup.groupName]);
+        }
+      }
+      // Filter all elevators to any of the active TU codes (kept for add-location / reference lookup)
+      const tuSet = new Set(tus);
+      const tuElevators = this.allElevators().filter(e => tuSet.has((e.tradeUnitCode ?? '').trim()));
+      this.tradeUnitElevators.set(tuElevators);
+      // Load bid data and references for all active TUs
+      this._loadBidData(tus, () => {
+        this._zoomToBidLocations();
+        // If edit bids is open, rebuild the grid with new data
+        if (this.editBidsMode()) {
+          this._buildEditGrid(this.editBidsYear());
+        }
+      });
+      this._loadReferences(tus);
+      this._loadLocationOrder(tus);
+    } else {
+      this.tradeUnitElevators.set([]);
+      this.bidLocations.set([]);
+      this.referenceByTu.set(new Map());
+      this.locationOrderByTu.set(new Map());
+      this.crops.set([]);
+      this.cropYears.set([]);
+      this.yearOffset.set(0);
+      this.selectedCrop.set('');
+      this.selectedBasis.set('all');
+      this.filterBids();
+      this._refreshMapMarkers();
+      // Reset map to US overview
+      if (this._map) this._map.setView([38.5, -98.0], 5);
+    }
+  }
+
+  private _loadReferences(tus: string[]): void {
+    if (tus.length === 0) return;
+    const key = [...tus].sort().join(',');
+    this.apiService.getBidSheetReference(key).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(ref => {
+      const refMap = new Map(this.referenceByTu());
+      if (ref?.locationId && ref?.name) {
+        refMap.set(key, { locationId: ref.locationId, name: ref.name });
+      } else {
+        refMap.delete(key);
+      }
+      this.referenceByTu.set(refMap);
+      this.filterBids();
+      this._refreshMapMarkers();
+    });
+  }
+
+  private _loadLocationOrder(tus: string[]): void {
+    if (tus.length === 0) return;
+    const key = [...tus].sort().join(',');
+    this.apiService.getBidSheetLocationOrder(key).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(result => {
+      const orderMap = new Map(this.locationOrderByTu());
+      if (result?.locationOrder) {
+        try { orderMap.set(key, JSON.parse(result.locationOrder)); }
+        catch { orderMap.delete(key); }
+      } else {
+        orderMap.delete(key);
+      }
+      this.locationOrderByTu.set(orderMap);
+      if (this.editBidsMode()) {
+        this._buildEditGrid(this.editBidsYear());
+      }
+    });
+  }
+
+  private _zoomToBidLocations(): void {
+    if (!this._map || !this._L) return;
+    const locs = this.bidLocations().filter(l => l.latitude && l.longitude);
+    if (locs.length === 0) return;
+
+    // Prioritize: reference location → first location
+    const refName = this.referenceLocationName();
+    const refLoc = refName ? locs.find(l => l.name === refName) : null;
+    const panelOpen = this.showPanel();
+    const rightPad = panelOpen ? 440 : 50;
+
+    if (refLoc) {
+      this._map.setView([refLoc.latitude!, refLoc.longitude!], 10, { animate: true });
+      if (panelOpen) setTimeout(() => this._map?.panBy([-(rightPad / 2), 0]), 300);
+    } else if (locs.length === 1) {
+      this._map.setView([locs[0].latitude!, locs[0].longitude!], 10, { animate: true });
+      if (panelOpen) setTimeout(() => this._map?.panBy([-(rightPad / 2), 0]), 300);
+    } else {
+      const bounds = this._L.latLngBounds(locs.map(l => [l.latitude!, l.longitude!] as [number, number]));
+      this._map.fitBounds(bounds, { paddingTopLeft: [50, 50], paddingBottomRight: [rightPad, 50], maxZoom: 12 });
+    }
+  }
+
+  /** Triggers bid data load via switchMap — automatically cancels any previous in-flight request. */
+  private _loadBidData(tradeUnitCodes: string[], onLoaded?: () => void): void {
+    if (tradeUnitCodes.length === 0) return;
+    this._loadBidData$.next({ tus: tradeUnitCodes, onLoaded });
   }
 
   // =========================================================================
@@ -483,14 +539,15 @@ export class BidSheetComponent {
     }
   }
 
-  /** Search input only filters map pins — panel stays full */
+  /** Search input only filters map pins — panel stays full (debounced 250ms) */
   onSearchInput(): void {
-    this._refreshMapMarkers();
+    if (this._searchDebounceTimer) clearTimeout(this._searchDebounceTimer);
+    this._searchDebounceTimer = setTimeout(() => this._refreshMapMarkers(), 250);
   }
 
   filterBids(): void {
     const hasTu = this.activeTradeUnits().length > 0;
-    const hasIndividualTu = this.appState.selectedTradeUnits().length > 0;
+    const hasIndividualTu = this.hasIndividualTu();
     const basis = this.selectedBasis();
 
     let items: any[] = [];
@@ -520,8 +577,8 @@ export class BidSheetComponent {
 
       // Compute reference bids per year for status comparison
       const refName = this.referenceLocationName();
-      let oldRefBid: number | null = NaN;
-      let newRefBid: number | null = NaN;
+      let oldRefBid: number | null = null;
+      let newRefBid: number | null = null;
       if (hasIndividualTu && refName) {
         oldRefBid = this._parseBid(this._getLatestBid(refName, oldYr, crop));
         newRefBid = this._parseBid(this._getLatestBid(refName, newYr, crop));
@@ -600,25 +657,12 @@ export class BidSheetComponent {
 
   private _getLatestBid(name: string, year: number | null, commodityCode: string): string {
     if (!year || !commodityCode) return '';
-    const matching = this.bidEntries().filter(
-      e => e.name === name && e.commodityCode === commodityCode && e.cropYear === year
-    );
-    if (matching.length === 0) return '';
-    // Sort by modifiedAt first (updated bids), then createdAt as fallback
-    return matching.sort((a, b) => {
-      const aTime = new Date(a.modifiedAt || a.createdAt).getTime();
-      const bTime = new Date(b.modifiedAt || b.createdAt).getTime();
-      return bTime - aTime;
-    })[0].bid;
+    return this.bidLookup().get(`${name}|${commodityCode}|${year}`)?.bid ?? '';
   }
 
   private _getLatestEntry(name: string, year: number | null, commodityCode: string): BidSheetEntry | null {
     if (!year || !commodityCode) return null;
-    const matching = this.bidEntries().filter(
-      e => e.name === name && e.commodityCode === commodityCode && e.cropYear === year
-    );
-    if (matching.length === 0) return null;
-    return matching.sort((a, b) => new Date(b.modifiedAt || b.createdAt).getTime() - new Date(a.modifiedAt || a.createdAt).getTime())[0];
+    return this.bidLookup().get(`${name}|${commodityCode}|${year}`) ?? null;
   }
 
   private _parseBid(bid: string): number | null {
@@ -628,11 +672,14 @@ export class BidSheetComponent {
 
   private _computeItemStatus(newBidStr: string, isRef: boolean, refBid: number | null, modifiedAt?: string | Date | null): string {
     if (isRef) return 'reference';
-    // Changed in last 24 hours takes priority over beating/matching
+    // Changed today (local calendar day) takes priority over beating/matching
     if (modifiedAt) {
       const modified = new Date(modifiedAt);
-      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      if (modified > oneDayAgo) return 'changed';
+      const now = new Date();
+      // Compare in local time — toLocaleDateString normalizes UTC timestamps to the user's timezone
+      if (modified.toLocaleDateString() === now.toLocaleDateString()) {
+        return 'changed';
+      }
     }
     const newNum = this._parseBid(newBidStr);
     if (refBid !== null && newNum !== null) {
@@ -771,11 +818,15 @@ export class BidSheetComponent {
     if (!fromEditBids && crops.length === 0) { this.toastService.error('Add at least one crop with both bids'); return; }
 
     // Build bids payload (2 per crop row: oldYear + newYear)
+    const commodityLookup = new Map(this.allCommodities().map(c => [c.code, c]));
     const bids = crops.flatMap(crop => {
       const code = crop.commodityCode.trim();
+      const commodity = commodityLookup.get(code);
+      const commodityName = commodity?.name ?? code;
+      const commodityCategory = commodity?.category ?? undefined;
       return [
-        { commodityCode: code, commodityName: code, commodityCategory: code, cropYear: crop.oldYear, bid: crop.oldBid.trim() },
-        { commodityCode: code, commodityName: code, commodityCategory: code, cropYear: crop.newYear, bid: crop.newBid.trim() }
+        { commodityCode: code, commodityName, commodityCategory, cropYear: crop.oldYear, bid: crop.oldBid.trim() },
+        { commodityCode: code, commodityName, commodityCategory, cropYear: crop.newYear, bid: crop.newBid.trim() }
       ];
     });
 
@@ -879,7 +930,7 @@ export class BidSheetComponent {
   }
 
   private _buildEditGrid(year: number): void {
-    const entries = this.bidEntries().filter(e => e.cropYear === year);
+    const lookup = this.bidLookup();
     const crops = this.crops();
     const rows: EditBidsRow[] = [];
     const addedNames = new Set<string>();
@@ -891,10 +942,7 @@ export class BidSheetComponent {
       const rep = this.bidEntries().find(e => e.name === name);
       const bids: Record<string, string> = {};
       for (const crop of crops) {
-        const latest = entries
-          .filter(e => e.name === name && e.commodityCode === crop)
-          .sort((a, b) => new Date(b.modifiedAt || b.createdAt).getTime() - new Date(a.modifiedAt || a.createdAt).getTime())[0];
-        bids[crop] = latest?.bid ?? '';
+        bids[crop] = lookup.get(`${name}|${crop}|${year}`)?.bid ?? '';
       }
       rows.push({ name, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids } });
     }
@@ -908,7 +956,40 @@ export class BidSheetComponent {
       rows.push({ name: loc.name, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids } });
     }
 
+    // Apply saved location order (unknown names go to end)
+    const savedOrder = this.locationOrderByTu().get(this.activeTradeUnitKey());
+    if (savedOrder && savedOrder.length > 0) {
+      const orderMap = new Map(savedOrder.map((name, idx) => [name, idx]));
+      rows.sort((a, b) => {
+        const ai = orderMap.get(a.name) ?? Number.MAX_SAFE_INTEGER;
+        const bi = orderMap.get(b.name) ?? Number.MAX_SAFE_INTEGER;
+        return ai - bi;
+      });
+    }
+
     this.editBidsRows.set(rows);
+  }
+
+  onRowDrop(event: CdkDragDrop<EditBidsRow[]>): void {
+    if (event.previousIndex === event.currentIndex) return;
+
+    this.editBidsRows.update(rows => {
+      const updated = [...rows];
+      moveItemInArray(updated, event.previousIndex, event.currentIndex);
+      return updated;
+    });
+
+    // Persist the new order
+    const key = this.activeTradeUnitKey();
+    if (!key) return;
+    const names = this.editBidsRows().map(r => r.name);
+    const orderMap = new Map(this.locationOrderByTu());
+    orderMap.set(key, names);
+    this.locationOrderByTu.set(orderMap);
+
+    this.apiService.setBidSheetLocationOrder(key, JSON.stringify(names))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({ error: () => this.toastService.error('Failed to save row order') });
   }
 
   applyEditBidsTuFilter(): void {
@@ -916,26 +997,22 @@ export class BidSheetComponent {
     if (tus.length === 0) return;
     this.editBidsGridLoading.set(true);
     this._loadReferences(tus);
-    const start = Date.now();
+    this._loadLocationOrder(tus);
     this._loadBidData(tus, () => {
-      const elapsed = Date.now() - start;
-      const remaining = Math.max(0, 1000 - elapsed);
-      setTimeout(() => {
-        this._buildEditGrid(this.editBidsYear());
-        this.editBidsGridLoading.set(false);
-        this.filterBids();
-        this._refreshMapMarkers();
-      }, remaining);
+      this._buildEditGrid(this.editBidsYear());
+      this.editBidsGridLoading.set(false);
+      this.filterBids();
+      this._refreshMapMarkers();
     });
   }
 
   onEditBidsYearChange(year: number): void {
     this.editBidsYear.set(year);
     this.editBidsGridLoading.set(true);
-    setTimeout(() => {
+    requestAnimationFrame(() => {
       this._buildEditGrid(year);
       this.editBidsGridLoading.set(false);
-    }, 400);
+    });
   }
 
   updateBid(rowIndex: number, crop: string, value: string): void {
@@ -1032,8 +1109,9 @@ export class BidSheetComponent {
   pendingClearReference = signal(false);
 
   setReferenceLocation(locationId: number, name: string): void {
-    if (this.referenceLocationName() === name) {
-      // Already the reference — confirm clearing it
+    const key = this.activeTradeUnitKey();
+    if (this.referenceByTu().get(key)?.name === name) {
+      // Already the reference for this TU combination — confirm clearing it
       this.pendingClearReference.set(true);
       this.pendingReferenceName.set(name);
       this.showReferenceConfirm.set(true);
@@ -1046,7 +1124,7 @@ export class BidSheetComponent {
   }
 
   confirmReferenceChange(): void {
-    const tu = this.activeTradeUnit();
+    const tu = this.activeTradeUnitKey();
     if (!tu) return;
 
     if (this.pendingClearReference()) {
@@ -1121,6 +1199,9 @@ export class BidSheetComponent {
     this.panelSelectedLocation.set('');
     this.selectedLocationName.set('');
     this.showDeleteLocationConfirm.set(false);
+    this.deleteMode.set(false);
+    this.showDeleteCropConfirm.set(false);
+    this.pendingDeleteCrop.set('');
     this._refreshMapMarkers();
   }
 
@@ -1136,6 +1217,7 @@ export class BidSheetComponent {
         this.bidLocations.update(locs => locs.filter(l => l.id !== loc.id));
         this.allMapLocations.update(locs => locs.filter(l => l.id !== loc.id));
         this.showDeleteLocationConfirm.set(false);
+        this.deleteMode.set(false);
         this.panelSelectedLocation.set('');
         this.selectedLocationName.set('');
         this.toastService.success(`Deleted ${name}`);
@@ -1145,6 +1227,48 @@ export class BidSheetComponent {
       error: () => {
         this.showDeleteLocationConfirm.set(false);
         this.toastService.error('Failed to delete location');
+      }
+    });
+  }
+
+  requestDeleteCrop(crop: string): void {
+    this.pendingDeleteCrop.set(crop);
+    this.showDeleteCropConfirm.set(true);
+  }
+
+  cancelDeleteCrop(): void {
+    this.pendingDeleteCrop.set('');
+    this.showDeleteCropConfirm.set(false);
+  }
+
+  confirmDeleteCrop(): void {
+    const crop = this.pendingDeleteCrop();
+    const name = this.panelSelectedLocation();
+    if (!crop || !name) return;
+    const loc = this.allMapLocations().find(l => l.name === name)
+             ?? this.bidLocations().find(l => l.name === name);
+    if (!loc) return;
+    const tu = loc.tradeUnitCode ?? this.activeTradeUnit();
+
+    this.apiService.deleteBidSheetBids(loc.id, crop, tu).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: () => {
+        // Remove bids locally from both caches
+        this.bidLocations.update(locs => locs.map(l =>
+          l.id === loc.id ? { ...l, bids: (l.bids ?? []).filter(b => b.commodityCode !== crop) } : l
+        ));
+        this.allMapLocations.update(locs => locs.map(l =>
+          l.id === loc.id ? { ...l, bids: (l.bids ?? []).filter(b => b.commodityCode !== crop) } : l
+        ));
+        this.showDeleteCropConfirm.set(false);
+        this.pendingDeleteCrop.set('');
+        this.toastService.success(`Deleted ${crop} bids from ${name}`);
+        this.filterBids();
+        this._refreshMapMarkers();
+      },
+      error: () => {
+        this.showDeleteCropConfirm.set(false);
+        this.pendingDeleteCrop.set('');
+        this.toastService.error('Failed to delete crop bids');
       }
     });
   }
@@ -1266,14 +1390,23 @@ export class BidSheetComponent {
 
   refreshBids(): void {
     this.isRefreshing.set(true);
-    this._loadAllMapLocations();
     const tus = this.activeTradeUnits();
     if (tus.length > 0) {
+      // Refresh map locations, TU bid data, and references in parallel
+      this._loadAllMapLocations();
       this._loadBidData(tus, () => this.isRefreshing.set(false));
       this._loadReferences(tus);
     } else {
-      // No TU — just wait a beat so the spinner is visible
-      setTimeout(() => this.isRefreshing.set(false), 600);
+      // No TU selected — just refresh the map locations
+      this.apiService.getAllBidSheetLocations().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: (locs) => {
+          this.allMapLocations.set(locs);
+          this.filterBids();
+          this._refreshMapMarkers();
+          this.isRefreshing.set(false);
+        },
+        error: () => this.isRefreshing.set(false)
+      });
     }
     this._startRefreshTimer();
   }
@@ -1286,7 +1419,7 @@ export class BidSheetComponent {
     this.lastRefreshed.set(new Date());
     this.timeSinceRefresh.set('Just now');
     if (this._refreshTimer) clearInterval(this._refreshTimer);
-    this._refreshTimer = setInterval(() => this._updateTimeSinceRefresh(), 1000);
+    this._refreshTimer = setInterval(() => this._updateTimeSinceRefresh(), 10000);
   }
 
   private _updateTimeSinceRefresh(): void {
@@ -1353,8 +1486,11 @@ export class BidSheetComponent {
       });
       this._resizeObserver.observe(mapElement);
 
-      // Re-render markers when zoom changes (dot vs label at different zoom levels)
-      this._map.on('zoomend', () => this._refreshMapMarkers());
+      // Re-render markers when zoom changes (dot vs label at different zoom levels, debounced 200ms)
+      this._map.on('zoomend', () => {
+        if (this._zoomDebounceTimer) clearTimeout(this._zoomDebounceTimer);
+        this._zoomDebounceTimer = setTimeout(() => this._refreshMapMarkers(), 200);
+      });
 
       // Left-click to place pin in add-location mode
       this._map.on('click', (e: any) => this._onMapClick(e));
@@ -1373,6 +1509,7 @@ export class BidSheetComponent {
     const activeTus = this.activeTradeUnits();
     const hasTu = activeTus.length > 0;
     const zoom = this._map.getZoom();
+    const lookup = this.bidLookup();
 
     const locKey = (lat: number, lng: number) => `${lat.toFixed(3)},${lng.toFixed(3)}`;
     const activeTuSet = new Set(activeTus);
@@ -1418,7 +1555,7 @@ export class BidSheetComponent {
       const lng = locs[0].longitude!;
       const names = locs.map(l => l.name);
       const isActiveTu = locs.some(l => activeTuSet.has(l.tradeUnitCode ?? ''));
-      const hasIndividualTu = this.appState.selectedTradeUnits().length > 0;
+      const hasIndividualTu = this.hasIndividualTu();
       const showBidValues = isActiveTu && hasIndividualTu && crop;
       const isRef = hasIndividualTu && refName && names.includes(refName);
 
@@ -1478,16 +1615,11 @@ export class BidSheetComponent {
         const bidItems = names
           .map(n => {
             const isNameRef = hasIndividualTu && n === refName;
+            const matched = lookup.get(`${n}|${crop}|${year}`);
             if (isNameRef) {
-              const matched = this.bidEntries()
-                .filter(e => e.name === n && e.commodityCode === crop && e.cropYear === year)
-                .sort((a, b) => new Date(b.modifiedAt || b.createdAt).getTime() - new Date(a.modifiedAt || a.createdAt).getTime())[0];
               const { bg, border } = statusColors['reference'];
               return { name: n, label: matched?.bid ?? '--', bg, border };
             }
-            const matched = this.bidEntries()
-              .filter(e => e.name === n && e.commodityCode === crop && e.cropYear === year)
-              .sort((a, b) => new Date(b.modifiedAt || b.createdAt).getTime() - new Date(a.modifiedAt || a.createdAt).getTime())[0];
             if (!matched) return null;
             const newBidStr = matched.bid ?? '';
             const status = this._computeItemStatus(newBidStr, false, refBid, matched.modifiedAt);

@@ -11,7 +11,8 @@ import { AIGrowthForecastComponent } from '../ai-growth-forecast/ai-growth-forec
 import { ActivitySummaryComponent } from '../activity-summary/activity-summary.component';
 import { EditCustomerDialogComponent } from '../edit-customer-dialog/edit-customer-dialog.component';
 import { CustomerPrintReportComponent } from '../customer-print-report/customer-print-report.component';
-import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity } from '@models';
+import { AppStateService } from '@core/services/app-state.service';
+import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow } from '@models';
 
 @Component({
   selector: 'app-customer-profile',
@@ -33,6 +34,8 @@ import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, Contr
   templateUrl: './customer-profile.component.html'
 })
 export class CustomerProfileComponent {
+  private readonly appState = inject(AppStateService);
+
   public customer = input.required<Customer>();
   public allCustomers = input<Customer[]>([]);
   public selectedTradeUnits = input<string[]>([]);
@@ -84,14 +87,11 @@ export class CustomerProfileComponent {
 
   constructor() {
     effect(() => {
-      // When arriving from Insights with a specific contract, switch to contracts tab and scroll to it
+      // When arriving from Insights with a specific contract, switch to contracts tab
+      // (the contracts-table component handles scrolling to the specific row)
       const openContractId = this.openContractId();
       if (openContractId != null) {
         this.activeTab.set('contracts');
-        // Defer scroll until after Angular renders the tab switch
-        setTimeout(() => {
-          this.tabsSectionRef?.nativeElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 50);
       }
     });
 
@@ -215,23 +215,84 @@ export class CustomerProfileComponent {
     const contracts = this.contracts();
     const commodities = this.commodities();
     const yieldEstimates = this.yieldEstimates();
-
-    const totalContracted = contracts
-      .filter(c => c.status !== 'Cancelled' && (year === 0 || c.cropYear === year))
-      .reduce((sum, c) => sum + c.quantity, 0);
+    const harvestWindows = this.appState.harvestWindows();
 
     const intentionsForYear = year > 0
       ? plantingIntentions.filter(pi => pi.plantingYear === year)
       : plantingIntentions;
 
-    const totalProjectedYield = intentionsForYear.reduce((sum, pi) => {
+    // Build a map from commodity code → category using the Commodities lookup table
+    // e.g. "HRWW" → "Wheat", "YC" → "Corn", "SB" → "Soybeans"
+    const codeToCategory = new Map<string, string>();
+    for (const c of commodities) {
+      if (c.code && c.category) codeToCategory.set(c.code.toUpperCase(), c.category.toUpperCase());
+    }
+
+    // Helper: get the broad category for a contract's commodity
+    const getContractCategory = (c: Contract): string => {
+      const code = (c.commodityCode || '').toUpperCase();
+      if (codeToCategory.has(code)) return codeToCategory.get(code)!;
+      // Fallback: check if description contains a known harvest window commodity
+      const desc = (c.commodityDescription || '').toUpperCase();
+      for (const hw of harvestWindows) {
+        if (desc.includes(hw.commodity.toUpperCase()) || code.includes(hw.commodity.toUpperCase())) {
+          return hw.commodity.toUpperCase();
+        }
+      }
+      return desc || code;
+    };
+
+    // Helper: does a contract's delivery period overlap with the harvest window for this category?
+    const contractMatchesCategory = (c: Contract, category: string): boolean => {
+      if (c.status === 'Cancelled' || !c.deliveryEnd) return false;
+      if (getContractCategory(c) !== category.toUpperCase()) return false;
+      if (year === 0) return true;
+      const hw = harvestWindows.find(w => w.commodity.toUpperCase() === category.toUpperCase());
+      if (!hw) return c.cropYear === year;
+      const windowStart = new Date(year, hw.deliveryStartMonth - 1, hw.deliveryStartDay);
+      const windowEnd = new Date(year, hw.deliveryEndMonth - 1, hw.deliveryEndDay);
+      windowEnd.setHours(23, 59, 59); // include the full end day
+      const delStart = c.deliveryStart ? new Date(c.deliveryStart) : new Date(c.deliveryEnd);
+      const delEnd = new Date(c.deliveryEnd);
+      // Contract overlaps if its delivery period intersects with the harvest window
+      return delStart <= windowEnd && delEnd >= windowStart;
+    };
+
+    // Build per-commodity metrics from planting intentions
+    const cropMap = new Map<string, { category: string; projectedYield: number; contracted: number }>();
+
+    for (const pi of intentionsForYear) {
       const commodity = commodities.find(c => c.code === pi.crop);
       const category = commodity?.category || pi.crop;
       const cropKey = [pi.type, category].filter(Boolean).join(' ');
       const est = yieldEstimates.find(ye => ye.crop === cropKey && ye.plantingYear === year)
         || yieldEstimates.find(ye => ye.crop === cropKey);
-      return sum + pi.acres * (est?.yieldEstimate ?? 0);
-    }, 0);
+      const projectedYield = pi.acres * (est?.yieldEstimate ?? 0);
+
+      if (!cropMap.has(category)) {
+        cropMap.set(category, { category, projectedYield: 0, contracted: 0 });
+      }
+      cropMap.get(category)!.projectedYield += projectedYield;
+    }
+
+    // Match contracts to each commodity category via harvest windows
+    for (const [category, data] of cropMap) {
+      data.contracted = contracts
+        .filter(c => contractMatchesCategory(c, category))
+        .reduce((sum, c) => sum + c.quantity, 0);
+    }
+
+    const byCommodity = Array.from(cropMap.values()).map(d => ({
+      commodity: d.category,
+      contracted: d.contracted,
+      projectedYield: d.projectedYield,
+      percentage: d.projectedYield > 0 ? (d.contracted / d.projectedYield) * 100 : 0,
+      available: Math.max(0, d.projectedYield - d.contracted),
+    }));
+
+    // Totals
+    const totalContracted = byCommodity.reduce((s, c) => s + c.contracted, 0);
+    const totalProjectedYield = byCommodity.reduce((s, c) => s + c.projectedYield, 0);
 
     return {
       contractYear: year,
@@ -239,6 +300,7 @@ export class CustomerProfileComponent {
       totalProjectedYield,
       marketSharePercentage: totalProjectedYield > 0 ? (totalContracted / totalProjectedYield) * 100 : 0,
       bushelsAvailable: Math.max(0, totalProjectedYield - totalContracted),
+      byCommodity,
     };
   });
 
@@ -300,6 +362,11 @@ export class CustomerProfileComponent {
   get contractYear(): number { return this.contractMetrics().contractYear; }
   get totalProjectedYield(): number { return this.contractMetrics().totalProjectedYield; }
   get totalContracted(): number { return this.contractMetrics().totalContracted; }
+
+  getCustomerAddress(): string {
+    const c = this.customer();
+    return [c.addressLine1, c.location, c.stateProvince, c.postalCode].filter(v => !!v).join(', ');
+  }
   get marketSharePercentage(): number { return this.contractMetrics().marketSharePercentage; }
   get bushelsAvailable(): number { return this.contractMetrics().bushelsAvailable; }
 
@@ -501,6 +568,11 @@ export class CustomerProfileComponent {
     const startMonth = startDate.toLocaleDateString('en-US', { month: 'short' });
     const endMonth = endDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
     return `${startMonth} - ${endMonth}`;
+  }
+
+  getContactAddress(): string {
+    const c = this.customer();
+    return [c.addressLine1, c.location, c.stateProvince].filter(v => !!v).join(', ');
   }
 
   getFormattedLocation(): string {

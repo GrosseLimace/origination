@@ -128,7 +128,7 @@
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
                   </svg>
-                  <span>{{ getFormattedLocation() }}</span>
+                  <span>{{ getContactAddress() }}</span>
                 </div>
                 @if (getCustomerPhone()) {
                   <a [href]="'tel:' + getCustomerPhone()" class="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors">
@@ -285,37 +285,46 @@
                 </div>
               } @else if (plantingIntentions().length > 0) {
                 <div class="mb-4 p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-                  <div class="flex items-center justify-between gap-4 flex-wrap">
-                    <div class="flex items-start gap-6 flex-wrap">
-                      <div class="text-center min-w-[80px] relative group cursor-default">
-                        <div class="text-3xl font-bold" [class]="marketSharePercentage > 0 ? 'text-scoular-green-accessible dark:text-scoular-green' : 'text-gray-400 dark:text-gray-500'">{{ marketSharePercentage | number:'1.0-0' }}%</div>
-                        <div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Contracted{{ contractYear > 0 ? ' (' + contractYear + ')' : '' }}</div>
-                        <!-- Hover tooltip -->
-                        <div class="absolute bottom-full left-0 mb-2 hidden group-hover:block z-50 w-64 pointer-events-none">
-                          <div class="bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg px-3 py-2 shadow-lg text-left space-y-1">
-                            <p class="text-gray-300">bu contracted / bu projected yield</p>
-                            <p class="text-gray-400">Projected yield = planting acres × yield estimate (set in the Trade Unit Dashboard).</p>
+                  <!-- Per-commodity breakdown -->
+                  @if (contractMetrics().byCommodity.length > 0) {
+                    <div class="space-y-3">
+                      @for (crop of contractMetrics().byCommodity; track crop.commodity) {
+                        <div class="flex items-center gap-4 relative group">
+                          <div class="w-24 text-sm font-medium text-gray-700 dark:text-gray-300 truncate">{{ crop.commodity }}</div>
+                          <div class="flex-1">
+                            <div class="h-2.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                              <div class="h-full bg-scoular-green-accessible rounded-full transition-all" [style.width.%]="crop.percentage > 100 ? 100 : crop.percentage"></div>
+                            </div>
                           </div>
-                          <div class="w-2 h-2 bg-gray-900 dark:bg-gray-700 rotate-45 ml-8 -mt-1"></div>
+                          <div class="w-14 text-right text-sm font-bold cursor-default" [class]="crop.percentage > 0 ? 'text-scoular-green-accessible dark:text-scoular-green' : 'text-gray-400'">{{ crop.percentage | number:'1.0-0' }}%</div>
+                          <div class="w-40 text-xs text-gray-500 dark:text-gray-400 text-right">{{ crop.contracted | number }} / {{ crop.projectedYield | number }} bu</div>
+                          <!-- Hover tooltip -->
+                          <div class="absolute bottom-full left-1/4 mb-2 hidden group-hover:block z-50 w-72 pointer-events-none">
+                            <div class="bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg px-3 py-2 shadow-lg text-left space-y-1">
+                              <p class="text-gray-200 font-medium">{{ crop.commodity }} — {{ crop.percentage | number:'1.0-0' }}% contracted</p>
+                              <p class="text-gray-400">{{ crop.contracted | number }} bu contracted / {{ crop.projectedYield | number }} bu projected yield</p>
+                              <p class="text-gray-400">Projected = planting acres × yield estimate. Contracts matched by delivery date within harvest window.</p>
+                              <p class="text-gray-400">{{ crop.available | number }} bu available to contract</p>
+                            </div>
+                            <div class="w-2 h-2 bg-gray-900 dark:bg-gray-700 rotate-45 ml-16 -mt-1"></div>
+                          </div>
                         </div>
-                      </div>
-                      <div class="border-l border-gray-200 dark:border-gray-700 pl-6 space-y-1 text-sm sm:text-base text-gray-600 dark:text-gray-400">
-                        <div><span class="font-medium text-gray-700 dark:text-gray-300">{{ totalContracted | number }}</span> bu contracted</div>
-                        <div><span class="font-medium text-gray-700 dark:text-gray-300">{{ totalProjectedYield | number }}</span> bu projected yield</div>
-                        <div><span class="font-medium text-gray-700 dark:text-gray-300">{{ bushelsAvailable | number }}</span> bu available to contract</div>
+                      }
+                    </div>
+                    <!-- Totals row -->
+                    <div class="border-t border-gray-300 dark:border-gray-600 mt-3 pt-3">
+                      <div class="flex items-center gap-4">
+                        <div class="w-24 text-sm font-medium text-gray-700 dark:text-gray-300">Total</div>
+                        <div class="flex-1">
+                          <div class="h-2.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                            <div class="h-full bg-scoular-green-accessible rounded-full transition-all" [style.width.%]="marketSharePercentage > 100 ? 100 : marketSharePercentage"></div>
+                          </div>
+                        </div>
+                        <div class="w-14 text-right text-sm font-bold" [class]="marketSharePercentage > 0 ? 'text-scoular-green-accessible dark:text-scoular-green' : 'text-gray-400'">{{ marketSharePercentage | number:'1.0-0' }}%</div>
+                        <div class="w-40 text-xs text-gray-500 dark:text-gray-400 text-right">{{ totalContracted | number }} / {{ totalProjectedYield | number }} bu</div>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-scoular-green-accessible text-white text-sm font-medium hover:bg-scoular-green transition-colors shrink-0"
-                      (click)="openAddPlanting()"
-                    >
-                      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                      </svg>
-                      Add Planting Intention
-                    </button>
-                  </div>
+                  }
                 </div>
               }
               <app-planting-intentions-table

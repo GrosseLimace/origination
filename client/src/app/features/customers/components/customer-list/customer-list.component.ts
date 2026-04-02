@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject, of, forkJoin, takeUntil } from 'rxjs';
-import { catchError, debounceTime, distinctUntilChanged, switchMap } from 'rxjs/operators';
+import { catchError, debounceTime, switchMap } from 'rxjs/operators';
 import { StoredGrain, Ticket, PlantingIntention } from '@models';
 import { Customer, SavedList, Note, ProducerDetails } from '@models';
 import { ApiService } from '@core/services/api.service';
@@ -51,6 +51,7 @@ export class CustomerListComponent {
   searchInputValue = '';
   selectedListId = signal('all');
   savedListLoading = signal(false);
+  searchLoading = signal(false);
   filteredCustomers = signal<Customer[]>([]);
   readonly hasTradeUnitSelection = computed(() =>
     this.appStateService.selectedTradeUnits().length > 0 || this.appStateService.selectedGroupNames().length > 0
@@ -83,10 +84,11 @@ export class CustomerListComponent {
 
     // Set up search — switchMap cancels any in-flight request when a new term arrives,
     // preventing stale results from overwriting newer ones.
+    // No distinctUntilChanged — allows re-searching the same term (e.g. after clearing and retyping).
     this._searchSubject$.pipe(
       debounceTime(150),
-      distinctUntilChanged(),
       switchMap(searchTerm => {
+        this.searchLoading.set(true);
         const explicitUnits = this.appStateService.selectedTradeUnits();
         const selectedGroups = this.appStateService.selectedGroupNames();
         let tradeUnits: string[] | undefined;
@@ -101,6 +103,7 @@ export class CustomerListComponent {
       }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe(customers => {
+      this.searchLoading.set(false);
       let result = customers.map(c => {
         const pd = this.producerDetailsMap().get(c.id);
         if (pd) {
@@ -402,6 +405,7 @@ export class CustomerListComponent {
 
   clearSearch(): void {
     this.searchInputValue = '';
+    this.searchLoading.set(false);
     this.appStateService.setSearchQuery('');
     this.applyFilters();
   }

@@ -26,4 +26,6 @@ export interface Contract {
   signed: boolean;
   priceTypeCode?: string; // ODS PriceTypeCode (e.g. "P" = priced, "U" = unpriced)
   customerConfirmStatus?: string; // ODS CustomerConfirmStatus (e.g. "Confirmed", "Pending", null)
+  marketZone?: string; // Market zone from ODS
+  basisLocation?: string; // Basis price location from ODS
 }

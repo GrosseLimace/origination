@@ -1,5 +1,5 @@
 import { Injectable, signal, computed } from '@angular/core';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, Commodity, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, RefinementFilters, ContractPricingLine } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, Commodity, CommodityConversion, HarvestWindow, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, RefinementFilters, ContractPricingLine } from '@models';
 import { ProducerDetails } from '../../models/producer-details.model';
 
 export interface DashboardCacheEntry {
@@ -90,6 +90,8 @@ export class AppStateService {
   storedGrain = signal<StoredGrain[]>([]);
   savedLists = signal<SavedList[]>([]);
   commodities = signal<Commodity[]>([]);
+  commodityConversions = signal<CommodityConversion[]>([]);
+  harvestWindows = signal<HarvestWindow[]>([]);
   producerDetails = signal<ProducerDetails[]>([]);
   pricingLines = signal<ContractPricingLine[]>([]);
 

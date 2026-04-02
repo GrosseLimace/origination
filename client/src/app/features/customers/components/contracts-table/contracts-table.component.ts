@@ -1,7 +1,8 @@
-import { Component, input, effect, signal, computed } from '@angular/core';
+import { Component, input, effect, signal, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
+import { AppStateService } from '@core/services/app-state.service';
 import { Customer, Contract, Ticket, ContractPricingLine } from '@models';
 
 type SortColumn = 'contractNumber' | 'date' | 'crop' | 'quantity' | 'price' | 'deliveryStart' | 'status';
@@ -23,6 +24,9 @@ type SortDirection = 'none' | 'asc' | 'desc';
   templateUrl: './contracts-table.component.html'
 })
 export class ContractsTableComponent {
+  private readonly appState = inject(AppStateService);
+  private _conversionMap: Map<string, number> | null = null;
+
   public isLoading = input(false);
   public contracts = input<Contract[]>([]);
   public tickets = input<Ticket[]>([]);
@@ -32,6 +36,7 @@ export class ContractsTableComponent {
 
   expandedRows = new Set<number>();
   expandedTicketSections = new Set<number>();
+  expandedPricingSections = new Set<number>();
   pricingLinesLoaded = computed(() => this.pricingLines() !== undefined);
   pricingLinesMap = computed(() => {
     const map = new Map<string, ContractPricingLine[]>();
@@ -62,10 +67,15 @@ export class ContractsTableComponent {
       this._deliveryStatsCache.clear();
       this._statusCache.clear();
       this.expandedRows.clear();
+      this.expandedTicketSections.clear();
+      this.expandedPricingSections.clear();
+      this.searchQuery.set('');
       // Apply openContractId after clearing expandedRows so it always wins
       const openId = this.openContractId();
-      if (openId != null) {
+      if (openId != null && _contracts.length > 0) {
         this.expandedRows.add(openId);
+        // Poll for the rendered element — Angular may not have flushed the DOM yet
+        this._scrollToContract(openId);
       }
     });
   }
@@ -255,10 +265,26 @@ export class ContractsTableComponent {
     return 'text-gray-400 dark:text-gray-600';
   }
 
+  private _scrollToContract(contractId: number, attempt = 0): void {
+    const el = document.getElementById('contract-row-' + contractId);
+    if (el) {
+      // Scroll so the contract row sits near the top with some padding
+      const rect = el.getBoundingClientRect();
+      const scrollParent = el.closest('[class*="overflow"]') as HTMLElement
+        ?? el.closest('[style*="overflow"]') as HTMLElement
+        ?? document.documentElement;
+      const parentRect = scrollParent.getBoundingClientRect();
+      scrollParent.scrollBy({ top: rect.top - parentRect.top - 8, behavior: 'smooth' });
+    } else if (attempt < 10) {
+      setTimeout(() => this._scrollToContract(contractId, attempt + 1), 100);
+    }
+  }
+
   toggleRow(contractId: number): void {
     if (this.expandedRows.has(contractId)) {
       this.expandedRows.delete(contractId);
       this.expandedTicketSections.delete(contractId);
+      this.expandedPricingSections.delete(contractId);
     } else {
       this.expandedRows.add(contractId);
     }
@@ -269,6 +295,14 @@ export class ContractsTableComponent {
       this.expandedTicketSections.delete(contractId);
     } else {
       this.expandedTicketSections.add(contractId);
+    }
+  }
+
+  togglePricingSection(contractId: number): void {
+    if (this.expandedPricingSections.has(contractId)) {
+      this.expandedPricingSections.delete(contractId);
+    } else {
+      this.expandedPricingSections.add(contractId);
     }
   }
 
@@ -284,6 +318,11 @@ export class ContractsTableComponent {
   //   PriceTypeCode 'D' = DEFERRED
   //   Pricing line exists, priceSequence > 0 = PRICED
   //   Pricing line exists, priceSequence = 0 = PRICED (all)
+  getPricingLinesForContract(contract: Contract): ContractPricingLine[] {
+    const key = contract.sourceContractId;
+    return key ? (this.pricingLinesMap().get(key) ?? []) : [];
+  }
+
   getPricingInfo(contract: Contract): { status: 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'FLAT' | 'DEFERRED' | 'LOADING' | 'ERROR'; cashPrice?: number } {
     const ptc = (contract.priceTypeCode ?? '').trim().toUpperCase();
     const key = contract.sourceContractId;
@@ -458,27 +497,37 @@ export class ContractsTableComponent {
     return pounds / lbsPerBushel;
   }
 
-  private _getLbsPerBushel(commodity: string): number {
-    const commodityUpper = commodity.toUpperCase();
-    if (commodityUpper.includes('CORN')) return 56;
-    if (commodityUpper.includes('SOYBEAN') || commodityUpper.includes('SOY')) return 60;
-    if (commodityUpper.includes('WHEAT')) return 60;
+  private _getLbsPerBushel(code: string): number {
+    return this._lookupLbsPerBushel(code);
+  }
+
+  private _lookupLbsPerBushel(productCode: string): number {
+    const code = (productCode || '').trim().toUpperCase();
+    if (!code) return 56;
+
+    const conversions = this.appState.commodityConversions();
+    if (conversions.length > 0) {
+      if (!this._conversionMap || this._conversionMap.size !== conversions.length) {
+        this._conversionMap = new Map(conversions.map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit]));
+      }
+      const lbs = this._conversionMap.get(code);
+      if (lbs && lbs > 0) return lbs;
+    }
+
+    // Fallback
+    if (code.includes('CORN') || code.includes('YC'))                              return 56;
+    if (code.includes('SOY') || code.includes('BEAN') || code.includes('SB'))      return 60;
+    if (code.includes('WHEAT') || code.includes('HRW') || code.includes('HRS') ||
+        code.includes('HWS') || code.includes('SRW') || code.includes('WW'))       return 60;
+    if (code.includes('SORGHUM') || code.includes('MILO') || code.includes('SOR') || code.includes('SG'))  return 56;
+    if (code.includes('BARLEY'))                                                    return 48;
+    if (code.includes('OAT'))                                                       return 32;
+    if (code.includes('RYE'))                                                       return 56;
     return 56;
   }
 
   toBushels(lbs: number | null | undefined, productCode: string | undefined | null): number {
-    const code = (productCode || '').toUpperCase();
-    let lbsPerBu = 56;
-    if (code.includes('CORN') || code.includes('YC'))                                           lbsPerBu = 56;
-    else if (code.includes('SOY') || code.includes('BEAN') || code.includes('SB'))             lbsPerBu = 60;
-    else if (code.includes('WHEAT') || code.includes('HRW') || code.includes('HRS') ||
-             code.includes('HWS') || code.includes('SRW') || code.includes('WW'))              lbsPerBu = 60;
-    else if (code.includes('SORGHUM') || code.includes('MILO') || code.includes('SOR') ||
-             code.includes('SG'))                                                               lbsPerBu = 56;
-    else if (code.includes('BARLEY'))                                                           lbsPerBu = 48;
-    else if (code.includes('OAT'))                                                              lbsPerBu = 32;
-    else if (code.includes('RYE'))                                                              lbsPerBu = 56;
-    return (lbs || 0) / lbsPerBu;
+    return (lbs || 0) / this._lookupLbsPerBushel(productCode || '');
   }
 
   getAppliedTickets(contract: Contract): Ticket[] {
@@ -535,7 +584,7 @@ export class ContractsTableComponent {
     // If delivery is complete, always show Fulfilled (overrides everything)
     // Check both percentage and remaining quantity to handle rounding edge cases
     if (stats.progressPercent >= 100 || stats.remainingBushels <= 0) {
-      return 'Fulfilled';
+      return 'Filled';
     }
 
     // Check for cancelled status from API
@@ -543,9 +592,9 @@ export class ContractsTableComponent {
       return 'Cancelled';
     }
 
-    // Check if contract is overdue (past end date and not fulfilled)
+    // Check if contract is past due (past end date and not filled)
     if (now > endDate) {
-      return 'Overdue';
+      return 'Past Due';
     }
 
     // Check if contract has reached its start date
@@ -554,23 +603,18 @@ export class ContractsTableComponent {
     }
 
     // Before start date
-    return 'Pending';
+    return 'To Arrive';
   }
 
   getStatusClass(status: string): string {
+    const base = 'inline-flex items-center justify-center min-w-[5.25rem] px-3 py-1 rounded-full text-xs font-medium text-white';
     switch (status) {
-      case 'Active':
-        return 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-scoular-green-accessible text-white';
-      case 'Fulfilled':
-        return 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-scoular-blue text-white';
-      case 'Pending':
-        return 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-500 text-white';
-      case 'Overdue':
-        return 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-scoular-red-accessible text-white';
-      case 'Cancelled':
-        return 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-500 text-white';
-      default:
-        return 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-500 text-white';
+      case 'Active':    return `${base} bg-scoular-green-accessible`;
+      case 'Filled':    return `${base} bg-scoular-blue`;
+      case 'To Arrive': return `${base} bg-yellow-500`;
+      case 'Past Due':  return `${base} bg-scoular-red-accessible`;
+      case 'Cancelled': return `${base} bg-gray-500`;
+      default:          return `${base} bg-gray-500`;
     }
   }
 }

@@ -117,6 +117,8 @@ export class NlqFilterService {
   private _categoryByCodeOrName = new Map<string, string>();
   // All known commodity names/codes (lowered) for query detection.
   private _allCommodityTerms: string[] = [];
+  // Track commodity fingerprint to detect when the lookup needs rebuilding (e.g., TU switch).
+  private _lastCommodityFingerprint = '';
 
   /** Call once when commodities are available to build the dynamic lookup. */
   private _buildCommodityLookup(commodities: Commodity[]): void {
@@ -230,9 +232,14 @@ export class NlqFilterService {
   // ============================================================
 
   parseAndFilter(query: string, context: NlqFilterContext): NlqFilterResult {
-    // Build dynamic commodity lookup before pattern detection so codes/names are recognized
-    if (context.commodities && context.commodities.length > 0 && this._allCommodityTerms.length === 0) {
-      this._buildCommodityLookup(context.commodities);
+    // Rebuild dynamic commodity lookup when commodities change (e.g., TU switch).
+    // _buildCommodityLookup clears and rebuilds all maps, so it's safe to call repeatedly.
+    if (context.commodities && context.commodities.length > 0) {
+      const fingerprint = context.commodities.map(c => c.code).sort().join(',');
+      if (fingerprint !== this._lastCommodityFingerprint) {
+        this._buildCommodityLookup(context.commodities);
+        this._lastCommodityFingerprint = fingerprint;
+      }
     }
     const detectedState = this.detectStateInQuery(query);
     const matchedPatterns = this.detectPatterns(query, detectedState);
@@ -257,7 +264,11 @@ export class NlqFilterService {
       ' ks ': 'kansas', ' ks,': 'kansas', ' ks.': 'kansas',
       ' sd ': 'south dakota', ' sd,': 'south dakota', ' sd.': 'south dakota',
       ' nd ': 'north dakota', ' nd,': 'north dakota', ' nd.': 'north dakota',
-      ' in,': 'indiana', ' in.': 'indiana',
+      // Note: ' in ' omitted (too common as preposition). ' in,' and ' in.' only match
+      // when the query ends with them or they're followed by a digit (zip code), to avoid
+      // false positives like "customers in, say, Iowa".
+      // See _matchIndianaAbbrev() below for the tighter check.
+
       ' oh ': 'ohio', ' oh,': 'ohio', ' oh.': 'ohio',
       ' mi ': 'michigan', ' mi,': 'michigan', ' mi.': 'michigan',
       ' tx ': 'texas', ' tx,': 'texas', ' tx.': 'texas',
@@ -267,6 +278,13 @@ export class NlqFilterService {
 
     for (const [abbrev, state] of Object.entries(stateAbbreviations)) {
       if (lowerQuery.includes(abbrev)) return state;
+    }
+
+    // Indiana special case: ' in,' and ' in.' are too easily confused with the preposition.
+    // Only match when preceded by a location-context word (from/near/around) or at end of query,
+    // and NOT when followed by a letter (which indicates it's part of a phrase like "in, say, Iowa").
+    if (/(?:from|near|around)\s+in[,.]/.test(lowerQuery) || /\bin[,.]$/.test(lowerQuery.trim())) {
+      return 'indiana';
     }
 
     return null;
@@ -367,32 +385,51 @@ export class NlqFilterService {
     return abbrevs[state.toLowerCase()] || '';
   }
 
+  /** Returns true if the query is a note content search, so other filters (commodity, city) don't misinterpret search terms. */
+  private _isNoteSearchQuery(lowerQuery: string): boolean {
+    return /note(?:s)?\s*(?:about|mentioning|containing|with|saying|that\s+(?:say|mention|include|contain))|search\s+notes?\s+for|note\s*search|whose\s+notes?/.test(lowerQuery);
+  }
+
+  // ============================================================
+  // Synonym normalization — single source of truth for both
+  // detectPatterns() and filterCustomers()
+  // ============================================================
+
+  private normalizeSynonyms(query: string): string {
+    let q = query;
+    // -- Calling / follow-up synonyms --
+    q = q.replace(/\bneed(?:s)?\s+(?:to\s+)?(?:call|contact|reach\s+out(?:\s+to)?)\b/g, 'not contacted in 30 days');
+    q = q.replace(/\bneed(?:s)?\s+follow\s*-?\s*up\b/g, 'not contacted in 14 days');
+    q = q.replace(/\bwho\s+(?:do\s+i|should\s+i)\s+(?:call|follow\s+up|follow-up|contact|reach\s+out)\b/gi, 'not contacted in 30 days');
+    q = q.replace(/\bhaven'?t\s+(?:called|reached\s+out)\b/g, 'not contacted in 30 days');
+    q = q.replace(/\bnot\s+(?:been\s+)?called\b/g, 'not contacted in 30 days');
+    q = q.replace(/\bneed\s+(?:a\s+)?touchpoint\b/g, 'not contacted in 30 days');
+    q = q.replace(/\boverdue\s+for\s+(?:a\s+)?(?:call|contact|follow.?up)\b/g, 'not contacted in 30 days');
+    q = q.replace(/\bwho\s+(?:do\s+i|should\s+i)\s+follow\s*-?\s*up\b/g, 'not contacted in 14 days');
+    // -- Contract state synonyms --
+    q = q.replace(/\binactive\s+(?:customers?|producers?|growers?|farmers?)\b/g, 'no active contract');
+    q = q.replace(/\b(?:not\s+contracted|uncontracted|haven'?t\s+contracted|nothing\s+contracted|no\s+contracts)\b/g, 'no active contract');
+    // -- Delivery state synonyms --
+    q = q.replace(/\bhaven'?t\s+delivered\b/g, 'no deliveries');
+    q = q.replace(/\bnot\s+delivered\b/g, 'no deliveries');
+    q = q.replace(/\bnothing\s+delivered\b/g, 'no deliveries');
+    q = q.replace(/\bzero\s+deliveries\b/g, 'no deliveries');
+    // -- High-value / priority synonyms --
+    q = q.replace(/\bhigh\s*-?\s*value\s+(?:customers?|producers?|growers?|farmers?)\b/g, 'top 10 by contract value');
+    q = q.replace(/\bmy\s+biggest\s+(?:growers?|producers?|customers?|farmers?)\b/g, 'top 10 by acres');
+    q = q.replace(/\blargest\s+(?:producers?|customers?|growers?|farmers?|operations?)\b/g, 'top 10 by acres');
+    q = q.replace(/\b(?:most\s+active|best)\s+(?:customers?|producers?|growers?|farmers?)\b/g, 'top 10 by contract value');
+    // -- Storage synonyms --
+    q = q.replace(/\b(?:has\s+grain\s+in\s+storage|storing\s+grain|grain\s+on\s+hand)\b/g, 'in storage');
+    return q;
+  }
+
   // ============================================================
   // Pattern Detection (for "unrecognized query" UI feedback)
   // ============================================================
 
   detectPatterns(query: string, detectedState?: string | null): string[] {
-    let lowerQuery = query.toLowerCase();
-    // Apply same synonym normalization as filterCustomers
-    lowerQuery = lowerQuery.replace(/\bneed(?:s)?\s+(?:to\s+)?(?:call|contact|reach\s+out(?:\s+to)?)\b/g, 'not contacted in 30 days');
-    lowerQuery = lowerQuery.replace(/\bneed(?:s)?\s+follow\s*-?\s*up\b/g, 'not contacted in 14 days');
-    lowerQuery = lowerQuery.replace(/\bwho\s+(?:do\s+i|should\s+i)\s+(?:call|follow\s+up|follow-up|contact|reach\s+out)\b/gi, 'not contacted in 30 days');
-    lowerQuery = lowerQuery.replace(/\bhaven'?t\s+(?:called|reached\s+out)\b/g, 'not contacted in 30 days');
-    lowerQuery = lowerQuery.replace(/\bnot\s+(?:been\s+)?called\b/g, 'not contacted in 30 days');
-    lowerQuery = lowerQuery.replace(/\bneed\s+(?:a\s+)?touchpoint\b/g, 'not contacted in 30 days');
-    lowerQuery = lowerQuery.replace(/\boverdue\s+for\s+(?:a\s+)?(?:call|contact|follow.?up)\b/g, 'not contacted in 30 days');
-    lowerQuery = lowerQuery.replace(/\bwho\s+(?:do\s+i|should\s+i)\s+follow\s*-?\s*up\b/g, 'not contacted in 14 days');
-    lowerQuery = lowerQuery.replace(/\binactive\s+(?:customers?|producers?|growers?|farmers?)\b/g, 'no active contract');
-    lowerQuery = lowerQuery.replace(/\b(?:not\s+contracted|uncontracted|haven'?t\s+contracted|nothing\s+contracted|no\s+contracts)\b/g, 'no active contract');
-    lowerQuery = lowerQuery.replace(/\bhaven'?t\s+delivered\b/g, 'no deliveries');
-    lowerQuery = lowerQuery.replace(/\bnot\s+delivered\b/g, 'no deliveries');
-    lowerQuery = lowerQuery.replace(/\bnothing\s+delivered\b/g, 'no deliveries');
-    lowerQuery = lowerQuery.replace(/\bzero\s+deliveries\b/g, 'no deliveries');
-    lowerQuery = lowerQuery.replace(/\bhigh\s*-?\s*value\s+(?:customers?|producers?|growers?|farmers?)\b/g, 'top 10 by contract value');
-    lowerQuery = lowerQuery.replace(/\bmy\s+biggest\s+(?:growers?|producers?|customers?|farmers?)\b/g, 'top 10 by acres');
-    lowerQuery = lowerQuery.replace(/\blargest\s+(?:producers?|customers?|growers?|farmers?|operations?)\b/g, 'top 10 by acres');
-    lowerQuery = lowerQuery.replace(/\b(?:most\s+active|best)\s+(?:customers?|producers?|growers?|farmers?)\b/g, 'top 10 by contract value');
-    lowerQuery = lowerQuery.replace(/\b(?:has\s+grain\s+in\s+storage|storing\s+grain|grain\s+on\s+hand)\b/g, 'in storage');
+    const lowerQuery = this.normalizeSynonyms(query.toLowerCase());
     const matched: string[] = [];
 
     // --- Location ---
@@ -595,7 +632,12 @@ export class NlqFilterService {
 
     // --- Notes (enhanced) ---
     if (lowerQuery.includes('pinned note') || lowerQuery.includes('pinned')) matched.push('has_pinned_notes');
-    if (/note(?:s)?\s*(?:about|mentioning|containing|with)\s+/i.test(lowerQuery)) matched.push('note_contains');
+    if (/note(?:s)?\s*(?:about|mentioning|containing|with|saying|that\s+(?:say|mention|include|contain))\s+/i.test(lowerQuery) ||
+        /search\s+notes?\s+for\s+/i.test(lowerQuery) ||
+        /note\s*search\s*:?\s+/i.test(lowerQuery) ||
+        /whose\s+notes?\s+(?:say|mention|include|contain|reference)\s+/i.test(lowerQuery)) {
+      matched.push('note_contains');
+    }
 
     // --- Ranking ---
     if (/top\s*\d+/.test(lowerQuery)) matched.push('top_n');
@@ -650,6 +692,25 @@ export class NlqFilterService {
       matched.push('cross_delivery_no_contract');
     }
 
+    // --- Supplementary note keyword match ---
+    // If no other patterns matched, check if the query has meaningful keywords (4+ chars)
+    // that could match note content. This ensures the query isn't flagged as "unrecognized"
+    // when the supplementary note search in filterCustomers() will find results.
+    if (matched.length === 0) {
+      const structuralWords = new Set([
+        'show', 'find', 'list', 'customers', 'customer', 'producers', 'producer',
+        'growers', 'grower', 'farmers', 'farmer', 'who', 'that', 'have', 'has',
+        'with', 'without', 'more', 'less', 'than', 'over', 'under', 'above', 'below',
+        'the', 'and', 'for', 'are', 'but', 'not', 'all', 'can', 'was', 'one',
+        'out', 'had', 'how', 'did', 'let', 'say', 'use', 'been', 'said', 'each',
+        'them', 'then', 'what', 'when', 'will', 'into', 'some', 'about', 'their',
+        'which', 'would', 'there', 'these', 'other', 'from', 'they', 'this',
+      ]);
+      const hasKeywords = lowerQuery.split(/\s+/)
+        .some(w => w.length >= 4 && !structuralWords.has(w) && !/^\d+$/.test(w));
+      if (hasKeywords) matched.push('note_keyword_search');
+    }
+
     return matched;
   }
 
@@ -659,31 +720,7 @@ export class NlqFilterService {
 
   private filterCustomers(query: string, context: NlqFilterContext, detectedState: string | null): Customer[] {
     // Normalize synonyms before pattern matching
-    let lowerQuery = query.toLowerCase();
-    // -- Calling / follow-up synonyms --
-    lowerQuery = lowerQuery.replace(/\bneed(?:s)?\s+(?:to\s+)?(?:call|contact|reach\s+out(?:\s+to)?)\b/g, 'not contacted in 30 days');
-    lowerQuery = lowerQuery.replace(/\bneed(?:s)?\s+follow\s*-?\s*up\b/g, 'not contacted in 14 days');
-    lowerQuery = lowerQuery.replace(/\bwho\s+(?:do\s+i|should\s+i)\s+(?:call|follow\s+up|follow-up|contact|reach\s+out)\b/gi, 'not contacted in 30 days');
-    lowerQuery = lowerQuery.replace(/\bhaven'?t\s+(?:called|reached\s+out)\b/g, 'not contacted in 30 days');
-    lowerQuery = lowerQuery.replace(/\bnot\s+(?:been\s+)?called\b/g, 'not contacted in 30 days');
-    lowerQuery = lowerQuery.replace(/\bneed\s+(?:a\s+)?touchpoint\b/g, 'not contacted in 30 days');
-    lowerQuery = lowerQuery.replace(/\boverdue\s+for\s+(?:a\s+)?(?:call|contact|follow.?up)\b/g, 'not contacted in 30 days');
-    lowerQuery = lowerQuery.replace(/\bwho\s+(?:do\s+i|should\s+i)\s+follow\s*-?\s*up\b/g, 'not contacted in 14 days');
-    // -- Contract state synonyms --
-    lowerQuery = lowerQuery.replace(/\binactive\s+(?:customers?|producers?|growers?|farmers?)\b/g, 'no active contract');
-    lowerQuery = lowerQuery.replace(/\b(?:not\s+contracted|uncontracted|haven'?t\s+contracted|nothing\s+contracted|no\s+contracts)\b/g, 'no active contract');
-    // -- Delivery state synonyms --
-    lowerQuery = lowerQuery.replace(/\bhaven'?t\s+delivered\b/g, 'no deliveries');
-    lowerQuery = lowerQuery.replace(/\bnot\s+delivered\b/g, 'no deliveries');
-    lowerQuery = lowerQuery.replace(/\bnothing\s+delivered\b/g, 'no deliveries');
-    lowerQuery = lowerQuery.replace(/\bzero\s+deliveries\b/g, 'no deliveries');
-    // -- High-value / priority synonyms --
-    lowerQuery = lowerQuery.replace(/\bhigh\s*-?\s*value\s+(?:customers?|producers?|growers?|farmers?)\b/g, 'top 10 by contract value');
-    lowerQuery = lowerQuery.replace(/\bmy\s+biggest\s+(?:growers?|producers?|customers?|farmers?)\b/g, 'top 10 by acres');
-    lowerQuery = lowerQuery.replace(/\blargest\s+(?:producers?|customers?|growers?|farmers?|operations?)\b/g, 'top 10 by acres');
-    lowerQuery = lowerQuery.replace(/\b(?:most\s+active|best)\s+(?:customers?|producers?|growers?|farmers?)\b/g, 'top 10 by contract value');
-    // -- Storage synonyms --
-    lowerQuery = lowerQuery.replace(/\b(?:has\s+grain\s+in\s+storage|storing\s+grain|grain\s+on\s+hand)\b/g, 'in storage');
+    const lowerQuery = this.normalizeSynonyms(query.toLowerCase());
     let result = [...context.customers];
 
     // Pre-index: latest note per customer — O(notes) build, then O(1) lookup per customer.
@@ -705,7 +742,7 @@ export class NlqFilterService {
     result = this.applyAcresFilter(lowerQuery, result);
     result = this.applyCustomerInfoFilters(lowerQuery, result, context.tickets, context.contracts);
     result = this.applyContactFilters(lowerQuery, result, latestNoteByCustomer, customerIdsWithNotes);
-    result = this.applyNoteFilters(lowerQuery, result, context.notes);
+    result = this.applyNoteFilters(lowerQuery, result, context.notes, context.customers);
     result = this.applyStorageFilters(lowerQuery, result, context.storedGrain);
     result = this.applyPlantingFilters(lowerQuery, result, context.plantingIntentions);
     result = this.applyContractFilters(lowerQuery, result, context.contracts);
@@ -715,6 +752,30 @@ export class NlqFilterService {
     result = this.applyContractStatusOrFilter(lowerQuery, result, context.contracts);
     result = this.applyCrossEntityFilters(lowerQuery, result, context.contracts, context.tickets, context.plantingIntentions);
     result = this.applyRankingFilters(lowerQuery, result, context.contracts, context.tickets, context.plantingIntentions, context.storedGrain, context.notes);
+
+    // ── Supplementary note search ──────────────────────────────────────
+    // Notes are a first-class data source. When the query didn't trigger any
+    // specific structured filters (storage, contracts, tickets, planting, etc.),
+    // search note content for meaningful query keywords and merge in matches.
+    // This ensures user-entered note content (e.g., "75000 bu beans in his bins")
+    // is discoverable via freeform queries.
+    //
+    // SKIP when:
+    // - Explicit note search ("notes mentioning X") — already handled by applyNoteFilters
+    // - Ranking queries ("top 10") — note merging would dilute ranked results
+    // - Structured filters already narrowed results — the query has a specific intent
+    //   (e.g., "grain stored for over 60 days") and note matches would add false positives
+    const structuredFiltersNarrowed = result.length < context.customers.length;
+    if (!this._isNoteSearchQuery(lowerQuery) && !/^top\s*\d+/.test(lowerQuery) && !structuredFiltersNarrowed) {
+      const noteMatchedIds = this._findCustomersByNoteKeywords(lowerQuery, context.notes, context.customers);
+      if (noteMatchedIds.size > 0) {
+        const existingIds = new Set(result.map(c => c.id));
+        const additional = context.customers.filter(c => noteMatchedIds.has(c.id) && !existingIds.has(c.id));
+        if (additional.length > 0) {
+          result = [...result, ...additional];
+        }
+      }
+    }
 
     return result;
   }
@@ -1021,12 +1082,17 @@ export class NlqFilterService {
     // Commodities match (from customer's commodity list + ticket product codes + contracts)
     // Supports OR: "corn or soybeans customers", "grow corn or wheat"
     // Also supports dynamic commodity codes/names from the Commodities table (e.g. "HRWW", "yellow corn")
-    const commodityTradeMatch = lowerQuery.match(/(?:trad|deal|work|grow|produc|rais|farm)\w*\s*(?:in|with|of)?\s*(corn|soybeans?|wheat|oats|barley|sorghum|milo|beans|canola|sunflower)/);
-    const commodityProducerMatch = lowerQuery.match(/(corn|soybeans?|wheat|oats|barley|sorghum|milo|beans|canola|sunflower)\s*(?:customers?|producers?|growers?|farmers?)/);
+    //
+    // Skip commodity filtering when the query is a note content search — crop words like
+    // "beans" in "notes mentioning beans in the bin" are search terms, not commodity filters.
+    const isNoteSearchQuery = this._isNoteSearchQuery(lowerQuery);
+
+    const commodityTradeMatch = isNoteSearchQuery ? null : lowerQuery.match(/(?:trad|deal|work|grow|produc|rais|farm)\w*\s*(?:in|with|of)?\s*(corn|soybeans?|wheat|oats|barley|sorghum|milo|beans|canola|sunflower)/);
+    const commodityProducerMatch = isNoteSearchQuery ? null : lowerQuery.match(/(corn|soybeans?|wheat|oats|barley|sorghum|milo|beans|canola|sunflower)\s*(?:customers?|producers?|growers?|farmers?)/);
     let commodityCrop = commodityTradeMatch?.[1] || commodityProducerMatch?.[1] || null;
 
     // If no hardcoded crop found, try detecting a dynamic commodity term from the DB
-    if (!commodityCrop) {
+    if (!commodityCrop && !isNoteSearchQuery) {
       for (const term of this._allCommodityTerms) {
         if (term.length > 2 && lowerQuery.includes(term)) {
           commodityCrop = term;
@@ -1096,7 +1162,8 @@ export class NlqFilterService {
 
     // City/location search — "in [city]", "from [city]", "near [city]", "[city] customers"
     // Lookahead allows trailing "with/who/and/having" without consuming them so other filters still fire.
-    const cityMatch = lowerQuery.match(/(?:in|from|near|around)\s+([a-z][a-z\s]{1,25}?)(?=\s+(?:customers?|producers?|farmers?|growers?|area|region|with|who|and|that|having)|$)/);
+    // Skip city matching for note-search queries to avoid "in the bin" being parsed as a city.
+    const cityMatch = this._isNoteSearchQuery(lowerQuery) ? null : lowerQuery.match(/(?:in|from|near|around)\s+([a-z][a-z\s]{1,25}?)(?=\s+(?:customers?|producers?|farmers?|growers?|area|region|with|who|and|that|having)|$)/);
     if (cityMatch && !this.stateNames[cityMatch[1].trim()]) {
       const city = cityMatch[1].trim();
       result = result.filter(c => {
@@ -1216,7 +1283,7 @@ export class NlqFilterService {
   // NOTE FILTERS (pinned, content search)
   // ============================================================
 
-  private applyNoteFilters(lowerQuery: string, result: Customer[], notes: Note[]): Customer[] {
+  private applyNoteFilters(lowerQuery: string, result: Customer[], notes: Note[], allCustomers: Customer[] = result): Customer[] {
     // Pinned notes
     if (lowerQuery.includes('pinned note') || lowerQuery.includes('with pinned') || lowerQuery.includes('has pinned')) {
       const customersWithPinned = new Set<number>(
@@ -1225,17 +1292,164 @@ export class NlqFilterService {
       result = result.filter(c => customersWithPinned.has(c.id));
     }
 
-    // Note content search: "notes about pricing", "notes mentioning delivery"
-    const noteContentMatch = lowerQuery.match(/note(?:s)?\s*(?:about|mentioning|containing|with)\s+(.+?)(?:\s+and\s+|\s+in\s+|\s+from\s+|$)/);
-    if (noteContentMatch) {
-      const searchTerm = noteContentMatch[1].trim();
-      const customersWithContent = new Set<number>(
-        notes.filter(n => n.content.toLowerCase().includes(searchTerm)).map(n => n.customerId)
-      );
-      result = result.filter(c => customersWithContent.has(c.id));
+    // Note content search — multiple trigger patterns:
+    //   "notes about beans in the bin"
+    //   "notes mentioning 75000"
+    //   "whose notes say grain"
+    //   "note search: beans"
+    //   "search notes for beans in the bin"
+    //   "notes with beans and corn"
+    //
+    // The search term is captured GREEDILY to end-of-string so phrases like
+    // "beans and corn in the bin" aren't truncated. The note search clause
+    // should be the last meaningful part of the query.
+    let searchTerm: string | null = null;
+
+    // Pattern 1: "notes about/mentioning/containing/with/saying <term...>"
+    const noteContentMatch = lowerQuery.match(
+      /note(?:s)?\s*(?:about|mentioning|containing|with|saying|that\s+(?:say|mention|include|contain))\s+(.+)$/
+    );
+    if (noteContentMatch) searchTerm = noteContentMatch[1].trim();
+
+    // Pattern 2: "search notes for <term...>" / "note search: <term...>"
+    if (!searchTerm) {
+      const searchNotesMatch = lowerQuery.match(/(?:search\s+notes?\s+for|note\s*search\s*:?\s*)(.+)$/);
+      if (searchNotesMatch) searchTerm = searchNotesMatch[1].trim();
+    }
+
+    // Pattern 3: "whose notes say/mention <term...>"
+    if (!searchTerm) {
+      const whoseNotesMatch = lowerQuery.match(/whose\s+notes?\s+(?:say|mention|include|contain|reference)\s+(.+)$/);
+      if (whoseNotesMatch) searchTerm = whoseNotesMatch[1].trim();
+    }
+
+    if (searchTerm) {
+      // Pre-index notes by customer for O(notes) build, O(1) lookup
+      const notesByCustomer = new Map<number, string[]>();
+      for (const n of notes) {
+        const arr = notesByCustomer.get(n.customerId);
+        const lower = n.content.toLowerCase();
+        if (arr) arr.push(lower); else notesByCustomer.set(n.customerId, [lower]);
+      }
+
+      // Build linked-producer map from ALL customers (not just filtered result) so
+      // linked producers that were filtered out by earlier filters can still be resolved.
+      const sourceIdToNumericId = new Map<string, number>();
+      for (const c of allCustomers) {
+        if (c.sourceCustomerId) sourceIdToNumericId.set(c.sourceCustomerId, c.id);
+      }
+
+      // Extract keywords from the search term (3+ chars to skip stop words like
+      // "in", "the", "a", "of"). Substring matching handles plurals naturally
+      // (e.g., "bin" matches "bins", "bean" matches "beans").
+      const stopWords = new Set(['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'has', 'her', 'his', 'its', 'was', 'one', 'our', 'out', 'had', 'how', 'who', 'did', 'get', 'let', 'say', 'she', 'too', 'use', 'that', 'this', 'with', 'from', 'they', 'been', 'have', 'said', 'each', 'than', 'them', 'then', 'what', 'when', 'will', 'into', 'some', 'about', 'their', 'which', 'would', 'there', 'these', 'other']);
+      const keywords = searchTerm.split(/\s+/)
+        .filter(w => w.length >= 3 && !stopWords.has(w));
+
+      // If no meaningful keywords remain, fall back to full phrase match
+      const useKeywordMatch = keywords.length > 0;
+
+      result = result.filter(c => {
+        // Collect note content from this customer + their linked producers
+        const allNoteTexts: string[] = [];
+        const own = notesByCustomer.get(c.id);
+        if (own) allNoteTexts.push(...own);
+
+        // Include linked producer notes
+        if (c.linkedProducerIds?.length) {
+          for (const linkedSourceId of c.linkedProducerIds) {
+            const linkedNumericId = sourceIdToNumericId.get(linkedSourceId);
+            if (linkedNumericId && linkedNumericId !== c.id) {
+              const linked = notesByCustomer.get(linkedNumericId);
+              if (linked) allNoteTexts.push(...linked);
+            }
+          }
+        }
+
+        if (allNoteTexts.length === 0) return false;
+        const allContent = allNoteTexts.join(' ');
+
+        if (useKeywordMatch) {
+          // ALL keywords must appear somewhere in the customer's notes (substring match)
+          return keywords.every(kw => allContent.includes(kw));
+        }
+        // Fallback: exact phrase match for very short search terms
+        return allContent.includes(searchTerm!);
+      });
     }
 
     return result;
+  }
+
+  /**
+   * Supplementary note keyword search — extracts meaningful keywords from ANY query
+   * and returns customer IDs whose notes contain ALL of them.
+   * Used after pattern-based filtering to merge in note-matched customers.
+   */
+  private _findCustomersByNoteKeywords(lowerQuery: string, notes: Note[], allCustomers: Customer[]): Set<number> {
+    const matched = new Set<number>();
+
+    // Strip NLQ structural words that are part of query syntax, not search content
+    const structuralWords = new Set([
+      // Query verbs/prepositions
+      'show', 'find', 'list', 'get', 'give', 'pull', 'search', 'look',
+      'customers', 'customer', 'producers', 'producer', 'growers', 'grower',
+      'farmers', 'farmer', 'who', 'that', 'have', 'has', 'with', 'without',
+      'more', 'less', 'than', 'over', 'under', 'above', 'below',
+      'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can',
+      'was', 'one', 'our', 'out', 'had', 'how', 'did', 'let', 'say',
+      'she', 'too', 'use', 'been', 'said', 'each', 'them', 'then',
+      'what', 'when', 'will', 'into', 'some', 'about', 'their', 'which',
+      'would', 'there', 'these', 'other', 'from', 'they', 'this',
+      // NLQ-specific
+      'active', 'contracts', 'contract', 'deliveries', 'delivery', 'delivered',
+      'tickets', 'ticket', 'planting', 'planted', 'storage', 'stored', 'contacted',
+      'acres', 'bushels', 'days', 'ago', 'last', 'past', 'recently', 'never',
+      'notes', 'note', 'mentioning', 'containing', 'saying',
+    ]);
+
+    // Extract meaningful keywords (4+ chars, not structural)
+    const keywords = lowerQuery.split(/\s+/)
+      .filter(w => w.length >= 4 && !structuralWords.has(w))
+      // Remove pure numbers (already handled by quantity filters)
+      .filter(w => !/^\d+$/.test(w));
+
+    if (keywords.length === 0) return matched;
+
+    // Pre-index notes by customer (including linked producers)
+    const sourceIdToNumericId = new Map<string, number>();
+    for (const c of allCustomers) {
+      if (c.sourceCustomerId) sourceIdToNumericId.set(c.sourceCustomerId, c.id);
+    }
+
+    const noteContentByCustomer = new Map<number, string>();
+    for (const n of notes) {
+      const existing = noteContentByCustomer.get(n.customerId) || '';
+      noteContentByCustomer.set(n.customerId, existing + ' ' + n.content.toLowerCase());
+    }
+
+    for (const c of allCustomers) {
+      // Collect this customer's notes + linked producer notes
+      let allContent = noteContentByCustomer.get(c.id) || '';
+      if (c.linkedProducerIds?.length) {
+        for (const linkedSourceId of c.linkedProducerIds) {
+          const linkedId = sourceIdToNumericId.get(linkedSourceId);
+          if (linkedId && linkedId !== c.id) {
+            const linkedContent = noteContentByCustomer.get(linkedId);
+            if (linkedContent) allContent += ' ' + linkedContent;
+          }
+        }
+      }
+
+      if (!allContent.trim()) continue;
+
+      // Customer matches if ALL keywords appear in their notes (substring match)
+      if (keywords.every(kw => allContent.includes(kw))) {
+        matched.add(c.id);
+      }
+    }
+
+    return matched;
   }
 
   // ============================================================
