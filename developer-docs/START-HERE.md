@@ -36,12 +36,12 @@ Your Origination application runs on fully managed Azure infrastructure with pri
 - **App Service** (Linux, .NET 10.0, 64-bit, always-on)
   - Dev: Shared P2v4 App Service Plan (2 vCores, 8 GB RAM, shared across multiple apps)
   - QA: B1 (dedicated App Service Plan)
-  - Prod: P1v3 (dedicated App Service Plan)
+  - Prod: P1v4 (dedicated App Service Plan)
 
 ### Data and Storage
 - **SQL Database** (Azure SQL, managed identity authentication)
-  - Dev/QA: Serverless (2 vCores, auto-pause after 1 hour)
-  - Prod: Hyperscale (2 vCores, always-on)
+  - Dev/QA: Serverless, 0.5-2 vCores, auto-pause 60 min
+  - Prod: Hyperscale Serverless, 0.5-2 vCores, no auto-pause
 - **Key Vault** — Secure storage for secrets with RBAC-based access, private endpoint, and audit logging
 
 ### Networking
@@ -176,4 +176,4 @@ For new developers joining the Origination team:
 
 ---
 
-*Document version: 1.6 | 2026-03-31*
+*Document version: 1.7 | 2026-04-01*
