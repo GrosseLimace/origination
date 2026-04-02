@@ -56,6 +56,10 @@ public class Contract
     // Customer confirmation status from ODS (e.g. "Confirmed", "Pending", null)
     public string? CustomerConfirmStatus { get; set; }
 
+    // Market zone and basis price location from ODS
+    public string? MarketZone { get; set; }
+    public string? BasisLocation { get; set; }
+
     // ODS metadata fields
     public bool IsActive { get; set; }
     public DateTime? EffectiveStartDate { get; set; }

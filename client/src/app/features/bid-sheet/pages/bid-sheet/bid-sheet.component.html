@@ -174,9 +174,12 @@
                   Edit Bids
                 </button>
                 }
-                <button (click)="showDeleteLocationConfirm.set(true)" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-scoular-red-accessible dark:text-scoular-red rounded-lg border border-scoular-red/30 dark:border-scoular-red/40 hover:bg-scoular-red/10 dark:hover:bg-scoular-red/20 transition-colors">
+                <button (click)="deleteMode.set(!deleteMode())" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors"
+                  [ngClass]="deleteMode()
+                    ? 'text-white bg-scoular-red-accessible border-scoular-red-accessible dark:bg-scoular-red dark:border-scoular-red'
+                    : 'text-scoular-red-accessible dark:text-scoular-red border-scoular-red/30 dark:border-scoular-red/40 hover:bg-scoular-red/10 dark:hover:bg-scoular-red/20'">
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                  Delete
+                  @if (deleteMode()) { Done } @else { Delete }
                 </button>
               </div>
 
@@ -199,6 +202,9 @@
                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
                       </button>
                     </th>
+                    @if (deleteMode()) {
+                    <th class="w-8 border-b border-gray-200 dark:border-gray-700"></th>
+                    }
                   </tr>
                 </thead>
                 <tbody>
@@ -207,10 +213,31 @@
                       <td class="px-3 py-3 text-sm font-medium text-gray-900 dark:text-white">{{ row.crop }}</td>
                       <td class="px-1 py-3 text-base font-mono font-semibold text-center text-gray-900 dark:text-white">{{ row.oldBid || '--' }}</td>
                       <td class="px-1 py-3 text-base font-mono font-semibold text-center text-gray-900 dark:text-white">{{ row.newBid || '--' }}</td>
+                      @if (deleteMode()) {
+                      <td class="px-1 py-3 text-center">
+                        <button (click)="requestDeleteCrop(row.crop)" title="Delete {{ row.crop }} bids"
+                          class="p-1 rounded text-gray-400 hover:text-scoular-red-accessible dark:text-gray-500 dark:hover:text-scoular-red transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        </button>
+                      </td>
+                      }
                     </tr>
                   }
                 </tbody>
               </table>
+
+              <!-- Delete crop confirmation is shown as a popup (see below showDeleteCropConfirm block) -->
+
+              <!-- Delete entire location (only visible in delete mode) -->
+              @if (deleteMode()) {
+              <div class="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
+                <button (click)="showDeleteLocationConfirm.set(true)"
+                  class="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-scoular-red-accessible dark:text-scoular-red rounded-lg border border-scoular-red/30 dark:border-scoular-red/40 hover:bg-scoular-red/10 dark:hover:bg-scoular-red/20 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                  Delete Location &amp; All Bids
+                </button>
+              </div>
+              }
               } @else {
               <div class="flex flex-col items-center justify-center py-12 px-6 text-center">
                 <p class="text-sm text-gray-400 dark:text-gray-500">No bids recorded for this location.</p>
@@ -410,6 +437,33 @@
                 <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
                   <button (click)="showDeleteLocationConfirm.set(false)" class="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
                   <button (click)="confirmDeleteLocation()" class="px-3 py-1.5 text-xs font-medium text-white bg-scoular-red-accessible hover:bg-scoular-red rounded-lg transition-colors">Delete</button>
+                </div>
+              </div>
+            </div>
+          }
+
+          <!-- Delete Crop Bids Confirmation -->
+          @if (showDeleteCropConfirm()) {
+            <div class="absolute inset-0 z-[1100] bg-black/40 backdrop-blur-sm flex items-center justify-center">
+              <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-sm mx-4">
+                <div class="px-5 pt-5 pb-4">
+                  <div class="flex items-start gap-3 mb-3">
+                    <div class="shrink-0 w-9 h-9 rounded-full bg-scoular-red/10 dark:bg-scoular-red/20 flex items-center justify-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-red-accessible dark:text-scoular-red">
+                        <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">Delete Crop Bids?</h4>
+                      <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                        Permanently delete all <span class="font-medium text-gray-700 dark:text-gray-300">{{ pendingDeleteCrop() }}</span> bids from <span class="font-medium text-gray-700 dark:text-gray-300">{{ panelSelectedLocation() }}</span>. This cannot be undone.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+                  <button (click)="cancelDeleteCrop()" class="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
+                  <button (click)="confirmDeleteCrop()" class="px-3 py-1.5 text-xs font-medium text-white bg-scoular-red-accessible hover:bg-scoular-red rounded-lg transition-colors">Delete</button>
                 </div>
               </div>
             </div>
@@ -714,14 +768,17 @@
                       </th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody cdkDropList (cdkDropListDropped)="onRowDrop($event)">
                     @for (row of editBidsRows(); track row.name; let rowIdx = $index) {
-                      <tr class="border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors">
+                      <tr cdkDrag class="border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors">
                         <td class="sticky left-0 z-10 px-4 py-3 border-r border-gray-200 dark:border-gray-700"
                             [ngClass]="row.type === 'elevator'
                               ? 'bg-scoular-green/10 dark:bg-scoular-green/20'
                               : 'bg-white dark:bg-gray-900'">
                           <div class="flex items-center gap-2">
+                            <span cdkDragHandle class="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400 flex-shrink-0">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>
+                            </span>
                             <span class="text-sm font-medium text-gray-900 dark:text-white truncate" style="max-width: 220px;" [title]="row.name">{{ row.name }}</span>
                           </div>
                         </td>

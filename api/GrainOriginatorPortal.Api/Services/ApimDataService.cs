@@ -198,6 +198,12 @@ public class ApimDataService : IDataService
     public Task<List<Commodity>> GetCommoditiesAsync(CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetCommodities");
 
+    public Task<List<CommodityConversion>> GetCommodityConversionsAsync(CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetCommodityConversions");
+
+    public Task<List<HarvestWindow>> GetHarvestWindowsAsync(CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetHarvestWindows");
+
     // =========================================================================
     // Saved List Operations
     // =========================================================================
@@ -272,6 +278,9 @@ public class ApimDataService : IDataService
     public Task DeleteBidSheetLocationAsync(int id, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for DeleteBidSheetLocation");
 
+    public Task DeleteBidSheetBidsAsync(int locationId, string commodityCode, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for DeleteBidSheetBids");
+
     public Task BulkUpsertBidSheetBidsAsync(IEnumerable<GrainOriginatorPortal.Api.Models.Requests.UpsertBidSheetBidRequest> requests, string tradeUnitCode, string userId, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for BulkUpsertBidSheetBids");
 
@@ -289,4 +298,10 @@ public class ApimDataService : IDataService
 
     public Task ClearBidSheetReferenceAsync(string userId, string tradeUnitCode, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for ClearBidSheetReference");
+
+    public Task<BidSheetLocationOrder?> GetBidSheetLocationOrderAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetBidSheetLocationOrder");
+
+    public Task SetBidSheetLocationOrderAsync(string userId, string tradeUnitKey, string locationOrderJson, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for SetBidSheetLocationOrder");
 }

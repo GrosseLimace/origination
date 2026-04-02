@@ -38,7 +38,11 @@
               placeholder="Search customers..."
               class="w-full h-9 pl-10 pr-10 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-base text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green"
             />
-            @if (searchInputValue) {
+            @if (searchLoading()) {
+              <div class="absolute right-3 top-1/2 -translate-y-1/2">
+                <div class="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 dark:border-gray-600 border-t-scoular-green"></div>
+              </div>
+            } @else if (searchInputValue) {
               <button
                 (click)="clearSearch()"
                 type="button"

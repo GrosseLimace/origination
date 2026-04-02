@@ -56,9 +56,12 @@ export class BuildListComponent {
   // Trade units captured at init — used to detect changes on destroy
   private _initTradeUnits: string[] = [];
   private _initialized = false;
-  private _ticketsReady = false;
+  private _ticketsReady = signal(false);
   private _loadRequestId = 0;
   private _queryGenId = 0;
+  // True once the forkJoin (or cache restore) has populated all core data signals.
+  // Guards processQuery() and example chips from running against partial/empty data.
+  readonly coreDataLoaded = signal(false);
   // All trade units the user can access (union of all groups from Entitlements DB)
   private _allUserTradeUnits = signal<string[]>([]);
 
@@ -148,16 +151,10 @@ export class BuildListComponent {
     if (r.neverContacted) {
       list = list.filter(c => !contactMap.has(c.id));
     } else if (r.notContactedDays != null && r.notContactedDays > 0) {
-      const threshold = new Date();
-      threshold.setDate(threshold.getDate() - r.notContactedDays);
       list = list.filter(c => {
         const info = contactMap.get(c.id);
         if (!info) return true; // never contacted → include
-        // Parse days from the cached text to avoid re-scanning notes
-        const match = info.text.match(/(\d+) days ago/);
-        if (match) return parseInt(match[1], 10) >= r.notContactedDays!;
-        if (info.text === 'Never contacted') return true;
-        return false; // "today" or "yesterday" → contacted recently
+        return info.daysAgo >= r.notContactedDays!;
       });
     }
     if (r.crops && r.crops.length > 0) {
@@ -200,6 +197,7 @@ export class BuildListComponent {
   deleteListId = signal<number | null>(null);
   newListName = signal('');
   isProcessing = signal(false);
+  waitingForTickets = signal(false);
   hasGenerated = signal(false);
   showMap = signal(false);
   loading = signal(false);
@@ -211,6 +209,41 @@ export class BuildListComponent {
   pendingRefinements = signal<RefinementFilters>({});
   appliedRefinements = signal<RefinementFilters>({});
   notContactedDaysInput = signal('');
+  matchedPatterns = signal<string[]>([]);
+
+  // ── Pattern display name map for user-facing feedback ────────────────────
+  private readonly _patternDisplayNames: { [key: string]: string } = {
+    state_filter: 'State', acres_more: 'Acres (min)', acres_less: 'Acres (max)', acres_between: 'Acres (range)',
+    large_farm: 'Large operations', small_farm: 'Small operations', not_contacted: 'Not contacted',
+    recently_contacted: 'Recently contacted', storage: 'Has storage', no_storage: 'No storage',
+    storage_duration: 'Storage duration', planting: 'Planting', no_planting: 'No planting',
+    planting_year: 'Planting year', planting_type: 'Planting type',
+    active_contract: 'Active contracts', no_contract: 'No contracts',
+    unsigned_contract: 'Unsigned contracts', negative_pacing: 'Behind on pacing',
+    positive_pacing: 'Ahead on pacing', contract_unconfirmed: 'Unconfirmed contracts',
+    contract_confirmed: 'Confirmed contracts', contract_priced: 'Pricing status',
+    contract_quantity: 'Contract quantity', contract_value: 'Contract value',
+    contract_open_balance: 'Open balance', fulfillment_ratio: 'Fulfillment %',
+    commodity_contract: 'Commodity contracts', has_deliveries: 'Has deliveries',
+    no_deliveries: 'No deliveries', delivery_commodity: 'Delivery commodity',
+    delivery_quantity: 'Delivery quantity', ticket_unapplied: 'Unapplied tickets',
+    ticket_unsettled: 'Unsettled tickets', has_phone: 'Has phone', no_phone: 'No phone',
+    has_email: 'Has email', no_email: 'No email', commodities_match: 'Commodity match',
+    top_n: 'Top N ranking', customer_search: 'Name search', region_filter: 'Region',
+    multi_commodity: 'Multiple crops (AND)', multi_commodity_or: 'Multiple crops (OR)',
+    cross_contract_no_delivery: 'Contracted, not delivered',
+    cross_planting_no_contract: 'Planting, no contracts',
+    cross_delivery_no_contract: 'Delivered, no contracts',
+    note_contains: 'Notes containing',
+  };
+
+  readonly matchedPatternLabels = computed(() =>
+    this.matchedPatterns()
+      .map(p => this._patternDisplayNames[p] || null)
+      .filter((label): label is string => label !== null)
+      // Deduplicate labels
+      .filter((v, i, a) => a.indexOf(v) === i)
+  );
 
   // ── Pre-indexed computed signals for O(1) lookups ────────────────────────
 
@@ -227,7 +260,7 @@ export class BuildListComponent {
 
   /** Most recent note per customer — pre-indexed for O(1) template lookup. */
   readonly lastContactByCustomer = computed(() => {
-    const map = new Map<number, { text: string; colorClass: string }>();
+    const map = new Map<number, { text: string; colorClass: string; daysAgo: number }>();
     // Pre-index: find most recent note per customer, parsing Date once per note
     const latestNotes = new Map<number, { time: number }>();
     for (const n of this.notes()) {
@@ -239,13 +272,13 @@ export class BuildListComponent {
     }
     const now = Date.now();
     for (const [customerId, { time }] of latestNotes) {
-      const daysAgo = Math.floor((now - time) / 86400000);
-      let result: { text: string; colorClass: string };
-      if (daysAgo === 0) result = { text: 'Contacted today', colorClass: 'text-scoular-green' };
-      else if (daysAgo === 1) result = { text: 'Contacted yesterday', colorClass: 'text-scoular-green' };
-      else if (daysAgo < 7) result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-scoular-green' };
-      else if (daysAgo < 30) result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-yellow-500' };
-      else result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-scoular-red' };
+      const daysAgo = Math.max(0, Math.floor((now - time) / 86400000));
+      let result: { text: string; colorClass: string; daysAgo: number };
+      if (daysAgo === 0) result = { text: 'Contacted today', colorClass: 'text-scoular-green', daysAgo };
+      else if (daysAgo === 1) result = { text: 'Contacted yesterday', colorClass: 'text-scoular-green', daysAgo };
+      else if (daysAgo < 7) result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-scoular-green', daysAgo };
+      else if (daysAgo < 30) result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-yellow-500', daysAgo };
+      else result = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-scoular-red', daysAgo };
       map.set(customerId, result);
     }
     return map;
@@ -275,6 +308,16 @@ export class BuildListComponent {
       ticketCropsByCustomer.get(t.customerId)!.add(t.productCode);
     }
 
+    // Pre-index stored grain crops by customerId
+    const storedGrainCropsByCustomer = new Map<number, Set<string>>();
+    for (const sg of this.storedGrain()) {
+      if (!sg.customerId || !sg.crop) continue;
+      if (!storedGrainCropsByCustomer.has(sg.customerId)) {
+        storedGrainCropsByCustomer.set(sg.customerId, new Set());
+      }
+      storedGrainCropsByCustomer.get(sg.customerId)!.add(sg.crop);
+    }
+
     for (const customer of this.customers()) {
       const detailCrops = customer.commodities?.length ? [...customer.commodities] : [];
       const contractCrops = customer.sourceCustomerId
@@ -286,7 +329,8 @@ export class BuildListComponent {
         : [];
       const intentionCrops = [...(intentionCropsByCustomer.get(customer.id) || [])];
       const ticketCrops = [...(ticketCropsByCustomer.get(customer.id) || [])];
-      map.set(customer.id, [...new Set([...detailCrops, ...contractCrops, ...intentionCrops, ...ticketCrops])].slice(0, 5));
+      const storageCrops = [...(storedGrainCropsByCustomer.get(customer.id) || [])];
+      map.set(customer.id, [...new Set([...detailCrops, ...contractCrops, ...intentionCrops, ...ticketCrops, ...storageCrops])].slice(0, 5));
     }
     return map;
   });
@@ -299,7 +343,8 @@ export class BuildListComponent {
     'Customers planting soybeans in 2026',
     'Growers with unapplied tickets',
     'Customers with unconfirmed contracts',
-    'Grain stored for over 60 days'
+    'Grain stored for over 60 days',
+    'Notes mentioning beans in the bin'
   ];
 
 
@@ -371,37 +416,52 @@ export class BuildListComponent {
     // Restore UI state (query text, refinements, etc.) — this is safe, never corrupted
     this._restoreUIState();
 
-    // If we have saved results, show them instantly while fresh data loads
-    const saved = this.appState.buildListState();
     const currentTus = this.appState.selectedTradeUnits();
-    const savedTus = saved?.tradeUnits ?? [];
-    const tusMatch = currentTus.length > 0 && savedTus.length > 0
-      && currentTus.length === savedTus.length
-      && currentTus.every(tu => savedTus.includes(tu));
+    const cachedCustomers = this.appState.customers();
 
-    if (tusMatch && saved?.hasGenerated && saved.filteredCustomerIds.length > 0) {
-      // Temporarily restore data signals from appState so computed properties
-      // (cropsByCustomer, lastContactByCustomer, etc.) work while cached results display.
-      // _loadFresh will overwrite these with fresh data when it completes.
-      const cachedCustomers = this.appState.customers();
-      if (cachedCustomers.length > 0) {
-        this.customers.set(cachedCustomers);
-        this.contracts.set(this.appState.contracts());
-        this.tickets.set(this.appState.tickets());
-        this.plantingIntentions.set(this.appState.plantingIntentions());
-        this.notes.set(this.appState.notes());
-        this.storedGrain.set(this.appState.storedGrain());
-        this._ticketsReady = this.appState.tickets().length > 0;
-        if (this.appState.producerDetails().length > 0) {
-          this._mergeProducerDetails(this.appState.producerDetails());
-        }
+    // If appState already has customer data (loaded by home page or a previous visit),
+    // use it immediately for fast display, then do a background refresh to fill in
+    // any data the preload service hadn't finished (tickets, stored grain, etc.).
+    if (currentTus.length > 0 && cachedCustomers.length > 0) {
+      this.customers.set(cachedCustomers);
+      this.contracts.set(this.appState.contracts());
+      this.tickets.set(this.appState.tickets());
+      this.plantingIntentions.set(this.appState.plantingIntentions());
+      this.notes.set(this.appState.notes());
+      this.storedGrain.set(this.appState.storedGrain());
+      this.savedLists.set(this.appState.savedLists());
+      // Don't set _ticketsReady from cache — ticket data may be stale or from a
+      // different TU. The background refresh will set it when fresh tickets arrive.
+      // Ticket-dependent queries will wait via the "Loading delivery data..." path,
+      // ensuring they always use fresh data.
+      if (this.appState.producerDetails().length > 0) {
+        this._mergeProducerDetails(this.appState.producerDetails());
+      }
+
+      // Restore filtered results if we had a previous query for the same TUs
+      const saved = this.appState.buildListState();
+      const savedTus = saved?.tradeUnits ?? [];
+      const tusMatch = savedTus.length === currentTus.length
+        && currentTus.every(tu => savedTus.includes(tu));
+      if (tusMatch && saved?.hasGenerated && saved.filteredCustomerIds.length > 0) {
         const idSet = new Set(saved.filteredCustomerIds);
         this.filteredCustomers.set(this.customers().filter(c => idSet.has(c.id)));
       }
-    }
 
-    // Always fetch fresh data — appState may have been corrupted by the home page
-    if (currentTus.length > 0) {
+      this.loading.set(false);
+      this.coreDataLoaded.set(true);
+
+      // Auto-run staged query if present and no results yet
+      if (this.queryText().trim() && !this.hasGenerated()) {
+        this.processQuery();
+      }
+
+      // Background refresh: the home page preload may not have finished loading all
+      // data (tickets, stored grain load as secondary/background). Fetch fresh data
+      // without clearing current signals so the UI stays responsive.
+      this._loadFresh(false);
+    } else if (currentTus.length > 0) {
+      // No cached data — fetch fresh from API
       this._loadFresh();
     } else {
       this.loading.set(false);
@@ -412,7 +472,13 @@ export class BuildListComponent {
    *  @param clearSignals If true, clears data signals immediately (TU change). If false, keeps them for display (background refresh). */
   private _loadFresh(clearSignals = false): void {
     const requestId = ++this._loadRequestId;
-    this._ticketsReady = false;
+    this._ticketsReady.set(false);
+    // Only reset coreDataLoaded when clearing signals (TU change / initial load).
+    // For background refreshes (clearSignals=false with existing data), keep it true
+    // so the UI stays interactive while fresh data loads behind the scenes.
+    if (clearSignals || this.customers().length === 0) {
+      this.coreDataLoaded.set(false);
+    }
 
     if (clearSignals) {
       // TU changed — clear everything to prevent stale data from previous TU
@@ -464,30 +530,34 @@ export class BuildListComponent {
         this.appState.setSavedLists(data.savedLists);
 
         this.loading.set(false);
+        this.coreDataLoaded.set(true);
 
-        // Auto-run query if not already showing results.
-        // If hasGenerated is true, results are cached from a previous run (possibly a saved list
-        // with different TUs) — don't overwrite with a re-run against current TUs.
-        if (this.queryText().trim() && !this.hasGenerated()) {
+        // Auto-run query if not already showing results and not already processing.
+        // If hasGenerated is true, results are cached from a previous run — don't overwrite.
+        // If isProcessing is true, the user already triggered a query (e.g., clicked an
+        // example chip) and that query is waiting for tickets — don't compete with it.
+        if (this.queryText().trim() && !this.hasGenerated() && !this.isProcessing()) {
           this.processQuery();
         }
       },
       error: () => {
         if (requestId !== this._loadRequestId) return;
         this.loading.set(false);
+        this.coreDataLoaded.set(true); // Mark loaded even on error so UI isn't stuck
         this.toastService.error('Failed to load data');
       }
     });
 
     // Tickets load in background — processQuery waits for them only if the query needs tickets
     this.apiService.getTickets(tuParam).pipe(
+      timeout(60000),
       catchError(() => of([] as Ticket[])),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe(tickets => {
       if (requestId !== this._loadRequestId) return;
       this.tickets.set(tickets);
       this.appState.setTickets(tickets);
-      this._ticketsReady = true;
+      this._ticketsReady.set(true);
     });
   }
 
@@ -559,9 +629,11 @@ export class BuildListComponent {
   clearQuery(): void {
     this._queryGenId++;
     this.isProcessing.set(false);
+    this.waitingForTickets.set(false);
     this.queryText.set('');
     this.hasGenerated.set(false);
     this.filteredCustomers.set([]);
+    this.matchedPatterns.set([]);
     this.detectedState.set(null);
     this.queryUnrecognized.set(false);
     this.queryReturnedNoMatches.set(false);
@@ -603,7 +675,7 @@ export class BuildListComponent {
     this.queryUnrecognized.set(false);
     this.queryReturnedNoMatches.set(false);
     this.queryText.set(example);
-    if (!this.loading()) {
+    if (this.coreDataLoaded() && !this.loading()) {
       this.processQuery();
     }
     // If loading: text is staged; _loadFresh auto-runs processQuery() on completion
@@ -613,13 +685,14 @@ export class BuildListComponent {
     if (!this.queryText().trim()) return;
     // Don't run if core data hasn't loaded yet — the staged query will auto-run when data arrives
     // (hasGenerated stays false so _loadFresh's auto-run at completion picks it up)
-    if (this.customers().length === 0) {
+    if (!this.coreDataLoaded()) {
       this.hasGenerated.set(false);
       return;
     }
 
     const queryGen = ++this._queryGenId;
     this.isProcessing.set(true);
+    this.waitingForTickets.set(false); // Reset — will be set to true below only if this query needs tickets
 
     // Saved lists always re-fetch to ensure fresh data
     if (overrideTradeUnits && overrideTradeUnits.length > 0) {
@@ -629,7 +702,8 @@ export class BuildListComponent {
 
     // If query involves tickets and tickets haven't loaded yet, wait for them
     const needsTickets = this.nlqFilterService.queryInvolvesTickets(this.queryText());
-    if (needsTickets && (!this._ticketsReady || this.tickets().length === 0)) {
+    if (needsTickets && !this._ticketsReady()) {
+      this.waitingForTickets.set(true);
       const tuParam = this.appState.selectedTradeUnits();
       this.apiService.getTickets(tuParam.length > 0 ? tuParam : undefined).pipe(
         timeout(60000),
@@ -638,7 +712,8 @@ export class BuildListComponent {
       ).subscribe(tickets => {
         if (queryGen !== this._queryGenId) return;
         this.tickets.set(tickets);
-        this._ticketsReady = true;
+        this._ticketsReady.set(true);
+        this.waitingForTickets.set(false);
         this._applyNlqFilter();
         this.isProcessing.set(false);
       });
@@ -671,8 +746,9 @@ export class BuildListComponent {
         this.notes.set(data.notes);
         this.plantingIntentions.set(data.plantingIntentions);
         this.storedGrain.set(data.storedGrain);
+        this._ticketsReady.set(true);
+        this.coreDataLoaded.set(true);
 
-    
         this._applyNlqFilter();
         this.isProcessing.set(false);
       },
@@ -696,10 +772,11 @@ export class BuildListComponent {
     };
     const result = this.nlqFilterService.parseAndFilter(this.queryText(), context);
     this.detectedState.set(result.detectedState);
+    this.matchedPatterns.set(result.matchedPatterns);
     this.hasGenerated.set(true);
     this.queryUnrecognized.set(result.matchedPatterns.length === 0);
     // Don't show "no match" if tickets are still loading and the query needs them
-    const ticketsPending = this.nlqFilterService.queryInvolvesTickets(this.queryText()) && !this._ticketsReady;
+    const ticketsPending = this.nlqFilterService.queryInvolvesTickets(this.queryText()) && !this._ticketsReady();
     this.queryReturnedNoMatches.set(result.matchedPatterns.length > 0 && result.customers.length === 0 && !ticketsPending);
 
     if (this.queryUnrecognized()) {
@@ -776,12 +853,10 @@ export class BuildListComponent {
   }
 
   applyFilters(): void {
+    // Setting appliedRefinements is sufficient — displayedCustomers computed signal
+    // automatically recalculates when appliedRefinements() changes. No need to re-run
+    // the full NLQ parse/filter pipeline since the base filteredCustomers hasn't changed.
     this.appliedRefinements.set({ ...this.pendingRefinements() });
-    // Re-run the NLQ filter so hasNegativePacing (and any other refinement that
-    // affects the base customer set) uses the correct set of customers.
-    if (this.hasGenerated()) {
-      this._applyNlqFilter();
-    }
   }
 
   togglePendingCrop(crop: string): void {
@@ -951,9 +1026,9 @@ export class BuildListComponent {
     return customer.extendedCity || customer.location || customer.stateProvince || '';
   }
 
-  getLastContactInfo(customerId: number): { text: string; colorClass: string } {
+  getLastContactInfo(customerId: number): { text: string; colorClass: string; daysAgo: number } {
     return this.lastContactByCustomer().get(customerId)
-      ?? { text: 'Never contacted', colorClass: 'text-scoular-red' };
+      ?? { text: 'Never contacted', colorClass: 'text-scoular-red', daysAgo: Infinity };
   }
 
   getCustomerCrops(customerId: number): string[] {

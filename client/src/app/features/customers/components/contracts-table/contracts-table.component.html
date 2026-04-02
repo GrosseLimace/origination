@@ -15,31 +15,25 @@
       } @else {
         <!-- Search toolbar -->
         <div class="flex items-center border-b border-gray-100 dark:border-gray-800 px-3 py-1.5">
-          @if (showSearch()) {
-            <div class="flex items-center w-full gap-2">
-              <svg class="w-4 h-4 text-gray-500 dark:text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
-              </svg>
-              <input
-                type="text"
-                [ngModel]="searchQuery()"
-                (ngModelChange)="searchQuery.set($event)"
-                placeholder="Search by contract #, date, crop, or status..."
-                class="flex-1 py-1 text-sm bg-transparent focus:outline-none text-gray-900 dark:text-white placeholder-gray-400"
-              />
-              <button (click)="clearSearch()" title="Clear search" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0">
+          <div class="flex items-center w-full gap-2">
+            <svg class="w-4 h-4 text-gray-500 dark:text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+            </svg>
+            <input
+              type="text"
+              [ngModel]="searchQuery()"
+              (ngModelChange)="searchQuery.set($event)"
+              placeholder="Search contracts..."
+              class="flex-1 py-1 text-sm bg-transparent focus:outline-none text-gray-900 dark:text-white placeholder-gray-400"
+            />
+            @if (searchQuery()) {
+              <button (click)="searchQuery.set('')" title="Clear search" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
               </button>
-            </div>
-          } @else {
-            <button (click)="showSearch.set(true)" title="Search contracts" class="ml-auto p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
-              </svg>
-            </button>
-          }
+            }
+          </div>
         </div>
         <div class="max-h-[calc(100vh-14rem)] overflow-y-auto overflow-x-auto relative">
         <app-table [stickyHeader]="true">
@@ -166,8 +160,8 @@
                 </span>
               </app-table-head>
               <app-table-head [sortable]="true" (click)="handleSort('status')">
-                <span class="flex items-center gap-1">
-                  Status
+                <span class="flex items-center justify-center gap-1">
+                  Delivery Status
                   <span [class]="getSortIconClass('status')">
                     @if (currentSortColumn() === 'status' && currentSortDirection() === 'asc') {
                       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -191,6 +185,7 @@
             @for (contract of displayedContracts; track contract.id) {
               <!-- Main Row -->
               <app-table-row
+                [rowId]="'contract-row-' + contract.id"
                 [highlighted]="!contract.signed"
                 [clickable]="true"
                 (rowClick)="toggleRow(contract.id)"
@@ -246,7 +241,7 @@
                 <app-table-cell>
                   <span [class]="!contract.signed ? 'text-scoular-red-accessible dark:text-scoular-red' : ''">{{ contract.deliveryStart | date:'M/d/yyyy' }} - {{ contract.deliveryEnd | date:'M/d/yyyy' }}</span>
                 </app-table-cell>
-                <app-table-cell>
+                <app-table-cell class="text-center">
                   <span [class]="getStatusClass(getCalculatedStatus(contract))">
                     {{ getCalculatedStatus(contract) }}
                   </span>
@@ -258,6 +253,14 @@
                 <app-table-row [class]="'bg-gray-50 dark:bg-gray-800/50'">
                   <app-table-cell [colspan]="7">
                     <div class="block w-full py-6" style="display: block; width: 100%;">
+                      @if (contract.customerConfirmStatus && contract.customerConfirmStatus !== 'Confirmed') {
+                        <div class="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40">
+                          <svg class="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5Z"/>
+                          </svg>
+                          <span class="text-sm font-medium text-amber-700 dark:text-amber-400">Unconfirmed Contract</span>
+                        </div>
+                      }
                       <!-- Delivery Progress at top -->
                       <div class="mb-8 w-full">
                         <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Delivery Progress</p>
@@ -274,10 +277,10 @@
                         </div>
                       </div>
 
-                      <!-- Two column layout using flexbox -->
-                      <div class="flex flex-row gap-16 w-full" style="display: flex; width: 100%; gap: 4rem;">
-                        <!-- Left column -->
-                        <div class="flex-1 space-y-5" style="flex: 1; min-width: 0;">
+                      <!-- Three column layout -->
+                      <div class="grid grid-cols-3 gap-8 w-full">
+                        <!-- Column 1 -->
+                        <div class="space-y-5">
                           <div class="flex flex-col">
                             <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Contract Value</span>
                             <span class="font-medium text-gray-900 dark:text-gray-100">
@@ -322,8 +325,8 @@
                           </div>
                         </div>
 
-                        <!-- Right column -->
-                        <div class="flex-1 space-y-5" style="flex: 1; min-width: 0;">
+                        <!-- Column 2 -->
+                        <div class="space-y-5">
                           <div class="flex flex-col">
                             <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Delivery Window</span>
                             <span class="font-medium text-gray-900 dark:text-gray-100">{{ getDeliveryWindowStatus(contract) }}</span>
@@ -340,13 +343,87 @@
                             <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Remaining Quantity</span>
                             <span class="font-medium text-gray-900 dark:text-gray-100">{{ getDeliveryStats(contract).remainingBushels | number }} {{ contract.unit }}</span>
                           </div>
+                          <div class="flex flex-col">
+                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Market Zone</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ contract.marketZone || 'N/A' }}</span>
+                          </div>
+                        </div>
+
+                        <!-- Column 3 -->
+                        <div class="space-y-5">
+                          <div class="flex flex-col">
+                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Basis Price Location</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ contract.basisLocation || 'N/A' }}</span>
+                          </div>
                         </div>
                       </div>
 
+                      <!-- Pricing Lines Section -->
+                      @if (getPricingLinesForContract(contract).length > 0) {
+                        <div class="mt-8 border-t border-gray-200 dark:border-gray-700">
+                          <button
+                            class="w-full flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors py-3 px-2 -mx-2 rounded-md cursor-pointer"
+                            (click)="togglePricingSection(contract.id)"
+                          >
+                            <span class="text-gray-400">
+                              @if (expandedPricingSections.has(contract.id)) {
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                                </svg>
+                              } @else {
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                </svg>
+                              }
+                            </span>
+                            Pricing Lines ({{ getPricingLinesForContract(contract).length }})
+                          </button>
+
+                          @if (expandedPricingSections.has(contract.id)) {
+                            <div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+                              <table class="w-full text-sm">
+                                <thead class="bg-gray-50 dark:bg-gray-800/60">
+                                  <tr>
+                                    <th class="px-3 py-2 text-center font-medium text-gray-500 dark:text-gray-400">Price Sequence</th>
+                                    <th class="px-3 py-2 text-center font-medium text-gray-500 dark:text-gray-400">Quantity</th>
+                                    <th class="px-3 py-2 text-center font-medium text-gray-500 dark:text-gray-400">Basis</th>
+                                    <th class="px-3 py-2 text-center font-medium text-gray-500 dark:text-gray-400">Hedge</th>
+                                    <th class="px-3 py-2 text-center font-medium text-gray-500 dark:text-gray-400">Flat Price</th>
+                                    <th class="px-3 py-2 text-center font-medium text-gray-500 dark:text-gray-400">Price Date</th>
+                                    <th class="px-3 py-2 text-center font-medium text-gray-500 dark:text-gray-400">Customer Confirm Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+                                  @for (line of getPricingLinesForContract(contract); track line.priceSequence) {
+                                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/40">
+                                      <td class="px-3 py-2 text-center text-gray-500 dark:text-gray-400">{{ line.priceSequence }}</td>
+                                      <td class="px-3 py-2 text-center text-gray-900 dark:text-gray-100">{{ (line.priceQuantity ?? 0) | number:'1.0-0' }} {{ contract.unit }}</td>
+                                      <td class="px-3 py-2 text-center text-gray-900 dark:text-gray-100">{{ line.basisPrice != null ? (line.basisPrice | currency:'USD':'symbol':'1.2-6') : '—' }}</td>
+                                      <td class="px-3 py-2 text-center text-gray-900 dark:text-gray-100">{{ line.hedgePrice != null ? (line.hedgePrice | currency:'USD':'symbol':'1.2-6') : '—' }}</td>
+                                      <td class="px-3 py-2 text-center font-medium text-gray-900 dark:text-gray-100">{{ line.flatPrice != null ? (line.flatPrice | currency:'USD':'symbol':'1.2-6') : '—' }}</td>
+                                      <td class="px-3 py-2 text-center text-gray-900 dark:text-gray-100">{{ line.priceDate | date:'M/d/yyyy' }}</td>
+                                      <td class="px-3 py-2 text-center">
+                                        @if (line.customerConfirmStatus === 'Confirmed') {
+                                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Confirmed</span>
+                                        } @else if (line.customerConfirmStatus) {
+                                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">{{ line.customerConfirmStatus }}</span>
+                                        } @else {
+                                          <span class="text-gray-400">—</span>
+                                        }
+                                      </td>
+                                    </tr>
+                                  }
+                                </tbody>
+                              </table>
+                            </div>
+                          }
+                        </div>
+                      }
+
                       <!-- Applied Tickets Section -->
-                      <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+                      <div class="mt-2 border-t border-gray-200 dark:border-gray-700">
                         <button
-                          class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors mb-4"
+                          class="w-full flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors py-3 px-2 -mx-2 rounded-md cursor-pointer"
                           (click)="toggleTicketSection(contract.id)"
                         >
                           <span class="text-gray-400">
@@ -367,7 +444,7 @@
                           @if (getAppliedTickets(contract).length > 0) {
                             @for (ticket of getAppliedTickets(contract); track ticket.id) {
                               <div class="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 mb-3">
-                                <div [class]="hasWheatInAppliedTickets(contract) ? 'grid grid-cols-1 sm:grid-cols-6 gap-4' : 'grid grid-cols-1 sm:grid-cols-5 gap-4'">
+                                <div [class]="hasWheatInAppliedTickets(contract) ? 'grid grid-cols-1 sm:grid-cols-7 gap-4' : 'grid grid-cols-1 sm:grid-cols-6 gap-4'">
                                   <div class="text-center">
                                     <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Ticket Number</p>
                                     <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.ticketNumber }}</p>
@@ -381,8 +458,12 @@
                                     <p class="font-medium text-gray-900 dark:text-gray-100">{{ ticket.productCode || 'N/A' }}</p>
                                   </div>
                                   <div class="text-center">
+                                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Location</p>
+                                    <p class="font-medium text-gray-900 dark:text-gray-100 text-xs">{{ ticket.elevatorCity && ticket.elevatorState ? ticket.elevatorCity + ', ' + ticket.elevatorState : ticket.elevatorCity || ticket.elevatorState || '—' }}</p>
+                                  </div>
+                                  <div class="text-center">
                                     <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Net Bu</p>
-                                    <p class="font-medium text-gray-900 dark:text-gray-100">{{ toBushels(ticket.appliedDockQuantity, ticket.productCode) | number:'1.0-0' }}</p>
+                                    <p class="font-medium text-gray-900 dark:text-gray-100">{{ toBushels(ticket.appliedDockQuantity, ticket.productCode) | number:'1.2-2' }}</p>
                                   </div>
                                   <div class="text-center">
                                     <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Moisture %</p>

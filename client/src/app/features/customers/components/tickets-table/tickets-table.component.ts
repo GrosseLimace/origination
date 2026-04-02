@@ -1,10 +1,11 @@
-import { Component, input, effect } from '@angular/core';
+import { Component, input, effect, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
+import { AppStateService } from '@core/services/app-state.service';
 import { Customer, Ticket, Contract } from '@models';
 
-type SortColumn = 'id' | 'date' | 'crop' | 'appliedDockQuantity' | 'moisture' | 'testWeight' | 'protein';
+type SortColumn = 'id' | 'date' | 'crop' | 'location' | 'appliedDockQuantity' | 'moisture' | 'testWeight' | 'protein';
 type SortDirection = 'none' | 'asc' | 'desc';
 
 interface TicketGroup {
@@ -35,10 +36,14 @@ interface TicketGroup {
   templateUrl: './tickets-table.component.html'
 })
 export class TicketsTableComponent {
+  private readonly appState = inject(AppStateService);
+
   public isLoading = input(false);
   public tickets = input<Ticket[]>([]);
   public contracts = input<Contract[]>([]);
   public customer = input.required<Customer>();
+
+  private _conversionMap: Map<string, number> | null = null;
 
   currentSortColumn: SortColumn | null = null;
   currentSortDirection: SortDirection = 'none';
@@ -46,6 +51,7 @@ export class TicketsTableComponent {
   cropRotation = 0;
   showSearch = false;
   searchQuery = '';
+  expandedCommodities = new Set<string>();
 
   private _previousCustomerId: number | null = null;
 
@@ -59,8 +65,18 @@ export class TicketsTableComponent {
         this.cropRotation = 0;
         this.searchQuery = '';
         this.showSearch = false;
+        this.expandedCommodities.clear();
       }
       this._previousCustomerId = cust.id;
+    });
+
+    // Auto-expand when there's only one commodity group
+    effect(() => {
+      const tickets = this.tickets();
+      const crops = new Set(tickets.filter(t => !t.isApplied).map(t => t.productCode || 'Unknown'));
+      if (crops.size === 1) {
+        this.expandedCommodities = new Set(crops);
+      }
     });
   }
 
@@ -88,7 +104,6 @@ export class TicketsTableComponent {
   get ticketGroups(): TicketGroup[] {
     const q = this.searchQuery.trim().toLowerCase();
     const terms = q ? this._expandWithAliases(q) : [];
-    const avgOnly = terms.some(t => t === 'avg' || t === 'average');
 
     const groupMap = new Map<string, Ticket[]>();
     for (const ticket of this.unappliedTickets) {
@@ -99,41 +114,38 @@ export class TicketsTableComponent {
 
     const groups: TicketGroup[] = [];
     for (const [productCode, allTickets] of groupMap) {
-      let filtered: Ticket[];
-      if (!q || avgOnly) {
-        filtered = avgOnly ? [] : allTickets;
-      } else {
-        filtered = allTickets.filter(t => {
-          const fmtDate = this._formatTicketDate(t.date);
-          return terms.some(term =>
-            t.ticketNumber.toLowerCase().includes(term) ||
-            fmtDate.includes(term) ||
-            this._matchesDate(t.date, term) ||
-            (t.productCode || '').toLowerCase().includes(term) ||
-            (t.ctrmContractNumber || '').toLowerCase().includes(term) ||
-            (t.organizationCode || '').toLowerCase().includes(term)
-          );
-        });
-      }
+      // Filter tickets by search within each group
+      const filtered = !q ? allTickets : allTickets.filter(t => {
+        const fmtDate = this._formatTicketDate(t.date);
+        const loc = this._formatLocation(t);
+        return terms.some(term =>
+          t.ticketNumber.toLowerCase().includes(term) ||
+          fmtDate.includes(term) ||
+          this._matchesDate(t.date, term) ||
+          (t.productCode || '').toLowerCase().includes(term) ||
+          (t.ctrmContractNumber || '').toLowerCase().includes(term) ||
+          (t.organizationCode || '').toLowerCase().includes(term) ||
+          loc.includes(term)
+        );
+      });
 
-      if (!avgOnly && filtered.length === 0) continue;
+      if (filtered.length === 0) continue;
 
-      const ticketsForAvg = avgOnly ? allTickets : filtered;
-      const sorted = avgOnly ? [] : this._sortTicketList(filtered);
-      const validMoisture = ticketsForAvg.filter(t => typeof t.moisture === 'number' && t.moisture > 0);
-      const validTestWeight = ticketsForAvg.filter(t => typeof t.testWeight === 'number' && t.testWeight > 0);
-      const validProtein = ticketsForAvg.filter(t => typeof t.proteinPercent === 'number' && t.proteinPercent > 0);
-      const validDateMs = ticketsForAvg
+      // Averages always from all tickets in the group (not just search results)
+      const validMoisture = allTickets.filter(t => typeof t.moisture === 'number' && t.moisture > 0);
+      const validTestWeight = allTickets.filter(t => typeof t.testWeight === 'number' && t.testWeight > 0);
+      const validProtein = allTickets.filter(t => typeof t.proteinPercent === 'number' && t.proteinPercent > 0);
+      const validDateMs = allTickets
         .map(t => this._parseTicketDate(t.date)?.getTime() ?? null)
         .filter((d): d is number => d !== null && !isNaN(d));
       const isWheat = this.isWheatCommodity(undefined, productCode);
 
       groups.push({
         productCode,
-        tickets: sorted,
-        ticketCount: ticketsForAvg.length,
+        tickets: this._sortTicketList(filtered),
+        ticketCount: allTickets.length,
         avgDate: validDateMs.length ? new Date(validDateMs.reduce((s, d) => s + d, 0) / validDateMs.length) : null,
-        totalNetWeight: ticketsForAvg.reduce((s, t) => s + (t.appliedDockQuantity || 0), 0),
+        totalNetWeight: allTickets.reduce((s, t) => s + (t.appliedDockQuantity || 0), 0),
         avgMoisture: validMoisture.length ? validMoisture.reduce((s, t) => s + (t.moisture || 0), 0) / validMoisture.length : 0,
         avgTestWeight: validTestWeight.length ? validTestWeight.reduce((s, t) => s + (t.testWeight || 0), 0) / validTestWeight.length : null,
         avgProtein: validProtein.length ? validProtein.reduce((s, t) => s + (t.proteinPercent || 0), 0) / validProtein.length : null,
@@ -166,6 +178,12 @@ export class TicketsTableComponent {
       switch (this.currentSortColumn) {
         case 'id': comparison = a.id - b.id; break;
         case 'date': comparison = (this._parseTicketDate(a.date)?.getTime() ?? 0) - (this._parseTicketDate(b.date)?.getTime() ?? 0); break;
+        case 'location': {
+          const locA = (a.elevatorCity || '').toLowerCase();
+          const locB = (b.elevatorCity || '').toLowerCase();
+          comparison = locA.localeCompare(locB);
+          break;
+        }
         case 'appliedDockQuantity': comparison = (a.appliedDockQuantity || 0) - (b.appliedDockQuantity || 0); break;
         case 'moisture': comparison = (a.moisture || 0) - (b.moisture || 0); break;
         case 'testWeight': comparison = (a.testWeight || 0) - (b.testWeight || 0); break;
@@ -201,8 +219,6 @@ export class TicketsTableComponent {
 
   private _expandWithAliases(q: string): string[] {
     const aliases: { [key: string]: string[] } = {
-      'avg':       ['avg', 'average'],
-      'average':   ['avg', 'average'],
       'yc':        ['yc', 'corn', 'yellow corn'],
       'corn':      ['yc', 'corn', 'yellow corn'],
       'yellow corn': ['yc', 'corn', 'yellow corn'],
@@ -224,6 +240,32 @@ export class TicketsTableComponent {
       if (key.startsWith(q)) terms.forEach(t => expanded.add(t));
     }
     return Array.from(expanded);
+  }
+
+  private static readonly _STATE_NAMES: Record<string, string> = {
+    AL: 'alabama', AK: 'alaska', AZ: 'arizona', AR: 'arkansas', CA: 'california',
+    CO: 'colorado', CT: 'connecticut', DE: 'delaware', FL: 'florida', GA: 'georgia',
+    HI: 'hawaii', ID: 'idaho', IL: 'illinois', IN: 'indiana', IA: 'iowa',
+    KS: 'kansas', KY: 'kentucky', LA: 'louisiana', ME: 'maine', MD: 'maryland',
+    MA: 'massachusetts', MI: 'michigan', MN: 'minnesota', MS: 'mississippi', MO: 'missouri',
+    MT: 'montana', NE: 'nebraska', NV: 'nevada', NH: 'new hampshire', NJ: 'new jersey',
+    NM: 'new mexico', NY: 'new york', NC: 'north carolina', ND: 'north dakota', OH: 'ohio',
+    OK: 'oklahoma', OR: 'oregon', PA: 'pennsylvania', RI: 'rhode island', SC: 'south carolina',
+    SD: 'south dakota', TN: 'tennessee', TX: 'texas', UT: 'utah', VT: 'vermont',
+    VA: 'virginia', WA: 'washington', WV: 'west virginia', WI: 'wisconsin', WY: 'wyoming',
+  };
+
+  /** Build a searchable location string: "city, state, full state name" */
+  private _formatLocation(ticket: Ticket): string {
+    const parts: string[] = [];
+    if (ticket.elevatorCity) parts.push(ticket.elevatorCity.toLowerCase());
+    if (ticket.elevatorState) {
+      const abbr = ticket.elevatorState.toUpperCase();
+      parts.push(abbr.toLowerCase());
+      const fullName = TicketsTableComponent._STATE_NAMES[abbr];
+      if (fullName) parts.push(fullName);
+    }
+    return parts.join(' ');
   }
 
   private static readonly _MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
@@ -359,6 +401,20 @@ export class TicketsTableComponent {
     return this.currentSortDirection === 'desc' ? sorted.reverse() : sorted;
   }
 
+  toggleCommodity(productCode: string): void {
+    if (this.expandedCommodities.has(productCode)) {
+      this.expandedCommodities.delete(productCode);
+    } else {
+      this.expandedCommodities.add(productCode);
+    }
+  }
+
+  isCommodityExpanded(productCode: string): boolean {
+    // Auto-expand all groups when searching
+    if (this.searchQuery.trim()) return true;
+    return this.expandedCommodities.has(productCode);
+  }
+
   handleSort(column: SortColumn): void {
     if (column === 'crop') {
       if (!this.cropSortActive) {
@@ -395,10 +451,23 @@ export class TicketsTableComponent {
     return 'text-gray-400 dark:text-gray-600';
   }
 
-  // Standard U.S. grain conversions (lbs per bushel).
-  // TODO: replace with a per-commodity table from the database when available.
+  /** Looks up lbs-per-bushel from ODS ctrm.vw_GNP024 via commodity code.
+   *  Falls back to standard U.S. grain conversions if ODS data isn't loaded yet. */
   getLbsPerBushel(productCode: string | undefined | null): number {
-    const code = (productCode || '').toUpperCase();
+    const code = (productCode || '').trim().toUpperCase();
+    if (!code) return 56;
+
+    // Build map lazily from appState signal
+    const conversions = this.appState.commodityConversions();
+    if (conversions.length > 0) {
+      if (!this._conversionMap || this._conversionMap.size !== conversions.length) {
+        this._conversionMap = new Map(conversions.map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit]));
+      }
+      const lbs = this._conversionMap.get(code);
+      if (lbs && lbs > 0) return lbs;
+    }
+
+    // Fallback — standard U.S. grain conversions
     if (code.includes('CORN') || code.includes('YC'))                              return 56;
     if (code.includes('SOY') || code.includes('BEAN') || code.includes('SB'))      return 60;
     if (code.includes('WHEAT') || code.includes('HRW') || code.includes('HRS') ||

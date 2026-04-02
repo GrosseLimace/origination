@@ -23,6 +23,7 @@ public class OriginationDbContext : DbContext
     public DbSet<TicketQuality> TicketQualities => Set<TicketQuality>();
     public DbSet<ContractPricingLine> ContractPricingLines => Set<ContractPricingLine>();
     public DbSet<Elevator> Elevators => Set<Elevator>();
+    public DbSet<CommodityConversion> CommodityConversions => Set<CommodityConversion>();
 
     // Application tables - Notes and TradeUnits moved to ApplicationDbContext (Origination database)
 
@@ -154,6 +155,10 @@ public class OriginationDbContext : DbContext
 
             // Customer confirmation status
             entity.Property(e => e.CustomerConfirmStatus).HasColumnName("CustomerConfirmStatus").HasMaxLength(100).IsRequired(false);
+
+            // Market zone and basis price location
+            entity.Property(e => e.MarketZone).HasColumnName("MarketZone").HasMaxLength(200).IsRequired(false);
+            entity.Property(e => e.BasisLocation).HasColumnName("BasisLocation").HasMaxLength(200).IsRequired(false);
 
             // Metadata
             entity.Property(e => e.IsActive).HasColumnName("IsActive").IsRequired();
@@ -339,6 +344,17 @@ public class OriginationDbContext : DbContext
             entity.Property(e => e.ElevatorLocationCode).HasColumnName("Elevator_Location_Code").HasMaxLength(4);
             entity.Ignore(e => e.Latitude);
             entity.Ignore(e => e.Longitude);
+        });
+
+        // Configure CommodityConversion — maps to ctrm.vw_GNP024 (read-only view, no PK)
+        modelBuilder.Entity<CommodityConversion>(entity =>
+        {
+            entity.ToView("vw_GNP024", schema: "ctrm");
+            entity.HasNoKey();
+            entity.Property(e => e.CommodityCode).HasColumnName("Commodity_Code").HasMaxLength(10);
+            entity.Property(e => e.Description).HasColumnName("Commodity_Full_Description").HasMaxLength(100);
+            entity.Property(e => e.LbsPerUnit).HasColumnName("Pounds_To_Commodity_Unit").HasColumnType("decimal(18,6)");
+            entity.Property(e => e.UnitOfMeasure).HasColumnName("Commodity_Std_Unit_Measure").HasMaxLength(10);
         });
     }
 }

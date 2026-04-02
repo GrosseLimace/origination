@@ -29,14 +29,14 @@
             <!-- Year Separator -->
             @if (shouldShowYearSeparator(i, intention)) {
               <div class="flex items-center gap-2 py-2 cursor-pointer group" (click)="yearSelect.emit(intention.plantingYear)">
-                <div class="h-px flex-1" [class]="selectedYear() === intention.plantingYear ? 'bg-green-500 dark:bg-green-400' : 'bg-gray-300 dark:bg-gray-600'"></div>
+                <div class="h-px flex-1" [class]="selectedYear() === intention.plantingYear ? 'bg-scoular-green-accessible dark:bg-scoular-green' : 'bg-gray-300 dark:bg-gray-600'"></div>
                 <span class="text-sm font-semibold px-2 py-0.5 rounded-md transition-colors"
                   [class]="selectedYear() === intention.plantingYear
-                    ? 'bg-green-600 text-white'
+                    ? 'bg-scoular-green-accessible text-white'
                     : 'text-gray-700 dark:text-gray-300 group-hover:bg-gray-100 dark:group-hover:bg-gray-700'">
                   {{ intention.plantingYear }} Planting Year
                 </span>
-                <div class="h-px flex-1" [class]="selectedYear() === intention.plantingYear ? 'bg-green-500 dark:bg-green-400' : 'bg-gray-300 dark:bg-gray-600'"></div>
+                <div class="h-px flex-1" [class]="selectedYear() === intention.plantingYear ? 'bg-scoular-green-accessible dark:bg-scoular-green' : 'bg-gray-300 dark:bg-gray-600'"></div>
               </div>
             }
 
@@ -86,7 +86,7 @@
           <app-table [stickyHeader]="true">
             <app-table-header>
               <app-table-row>
-                <app-table-head [sortable]="true" (click)="handleSort('crop')" class="w-[24%] text-center">
+                <app-table-head [sortable]="true" (click)="handleSort('crop')" class="text-center">
                   <div class="flex items-center justify-center gap-1.5">
                     <span>Crop</span>
                     <span [class]="getSortIconClass('crop')">
@@ -106,7 +106,7 @@
                     </span>
                   </div>
                 </app-table-head>
-                <app-table-head [sortable]="true" (click)="handleSort('acres')" class="w-[24%] text-center">
+                <app-table-head [sortable]="true" (click)="handleSort('acres')" class="text-center">
                   <div class="flex items-center justify-center gap-1.5">
                     <span>Acres</span>
                     <span [class]="getSortIconClass('acres')">
@@ -126,7 +126,7 @@
                     </span>
                   </div>
                 </app-table-head>
-                <app-table-head [sortable]="true" (click)="handleSort('plantingYear')" class="w-[24%] text-center">
+                <app-table-head [sortable]="true" (click)="handleSort('plantingYear')" class="text-center">
                   <div class="flex items-center justify-center gap-1.5">
                     <span>Planting Year</span>
                     <span [class]="getSortIconClass('plantingYear')">
@@ -146,7 +146,7 @@
                     </span>
                   </div>
                 </app-table-head>
-                <app-table-head [sortable]="true" (click)="handleSort('createdAt')" class="w-[24%] text-center">
+                <app-table-head [sortable]="true" (click)="handleSort('createdAt')" class="text-center">
                   <div class="flex items-center justify-center gap-1.5">
                     <span>Created On</span>
                     <span [class]="getSortIconClass('createdAt')">
@@ -166,7 +166,16 @@
                     </span>
                   </div>
                 </app-table-head>
-                <app-table-head class="w-[4%] text-center"></app-table-head>
+                <app-table-head class="w-[22%]">
+                  <div class="flex justify-center">
+                    <button type="button" (click)="openAddDialog()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium text-scoular-green-accessible dark:text-scoular-green border border-scoular-green-accessible/30 dark:border-scoular-green/30 hover:bg-scoular-green/10 dark:hover:bg-scoular-green/20 transition-colors">
+                      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+                      </svg>
+                      Add Intention
+                    </button>
+                  </div>
+                </app-table-head>
               </app-table-row>
             </app-table-header>
             <app-table-body>
@@ -174,16 +183,16 @@
                 <!-- Year Separator Row (clickable to select year) -->
                 @if (shouldShowYearSeparator(i, intention)) {
                   <app-table-row>
-                    <app-table-cell [colspan]="5" [class]="selectedYear() === intention.plantingYear ? 'bg-green-50 dark:bg-green-900/20' : 'bg-gray-50 dark:bg-gray-800/50'">
+                    <app-table-cell [colspan]="5" [class]="selectedYear() === intention.plantingYear ? 'bg-scoular-green-accessible/5 dark:bg-scoular-green/10' : 'bg-gray-50 dark:bg-gray-800/50'">
                       <div class="py-2 px-3 flex items-center gap-2 cursor-pointer group" (click)="yearSelect.emit(intention.plantingYear)">
-                        <div class="h-px flex-1" [class]="selectedYear() === intention.plantingYear ? 'bg-green-500 dark:bg-green-400' : 'bg-gray-300 dark:bg-gray-600'"></div>
+                        <div class="h-px flex-1" [class]="selectedYear() === intention.plantingYear ? 'bg-scoular-green-accessible dark:bg-scoular-green' : 'bg-gray-300 dark:bg-gray-600'"></div>
                         <span class="text-sm font-semibold px-2.5 py-0.5 rounded-md transition-colors"
                           [class]="selectedYear() === intention.plantingYear
-                            ? 'bg-green-600 text-white'
+                            ? 'bg-scoular-green-accessible text-white'
                             : 'text-gray-700 dark:text-gray-300 group-hover:bg-gray-100 dark:group-hover:bg-gray-700'">
                           {{ intention.plantingYear }} Planting Year
                         </span>
-                        <div class="h-px flex-1" [class]="selectedYear() === intention.plantingYear ? 'bg-green-500 dark:bg-green-400' : 'bg-gray-300 dark:bg-gray-600'"></div>
+                        <div class="h-px flex-1" [class]="selectedYear() === intention.plantingYear ? 'bg-scoular-green-accessible dark:bg-scoular-green' : 'bg-gray-300 dark:bg-gray-600'"></div>
                       </div>
                     </app-table-cell>
                   </app-table-row>
@@ -195,16 +204,18 @@
                   <app-table-cell class="text-center">{{ intention.acres | number }}</app-table-cell>
                   <app-table-cell class="text-center">{{ intention.plantingYear }}</app-table-cell>
                   <app-table-cell class="text-center">{{ intention.createdAt | date:'M/d/yy' }}</app-table-cell>
-                  <app-table-cell class="text-center">
-                    <button
-                      type="button"
-                      class="h-7 w-7 inline-flex items-center justify-center text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green bg-transparent border-0 p-0"
-                      (click)="openEditDialog(intention)"
-                    >
+                  <app-table-cell class="w-[22%]">
+                    <div class="flex justify-center">
+                      <button
+                        type="button"
+                        class="h-7 w-7 inline-flex items-center justify-center text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green bg-transparent border-0 p-0"
+                        (click)="openEditDialog(intention)"
+                      >
                       <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
                       </svg>
                     </button>
+                    </div>
                   </app-table-cell>
                 </app-table-row>
               }
@@ -376,7 +387,7 @@
 
       <!-- Delete Confirmation Dialog -->
       @if (showDeleteConfirm && selectedIntention) {
-        <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 overflow-hidden" (click)="closeDeleteConfirm()">
+        <div class="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 overflow-hidden" (click)="closeDeleteConfirm()">
           <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full p-6 overflow-y-auto max-h-[90vh]" (click)="$event.stopPropagation()">
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Delete Planting Intention?</h3>
             <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">

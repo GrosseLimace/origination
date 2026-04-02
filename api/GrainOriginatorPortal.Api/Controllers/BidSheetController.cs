@@ -127,6 +127,16 @@ public class BidSheetController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>Deletes all bids for a specific commodity on a location.</summary>
+    [HttpDelete("locations/{id:int}/bids/{commodityCode}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> DeleteBids(int id, string commodityCode, [FromQuery] string tradeUnitCode, CancellationToken ct = default)
+    {
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
+        await _dataService.DeleteBidSheetBidsAsync(id, commodityCode, ct);
+        return NoContent();
+    }
+
     // -------------------------------------------------------------------------
     // Bids (bulk upsert for the edit-bids grid)
     // -------------------------------------------------------------------------
@@ -182,35 +192,65 @@ public class BidSheetController : ControllerBase
     // Reference
     // -------------------------------------------------------------------------
 
-    /// <summary>Gets the reference elevator for the current user and a trade unit.</summary>
+    /// <summary>Parses a composite trade-unit key ("2040,2050") into individual codes for entitlement validation.</summary>
+    private static IEnumerable<string> ParseTradeUnitKey(string tradeUnitCode) =>
+        tradeUnitCode.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    /// <summary>Gets the reference location for the current user and a trade unit key (may be composite, e.g. "2040,2050").</summary>
     [HttpGet("reference")]
     [ProducesResponseType(typeof(BidSheetReference), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<ActionResult<BidSheetReference>> GetReference([FromQuery] string tradeUnitCode, CancellationToken ct = default)
     {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync(ParseTradeUnitKey(tradeUnitCode), ct);
         var reference = await _dataService.GetBidSheetReferenceAsync(CurrentUserId, tradeUnitCode, ct);
         if (reference is null) return NoContent();
         return Ok(reference);
     }
 
-    /// <summary>Sets or updates the reference location for the current user and a trade unit.</summary>
+    /// <summary>Sets or updates the reference location for the current user and a trade unit key (may be composite).</summary>
     [HttpPut("reference")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> SetReference([FromBody] SetBidSheetReferenceRequest request, CancellationToken ct = default)
     {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync([request.TradeUnitCode], ct);
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync(ParseTradeUnitKey(request.TradeUnitCode), ct);
         await _dataService.SetBidSheetReferenceAsync(CurrentUserId, request.TradeUnitCode, request.LocationId, request.Name, ct);
         return NoContent();
     }
 
-    /// <summary>Clears the reference location for the current user and a trade unit.</summary>
+    /// <summary>Clears the reference location for the current user and a trade unit key (may be composite).</summary>
     [HttpDelete("reference")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> ClearReference([FromQuery] string tradeUnitCode, CancellationToken ct = default)
     {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync(ParseTradeUnitKey(tradeUnitCode), ct);
         await _dataService.ClearBidSheetReferenceAsync(CurrentUserId, tradeUnitCode, ct);
+        return NoContent();
+    }
+
+    // -------------------------------------------------------------------------
+    // Location Order (drag-to-reorder persistence)
+    // -------------------------------------------------------------------------
+
+    /// <summary>Gets the saved location order for the current user and a trade unit key (may be composite).</summary>
+    [HttpGet("location-order")]
+    [ProducesResponseType(typeof(BidSheetLocationOrder), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<ActionResult<BidSheetLocationOrder>> GetLocationOrder([FromQuery] string tradeUnitKey, CancellationToken ct = default)
+    {
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync(ParseTradeUnitKey(tradeUnitKey), ct);
+        var order = await _dataService.GetBidSheetLocationOrderAsync(CurrentUserId, tradeUnitKey, ct);
+        if (order is null) return NoContent();
+        return Ok(order);
+    }
+
+    /// <summary>Saves the location order for the current user and a trade unit key.</summary>
+    [HttpPut("location-order")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> SetLocationOrder([FromBody] SetBidSheetLocationOrderRequest request, CancellationToken ct = default)
+    {
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync(ParseTradeUnitKey(request.TradeUnitKey), ct);
+        await _dataService.SetBidSheetLocationOrderAsync(CurrentUserId, request.TradeUnitKey, request.LocationOrder, ct);
         return NoContent();
     }
 }

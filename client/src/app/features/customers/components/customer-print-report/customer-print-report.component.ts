@@ -127,7 +127,9 @@ export class CustomerPrintReportComponent {
 
   // Computed data
   readonly activeContracts = computed(() =>
-    this.contracts().filter(c => c.status === 'Active' || c.status === 'Pending')
+    this.contracts()
+      .filter(c => c.status === 'Active' || c.status === 'Pending')
+      .sort((a, b) => (a.commodityDescription ?? '').localeCompare(b.commodityDescription ?? ''))
   );
 
   readonly totalContracted = computed(() =>

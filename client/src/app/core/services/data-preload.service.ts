@@ -6,7 +6,7 @@ import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 import { ApiService } from './api.service';
 import { AppStateService } from './app-state.service';
-import { Customer, Contract, Ticket, Note, PlantingIntention, StoredGrain, SavedList, Commodity, DashboardSummary } from '@models';
+import { Customer, Contract, Ticket, Note, PlantingIntention, StoredGrain, SavedList, Commodity, CommodityConversion, HarvestWindow, DashboardSummary } from '@models';
 import { ProducerDetails } from '../../models/producer-details.model';
 
 @Injectable({ providedIn: 'root' })
@@ -164,6 +164,18 @@ export class DataPreloadService {
             this.appState.setCommodities(data);
           })
         );
+        const conversions$ = this.apiService.getCommodityConversions().pipe(
+          catchError(() => of([] as CommodityConversion[])),
+          tap(data => {
+            this.appState.commodityConversions.set(data);
+          })
+        );
+        const harvestWindows$ = this.apiService.getHarvestWindows().pipe(
+          catchError(() => of([] as HarvestWindow[])),
+          tap(data => {
+            this.appState.harvestWindows.set(data);
+          })
+        );
         const producerDetails$ = this.apiService.getAllProducerDetails().pipe(
           catchError(() => of([] as ProducerDetails[])),
           tap(data => {
@@ -183,7 +195,7 @@ export class DataPreloadService {
           })
         );
 
-        return merge(customers$, contracts$, todaysTickets$, tickets$, notes$, plantingIntentions$, storedGrain$, savedLists$, commodities$, producerDetails$, dashboardSummary$);
+        return merge(customers$, contracts$, todaysTickets$, tickets$, notes$, plantingIntentions$, storedGrain$, savedLists$, commodities$, conversions$, harvestWindows$, producerDetails$, dashboardSummary$);
       }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe();

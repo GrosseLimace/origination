@@ -15,265 +15,182 @@
       } @else {
         <!-- Search toolbar -->
         <div class="flex items-center border-b border-gray-100 dark:border-gray-800 px-3 py-1.5">
-          @if (showSearch) {
-            <div class="flex items-center w-full gap-2">
-              <svg class="w-4 h-4 text-gray-500 dark:text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
-              </svg>
-              <input
-                type="text"
-                [(ngModel)]="searchQuery"
-                placeholder="Search by ticket #, date, crop, or 'avg'..."
-                class="flex-1 py-1 text-sm bg-transparent focus:outline-none text-gray-900 dark:text-white placeholder-gray-400"
-              />
-              <button (click)="clearSearch()" title="Clear search" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0">
+          <div class="flex items-center w-full gap-2">
+            <svg class="w-4 h-4 text-gray-500 dark:text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+            </svg>
+            <input
+              type="text"
+              [(ngModel)]="searchQuery"
+              placeholder="Search tickets..."
+              class="flex-1 py-1 text-sm bg-transparent focus:outline-none text-gray-900 dark:text-white placeholder-gray-400"
+            />
+            @if (searchQuery) {
+              <button (click)="searchQuery = ''" title="Clear search" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
               </button>
+            }
+          </div>
+        </div>
+        <div class="max-h-[calc(100vh-14rem)] overflow-y-auto overflow-x-auto relative space-y-2 py-2">
+          @for (group of ticketGroups; track group.productCode) {
+            <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+
+              <!-- Commodity Header (collapsible) -->
+              <div
+                class="flex items-center justify-between px-4 py-3 cursor-pointer select-none bg-gray-50 dark:bg-gray-800/60 hover:bg-gray-100 dark:hover:bg-gray-700/60 transition-colors"
+                (click)="toggleCommodity(group.productCode)"
+              >
+                <div class="flex items-center gap-3 min-w-0">
+                  <svg class="h-4 w-4 text-gray-400 flex-shrink-0 transition-transform duration-200" [class.rotate-90]="isCommodityExpanded(group.productCode)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 18 6-6-6-6"/>
+                  </svg>
+                  <div class="min-w-0">
+                    <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ group.productCode }}</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">{{ group.ticketCount }} ticket{{ group.ticketCount !== 1 ? 's' : '' }}</p>
+                  </div>
+                </div>
+                <div class="flex items-center gap-4 flex-shrink-0">
+                  <div class="w-24 text-center">
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Avg Date</p>
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">{{ group.avgDate ? (group.avgDate | date:'M/d/yyyy') : '—' }}</p>
+                  </div>
+                  <div class="w-28 text-center">
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Total Net Bu</p>
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">{{ toBushels(group.totalNetWeight, group.productCode) | number:'1.2-2' }}</p>
+                  </div>
+                  <div class="w-24 text-center">
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Avg Moisture</p>
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">{{ group.avgMoisture | number:'1.1-1' }}%</p>
+                  </div>
+                  <div class="w-24 text-center">
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Avg Test Wt</p>
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">{{ group.avgTestWeight !== null ? (group.avgTestWeight | number:'1.1-1') + '%' : '—' }}</p>
+                  </div>
+                  @if (hasWheatTickets) {
+                    <div class="w-24 text-center">
+                      <p class="text-xs text-gray-500 dark:text-gray-400">Avg Protein</p>
+                      <p class="text-sm font-medium text-gray-900 dark:text-white">{{ group.avgProtein !== null ? (group.avgProtein | number:'1.1-1') + '%' : '—' }}</p>
+                    </div>
+                  }
+                </div>
+              </div>
+
+              <!-- Expanded: Ticket Table -->
+              @if (isCommodityExpanded(group.productCode)) {
+                <div class="overflow-x-auto">
+                  <app-table>
+                    <app-table-header>
+                      <app-table-row>
+                        <app-table-head [sortable]="true" (click)="handleSort('id')">
+                          <span class="flex items-center justify-center gap-1">Ticket #
+                            <svg class="w-3.5 h-3.5" [class]="getSortIconClass('id')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              @if (currentSortColumn === 'id' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                              @else if (currentSortColumn === 'id' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                              @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
+                            </svg>
+                          </span>
+                        </app-table-head>
+                        <app-table-head [sortable]="true" (click)="handleSort('date')">
+                          <span class="flex items-center justify-center gap-1">Date
+                            <svg class="w-3.5 h-3.5" [class]="getSortIconClass('date')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              @if (currentSortColumn === 'date' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                              @else if (currentSortColumn === 'date' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                              @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
+                            </svg>
+                          </span>
+                        </app-table-head>
+                        <app-table-head><span class="flex items-center justify-center">Crop</span></app-table-head>
+                        <app-table-head [sortable]="true" (click)="handleSort('location')">
+                          <span class="flex items-center justify-center gap-1">Location
+                            <svg class="w-3.5 h-3.5" [class]="getSortIconClass('location')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              @if (currentSortColumn === 'location' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                              @else if (currentSortColumn === 'location' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                              @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
+                            </svg>
+                          </span>
+                        </app-table-head>
+                        <app-table-head [sortable]="true" (click)="handleSort('appliedDockQuantity')">
+                          <span class="flex items-center justify-center gap-1">Net Bu
+                            <svg class="w-3.5 h-3.5" [class]="getSortIconClass('appliedDockQuantity')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              @if (currentSortColumn === 'appliedDockQuantity' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                              @else if (currentSortColumn === 'appliedDockQuantity' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                              @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
+                            </svg>
+                          </span>
+                        </app-table-head>
+                        <app-table-head [sortable]="true" (click)="handleSort('moisture')">
+                          <span class="flex items-center justify-center gap-1">Moisture %
+                            <svg class="w-3.5 h-3.5" [class]="getSortIconClass('moisture')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              @if (currentSortColumn === 'moisture' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                              @else if (currentSortColumn === 'moisture' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                              @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
+                            </svg>
+                          </span>
+                        </app-table-head>
+                        <app-table-head [sortable]="true" (click)="handleSort('testWeight')">
+                          <span class="flex items-center justify-center gap-1">Test Wt %
+                            <svg class="w-3.5 h-3.5" [class]="getSortIconClass('testWeight')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              @if (currentSortColumn === 'testWeight' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                              @else if (currentSortColumn === 'testWeight' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                              @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
+                            </svg>
+                          </span>
+                        </app-table-head>
+                        @if (hasWheatTickets) {
+                          <app-table-head [sortable]="true" (click)="handleSort('protein')">
+                            <span class="flex items-center justify-center gap-1">Protein %
+                              <svg class="w-3.5 h-3.5" [class]="getSortIconClass('protein')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                @if (currentSortColumn === 'protein' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                                @else if (currentSortColumn === 'protein' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                                @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
+                              </svg>
+                            </span>
+                          </app-table-head>
+                        }
+                      </app-table-row>
+                    </app-table-header>
+                    <app-table-body>
+                      @for (ticket of group.tickets; track ticket.id) {
+                        <app-table-row>
+                          <app-table-cell class="text-center">{{ ticket.ticketNumber }}</app-table-cell>
+                          <app-table-cell class="text-center">{{ ticket.date | date:'M/d/yyyy' }}</app-table-cell>
+                          <app-table-cell class="text-center">{{ ticket.productCode }}</app-table-cell>
+                          <app-table-cell class="text-center text-xs">{{ ticket.elevatorCity && ticket.elevatorState ? ticket.elevatorCity + ', ' + ticket.elevatorState : ticket.elevatorCity || ticket.elevatorState || '—' }}</app-table-cell>
+                          <app-table-cell class="text-center">{{ toBushels(ticket.appliedDockQuantity, ticket.productCode) | number:'1.2-2' }}</app-table-cell>
+                          <app-table-cell class="text-center">{{ ticket.moisture | number:'1.1-1' }}%</app-table-cell>
+                          <app-table-cell class="text-center">
+                            @if (ticket.testWeight !== null && ticket.testWeight !== undefined) {
+                              {{ ticket.testWeight | number:'1.1-1' }}%
+                            } @else {
+                              -
+                            }
+                          </app-table-cell>
+                          @if (hasWheatTickets) {
+                            <app-table-cell class="text-center">
+                              @if (ticket.proteinPercent !== null && ticket.proteinPercent !== undefined) {
+                                {{ ticket.proteinPercent | number:'1.1-1' }}%
+                              } @else {
+                                -
+                              }
+                            </app-table-cell>
+                          }
+                        </app-table-row>
+                      }
+                    </app-table-body>
+                  </app-table>
+                </div>
+              }
             </div>
-          } @else {
-            <button (click)="showSearch = true" title="Search tickets" class="ml-auto p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
-              </svg>
-            </button>
+          }
+
+          @if (ticketGroups.length === 0 && searchQuery.trim()) {
+            <div class="text-center py-8 text-sm text-gray-500 dark:text-gray-400">
+              No tickets match "<span class="font-medium text-gray-700 dark:text-gray-300">{{ searchQuery }}</span>"
+            </div>
           }
         </div>
-        <div class="max-h-[calc(100vh-14rem)] overflow-y-auto overflow-x-auto relative">
-        <app-table [stickyHeader]="true">
-          <app-table-header>
-            <app-table-row>
-              <app-table-head [sortable]="true" (click)="handleSort('id')">
-                <span class="flex items-center justify-center gap-1">
-                  Ticket Number
-                  <span [class]="getSortIconClass('id')">
-                    @if (currentSortColumn === 'id' && currentSortDirection === 'asc') {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                      </svg>
-                    } @else if (currentSortColumn === 'id' && currentSortDirection === 'desc') {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                      </svg>
-                    } @else {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
-                      </svg>
-                    }
-                  </span>
-                </span>
-              </app-table-head>
-              <app-table-head [sortable]="true" (click)="handleSort('date')">
-                <span class="flex items-center justify-center gap-1">
-                  Date
-                  <span [class]="getSortIconClass('date')">
-                    @if (currentSortColumn === 'date' && currentSortDirection === 'asc') {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                      </svg>
-                    } @else if (currentSortColumn === 'date' && currentSortDirection === 'desc') {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                      </svg>
-                    } @else {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
-                      </svg>
-                    }
-                  </span>
-                </span>
-              </app-table-head>
-              <app-table-head [sortable]="true" (click)="handleSort('crop')">
-                <span class="flex items-center justify-center gap-1">
-                  Crop
-                  <span [class]="getSortIconClass('crop')">
-                    @if (currentSortColumn === 'crop' && currentSortDirection === 'asc') {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                      </svg>
-                    } @else if (currentSortColumn === 'crop' && currentSortDirection === 'desc') {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                      </svg>
-                    } @else {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
-                      </svg>
-                    }
-                  </span>
-                </span>
-              </app-table-head>
-              <app-table-head>
-                <span class="flex items-center justify-center">Location</span>
-              </app-table-head>
-              <app-table-head [sortable]="true" (click)="handleSort('appliedDockQuantity')">
-                <span class="flex items-center justify-center gap-1">
-                  Net Bu
-                  <span [class]="getSortIconClass('appliedDockQuantity')">
-                    @if (currentSortColumn === 'appliedDockQuantity' && currentSortDirection === 'asc') {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                      </svg>
-                    } @else if (currentSortColumn === 'appliedDockQuantity' && currentSortDirection === 'desc') {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                      </svg>
-                    } @else {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
-                      </svg>
-                    }
-                  </span>
-                </span>
-              </app-table-head>
-              <app-table-head [sortable]="true" (click)="handleSort('moisture')">
-                <span class="flex items-center justify-center gap-1">
-                  Moisture %
-                  <span [class]="getSortIconClass('moisture')">
-                    @if (currentSortColumn === 'moisture' && currentSortDirection === 'asc') {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                      </svg>
-                    } @else if (currentSortColumn === 'moisture' && currentSortDirection === 'desc') {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                      </svg>
-                    } @else {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
-                      </svg>
-                    }
-                  </span>
-                </span>
-              </app-table-head>
-              <app-table-head [sortable]="true" (click)="handleSort('testWeight')">
-                <span class="flex items-center justify-center gap-1">
-                  Test Weight %
-                  <span [class]="getSortIconClass('testWeight')">
-                    @if (currentSortColumn === 'testWeight' && currentSortDirection === 'asc') {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                      </svg>
-                    } @else if (currentSortColumn === 'testWeight' && currentSortDirection === 'desc') {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                      </svg>
-                    } @else {
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
-                      </svg>
-                    }
-                  </span>
-                </span>
-              </app-table-head>
-              @if (hasWheatTickets) {
-                <app-table-head [sortable]="true" (click)="handleSort('protein')">
-                  <span class="flex items-center justify-center gap-1">
-                    Protein %
-                    <span [class]="getSortIconClass('protein')">
-                      @if (currentSortColumn === 'protein' && currentSortDirection === 'asc') {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                        </svg>
-                      } @else if (currentSortColumn === 'protein' && currentSortDirection === 'desc') {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                        </svg>
-                      } @else {
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
-                        </svg>
-                      }
-                    </span>
-                  </span>
-                </app-table-head>
-              }
-            </app-table-row>
-          </app-table-header>
-          <app-table-body>
-            @for (group of ticketGroups; track group.productCode) {
-              @for (ticket of group.tickets; track ticket.id) {
-                <app-table-row>
-                  <app-table-cell class="text-center">{{ ticket.ticketNumber }}</app-table-cell>
-                  <app-table-cell class="text-center">{{ ticket.date | date:'M/d/yyyy' }}</app-table-cell>
-                  <app-table-cell class="text-center">{{ ticket.productCode }}</app-table-cell>
-                  <app-table-cell class="text-center text-xs">{{ ticket.elevatorCity && ticket.elevatorState ? ticket.elevatorCity + ', ' + ticket.elevatorState : ticket.elevatorCity || ticket.elevatorState || '—' }}</app-table-cell>
-                  <app-table-cell class="text-center">{{ toBushels(ticket.appliedDockQuantity, ticket.productCode) | number:'1.0-0' }}</app-table-cell>
-                  <app-table-cell class="text-center">{{ ticket.moisture | number:'1.1-1' }}%</app-table-cell>
-                  <app-table-cell class="text-center">
-                    @if (ticket.testWeight !== null && ticket.testWeight !== undefined) {
-                      {{ ticket.testWeight | number:'1.1-1' }}%
-                    } @else {
-                      -
-                    }
-                  </app-table-cell>
-                  @if (hasWheatTickets) {
-                    <app-table-cell class="text-center">
-                      @if (ticket.proteinPercent !== null && ticket.proteinPercent !== undefined) {
-                        {{ ticket.proteinPercent | number:'1.1-1' }}%
-                      } @else {
-                        -
-                      }
-                    </app-table-cell>
-                  }
-                </app-table-row>
-              }
-              <!-- Commodity average row -->
-              <app-table-row [class]="'border-t-2 border-gray-300 dark:border-gray-600 !bg-gray-100 dark:!bg-gray-700/60'">
-                <app-table-cell class="text-center">
-                  <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Avg</span>
-                  <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">({{ group.ticketCount }})</span>
-                </app-table-cell>
-                <app-table-cell class="text-center">
-                  @if (group.avgDate) {
-                    <span class="font-bold text-gray-800 dark:text-gray-100">{{ group.avgDate | date:'M/d/yyyy' }}</span>
-                  } @else {
-                    <span class="font-bold text-gray-800 dark:text-gray-100">—</span>
-                  }
-                </app-table-cell>
-                <app-table-cell class="text-center">
-                  <span class="text-sm font-medium text-gray-900 dark:text-gray-100">{{ group.productCode }}</span>
-                </app-table-cell>
-                <app-table-cell></app-table-cell>
-                <app-table-cell class="text-center">
-                  <div class="relative inline-block">
-                    <span class="font-bold text-gray-800 dark:text-gray-100">{{ toBushels(group.totalNetWeight, group.productCode) | number:'1.0-0' }}</span>
-                    <div class="absolute left-1/2 -translate-x-1/2 top-full text-[10px] text-gray-400 dark:text-gray-500 whitespace-nowrap">(total)</div>
-                  </div>
-                </app-table-cell>
-                <app-table-cell class="text-center">
-                  <span class="font-bold text-gray-800 dark:text-gray-100">{{ group.avgMoisture | number:'1.1-1' }}%</span>
-                </app-table-cell>
-                <app-table-cell class="text-center">
-                  <span class="font-bold text-gray-800 dark:text-gray-100">
-                    @if (group.avgTestWeight !== null) {
-                      {{ group.avgTestWeight | number:'1.1-1' }}%
-                    } @else {
-                      —
-                    }
-                  </span>
-                </app-table-cell>
-                @if (hasWheatTickets) {
-                  <app-table-cell class="text-center">
-                    <span class="font-bold text-gray-800 dark:text-gray-100">
-                      @if (group.avgProtein !== null) {
-                        {{ group.avgProtein | number:'1.1-1' }}%
-                      } @else {
-                        —
-                      }
-                    </span>
-                  </app-table-cell>
-                }
-              </app-table-row>
-            }
-          </app-table-body>
-        </app-table>
-        </div>
-        @if (ticketGroups.length === 0 && searchQuery.trim()) {
-          <div class="text-center py-8 text-sm text-gray-500 dark:text-gray-400">
-            No tickets match "<span class="font-medium text-gray-700 dark:text-gray-300">{{ searchQuery }}</span>"
-          </div>
-        }
       }
     </div>

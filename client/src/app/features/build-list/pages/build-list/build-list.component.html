@@ -6,7 +6,8 @@
           <app-trade-unit-selector class="mt-2 block" />
           <p class="text-gray-500 dark:text-gray-400 mt-1">Use natural language to create a custom customer list based on your criteria</p>
         </div>
-        <app-button
+        <!-- Map button hidden for now -->
+        <!--<app-button
           [variant]="showMap() ? 'default' : 'outline'"
           (onClick)="hasTradeUnits() && toggleMap()"
           [disabled]="!hasTradeUnits()"
@@ -19,7 +20,7 @@
             <line x1="15" x2="15" y1="6" y2="21"/>
           </svg>
           Map
-        </app-button>
+        </app-button>-->
       </div>
 
       <!-- Scrollable content area -->
@@ -67,7 +68,7 @@
               (keydown)="onQueryKeydown($event)"
               placeholder="Describe the customers you want to find... e.g., 'Customers with more than 500 acres' or 'Farmers I have not contacted in over 30 days'"
               rows="3"
-              maxlength="1000"
+              maxlength="500"
               [disabled]="!hasTradeUnits()"
               class="w-full p-3 pr-9 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green resize-none disabled:opacity-50 disabled:cursor-not-allowed"
             ></textarea>
@@ -87,8 +88,13 @@
 
           <!-- Generate Button -->
           <div class="mb-6">
-            <app-button variant="default" (onClick)="processQuery()" [disabled]="!hasTradeUnits() || !queryText().trim() || isProcessing() || loading()">
-              @if (isProcessing()) {
+            <app-button variant="default" (onClick)="processQuery()" [disabled]="!hasTradeUnits() || !coreDataLoaded() || !queryText().trim() || isProcessing() || loading()">
+              @if (waitingForTickets()) {
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2 animate-spin">
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                </svg>
+                Loading delivery data...
+              } @else if (isProcessing()) {
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2 animate-spin">
                   <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
                 </svg>
@@ -115,8 +121,8 @@
               @for (example of exampleQueries; track example) {
                 <button
                   type="button"
-                  (click)="hasTradeUnits() && useExampleQuery(example)"
-                  [disabled]="!hasTradeUnits()"
+                  (click)="coreDataLoaded() && useExampleQuery(example)"
+                  [disabled]="!hasTradeUnits() || !coreDataLoaded()"
                   class="px-3 py-1.5 text-sm rounded-full border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                 >
                   {{ example }}
@@ -126,6 +132,16 @@
           </div>
         </app-card-content>
       </app-card>
+
+      <!-- Empty state: trade units selected but no customers exist -->
+      @if (coreDataLoaded() && hasTradeUnits() && customers().length === 0 && !hasGenerated()) {
+        <div class="flex items-start gap-3 px-4 py-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400 flex-shrink-0 mt-0.5">
+            <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+          </svg>
+          <p class="text-sm text-gray-500 dark:text-gray-400">No customers found for the selected trade units. Try selecting different trade units above.</p>
+        </div>
+      }
 
       <!-- Unrecognized Query Warning (non-blocking — results still shown below) -->
       @if (queryUnrecognized() && hasGenerated() && queryText().trim()) {
@@ -177,7 +193,8 @@
               </div>
               @if (filtered.length > 0) {
                 <div class="flex gap-2">
-                  @if (!showMap()) {
+                  <!-- Show on Map button hidden for now -->
+                  <!--@if (!showMap()) {
                     <app-button variant="outline" (onClick)="toggleMap()">
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2">
                         <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/>
@@ -186,8 +203,8 @@
                       </svg>
                       Show on Map
                     </app-button>
-                  }
-                  <app-button variant="outline" (onClick)="showRefinePanel.update(v => !v)">
+                  }-->
+                  <app-button [variant]="showRefinePanel() ? 'default' : 'outline'" (onClick)="showRefinePanel.update(v => !v)">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2">
                       <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
                     </svg>
@@ -344,6 +361,8 @@
             } @else {
               <div class="divide-y divide-gray-200 dark:divide-gray-700">
                 @for (customer of displayed; track customer.id) {
+                  @let contactInfo = getLastContactInfo(customer.id);
+                  @let customerCrops = getCustomerCrops(customer.id);
                   <div
                     class="py-4 flex items-start justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 -mx-6 px-6 cursor-pointer transition-colors"
                     (click)="selectCustomer(customer)"
@@ -367,11 +386,11 @@
                       </div>
                     </div>
                     <div class="text-right">
-                      <span [class]="getLastContactInfo(customer.id).colorClass + ' text-sm'">
-                        {{ getLastContactInfo(customer.id).text }}
+                      <span [class]="contactInfo.colorClass + ' text-sm'">
+                        {{ contactInfo.text }}
                       </span>
                       <div class="flex gap-1 mt-2 justify-end">
-                        @for (crop of getCustomerCrops(customer.id); track crop) {
+                        @for (crop of customerCrops; track crop) {
                           <app-badge variant="outline" class="text-xs">{{ crop }}</app-badge>
                         }
                       </div>

@@ -82,6 +82,23 @@ const CATEGORY_META: Record<InsightCategory, {
   },
 };
 
+/** Convert pounds to bushels using ODS conversion map with hardcoded fallback. */
+function getLbsPerBushel(productCode: string | undefined | null, conversionMap?: Map<string, number>): number {
+  const code = (productCode || '').trim().toUpperCase();
+  if (!code) return 56;
+  if (conversionMap) {
+    const lbs = conversionMap.get(code);
+    if (lbs && lbs > 0) return lbs;
+  }
+  // Fallback
+  if (code.includes('SOY') || code.includes('BEAN') || code.includes('SB')) return 60;
+  if (code.includes('WHEAT') || code.includes('HRW') || code.includes('HRS') ||
+      code.includes('HWS') || code.includes('SRW') || code.includes('WW')) return 60;
+  if (code.includes('BARLEY')) return 48;
+  if (code.includes('OAT')) return 32;
+  return 56; // corn, sorghum, default
+}
+
 /** Pre-compute summary text for a customer group */
 function computeSummary(items: Insight[], category: InsightCategory): string {
   const count = items.length;
@@ -91,9 +108,9 @@ function computeSummary(items: Insight[], category: InsightCategory): string {
     case 'SpotLoads':
       return `${count} load${count !== 1 ? 's' : ''}`;
     case 'UnshippedBushels': {
-      const totalBu = items.reduce((sum, item) => sum + (item.quantity ?? 0), 0);
-      return totalBu > 0
-        ? `${Math.round(totalBu).toLocaleString()} bu`
+      const total = items.reduce((sum, item) => sum + (item.quantity ?? 0), 0);
+      return total > 0
+        ? `${Math.round(total).toLocaleString()} remaining`
         : `${count} contract${count !== 1 ? 's' : ''}`;
     }
     default: return '';
@@ -163,6 +180,12 @@ export class InsightsComponent {
     const now = new Date();
     const today = new Date(`${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`);
 
+    // Build conversion map from ODS data
+    const rawConversions = this.appState.commodityConversions();
+    const conversionMap = rawConversions.length > 0
+      ? new Map(rawConversions.map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit]))
+      : undefined;
+
     // Pre-index contracts by customer for O(1) lookup
     const contractsByCustomer = new Map<string, Contract[]>();
     for (const c of contracts) {
@@ -195,19 +218,21 @@ export class InsightsComponent {
           const desc = contract.commodityDescription?.trim();
           const code = contract.commodityCode?.trim();
           const commodity = desc && code ? `${desc} (${code})` : desc || code || 'Unknown commodity';
-          const qty = contract.quantity ? Math.round(contract.quantity).toLocaleString() : '?';
+          const rawQty = contract.quantity || contract.openBalanceQuantity || 0;
+          const unitLabel = contract.unit || 'bu';
+          const qtyTag = rawQty ? `${Math.round(rawQty).toLocaleString()} ${unitLabel}` : null;
           const statusLabel = confirmStatus || 'No status';
           insights.push({
             customer,
             category: 'UnconfirmedContracts',
             priority: 'Urgent',
-            message: `Contract ${contract.contractNumber} (${commodity}, ${qty} bu) — ${statusLabel}.`,
+            message: `Contract ${contract.contractNumber} (${commodity}${qtyTag ? ', ' + qtyTag : ''}) — ${statusLabel}.`,
             contractId: contract.id,
-            quantity: contract.quantity ?? 0,
+            quantity: rawQty,
             tags: [
               { label: contract.sourceContractId || contract.contractNumber, style: 'default' },
               { label: commodity, style: 'commodity' },
-              { label: `${qty} bu`, style: 'quantity' },
+              ...(qtyTag ? [{ label: qtyTag, style: 'quantity' as const }] : []),
               { label: statusLabel, style: 'warning' },
             ],
             searchTerms: [contract.sourceContractId, contract.contractNumber, desc, code].filter(Boolean) as string[]
@@ -227,7 +252,8 @@ export class InsightsComponent {
           return start <= ticketDate && end >= ticketDate;
         });
         if (!hasContractCoverage) {
-          const bu = ticket.unloadQuantity ? Math.round(ticket.unloadQuantity) : null;
+          const lbs = ticket.appliedDockQuantity || ticket.unloadQuantity || 0;
+          const bu = lbs ? Math.round(lbs / getLbsPerBushel(ticket.productCode, conversionMap)) : null;
           const dateLabel = ticketDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
           insights.push({
             customer,
@@ -262,19 +288,21 @@ export class InsightsComponent {
           const desc = contract.commodityDescription?.trim();
           const code = contract.commodityCode?.trim();
           const commodity = desc && code ? `${desc} (${code})` : desc || code || 'Unknown commodity';
-          const qty = contract.quantity ? Math.round(contract.quantity).toLocaleString() : '?';
+          const rawQty = contract.openBalanceQuantity || contract.quantity || 0;
+          const unitLabel = contract.unit || 'bu';
+          const qtyTag = rawQty ? `${Math.round(rawQty).toLocaleString()} ${unitLabel}` : null;
           const daysOverdue = Math.floor((today.getTime() - deliveryEnd.getTime()) / (1000 * 60 * 60 * 24));
           insights.push({
             customer,
             category: 'UnshippedBushels',
             priority: 'Warning',
-            message: `Contract ${contract.contractNumber} (${commodity}, ${qty} bu) is past its delivery end date.`,
+            message: `Contract ${contract.contractNumber} (${commodity}${qtyTag ? ', ' + qtyTag : ''}) is past its delivery end date.`,
             contractId: contract.id,
-            quantity: contract.openBalanceQuantity ?? contract.quantity ?? 0,
+            quantity: rawQty,
             tags: [
               { label: contract.sourceContractId || contract.contractNumber, style: 'default' },
               { label: commodity, style: 'commodity' },
-              { label: `${qty} bu`, style: 'quantity' },
+              ...(qtyTag ? [{ label: qtyTag, style: 'quantity' as const }] : []),
               { label: `${daysOverdue}d overdue`, style: 'alert' },
             ],
             searchTerms: [contract.sourceContractId, contract.contractNumber, desc, code].filter(Boolean) as string[]
