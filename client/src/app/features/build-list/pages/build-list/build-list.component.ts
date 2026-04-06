@@ -228,7 +228,7 @@ export class BuildListComponent {
     no_deliveries: 'No deliveries', delivery_commodity: 'Delivery commodity',
     delivery_quantity: 'Delivery quantity', ticket_unapplied: 'Unapplied tickets',
     ticket_unsettled: 'Unsettled tickets', has_phone: 'Has phone', no_phone: 'No phone',
-    has_email: 'Has email', no_email: 'No email', commodities_match: 'Commodity match',
+    has_email: 'Has email', no_email: 'No email', commodities_match: 'Commodity match', crop_count: 'Crop count',
     top_n: 'Top N ranking', customer_search: 'Name search', region_filter: 'Region',
     multi_commodity: 'Multiple crops (AND)', multi_commodity_or: 'Multiple crops (OR)',
     cross_contract_no_delivery: 'Contracted, not delivered',
@@ -720,9 +720,16 @@ export class BuildListComponent {
       return;
     }
 
-    // Run NLQ immediately — uses local signals directly (set by _initLoad or _loadFresh)
-    this._applyNlqFilter();
-    this.isProcessing.set(false);
+    // Run NLQ on the next tick so the "Generating..." spinner renders on re-runs.
+    // Without this, synchronous execution means Angular never shows the processing state.
+    if (this.hasGenerated()) {
+      this.filteredCustomers.set([]);
+    }
+    setTimeout(() => {
+      if (queryGen !== this._queryGenId) return;
+      this._applyNlqFilter();
+      this.isProcessing.set(false);
+    });
   }
 
   /** Fetches fresh data for specific trade units and runs the NLQ filter. */

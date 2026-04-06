@@ -42,6 +42,7 @@ export class TicketsTableComponent {
   public tickets = input<Ticket[]>([]);
   public contracts = input<Contract[]>([]);
   public customer = input.required<Customer>();
+  public openCrop = input<string | null>(null);
 
   private _conversionMap: Map<string, number> | null = null;
 
@@ -70,11 +71,14 @@ export class TicketsTableComponent {
       this._previousCustomerId = cust.id;
     });
 
-    // Auto-expand when there's only one commodity group
+    // Auto-expand when there's only one commodity group, or when navigating from Insights with a specific crop
     effect(() => {
       const tickets = this.tickets();
       const crops = new Set(tickets.filter(t => !t.isApplied).map(t => t.productCode || 'Unknown'));
-      if (crops.size === 1) {
+      const openCrop = this.openCrop();
+      if (openCrop && crops.has(openCrop)) {
+        this.expandedCommodities = new Set([openCrop]);
+      } else if (crops.size === 1) {
         this.expandedCommodities = new Set(crops);
       }
     });
@@ -87,6 +91,28 @@ export class TicketsTableComponent {
   clearSearch(): void {
     this.searchQuery = '';
     this.showSearch = false;
+  }
+
+  /** Set of ticket IDs that are spot loads (unapplied, last 30 days, no contract coverage).
+   *  Matches the same logic as Actionable Insights → Spot Loads. */
+  get spotTicketIds(): Set<number> {
+    const contracts = this.contracts();
+    const ids = new Set<number>();
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    for (const t of this.tickets()) {
+      if (t.isApplied || !t.date) continue;
+      const ticketDate = new Date(t.date);
+      if (ticketDate < thirtyDaysAgo) continue; // Only last 30 days
+      const hasCoverage = contracts.some(c => {
+        if (c.status === 'Fulfilled' || c.status === 'Cancelled') return false;
+        const start = new Date(c.deliveryStart);
+        const end = new Date(c.deliveryEnd);
+        return start <= ticketDate && end >= ticketDate;
+      });
+      if (!hasCoverage) ids.add(t.id);
+    }
+    return ids;
   }
 
   get unappliedTickets(): Ticket[] {
@@ -138,7 +164,7 @@ export class TicketsTableComponent {
       const validDateMs = allTickets
         .map(t => this._parseTicketDate(t.date)?.getTime() ?? null)
         .filter((d): d is number => d !== null && !isNaN(d));
-      const isWheat = this.isWheatCommodity(undefined, productCode);
+      const isWheat = this.isWheatProductCode(productCode);
 
       groups.push({
         productCode,
@@ -322,7 +348,9 @@ export class TicketsTableComponent {
   isWheatProductCode(productCode?: string | null): boolean {
     if (!productCode) return false;
     const upper = productCode.toUpperCase().trim();
-    return upper.includes('WHEAT') || upper.includes('WW') || upper === 'HRW' || upper === 'SRW' || upper === 'DUR';
+    return upper.includes('WHEAT') || upper.includes('WW') ||
+      upper.startsWith('HRW') || upper.startsWith('HRS') || upper.startsWith('SRW') ||
+      upper.startsWith('DUR') || upper === 'HW';
   }
 
   isWheatCommodity(commodityGroup: string | undefined, commodityDescription?: string | undefined): boolean {
@@ -407,6 +435,11 @@ export class TicketsTableComponent {
     } else {
       this.expandedCommodities.add(productCode);
     }
+  }
+
+  getSpotCount(group: TicketGroup): number {
+    const spots = this.spotTicketIds;
+    return group.tickets.filter(t => spots.has(t.id)).length;
   }
 
   isCommodityExpanded(productCode: string): boolean {

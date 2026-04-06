@@ -600,6 +600,12 @@ export class NlqFilterService {
         matched.push('commodities_match');
       }
     }
+    // Crop count — "two crops", "multiple crops", "more than 2 crops", "at least 3 commodities"
+    if (/(?:two|2|multiple|several|many)\s+(?:crops?|commodit)/i.test(lowerQuery) ||
+        /(?:more than|over|above|at least|exceeding)\s+(\d+)\s+(?:crops?|commodit)/i.test(lowerQuery)) {
+      matched.push('crop_count');
+    }
+
     if (lowerQuery.includes('linked producer') || lowerQuery.includes('linked customer') ||
         lowerQuery.includes('has linked') || lowerQuery.includes('with linked')) matched.push('has_linked_producers');
     if (lowerQuery.includes('no linked') || lowerQuery.includes('without linked') ||
@@ -1139,6 +1145,31 @@ export class NlqFilterService {
           const ticketCodes = ticketCommoditiesByCustomer.get(c.sourceCustomerId ?? '');
           return ticketCodes ? [...ticketCodes].some(code => this.matchesCommodity(code, crop)) : false;
         });
+      });
+    }
+
+    // Crop count — filter by number of distinct commodities a customer has
+    const cropCountMatch = lowerQuery.match(/(?:more than|over|above|at least|exceeding)\s+(\d+)\s+(?:crops?|commodit)/i);
+    const cropCountWord = /(?:two|2|multiple|several|many)\s+(?:crops?|commodit)/i.test(lowerQuery);
+    if (cropCountMatch || cropCountWord) {
+      const minCrops = cropCountMatch ? parseInt(cropCountMatch[1], 10) : 2;
+      // Count distinct commodities from contracts, tickets, and customer.commodities
+      result = result.filter(c => {
+        const crops = new Set<string>();
+        // From customer commodities field
+        for (const crop of (c.commodities ?? [])) { if (crop.trim()) crops.add(crop.trim().toUpperCase()); }
+        // From contracts
+        const custContracts = contracts.filter(ct =>
+          ct.ctrmCustomerId === c.sourceCustomerId && ct.status !== 'Cancelled');
+        for (const ct of custContracts) {
+          if (ct.commodityCode) crops.add(ct.commodityCode.trim().toUpperCase());
+        }
+        // From tickets
+        const custTickets = tickets.filter(t => t.customerCode === c.sourceCustomerId);
+        for (const t of custTickets) {
+          if (t.productCode) crops.add(t.productCode.trim().toUpperCase());
+        }
+        return crops.size >= minCrops;
       });
     }
 

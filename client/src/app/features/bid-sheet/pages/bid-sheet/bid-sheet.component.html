@@ -20,6 +20,8 @@
             <select [ngModel]="selectedCrop()" (ngModelChange)="selectedCrop.set($event); onMapCropChange()" class="px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
               @if (crops().length === 0) {
                 <option value="" disabled selected>No crops yet</option>
+              } @else {
+                <option value="">All Crops</option>
               }
               @for (crop of crops(); track crop) {
                 <option [value]="crop">{{ crop }}</option>
@@ -250,8 +252,9 @@
             <!-- Panel Header -->
             <div class="shrink-0 flex items-center gap-2 px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[52px]">
               @if (activeTradeUnits().length > 0) {
-              <button (click)="openEditBids()" title="Edit bids" class="shrink-0 p-1 rounded text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              <button (click)="openEditBids()" title="Edit bids" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-scoular-green-accessible dark:text-scoular-green border border-scoular-green-accessible/30 dark:border-scoular-green/30 hover:bg-scoular-green/10 dark:hover:bg-scoular-green/20 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                Edit
               </button>
               }
               <h3 class="text-sm font-semibold text-gray-900 dark:text-white truncate flex-1">

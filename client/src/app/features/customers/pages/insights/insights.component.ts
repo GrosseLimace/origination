@@ -28,6 +28,8 @@ interface Insight {
   message: string;
   tags?: InsightTag[];
   contractId?: number;
+  ticketNumber?: string;
+  productCode?: string;
   searchTerms?: string[];
   quantity?: number;
   sortDate?: string; // yyyy-MM-dd, used to sort SpotLoads newest-first
@@ -260,6 +262,8 @@ export class InsightsComponent {
             category: 'SpotLoads',
             priority: 'Urgent',
             message: `Ticket #${ticket.ticketNumber}${ticket.productCode ? ' — ' + ticket.productCode : ''}${bu ? ', ' + bu.toLocaleString() + ' bu' : ''}`,
+            ticketNumber: ticket.ticketNumber,
+            productCode: ticket.productCode,
             sortDate: ticket.date,
             quantity: bu ?? 0,
             tags: [
@@ -283,8 +287,9 @@ export class InsightsComponent {
         const deliveryEnd = new Date(contract.deliveryEnd);
         const isPastDue = deliveryEnd < today;
         const isOpen = contract.status === 'Active' || contract.status === 'Overdue';
+        const hasRemainingQty = (contract.openBalanceQuantity ?? 0) > 0;
 
-        if (isPastDue && isOpen) {
+        if (isPastDue && isOpen && hasRemainingQty) {
           const desc = contract.commodityDescription?.trim();
           const code = contract.commodityCode?.trim();
           const commodity = desc && code ? `${desc} (${code})` : desc || code || 'Unknown commodity';
@@ -506,7 +511,10 @@ export class InsightsComponent {
   selectInsight(insight: Insight): void {
     const params: Record<string, string | number> = { customerId: insight.customer.id };
     if (insight.contractId) params['contractId'] = insight.contractId;
-    if (insight.category === 'SpotLoads') params['tab'] = 'tickets';
+    if (insight.category === 'SpotLoads') {
+      params['tab'] = 'tickets';
+      if (insight.productCode) params['ticketCrop'] = insight.productCode;
+    }
     this.router.navigate(['/'], { queryParams: params });
   }
 

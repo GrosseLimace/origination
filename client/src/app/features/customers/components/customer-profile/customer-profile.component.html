@@ -271,7 +271,7 @@
               <app-contracts-table [contracts]="contracts()" [tickets]="tickets()" [pricingLines]="pricingLines()" [customer]="customer()" [openContractId]="openContractId()" [isLoading]="isLoadingContracts()"></app-contracts-table>
             }
             @case ('tickets') {
-              <app-tickets-table [tickets]="tickets()" [contracts]="contracts()" [customer]="customer()" [isLoading]="isLoadingTickets()"></app-tickets-table>
+              <app-tickets-table [tickets]="tickets()" [contracts]="contracts()" [customer]="customer()" [isLoading]="isLoadingTickets()" [openCrop]="openTicketCrop()"></app-tickets-table>
             }
             @case ('planting') {
               <!-- Contract Percentage Summary for this planting year -->
@@ -311,19 +311,21 @@
                         </div>
                       }
                     </div>
-                    <!-- Totals row -->
-                    <div class="border-t border-gray-300 dark:border-gray-600 mt-3 pt-3">
-                      <div class="flex items-center gap-4">
-                        <div class="w-24 text-sm font-medium text-gray-700 dark:text-gray-300">Total</div>
-                        <div class="flex-1">
-                          <div class="h-2.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                            <div class="h-full bg-scoular-green-accessible rounded-full transition-all" [style.width.%]="marketSharePercentage > 100 ? 100 : marketSharePercentage"></div>
+                    <!-- Totals row (only when 2+ commodities) -->
+                    @if (contractMetrics().byCommodity.length > 1) {
+                      <div class="border-t border-gray-300 dark:border-gray-600 mt-3 pt-3">
+                        <div class="flex items-center gap-4">
+                          <div class="w-24 text-sm font-medium text-gray-700 dark:text-gray-300">Total</div>
+                          <div class="flex-1">
+                            <div class="h-2.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                              <div class="h-full bg-scoular-green-accessible rounded-full transition-all" [style.width.%]="marketSharePercentage > 100 ? 100 : marketSharePercentage"></div>
+                            </div>
                           </div>
+                          <div class="w-14 text-right text-sm font-bold" [class]="marketSharePercentage > 0 ? 'text-scoular-green-accessible dark:text-scoular-green' : 'text-gray-400'">{{ marketSharePercentage | number:'1.0-0' }}%</div>
+                          <div class="w-40 text-xs text-gray-500 dark:text-gray-400 text-right">{{ totalContracted | number }} / {{ totalProjectedYield | number }} bu</div>
                         </div>
-                        <div class="w-14 text-right text-sm font-bold" [class]="marketSharePercentage > 0 ? 'text-scoular-green-accessible dark:text-scoular-green' : 'text-gray-400'">{{ marketSharePercentage | number:'1.0-0' }}%</div>
-                        <div class="w-40 text-xs text-gray-500 dark:text-gray-400 text-right">{{ totalContracted | number }} / {{ totalProjectedYield | number }} bu</div>
                       </div>
-                    </div>
+                    }
                   }
                 </div>
               }

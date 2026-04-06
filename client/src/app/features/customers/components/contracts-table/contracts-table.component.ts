@@ -606,6 +606,13 @@ export class ContractsTableComponent {
     return 'To Arrive';
   }
 
+  getRowHighlight(contract: Contract): string {
+    const status = this.getCalculatedStatus(contract);
+    if (status === 'Past Due') return '!bg-red-100 dark:!bg-red-500/15';
+    if (contract.customerConfirmStatus && contract.customerConfirmStatus !== 'Confirmed') return '!bg-amber-100 dark:!bg-amber-500/15';
+    return '';
+  }
+
   getStatusClass(status: string): string {
     const base = 'inline-flex items-center justify-center min-w-[5.25rem] px-3 py-1 rounded-full text-xs font-medium text-white';
     switch (status) {

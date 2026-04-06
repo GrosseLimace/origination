@@ -53,6 +53,7 @@ export class HomeComponent {
   readonly selectedCustomer = signal<Customer | null>(null);
   readonly pendingContractId = signal<number | null>(null);
   readonly pendingTab = signal<string | null>(null);
+  readonly pendingTicketCrop = signal<string | null>(null);
   readonly selectedTradeUnits = signal<string[]>([]);
   readonly customerContracts = signal<Contract[]>([]);
   readonly customerTickets = signal<Ticket[]>([]);
@@ -151,6 +152,7 @@ export class HomeComponent {
         const contractId = params['contractId'];
         this.pendingContractId.set(contractId ? parseInt(contractId, 10) : null);
         this.pendingTab.set(params['tab'] ?? null);
+        this.pendingTicketCrop.set(params['ticketCrop'] ?? null);
         this._selectCustomerById(customerId);
       }
     });

@@ -324,6 +324,10 @@ export class BidSheetComponent {
     this._loadBidData$.pipe(
       switchMap(({ tus, onLoaded }) => {
         this.isLoading.set(true);
+        // Set edit grid loading here (inside switchMap) so it survives cancellation of
+        // the previous request. The previous onLoaded callback will never fire, but this
+        // new emission takes ownership of the loading state.
+        if (onLoaded && this.editBidsMode()) this.editBidsGridLoading.set(true);
         return forkJoin(
           tus.map(tu => forkJoin({
             locations: this.apiService.getBidSheetLocations(tu),
@@ -342,8 +346,10 @@ export class BidSheetComponent {
         this.bidLocations.set(allLocations);
         this.crops.set(bidCommodities);
 
-        if (!this.selectedCrop() || (bidCommodities.length > 0 && !bidCommodities.includes(this.selectedCrop()))) {
-          this.selectedCrop.set(bidCommodities.length > 0 ? bidCommodities[0] : '');
+        // Only reset crop selection if the current selection is a specific crop that no longer exists.
+        // Empty string = "All Crops" which is always valid.
+        if (this.selectedCrop() && bidCommodities.length > 0 && !bidCommodities.includes(this.selectedCrop())) {
+          this.selectedCrop.set('');
         }
 
         const currentYear = new Date().getFullYear();
@@ -361,6 +367,7 @@ export class BidSheetComponent {
       },
       error: () => {
         this.isLoading.set(false);
+        this.editBidsGridLoading.set(false);
         this.toastService.error('Failed to load bid data');
       }
     });
@@ -418,11 +425,13 @@ export class BidSheetComponent {
       const tuElevators = this.allElevators().filter(e => tuSet.has((e.tradeUnitCode ?? '').trim()));
       this.tradeUnitElevators.set(tuElevators);
       // Load bid data and references for all active TUs
+      if (this.editBidsMode()) this.editBidsGridLoading.set(true);
       this._loadBidData(tus, () => {
         this._zoomToBidLocations();
         // If edit bids is open, rebuild the grid with new data
         if (this.editBidsMode()) {
           this._buildEditGrid(this.editBidsYear());
+          this.editBidsGridLoading.set(false);
         }
       });
       this._loadReferences(tus);
