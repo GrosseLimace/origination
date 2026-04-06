@@ -49,7 +49,9 @@
                   </svg>
                   <div class="min-w-0">
                     <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ group.productCode }}</p>
-                    <p class="text-xs text-gray-500 dark:text-gray-400">{{ group.ticketCount }} ticket{{ group.ticketCount !== 1 ? 's' : '' }}</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                      {{ group.ticketCount }} ticket{{ group.ticketCount !== 1 ? 's' : '' }}@if (getSpotCount(group) > 0) {<span class="text-amber-600 dark:text-amber-400"> · {{ getSpotCount(group) }} Spot</span>}
+                    </p>
                   </div>
                 </div>
                 <div class="flex items-center gap-4 flex-shrink-0">
@@ -69,7 +71,7 @@
                     <p class="text-xs text-gray-500 dark:text-gray-400">Avg Test Wt</p>
                     <p class="text-sm font-medium text-gray-900 dark:text-white">{{ group.avgTestWeight !== null ? (group.avgTestWeight | number:'1.1-1') + '%' : '—' }}</p>
                   </div>
-                  @if (hasWheatTickets) {
+                  @if (group.isWheat) {
                     <div class="w-24 text-center">
                       <p class="text-xs text-gray-500 dark:text-gray-400">Avg Protein</p>
                       <p class="text-sm font-medium text-gray-900 dark:text-white">{{ group.avgProtein !== null ? (group.avgProtein | number:'1.1-1') + '%' : '—' }}</p>
@@ -139,7 +141,7 @@
                             </svg>
                           </span>
                         </app-table-head>
-                        @if (hasWheatTickets) {
+                        @if (group.isWheat) {
                           <app-table-head [sortable]="true" (click)="handleSort('protein')">
                             <span class="flex items-center justify-center gap-1">Protein %
                               <svg class="w-3.5 h-3.5" [class]="getSortIconClass('protein')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -154,7 +156,7 @@
                     </app-table-header>
                     <app-table-body>
                       @for (ticket of group.tickets; track ticket.id) {
-                        <app-table-row>
+                        <app-table-row [class]="spotTicketIds.has(ticket.id) ? '!bg-amber-100 dark:!bg-amber-500/15' : ''">
                           <app-table-cell class="text-center">{{ ticket.ticketNumber }}</app-table-cell>
                           <app-table-cell class="text-center">{{ ticket.date | date:'M/d/yyyy' }}</app-table-cell>
                           <app-table-cell class="text-center">{{ ticket.productCode }}</app-table-cell>
@@ -168,7 +170,7 @@
                               -
                             }
                           </app-table-cell>
-                          @if (hasWheatTickets) {
+                          @if (group.isWheat) {
                             <app-table-cell class="text-center">
                               @if (ticket.proteinPercent !== null && ticket.proteinPercent !== undefined) {
                                 {{ ticket.proteinPercent | number:'1.1-1' }}%

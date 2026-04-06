@@ -70,6 +70,7 @@ export class CustomerProfileComponent {
   public onSelectLinkedCustomer = output<number>();
   public openContractId = input<number | null>(null);
   public openTab = input<string | null>(null);
+  public openTicketCrop = input<string | null>(null);
 
   @ViewChild(PlantingIntentionsTableComponent) private plantingTable?: PlantingIntentionsTableComponent;
   @ViewChild('tabsSection') private tabsSectionRef?: ElementRef<HTMLElement>;
@@ -244,16 +245,18 @@ export class CustomerProfileComponent {
 
     // Helper: does a contract's delivery period overlap with the harvest window for this category?
     const contractMatchesCategory = (c: Contract, category: string): boolean => {
-      if (c.status === 'Cancelled' || !c.deliveryEnd) return false;
+      if (c.status === 'Cancelled') return false;
       if (getContractCategory(c) !== category.toUpperCase()) return false;
       if (year === 0) return true;
+      // If no delivery dates, fall back to cropYear matching
+      if (!c.deliveryEnd && !c.deliveryStart) return c.cropYear === year;
       const hw = harvestWindows.find(w => w.commodity.toUpperCase() === category.toUpperCase());
       if (!hw) return c.cropYear === year;
       const windowStart = new Date(year, hw.deliveryStartMonth - 1, hw.deliveryStartDay);
       const windowEnd = new Date(year, hw.deliveryEndMonth - 1, hw.deliveryEndDay);
       windowEnd.setHours(23, 59, 59); // include the full end day
-      const delStart = c.deliveryStart ? new Date(c.deliveryStart) : new Date(c.deliveryEnd);
-      const delEnd = new Date(c.deliveryEnd);
+      const delStart = c.deliveryStart ? new Date(c.deliveryStart) : new Date(c.deliveryEnd!);
+      const delEnd = c.deliveryEnd ? new Date(c.deliveryEnd) : new Date(c.deliveryStart!);
       // Contract overlaps if its delivery period intersects with the harvest window
       return delStart <= windowEnd && delEnd >= windowStart;
     };
@@ -265,8 +268,12 @@ export class CustomerProfileComponent {
       const commodity = commodities.find(c => c.code === pi.crop);
       const category = commodity?.category || pi.crop;
       const cropKey = [pi.type, category].filter(Boolean).join(' ');
+      // Try exact match (e.g., "Dryland Wheat" for year), then exact without year,
+      // then category-only match (e.g., "Wheat") as fallback for missing type
       const est = yieldEstimates.find(ye => ye.crop === cropKey && ye.plantingYear === year)
-        || yieldEstimates.find(ye => ye.crop === cropKey);
+        || yieldEstimates.find(ye => ye.crop === cropKey)
+        || (cropKey !== category ? yieldEstimates.find(ye => ye.crop === category && ye.plantingYear === year) : undefined)
+        || (cropKey !== category ? yieldEstimates.find(ye => ye.crop === category) : undefined);
       const projectedYield = pi.acres * (est?.yieldEstimate ?? 0);
 
       if (!cropMap.has(category)) {

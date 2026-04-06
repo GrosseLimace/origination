@@ -132,6 +132,31 @@ export class CustomerPrintReportComponent {
       .sort((a, b) => (a.commodityDescription ?? '').localeCompare(b.commodityDescription ?? ''))
   );
 
+  /** Contracts grouped by commodity for print display */
+  readonly contractsByCommodity = computed(() => {
+    const map = new Map<string, Contract[]>();
+    for (const ct of this.activeContracts()) {
+      const key = ct.commodityDescription || ct.commodityCode || 'Other';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(ct);
+    }
+    return Array.from(map.entries()).map(([commodity, contracts]) => ({ commodity, contracts }));
+  });
+
+  /** Planting intentions grouped by crop then sorted by planting year desc */
+  readonly plantingByCrop = computed(() => {
+    const commodities = this.commodities();
+    const map = new Map<string, { crop: string; intentions: PlantingIntention[] }>();
+    const sorted = [...this.plantingIntentions()].sort((a, b) => b.plantingYear - a.plantingYear);
+    for (const pi of sorted) {
+      const commodity = commodities.find(c => c.code === pi.crop);
+      const category = commodity?.category || pi.crop;
+      if (!map.has(category)) map.set(category, { crop: category, intentions: [] });
+      map.get(category)!.intentions.push(pi);
+    }
+    return Array.from(map.values());
+  });
+
   readonly totalContracted = computed(() =>
     this.activeContracts().reduce((sum, c) => sum + (c.quantity ?? 0), 0)
   );

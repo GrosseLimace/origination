@@ -1,0 +1,1106 @@
+{
+  "scanModels": [
+    "claude-sonnet",
+    "gpt-5.4"
+  ],
+  "findings": [
+    {
+      "rule": "Sensitive data access checks user permissions",
+      "confidence": null,
+      "file": "api/GrainOriginatorPortal.Api/Controllers/ContractsController.cs",
+      "status": "open",
+      "id": "f-dd2afee559b5a6df",
+      "owasp": null,
+      "effort": null,
+      "readableId": "H-012",
+      "sources": [
+        "codex"
+      ],
+      "suggestion": "Before querying contracts or pricing lines, resolve the target customer and call `ValidateCustomerAccessAsync()` (or validate the resolved trade unit list) for every customer-scoped endpoint, including the `sourceCustomerId` query path.",
+      "severity": "HIGH",
+      "cwe": null,
+      "description": "The customer-scoped contract endpoints trust attacker-supplied customer identifiers instead of verifying ownership. `GET /api/contracts/customer/{customerId}?sourceCustomerId=...` skips any entitlement check and `GET /api/contracts/pricing-lines/by-customer?sourceCustomerId=...` does the same; both flow into `SqlDataService` queries keyed only by `sourceCustomerId`, so any authenticated user who knows a victim customer code can read that customer's contracts and pricing lines across trade-unit boundaries.",
+      "line": 37,
+      "firstSeen": "2026-03-23T15:56:51.0924436+00:00"
+    },
+    {
+      "rule": "Sensitive data access checks user permissions",
+      "confidence": null,
+      "file": "api/GrainOriginatorPortal.Api/Controllers/CustomersController.cs",
+      "status": "open",
+      "id": "f-f04fd02548ba838e",
+      "owasp": null,
+      "effort": null,
+      "readableId": "H-014",
+      "sources": [
+        "codex"
+      ],
+      "suggestion": "Resolve the customer first, then enforce `ValidateCustomerAccessAsync()` before returning it. Apply the same server-side entitlement check to both lookup variants so authorization is based on the stored customer-to-trade-unit mapping, not on whether the caller already knows an identifier.",
+      "severity": "HIGH",
+      "cwe": null,
+      "description": "`GET /api/customers/{id}` and `GET /api/customers/by-source/{sourceId}` return customer records without any trade-unit entitlement check. An authenticated user can supply another customer's numeric ID or source-system ID, the request flows straight into `SqlDataService.GetCustomerByIdAsync()` / `GetCustomerBySourceIdAsync()`, and the ODS query returns the victim's profile even when it belongs to an unauthorized trade unit.",
+      "line": 61,
+      "firstSeen": "2026-03-23T15:56:51.0924436+00:00"
+    },
+    {
+      "rule": "Sensitive data access checks user permissions",
+      "confidence": null,
+      "file": "api/GrainOriginatorPortal.Api/Controllers/TicketsController.cs",
+      "status": "open",
+      "id": "f-ee777a5cbd1486e4",
+      "owasp": null,
+      "effort": null,
+      "readableId": "H-009",
+      "sources": [
+        "codex"
+      ],
+      "suggestion": "Enforce `ValidateCustomerAccessAsync()` for customer-scoped ticket lookups, and avoid trusting caller-supplied `sourceCustomerId` without first resolving and authorizing the target customer record.",
+      "severity": "HIGH",
+      "cwe": null,
+      "description": "`GET /api/tickets/customer/{customerId}?sourceCustomerId=...` exposes another customer's ticket history because the controller never validates customer ownership. The optional `sourceCustomerId` parameter is passed directly into `SqlDataService.GetTicketsByCustomerAsync()`, which queries ODS tickets by `CustomerCode` and returns the victim's records even if the caller has no entitlement to that customer's trade unit.",
+      "line": 45,
+      "firstSeen": "2026-03-23T15:56:51.0924436+00:00"
+    },
+    {
+      "rule": "Authorization - Missing authorization checks (IDOR)",
+      "confidence": 8,
+      "file": "api/GrainOriginatorPortal.Api/Controllers/CustomersController.cs",
+      "status": "open",
+      "id": "f-c53a329ffb0b5536",
+      "owasp": "A01:2021 Broken Access Control",
+      "effort": "Trivial",
+      "readableId": "H-020",
+      "sources": [
+        "claude"
+      ],
+      "suggestion": "After retrieving the customer, validate access: `await _entitlementService.ValidateCustomerAccessAsync(customer.Id, cancellationToken);` before returning the customer object.",
+      "severity": "HIGH",
+      "cwe": "CWE-639",
+      "description": "The GetBySourceId endpoint returns customer details for any source system ID without authorization validation. An attacker can enumerate sourceId values (e.g., CTRM customer codes) to discover and access customer records they should not see, potentially exposing PII and business-sensitive data.",
+      "line": 73,
+      "firstSeen": "2026-04-06T10:46:13.2577222+00:00"
+    },
+    {
+      "rule": "Sensitive data access checks user permissions",
+      "confidence": null,
+      "file": "api/GrainOriginatorPortal.Api/Controllers/DashboardPlantingEstimatesController.cs",
+      "status": "open",
+      "id": "f-2052ef0f2d15975f",
+      "owasp": null,
+      "effort": null,
+      "readableId": "H-021",
+      "sources": [
+        "codex"
+      ],
+      "suggestion": "Load the `DashboardActualHarvest` row first, validate its `TradeUnitKey` against the caller's entitlements, and only then delete it. Alternatively require the trade-unit key in the route/body and cross-check it against the stored row before deletion.",
+      "severity": "HIGH",
+      "cwe": null,
+      "description": "`DELETE /api/dashboardplantingestimates/actualharvest/{id}` deletes dashboard harvest rows by primary key with no trade-unit authorization check. The class-level `EnforceTradeUnitAccess` filter only inspects `tradeUnitKey` values in query/body data, so it never runs for this route; the request flows directly to `SqlDataService.DeleteDashboardActualHarvestAsync()`, which removes any row matching the supplied auto-incrementing ID. Any authenticated user who can guess another row ID can delete another trade unit's harvest record.",
+      "line": 134,
+      "firstSeen": "2026-04-06T10:46:13.2577222+00:00"
+    },
+    {
+      "rule": "Authorization - Missing authorization checks (IDOR)",
+      "confidence": 9,
+      "file": "api/GrainOriginatorPortal.Api/Controllers/TicketsController.cs",
+      "status": "open",
+      "id": "f-2656cbdb843abb2c",
+      "owasp": "A01:2021 Broken Access Control",
+      "effort": "Trivial",
+      "readableId": "H-022",
+      "sources": [
+        "claude"
+      ],
+      "suggestion": "Add authorization validation: `await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);` before returning tickets. Reference the GetByFarm method (line 58) which correctly validates trade unit access.",
+      "severity": "HIGH",
+      "cwe": "CWE-639",
+      "description": "The GetByCustomer endpoint returns all delivery tickets for a specified customerId without validating user access. An authenticated attacker can enumerate customer IDs to view sensitive delivery ticket data for customers outside their assigned trade units.",
+      "line": 45,
+      "firstSeen": "2026-04-06T10:46:13.2577222+00:00"
+    },
+    {
+      "rule": "Error Handling - Information disclosure via debug headers",
+      "confidence": 7,
+      "file": "api/GrainOriginatorPortal.Api/Controllers/UserTradeUnitsController.cs",
+      "status": "open",
+      "id": "f-974476673d320698",
+      "owasp": "A05:2021 Security Misconfiguration",
+      "effort": "Trivial",
+      "readableId": "M-006",
+      "sources": [
+        "claude"
+      ],
+      "suggestion": "Remove the debug header or ensure it only appears in local development, not in deployed QA/dev environments. If debugging is needed, use server-side logging only.",
+      "severity": "MEDIUM",
+      "cwe": "CWE-200",
+      "description": "In non-production environments, the controller exposes X-Entitlements-Fallback header indicating database unavailability and fallback logic. This leaks infrastructure topology and failure modes to clients. While limited to dev/QA, this practice normalizes information disclosure and could expose production systems if environment detection fails or configuration is incorrect.",
+      "line": 71,
+      "firstSeen": "2026-04-06T10:46:13.2577222+00:00"
+    },
+    {
+      "rule": "Authorization - Missing authorization checks (IDOR)",
+      "confidence": 9,
+      "file": "api/GrainOriginatorPortal.Api/Controllers/ContractsController.cs",
+      "status": "open",
+      "id": "f-c41260a7c5488b72",
+      "owasp": "A01:2021 Broken Access Control",
+      "effort": "Small",
+      "readableId": "H-023",
+      "sources": [
+        "claude"
+      ],
+      "suggestion": "Validate trade unit access for the farm BEFORE querying contracts, or ensure validation always runs even when the result set is empty or contains null trade units.",
+      "severity": "HIGH",
+      "cwe": "CWE-639",
+      "description": "The GetByFarm endpoint retrieves contracts and validates trade unit access AFTER fetching the data (line 49-51). While authorization is performed, the query executes first, potentially exposing data in logs or error conditions. More critically, if the contracts list is empty or all contracts have null TradeUnit values, the validation is bypassed entirely.",
+      "line": 46,
+      "firstSeen": "2026-04-06T10:46:13.2577222+00:00"
+    },
+    {
+      "rule": "Sensitive data access checks user permissions",
+      "confidence": null,
+      "file": "api/GrainOriginatorPortal.Api/Controllers/BidSheetController.cs",
+      "status": "open",
+      "id": "f-8fd01e762a7167f5",
+      "owasp": null,
+      "effort": null,
+      "readableId": "H-024",
+      "sources": [
+        "codex"
+      ],
+      "suggestion": "Require entitlement filtering on all bid sheet reads, and on writes load the target location first and verify its persisted `TradeUnitCode` against the caller's entitlements before allowing update or deletion. Do not authorize based only on a client-supplied trade unit value.",
+      "severity": "HIGH",
+      "cwe": null,
+      "description": "Bid sheet authorization can be bypassed end-to-end. First, `GET /api/bidsheet/locations` returns every bid sheet location when `tradeUnitCode` is omitted, exposing other trade units' location IDs and metadata. Then the update/delete endpoints authorize only a caller-controlled `tradeUnitCode`/`request.TradeUnitCode`, while `SqlDataService.UpdateBidSheetLocationAsync()`, `DeleteBidSheetLocationAsync()`, and `DeleteBidSheetBidsAsync()` mutate rows solely by numeric ID. An authenticated user can enumerate a victim location ID and then modify or delete that location or its bids by pairing the victim ID with one of the caller's own entitled trade units.",
+      "line": 50,
+      "firstSeen": "2026-04-06T10:46:13.2577222+00:00"
+    },
+    {
+      "rule": "Authorization - Missing authorization checks (IDOR)",
+      "confidence": 9,
+      "file": "api/GrainOriginatorPortal.Api/Controllers/ContractsController.cs",
+      "status": "open",
+      "id": "f-33fa40504423472d",
+      "owasp": "A01:2021 Broken Access Control",
+      "effort": "Trivial",
+      "readableId": "H-025",
+      "sources": [
+        "claude"
+      ],
+      "suggestion": "Add authorization validation before returning data: `await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);` This pattern is already used in other endpoints like CustomersController.Update (line 87).",
+      "severity": "HIGH",
+      "cwe": "CWE-639",
+      "description": "The GetByCustomer endpoint returns all contracts for a specified customerId without validating that the authenticated user has access to that customer's data. An attacker can enumerate customer IDs to view contracts for any customer in the system, bypassing trade unit entitlements.",
+      "line": 37,
+      "firstSeen": "2026-04-06T10:46:13.2577222+00:00"
+    },
+    {
+      "rule": "Error Handling - Sensitive information exposure in error responses",
+      "file": "api/GrainOriginatorPortal.Api/Controllers/DiagnosticsController.cs",
+      "status": "resolved",
+      "id": "f-366e0e78d56b4425",
+      "firstSeen": "2026-03-30T09:58:40.2025183+00:00",
+      "readableId": "M-005",
+      "resolvedInCommit": "e7dd8781bcdfa8370237f3852b648833b1fbd118",
+      "sources": "claude",
+      "suggestion": "Never return exception details in HTTP responses, even in non-production environments. Log errors server-side and return generic error messages to clients. Use structured logging for diagnostic information.",
+      "severity": "MEDIUM",
+      "description": "SQL exception details including error numbers, error states, and messages are returned in HTTP responses. While protected by DenyIfNotDevelopment() checks (line 52), this exposes database structure and error details that could aid attackers. If environment detection fails or is bypassed, production errors would leak sensitive information. Lines 71-77 return SqlException.Number, SqlException.State, and SqlException.Message in JSON responses.",
+      "resolvedAt": "2026-04-06T10:46:13.2577222+00:00",
+      "line": 71,
+      "retainUntil": "2026-05-06T10:46:13.2577222+00:00"
+    },
+    {
+      "rule": "Authorization - Missing authorization checks on sensitive data access",
+      "file": "api/GrainOriginatorPortal.Api/Controllers/TicketsController.cs",
+      "status": "resolved",
+      "id": "f-077a13c51ce3a5d7",
+      "firstSeen": "2026-03-30T09:58:40.2025183+00:00",
+      "readableId": "H-017",
+      "resolvedInCommit": "e7dd8781bcdfa8370237f3852b648833b1fbd118",
+      "sources": "claude",
+      "suggestion": "Add authorization check before retrieving data: await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);",
+      "severity": "HIGH",
+      "description": "The GetByCustomer endpoint retrieves all delivery tickets for a customer without validating that the authenticated user has access to that customer's data. An attacker can enumerate tickets for any customer ID by calling GET /api/tickets/customer/{customerId}. Tickets may contain sensitive delivery and transaction information.",
+      "resolvedAt": "2026-04-06T10:46:13.2577222+00:00",
+      "line": 45,
+      "retainUntil": "2026-07-05T10:46:13.2577222+00:00"
+    },
+    {
+      "rule": "Authorization - Missing authorization checks on sensitive data access",
+      "file": "api/GrainOriginatorPortal.Api/Controllers/CustomersController.cs",
+      "status": "resolved",
+      "id": "f-24c39d1b2cdc857b",
+      "firstSeen": "2026-03-30T09:58:40.2025183+00:00",
+      "readableId": "H-016",
+      "resolvedInCommit": "e7dd8781bcdfa8370237f3852b648833b1fbd118",
+      "sources": "claude",
+      "suggestion": "Add authorization validation after retrieving the customer: await _entitlementService.ValidateCustomerAccessAsync(customer.Id, cancellationToken);",
+      "severity": "HIGH",
+      "description": "The GetBySourceId endpoint retrieves customer details by source system ID without any authorization checks. An attacker can enumerate and retrieve customer records by iterating through source IDs. The endpoint at GET /api/customers/by-source/{sourceId} returns full customer details including contact information and business data.",
+      "resolvedAt": "2026-04-06T10:46:13.2577222+00:00",
+      "line": 73,
+      "retainUntil": "2026-07-05T10:46:13.2577222+00:00"
+    },
+    {
+      "rule": "Sensitive data access checks user permissions",
+      "file": "api/GrainOriginatorPortal.Api/Filters/EnforceTradeUnitAccessAttribute.cs",
+      "status": "resolved",
+      "id": "f-e07da112c351ea60",
+      "firstSeen": "2026-03-23T15:56:51.0924436+00:00",
+      "readableId": "H-011",
+      "resolvedInCommit": "e7dd8781bcdfa8370237f3852b648833b1fbd118",
+      "sources": "codex",
+      "suggestion": "Fail closed when entitlements cannot be loaded. Return 503/403 for protected reads, or require a successfully loaded entitlement set before executing any trade-unit-scoped endpoint.",
+      "severity": "HIGH",
+      "description": "Trade-unit authorization fails open on read requests when the Entitlements database is unavailable. `UserEntitlementService.GetAllowedTradeUnitCodesAsync()` marks `EntitlementsAvailable=false` and returns an empty set on SQL errors, then `EnforceTradeUnitAccessFilter` skips filtering entirely for GET/HEAD and calls the action. Any authenticated user can hit endpoints such as `/api/customers`, `/api/contracts`, `/api/tickets`, and dashboard read APIs during an entitlements outage and receive unfiltered data outside their assigned trade units because the downstream services treat missing trade-unit filters as 'return all rows'.",
+      "resolvedAt": "2026-04-06T10:46:13.2577222+00:00",
+      "line": 42,
+      "retainUntil": "2026-07-05T10:46:13.2577222+00:00"
+    },
+    {
+      "rule": "Authorization - Missing authorization checks on sensitive data access",
+      "file": "api/GrainOriginatorPortal.Api/Controllers/ContractsController.cs",
+      "status": "resolved",
+      "id": "f-3158187c0ec59090",
+      "firstSeen": "2026-03-30T09:58:40.2025183+00:00",
+      "readableId": "H-019",
+      "resolvedInCommit": "e7dd8781bcdfa8370237f3852b648833b1fbd118",
+      "sources": "claude",
+      "suggestion": "Add authorization check before retrieving data: await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);",
+      "severity": "HIGH",
+      "description": "The GetByCustomer endpoint retrieves all contracts for a customer without validating that the authenticated user has access to that customer's data. An attacker can enumerate contracts for any customer ID by calling GET /api/contracts/customer/{customerId}. Other controllers like ProducerDetailsController properly call ValidateCustomerAccessAsync before returning customer-specific data.",
+      "resolvedAt": "2026-04-06T10:46:13.2577222+00:00",
+      "line": 37,
+      "retainUntil": "2026-07-05T10:46:13.2577222+00:00"
+    },
+    {
+      "rule": "Admin/privileged operations have role checks: [Authorize(Roles = \"Admin\")]",
+      "file": "api/GrainOriginatorPortal.Api/Controllers/DiagnosticsController.cs",
+      "status": "resolved",
+      "id": "f-530b0c4dae0826d8",
+      "firstSeen": "2026-03-30T09:58:40.2025183+00:00",
+      "readableId": "M-004",
+      "resolvedInCommit": "e7dd8781bcdfa8370237f3852b648833b1fbd118",
+      "sources": "codex",
+      "suggestion": "Protect diagnostics routes with an explicit admin-only policy/role and consider removing write-capable maintenance endpoints from the HTTP surface entirely outside local development.",
+      "severity": "MEDIUM",
+      "description": "The diagnostics controller exposes privileged schema-inspection and data-mutation endpoints to any authenticated user in QA/Development. `DenyIfNotDevelopment()` only checks the environment, so routes such as `/api/diagnostics/connections`, `/api/diagnostics/tables`, `/api/diagnostics/schema/{tableName}`, and mutation endpoints like `/api/diagnostics/customer-snapshot/populate` are reachable by non-admin users whenever the app runs in QA or Development. Those endpoints disclose database structure and connection error details, and some perform destructive writes such as deleting and rebuilding `dbo.CustomerSnapshot`.",
+      "resolvedAt": "2026-04-06T10:46:13.2577222+00:00",
+      "line": 104,
+      "retainUntil": "2026-05-06T10:46:13.2577222+00:00"
+    },
+    {
+      "rule": "SQL Injection - String concatenation in SQL queries",
+      "file": "api/GrainOriginatorPortal.Api/Services/SqlDataService.cs",
+      "status": "resolved",
+      "id": "f-98e15f27af92884b",
+      "firstSeen": "2026-03-30T09:58:40.2025183+00:00",
+      "readableId": "M-003",
+      "resolvedInCommit": "e7dd8781bcdfa8370237f3852b648833b1fbd118",
+      "sources": "claude",
+      "suggestion": "Replace string concatenation with proper parameterized queries. Create individual SqlParameter objects for each ID and build an IN clause or use a table-valued parameter instead of STRING_SPLIT with a concatenated CSV.",
+      "severity": "MEDIUM",
+      "description": "Second-order SQL injection vulnerability via string concatenation before SQL interpolation. The code creates a CSV string by joining SourceCustomerId values from CustomerSnapshot records (line 666: var ctrmIdsCsv = string.Join(\",\", ctrmIds)), then interpolates this pre-concatenated string into a SQL query (line 668-672). If the upstream ODS database is compromised and contains malicious SourceCustomerId values (e.g., \"'; DROP TABLE--\"), these would be joined into the CSV and executed as SQL. While this requires upstream data compromise, the code pattern itself is vulnerable and should use proper parameterization.",
+      "resolvedAt": "2026-04-06T10:46:13.2577222+00:00",
+      "line": 666,
+      "retainUntil": "2026-05-06T10:46:13.2577222+00:00"
+    },
+    {
+      "rule": "Authorization - Missing authorization checks on sensitive data access",
+      "file": "api/GrainOriginatorPortal.Api/Controllers/ContractsController.cs",
+      "status": "resolved",
+      "id": "f-9031bcb690637cdb",
+      "firstSeen": "2026-03-30T09:58:40.2025183+00:00",
+      "readableId": "H-018",
+      "resolvedInCommit": "e7dd8781bcdfa8370237f3852b648833b1fbd118",
+      "sources": "claude",
+      "suggestion": "Add authorization by first retrieving the customer, validating access, then returning pricing data. Follow the pattern used in GetPricingLines method.",
+      "severity": "HIGH",
+      "description": "The GetPricingLinesByCustomer endpoint retrieves sensitive contract pricing data without authorization checks. Unlike the GetPricingLines endpoint (lines 60-72) which validates trade unit access, this endpoint directly returns pricing lines for any customer by calling GET /api/contracts/pricing-lines/by-customer?sourceCustomerId={id}. Contract pricing is highly sensitive competitive information.",
+      "resolvedAt": "2026-04-06T10:46:13.2577222+00:00",
+      "line": 79,
+      "retainUntil": "2026-07-05T10:46:13.2577222+00:00"
+    },
+    {
+      "rule": "Sensitive data access checks user permissions",
+      "resolvedInCommit": "e9398f8c4281010fa12ecf660875c21584b6d24c",
+      "resolvedAt": "2026-03-30T09:58:40.2025183+00:00",
+      "readableId": "M-002",
+      "line": 33,
+      "retainUntil": "2026-04-29T09:58:40.2025183+00:00",
+      "suggestion": "Use a stable unique identifier such as `preferred_username` or `oid` for persisted ownership fields, and migrate existing saved-list rows to that identifier.",
+      "status": "resolved",
+      "file": "api/GrainOriginatorPortal.Api/Services/SqlDataService.cs",
+      "id": "f-22ad68a4dcf13f62",
+      "severity": "MEDIUM",
+      "sources": "codex",
+      "firstSeen": "2026-03-23T15:56:51.0924436+00:00",
+      "description": "`GetCurrentUser()` prefers the Azure AD `name` claim, which is a display name and not guaranteed to be unique or stable. Saved-list ownership checks use this value for create/read/update/delete decisions, so two users sharing the same display name can collide and access each other's saved lists."
+    },
+    {
+      "rule": "Sensitive data access checks user permissions",
+      "resolvedInCommit": "e9398f8c4281010fa12ecf660875c21584b6d24c",
+      "resolvedAt": "2026-03-30T09:58:40.2025183+00:00",
+      "readableId": "H-013",
+      "line": 122,
+      "retainUntil": "2026-06-28T09:58:40.2025183+00:00",
+      "suggestion": "Load the harvest row first, validate its `TradeUnitKey` against the caller's entitlements, and only then delete it.",
+      "status": "resolved",
+      "file": "api/GrainOriginatorPortal.Api/Controllers/DashboardPlantingEstimatesController.cs",
+      "id": "f-b5959f473fad9d07",
+      "severity": "HIGH",
+      "sources": "codex",
+      "firstSeen": "2026-03-23T15:56:51.0924436+00:00",
+      "description": "`DeleteActualHarvest` deletes rows by integer ID with no trade-unit context. The class-level trade-unit filter cannot authorize this action because the route/body contains no `TradeUnitKey`, and the service removes whichever row matches the ID. Any authenticated user who can guess an ID can delete another trade unit's harvest data."
+    },
+    {
+      "rule": "Sensitive data access checks user permissions",
+      "resolvedInCommit": "e9398f8c4281010fa12ecf660875c21584b6d24c",
+      "resolvedAt": "2026-03-30T09:58:40.2025183+00:00",
+      "readableId": "H-015",
+      "line": 90,
+      "retainUntil": "2026-06-28T09:58:40.2025183+00:00",
+      "suggestion": "When the action argument is an enumerable, iterate each item and validate its `TradeUnitKey`, or move the entitlement check into each dashboard write action/service before persisting data.",
+      "status": "resolved",
+      "file": "api/GrainOriginatorPortal.Api/Filters/EnforceTradeUnitAccessAttribute.cs",
+      "id": "f-829326bbe54d457d",
+      "severity": "HIGH",
+      "sources": "codex",
+      "firstSeen": "2026-03-23T15:56:51.0924436+00:00",
+      "description": "The dashboard controller relies on the class-level `EnforceTradeUnitAccess` filter for POST authorization, but the filter only looks for a `TradeUnitKey` property on the top-level action argument. For `List<UpsertDashboardEstimateRequest>`, `List<UpsertDashboardMarketShareRequest>`, and `List<UpsertDashboardActualHarvestRequest>`, that reflection never reaches the individual items, so arbitrary `TradeUnitKey` values can be written by any authenticated user."
+    },
+    {
+      "rule": "Sensitive data access checks user permissions",
+      "resolvedInCommit": "e9398f8c4281010fa12ecf660875c21584b6d24c",
+      "resolvedAt": "2026-03-30T09:58:40.2025183+00:00",
+      "readableId": "H-010",
+      "line": 1868,
+      "retainUntil": "2026-06-28T09:58:40.2025183+00:00",
+      "suggestion": "Query by both `id` and authorized trade unit, or load the row first and compare its `TradeUnitCode` against the caller's allowed set before applying updates/deletes.",
+      "status": "resolved",
+      "file": "api/GrainOriginatorPortal.Api/Services/SqlDataService.cs",
+      "id": "f-4d992e87ba6b1c3e",
+      "severity": "HIGH",
+      "sources": "codex",
+      "firstSeen": "2026-03-23T15:56:51.0924436+00:00",
+      "description": "Bid sheet update and delete operations load rows by primary key only. Although the controller validates a caller-supplied `tradeUnitCode`, the service never checks that the existing row belongs to that trade unit, so a user with access to one trade unit can modify or delete another trade unit's bid-sheet entry by supplying its `id`."
+    },
+    {
+      "line": 42,
+      "readableId": "C-001",
+      "resolvedInCommit": "a9493c9ba9c28b2e3bd65f1deb723b50006a7fb0",
+      "description": "The central trade-unit authorization filter fails open on GET/HEAD requests when the entitlements database is unavailable. In that state it calls the action without rewriting or rejecting the requested trade units, so callers can omit filters and receive unscoped customer, contract, ticket, and farm data during an entitlement outage.",
+      "retainUntil": "2026-06-21T15:56:51.0924436+00:00",
+      "firstSeen": "2026-03-19T06:10:34.370488+00:00",
+      "file": "api/GrainOriginatorPortal.Api/Filters/EnforceTradeUnitAccessAttribute.cs",
+      "suggestion": "Fail closed when entitlements cannot be loaded, or return 503 for entitlement-dependent reads. Do not continue to the action unless the request has been positively scoped to the caller's allowed trade units.",
+      "sources": "codex",
+      "resolvedAt": "2026-03-23T15:56:51.0924436+00:00",
+      "severity": "CRITICAL",
+      "rule": "Authorization",
+      "status": "resolved",
+      "id": "f-a77faf3b53ec76f1"
+    },
+    {
+      "line": 61,
+      "readableId": "H-008",
+      "resolvedInCommit": "a9493c9ba9c28b2e3bd65f1deb723b50006a7fb0",
+      "description": "The customer detail endpoints return individual customer records by numeric ID or source-system ID without calling ValidateCustomerAccessAsync or enforcing trade-unit scope. Any authenticated user who can guess identifiers can retrieve customer PII such as phone numbers, emails, and addresses outside their entitlement set.",
+      "retainUntil": "2026-06-21T15:56:51.0924436+00:00",
+      "firstSeen": "2026-03-19T06:10:34.370488+00:00",
+      "file": "api/GrainOriginatorPortal.Api/Controllers/CustomersController.cs",
+      "suggestion": "Validate customer access before returning either detail route, or resolve the customer's trade units and reject requests that are outside the caller's allowed set.",
+      "sources": "codex",
+      "resolvedAt": "2026-03-23T15:56:51.0924436+00:00",
+      "severity": "HIGH",
+      "rule": "Authorization",
+      "status": "resolved",
+      "id": "f-a5218475a3e60382"
+    },
+    {
+      "line": 35,
+      "readableId": "H-001",
+      "resolvedInCommit": "a9493c9ba9c28b2e3bd65f1deb723b50006a7fb0",
+      "description": "The ticket detail endpoint returns all tickets for an arbitrary customerId without validating customer access. Because the backing service queries by the customer's source code only, any authenticated user who knows or can enumerate customer IDs can read delivery history outside their assigned trade units.",
+      "retainUntil": "2026-06-21T15:56:51.0924436+00:00",
+      "firstSeen": "2026-03-19T06:10:34.370488+00:00",
+      "file": "api/GrainOriginatorPortal.Api/Controllers/TicketsController.cs",
+      "suggestion": "Require ValidateCustomerAccessAsync before loading customer tickets, and reject requests for customers outside the caller's entitlement set.",
+      "sources": "codex",
+      "resolvedAt": "2026-03-23T15:56:51.0924436+00:00",
+      "severity": "HIGH",
+      "rule": "Authorization",
+      "status": "resolved",
+      "id": "f-0ccdb8dfcc3fb869"
+    },
+    {
+      "line": 30,
+      "readableId": "H-007",
+      "resolvedInCommit": "a9493c9ba9c28b2e3bd65f1deb723b50006a7fb0",
+      "description": "The bid-sheet controller trusts caller-supplied tradeUnitCode values and exposes read, create, update, bulk-create, and delete operations without any entitlement validation. Combined with service methods that update and delete rows purely by entry ID, any authenticated user can read or tamper with competitor bid data for trade units they do not own.",
+      "retainUntil": "2026-06-21T15:56:51.0924436+00:00",
+      "firstSeen": "2026-03-19T06:10:34.370488+00:00",
+      "file": "api/GrainOriginatorPortal.Api/Controllers/BidSheetController.cs",
+      "suggestion": "Add trade-unit authorization to every bid-sheet route, validate request trade units against the entitlement service, and on update/delete re-load the existing row and verify its TradeUnitCode is in the caller's allowed set before applying changes.",
+      "sources": "codex",
+      "resolvedAt": "2026-03-23T15:56:51.0924436+00:00",
+      "severity": "HIGH",
+      "rule": "Authorization",
+      "status": "resolved",
+      "id": "f-5a28dda3dbc686e2"
+    },
+    {
+      "line": 188,
+      "readableId": "M-001",
+      "resolvedInCommit": "a9493c9ba9c28b2e3bd65f1deb723b50006a7fb0",
+      "description": "Multiple diagnostics endpoints that inspect schema or mutate application data are gated only by environment checks. In Development or QA, any authenticated user can repopulate CustomerSnapshot, seed commodities, refresh elevator caches, and trigger background geocoding without an admin role check.",
+      "retainUntil": "2026-04-22T15:56:51.0924436+00:00",
+      "firstSeen": "2026-03-19T06:10:34.370488+00:00",
+      "file": "api/GrainOriginatorPortal.Api/Controllers/DiagnosticsController.cs",
+      "suggestion": "Restrict diagnostics routes to an explicit admin/support role or remove mutating diagnostics from shared environments entirely. Environment checks alone are not sufficient authorization for privileged operations.",
+      "sources": "codex",
+      "resolvedAt": "2026-03-23T15:56:51.0924436+00:00",
+      "severity": "MEDIUM",
+      "rule": "Authorization",
+      "status": "resolved",
+      "id": "f-e69ff7aeb49cfc75"
+    },
+    {
+      "line": 35,
+      "readableId": "H-005",
+      "resolvedInCommit": "a9493c9ba9c28b2e3bd65f1deb723b50006a7fb0",
+      "description": "The contract endpoints /api/contracts/customer/{customerId} and /api/contracts/pricing-lines/by-customer return contract and pricing data without validating that the caller is entitled to the referenced customer. Both paths query ODS directly from caller-supplied customer identifiers, so a user can read another customer's commercial data by guessing IDs.",
+      "retainUntil": "2026-06-21T15:56:51.0924436+00:00",
+      "firstSeen": "2026-03-19T06:10:34.370488+00:00",
+      "file": "api/GrainOriginatorPortal.Api/Controllers/ContractsController.cs",
+      "suggestion": "Call ValidateCustomerAccessAsync before customer-scoped contract reads, and for sourceCustomerId inputs resolve the customer/trade units first and enforce the caller's entitlements before loading pricing lines.",
+      "sources": "codex",
+      "resolvedAt": "2026-03-23T15:56:51.0924436+00:00",
+      "severity": "HIGH",
+      "rule": "Authorization",
+      "status": "resolved",
+      "id": "f-b7c425078cfe9655"
+    },
+    {
+      "line": 1801,
+      "readableId": "H-002",
+      "resolvedInCommit": "a9493c9ba9c28b2e3bd65f1deb723b50006a7fb0",
+      "description": "Dashboard actual-harvest rows are deleted by primary key alone. The controller action accepts only an ID, the class-level trade-unit filter cannot evaluate that request, and the service removes the record without verifying its TradeUnitKey, so a user can delete another trade unit's data by guessing IDs.",
+      "retainUntil": "2026-06-21T15:56:51.0924436+00:00",
+      "firstSeen": "2026-03-19T06:10:34.370488+00:00",
+      "file": "api/GrainOriginatorPortal.Api/Services/SqlDataService.cs",
+      "suggestion": "Load the row first, validate its TradeUnitKey against the caller's entitlements, and only then allow deletion. Consider moving the check into the service so the protection cannot be bypassed by future callers.",
+      "sources": "codex",
+      "resolvedAt": "2026-03-23T15:56:51.0924436+00:00",
+      "severity": "HIGH",
+      "rule": "Authorization",
+      "status": "resolved",
+      "id": "f-0cdff73f78905324"
+    },
+    {
+      "line": 661,
+      "readableId": "H-004",
+      "resolvedInCommit": "a9493c9ba9c28b2e3bd65f1deb723b50006a7fb0",
+      "description": "When contracts are requested with trade-unit filters, the service intentionally loads all active contracts for any customer who has at least one matching contract or ticket, even if other returned contracts belong to different trade units. A caller entitled to one trade unit can therefore receive off-scope contract history for shared customers.",
+      "retainUntil": "2026-06-21T15:56:51.0924436+00:00",
+      "firstSeen": "2026-03-19T06:10:34.370488+00:00",
+      "file": "api/GrainOriginatorPortal.Api/Services/SqlDataService.cs",
+      "suggestion": "Apply entitlement filtering to the returned contracts as well, or explicitly intersect the result set with the caller's allowed trade units before serializing the response.",
+      "sources": "codex",
+      "resolvedAt": "2026-03-23T15:56:51.0924436+00:00",
+      "severity": "HIGH",
+      "rule": "Authorization",
+      "status": "resolved",
+      "id": "f-659ffc1b9ad1656c"
+    },
+    {
+      "line": 103,
+      "readableId": "H-006",
+      "resolvedInCommit": "a9493c9ba9c28b2e3bd65f1deb723b50006a7fb0",
+      "description": "ValidateCustomerAccessAsync explicitly allows access when a customer has no trade-unit mapping in ODS. That makes authorization fail open for application-owned records keyed only by CustomerId, allowing reads or writes for arbitrary, stale, or not-yet-mapped customers in notes, planting intentions, and producer details.",
+      "retainUntil": "2026-06-21T15:56:51.0924436+00:00",
+      "firstSeen": "2026-03-19T06:10:34.370488+00:00",
+      "file": "api/GrainOriginatorPortal.Api/Services/UserEntitlementService.cs",
+      "suggestion": "Treat missing customer-to-trade-unit mappings as access denied unless another authoritative source proves ownership. At minimum, verify the customer exists in a trusted snapshot before permitting any customer-scoped read or write.",
+      "sources": "codex",
+      "resolvedAt": "2026-03-23T15:56:51.0924436+00:00",
+      "severity": "HIGH",
+      "rule": "Authorization",
+      "status": "resolved",
+      "id": "f-dd0517f3eb6afc73"
+    },
+    {
+      "line": 66,
+      "readableId": "H-003",
+      "resolvedInCommit": "a9493c9ba9c28b2e3bd65f1deb723b50006a7fb0",
+      "description": "If the entitlements lookup throws, the controller falls back to returning every trade unit in CustomerSnapshot. Any authenticated user in that failure mode can enumerate all trade units and drive the UI with organization-wide scope instead of their assigned scope.",
+      "retainUntil": "2026-06-21T15:56:51.0924436+00:00",
+      "firstSeen": "2026-03-19T06:10:34.370488+00:00",
+      "file": "api/GrainOriginatorPortal.Api/Controllers/UserTradeUnitsController.cs",
+      "suggestion": "Return an error or an empty result when entitlements are unavailable. Never substitute global trade-unit data for a user-specific entitlement response.",
+      "sources": "codex",
+      "resolvedAt": "2026-03-23T15:56:51.0924436+00:00",
+      "severity": "HIGH",
+      "rule": "Authorization",
+      "status": "resolved",
+      "id": "f-823c3d7758fcd657"
+    }
+  ],
+  "sbom": {
+    "dependencies": [
+      {
+        "ecosystem": "nuget",
+        "version": "10.3.0",
+        "source": "api/GrainOriginatorPortal.Api/GrainOriginatorPortal.Api.csproj",
+        "package": "Microsoft.Extensions.Http.Resilience"
+      },
+      {
+        "ecosystem": "nuget",
+        "version": "10.0.1",
+        "source": "api/GrainOriginatorPortal.Api/GrainOriginatorPortal.Api.csproj",
+        "package": "Microsoft.EntityFrameworkCore.Design"
+      },
+      {
+        "ecosystem": "nuget",
+        "version": "10.0.0",
+        "source": "api/GrainOriginatorPortal.Api.Tests/GrainOriginatorPortal.Api.Tests.csproj",
+        "package": "Microsoft.EntityFrameworkCore.InMemory"
+      },
+      {
+        "ecosystem": "nuget",
+        "version": "17.14.1",
+        "source": "api/GrainOriginatorPortal.Api.Tests/GrainOriginatorPortal.Api.Tests.csproj",
+        "package": "Microsoft.NET.Test.Sdk"
+      },
+      {
+        "ecosystem": "nuget",
+        "version": "1.5.0",
+        "source": "api/GrainOriginatorPortal.Api/GrainOriginatorPortal.Api.csproj",
+        "package": "Azure.Extensions.AspNetCore.Configuration.Secrets"
+      },
+      {
+        "ecosystem": "nuget",
+        "version": "3.8.4",
+        "source": "api/GrainOriginatorPortal.Api/GrainOriginatorPortal.Api.csproj",
+        "package": "Microsoft.Identity.Web"
+      },
+      {
+        "ecosystem": "nuget",
+        "version": "4.20.72",
+        "source": "api/GrainOriginatorPortal.Api.Tests/GrainOriginatorPortal.Api.Tests.csproj",
+        "package": "Moq"
+      },
+      {
+        "ecosystem": "nuget",
+        "version": "2.9.3",
+        "source": "api/GrainOriginatorPortal.Api.Tests/GrainOriginatorPortal.Api.Tests.csproj",
+        "package": "xunit"
+      },
+      {
+        "ecosystem": "nuget",
+        "version": "6.0.4",
+        "source": "api/GrainOriginatorPortal.Api.Tests/GrainOriginatorPortal.Api.Tests.csproj",
+        "package": "coverlet.collector"
+      },
+      {
+        "ecosystem": "nuget",
+        "version": "3.1.4",
+        "source": "api/GrainOriginatorPortal.Api.Tests/GrainOriginatorPortal.Api.Tests.csproj",
+        "package": "xunit.runner.visualstudio"
+      },
+      {
+        "ecosystem": "nuget",
+        "version": "6.1.4",
+        "source": "api/GrainOriginatorPortal.Api/GrainOriginatorPortal.Api.csproj",
+        "package": "Microsoft.Data.SqlClient"
+      },
+      {
+        "ecosystem": "nuget",
+        "version": "10.0.1",
+        "source": "api/GrainOriginatorPortal.Api/GrainOriginatorPortal.Api.csproj",
+        "package": "Microsoft.EntityFrameworkCore.SqlServer"
+      },
+      {
+        "ecosystem": "nuget",
+        "version": "1.18.0",
+        "source": "api/GrainOriginatorPortal.Api/GrainOriginatorPortal.Api.csproj",
+        "package": "Azure.Identity"
+      },
+      {
+        "ecosystem": "nuget",
+        "version": "10.0.1",
+        "source": "api/GrainOriginatorPortal.Api/GrainOriginatorPortal.Api.csproj",
+        "package": "Microsoft.AspNetCore.OpenApi"
+      },
+      {
+        "ecosystem": "nuget",
+        "version": "10.0.3",
+        "source": "api/GrainOriginatorPortal.Api/GrainOriginatorPortal.Api.csproj",
+        "package": "Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "8.5.8",
+        "source": "client/package.json",
+        "package": "postcss"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "21.2.5",
+        "source": "client/package.json",
+        "package": "@angular/platform-browser-dynamic"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "7.8.2",
+        "source": "client/package.json",
+        "package": "rxjs"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "1.9.4",
+        "source": "client/package.json",
+        "package": "leaflet"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "1.5.3",
+        "source": "client/package.json",
+        "package": "leaflet.markercluster"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "21.2.5",
+        "source": "client/package.json",
+        "package": "@angular/animations"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "4.0.18",
+        "source": "client/package.json",
+        "package": "@vitest/ui"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "4.0.18",
+        "source": "client/package.json",
+        "package": "@vitest/coverage-v8"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "21.2.5",
+        "source": "client/package.json",
+        "package": "@angular/common"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "1.5.6",
+        "source": "client/package.json",
+        "package": "@types/leaflet.markercluster"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "21.2.1",
+        "source": "client/package.json",
+        "package": "@angular/cli"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "5.9.3",
+        "source": "client/package.json",
+        "package": "typescript"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "1.9.21",
+        "source": "client/package.json",
+        "package": "@types/leaflet"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "2.8.1",
+        "source": "client/package.json",
+        "package": "tslib"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "21.2.5",
+        "source": "client/package.json",
+        "package": "@angular/cdk"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "0.15.1",
+        "source": "client/package.json",
+        "package": "zone.js"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "4.2.1",
+        "source": "client/package.json",
+        "package": "@tailwindcss/postcss"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "0.1.1",
+        "source": "client/package.json",
+        "package": "@it/design-system"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "21.2.5",
+        "source": "client/package.json",
+        "package": "@angular/forms"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "21.2.5",
+        "source": "client/package.json",
+        "package": "@angular/compiler-cli"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "21.2.5",
+        "source": "client/package.json",
+        "package": "@angular/platform-browser"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "4.0.18",
+        "source": "client/package.json",
+        "package": "vitest"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "21.2.5",
+        "source": "client/package.json",
+        "package": "@angular/router"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "5.4.0",
+        "source": "client/package.json",
+        "package": "@azure/msal-browser"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "21.2.1",
+        "source": "client/package.json",
+        "package": "@angular/build"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "20.8.3",
+        "source": "client/package.json",
+        "package": "happy-dom"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "4.2.1",
+        "source": "client/package.json",
+        "package": "tailwindcss"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "21.2.5",
+        "source": "client/package.json",
+        "package": "@angular/core"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "21.2.5",
+        "source": "client/package.json",
+        "package": "@angular/compiler"
+      },
+      {
+        "ecosystem": "npm",
+        "version": "5.1.1",
+        "source": "client/package.json",
+        "package": "@azure/msal-angular"
+      }
+    ],
+    "vulnerabilities": [
+      {
+        "package": "picomatch",
+        "version": "4.0.3",
+        "cve": "GHSA-c2c7-rcm5-vvqj",
+        "severity": "HIGH",
+        "cvss": 7.5,
+        "description": "Extglob quantifiers can trigger ReDoS in Picomatch.",
+        "fixVersion": "4.0.4",
+        "source": "npm-audit",
+        "manifestPath": "client/package.json"
+      },
+      {
+        "package": "brace-expansion",
+        "version": "5.0.4",
+        "cve": "CVE-2026-33750",
+        "severity": "MEDIUM",
+        "cvss": 6.5,
+        "description": "Zero-step brace expansion can hang the process and consume large amounts of memory.",
+        "fixVersion": "5.0.5",
+        "source": "npm-audit",
+        "ghsa": "GHSA-f886-m6hf-6m8v",
+        "cvssVector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:H",
+        "cwes": [
+          "CWE-400"
+        ],
+        "epss": {
+          "percentile": 0.18486,
+          "percentage": 0.00058
+        },
+        "scope": "development",
+        "relationship": "transitive",
+        "manifestPath": "client/package-lock.json",
+        "dependabotState": "open"
+      },
+      {
+        "package": "undici",
+        "version": "7.22.0",
+        "cve": "GHSA-vrm6-8vpv-qv8q",
+        "severity": "HIGH",
+        "cvss": 7.5,
+        "description": "WebSocket permessage-deflate handling can consume unbounded memory.",
+        "fixVersion": "7.24.0",
+        "source": "npm-audit",
+        "manifestPath": "client/package.json"
+      },
+      {
+        "package": "happy-dom",
+        "version": "<=20.8.8",
+        "cve": "GHSA-6q6h-j7hj-3r64",
+        "severity": "HIGH",
+        "cvss": 8.8,
+        "description": "Happy DOM ECMAScriptModuleCompiler: unsanitized export names are interpolated as executable code, allowing remote code execution when processing untrusted module exports",
+        "fixVersion": "20.8.9",
+        "source": "npm-audit",
+        "ghsa": "GHSA-6q6h-j7hj-3r64",
+        "cvssVector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H",
+        "cwes": [
+          "CWE-94"
+        ],
+        "epss": {
+          "percentile": 0.24109,
+          "percentage": 0.00082
+        },
+        "scope": "development",
+        "relationship": "direct",
+        "manifestPath": "client/package-lock.json",
+        "dependabotState": "open"
+      },
+      {
+        "package": "undici",
+        "version": "7.0.0-7.23.0",
+        "cve": "GHSA-2mjp-6q6p-2qxm",
+        "severity": "MEDIUM",
+        "cvss": 6.5,
+        "description": "HTTP Request/Response Smuggling vulnerability allowing attackers to manipulate HTTP request boundaries and bypass security controls",
+        "fixVersion": "7.24.0",
+        "source": "npm-audit",
+        "manifestPath": "client/package.json"
+      },
+      {
+        "package": "undici",
+        "version": "7.22.0",
+        "cve": "GHSA-f269-vfmq-vjvj",
+        "severity": "HIGH",
+        "cvss": 7.5,
+        "description": "A malicious WebSocket frame length can overflow the parser and crash the client.",
+        "fixVersion": "7.24.0",
+        "source": "npm-audit",
+        "manifestPath": "client/package.json"
+      },
+      {
+        "package": "undici",
+        "version": "7.0.0-7.23.0",
+        "cve": "GHSA-4992-7rv2-5pvq",
+        "severity": "MEDIUM",
+        "cvss": 4.6,
+        "description": "CRLF Injection in undici via upgrade option allowing HTTP header injection and potential request smuggling",
+        "fixVersion": "7.24.0",
+        "source": "npm-audit",
+        "manifestPath": "client/package.json"
+      },
+      {
+        "package": "undici",
+        "version": "7.22.0",
+        "cve": "GHSA-phc3-fgpg-7m6h",
+        "severity": "MEDIUM",
+        "cvss": 5.9,
+        "description": "`DeduplicationHandler` response buffering can lead to unbounded memory consumption.",
+        "fixVersion": "7.24.0",
+        "source": "npm-audit",
+        "manifestPath": "client/package.json"
+      },
+      {
+        "package": "path-to-regexp",
+        "version": "8.3.0",
+        "cve": "CVE-2026-4926",
+        "severity": "HIGH",
+        "cvss": 7.5,
+        "description": "Sequential optional groups can generate exponentially expensive regular expressions and cause denial of service.",
+        "fixVersion": "8.4.0",
+        "source": "npm-audit",
+        "ghsa": "GHSA-j3q9-mxjg-w52f",
+        "cvssVector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+        "cwes": [
+          "CWE-400",
+          "CWE-1333"
+        ],
+        "epss": {
+          "percentile": 0.16531,
+          "percentage": 0.00052
+        },
+        "scope": "development",
+        "relationship": "transitive",
+        "manifestPath": "client/package-lock.json",
+        "dependabotState": "open"
+      },
+      {
+        "package": "picomatch",
+        "version": "4.0.3",
+        "cve": "GHSA-3v7f-55p6-f55p",
+        "severity": "MEDIUM",
+        "cvss": 5.3,
+        "description": "Method injection in POSIX character class handling can cause incorrect glob matching.",
+        "fixVersion": "4.0.4",
+        "source": "npm-audit",
+        "manifestPath": "client/package.json"
+      },
+      {
+        "package": "happy-dom",
+        "version": "20.8.3",
+        "cve": "CVE-2026-33943",
+        "severity": "HIGH",
+        "cvss": 8.8,
+        "description": "Unsanitized `export { ... }` handling in `ECMAScriptModuleCompiler` can turn attacker-controlled module content into executable code.",
+        "fixVersion": "20.8.8",
+        "source": "npm-audit",
+        "manifestPath": "client/package.json"
+      },
+      {
+        "package": "happy-dom",
+        "version": "20.8.3",
+        "cve": "CVE-2026-34226",
+        "severity": "HIGH",
+        "cvss": 7.5,
+        "description": "`fetch(..., { credentials: \"include\" })` may send cookies from the page origin instead of the request target origin, leaking cross-origin cookies.",
+        "fixVersion": "20.8.9",
+        "source": "npm-audit",
+        "ghsa": "GHSA-w4gp-fjgq-3q4g",
+        "cvssVector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+        "cwes": [
+          "CWE-201"
+        ],
+        "epss": {
+          "percentile": 0.10293,
+          "percentage": 0.00035
+        },
+        "scope": "development",
+        "relationship": "direct",
+        "manifestPath": "client/package-lock.json",
+        "dependabotState": "open"
+      },
+      {
+        "package": "path-to-regexp",
+        "version": "8.3.0",
+        "cve": "CVE-2026-4923",
+        "severity": "MEDIUM",
+        "cvss": 5.9,
+        "description": "Certain multiple-wildcard patterns can generate regexes vulnerable to ReDoS.",
+        "fixVersion": "8.4.0",
+        "source": "npm-audit",
+        "ghsa": "GHSA-27v5-c462-wpq7",
+        "cvssVector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H",
+        "cwes": [
+          "CWE-1333"
+        ],
+        "epss": {
+          "percentile": 0.16517,
+          "percentage": 0.00052
+        },
+        "scope": "development",
+        "relationship": "transitive",
+        "manifestPath": "client/package-lock.json",
+        "dependabotState": "open"
+      },
+      {
+        "package": "undici",
+        "version": "7.22.0",
+        "cve": "GHSA-v9p9-hfj2-hcw8",
+        "severity": "HIGH",
+        "cvss": 7.5,
+        "description": "Invalid `server_max_window_bits` validation can trigger an unhandled exception in the WebSocket client.",
+        "fixVersion": "7.24.0",
+        "source": "npm-audit",
+        "manifestPath": "client/package.json"
+      }
+    ]
+  },
+  "codexCostUsd": 6.8795,
+  "lastCheckedAt": "2026-04-06T10:46:13.2577222+00:00",
+  "scanDuration": 300.2,
+  "claudeCostUsd": 0.8633,
+  "generatedAt": "2026-04-06T10:46:13.2577222+00:00",
+  "schemaVersion": 1,
+  "repoName": "origination",
+  "positiveObservations": [
+    {
+      "description": "Proper Azure AD authentication with JWT bearer tokens on all endpoints",
+      "evidence": "Program.cs lines 84-136: Microsoft.Identity.Web properly configured with token validation, audience validation, and authentication failure logging"
+    },
+    {
+      "description": "Secrets stored in Azure Key Vault with Managed Identity authentication",
+      "evidence": "Program.cs lines 34-55: Key Vault integrated via ManagedIdentityCredential, no hardcoded secrets in appsettings.json (connection strings use 'Authentication=Active Directory Default')"
+    },
+    {
+      "description": "Comprehensive security headers prevent common web attacks",
+      "evidence": "SecurityHeadersMiddleware.cs: X-Content-Type-Options, X-Frame-Options, Strict-Transport-Security, Content-Security-Policy, and Referrer-Policy properly configured"
+    },
+    {
+      "description": "Parameterized queries prevent SQL injection throughout the application",
+      "evidence": "SqlDataService.cs extensively uses Entity Framework LINQ queries and FromSqlRaw with SqlParameter objects (lines 101, 186, 1927). No string concatenation in SQL detected."
+    },
+    {
+      "description": "Global exception handler prevents stack trace disclosure to clients",
+      "evidence": "GlobalExceptionHandler.cs lines 107-118: Generic error messages returned for all exceptions, with sensitive details only exposed in non-production via Debug field"
+    },
+    {
+      "description": "Rate limiting protects against resource exhaustion attacks",
+      "evidence": "Program.cs lines 331-342: Fixed-window rate limiter with 1000 requests per minute per user/IP"
+    },
+    {
+      "description": "HTTPS enforced with HSTS and certificate-based encryption for all connections",
+      "evidence": "Program.cs line 437: UseHttpsRedirection(), SecurityHeadersMiddleware.cs line 35: HSTS with 1-year max-age and includeSubDomains, appsettings files: SQL connections use 'Encrypt=true'"
+    },
+    {
+      "description": "CORS properly restricted to specific allowed origins per environment",
+      "evidence": "Program.cs lines 272-282: CORS policy configured from AllowedOrigins setting, not AllowAnyOrigin()"
+    },
+    {
+      "description": "Angular frontend free of XSS vulnerabilities",
+      "evidence": "No use of innerHTML binding, bypassSecurityTrust methods, eval(), or unsafe DOM manipulation detected in client TypeScript files"
+    },
+    {
+      "description": "Secure token storage using sessionStorage instead of localStorage",
+      "evidence": "client/src/main.ts line 48: MSAL configured with BrowserCacheLocation.SessionStorage, providing tab isolation and automatic cleanup"
+    },
+    {
+      "description": "Request correlation IDs enable security audit trails",
+      "evidence": "CorrelationIdMiddleware.cs: X-Correlation-Id header generated/propagated on all requests, included in all log entries and error responses"
+    },
+    {
+      "description": "Security audit logging tracks authentication failures and authorization denials",
+      "evidence": "SecurityAuditMiddleware.cs + JWT bearer events (Program.cs lines 99-113): 401/403 responses logged with trace IDs, user context, and failure reasons"
+    }
+  ],
+  "assessment": "This repository demonstrates strong security fundamentals with Azure AD authentication, Key Vault secrets management, comprehensive security headers, and protection against SQL injection and XSS. However, FOUR HIGH-SEVERITY IDOR (Insecure Direct Object Reference) vulnerabilities allow authenticated users to access customer data, contracts, and tickets outside their assigned trade unit entitlements. These authorization bypass issues affect ContractsController.GetByCustomer, TicketsController.GetByCustomer, CustomersController.GetBySourceId, and ContractsController.GetByFarm endpoints. The codebase already has the correct authorization patterns implemented in other endpoints (e.g., ProducerDetailsController, NotesController) using UserEntitlementService - these patterns need to be consistently applied to the vulnerable endpoints. Additionally, one medium-severity information disclosure issue exposes debugging headers in non-production environments. The npm dependencies contain several HIGH severity vulnerabilities in happy-dom and undici that should be patched. Overall risk assessment: HIGH due to the IDOR vulnerabilities enabling unauthorized data access.",
+  "summary": {
+    "resolved": 22,
+    "open": 10,
+    "suppressed": 0
+  },
+  "scanCostUsd": 7.7428,
+  "commitSha": "e7dd8781bcdfa8370237f3852b648833b1fbd118"
+}

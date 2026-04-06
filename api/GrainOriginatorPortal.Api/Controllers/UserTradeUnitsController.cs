@@ -65,12 +65,6 @@ public class UserTradeUnitsController : ControllerBase
         {
             _logger.LogWarning(ex, "Entitlements DB unavailable for user {UserId} — falling back to all trade units from CustomerSnapshot", userId);
 
-            // In non-production, surface the real error in a response header visible in DevTools Network tab
-            if (!_env.IsProduction())
-            {
-                Response.Headers["X-Entitlements-Fallback"] = "true";
-            }
-
             return Ok(await GetFallbackTradeUnitsAsync());
         }
     }
