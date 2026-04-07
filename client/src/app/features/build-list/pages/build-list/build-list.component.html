@@ -77,9 +77,9 @@
                 type="button"
                 (click)="clearQuery()"
                 title="Clear query"
-                class="absolute top-2 right-2 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                class="absolute top-2 right-2 flex items-center justify-center w-7 h-7 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
                 </svg>
               </button>
@@ -175,8 +175,8 @@
           <app-card-header>
             <div class="flex items-center justify-between">
               <div>
-                <app-card-title>Results</app-card-title>
-                <app-card-description>
+                <app-card-title>Results @if (activeSavedList()) { <span class="font-normal text-gray-400 dark:text-gray-500">for {{ activeSavedList()!.name }}</span> }</app-card-title>
+                <app-card-description class="mt-1.5">
                   @if (refinementCount > 0) {
                     Showing {{ displayed.length }} of {{ filtered.length }} customer(s)
                     @if (detectedState()) {
@@ -211,6 +211,18 @@
                     Refine Filters
                     @if (refinementCount > 0) {
                       <span class="ml-1.5 inline-flex items-center justify-center w-4 h-4 text-xs font-bold rounded-full bg-gray-600 dark:bg-gray-400 text-white dark:text-gray-900">{{ refinementCount }}</span>
+                    }
+                  </app-button>
+                  <app-button [variant]="showManageMembersPanel() ? 'default' : 'outline'" (onClick)="showManageMembersPanel.update(v => !v)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2">
+                      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                      <circle cx="9" cy="7" r="4"/>
+                      <line x1="19" x2="19" y1="8" y2="14"/>
+                      <line x1="22" x2="16" y1="11" y2="11"/>
+                    </svg>
+                    Manage Members
+                    @if (memberOverrideCount() > 0) {
+                      <span class="ml-1.5 inline-flex items-center justify-center w-4 h-4 text-xs font-bold rounded-full bg-gray-600 dark:bg-gray-400 text-white dark:text-gray-900">{{ memberOverrideCount() }}</span>
                     }
                   </app-button>
                   <app-button variant="outline" (onClick)="openSaveDialog()" [disabled]="isProcessing()">
@@ -326,6 +338,107 @@
               </div>
             }
 
+            <!-- Manage Members Panel -->
+            @if (showManageMembersPanel()) {
+              <div class="mb-6 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-5 space-y-4">
+                <div class="flex items-center justify-between">
+                  <h4 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Manage Members</h4>
+                  @if (memberOverrideCount() > 0) {
+                    <span class="text-xs text-gray-400 dark:text-gray-500">{{ memberOverrideCount() }} override{{ memberOverrideCount() === 1 ? '' : 's' }}</span>
+                  }
+                </div>
+
+                <!-- Customer Search -->
+                <div class="relative">
+                  <input
+                    type="text"
+                    [ngModel]="memberSearchTerm()"
+                    (ngModelChange)="memberSearchTerm.set($event); searchMembers($event)"
+                    placeholder="Search to add or exclude customers..."
+                    class="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-scoular-green"
+                  >
+                  @if (memberSearchLoading()) {
+                    <div class="absolute right-3 top-2.5">
+                      <div class="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-scoular-green"></div>
+                    </div>
+                  }
+                </div>
+
+                <!-- Unified Search Results -->
+                @if (memberSearchTerm().trim().length >= 2 && (memberInResultsMatches().length > 0 || memberSearchResults().length > 0)) {
+                  <div class="max-h-60 overflow-auto rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700">
+                    <!-- In Results — click to exclude -->
+                    @if (memberInResultsMatches().length > 0) {
+                      <div class="px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-600">
+                        <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">In Your Results</span>
+                      </div>
+                      @for (customer of memberInResultsMatches(); track customer.id) {
+                        <div class="flex items-center justify-between px-3 py-2 hover:bg-scoular-red/5 dark:hover:bg-scoular-red/10 cursor-pointer border-b border-gray-100 dark:border-gray-600" (click)="excludeCustomerFromList(customer.id)">
+                          <div class="min-w-0">
+                            <span class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ customer.name }}</span>
+                            <span class="text-xs text-gray-400 ml-1">({{ customer.sourceCustomerId }})</span>
+                          </div>
+                          <span class="text-xs text-scoular-red font-medium flex-shrink-0 ml-2">Exclude</span>
+                        </div>
+                      }
+                    }
+                    <!-- Other Customers — click to add -->
+                    @if (memberSearchResults().length > 0) {
+                      <div class="px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-600">
+                        <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">Other Customers</span>
+                      </div>
+                      @for (customer of memberSearchResults(); track customer.id) {
+                        <div class="flex items-center justify-between px-3 py-2 hover:bg-scoular-green/5 dark:hover:bg-scoular-green/10 cursor-pointer border-b border-gray-100 dark:border-gray-600 last:border-b-0" (click)="addCustomerToList(customer)">
+                          <div class="min-w-0">
+                            <span class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ customer.name }}</span>
+                            <span class="text-xs text-gray-400 ml-1">({{ customer.sourceCustomerId }})</span>
+                          </div>
+                          <span class="text-xs text-scoular-green-accessible font-medium flex-shrink-0 ml-2">+ Add</span>
+                        </div>
+                      }
+                    }
+                    @if (memberSearchLoading()) {
+                      <div class="px-3 py-2 text-xs text-gray-400 text-center">Searching...</div>
+                    }
+                  </div>
+                }
+
+                <!-- Manually Added Customers -->
+                @if (manuallyIncludedCustomers().length > 0) {
+                  <div class="space-y-2 pt-1 border-t border-gray-200 dark:border-gray-700">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 pt-2">Added ({{ manuallyIncludedCustomers().length }})</p>
+                    @for (customer of manuallyIncludedCustomers(); track customer.id) {
+                      <div class="flex items-center justify-between px-3 py-2 rounded bg-scoular-green/5 dark:bg-scoular-green/10">
+                        <div class="min-w-0">
+                          <span class="text-sm text-gray-900 dark:text-white truncate">{{ customer.name }}</span>
+                          <span class="text-xs text-gray-400 ml-1">({{ customer.sourceCustomerId }})</span>
+                        </div>
+                        <button type="button" (click)="excludeCustomerFromList(customer.id)" class="flex items-center justify-center w-7 h-7 rounded-full text-gray-400 hover:text-white hover:bg-scoular-red transition-colors flex-shrink-0 ml-2" title="Remove">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                        </button>
+                      </div>
+                    }
+                  </div>
+                }
+
+                <!-- Excluded Customers -->
+                @if (excludedCustomersList().length > 0) {
+                  <div class="space-y-2 pt-1 border-t border-gray-200 dark:border-gray-700">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 pt-2">Excluded ({{ excludedCustomersList().length }})</p>
+                    @for (customer of excludedCustomersList(); track customer.id) {
+                      <div class="flex items-center justify-between px-2 py-1.5 rounded bg-scoular-red/5 dark:bg-scoular-red/10">
+                        <div class="min-w-0">
+                          <span class="text-sm text-gray-500 dark:text-gray-400 line-through truncate">{{ customer.name }}</span>
+                          <span class="text-xs text-gray-400 ml-1">({{ customer.sourceCustomerId }})</span>
+                        </div>
+                        <button type="button" (click)="restoreCustomer(customer.id)" class="text-xs text-scoular-green-accessible hover:underline flex-shrink-0 ml-2" title="Restore">Restore</button>
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+            }
+
             @if (filtered.length === 0) {
               <div class="text-center py-8">
                 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 text-gray-300 dark:text-gray-600">
@@ -385,15 +498,27 @@
                         </div>
                       </div>
                     </div>
-                    <div class="text-right">
-                      <span [class]="contactInfo.colorClass + ' text-sm'">
-                        {{ contactInfo.text }}
-                      </span>
-                      <div class="flex gap-1 mt-2 justify-end">
-                        @for (crop of customerCrops; track crop) {
-                          <app-badge variant="outline" class="text-xs">{{ crop }}</app-badge>
-                        }
+                    <div class="flex items-start gap-2">
+                      <div class="text-right">
+                        <span [class]="contactInfo.colorClass + ' text-sm'">
+                          {{ contactInfo.text }}
+                        </span>
+                        <div class="flex gap-1 mt-2 justify-end">
+                          @for (crop of customerCrops; track crop) {
+                            <app-badge variant="outline" class="text-xs">{{ crop }}</app-badge>
+                          }
+                        </div>
                       </div>
+                      @if (showManageMembersPanel()) {
+                        <button
+                          type="button"
+                          (click)="$event.stopPropagation(); excludeCustomerFromList(customer.id)"
+                          class="flex items-center justify-center w-8 h-8 rounded-full text-gray-300 hover:text-white hover:bg-scoular-red dark:text-gray-600 dark:hover:text-white transition-colors flex-shrink-0 self-center"
+                          title="Exclude from list"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                        </button>
+                      }
                     </div>
                   </div>
                 }

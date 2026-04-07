@@ -35,6 +35,14 @@ export class NlqFilterService {
       || q.includes('grain on hand') || q.includes('in storage');
   }
 
+  /** Returns true if the query involves contact-related patterns that require notes data. */
+  queryInvolvesContact(query: string): boolean {
+    const q = query.toLowerCase();
+    return q.includes('contacted') || q.includes('called') || q.includes('reached')
+      || q.includes('follow up') || q.includes('follow-up') || q.includes('touchpoint')
+      || q.includes('never contacted') || q.includes('not contacted');
+  }
+
   /** Returns true if the query involves planting-related patterns that require planting intentions data. */
   queryInvolvesPlanting(query: string): boolean {
     const q = query.toLowerCase();
@@ -294,6 +302,19 @@ export class NlqFilterService {
     return this.stateNames[state.toLowerCase()] || state.charAt(0).toUpperCase() + state.slice(1);
   }
 
+  /** Applies manual customer overrides: (baseIds + included) - excluded. */
+  applyCustomerOverrides(baseIds: number[], included?: number[], excluded?: number[]): number[] {
+    const excludedSet = new Set(excluded || []);
+    let ids = excludedSet.size > 0 ? baseIds.filter(id => !excludedSet.has(id)) : [...baseIds];
+    if (included?.length) {
+      const existingSet = new Set(ids);
+      for (const id of included) {
+        if (!existingSet.has(id) && !excludedSet.has(id)) ids.push(id);
+      }
+    }
+    return ids;
+  }
+
   /** Applies structured refinement filters on top of an already-NLQ-filtered customer list. */
   applyRefinementFilters(
     customers: Customer[],
@@ -385,9 +406,14 @@ export class NlqFilterService {
     return abbrevs[state.toLowerCase()] || '';
   }
 
-  /** Returns true if the query is a note content search, so other filters (commodity, city) don't misinterpret search terms. */
+  /** Returns true if the query is a note-focused search (content or author), so other filters (commodity, city) don't misinterpret search terms. */
   private _isNoteSearchQuery(lowerQuery: string): boolean {
-    return /note(?:s)?\s*(?:about|mentioning|containing|with|saying|that\s+(?:say|mention|include|contain))|search\s+notes?\s+for|note\s*search|whose\s+notes?/.test(lowerQuery);
+    return /note(?:s)?\s*(?:about|mentioning|containing|with|saying|that\s+(?:say|mention|include|contain))|search\s+notes?\s+for|note\s*search|whose\s+notes?/.test(lowerQuery) ||
+      /note(?:s)?\s+(?:entered|created|added|written|made|left|from|by)\s+/i.test(lowerQuery) ||
+      /(?:everyone|customers?)\s+\w+\s+(?:has|have)\s+(?:entered|noted|contacted)/i.test(lowerQuery) ||
+      /who\s+(?:has|have)\s+\w+\s+(?:noted|contacted)/i.test(lowerQuery) ||
+      /(?:contacted|noted|called)\s+by\s+/i.test(lowerQuery) ||
+      /\w+[''\u2019]s\s+notes?/.test(lowerQuery);
   }
 
   // ============================================================
@@ -421,6 +447,10 @@ export class NlqFilterService {
     q = q.replace(/\b(?:most\s+active|best)\s+(?:customers?|producers?|growers?|farmers?)\b/g, 'top 10 by contract value');
     // -- Storage synonyms --
     q = q.replace(/\b(?:has\s+grain\s+in\s+storage|storing\s+grain|grain\s+on\s+hand)\b/g, 'in storage');
+    // -- Contact time synonyms --
+    q = q.replace(/\blist\s+of\s+contacted\b/g, 'contacted');
+    q = q.replace(/\bwho\s+(?:did\s+)?(?:i|we)\s+(?:contact|call|reach)\s+today\b/g, 'contacted today');
+    q = q.replace(/\bwho\s+(?:did\s+)?(?:i|we)\s+(?:contact|call|reach)\s+yesterday\b/g, 'contacted yesterday');
     return q;
   }
 
@@ -453,6 +483,8 @@ export class NlqFilterService {
         lowerQuery.includes('not contacted') || lowerQuery.includes('never contacted')) matched.push('not_contacted');
     if (lowerQuery.includes('contacted in') || lowerQuery.includes('contacted within') ||
         lowerQuery.includes('contacted last') || lowerQuery.includes('contacted this') ||
+        lowerQuery.includes('contacted today') || lowerQuery.includes('contacted yesterday') ||
+        lowerQuery.includes('called today') || lowerQuery.includes('called yesterday') ||
         lowerQuery.includes('recently contacted')) matched.push('recently_contacted');
 
     // --- Storage ---
@@ -497,7 +529,11 @@ export class NlqFilterService {
     if (lowerQuery.includes('unconfirmed') || (lowerQuery.includes('not confirmed') && lowerQuery.includes('contract'))) matched.push('contract_unconfirmed');
     if (lowerQuery.includes('confirmed contract') || lowerQuery.includes('customer confirmed')) matched.push('contract_confirmed');
     if (lowerQuery.includes('unpriced') || lowerQuery.includes('not priced') ||
-        lowerQuery.includes('not fully priced')) matched.push('contract_priced');
+        lowerQuery.includes('not fully priced') || lowerQuery.includes('needs pricing') ||
+        lowerQuery.includes('need to price') || lowerQuery.includes('open price') ||
+        lowerQuery.includes('deferred') || lowerQuery.includes('without a price') ||
+        lowerQuery.includes('no price') || lowerQuery.includes('fully priced') ||
+        lowerQuery.includes('all priced') || lowerQuery.includes('priced contract')) matched.push('contract_priced');
     if (/contract\s*(?:s)?\s*(?:more than|over|above|exceeding|at least)\s*[\d,]+\s*(?:bushels?|bu)/i.test(lowerQuery) ||
         /(?:more than|over|above)\s*[\d,]+\s*(?:bushels?|bu)\s*(?:under\s+)?contract/i.test(lowerQuery)) matched.push('contract_quantity');
     if (/contract\s*(?:value|worth)\s*(?:over|above|more than|exceeding)\s*\$?[\d,]+/i.test(lowerQuery)) matched.push('contract_value');
@@ -644,6 +680,16 @@ export class NlqFilterService {
         /whose\s+notes?\s+(?:say|mention|include|contain|reference)\s+/i.test(lowerQuery)) {
       matched.push('note_contains');
     }
+    // Note author/modifier search
+    if (/note(?:s)?\s+(?:entered|created|added|written|made|left|from|by)\s+/i.test(lowerQuery) ||
+        /(?:everyone|customers?|producers?|growers?|farmers?)\s+\w+\s+(?:has|have)\s+(?:entered|noted|contacted|called)/i.test(lowerQuery) ||
+        /who\s+(?:has|have)\s+\w+\s+(?:noted|contacted|called)/i.test(lowerQuery) ||
+        /(?:show|find|list|get)\s+(?:me\s+)?(?:everyone|all|customers?)\s+\w+\s+(?:has|have)\s+(?:entered|created|noted)/i.test(lowerQuery) ||
+        /\w+[''\u2019]s\s+(?:notes?|contacts?)/.test(lowerQuery) ||
+        /(?:contacted|noted|called)\s+by\s+/i.test(lowerQuery) ||
+        /note(?:s)?\s+(?:modified|updated|edited)\s+by\s+/i.test(lowerQuery)) {
+      matched.push('note_author');
+    }
 
     // --- Ranking ---
     if (/top\s*\d+/.test(lowerQuery)) matched.push('top_n');
@@ -729,16 +775,54 @@ export class NlqFilterService {
     const lowerQuery = this.normalizeSynonyms(query.toLowerCase());
     let result = [...context.customers];
 
-    // Pre-index: latest note per customer — O(notes) build, then O(1) lookup per customer.
-    // Shared by applyContactFilters and avoids the O(customers × notes) inner loops.
+    // Pre-index: latest note per customer — matches home page logic.
+    // Indexes notes by customerCode (source ID), resolves linked producer notes
+    // bidirectionally (outgoing + incoming links).
     const latestNoteByCustomer = new Map<number, { note: Note; time: number }>();
     const customerIdsWithNotes = new Set<number>();
+
+    // Index notes by customerCode (source customer ID string)
+    const noteTimeByCode = new Map<string, { note: Note; time: number }>();
     for (const n of context.notes) {
-      customerIdsWithNotes.add(n.customerId);
+      if (!n.customerCode) continue;
       const time = new Date(n.createdAt).getTime();
-      const existing = latestNoteByCustomer.get(n.customerId);
+      const existing = noteTimeByCode.get(n.customerCode);
       if (!existing || time > existing.time) {
-        latestNoteByCustomer.set(n.customerId, { note: n, time });
+        noteTimeByCode.set(n.customerCode, { note: n, time });
+      }
+    }
+
+    // Build bidirectional linked-producer map
+    const linkedById = new Map<number, string[]>();
+    for (const c of context.customers) {
+      if (c.linkedProducerIds?.length) linkedById.set(c.id, c.linkedProducerIds);
+    }
+    const incomingCodeLinks = new Map<string, Set<string>>();
+    for (const c of context.customers) {
+      if (!c.sourceCustomerId) continue;
+      for (const linkedCode of (c.linkedProducerIds || [])) {
+        if (!incomingCodeLinks.has(linkedCode)) incomingCodeLinks.set(linkedCode, new Set());
+        incomingCodeLinks.get(linkedCode)!.add(c.sourceCustomerId);
+      }
+    }
+
+    // Resolve latest note per customer including bidirectional linked producers
+    for (const customer of context.customers) {
+      const freshLinked = linkedById.get(customer.id) ?? customer.linkedProducerIds ?? [];
+      const allCodes = new Set<string>();
+      if (customer.sourceCustomerId) allCodes.add(customer.sourceCustomerId);
+      for (const linkedCode of freshLinked) allCodes.add(linkedCode);
+      for (const incomingCode of (incomingCodeLinks.get(customer.sourceCustomerId || '') || new Set<string>())) {
+        allCodes.add(incomingCode);
+      }
+      let latestEntry: { note: Note; time: number } | null = null;
+      for (const code of allCodes) {
+        const entry = noteTimeByCode.get(code);
+        if (entry && (!latestEntry || entry.time > latestEntry.time)) latestEntry = entry;
+      }
+      if (latestEntry) {
+        latestNoteByCustomer.set(customer.id, latestEntry);
+        customerIdsWithNotes.add(customer.id);
       }
     }
 
@@ -760,19 +844,15 @@ export class NlqFilterService {
     result = this.applyRankingFilters(lowerQuery, result, context.contracts, context.tickets, context.plantingIntentions, context.storedGrain, context.notes);
 
     // ── Supplementary note search ──────────────────────────────────────
-    // Notes are a first-class data source. When the query didn't trigger any
-    // specific structured filters (storage, contracts, tickets, planting, etc.),
-    // search note content for meaningful query keywords and merge in matches.
-    // This ensures user-entered note content (e.g., "75000 bu beans in his bins")
-    // is discoverable via freeform queries.
+    // Notes are a first-class data source. Always search note content for
+    // meaningful query keywords and merge in matches alongside structured filters.
+    // E.g., "Customers with milo" finds customers with milo contracts AND customers
+    // whose notes mention milo — merged together.
     //
     // SKIP when:
     // - Explicit note search ("notes mentioning X") — already handled by applyNoteFilters
     // - Ranking queries ("top 10") — note merging would dilute ranked results
-    // - Structured filters already narrowed results — the query has a specific intent
-    //   (e.g., "grain stored for over 60 days") and note matches would add false positives
-    const structuredFiltersNarrowed = result.length < context.customers.length;
-    if (!this._isNoteSearchQuery(lowerQuery) && !/^top\s*\d+/.test(lowerQuery) && !structuredFiltersNarrowed) {
+    if (!this._isNoteSearchQuery(lowerQuery) && !/^top\s*\d+/.test(lowerQuery)) {
       const noteMatchedIds = this._findCustomersByNoteKeywords(lowerQuery, context.notes, context.customers);
       if (noteMatchedIds.size > 0) {
         const existingIds = new Set(result.map(c => c.id));
@@ -1299,6 +1379,15 @@ export class NlqFilterService {
       filterByCutoff(14);
     }
 
+    if (lowerQuery.includes('contacted today') || lowerQuery.includes('called today') ||
+        lowerQuery.includes('list of contacted today') || lowerQuery.includes('reached today')) {
+      filterByCutoff(1);
+    }
+
+    if (lowerQuery.includes('contacted yesterday') || lowerQuery.includes('called yesterday')) {
+      filterByCutoff(2);
+    }
+
     if (lowerQuery.includes('contacted last week') || lowerQuery.includes('contacted this week')) {
       filterByCutoff(7);
     }
@@ -1321,6 +1410,53 @@ export class NlqFilterService {
         notes.filter(n => n.isPinned).map(n => n.customerId)
       );
       result = result.filter(c => customersWithPinned.has(c.id));
+    }
+
+    // ── Note author/modifier search ──────────────────────────────────
+    // Matches: "notes by Caden", "everyone Caden has noted", "customers Caden contacted",
+    //   "notes entered by John", "notes created by Smith", "who has Caden noted",
+    //   "show me everyone Caden has entered a note for", "notes modified by Jane"
+    let noteAuthor: string | null = null;
+
+    const authorPatterns = [
+      // "notes by <name>", "notes entered/created/placed by <name>",
+      // "customers with notes created by <name>"
+      /note(?:s)?\s+(?:entered|created|added|written|made|left|placed|from|by)\s+(?:by\s+)?(.+?)(?:\s+(?:for|about|in|from|and)\s|$)/,
+      // "everyone/customers <name> has noted/contacted/entered/placed a note"
+      /(?:everyone|customers?|producers?|growers?|farmers?)\s+(\w+(?:\s+\w+)?)\s+(?:has|have)\s+(?:entered|placed|created|added|written|left|made)\s+(?:a\s+)?note/,
+      /(?:everyone|customers?|producers?|growers?|farmers?)\s+(\w+(?:\s+\w+)?)\s+(?:has|have)\s+(?:noted|contacted|called|reached)/,
+      // "who has <name> noted/contacted/entered"
+      /who\s+(?:has|have)\s+(\w+(?:\s+\w+)?)\s+(?:noted|contacted|called|reached|entered|placed)/,
+      // "show me everyone <name> has entered/placed a note for"
+      /(?:show|find|list|get)\s+(?:me\s+)?(?:everyone|all|customers?)\s+(\w+(?:\s+\w+)?)\s+(?:has|have)\s+(?:entered|created|added|written|left|made|placed)/,
+      // "<name>'s notes", "<name>'s customers"
+      /(\w+(?:\s+\w+)?)[''\u2019]s\s+(?:notes?|customers?|contacts?)/,
+      // "notes modified/updated/edited by <name>"
+      /note(?:s)?\s+(?:modified|updated|edited)\s+by\s+(.+?)(?:\s+(?:for|about|in|from|and)\s|$)/,
+      // "contacted/noted/placed by <name>"
+      /(?:contacted|noted|called|reached|placed|entered|written)\s+by\s+(.+?)(?:\s+(?:for|about|in|from|and)\s|$)/,
+    ];
+
+    for (const pattern of authorPatterns) {
+      const match = lowerQuery.match(pattern);
+      if (match) {
+        noteAuthor = match[1].trim();
+        break;
+      }
+    }
+
+    if (noteAuthor) {
+      // Search by createdBy or modifiedBy — match against name/email substrings
+      const authorLower = noteAuthor.toLowerCase();
+      const customersWithAuthorNotes = new Set<number>();
+      for (const n of notes) {
+        const createdByMatch = n.createdBy?.toLowerCase().includes(authorLower);
+        const modifiedByMatch = n.modifiedBy?.toLowerCase().includes(authorLower);
+        if (createdByMatch || modifiedByMatch) {
+          customersWithAuthorNotes.add(n.customerId);
+        }
+      }
+      result = result.filter(c => customersWithAuthorNotes.has(c.id));
     }
 
     // Note content search — multiple trigger patterns:
@@ -1722,9 +1858,29 @@ export class NlqFilterService {
     }
 
     // --- Unpriced contracts ---
-    if (lowerQuery.includes('unpriced') || lowerQuery.includes('not priced') || lowerQuery.includes('not fully priced')) {
+    // Unpriced / not priced / needs pricing / open price / deferred pricing
+    if (lowerQuery.includes('unpriced') || lowerQuery.includes('not priced') ||
+        lowerQuery.includes('not fully priced') || lowerQuery.includes('needs pricing') ||
+        lowerQuery.includes('need to price') || lowerQuery.includes('open price') ||
+        lowerQuery.includes('unprice') || lowerQuery.includes('deferred') ||
+        lowerQuery.includes('without a price') || lowerQuery.includes('no price')) {
       result = result.filter(c =>
-        getCustomerContracts(c).some(ct => !ct.pricedQuantity || ct.pricedQuantity < ct.quantity)
+        getCustomerContracts(c).some(ct =>
+          ct.priceTypeCode === 'U' || ct.priceTypeCode === 'D' ||
+          (!ct.pricedQuantity || ct.pricedQuantity < (ct.quantity || 0))
+        )
+      );
+    }
+
+    // Fully priced / priced contracts
+    if ((lowerQuery.includes('fully priced') || lowerQuery.includes('all priced') ||
+         lowerQuery.includes('priced contract')) &&
+        !lowerQuery.includes('not ') && !lowerQuery.includes('un')) {
+      result = result.filter(c =>
+        getCustomerContracts(c).some(ct =>
+          ct.priceTypeCode === 'P' ||
+          (ct.pricedQuantity && ct.pricedQuantity >= (ct.quantity || 0))
+        )
       );
     }
 

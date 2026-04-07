@@ -132,7 +132,7 @@ export class TableRowComponent {
   host: { style: 'display: contents' },
   template: `
     <th
-      class="h-12 px-4 text-left align-middle font-medium text-gray-700 dark:text-gray-400 whitespace-nowrap"
+      [class]="getHeadClasses()"
       [class.cursor-pointer]="sortable()"
       [class.select-none]="sortable()"
       [class.hover:bg-gray-50]="sortable()"
@@ -146,6 +146,11 @@ export class TableRowComponent {
 export class TableHeadComponent {
   public sortable = input<boolean>(false);
   public minWidth = input<string | undefined>(undefined);
+  public thClass = input<string>('');
+
+  getHeadClasses(): string {
+    return `h-12 px-4 text-left align-middle font-medium text-gray-700 dark:text-gray-400 whitespace-nowrap ${this.thClass()}`.trim();
+  }
 }
 
 @Component({
@@ -155,7 +160,7 @@ export class TableHeadComponent {
   host: { style: 'display: contents' },
   template: `
     <td
-      class="p-4 align-middle text-gray-900 dark:text-gray-100 whitespace-nowrap"
+      [class]="getCellClasses()"
       [attr.colspan]="colspan()"
       [style.min-width]="minWidth()"
     >
@@ -166,4 +171,9 @@ export class TableHeadComponent {
 export class TableCellComponent {
   public colspan = input<number | undefined>(undefined);
   public minWidth = input<string | undefined>(undefined);
+  public tdClass = input<string>('');
+
+  getCellClasses(): string {
+    return `p-4 align-middle text-gray-900 dark:text-gray-100 whitespace-nowrap ${this.tdClass()}`.trim();
+  }
 }

@@ -448,7 +448,8 @@ export class HomeComponent {
       tickets: this.tickets(),
       notes: this.notes(),
       plantingIntentions: this.plantingIntentions(),
-      storedGrain: this.storedGrain()
+      storedGrain: this.storedGrain(),
+      commodities: this.appState.commodities()
     };
     this.savedLists.set(this.savedLists().map(list => {
       if (list.customerIds?.length) return list; // Already resolved
@@ -456,7 +457,10 @@ export class HomeComponent {
       const refined = list.filters
         ? this.nlqFilterService.applyRefinementFilters(nlqCustomers, list.filters, this.contracts(), this.notes())
         : nlqCustomers;
-      return { ...list, customerIds: refined.map(c => c.id) };
+      const ids = this.nlqFilterService.applyCustomerOverrides(
+        refined.map(c => c.id), list.includedCustomerIds, list.excludedCustomerIds
+      );
+      return { ...list, customerIds: ids };
     }));
   }
 

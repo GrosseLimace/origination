@@ -12,8 +12,19 @@
         }
 
         @if (!addLocationMode()) {
-          <!-- Floating filter bar (top-left) -->
-          <div class="absolute top-2.5 left-14 z-[1000] flex items-center gap-2 flex-wrap bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm p-2 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+          <!-- Floating filter bar (top-left, constrained to not overlap panel) -->
+          <div class="absolute top-2.5 left-14 z-[1000] flex items-center gap-2 flex-wrap bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm p-2 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 transition-all duration-300"
+               [style.max-width]="showPanel() ? 'calc(100% - 510px)' : 'calc(100% - 80px)'">
+            <button (click)="showFilters.set(!showFilters())" class="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors" [title]="showFilters() ? 'Collapse filters' : 'Expand filters'">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                @if (showFilters()) {
+                  <polyline points="18 15 12 9 6 15"/>
+                } @else {
+                  <polyline points="6 9 12 15 18 9"/>
+                }
+              </svg>
+            </button>
+            @if (showFilters()) {
             <app-trade-unit-selector />
             @if (activeTradeUnits().length > 0) {
             <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
@@ -27,7 +38,7 @@
                 <option [value]="crop">{{ crop }}</option>
               }
             </select>
-            <select [ngModel]="selectedYear()" (ngModelChange)="selectedYear.set(+$event); onFilterChange()" class="px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
+            <select [ngModel]="selectedYear()" (ngModelChange)="onYearDropdownChange(+$event)" class="px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
               @for (year of cropYears(); track year) {
                 <option [value]="year">{{ year }}</option>
               }
@@ -52,6 +63,7 @@
             />
             @if (activeTradeUnits().length > 0 || searchQuery()) {
             <button (click)="clearAllFilters()" class="px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:text-scoular-red hover:bg-gray-100 dark:text-gray-400 dark:hover:text-scoular-red dark:hover:bg-gray-700 transition-colors">Clear</button>
+            }
             }
           </div>
 
@@ -93,10 +105,20 @@
           </div>
 
           <!-- Map legend (bottom-right, shifts left when panel is open) -->
-          <div class="absolute bottom-4 z-[1000] bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 px-4 py-3 transition-all duration-300"
+          <div class="absolute bottom-4 z-[1000] bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 transition-all duration-300"
                [style.right]="showPanel() ? '452px' : '16px'">
-            <div class="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2.5">Key</div>
-            <div class="flex flex-col gap-2">
+            <div class="flex items-center gap-2 px-3 py-2 cursor-pointer" (click)="showLegend.set(!showLegend())">
+              <span class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Key</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400">
+                @if (showLegend()) {
+                  <polyline points="6 9 12 15 18 9"/>
+                } @else {
+                  <polyline points="18 15 12 9 6 15"/>
+                }
+              </svg>
+            </div>
+            @if (showLegend()) {
+            <div class="flex flex-col gap-2 px-4 pb-3">
               <div class="flex items-center gap-2">
                 <div class="w-4 h-4 rounded shrink-0" style="background:#2563eb; border:1.5px solid #1d4ed8;"></div>
                 <span class="text-sm text-gray-700 dark:text-gray-300">Reference</span>
@@ -114,6 +136,7 @@
                 <span class="text-sm text-gray-700 dark:text-gray-300">Changed</span>
               </div>
             </div>
+            }
           </div>
 
           <!-- Slide-in bids panel (right edge) -->
@@ -244,6 +267,15 @@
               <div class="flex flex-col items-center justify-center py-12 px-6 text-center">
                 <p class="text-sm text-gray-400 dark:text-gray-500">No bids recorded for this location.</p>
               </div>
+              @if (deleteMode()) {
+              <div class="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
+                <button (click)="showDeleteLocationConfirm.set(true)"
+                  class="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-scoular-red-accessible dark:text-scoular-red rounded-lg border border-scoular-red/30 dark:border-scoular-red/40 hover:bg-scoular-red/10 dark:hover:bg-scoular-red/20 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                  Delete Location
+                </button>
+              </div>
+              }
               }
             </div>
 
@@ -307,6 +339,14 @@
                     <p class="text-xs font-semibold text-amber-800 dark:text-amber-200">No reference set{{ selectedCrop() ? ' for ' + selectedCrop() : '' }}</p>
                     <p class="text-xs text-amber-700 dark:text-scoular-yellow mt-0.5 leading-relaxed">Click an elevator row to set it as your reference location.</p>
                   </div>
+                </div>
+              }
+              @if (hasIndividualTu() && !selectedCrop()) {
+                <div class="flex items-start gap-3 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-700">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 mt-0.5 text-amber-500 dark:text-scoular-yellow">
+                    <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+                  </svg>
+                  <p class="text-xs text-amber-700 dark:text-scoular-yellow leading-relaxed">Select a crop from the dropdown to show bid values.</p>
                 </div>
               }
 

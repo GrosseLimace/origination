@@ -4,6 +4,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { forkJoin, of, catchError, timeout } from 'rxjs';
+import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService, BuildListState } from '@core/services/app-state.service';
 import { DataPreloadService } from '@core/services/data-preload.service';
@@ -50,6 +51,7 @@ export class BuildListComponent {
   private readonly dataPreloadService = inject(DataPreloadService);
   private readonly toastService = inject(ToastService);
   private readonly nlqFilterService = inject(NlqFilterService);
+  private readonly msalService = inject(MsalService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -59,6 +61,7 @@ export class BuildListComponent {
   private _ticketsReady = signal(false);
   private _loadRequestId = 0;
   private _queryGenId = 0;
+  private _pendingIncludedIds: number[] = [];
   // True once the forkJoin (or cache restore) has populated all core data signals.
   // Guards processQuery() and example chips from running against partial/empty data.
   readonly coreDataLoaded = signal(false);
@@ -158,13 +161,34 @@ export class BuildListComponent {
       });
     }
     if (r.crops && r.crops.length > 0) {
-      list = list.filter(c => (c.commodities ?? []).some(crop => r.crops!.includes(crop.trim())));
+      // Expand selected crops with aliases (e.g., "Milo" also matches "Sorghum")
+      const aliasMap: Record<string, string[]> = {
+        'milo': ['milo', 'sorghum'], 'sorghum': ['milo', 'sorghum'],
+        'beans': ['beans', 'soybeans', 'soy'], 'soybeans': ['soybeans', 'beans', 'soy'], 'soy': ['soy', 'soybeans', 'beans'],
+      };
+      const expandedCrops = new Set<string>();
+      for (const crop of r.crops) {
+        const lower = crop.trim().toLowerCase();
+        for (const alias of (aliasMap[lower] ?? [lower])) expandedCrops.add(alias);
+      }
+      list = list.filter(c => (c.commodities ?? []).some(crop => expandedCrops.has(crop.trim().toLowerCase())));
     }
     if (r.states && r.states.length > 0) {
       list = list.filter(c => {
         const state = c.extendedStateProvince || c.stateProvince;
         return !!state && r.states!.includes(state);
       });
+    }
+    // Apply manual member overrides: exclude removed, add included
+    const excludedIds = this.manuallyExcludedCustomerIds();
+    if (excludedIds.size > 0) {
+      list = list.filter(c => !excludedIds.has(c.id));
+    }
+    const includedCustomers = this.manuallyIncludedCustomers();
+    if (includedCustomers.length > 0) {
+      const existingIds = new Set(list.map(c => c.id));
+      const toAdd = includedCustomers.filter(c => !existingIds.has(c.id) && !excludedIds.has(c.id));
+      if (toAdd.length > 0) list = [...list, ...toAdd];
     }
     return list;
   });
@@ -210,6 +234,26 @@ export class BuildListComponent {
   appliedRefinements = signal<RefinementFilters>({});
   notContactedDaysInput = signal('');
   matchedPatterns = signal<string[]>([]);
+
+  // ── Manage Members ──────────────────────────────────────────────────────
+  showManageMembersPanel = signal(false);
+  manuallyIncludedCustomers = signal<Customer[]>([]);
+  manuallyExcludedCustomerIds = signal<Set<number>>(new Set());
+  memberSearchTerm = signal('');
+  memberSearchResults = signal<Customer[]>([]);
+  memberSearchLoading = signal(false);
+  private _memberSearchTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  readonly memberOverrideCount = computed(() =>
+    this.manuallyIncludedCustomers().length + this.manuallyExcludedCustomerIds().size
+  );
+
+  /** Excluded customers as an array for template iteration. */
+  readonly excludedCustomersList = computed(() => {
+    const ids = [...this.manuallyExcludedCustomerIds()];
+    const customerMap = new Map(this.customers().map(c => [c.id, c]));
+    return ids.map(id => customerMap.get(id)).filter((c): c is Customer => !!c);
+  });
 
   // ── Pattern display name map for user-facing feedback ────────────────────
   private readonly _patternDisplayNames: { [key: string]: string } = {
@@ -258,18 +302,56 @@ export class BuildListComponent {
     return map;
   });
 
-  /** Most recent note per customer — pre-indexed for O(1) template lookup. */
+  /** Most recent note per customer — pre-indexed for O(1) template lookup.
+   *  Matches home page logic: indexes notes by customerCode (source ID), resolves
+   *  linked producer notes bidirectionally (outgoing + incoming links). */
   readonly lastContactByCustomer = computed(() => {
     const map = new Map<number, { text: string; colorClass: string; daysAgo: number }>();
-    // Pre-index: find most recent note per customer, parsing Date once per note
-    const latestNotes = new Map<number, { time: number }>();
+
+    // Index notes by customerCode (source customer ID) — same as home page
+    const notesByCode = new Map<string, { time: number }>();
     for (const n of this.notes()) {
+      if (!n.customerCode) continue;
       const time = new Date(n.createdAt).getTime();
-      const existing = latestNotes.get(n.customerId);
+      const existing = notesByCode.get(n.customerCode);
       if (!existing || time > existing.time) {
-        latestNotes.set(n.customerId, { time });
+        notesByCode.set(n.customerCode, { time });
       }
     }
+
+    // Build bidirectional linked-producer map (outgoing + incoming)
+    const allCustomers = this.customers();
+    const linkedById = new Map<number, string[]>();
+    for (const c of allCustomers) {
+      if (c.linkedProducerIds?.length) linkedById.set(c.id, c.linkedProducerIds);
+    }
+    const incomingCodeLinks = new Map<string, Set<string>>();
+    for (const c of allCustomers) {
+      if (!c.sourceCustomerId) continue;
+      for (const linkedCode of (c.linkedProducerIds || [])) {
+        if (!incomingCodeLinks.has(linkedCode)) incomingCodeLinks.set(linkedCode, new Set());
+        incomingCodeLinks.get(linkedCode)!.add(c.sourceCustomerId);
+      }
+    }
+
+    // Resolve latest note time per customer including linked producers
+    const latestNotes = new Map<number, { time: number }>();
+    for (const customer of allCustomers) {
+      const freshLinked = linkedById.get(customer.id) ?? customer.linkedProducerIds ?? [];
+      const allCodes = new Set<string>();
+      if (customer.sourceCustomerId) allCodes.add(customer.sourceCustomerId);
+      for (const linkedCode of freshLinked) allCodes.add(linkedCode);
+      for (const incomingCode of (incomingCodeLinks.get(customer.sourceCustomerId || '') || new Set<string>())) {
+        allCodes.add(incomingCode);
+      }
+      let latestTime = 0;
+      for (const code of allCodes) {
+        const entry = notesByCode.get(code);
+        if (entry && entry.time > latestTime) latestTime = entry.time;
+      }
+      if (latestTime > 0) latestNotes.set(customer.id, { time: latestTime });
+    }
+
     const now = Date.now();
     for (const [customerId, { time }] of latestNotes) {
       const daysAgo = Math.max(0, Math.floor((now - time) / 86400000));
@@ -401,7 +483,10 @@ export class BuildListComponent {
           tradeUnits: this._initTradeUnits,
           appliedRefinements: this.appliedRefinements(),
           notContactedDaysInput: this.notContactedDaysInput(),
-          showRefinePanel: this.showRefinePanel()
+          showRefinePanel: this.showRefinePanel(),
+          manuallyIncludedCustomerIds: this.manuallyIncludedCustomers().map(c => c.id),
+          manuallyExcludedCustomerIds: [...this.manuallyExcludedCustomerIds()],
+          showManageMembersPanel: this.showManageMembersPanel()
         });
       }
     });
@@ -450,11 +535,7 @@ export class BuildListComponent {
 
       this.loading.set(false);
       this.coreDataLoaded.set(true);
-
-      // Auto-run staged query if present and no results yet
-      if (this.queryText().trim() && !this.hasGenerated()) {
-        this.processQuery();
-      }
+      this._resolvePendingIncludes();
 
       // Background refresh: the home page preload may not have finished loading all
       // data (tickets, stored grain load as secondary/background). Fetch fresh data
@@ -532,13 +613,9 @@ export class BuildListComponent {
         this.loading.set(false);
         this.coreDataLoaded.set(true);
 
-        // Auto-run query if not already showing results and not already processing.
-        // If hasGenerated is true, results are cached from a previous run — don't overwrite.
-        // If isProcessing is true, the user already triggered a query (e.g., clicked an
-        // example chip) and that query is waiting for tickets — don't compete with it.
-        if (this.queryText().trim() && !this.hasGenerated() && !this.isProcessing()) {
-          this.processQuery();
-        }
+        // Don't auto-run queries on background refresh completion.
+        // Restored queries show their cached results (if hasGenerated was saved).
+        // New queries require the user to click Generate or select an example.
       },
       error: () => {
         if (requestId !== this._loadRequestId) return;
@@ -615,6 +692,14 @@ export class BuildListComponent {
     }
     if (saved.notContactedDaysInput) this.notContactedDaysInput.set(saved.notContactedDaysInput);
     if (saved.showRefinePanel) this.showRefinePanel.set(saved.showRefinePanel);
+    if (saved.manuallyExcludedCustomerIds?.length) {
+      this.manuallyExcludedCustomerIds.set(new Set(saved.manuallyExcludedCustomerIds));
+    }
+    if (saved.manuallyIncludedCustomerIds?.length) {
+      // Store as pending — resolved to full Customer objects after data loads in _initLoad
+      this._pendingIncludedIds = saved.manuallyIncludedCustomerIds;
+    }
+    if (saved.showManageMembersPanel) this.showManageMembersPanel.set(true);
     // Note: filteredCustomers are restored by _initLoad after data signals are set
   }
 
@@ -642,6 +727,11 @@ export class BuildListComponent {
     this.pendingRefinements.set({});
     this.appliedRefinements.set({});
     this.notContactedDaysInput.set('');
+    this.showManageMembersPanel.set(false);
+    this.manuallyIncludedCustomers.set([]);
+    this.manuallyExcludedCustomerIds.set(new Set());
+    this.memberSearchTerm.set('');
+    this.memberSearchResults.set([]);
     this.activeSavedList.set(null);
     this.appState.clearBuildListState();
   }
@@ -669,14 +759,39 @@ export class BuildListComponent {
   }
 
   useExampleQuery(example: string): void {
-    this.detectedState.set(null);
-    this.hasGenerated.set(false);
-    this.filteredCustomers.set([]);
+    // Reset non-visual state from any previous query or saved list.
+    // Keep hasGenerated and filteredCustomers intact so the old results stay visible
+    // until the new NLQ filter runs — prevents a flash of empty state between queries.
+    this._queryGenId++;
+    this.isProcessing.set(false);
+    this.waitingForTickets.set(false);
     this.queryUnrecognized.set(false);
     this.queryReturnedNoMatches.set(false);
+    this.showRefinePanel.set(false);
+    this.pendingRefinements.set({});
+    this.appliedRefinements.set({});
+    this.notContactedDaysInput.set('');
+    this.showManageMembersPanel.set(false);
+    this.manuallyIncludedCustomers.set([]);
+    this.manuallyExcludedCustomerIds.set(new Set());
+    this.memberSearchTerm.set('');
+    this.memberSearchResults.set([]);
+    this.memberInResultsMatches.set([]);
+    this.activeSavedList.set(null);
+
     this.queryText.set(example);
     if (this.coreDataLoaded() && !this.loading()) {
-      this.processQuery();
+      // If query needs data that isn't ready, go through processQuery()
+      // which handles the wait path. Otherwise run synchronously to avoid flash.
+      const needsTickets = this.nlqFilterService.queryInvolvesTickets(example);
+      const needsStorage = this.nlqFilterService.queryInvolvesStorage(example);
+      const needsNotes = this.nlqFilterService.queryInvolvesContact(example);
+      if ((needsTickets && !this._ticketsReady()) || (needsStorage && this.storedGrain().length === 0) || (needsNotes && this.notes().length === 0)) {
+        this.processQuery();
+      } else {
+        this._applyNlqFilter();
+        this.isProcessing.set(false);
+      }
     }
     // If loading: text is staged; _loadFresh auto-runs processQuery() on completion
   }
@@ -734,8 +849,28 @@ export class BuildListComponent {
 
   /** Fetches fresh data for specific trade units and runs the NLQ filter. */
   private _fetchAndFilter(tradeUnits: string[]): void {
+    const queryGen = this._queryGenId; // Capture to detect if a newer query supersedes this one
+
+    // Fast path: if requested TUs match what's already loaded AND all data the query
+    // needs is ready, skip the fetch and run NLQ directly against in-memory data.
+    const currentTus = this.appState.selectedTradeUnits();
+    const tusMatch = tradeUnits.length === currentTus.length
+      && tradeUnits.every(tu => currentTus.includes(tu));
+    const query = this.queryText().toLowerCase();
+    const needsTickets = this.nlqFilterService.queryInvolvesTickets(query);
+    const needsStorage = this.nlqFilterService.queryInvolvesStorage(query);
+    const needsNotes = this.nlqFilterService.queryInvolvesContact(query);
+    const ticketsOk = !needsTickets || this._ticketsReady();
+    const storageOk = !needsStorage || this.storedGrain().length > 0;
+    const notesOk = !needsNotes || this.notes().length > 0;
+    if (tusMatch && this.coreDataLoaded() && this.customers().length > 0 && ticketsOk && storageOk && notesOk) {
+      this._resolvePendingIncludes();
+      this._applyNlqFilter();
+      this.isProcessing.set(false);
+      return;
+    }
+
     const tuParam = tradeUnits.length > 0 ? tradeUnits : undefined;
-    // TU filter for customers and operational data. Notes global for accurate "last contacted".
     forkJoin({
       customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
       contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => of([] as Contract[]))),
@@ -746,6 +881,7 @@ export class BuildListComponent {
       producerDetails: (this.appState.producerDetails().length > 0 ? of(this.appState.producerDetails()) : this.apiService.getAllProducerDetails()).pipe(catchError(() => of([] as ProducerDetails[])))
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
+        if (queryGen !== this._queryGenId) return; // Superseded by a newer query
         this.customers.set(data.customers);
         this._mergeProducerDetails(data.producerDetails);
         this.contracts.set(data.contracts);
@@ -755,15 +891,74 @@ export class BuildListComponent {
         this.storedGrain.set(data.storedGrain);
         this._ticketsReady.set(true);
         this.coreDataLoaded.set(true);
+        this._resolvePendingIncludes();
 
         this._applyNlqFilter();
         this.isProcessing.set(false);
       },
       error: () => {
+        if (queryGen !== this._queryGenId) return;
         this.toastService.error('Failed to load data for query');
         this.isProcessing.set(false);
       }
     });
+  }
+
+  /**
+   * Resolves first-person references ("me", "my", "I") in a query to the current user's
+   * display name or username so note author searches work with self-referencing queries
+   * like "notes by me", "customers I have contacted", "my notes".
+   */
+  /** Resolves pending included customer IDs to full Customer objects from the now-loaded data. */
+  private _resolvePendingIncludes(): void {
+    if (this._pendingIncludedIds.length === 0) return;
+    const customerMap = new Map(this.customers().map(c => [c.id, c]));
+    this.manuallyIncludedCustomers.set(
+      this._pendingIncludedIds.map(id => customerMap.get(id)).filter((c): c is Customer => !!c)
+    );
+    this._pendingIncludedIds = [];
+    // Auto-open panel now that included customers are resolved
+    if (this.manuallyIncludedCustomers().length > 0) {
+      this.showManageMembersPanel.set(true);
+    }
+  }
+
+  private _resolveUserReferences(query: string): string {
+    const account = this.msalService.instance.getActiveAccount()
+      ?? this.msalService.instance.getAllAccounts()[0];
+    if (!account) return query;
+
+    // Use first name from display name (e.g., "Caden Egr" → "Caden"),
+    // or fall back to the username prefix (e.g., "caden.egr@scoular.com" → "caden.egr")
+    const displayName = account.name ?? '';
+    const firstName = displayName.split(' ')[0] || '';
+    const username = (account.username ?? '').split('@')[0] || '';
+    const replacement = firstName || username;
+    if (!replacement) return query;
+
+    // Replace self-references with the user's name. More specific patterns FIRST
+    // so "I have left" matches before the generic "I have" replacement.
+    return query
+      .replace(/\bby me\b/gi, `by ${replacement}`)
+      .replace(/\bmy notes?\b/gi, `${replacement}'s notes`)
+      .replace(/\bmy customers?\b/gi, `${replacement}'s customers`)
+      // Full phrase replacements — "Notes I have left" → "notes entered by Caden"
+      .replace(/\bnotes?\s+I\s+(?:have\s+)?(?:wrote|left|made|placed|entered|created|added)\b/gi, `notes entered by ${replacement}`)
+      .replace(/\bI\s+(?:have\s+)?(?:wrote|left|made|placed|entered|created|added)\b/gi, `entered by ${replacement}`)
+      // Contact phrases — "Customers I contacted" → "customers contacted by Caden"
+      .replace(/\bwho\s+have\s+I\s+(?:contacted|called|reached|noted)\b/gi, `who has ${replacement} contacted`)
+      .replace(/\bI\s+(?:have\s+)?(?:contacted|called|reached|noted)\b/gi, `contacted by ${replacement}`)
+      // Generic "I have" / "I've" — only matches if not already caught above
+      .replace(/\bI have\b/gi, `${replacement} has`)
+      .replace(/\bI've\b/gi, `${replacement} has`)
+      .replace(/\bwho\s+have\s+I\s+(?:entered|placed|written|left|made)\s+(?:a\s+)?notes?\s+for\b/gi, `customers ${replacement} has entered a note for`)
+      .replace(/\bnoted by me\b/gi, `noted by ${replacement}`)
+      .replace(/\bcontacted by me\b/gi, `contacted by ${replacement}`)
+      .replace(/\bplaced by me\b/gi, `entered by ${replacement}`)
+      .replace(/\bentered by me\b/gi, `entered by ${replacement}`)
+      .replace(/\bwritten by me\b/gi, `entered by ${replacement}`)
+      .replace(/\bmade by me\b/gi, `entered by ${replacement}`)
+      .replace(/\bleft by me\b/gi, `entered by ${replacement}`);
   }
 
   /** Runs the NLQ filter against the current in-memory data and updates filteredCustomers. */
@@ -777,7 +972,8 @@ export class BuildListComponent {
       storedGrain: this.storedGrain(),
       commodities: this.appState.commodities()
     };
-    const result = this.nlqFilterService.parseAndFilter(this.queryText(), context);
+    const resolvedQuery = this._resolveUserReferences(this.queryText());
+    const result = this.nlqFilterService.parseAndFilter(resolvedQuery, context);
     this.detectedState.set(result.detectedState);
     this.matchedPatterns.set(result.matchedPatterns);
     this.hasGenerated.set(true);
@@ -831,9 +1027,18 @@ export class BuildListComponent {
         ? this.appliedRefinements().notContactedDays!.toString()
         : ''
     );
+    // Restore manual member overrides — excluded IDs can be set immediately (just numbers).
+    // Included customers need full Customer objects, which are resolved after data loads
+    // (in case the saved list uses different TUs than what's currently loaded).
+    this.manuallyExcludedCustomerIds.set(new Set(list.excludedCustomerIds || []));
+    this._pendingIncludedIds = list.includedCustomerIds ?? [];
+    this.manuallyIncludedCustomers.set([]);
     // Open the panel automatically so the user can see the active filters
     if (this.hasAnyRefinement(this.appliedRefinements())) {
       this.showRefinePanel.set(true);
+    }
+    if (this._pendingIncludedIds.length > 0 || this.manuallyExcludedCustomerIds().size > 0) {
+      this.showManageMembersPanel.set(true);
     }
     // Clear stale results before fetching so no intermediate render fires with the
     // enriched cache that home page customer visits leave in appState.contracts.
@@ -884,6 +1089,102 @@ export class BuildListComponent {
 
   isStateSelected(state: string): boolean {
     return !!(this.pendingRefinements().states?.includes(state));
+  }
+
+  // ── Manage Members methods ─────────────────────────────────────────────
+
+  /** Matches from current displayed results (available to exclude). */
+  memberInResultsMatches = signal<Customer[]>([]);
+
+  searchMembers(term: string): void {
+    if (this._memberSearchTimeout) clearTimeout(this._memberSearchTimeout);
+    if (!term.trim() || term.trim().length < 2) {
+      this.memberSearchResults.set([]);
+      this.memberInResultsMatches.set([]);
+      this.memberSearchLoading.set(false);
+      return;
+    }
+
+    // Immediately filter current results for exclude candidates (client-side, instant)
+    const lower = term.trim().toLowerCase();
+    const excludedIds = this.manuallyExcludedCustomerIds();
+    this.memberInResultsMatches.set(
+      this.displayedCustomers()
+        .filter(c =>
+          !excludedIds.has(c.id) &&
+          (c.name.toLowerCase().includes(lower) ||
+           (c.sourceCustomerId || '').toLowerCase().includes(lower) ||
+           (c.farm || '').toLowerCase().includes(lower))
+        )
+        .slice(0, 5)
+    );
+
+    // Debounced API search for add candidates
+    this.memberSearchLoading.set(true);
+    this._memberSearchTimeout = setTimeout(() => {
+      const tus = this.effectiveTradeUnits();
+      this.apiService.searchCustomers(term, tus.length > 0 ? tus : undefined)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: (results) => {
+            const includedIds = new Set(this.manuallyIncludedCustomers().map(c => c.id));
+            const displayedIds = new Set(this.displayedCustomers().map(c => c.id));
+            this.memberSearchResults.set(
+              results.filter(c => !includedIds.has(c.id) && !displayedIds.has(c.id)).slice(0, 5)
+            );
+            this.memberSearchLoading.set(false);
+          },
+          error: () => {
+            this.memberSearchResults.set([]);
+            this.memberSearchLoading.set(false);
+          }
+        });
+    }, 300);
+  }
+
+  addCustomerToList(customer: Customer): void {
+    // Remove from excluded if they were previously excluded
+    const excluded = this.manuallyExcludedCustomerIds();
+    if (excluded.has(customer.id)) {
+      const updated = new Set(excluded);
+      updated.delete(customer.id);
+      this.manuallyExcludedCustomerIds.set(updated);
+    }
+    // Add to included if not already there
+    if (!this.manuallyIncludedCustomers().some(c => c.id === customer.id)) {
+      this.manuallyIncludedCustomers.update(list => [...list, customer]);
+    }
+    // Clear search
+    this.memberSearchTerm.set('');
+    this.memberSearchResults.set([]);
+    this.memberInResultsMatches.set([]);
+  }
+
+  excludeCustomerFromList(customerId: number): void {
+    // If this was a manually added customer, just remove the add
+    const wasManualAdd = this.manuallyIncludedCustomers().some(c => c.id === customerId);
+    if (wasManualAdd) {
+      this.manuallyIncludedCustomers.update(list => list.filter(c => c.id !== customerId));
+    } else {
+      // Add to excluded set (for NLQ-matched customers)
+      this.manuallyExcludedCustomerIds.update(set => {
+        const updated = new Set(set);
+        updated.add(customerId);
+        return updated;
+      });
+    }
+    // Clear search so user can immediately search for another
+    this.memberSearchTerm.set('');
+    this.memberSearchResults.set([]);
+    this.memberInResultsMatches.set([]);
+  }
+
+  restoreCustomer(customerId: number): void {
+    this.manuallyExcludedCustomerIds.update(set => {
+      const updated = new Set(set);
+      updated.delete(customerId);
+      return updated;
+    });
   }
 
   private _getCustomerPacing(customer: Customer): number | null {
@@ -937,14 +1238,18 @@ export class BuildListComponent {
   }
 
   saveList(): void {
-    if (!this.newListName().trim() || this.filteredCustomers().length === 0) return;
+    if (!this.newListName().trim() || this.displayedCustomers().length === 0) return;
 
     const tradeUnits = this.effectiveTradeUnits();
+    const includedIds = this.manuallyIncludedCustomers().map(c => c.id);
+    const excludedIds = [...this.manuallyExcludedCustomerIds()];
     const payload = {
       name: this.newListName(),
       query: this.queryText(),
       tradeUnits: tradeUnits.length > 0 ? tradeUnits.join(',') : undefined,
-      filters: this.activeRefinementCount() > 0 ? { ...this.appliedRefinements() } : undefined
+      filters: this.activeRefinementCount() > 0 ? { ...this.appliedRefinements() } : undefined,
+      includedCustomerIds: includedIds.length > 0 ? includedIds : undefined,
+      excludedCustomerIds: excludedIds.length > 0 ? excludedIds : undefined,
     };
 
     const request$ = this.activeSavedList()
@@ -952,12 +1257,11 @@ export class BuildListComponent {
       : this.apiService.createSavedList(payload);
 
     request$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (savedList) => {
+      next: () => {
         this.toastService.success(`List "${this.newListName()}" saved`);
-        this.newListName.set('');
         this.showSaveDialog.set(false);
-        this.activeSavedList.set(savedList);
         this._refreshSavedLists();
+        this.clearQuery();
       },
       error: () => {
         this.toastService.error('Failed to save list');

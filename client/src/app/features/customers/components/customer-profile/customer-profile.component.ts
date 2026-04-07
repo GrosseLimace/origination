@@ -89,7 +89,7 @@ export class CustomerProfileComponent {
   constructor() {
     effect(() => {
       // When arriving from Insights with a specific contract, switch to contracts tab
-      // (the contracts-table component handles scrolling to the specific row)
+      // (contracts-table handles scrolling to the specific row)
       const openContractId = this.openContractId();
       if (openContractId != null) {
         this.activeTab.set('contracts');

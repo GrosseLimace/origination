@@ -344,13 +344,13 @@ public interface IDataService
     /// <param name="filters">Optional serialized filter state.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The newly created saved list.</returns>
-    Task<SavedList> SaveListAsync(string name, string query, string? tradeUnits, string? filters = null, CancellationToken cancellationToken = default);
+    Task<SavedList> SaveListAsync(string name, string query, string? tradeUnits, string? filters = null, string? includedCustomerIds = null, string? excludedCustomerIds = null, CancellationToken cancellationToken = default);
 
     /// <summary>Updates an existing saved list.</summary>
     /// <param name="listId">The saved list's unique identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The updated saved list if found; otherwise, null.</returns>
-    Task<SavedList?> UpdateListAsync(int listId, string name, string query, string? tradeUnits, string? filters = null, CancellationToken cancellationToken = default);
+    Task<SavedList?> UpdateListAsync(int listId, string name, string query, string? tradeUnits, string? filters = null, string? includedCustomerIds = null, string? excludedCustomerIds = null, CancellationToken cancellationToken = default);
 
     /// <summary>Deletes a saved list by its identifier.</summary>
     /// <param name="listId">The saved list's unique identifier.</param>

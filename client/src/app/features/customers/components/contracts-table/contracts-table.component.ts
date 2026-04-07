@@ -214,9 +214,16 @@ export class ContractsTableComponent {
     const sorted = [...this.contracts()].sort((a, b) => {
       let comparison = 0;
       switch (this.currentSortColumn()) {
-        case 'contractNumber':
-          comparison = a.contractNumber.localeCompare(b.contractNumber);
+        case 'contractNumber': {
+          // Sort by letter prefix first, then numerically within the same prefix
+          const idA = a.sourceContractId || a.contractNumber;
+          const idB = b.sourceContractId || b.contractNumber;
+          const prefixA = idA.replace(/[0-9]/g, '');
+          const prefixB = idB.replace(/[0-9]/g, '');
+          comparison = prefixA.localeCompare(prefixB)
+            || (parseInt(idA.replace(/\D/g, ''), 10) || 0) - (parseInt(idB.replace(/\D/g, ''), 10) || 0);
           break;
+        }
         case 'date':
           comparison = new Date(a.contractDate || 0).getTime() - new Date(b.contractDate || 0).getTime();
           break;
@@ -226,9 +233,20 @@ export class ContractsTableComponent {
         case 'quantity':
           comparison = a.quantity - b.quantity;
           break;
-        case 'price':
-          comparison = a.price - b.price;
+        case 'price': {
+          // Rank: Deferred(0) → Unpriced(1) → Partial(2) → Priced/badge(3) → Cash price(4+)
+          const priceRank = (ct: Contract): number => {
+            const info = this.getPricingInfo(ct);
+            if (info.status === 'DEFERRED') return 0;
+            if (info.status === 'UNPRICED') return 1;
+            if (info.status === 'PARTIAL') return 2;
+            if (info.status === 'PRICED') return 3;
+            if (info.status === 'FLAT' && info.cashPrice != null) return 4 + info.cashPrice;
+            return 3;
+          };
+          comparison = priceRank(a) - priceRank(b);
           break;
+        }
         case 'deliveryStart':
           comparison = new Date(a.deliveryStart).getTime() - new Date(b.deliveryStart).getTime();
           break;
@@ -268,13 +286,9 @@ export class ContractsTableComponent {
   private _scrollToContract(contractId: number, attempt = 0): void {
     const el = document.getElementById('contract-row-' + contractId);
     if (el) {
-      // Scroll so the contract row sits near the top with some padding
-      const rect = el.getBoundingClientRect();
-      const scrollParent = el.closest('[class*="overflow"]') as HTMLElement
-        ?? el.closest('[style*="overflow"]') as HTMLElement
-        ?? document.documentElement;
-      const parentRect = scrollParent.getBoundingClientRect();
-      scrollParent.scrollBy({ top: rect.top - parentRect.top - 8, behavior: 'smooth' });
+      // Add scroll-margin so scrollIntoView doesn't hide the row behind sticky headers
+      el.style.scrollMarginTop = '3rem';
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } else if (attempt < 10) {
       setTimeout(() => this._scrollToContract(contractId, attempt + 1), 100);
     }

@@ -182,16 +182,26 @@ export class EditCustomerDialogComponent {
     this.editCommodities.update(c => c.filter(x => x !== commodity));
   }
 
+  private readonly _commodityAliases: Record<string, string[]> = {
+    'milo': ['milo', 'sorghum', 'sor', 'sg'],
+    'sorghum': ['milo', 'sorghum', 'sor', 'sg'],
+    'beans': ['soybeans', 'soy', 'beans', 'sb'],
+    'soy': ['soybeans', 'soy', 'beans', 'sb'],
+  };
+
   onCommoditySearch(): void {
     const term = this.newCommodity().trim().toLowerCase();
     if (!term) {
       this.filteredCommodities.set([]);
       return;
     }
-    this.filteredCommodities.set(this.allCommodities().filter(c =>
-      (c.name.toLowerCase().includes(term) || c.code.toLowerCase().includes(term))
-      && !this.editCommodities().includes(c.code)
-    ));
+    const searchTerms = this._commodityAliases[term] ?? [term];
+    this.filteredCommodities.set(this.allCommodities().filter(c => {
+      const name = c.name.toLowerCase();
+      const code = c.code.toLowerCase();
+      return searchTerms.some(t => name.includes(t) || code.includes(t))
+        && !this.editCommodities().includes(c.code);
+    }));
     this.showSuggestions.set(true);
   }
 

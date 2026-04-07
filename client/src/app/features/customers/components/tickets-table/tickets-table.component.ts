@@ -157,11 +157,12 @@ export class TicketsTableComponent {
 
       if (filtered.length === 0) continue;
 
-      // Averages always from all tickets in the group (not just search results)
-      const validMoisture = allTickets.filter(t => typeof t.moisture === 'number' && t.moisture > 0);
-      const validTestWeight = allTickets.filter(t => typeof t.testWeight === 'number' && t.testWeight > 0);
-      const validProtein = allTickets.filter(t => typeof t.proteinPercent === 'number' && t.proteinPercent > 0);
-      const validDateMs = allTickets
+      // Stats reflect the visible (filtered) tickets so the header updates as the user searches
+      const statsTickets = filtered;
+      const validMoisture = statsTickets.filter(t => typeof t.moisture === 'number' && t.moisture > 0);
+      const validTestWeight = statsTickets.filter(t => typeof t.testWeight === 'number' && t.testWeight > 0);
+      const validProtein = statsTickets.filter(t => typeof t.proteinPercent === 'number' && t.proteinPercent > 0);
+      const validDateMs = statsTickets
         .map(t => this._parseTicketDate(t.date)?.getTime() ?? null)
         .filter((d): d is number => d !== null && !isNaN(d));
       const isWheat = this.isWheatProductCode(productCode);
@@ -169,9 +170,9 @@ export class TicketsTableComponent {
       groups.push({
         productCode,
         tickets: this._sortTicketList(filtered),
-        ticketCount: allTickets.length,
+        ticketCount: statsTickets.length,
         avgDate: validDateMs.length ? new Date(validDateMs.reduce((s, d) => s + d, 0) / validDateMs.length) : null,
-        totalNetWeight: allTickets.reduce((s, t) => s + (t.appliedDockQuantity || 0), 0),
+        totalNetWeight: statsTickets.reduce((s, t) => s + (t.appliedDockQuantity || 0), 0),
         avgMoisture: validMoisture.length ? validMoisture.reduce((s, t) => s + (t.moisture || 0), 0) / validMoisture.length : 0,
         avgTestWeight: validTestWeight.length ? validTestWeight.reduce((s, t) => s + (t.testWeight || 0), 0) / validTestWeight.length : null,
         avgProtein: validProtein.length ? validProtein.reduce((s, t) => s + (t.proteinPercent || 0), 0) / validProtein.length : null,
