@@ -17,4 +17,7 @@ public record CreateSavedListRequest
 
     [StringLength(4000)]
     public string? Filters { get; init; }
+
+    public string? IncludedCustomerIds { get; init; }  // JSON array string
+    public string? ExcludedCustomerIds { get; init; }  // JSON array string
 }

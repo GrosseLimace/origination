@@ -455,34 +455,44 @@ export class ApiService {
   // Saved List Operations (Customer query lists)
   // ==========================================================================
 
-  /** Fetches all saved customer lists — deserializes the Filters JSON string to an object */
+  /** Fetches all saved customer lists — deserializes JSON strings to objects */
   getSavedLists(): Observable<SavedList[]> {
+    const parseJson = <T>(val: string | null | undefined): T | undefined => {
+      if (!val) return undefined;
+      try { return JSON.parse(val) as T; } catch { return undefined; }
+    };
     return this._dedupe('savedlists',
       this.http.get<any[]>(`${this.baseUrl}/savedlists`).pipe(
         map(lists => lists.map(l => ({
           ...l,
-          filters: l.filters ? (() => { try { return JSON.parse(l.filters) as RefinementFilters; } catch { return undefined; } })() : undefined
+          filters: parseJson<RefinementFilters>(l.filters),
+          includedCustomerIds: parseJson<number[]>(l.includedCustomerIds),
+          excludedCustomerIds: parseJson<number[]>(l.excludedCustomerIds),
         }))),
         catchError(e => this.handleError(e))
       )
     );
   }
 
-  /** Creates a new saved list (stores only the query prompt + optional filters, not customer IDs) */
-  createSavedList(data: { name: string; query: string; tradeUnits?: string; filters?: RefinementFilters }): Observable<SavedList> {
+  /** Creates a new saved list */
+  createSavedList(data: { name: string; query: string; tradeUnits?: string; filters?: RefinementFilters; includedCustomerIds?: number[]; excludedCustomerIds?: number[] }): Observable<SavedList> {
     const payload = {
       ...data,
-      filters: data.filters && Object.keys(data.filters).length > 0 ? JSON.stringify(data.filters) : null
+      filters: data.filters && Object.keys(data.filters).length > 0 ? JSON.stringify(data.filters) : null,
+      includedCustomerIds: data.includedCustomerIds?.length ? JSON.stringify(data.includedCustomerIds) : null,
+      excludedCustomerIds: data.excludedCustomerIds?.length ? JSON.stringify(data.excludedCustomerIds) : null,
     };
     return this.http.post<SavedList>(`${this.baseUrl}/savedlists`, payload)
       .pipe(catchError(e => this.handleError(e)));
   }
 
   /** Updates an existing saved list by ID */
-  updateSavedList(id: number, data: { name: string; query: string; tradeUnits?: string; filters?: RefinementFilters }): Observable<SavedList> {
+  updateSavedList(id: number, data: { name: string; query: string; tradeUnits?: string; filters?: RefinementFilters; includedCustomerIds?: number[]; excludedCustomerIds?: number[] }): Observable<SavedList> {
     const payload = {
       ...data,
-      filters: data.filters && Object.keys(data.filters).length > 0 ? JSON.stringify(data.filters) : null
+      filters: data.filters && Object.keys(data.filters).length > 0 ? JSON.stringify(data.filters) : null,
+      includedCustomerIds: data.includedCustomerIds?.length ? JSON.stringify(data.includedCustomerIds) : null,
+      excludedCustomerIds: data.excludedCustomerIds?.length ? JSON.stringify(data.excludedCustomerIds) : null,
     };
     return this.http.put<SavedList>(`${this.baseUrl}/savedlists/${id}`, payload)
       .pipe(catchError(e => this.handleError(e)));

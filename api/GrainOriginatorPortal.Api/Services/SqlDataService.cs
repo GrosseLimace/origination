@@ -171,6 +171,7 @@ public class SqlDataService : IDataService
                     OR ExtendedPrimaryPhone LIKE '%' + {paramName} + '%'
                     OR MerchandisingCity LIKE '%' + {paramName} + '%'
                     OR MerchandisingStateProvince = {paramName}
+                    OR CustomerId IN (SELECT CustomerId FROM dbo.ProducerDetails WHERE PrimaryContact LIKE '%' + {paramName} + '%')
                 )");
             }
 
@@ -1977,7 +1978,7 @@ public class SqlDataService : IDataService
         }
     }
 
-    public async Task<SavedList> SaveListAsync(string name, string query, string? tradeUnits, string? filters = null, CancellationToken cancellationToken = default)
+    public async Task<SavedList> SaveListAsync(string name, string query, string? tradeUnits, string? filters = null, string? includedCustomerIds = null, string? excludedCustomerIds = null, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -1987,6 +1988,8 @@ public class SqlDataService : IDataService
                 Query = query,
                 TradeUnits = tradeUnits,
                 Filters = filters,
+                IncludedCustomerIds = includedCustomerIds,
+                ExcludedCustomerIds = excludedCustomerIds,
                 CreatedBy = GetCurrentUser(),
                 CreatedAt = DateTime.UtcNow
             };
@@ -2002,7 +2005,7 @@ public class SqlDataService : IDataService
         }
     }
 
-    public async Task<SavedList?> UpdateListAsync(int listId, string name, string query, string? tradeUnits, string? filters = null, CancellationToken cancellationToken = default)
+    public async Task<SavedList?> UpdateListAsync(int listId, string name, string query, string? tradeUnits, string? filters = null, string? includedCustomerIds = null, string? excludedCustomerIds = null, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -2013,6 +2016,8 @@ public class SqlDataService : IDataService
             list.Query = query;
             list.TradeUnits = tradeUnits;
             list.Filters = filters;
+            list.IncludedCustomerIds = includedCustomerIds;
+            list.ExcludedCustomerIds = excludedCustomerIds;
             list.ModifiedAt = DateTime.UtcNow;
             list.ModifiedBy = currentUser;
             await _appContext.SaveChangesAsync(cancellationToken);
@@ -2357,11 +2362,12 @@ public class SqlDataService : IDataService
             .Where(l => l.TradeUnitCode == tradeUnitCode)
             .ToListAsync(cancellationToken);
 
-        var byElevator = allLocations
-            .Where(l => !string.IsNullOrEmpty(l.ElevatorCode))
-            .ToDictionary(l => l.ElevatorCode!, l => l);
-        var byName = allLocations
-            .ToDictionary(l => l.Name.Trim(), l => l, StringComparer.OrdinalIgnoreCase);
+        var byElevator = new Dictionary<string, BidSheetLocation>();
+        foreach (var l in allLocations.Where(l => !string.IsNullOrEmpty(l.ElevatorCode)))
+            byElevator.TryAdd(l.ElevatorCode!, l);
+        var byName = new Dictionary<string, BidSheetLocation>(StringComparer.OrdinalIgnoreCase);
+        foreach (var l in allLocations)
+            byName.TryAdd(l.Name.Trim(), l);
 
         // First pass: create any missing locations in batch
         var newLocations = new List<BidSheetLocation>();
@@ -2408,8 +2414,9 @@ public class SqlDataService : IDataService
         var existingBids = await _appContext.BidSheetLocationBids
             .Where(b => locationIds.Contains(b.LocationId))
             .ToListAsync(cancellationToken);
-        var bidLookup = existingBids
-            .ToDictionary(b => (b.LocationId, b.CommodityCode, b.CropYear), b => b);
+        var bidLookup = new Dictionary<(int, string, int), BidSheetLocationBid>();
+        foreach (var b in existingBids)
+            bidLookup.TryAdd((b.LocationId, b.CommodityCode, b.CropYear), b);
 
         // Second pass: upsert bids using in-memory lookups (0 queries)
         foreach (var req in requestList)

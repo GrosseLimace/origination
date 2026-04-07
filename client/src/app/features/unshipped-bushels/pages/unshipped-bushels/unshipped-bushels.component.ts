@@ -81,11 +81,16 @@ export class UnshippedBushelsComponent implements OnInit {
   getFilteredContracts(group: CustomerContractGroup): Contract[] {
     const commFilter = this.searchCommodity().trim().toLowerCase();
     const contractFilter = this.searchContract().trim().toLowerCase();
+    const commAliases: Record<string, string[]> = {
+      'milo': ['milo', 'sorghum', 'sor'], 'sorghum': ['milo', 'sorghum', 'sor'],
+      'beans': ['beans', 'soybeans', 'soy'], 'soybeans': ['soybeans', 'beans', 'soy'],
+    };
+    const commTerms = commFilter ? (commAliases[commFilter] ?? [commFilter]) : [];
     return group.contracts.filter(c => {
       if (commFilter) {
-        const match = (c.commodityDescription?.toLowerCase().includes(commFilter)) ||
-                      (c.commodityCode?.toLowerCase().includes(commFilter));
-        if (!match) return false;
+        const desc = c.commodityDescription?.toLowerCase() ?? '';
+        const code = c.commodityCode?.toLowerCase() ?? '';
+        if (!commTerms.some(t => desc.includes(t) || code.includes(t))) return false;
       }
       if (contractFilter) {
         const match = (c.contractNumber?.toLowerCase().includes(contractFilter)) ||

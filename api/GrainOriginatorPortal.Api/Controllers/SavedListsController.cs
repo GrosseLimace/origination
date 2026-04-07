@@ -38,7 +38,7 @@ public class SavedListsController : ControllerBase
     public async Task<ActionResult<SavedList>> Create([FromBody] CreateSavedListRequest request, CancellationToken cancellationToken = default)
     {
         await ValidateTradeUnitsInRequest(request.TradeUnits, cancellationToken);
-        var savedList = await _dataService.SaveListAsync(request.Name, request.Query, request.TradeUnits, request.Filters, cancellationToken);
+        var savedList = await _dataService.SaveListAsync(request.Name, request.Query, request.TradeUnits, request.Filters, request.IncludedCustomerIds, request.ExcludedCustomerIds, cancellationToken);
         _logger.LogInformation(
             "Saved list created [{ErrorCode}] [{ErrorCategory}]: ListId={ListId}, Name={Name}",
             "AUDIT_CREATE", "DataMutation", savedList.Id, request.Name);
@@ -53,7 +53,7 @@ public class SavedListsController : ControllerBase
     public async Task<ActionResult<SavedList>> Update(int id, [FromBody] CreateSavedListRequest request, CancellationToken cancellationToken = default)
     {
         await ValidateTradeUnitsInRequest(request.TradeUnits, cancellationToken);
-        var updated = await _dataService.UpdateListAsync(id, request.Name, request.Query, request.TradeUnits, request.Filters, cancellationToken)
+        var updated = await _dataService.UpdateListAsync(id, request.Name, request.Query, request.TradeUnits, request.Filters, request.IncludedCustomerIds, request.ExcludedCustomerIds, cancellationToken)
             ?? throw new NotFoundException("SavedList", id);
         _logger.LogInformation(
             "Saved list updated [{ErrorCode}] [{ErrorCategory}]: ListId={ListId}, Name={Name}",

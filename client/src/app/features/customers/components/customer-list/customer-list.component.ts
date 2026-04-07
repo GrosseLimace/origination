@@ -388,13 +388,16 @@ export class CustomerListComponent {
       tickets: this.appStateService.tickets(),
       notes,
       plantingIntentions: this.appStateService.plantingIntentions(),
-      storedGrain: this.appStateService.storedGrain()
+      storedGrain: this.appStateService.storedGrain(),
+      commodities: this.appStateService.commodities()
     };
     const result = this.nlqFilterService.parseAndFilter(savedList.query, context);
     const refined = savedList.filters
       ? this.nlqFilterService.applyRefinementFilters(result.customers, savedList.filters, contracts, notes)
       : result.customers;
-    savedList.customerIds = refined.map(c => c.id);
+    savedList.customerIds = this.nlqFilterService.applyCustomerOverrides(
+      refined.map(c => c.id), savedList.includedCustomerIds, savedList.excludedCustomerIds
+    );
 
     // Persist customerIds to appState so they survive component remount
     const lists = this.appStateService.savedLists().map(l =>
@@ -450,11 +453,16 @@ export class CustomerListComponent {
     // and customers() input is empty). Fall back to customers() for TU-filtered loads.
     const customersToCache = this.filteredCustomers().length > 0 ? this.filteredCustomers() : this.customers();
 
-    // Build incoming-links map: sourceCustomerId → Set of sourceCustomerIds that link TO it.
-    // linkedProducerIds entries are source ID strings, so no numeric ID resolution is needed.
-    // Mirrors the reverse-link lookup in home.component getLinkedGroup.
+    // Build incoming-links map from the FULL customer list (not filteredCustomers) because
+    // filteredCustomers may hold stale objects from before _mergeProducerDetails populated
+    // linkedProducerIds. The full customers() list has the merged producer details.
+    const allCustomers = this.customers();
+    const linkedById = new Map<number, string[]>();
+    for (const c of allCustomers) {
+      if (c.linkedProducerIds?.length) linkedById.set(c.id, c.linkedProducerIds);
+    }
     const incomingCodeLinks = new Map<string, Set<string>>();
-    for (const c of customersToCache) {
+    for (const c of allCustomers) {
       if (!c.sourceCustomerId) continue;
       for (const linkedCode of (c.linkedProducerIds || [])) {
         if (!incomingCodeLinks.has(linkedCode)) incomingCodeLinks.set(linkedCode, new Set());
@@ -464,11 +472,11 @@ export class CustomerListComponent {
 
     for (const customer of customersToCache) {
       // Collect all source codes to look up: this customer + outgoing links + incoming links.
-      // Using codes means cross-TU linked producers and formerly-linked producers whose
-      // notes carry their customerCode are all found without needing a numeric ID lookup.
+      // Use linkedProducerIds from the full customer list (not the potentially stale filtered copy).
+      const freshLinked = linkedById.get(customer.id) ?? customer.linkedProducerIds ?? [];
       const allCodes = new Set<string>();
       if (customer.sourceCustomerId) allCodes.add(customer.sourceCustomerId);
-      for (const linkedCode of (customer.linkedProducerIds || [])) allCodes.add(linkedCode);
+      for (const linkedCode of freshLinked) allCodes.add(linkedCode);
       for (const incomingCode of (incomingCodeLinks.get(customer.sourceCustomerId || '') || new Set<string>())) {
         allCodes.add(incomingCode);
       }

@@ -137,6 +137,8 @@ export class BidSheetComponent {
 
   // --- Panel ---
   showPanel = signal<boolean>(false);
+  showLegend = signal<boolean>(true);
+  showFilters = signal<boolean>(true);
   filteredBidItems = signal<any[]>([]);
   selectedLocationName = signal<string>('');
   panelSelectedLocation = signal<string>('');
@@ -212,9 +214,17 @@ export class BidSheetComponent {
   ]);
 
   // Returns unique grain crop categories (Corn, Wheat, Milo, etc.) matching the query
+  private static readonly _commodityAliases: Record<string, string[]> = {
+    'milo': ['milo', 'sorghum', 'sor', 'sg'],
+    'sorghum': ['milo', 'sorghum', 'sor', 'sg'],
+    'beans': ['soybeans', 'soy', 'beans', 'sb'],
+    'soy': ['soybeans', 'soy', 'beans', 'sb'],
+  };
+
   filteredCommodities(query: string): { code: string; name: string }[] {
     if (!query || query.length < 1) return [];
     const q = query.toLowerCase();
+    const searchTerms = BidSheetComponent._commodityAliases[q] ?? [q];
     const seen = new Set<string>();
     const results: { code: string; name: string }[] = [];
     for (const c of this.allCommodities()) {
@@ -222,7 +232,10 @@ export class BidSheetComponent {
       const cat = (c.category ?? '').trim().toUpperCase();
       const desc = (c.name ?? '').trim();
       if (!code || seen.has(code) || BidSheetComponent._excludedCommodityCategories.has(cat)) continue;
-      if (code.toLowerCase().includes(q) || desc.toLowerCase().includes(q) || cat.toLowerCase().includes(q)) {
+      const codeLower = code.toLowerCase();
+      const descLower = desc.toLowerCase();
+      const catLower = cat.toLowerCase();
+      if (searchTerms.some(t => codeLower.includes(t) || descLower.includes(t) || catLower.includes(t))) {
         seen.add(code);
         results.push({ code, name: `${(desc || cat).toUpperCase()} (${code.toUpperCase()})` });
       }
@@ -530,6 +543,17 @@ export class BidSheetComponent {
     this.onFilterChange();
   }
 
+  onYearDropdownChange(year: number): void {
+    this.selectedYear.set(year);
+    // Sync yearOffset so newYear() matches the dropdown selection
+    const years = this.cropYears();
+    const idx = years.indexOf(year);
+    if (idx >= 0) {
+      this.yearOffset.set(idx - (years.length - 1));
+    }
+    this.onFilterChange();
+  }
+
   shiftYearsBack(): void {
     if (this.canShiftYearsBack()) {
       this.yearOffset.update(o => o - 1);
@@ -586,11 +610,14 @@ export class BidSheetComponent {
 
       // Compute reference bids per year for status comparison
       const refName = this.referenceLocationName();
+      const selectedYr = this.selectedYear();
       let oldRefBid: number | null = null;
       let newRefBid: number | null = null;
+      let selectedRefBid: number | null = null;
       if (hasIndividualTu && refName) {
         oldRefBid = this._parseBid(this._getLatestBid(refName, oldYr, crop));
         newRefBid = this._parseBid(this._getLatestBid(refName, newYr, crop));
+        selectedRefBid = this._parseBid(this._getLatestBid(refName, selectedYr, crop));
       }
 
       // Add location entries — filter by crop if one is selected
@@ -607,9 +634,11 @@ export class BidSheetComponent {
       for (const name of uniqueNames) {
         const oldBid = this._getLatestBid(name, oldYr, crop);
         const newBid = this._getLatestBid(name, newYr, crop);
+        const selectedBid = this._getLatestBid(name, selectedYr, crop);
         const entryWithCoords = this.bidEntries().find(e => e.name === name);
         const oldEntry = this._getLatestEntry(name, oldYr, crop);
         const newEntry = this._getLatestEntry(name, newYr, crop);
+        const selectedEntry = this._getLatestEntry(name, selectedYr, crop);
         const isRef = hasIndividualTu && name === refName;
 
         items.push({
@@ -623,7 +652,7 @@ export class BidSheetComponent {
           newBid,
           oldStatus: isRef ? 'reference' : (hasIndividualTu ? this._computeItemStatus(oldBid, false, oldRefBid, oldEntry?.modifiedAt) : 'none'),
           newStatus: isRef ? 'reference' : (hasIndividualTu ? this._computeItemStatus(newBid, false, newRefBid, newEntry?.modifiedAt) : 'none'),
-          status: isRef ? 'reference' : (hasIndividualTu ? this._computeItemStatus(newBid, false, newRefBid, newEntry?.modifiedAt) : 'none')
+          status: isRef ? 'reference' : (hasIndividualTu ? this._computeItemStatus(selectedBid, false, selectedRefBid, selectedEntry?.modifiedAt) : 'none')
         });
       }
 
@@ -1524,12 +1553,10 @@ export class BidSheetComponent {
     const activeTuSet = new Set(activeTus);
     const crop = this.selectedCrop();
     const year = this.selectedYear();
-    const oldYr = this.oldYear();
-    const newYr = this.newYear();
 
-    // Reference bid for status comparison (when TU is active)
+    // Reference bid for status comparison — use selectedYear (same year used for bid pill lookups)
     const refName = this.referenceLocationName();
-    const refBid = this._parseBid(refName ? this._getLatestBid(refName, newYr, crop) : '');
+    const refBid = this._parseBid(refName ? this._getLatestBid(refName, year, crop) : '');
 
     const statusColors: Record<string, { bg: string; border: string }> = {
       reference: { bg: '#2563eb', border: '#1d4ed8' },
@@ -1575,8 +1602,8 @@ export class BidSheetComponent {
       // Selected location — enlarged pin: name on top, crop + bid underneath, keeps status color
       if (isSelected) {
         const selName = selectedName;
-        const bidStr = crop ? this._getLatestBid(selName, newYr, crop) : '';
-        const selEntry = crop ? this._getLatestEntry(selName, newYr, crop) : null;
+        const bidStr = crop ? this._getLatestBid(selName, year, crop) : '';
+        const selEntry = crop ? this._getLatestEntry(selName, year, crop) : null;
         const isSelRef = selName === refName;
         const status = hasIndividualTu ? this._computeItemStatus(bidStr, isSelRef, refBid, selEntry?.modifiedAt) : 'none';
         const { bg: selBg, border: selBorder } = statusColors[status] ?? statusColors['none'];

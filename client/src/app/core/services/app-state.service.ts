@@ -26,6 +26,9 @@ export interface BuildListState {
   appliedRefinements?: RefinementFilters;
   notContactedDaysInput?: string;
   showRefinePanel?: boolean;
+  manuallyIncludedCustomerIds?: number[];
+  manuallyExcludedCustomerIds?: number[];
+  showManageMembersPanel?: boolean;
 }
 
 @Injectable({

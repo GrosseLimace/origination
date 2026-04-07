@@ -11,6 +11,8 @@ public class SavedList
     public string Query { get; set; } = string.Empty;
     public string? TradeUnits { get; set; } // Comma-separated trade unit keys (e.g. "TU1,TU2")
     public string? Filters { get; set; }   // JSON-serialized RefinementFilters (nullable)
+    public string? IncludedCustomerIds { get; set; }  // JSON array of manually added customer IDs
+    public string? ExcludedCustomerIds { get; set; }  // JSON array of manually removed customer IDs
     public string CreatedBy { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public DateTime? ModifiedAt { get; set; }
