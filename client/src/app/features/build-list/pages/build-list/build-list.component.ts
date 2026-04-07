@@ -936,17 +936,21 @@ export class BuildListComponent {
     const replacement = firstName || username;
     if (!replacement) return query;
 
-    // Replace self-references with the user's name, using word boundaries to avoid
-    // replacing "me" inside words like "mentioned" or "my" inside "mystery"
+    // Replace self-references with the user's name. More specific patterns FIRST
+    // so "I have left" matches before the generic "I have" replacement.
     return query
       .replace(/\bby me\b/gi, `by ${replacement}`)
       .replace(/\bmy notes?\b/gi, `${replacement}'s notes`)
       .replace(/\bmy customers?\b/gi, `${replacement}'s customers`)
+      // Full phrase replacements — "Notes I have left" → "notes entered by Caden"
+      .replace(/\bnotes?\s+I\s+(?:have\s+)?(?:wrote|left|made|placed|entered|created|added)\b/gi, `notes entered by ${replacement}`)
+      .replace(/\bI\s+(?:have\s+)?(?:wrote|left|made|placed|entered|created|added)\b/gi, `entered by ${replacement}`)
+      // Contact phrases — "Customers I contacted" → "customers contacted by Caden"
+      .replace(/\bwho\s+have\s+I\s+(?:contacted|called|reached|noted)\b/gi, `who has ${replacement} contacted`)
+      .replace(/\bI\s+(?:have\s+)?(?:contacted|called|reached|noted)\b/gi, `contacted by ${replacement}`)
+      // Generic "I have" / "I've" — only matches if not already caught above
       .replace(/\bI have\b/gi, `${replacement} has`)
       .replace(/\bI've\b/gi, `${replacement} has`)
-      .replace(/\bI\s+(?:wrote|left|made|placed|entered|created|added)\b/gi, `${replacement} has entered`)
-      .replace(/\bI\s+(?:contacted|called|reached|noted)\b/gi, `${replacement} has contacted`)
-      .replace(/\bwho\s+have\s+I\s+(?:contacted|called|reached|noted)\b/gi, `who has ${replacement} contacted`)
       .replace(/\bwho\s+have\s+I\s+(?:entered|placed|written|left|made)\s+(?:a\s+)?notes?\s+for\b/gi, `customers ${replacement} has entered a note for`)
       .replace(/\bnoted by me\b/gi, `noted by ${replacement}`)
       .replace(/\bcontacted by me\b/gi, `contacted by ${replacement}`)
