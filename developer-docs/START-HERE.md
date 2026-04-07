@@ -34,8 +34,7 @@ Your Origination application runs on fully managed Azure infrastructure with pri
 
 ### Compute and Hosting
 - **App Service** (Linux, .NET 10.0, 64-bit, always-on)
-  - Dev: Shared P2v4 App Service Plan (2 vCores, 8 GB RAM, shared across multiple apps)
-  - QA: B1 (dedicated App Service Plan)
+  - Dev/QA: Shared P2v4 App Service Plan (2 vCores, 8 GB RAM, shared across multiple apps)
   - Prod: P1v4 (dedicated App Service Plan)
 
 ### Data and Storage
