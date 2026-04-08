@@ -1,123 +1,168 @@
 ---
 name: code-review
-description: Self-review checklist before committing - checks for security issues, error handling, test coverage, and code quality. Use when user says review code, code review, check my code, or before committing.
+description: Findings-first code review for correctness, maintainability, readability, standards drift, and test quality. Use when the user asks for a code review, repo audit, PR review, quality pass, or wants help finding bugs and weak tests.
 ---
 
 # Code Review Skill
 
-## Purpose
+Review code the way a strong teammate reviews a risky PR: findings first, grounded in the code, and scoped to the highest-value areas.
 
-Perform a structured self-review of code changes before committing to catch common issues.
+This skill is for:
 
-## When to Use
+- correctness and regression risk
+- maintainability and code organization
+- readability and design clarity
+- standards drift against local style guides
+- test quality and verification gaps
 
-Run `/code-review` before committing changes to ensure code quality and catch issues early.
+This skill is not a substitute for a dedicated security review or deterministic build/test execution. If verification was not run, say so clearly.
 
-## Process
+## Workflow
 
-### Step 1: Identify Changes
+### Phase 1: Explore
 
-Run git commands to see what's changed:
+Start read-only. Map the repo before reading code deeply.
+
+Use fast discovery commands such as:
 
 ```bash
 git status --short
-git diff --name-only
-git diff --staged --name-only
+rg --files
+find . -maxdepth 3 -type d | sort
 ```
 
-List all modified, added, and deleted files.
+Identify:
 
-### Step 2: Review Each Changed File
+- major modules and feature areas
+- primary languages and frameworks
+- test locations
+- generated, vendored, or build-output directories to ignore
+- whether the review should focus on the whole repo, a changed area, or a specific feature
+- for large repos, which bounded batches should be reviewed first and what remains out of scope for now
 
-For each changed file, check the following:
+For large repos, review one batch at a time and summarize interim findings before moving on. If useful and supported, optionally use sub-agents to review disjoint areas in parallel. Do not depend on sub-agents for the core workflow.
 
-#### Security Checklist
+Load only the style guides that matter to the reviewed files:
 
-- [ ] No hardcoded secrets, API keys, or passwords
-- [ ] No sensitive data in logs or error messages
-- [ ] Input validation on user-provided data
-- [ ] SQL queries use parameterized statements (no string concatenation)
-- [ ] No command injection vulnerabilities (user input in shell commands)
-- [ ] Authentication/authorization checks where needed
+- `style-guides/csharp-guide.md`
+- `style-guides/angular-guide.md`
+- `style-guides/sql-guide.md`
+- `style-guides/error-handling-guide.md`
+- `style-guides/logging-guide.md` when logging or observability changes matter
+- `style-guides/git-201.md` when workflow or change hygiene matters
 
-#### Error Handling Checklist
+Load `style-guides/security-guide.md` only if the user explicitly wants a security review or the finding is inseparable from security design.
 
-- [ ] Try/catch blocks around external calls (API, database, file I/O)
-- [ ] Meaningful error messages (not generic "An error occurred")
-- [ ] Errors logged appropriately (not swallowed silently)
-- [ ] Graceful degradation where possible
+### Phase 2: Plan
 
-#### Code Quality Checklist
+Define the review batches before you dive in.
 
-- [ ] No debug code left in (console.log, Debug.WriteLine, TODO comments)
-- [ ] No commented-out code blocks
-- [ ] Variable/function names are clear and descriptive
-- [ ] No magic numbers (use named constants)
-- [ ] Functions are reasonably sized (not 200+ lines)
-- [ ] No obvious code duplication
+Good batch boundaries:
 
-#### Test Coverage Checklist
+- top-level modules
+- backend vs frontend vs data layer
+- app code vs tests
+- one bounded subsystem at a time
 
-- [ ] New functionality has corresponding tests
-- [ ] Edge cases are tested
-- [ ] Tests actually assert something meaningful
-- [ ] No tests that always pass (empty assertions)
+Prioritize:
 
-### Step 3: Check for Common Patterns
+- recent churn
+- shared abstractions and orchestration points
+- large files
+- code with weak or missing tests
+- areas where multiple systems interact
 
-Use grep to scan for potential issues:
+If the repo is too large to cover fully, say what you will review first and where residual risk will remain.
+
+### Phase 3: Review
+
+Review in multiple focused passes. Do not read the entire repo and then produce a shallow summary.
+
+Passes to apply:
+
+- architecture and boundaries
+- correctness and regression risk
+- readability and clean code
+- tests and verification quality
+- repo hygiene and reviewability
+
+Use targeted smell scans to support judgment, then read the surrounding code before reporting anything:
 
 ```bash
-# Hardcoded secrets
-grep -r "password\s*=" --include="*.cs" --include="*.ts"
-grep -r "api_key\s*=" --include="*.cs" --include="*.ts"
-
-# Debug statements
-grep -r "console\.log" --include="*.ts" --include="*.js"
-grep -r "Debug\.WriteLine" --include="*.cs"
-
-# TODO/FIXME comments
-grep -r "TODO\|FIXME" --include="*.cs" --include="*.ts"
+rg -n "console\\.log|print\\(|Debug\\.WriteLine" .
+rg -n "TODO|FIXME|HACK|XXX" .
+rg -n "throw new Exception|catch \\(Exception\\)" .
+rg -n "duplicate|copy paste|temporary|quick fix" .
 ```
 
-### Step 4: Generate Review Report
+Do not edit code as part of a standard `/code-review` run unless the user explicitly asks for fixes after seeing the findings.
 
-Output a summary:
+### Phase 4: Verify
+
+If a finding depends on behavior, build output, or test evidence, run the narrowest deterministic verification you can. Examples:
+
+- targeted unit tests
+- focused build/typecheck commands
+- lint for the affected area
+
+If you cannot run verification, say that explicitly and downgrade confidence where appropriate.
+
+Before reporting, self-review your own findings:
+
+- confirm the code actually does what you claim
+- confirm the cited line is the real issue location
+- confirm the issue matters more than a style nit
+
+### Phase 5: Report
+
+Produce a findings-first report in priority order.
+
+Use this structure:
 
 ```text
-CODE REVIEW SUMMARY
+CODE REVIEW
 
-Files Changed: XX
-- [list of files]
+Coverage:
+- Reviewed: [modules / directories / file groups]
+- Not fully reviewed: [modules / directories / file groups]
 
-Security Issues Found: [None / List]
-Error Handling Issues: [None / List]
-Code Quality Issues: [None / List]
-Test Coverage: [Good / Needs attention]
+Findings:
+1. [severity] [file:line] Clear description of the issue, why it matters, and what should happen next
+2. ...
 
-Debug Code Found:
-- [file:line] - [description]
+Patterns:
+- [optional repeated issue across multiple files/modules]
 
-Recommendations:
-1. [Action item]
-2. [Action item]
+Open Questions:
+- [only when needed]
 
-Ready to Commit: [Yes / No - address issues first]
+Overall:
+- Healthy / Needs targeted cleanup / Needs significant follow-up
+- Highest-risk areas: [list]
+- Recommended verification: [specific commands or manual checks]
 ```
 
-## Severity Levels
+## Severity Guidance
 
-Categorize issues by severity:
+| Level | Meaning | Examples |
+|-------|---------|----------|
+| `BLOCKER` | Likely bug, regression, data loss risk, or unsafe behavior | stale call site, broken condition, invalid state transition, missing authorization in a non-security-focused review |
+| `WARNING` | Important maintainability, clarity, design, or test issue that should be fixed soon | duplicated logic, oversized mixed-responsibility module, weak tests around a risky workflow |
+| `NIT` | Minor cleanup that does not materially affect behavior | naming tweak, dead comment, small readability improvement |
 
-| Level | Action | Examples |
-|-------|--------|----------|
-| **BLOCKER** | Must fix before commit | Hardcoded secrets, SQL injection, no auth check |
-| **WARNING** | Should fix, but can commit | Missing error handling, magic numbers |
-| **INFO** | Nice to fix | TODO comments, minor naming issues |
+## Stop Conditions
 
-## Notes
+Stop and say so when:
 
-- Focus on the diff, not the entire file (unless it's a new file)
-- Be specific about line numbers when reporting issues
-- Offer to help fix any issues found
-- For large changes, suggest breaking into smaller commits
+- the repo is too large for a credible full review in one pass
+- you need a build/test result to confirm a finding and cannot run it
+- a suspected issue may be intentional and needs product or architectural context
+- a security concern dominates the review and should be handed to a dedicated security review
+
+## Reporting Rules
+
+- Include file and line references whenever possible.
+- Prefer concrete findings over generic advice.
+- Be explicit about what was not reviewed.
+- State clearly when no material findings were found in the reviewed scope.
+- Use the repo's local style guides as the source of truth, not personal preference.

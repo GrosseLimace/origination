@@ -1,6 +1,10 @@
-# Error Handling & Exception Management Standards
+# Error Handling & Exception Management Guide
 
 > **Purpose:** This document defines the error handling and exception management standards for all development work. Follow these patterns consistently across all backend services, frontend applications, APIs, and background jobs.
+>
+> **Related guides:**
+> - Use `logging-guide.md` for broader application logging, Azure Monitor, Application Insights, and Azure SQL observability guidance.
+> - Use `security-guide.md` for security-specific response and logging controls.
 
 ---
 
@@ -58,7 +62,7 @@ All API error responses MUST use this JSON structure. No exceptions.
 
 Use UPPER_SNAKE_CASE codes that combine category and specificity:
 
-```
+```text
 VALIDATION_ERROR
 VALIDATION_REQUIRED_FIELD
 VALIDATION_INVALID_FORMAT
@@ -81,7 +85,7 @@ All error codes MUST be registered in the team's error codes registry before use
 
 ### 3.1 Catch at the Right Level
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │ Global Exception Handler (safety net)                   │
 │   → Catches everything unhandled                        │
@@ -110,7 +114,7 @@ All error codes MUST be registered in the team's error codes registry before use
 ### 3.2 Core Rules
 
 **NEVER swallow exceptions:**
-```
+```text
 ❌ BAD:
 catch (Exception ex) { }
 
@@ -126,20 +130,20 @@ catch (SpecificException ex)
 ```
 
 **ALWAYS preserve stack traces:**
-```
+```text
 ❌ BAD:  throw ex;           // Resets the stack trace
 ✅ GOOD: throw;              // Preserves original stack trace
 ✅ GOOD: throw new ServiceException("Context", ex);  // Wraps with inner exception
 ```
 
 **ALWAYS use specific exception types:**
-```
+```text
 ❌ BAD:  catch (Exception ex) { ... }         // Too broad
 ✅ GOOD: catch (SqlTimeoutException ex) { ... } // Specific and intentional
 ```
 
 **ALWAYS clean up resources:**
-```
+```text
 ✅ Use using/try-with-resources/defer for:
    - Database connections
    - File handles
@@ -256,7 +260,7 @@ Use redaction utilities to scrub sensitive fields before logging.
 
 ### 6.2 Exponential Backoff with Jitter
 
-```
+```text
 delay = min(baseDelay × 2^attempt + random(0, jitterMax), maxDelay)
 
 Defaults:
@@ -270,7 +274,7 @@ Defaults:
 
 Implement for ALL external dependencies:
 
-```
+```text
 CLOSED (normal) ──[failure threshold exceeded]──► OPEN (fail fast)
                                                     │
                                               [cooldown elapsed]
@@ -304,7 +308,7 @@ CLOSED (normal) ──[failure threshold exceeded]──► OPEN (fail fast)
 2. **Provide a next step** (retry, correct input, contact support)
 3. **Use plain language** — no jargon, no error codes, no exception types
 4. **Don't blame the user** for system errors
-5. **Include a reference ID** (traceId) for Unexpected/Infrastructure errors so users can share it with support
+5. **Include a reference ID** (`traceId`) for Unexpected/Infrastructure errors so users can share it with support
 
 ### Templates
 

@@ -163,6 +163,14 @@ Choose the smallest appropriate data type:
 | Date + time | `DATETIME2(3)` | Millisecond precision usually sufficient |
 | UTC timestamp | `DATETIME2` | Store in UTC, convert in app |
 
+**Hard rules:**
+
+- Do **not** use `VARCHAR`, `NVARCHAR`, or other text types for surrogate primary keys or foreign keys.
+- Use `INT` for most surrogate keys, `BIGINT` only when row growth justifies it, and `UNIQUEIDENTIFIER` only when a distributed/global identifier is truly required.
+- If a foreign key references a parent key, the child column must match the parent key's type exactly, including length, precision, and scale where applicable.
+- Do not use `NVARCHAR(MAX)` or other large object types unless the actual use case requires it.
+- Be explicit about string lengths. Avoid default-length or "just make it 4000" habits.
+
 ```sql
 -- Good type choices
 CREATE TABLE Product (
@@ -174,6 +182,16 @@ CREATE TABLE Product (
     IsAvailable BIT DEFAULT 1,           -- Boolean
     LaunchDate DATE,                     -- Date only
     CreatedAt DATETIME2(3) DEFAULT GETUTCDATE()
+);
+```
+
+```sql
+-- Bad type choices
+CREATE TABLE Customer (
+    Id NVARCHAR(50) PRIMARY KEY,         -- Text surrogate key
+    Status NVARCHAR(4000),               -- Unbounded-ish without justification
+    TotalAmount FLOAT,                   -- Approximate numeric for money
+    CreatedAt DATETIME                   -- Less precise than DATETIME2
 );
 ```
 
@@ -199,6 +217,9 @@ CREATE TABLE Customer (
 - **Use surrogate keys** (`INT IDENTITY`) for most tables
 - **Natural keys** only when truly immutable and unique
 - **Composite keys** only for junction tables
+- Every table should have a primary key unless there is a very specific, documented reason not to
+- With few exceptions, every table should also have a clustered index
+- If you use a natural key, document why it is immutable and operationally safer than a surrogate key
 
 ```sql
 -- Surrogate key (preferred)
@@ -223,6 +244,9 @@ CREATE TABLE CustomerRole (
 - **Always define foreign keys** - even if application validates
 - **Consider cascade behavior** carefully
 - **Index foreign key columns** - critical for join performance
+- Foreign keys do **not** automatically create supporting indexes; add them intentionally
+- Match parent and child key definitions exactly; mismatched types create conversion risk and poor plans
+- Use `NOT NULL` on foreign key columns unless the relationship is genuinely optional
 
 ```sql
 -- Foreign key with index
@@ -400,6 +424,14 @@ WHERE ExpiresAt < GETUTCDATE();
 - Columns used in WHERE clauses frequently
 - Columns used in ORDER BY
 - Columns used in JOIN conditions
+
+**Hard rules:**
+
+- Review every new table for its clustered index strategy. Do not leave tables as heaps by accident.
+- Every foreign key column should have a supporting index unless an existing composite index already covers the workload.
+- Do not create indexes mechanically on every column; index for real query patterns and maintenance cost.
+- Review missing-index recommendations before applying them. They are suggestions, not automatic truth.
+- Check for obvious AI-generated anti-patterns: missing join indexes, duplicate indexes, or indexes that do not match actual predicates and sort order.
 
 **Covering indexes** - include columns to avoid key lookups:
 
