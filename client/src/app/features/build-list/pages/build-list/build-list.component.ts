@@ -261,7 +261,7 @@ export class BuildListComponent {
     large_farm: 'Large operations', small_farm: 'Small operations', not_contacted: 'Not contacted',
     recently_contacted: 'Recently contacted', storage: 'Has storage', no_storage: 'No storage',
     storage_duration: 'Storage duration', planting: 'Planting', no_planting: 'No planting',
-    planting_year: 'Planting year', planting_type: 'Planting type',
+    planting_year: 'Crop year', planting_type: 'Planting type',
     active_contract: 'Active contracts', no_contract: 'No contracts',
     unsigned_contract: 'Unsigned contracts', negative_pacing: 'Behind on pacing',
     positive_pacing: 'Ahead on pacing', contract_unconfirmed: 'Unconfirmed contracts',
@@ -308,11 +308,17 @@ export class BuildListComponent {
   readonly lastContactByCustomer = computed(() => {
     const map = new Map<number, { text: string; colorClass: string; daysAgo: number }>();
 
+    // Treat bare ISO strings as UTC — API stores DateTime.UtcNow without Z suffix.
+    const parseUtc = (ts: string | Date) => {
+      const raw = typeof ts === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
+      return new Date(raw).getTime();
+    };
+
     // Index notes by customerCode (source customer ID) — same as home page
     const notesByCode = new Map<string, { time: number }>();
     for (const n of this.notes()) {
       if (!n.customerCode) continue;
-      const time = new Date(n.createdAt).getTime();
+      const time = parseUtc(n.createdAt);
       const existing = notesByCode.get(n.customerCode);
       if (!existing || time > existing.time) {
         notesByCode.set(n.customerCode, { time });
@@ -352,9 +358,12 @@ export class BuildListComponent {
       if (latestTime > 0) latestNotes.set(customer.id, { time: latestTime });
     }
 
-    const now = Date.now();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     for (const [customerId, { time }] of latestNotes) {
-      const daysAgo = Math.max(0, Math.floor((now - time) / 86400000));
+      const noteDate = new Date(time);
+      noteDate.setHours(0, 0, 0, 0);
+      const daysAgo = Math.max(0, Math.round((today.getTime() - noteDate.getTime()) / 86400000));
       let result: { text: string; colorClass: string; daysAgo: number };
       if (daysAgo === 0) result = { text: 'Contacted today', colorClass: 'text-scoular-green', daysAgo };
       else if (daysAgo === 1) result = { text: 'Contacted yesterday', colorClass: 'text-scoular-green', daysAgo };

@@ -80,8 +80,8 @@
 
           <!-- Expanded: Individual Tickets -->
           @if (isExpanded(group.crop)) {
-            <div class="overflow-x-auto">
-              <app-table>
+            <div class="overflow-auto" style="max-height: min(50vh, 400px);">
+              <app-table [stickyHeader]="true">
                 <app-table-header>
                   <app-table-row>
                     <app-table-head [sortable]="true" (click)="handleSort('ticket')">
@@ -121,7 +121,7 @@
                         </svg>
                       </span>
                     </app-table-head>
-                    <app-table-head [sortable]="true" (click)="handleSort('storageDays')">
+                    <app-table-head [sortable]="true" (click)="handleSort('storageDays')" >
                       <span class="flex items-center justify-center gap-1">Storage Days
                         <svg class="w-3.5 h-3.5" [class]="getSortIconClass('storageDays')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           @if (currentSortColumn === 'storageDays' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
@@ -130,7 +130,7 @@
                         </svg>
                       </span>
                     </app-table-head>
-                    <app-table-head [sortable]="true" (click)="handleSort('rate')">
+                    <app-table-head [sortable]="true" (click)="handleSort('rate')" >
                       <span class="flex items-center justify-center gap-1">Rate
                         <svg class="w-3.5 h-3.5" [class]="getSortIconClass('rate')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           @if (currentSortColumn === 'rate' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
@@ -139,7 +139,7 @@
                         </svg>
                       </span>
                     </app-table-head>
-                    <app-table-head [sortable]="true" (click)="handleSort('amount')">
+                    <app-table-head [sortable]="true" (click)="handleSort('amount')" >
                       <span class="flex items-center justify-center gap-1">Storage Amount
                         <svg class="w-3.5 h-3.5" [class]="getSortIconClass('amount')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           @if (currentSortColumn === 'amount' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
@@ -158,9 +158,9 @@
                       <app-table-cell class="text-center">{{ grain.grossQuantity | number }}</app-table-cell>
                       <app-table-cell class="text-center">{{ grain.quantity | number }}</app-table-cell>
                       <app-table-cell class="text-center">{{ grain.chargedFromDate | date:'M/d/yy' }} – {{ grain.chargedThruDate | date:'M/d/yy' }}</app-table-cell>
-                      <app-table-cell class="text-center">{{ grain.storageDays | number:'1.0-1' }}</app-table-cell>
-                      <app-table-cell class="text-center">${{ grain.storageRate.toFixed(3) }}</app-table-cell>
-                      <app-table-cell class="text-center text-scoular-red-accessible dark:text-scoular-red font-medium">{{ getCost(grain.id) | currency:'USD':'symbol':'1.2-2' }}</app-table-cell>
+                      <app-table-cell class="text-center" >{{ grain.storageDays | number:'1.0-1' }}</app-table-cell>
+                      <app-table-cell class="text-center" >${{ grain.storageRate.toFixed(3) }}</app-table-cell>
+                      <app-table-cell class="text-center text-scoular-red-accessible dark:text-scoular-red font-medium" >{{ getCost(grain.id) | currency:'USD':'symbol':'1.2-2' }}</app-table-cell>
                     </app-table-row>
                   }
                 </app-table-body>

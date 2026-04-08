@@ -374,6 +374,36 @@ export class CustomerProfileComponent {
     const c = this.customer();
     return [c.addressLine1, c.location, c.stateProvince, c.postalCode].filter(v => !!v).join(', ');
   }
+
+  /** Splits ScoularView recipients string into individual entries.
+   *  Handles commas inside names (e.g., "Ade, Clay 785-555-1234") by only splitting
+   *  on commas that separate complete name+phone pairs. */
+  parseRecipients(raw: string): string[] {
+    const parts = raw.split(',').map(p => p.trim()).filter(Boolean);
+    const results: string[] = [];
+    let buffer = '';
+    for (const part of parts) {
+      if (buffer) {
+        buffer += ', ' + part;
+      } else {
+        buffer = part;
+      }
+      // A complete recipient has a phone number (3+ consecutive digits)
+      if (/\d{3}/.test(buffer)) {
+        results.push(buffer);
+        buffer = '';
+      }
+    }
+    // If anything remains without a phone number, attach it to the last entry or add as-is
+    if (buffer) {
+      if (results.length > 0) {
+        results[results.length - 1] += ', ' + buffer;
+      } else {
+        results.push(buffer);
+      }
+    }
+    return results;
+  }
   get marketSharePercentage(): number { return this.contractMetrics().marketSharePercentage; }
   get bushelsAvailable(): number { return this.contractMetrics().bushelsAvailable; }
 

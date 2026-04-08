@@ -34,7 +34,7 @@
                   [class]="selectedYear() === intention.plantingYear
                     ? 'bg-scoular-green-accessible text-white'
                     : 'text-gray-700 dark:text-gray-300 group-hover:bg-gray-100 dark:group-hover:bg-gray-700'">
-                  {{ intention.plantingYear }} Planting Year
+                  {{ intention.plantingYear }} Crop Year
                 </span>
                 <div class="h-px flex-1" [class]="selectedYear() === intention.plantingYear ? 'bg-scoular-green-accessible dark:bg-scoular-green' : 'bg-gray-300 dark:bg-gray-600'"></div>
               </div>
@@ -63,7 +63,7 @@
                   <div class="text-sm text-gray-900 dark:text-white">{{ intention.acres | number }}</div>
                 </div>
                 <div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400">Planting Year</div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">Crop Year</div>
                   <div class="text-sm text-gray-900 dark:text-white">{{ intention.plantingYear }}</div>
                 </div>
                 <div>
@@ -128,7 +128,7 @@
                 </app-table-head>
                 <app-table-head [sortable]="true" (click)="handleSort('plantingYear')" class="text-center">
                   <div class="flex items-center justify-center gap-1.5">
-                    <span>Planting Year</span>
+                    <span>Crop Year</span>
                     <span [class]="getSortIconClass('plantingYear')">
                       @if (currentSortColumn === 'plantingYear' && currentSortDirection === 'asc') {
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -168,7 +168,7 @@
                 </app-table-head>
                 <app-table-head class="w-[22%]">
                   <div class="flex justify-center">
-                    <button type="button" (click)="openAddDialog()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium text-scoular-green-accessible dark:text-scoular-green border border-scoular-green-accessible/30 dark:border-scoular-green/30 hover:bg-scoular-green/10 dark:hover:bg-scoular-green/20 transition-colors">
+                    <button type="button" (click)="openAddDialog()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green transition-colors">
                       <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
                       </svg>
@@ -190,7 +190,7 @@
                           [class]="selectedYear() === intention.plantingYear
                             ? 'bg-scoular-green-accessible text-white'
                             : 'text-gray-700 dark:text-gray-300 group-hover:bg-gray-100 dark:group-hover:bg-gray-700'">
-                          {{ intention.plantingYear }} Planting Year
+                          {{ intention.plantingYear }} Crop Year
                         </span>
                         <div class="h-px flex-1" [class]="selectedYear() === intention.plantingYear ? 'bg-scoular-green-accessible dark:bg-scoular-green' : 'bg-gray-300 dark:bg-gray-600'"></div>
                       </div>
@@ -287,7 +287,7 @@
               </div>
 
               <div class="space-y-2">
-                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Planting Year</label>
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Crop Year</label>
                 <app-input type="text" inputmode="numeric" [maxlength]="4" [(ngModel)]="addForm.plantingYear" placeholder="e.g., 2025"></app-input>
               </div>
 
@@ -364,7 +364,7 @@
             </div>
 
             <div class="space-y-2">
-              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Planting Year</label>
+              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Crop Year</label>
               <app-input type="text" inputmode="numeric" [maxlength]="4" [(ngModel)]="editForm.plantingYear" placeholder="e.g., 2025"></app-input>
             </div>
           </div>
@@ -412,7 +412,7 @@
                 <span class="text-sm font-medium text-gray-900 dark:text-gray-300">{{ selectedIntention.acres | number }}</span>
               </div>
               <div class="flex justify-between">
-                <span class="text-sm text-gray-600 dark:text-gray-400">Planting Year:</span>
+                <span class="text-sm text-gray-600 dark:text-gray-400">Crop Year:</span>
                 <span class="text-sm font-medium text-gray-900 dark:text-gray-300">{{ selectedIntention.plantingYear }}</span>
               </div>
             </div>

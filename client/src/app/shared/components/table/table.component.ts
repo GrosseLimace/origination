@@ -111,7 +111,7 @@ export class TableRowComponent {
   public rowClick = output<void>();
 
   getRowClasses(): string {
-    let classes = 'border-b border-gray-100 dark:border-gray-800 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50';
+    let classes = 'border-b border-gray-200 dark:border-gray-800 transition-colors hover:bg-gray-200 dark:hover:bg-gray-800/50 even:bg-gray-100 dark:even:bg-gray-800/30';
     if (this.clickable()) {
       classes += ' cursor-pointer';
     }

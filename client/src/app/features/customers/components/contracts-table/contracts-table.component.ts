@@ -621,9 +621,9 @@ export class ContractsTableComponent {
   }
 
   getRowHighlight(contract: Contract): string {
+    if (contract.customerConfirmStatus && contract.customerConfirmStatus !== 'Confirmed') return '!bg-amber-100 dark:!bg-amber-500/15';
     const status = this.getCalculatedStatus(contract);
     if (status === 'Past Due') return '!bg-red-100 dark:!bg-red-500/15';
-    if (contract.customerConfirmStatus && contract.customerConfirmStatus !== 'Confirmed') return '!bg-amber-100 dark:!bg-amber-500/15';
     return '';
   }
 

@@ -140,7 +140,7 @@
           </div>
 
           <!-- Slide-in bids panel (right edge) -->
-          <div class="absolute top-0 right-0 h-full w-[420px] z-[999] bg-white dark:bg-gray-900 shadow-2xl border-l border-gray-200 dark:border-gray-700 flex flex-col transition-transform duration-300 ease-in-out"
+          <div class="absolute top-0 right-0 h-full w-full sm:w-[360px] lg:w-[420px] z-[999] bg-white dark:bg-gray-900 shadow-2xl border-l border-gray-200 dark:border-gray-700 flex flex-col transition-transform duration-300 ease-in-out"
                [style.transform]="showPanel() ? 'translateX(0)' : 'translateX(100%)'">
 
             @if (panelSelectedLocation()) {
@@ -534,7 +534,7 @@
 
           <!-- Add Location Form (appears after pin is placed) -->
           @if (showAddLocationForm()) {
-            <div class="absolute top-2 right-2 z-[1100] bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-[500px] flex flex-col max-h-[calc(100%-1rem)]">
+            <div class="absolute top-2 right-2 z-[1100] bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-[calc(100%-1rem)] sm:w-[400px] lg:w-[500px] flex flex-col max-h-[calc(100%-1rem)]">
 
               <!-- Header -->
               <div class="shrink-0 flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-t-xl">
@@ -758,9 +758,9 @@
                 <table class="border-collapse text-sm" style="min-width: max-content; width: 100%;">
                   <thead>
                     <tr class="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-                      <th class="sticky top-0 left-0 z-30 px-4 py-3.5 text-left text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-r border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 min-w-[260px]">Location</th>
+                      <th class="sticky top-0 left-0 z-30 px-4 py-3.5 text-left text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-r border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 min-w-[180px] lg:min-w-[260px]">Location</th>
                       @for (crop of editBidsCrops(); track crop) {
-                        <th class="sticky top-0 z-20 px-4 py-3.5 text-center text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 min-w-[150px]">{{ crop }}</th>
+                        <th class="sticky top-0 z-20 px-4 py-3.5 text-center text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 min-w-[120px] lg:min-w-[150px]">{{ crop }}</th>
                       }
                       <th class="sticky top-0 z-20 px-3 py-3.5 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 w-12 relative">
                         <button
@@ -822,7 +822,7 @@
                             <span cdkDragHandle class="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400 flex-shrink-0">
                               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>
                             </span>
-                            <span class="text-sm font-medium text-gray-900 dark:text-white truncate" style="max-width: 220px;" [title]="row.name">{{ row.name }}</span>
+                            <span class="text-sm font-medium text-gray-900 dark:text-white truncate max-w-[160px] lg:max-w-[220px]" [title]="row.name">{{ row.name }}</span>
                           </div>
                         </td>
                         @for (crop of editBidsCrops(); track crop) {
