@@ -54,27 +54,27 @@
                     </p>
                   </div>
                 </div>
-                <div class="flex items-center gap-4 flex-shrink-0">
-                  <div class="w-24 text-center">
-                    <p class="text-xs text-gray-500 dark:text-gray-400">Avg Date</p>
-                    <p class="text-sm font-medium text-gray-900 dark:text-white">{{ group.avgDate ? (group.avgDate | date:'M/d/yyyy') : '—' }}</p>
+                <div class="flex items-center gap-2 lg:gap-4 flex-shrink-0 flex-wrap">
+                  <div class="text-center">
+                    <p class="text-[10px] lg:text-xs text-gray-500 dark:text-gray-400">Avg Date</p>
+                    <p class="text-xs lg:text-sm font-medium text-gray-900 dark:text-white">{{ group.avgDate ? (group.avgDate | date:'M/d/yyyy') : '—' }}</p>
                   </div>
-                  <div class="w-28 text-center">
-                    <p class="text-xs text-gray-500 dark:text-gray-400">Total Net Bu</p>
-                    <p class="text-sm font-medium text-gray-900 dark:text-white">{{ toBushels(group.totalNetWeight, group.productCode) | number:'1.2-2' }}</p>
+                  <div class="text-center">
+                    <p class="text-[10px] lg:text-xs text-gray-500 dark:text-gray-400">Total Net Bu</p>
+                    <p class="text-xs lg:text-sm font-medium text-gray-900 dark:text-white">{{ toBushels(group.totalNetWeight, group.productCode) | number:'1.2-2' }}</p>
                   </div>
-                  <div class="w-24 text-center">
-                    <p class="text-xs text-gray-500 dark:text-gray-400">Avg Moisture</p>
-                    <p class="text-sm font-medium text-gray-900 dark:text-white">{{ group.avgMoisture | number:'1.1-1' }}%</p>
+                  <div class="text-center">
+                    <p class="text-[10px] lg:text-xs text-gray-500 dark:text-gray-400">Avg Moisture</p>
+                    <p class="text-xs lg:text-sm font-medium text-gray-900 dark:text-white">{{ group.avgMoisture | number:'1.1-1' }}%</p>
                   </div>
-                  <div class="w-24 text-center">
-                    <p class="text-xs text-gray-500 dark:text-gray-400">Avg Test Wt</p>
-                    <p class="text-sm font-medium text-gray-900 dark:text-white">{{ group.avgTestWeight !== null ? (group.avgTestWeight | number:'1.1-1') + '%' : '—' }}</p>
+                  <div class="text-center">
+                    <p class="text-[10px] lg:text-xs text-gray-500 dark:text-gray-400">Avg Test Wt</p>
+                    <p class="text-xs lg:text-sm font-medium text-gray-900 dark:text-white">{{ group.avgTestWeight !== null ? (group.avgTestWeight | number:'1.1-1') + '%' : '—' }}</p>
                   </div>
                   @if (group.isWheat) {
-                    <div class="w-24 text-center">
-                      <p class="text-xs text-gray-500 dark:text-gray-400">Avg Protein</p>
-                      <p class="text-sm font-medium text-gray-900 dark:text-white">{{ group.avgProtein !== null ? (group.avgProtein | number:'1.1-1') + '%' : '—' }}</p>
+                    <div class="text-center">
+                      <p class="text-[10px] lg:text-xs text-gray-500 dark:text-gray-400">Avg Protein</p>
+                      <p class="text-xs lg:text-sm font-medium text-gray-900 dark:text-white">{{ group.avgProtein !== null ? (group.avgProtein | number:'1.1-1') + '%' : '—' }}</p>
                     </div>
                   }
                 </div>
@@ -82,8 +82,8 @@
 
               <!-- Expanded: Ticket Table -->
               @if (isCommodityExpanded(group.productCode)) {
-                <div class="overflow-x-auto">
-                  <app-table>
+                <div class="overflow-auto" style="max-height: min(50vh, 400px);">
+                  <app-table [stickyHeader]="true">
                     <app-table-header>
                       <app-table-row>
                         <app-table-head [sortable]="true" (click)="handleSort('id')">
@@ -132,7 +132,7 @@
                             </svg>
                           </span>
                         </app-table-head>
-                        <app-table-head [sortable]="true" (click)="handleSort('testWeight')">
+                        <app-table-head [sortable]="true" (click)="handleSort('testWeight')" >
                           <span class="flex items-center justify-center gap-1">Test Wt %
                             <svg class="w-3.5 h-3.5" [class]="getSortIconClass('testWeight')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               @if (currentSortColumn === 'testWeight' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
@@ -142,7 +142,7 @@
                           </span>
                         </app-table-head>
                         @if (group.isWheat) {
-                          <app-table-head [sortable]="true" (click)="handleSort('protein')">
+                          <app-table-head [sortable]="true" (click)="handleSort('protein')" >
                             <span class="flex items-center justify-center gap-1">Protein %
                               <svg class="w-3.5 h-3.5" [class]="getSortIconClass('protein')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 @if (currentSortColumn === 'protein' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
@@ -163,7 +163,7 @@
                           <app-table-cell class="text-center text-xs">{{ ticket.elevatorCity && ticket.elevatorState ? ticket.elevatorCity + ', ' + ticket.elevatorState : ticket.elevatorCity || ticket.elevatorState || '—' }}</app-table-cell>
                           <app-table-cell class="text-center">{{ toBushels(ticket.appliedDockQuantity, ticket.productCode) | number:'1.2-2' }}</app-table-cell>
                           <app-table-cell class="text-center">{{ ticket.moisture | number:'1.1-1' }}%</app-table-cell>
-                          <app-table-cell class="text-center">
+                          <app-table-cell class="text-center" >
                             @if (ticket.testWeight !== null && ticket.testWeight !== undefined) {
                               {{ ticket.testWeight | number:'1.1-1' }}%
                             } @else {
@@ -171,7 +171,7 @@
                             }
                           </app-table-cell>
                           @if (group.isWheat) {
-                            <app-table-cell class="text-center">
+                            <app-table-cell class="text-center" >
                               @if (ticket.proteinPercent !== null && ticket.proteinPercent !== undefined) {
                                 {{ ticket.proteinPercent | number:'1.1-1' }}%
                               } @else {

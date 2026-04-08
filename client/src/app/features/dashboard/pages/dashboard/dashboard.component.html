@@ -191,7 +191,7 @@
                   No planting data for {{ selectedPlantingYear() }}
                 </div>
               } @else {
-                <div class="flex items-end gap-2" style="height: 200px; padding-bottom: 4px;">
+                <div class="flex items-end gap-2 h-[160px] lg:h-[200px]" style="padding-bottom: 4px;">
                   @for (crop of breakdown; track $index) {
                     <div class="flex flex-col items-center gap-1 flex-1 min-w-0 h-full justify-end">
                       <span class="text-xs text-gray-500 dark:text-gray-400 tabular-nums whitespace-nowrap">{{ formatAcres(crop.acres) }}</span>
@@ -219,8 +219,7 @@
                 <div class="flex flex-col sm:flex-row items-center gap-6">
                   <!-- Donut ring -->
                   <div
-                    class="relative flex-shrink-0 rounded-full"
-                    style="width: 148px; height: 148px;"
+                    class="relative flex-shrink-0 rounded-full w-[120px] h-[120px] lg:w-[148px] lg:h-[148px]"
                     [style.background]="cropDistributionGradient()"
                   >
                     <!-- Inner circle (donut hole) -->
@@ -235,7 +234,7 @@
                     </div>
                   </div>
                   <!-- Legend -->
-                  <div class="flex-1 space-y-2.5 overflow-auto" style="max-height: 148px;">
+                  <div class="flex-1 space-y-2.5 overflow-auto max-h-[120px] lg:max-h-[148px]">
                     @for (crop of breakdown; track $index) {
                       <div class="flex items-center justify-between gap-3">
                         <div class="flex items-center gap-2 min-w-0">

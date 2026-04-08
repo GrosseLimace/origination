@@ -781,11 +781,17 @@ export class NlqFilterService {
     const latestNoteByCustomer = new Map<number, { note: Note; time: number }>();
     const customerIdsWithNotes = new Set<number>();
 
+    // Treat bare ISO strings as UTC — API stores DateTime.UtcNow without Z suffix.
+    const parseUtc = (ts: string | Date) => {
+      const raw = typeof ts === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
+      return new Date(raw).getTime();
+    };
+
     // Index notes by customerCode (source customer ID string)
     const noteTimeByCode = new Map<string, { note: Note; time: number }>();
     for (const n of context.notes) {
       if (!n.customerCode) continue;
-      const time = new Date(n.createdAt).getTime();
+      const time = parseUtc(n.createdAt);
       const existing = noteTimeByCode.get(n.customerCode);
       if (!existing || time > existing.time) {
         noteTimeByCode.set(n.customerCode, { note: n, time });
