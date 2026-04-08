@@ -503,6 +503,115 @@ public class UsersController : ControllerBase
 }
 ```
 
+## Outbound Calls, Batching, and Caching
+
+### Outbound Call Design
+
+Backend code MUST avoid chatty I/O patterns where one logical operation triggers many small outbound calls to databases, internal services, or third-party APIs.
+
+Prefer these patterns:
+
+- fetch the minimum data needed for the current operation
+- batch related lookups when the dependency supports it
+- shape queries so one request does the work of many per-item calls
+- reuse outbound HTTP clients through `IHttpClientFactory` or approved long-lived clients
+- cache repeated, relatively static reads when correctness allows it
+
+Avoid these patterns:
+
+- looping over items and making one outbound HTTP or database call per item
+- creating a new `HttpClient` per request
+- re-fetching the same reference data repeatedly within a request or hot path
+- loading full objects or large result sets "just in case" when a smaller projection would do
+- adding caching without clear invalidation, ownership, or consistency rules
+
+### Batching Rules
+
+- If one workflow needs data for multiple items, first ask whether the dependency supports batch retrieval.
+- If batch retrieval is available, prefer it over repeated per-item requests.
+- If batch retrieval is not available, document the limitation and minimize round trips through concurrency control, projection, or local aggregation.
+- Keep batch size explicit. Do not create unbounded "fetch everything" queries to avoid per-item calls.
+
+### Caching Rules
+
+- Cache only data that is expensive enough and stable enough to justify the complexity.
+- Prefer cache-aside patterns for read-heavy reference data.
+- Use in-memory caching only when single-instance behavior is acceptable.
+- Use distributed or hybrid caching when multiple app instances must share cached results.
+- Define cache key shape, TTL, invalidation triggers, and stale-data tolerance before adding a cache.
+- Do not use caching to hide correctness bugs or missing indexes.
+
+### HTTP Client Rules
+
+- Use `IHttpClientFactory` for named or typed clients when integrating with external or internal HTTP APIs.
+- Configure client timeouts, retry policies, and base addresses centrally.
+- Reuse connections intentionally. Do not allocate and dispose `HttpClient` per call.
+- Keep outbound call composition inside services or dedicated client abstractions, not controllers.
+
+### Review Heuristics
+
+During implementation and review, treat these as warning signs:
+
+- repeated `await` calls inside loops over collections
+- service methods that hydrate one DTO by calling multiple dependencies per item
+- endpoints that fetch static lookup data on every request
+- duplicate reference-data queries across multiple services
+- outbound API wrappers with no caching, batching, or projection strategy on hot paths
+
+### Good Example
+
+```csharp
+public async Task<IReadOnlyList<OrderSummaryDto>> GetOrdersAsync(
+    IReadOnlyCollection<int> orderIds,
+    CancellationToken cancellationToken)
+{
+    var orders = await _orderRepository.GetSummariesByIdsAsync(orderIds, cancellationToken);
+
+    var customerIds = orders
+        .Select(order => order.CustomerId)
+        .Distinct()
+        .ToArray();
+
+    var customers = await _customerClient.GetCustomersByIdsAsync(customerIds, cancellationToken);
+    var customerMap = customers.ToDictionary(customer => customer.Id);
+
+    return orders
+        .Select(order => new OrderSummaryDto(
+            order.Id,
+            order.Number,
+            customerMap[order.CustomerId].DisplayName,
+            order.Total))
+        .ToArray();
+}
+```
+
+### Bad Example
+
+```csharp
+public async Task<IReadOnlyList<OrderSummaryDto>> GetOrdersAsync(
+    IReadOnlyCollection<int> orderIds,
+    CancellationToken cancellationToken)
+{
+    var results = new List<OrderSummaryDto>();
+
+    foreach (var orderId in orderIds)
+    {
+        var order = await _orderRepository.GetByIdAsync(orderId, cancellationToken);
+        var customer = await _customerClient.GetCustomerAsync(order.CustomerId, cancellationToken);
+
+        results.Add(new OrderSummaryDto(
+            order.Id,
+            order.Number,
+            customer.DisplayName,
+            order.Total));
+    }
+
+    return results;
+}
+```
+
+In the bad example, one logical operation degrades into repeated per-item database and HTTP calls. The result is higher latency, more dependency pressure, and worse failure behavior.
+
 ## Exception Handling
 
 ### Custom Exceptions
