@@ -41,6 +41,13 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./features/unshipped-bushels/pages/unshipped-bushels/unshipped-bushels.component').then(m => m.UnshippedBushelsComponent)
   },
+  environment.usageDashboardEnabled
+    ? {
+        path: 'usage-dashboard',
+        canActivate: [authGuard],
+        loadComponent: () => import('./features/usage-dashboard/pages/usage-dashboard/usage-dashboard.component').then(m => m.UsageDashboardComponent)
+      }
+    : { path: 'usage-dashboard', redirectTo: '' },
   {
     path: '**',
     redirectTo: ''

@@ -48,10 +48,12 @@ export class HeaderComponent {
 
   readonly envName = environment.envName;
   readonly bidSheetEnabled = environment.bidSheetEnabled;
+  readonly usageDashboardEnabled = environment.usageDashboardEnabled;
 
   mobileMenuOpen = signal(false);
   profileMenuOpen = signal(false);
   profilePhotoUrl = signal<string | null>(null);
+  readonly isAdmin = signal(false);
   private readonly currentUrl = signal(this.router.url);
 
   constructor() {
@@ -69,6 +71,10 @@ export class HeaderComponent {
       switchMap(() => {
         const account = this._getAccount();
         if (!account) return EMPTY;
+
+        // Check admin role from ID token claims
+        const roles = (account.idTokenClaims as any)?.roles as string[] | undefined;
+        this.isAdmin.set(roles?.includes('Admin') ?? false);
         return from(this.msalService.instance.acquireTokenSilent({
           scopes: ['User.Read'],
           account

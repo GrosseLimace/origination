@@ -1,8 +1,9 @@
-import { Component, input, computed, signal, effect, ChangeDetectionStrategy } from '@angular/core';
+import { Component, input, computed, signal, effect, ChangeDetectionStrategy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
 import { Customer, StoredGrain } from '@models';
+import { UsageTrackingService } from '@core/services/usage-tracking.service';
 
 export interface CommodityGroup {
   crop: string;
@@ -20,6 +21,7 @@ export interface CommodityGroup {
   templateUrl: './stored-grain-table.component.html'
 })
 export class StoredGrainTableComponent {
+  private readonly usageTracking = inject(UsageTrackingService);
   public isLoading = input(false);
   public storedGrain = input<StoredGrain[]>([]);
   public customer = input.required<Customer>();
@@ -145,6 +147,7 @@ export class StoredGrainTableComponent {
       return next;
     });
     if (isOpening) {
+      this.usageTracking.trackStorageDropdownOpen();
       // Capture currentTarget synchronously — it becomes null after event dispatch completes
       const header = event.currentTarget as HTMLElement;
       setTimeout(() => {

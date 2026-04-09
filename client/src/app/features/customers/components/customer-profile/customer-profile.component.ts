@@ -12,6 +12,7 @@ import { ActivitySummaryComponent } from '../activity-summary/activity-summary.c
 import { EditCustomerDialogComponent } from '../edit-customer-dialog/edit-customer-dialog.component';
 import { CustomerPrintReportComponent } from '../customer-print-report/customer-print-report.component';
 import { AppStateService } from '@core/services/app-state.service';
+import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow } from '@models';
 
 @Component({
@@ -76,6 +77,15 @@ export class CustomerProfileComponent {
   @ViewChild('tabsSection') private tabsSectionRef?: ElementRef<HTMLElement>;
 
   private readonly themeService = inject(ThemeService);
+  private readonly usageTracking = inject(UsageTrackingService);
+
+  trackCallClick(): void {
+    this.usageTracking.trackCallClick(this.customer().id.toString());
+  }
+
+  trackEmailClick(): void {
+    this.usageTracking.trackEmailClick(this.customer().id.toString());
+  }
 
   // Local state - signals
   activeTab = signal('contracts');
@@ -197,6 +207,9 @@ export class CustomerProfileComponent {
 
   selectTab(tabId: string): void {
     this.activeTab.set(tabId);
+    // Track tab clicks for usage dashboard
+    if (tabId === 'planting') this.usageTracking.trackPlantingTabClick();
+    if (tabId === 'storage') this.usageTracking.trackStorageDropdownOpen(this.customer().id.toString());
     // Defer scroll until after Angular renders the new tab content — otherwise the DOM
     // still shows the old (tall) tab and the scroll position doesn't update correctly.
     setTimeout(() => {
@@ -324,6 +337,7 @@ export class CustomerProfileComponent {
 
   openEditDialog(): void {
     this.showEditDialog.set(true);
+    this.usageTracking.trackProducerDetailsEdit(this.customer().id.toString());
   }
 
   closeEditDialog(): void {

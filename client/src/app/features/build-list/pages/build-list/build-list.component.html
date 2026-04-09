@@ -204,7 +204,7 @@
                       Show on Map
                     </app-button>
                   }-->
-                  <app-button [variant]="showRefinePanel() ? 'default' : 'outline'" (onClick)="showRefinePanel.update(v => !v)">
+                  <app-button [variant]="showRefinePanel() ? 'default' : 'outline'" (onClick)="toggleRefinePanel()">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2">
                       <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
                     </svg>
@@ -213,7 +213,7 @@
                       <span class="ml-1.5 inline-flex items-center justify-center w-4 h-4 text-xs font-bold rounded-full bg-gray-600 dark:bg-gray-400 text-white dark:text-gray-900">{{ refinementCount }}</span>
                     }
                   </app-button>
-                  <app-button [variant]="showManageMembersPanel() ? 'default' : 'outline'" (onClick)="showManageMembersPanel.update(v => !v)">
+                  <app-button [variant]="showManageMembersPanel() ? 'default' : 'outline'" (onClick)="toggleManageMembersPanel()">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2">
                       <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
                       <circle cx="9" cy="7" r="4"/>

@@ -1,0 +1,805 @@
+<div class="p-6 max-w-7xl mx-auto">
+  <!-- Header Row: Title + Trade Unit Selector + Date Range -->
+  <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
+    <div class="flex items-center gap-4">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Usage Dashboard</h1>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Monitor team adoption and activity</p>
+      </div>
+    </div>
+    <div class="flex flex-wrap items-center gap-3">
+      <app-trade-unit-selector />
+      <div class="flex items-center gap-1.5">
+        <button type="button" (click)="setRange('7d')"
+          [class]="activeRange() === '7d'
+            ? 'px-3 py-1.5 text-sm font-medium rounded-lg bg-scoular-green-accessible text-white'
+            : 'px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'">
+          7 Days
+        </button>
+        <button type="button" (click)="setRange('30d')"
+          [class]="activeRange() === '30d'
+            ? 'px-3 py-1.5 text-sm font-medium rounded-lg bg-scoular-green-accessible text-white'
+            : 'px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'">
+          30 Days
+        </button>
+        <div class="relative">
+          <button type="button" (click)="customRangeOpen.set(!customRangeOpen())"
+            [class]="activeRange() === 'custom'
+              ? 'px-3 py-1.5 text-sm font-medium rounded-lg bg-scoular-green-accessible text-white'
+              : 'px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'">
+            Custom
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="inline ml-1"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          @if (customRangeOpen()) {
+            <div class="absolute right-0 mt-2 p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-50 space-y-3">
+              <div class="flex items-center gap-2">
+                <label class="text-sm text-gray-600 dark:text-gray-400 w-10">From</label>
+                <input type="date" [value]="dateFrom()" (change)="onCustomDateChange('from', $any($event.target).value)"
+                  class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-scoular-green focus:border-transparent" />
+              </div>
+              <div class="flex items-center gap-2">
+                <label class="text-sm text-gray-600 dark:text-gray-400 w-10">To</label>
+                <input type="date" [value]="dateTo()" (change)="onCustomDateChange('to', $any($event.target).value)"
+                  class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-scoular-green focus:border-transparent" />
+              </div>
+              <button type="button" (click)="customRangeOpen.set(false)"
+                class="w-full px-3 py-1.5 text-sm font-medium rounded-lg bg-scoular-green-accessible text-white hover:bg-scoular-green">
+                Apply
+              </button>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <!-- Adoption Rate -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+      <div class="w-10 h-10 rounded-lg bg-scoular-green/10 dark:bg-scoular-green/20 flex items-center justify-center flex-shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+      </div>
+      <div class="min-w-0 flex-1">
+        <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Adoption Rate</p>
+        <div class="flex items-baseline gap-2 mt-1">
+          <span class="text-2xl font-bold text-gray-900 dark:text-white">{{ summary()?.adoptionRate ?? 0 }}%</span>
+          <span class="text-xs text-gray-500 dark:text-gray-400">{{ summary()?.activeUsers ?? 0 }} of {{ summary()?.totalUsers ?? 0 }}</span>
+        </div>
+        <div class="mt-2 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+          <div class="bg-scoular-green h-1.5 rounded-full transition-all" [style.width.%]="summary()?.adoptionRate ?? 0"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Avg Logins -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+      <div class="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600 dark:text-blue-400">
+          <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/>
+        </svg>
+      </div>
+      <div class="min-w-0 flex-1">
+        <p class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ loginsLabel() }}</p>
+        <div class="flex items-baseline gap-2 mt-1">
+          <span class="text-2xl font-bold text-gray-900 dark:text-white">{{ avgLoginsDisplay() }}</span>
+        </div>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ loginsSubLabel() }}</p>
+      </div>
+    </div>
+
+    <!-- Avg Session Duration -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+      <div class="w-10 h-10 rounded-lg bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center flex-shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-purple-600 dark:text-purple-400">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+      </div>
+      <div class="min-w-0 flex-1">
+        <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Avg Session Duration</p>
+        <div class="flex items-baseline gap-2 mt-1">
+          <span class="text-2xl font-bold text-gray-900 dark:text-white">{{ formatSessionDuration(summary()?.avgSessionMinutes ?? 0) }}</span>
+        </div>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">average per session</p>
+      </div>
+    </div>
+
+    <!-- Needs Attention -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+      <div class="w-10 h-10 rounded-lg bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center flex-shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-amber-600 dark:text-amber-400">
+          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/>
+        </svg>
+      </div>
+      <div class="min-w-0 flex-1">
+        <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Needs Attention</p>
+        <div class="flex items-baseline gap-2 mt-1">
+          <span class="text-2xl font-bold" [class]="needsAttentionCount() > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-white'">{{ needsAttentionCount() }}</span>
+          <span class="text-xs text-gray-500 dark:text-gray-400">users</span>
+        </div>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">inactive or low usage</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab Bar (pill-style, matches customer profile tabs) -->
+  <div class="w-full bg-gray-100 dark:bg-gray-800 rounded-full p-0.5 sm:p-1 mb-6 overflow-x-auto">
+    <div class="flex min-w-0">
+      @for (tab of tabs; track tab.id) {
+        <button type="button"
+          (click)="onTabChange(tab.id)"
+          [class]="activeTab() === tab.id
+            ? 'flex-1 text-center px-4 py-2 text-sm font-medium rounded-full transition-all duration-200 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+            : 'flex-1 text-center px-4 py-2 text-sm font-medium rounded-full transition-all duration-200 bg-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'">
+          {{ tab.label }}
+        </button>
+      }
+    </div>
+  </div>
+
+  <!-- Tab Content -->
+
+  <!-- ==================== Who's Using It ==================== -->
+  @if (activeTab() === 'whos-using-it') {
+
+    <!-- Top Row: Status Breakdown + Daily Active Users -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+      <!-- User Status Breakdown (Donut) -->
+      <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-4 flex flex-col items-center">
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-3 self-start">User Status</h3>
+        <!-- Donut Chart -->
+        <div class="relative">
+          <svg width="130" height="130" viewBox="0 0 100 100">
+            <!-- Background circle -->
+            <circle cx="50" cy="50" r="40" fill="none" stroke="currentColor"
+              class="text-gray-200 dark:text-gray-700" stroke-width="10" />
+            <!-- Active segment (green) -->
+            @if (activeCount() > 0) {
+              <circle cx="50" cy="50" r="40" fill="none"
+                class="text-green-500 dark:text-green-400" stroke="currentColor" stroke-width="10"
+                [attr.stroke-dasharray]="donutSegments().activeLen + ' ' + (circumference - donutSegments().activeLen)"
+                [attr.stroke-dashoffset]="donutSegments().activeOffset"
+                transform="rotate(-90 50 50)" />
+            }
+            <!-- Low Usage segment (amber) -->
+            @if (lowUsageCount() > 0) {
+              <circle cx="50" cy="50" r="40" fill="none"
+                class="text-amber-500 dark:text-amber-400" stroke="currentColor" stroke-width="10"
+                [attr.stroke-dasharray]="donutSegments().lowLen + ' ' + (circumference - donutSegments().lowLen)"
+                [attr.stroke-dashoffset]="donutSegments().lowOffset"
+                transform="rotate(-90 50 50)" />
+            }
+            <!-- Inactive segment (red) -->
+            @if (inactiveCount() > 0) {
+              <circle cx="50" cy="50" r="40" fill="none"
+                class="text-red-500 dark:text-red-400" stroke="currentColor" stroke-width="10"
+                [attr.stroke-dasharray]="donutSegments().inactiveLen + ' ' + (circumference - donutSegments().inactiveLen)"
+                [attr.stroke-dashoffset]="donutSegments().inactiveOffset"
+                transform="rotate(-90 50 50)" />
+            }
+            <!-- Total in center -->
+            <text x="50" y="46" text-anchor="middle" dominant-baseline="central"
+              class="fill-gray-900 dark:fill-white" font-size="20" font-weight="700">
+              {{ users().length }}
+            </text>
+            <text x="50" y="60" text-anchor="middle" dominant-baseline="central"
+              class="fill-gray-500 dark:fill-gray-400" font-size="8">
+              total
+            </text>
+          </svg>
+        </div>
+        <!-- Legend -->
+        <div class="flex flex-col gap-2.5 mt-auto pt-4 w-full">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-3 rounded-full bg-green-500 dark:bg-green-400"></div>
+              <span class="text-sm text-gray-600 dark:text-gray-400">Active</span>
+            </div>
+            <span class="text-sm font-bold text-gray-900 dark:text-white">{{ activeCount() }}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-3 rounded-full bg-amber-500 dark:bg-amber-400"></div>
+              <span class="text-sm text-gray-600 dark:text-gray-400">Low Usage</span>
+            </div>
+            <span class="text-sm font-bold text-gray-900 dark:text-white">{{ lowUsageCount() }}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-3 rounded-full bg-red-500 dark:bg-red-400"></div>
+              <span class="text-sm text-gray-600 dark:text-gray-400">Inactive</span>
+            </div>
+            <span class="text-sm font-bold text-gray-900 dark:text-white">{{ inactiveCount() }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Daily Active Users (Last 15 Days) - Bar Graph -->
+      <div class="lg:col-span-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5">
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-4">Daily Active Users — Last 15 Days</h3>
+        <div class="flex items-end gap-2 h-[220px] pt-6 pb-6 relative">
+          <!-- Y-axis gridlines -->
+          <div class="absolute inset-x-0 top-6 bottom-6 flex flex-col justify-between pointer-events-none">
+            @for (line of [4, 3, 2, 1, 0]; track line) {
+              <div class="border-t border-gray-200 dark:border-gray-700/50 w-full"></div>
+            }
+          </div>
+          <!-- Bars -->
+          @for (day of dailyActiveLast15(); track day.date) {
+            <div class="flex-1 flex flex-col items-center h-full justify-end relative z-10 group">
+              <!-- Count above bar -->
+              @if (day.uniqueUserCount > 0) {
+                <span class="text-[11px] font-semibold text-gray-700 dark:text-gray-300 mb-1">{{ day.uniqueUserCount }}</span>
+              }
+              <!-- Bar -->
+              <div class="w-full max-w-[36px] mx-auto rounded-t-sm transition-all hover:opacity-80"
+                [class]="day.uniqueUserCount > 0 ? 'bg-scoular-green' : 'bg-gray-300 dark:bg-gray-600'"
+                [style.height.%]="day.uniqueUserCount > 0 ? Math.max((day.uniqueUserCount / maxDailyActive()) * 100, 6) : 2">
+              </div>
+              <!-- X-axis label -->
+              <span class="absolute -bottom-5 text-[10px] text-gray-500 dark:text-gray-400 whitespace-nowrap">{{ formatDayLabel(day.date).split(' ')[1] }}</span>
+            </div>
+          }
+        </div>
+        <!-- X-axis month labels -->
+        <div class="flex justify-between px-1 mt-1">
+          <span class="text-[10px] text-gray-400 dark:text-gray-500">{{ dailyActiveLast15()[0]?.date ? formatDayLabel(dailyActiveLast15()[0].date) : '' }}</span>
+          <span class="text-[10px] text-gray-400 dark:text-gray-500">{{ dailyActiveLast15().length > 0 ? formatDayLabel(dailyActiveLast15()[dailyActiveLast15().length - 1].date) : '' }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Originator Table -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm mt-6 overflow-hidden">
+      <div class="flex items-center gap-3 p-5 pb-4 bg-white dark:bg-gray-800 relative z-10">
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-white whitespace-nowrap">All Originators</h3>
+        <div class="relative">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="text" placeholder="Search originators..." [ngModel]="originatorSearch()" (ngModelChange)="originatorSearch.set($event)"
+            class="pl-8 pr-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white w-48 focus:ring-2 focus:ring-scoular-green focus:border-transparent" />
+        </div>
+        <select [ngModel]="statusFilter()" (ngModelChange)="statusFilter.set($event)"
+          class="text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+          <option value="all">All Statuses</option>
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+          <option value="Never Logged In">Never Logged In</option>
+        </select>
+      </div>
+
+      @if (loading() && users().length === 0) {
+        <div class="text-center py-12 text-gray-500 dark:text-gray-400">
+          <svg class="animate-spin h-8 w-8 mx-auto mb-3 text-gray-400" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.961 3 8.12l3-2.829z"></path>
+          </svg>
+          <p class="text-sm">Loading...</p>
+        </div>
+      } @else if (filteredUsers().length === 0) {
+        <div class="text-center py-12 text-gray-500 dark:text-gray-400">
+          <svg class="mx-auto h-10 w-10 text-gray-400 dark:text-gray-600 mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          <p class="text-sm">No users found</p>
+        </div>
+      } @else {
+        <div class="overflow-auto max-h-[500px] px-4 pb-4">
+          <app-table [stickyHeader]="true">
+            <app-table-header>
+                <app-table-row>
+                  <app-table-head [sortable]="true" (click)="handleSort('name')">
+                    <span class="flex items-center gap-1">
+                      Originator
+                      <span [class]="getSortIconClass('name')">
+                        @if (sortColumn() === 'name' && sortDirection() === 'asc') {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                        } @else if (sortColumn() === 'name' && sortDirection() === 'desc') {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        } @else {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
+                        }
+                      </span>
+                    </span>
+                  </app-table-head>
+                  <app-table-head thClass="text-center" [sortable]="true" (click)="handleSort('status')">
+                    <span class="flex items-center justify-center gap-1">
+                      Status
+                      <span [class]="getSortIconClass('status')">
+                        @if (sortColumn() === 'status' && sortDirection() === 'asc') {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                        } @else if (sortColumn() === 'status' && sortDirection() === 'desc') {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        } @else {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
+                        }
+                      </span>
+                    </span>
+                  </app-table-head>
+                  <app-table-head thClass="text-center" [sortable]="true" (click)="handleSort('lastLogin')">
+                    <span class="flex items-center justify-center gap-1">
+                      Last Login
+                      <span [class]="getSortIconClass('lastLogin')">
+                        @if (sortColumn() === 'lastLogin' && sortDirection() === 'asc') {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                        } @else if (sortColumn() === 'lastLogin' && sortDirection() === 'desc') {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        } @else {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
+                        }
+                      </span>
+                    </span>
+                  </app-table-head>
+                  <app-table-head thClass="text-center" [sortable]="true" (click)="handleSort('logins')">
+                    <span class="flex items-center justify-center gap-1">
+                      Logins (30d)
+                      <span [class]="getSortIconClass('logins')">
+                        @if (sortColumn() === 'logins' && sortDirection() === 'asc') {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                        } @else if (sortColumn() === 'logins' && sortDirection() === 'desc') {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        } @else {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
+                        }
+                      </span>
+                    </span>
+                  </app-table-head>
+                  <app-table-head thClass="text-center" [sortable]="true" (click)="handleSort('avgSession')">
+                    <span class="flex items-center justify-center gap-1">
+                      Avg Session
+                      <span [class]="getSortIconClass('avgSession')">
+                        @if (sortColumn() === 'avgSession' && sortDirection() === 'asc') {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                        } @else if (sortColumn() === 'avgSession' && sortDirection() === 'desc') {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        } @else {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
+                        }
+                      </span>
+                    </span>
+                  </app-table-head>
+                  <app-table-head thClass="text-center" [sortable]="true" (click)="handleSort('contacted')">
+                    <span class="flex items-center justify-center gap-1">
+                      Customers Contacted
+                      <span [class]="getSortIconClass('contacted')">
+                        @if (sortColumn() === 'contacted' && sortDirection() === 'asc') {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                        } @else if (sortColumn() === 'contacted' && sortDirection() === 'desc') {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        } @else {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
+                        }
+                      </span>
+                    </span>
+                  </app-table-head>
+                  <app-table-head thClass="text-center" [sortable]="true" (click)="handleSort('notes')">
+                    <span class="flex items-center justify-center gap-1">
+                      Notes Placed
+                      <span [class]="getSortIconClass('notes')">
+                        @if (sortColumn() === 'notes' && sortDirection() === 'asc') {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                        } @else if (sortColumn() === 'notes' && sortDirection() === 'desc') {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        } @else {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
+                        }
+                      </span>
+                    </span>
+                  </app-table-head>
+                </app-table-row>
+              </app-table-header>
+              <app-table-body>
+                @for (user of filteredUsers(); track user.userId) {
+                  <app-table-row>
+                    <app-table-cell>
+                      <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-scoular-green-accessible flex items-center justify-center flex-shrink-0">
+                          <span class="text-xs font-semibold text-white">{{ getInitials(user.displayName) }}</span>
+                        </div>
+                        <div>
+                          <div class="font-medium text-gray-900 dark:text-white">{{ user.displayName }}</div>
+                          <div class="text-xs text-gray-500 dark:text-gray-400">{{ user.userId }}&#64;scoular.com</div>
+                        </div>
+                      </div>
+                    </app-table-cell>
+                    <app-table-cell tdClass="text-center">
+                      <span class="px-2 py-1 text-xs font-medium rounded-full" [class]="getStatusClasses(user.status)">
+                        {{ user.status }}
+                      </span>
+                    </app-table-cell>
+                    <app-table-cell tdClass="text-center">{{ formatLastActive(user.lastActive) }}</app-table-cell>
+                    <app-table-cell tdClass="text-center">{{ user.loginCount }}</app-table-cell>
+                    <app-table-cell tdClass="text-center">{{ formatSessionDuration(user.avgSessionMinutes) }}</app-table-cell>
+                    <app-table-cell tdClass="text-center">{{ user.customersContacted }}</app-table-cell>
+                    <app-table-cell tdClass="text-center">{{ user.notesCreated }}</app-table-cell>
+                  </app-table-row>
+                }
+              </app-table-body>
+            </app-table>
+          </div>
+        }
+    </div>
+  }
+
+  <!-- ==================== What They're Doing ==================== -->
+  @if (activeTab() === 'whats-doing') {
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+      <!-- Feature Usage -->
+      <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+            @if (selectedScreen() === 'all') {
+              Time Spent by Screen
+            } @else {
+              {{ featureSessions()[0]?.featureLabel ?? 'Screen' }} Interactions
+            }
+          </h3>
+          <select [ngModel]="selectedScreen()" (ngModelChange)="selectedScreen.set($event)"
+            class="text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+            @for (screen of featureScreens; track screen.id) {
+              <option [value]="screen.id">{{ screen.label }}</option>
+            }
+          </select>
+        </div>
+        <!-- Total time for specific screen -->
+        @if (selectedScreen() !== 'all' && selectedScreenFeatures().length > 0) {
+          <div class="mb-4 flex items-baseline gap-2">
+            <span class="text-2xl font-bold text-gray-900 dark:text-white">
+              {{ formatTimeSpent(featureSessions()[0]?.sessionCount ?? 0) }}
+            </span>
+            <span class="text-sm text-gray-500 dark:text-gray-400">total time</span>
+          </div>
+        }
+        @if (selectedScreenFeatures().length === 0) {
+          <div class="text-center py-8 text-gray-500 dark:text-gray-400">
+            <svg class="mx-auto h-10 w-10 text-gray-400 dark:text-gray-600 mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z"/>
+            </svg>
+            <p class="text-sm">No data available</p>
+          </div>
+        } @else {
+          <div class="space-y-3">
+            @for (feat of selectedScreenFeatures(); track feat.name) {
+              <div>
+                <div class="flex justify-between items-center mb-1">
+                  <span class="text-sm text-gray-700 dark:text-gray-300">{{ feat.name }}</span>
+                  <span class="text-xs text-gray-500 dark:text-gray-400">
+                    {{ selectedScreen() === 'all' ? formatTimeSpent(feat.sessions) : feat.sessions + ' times' }}
+                  </span>
+                </div>
+                <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                  <div class="bg-scoular-green h-3 rounded-full transition-all"
+                    [style.width.%]="maxScreenFeatureSessions() > 0 ? (feat.sessions / maxScreenFeatureSessions()) * 100 : 0">
+                  </div>
+                </div>
+              </div>
+            }
+          </div>
+          @if (selectedScreen() === 'all') {
+            <p class="text-xs text-gray-400 dark:text-gray-500 mt-4">Select a screen to see interaction counts</p>
+          }
+          <!-- Example Query Breakdown (shown when Build a List is selected) -->
+          @if (selectedScreen() === 'build-a-list' && exampleQueryUsage().length > 0) {
+            <div class="mt-5 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <button type="button" (click)="exampleQueriesOpen.set(!exampleQueriesOpen())"
+                class="flex items-center gap-2 w-full text-left">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                  class="text-gray-500 dark:text-gray-400 transition-transform" [class.rotate-90]="exampleQueriesOpen()">
+                  <path d="m9 18 6-6-6-6"/>
+                </svg>
+                <span class="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Example Queries Used</span>
+                <span class="text-xs text-gray-400 dark:text-gray-500">({{ exampleQueryUsage().length }})</span>
+              </button>
+              @if (exampleQueriesOpen()) {
+                <div class="space-y-2 mt-3">
+                  @for (query of exampleQueryUsage(); track query.queryText) {
+                    <div class="flex items-center justify-between gap-3 p-2.5 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+                      <span class="text-sm text-gray-700 dark:text-gray-300 truncate flex-1" [title]="query.queryText">{{ query.queryText }}</span>
+                      <span class="text-xs font-bold text-scoular-green whitespace-nowrap">{{ query.timesUsed }}x</span>
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+          }
+        }
+      </div>
+
+      <!-- Weekly Login Trend -->
+      <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Weekly Login Trend</h3>
+          <div class="flex items-center gap-4">
+            <div class="flex items-center gap-1.5">
+              <div class="w-3 h-3 rounded-sm bg-scoular-green"></div>
+              <span class="text-xs text-gray-500 dark:text-gray-400">Logins</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <div class="w-3 h-3 rounded-sm bg-blue-500"></div>
+              <span class="text-xs text-gray-500 dark:text-gray-400">Sessions</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bar chart: grouped bars per week -->
+        <div class="flex items-end gap-2 h-[200px] pt-4 pb-6 relative">
+          <!-- Gridlines -->
+          <div class="absolute inset-x-0 top-4 bottom-6 flex flex-col justify-between pointer-events-none">
+            @for (line of [4, 3, 2, 1, 0]; track line) {
+              <div class="border-t border-gray-200 dark:border-gray-700/50 w-full"></div>
+            }
+          </div>
+          <!-- Grouped bars -->
+          @for (week of weeklyTrend(); track week.weekStart) {
+            <div class="flex-1 flex flex-col items-center h-full justify-end relative z-10 group">
+              <!-- Tooltip -->
+              <div class="absolute bottom-full mb-1 px-2 py-1 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-[10px] font-medium rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-20">
+                {{ week.totalLogins }} logins &middot; {{ week.totalSessions }} sessions
+              </div>
+              <!-- Bar pair -->
+              <div class="flex items-end gap-[2px] w-full max-w-[40px] mx-auto h-full">
+                <!-- Logins bar -->
+                <div class="flex-1 rounded-t-sm transition-all bg-scoular-green hover:opacity-80"
+                  [style.height.%]="week.totalLogins > 0 ? Math.max((week.totalLogins / maxWeeklyTrend()) * 100, 4) : 2"
+                  [class]="week.totalLogins > 0 ? 'bg-scoular-green' : 'bg-gray-300 dark:bg-gray-600'">
+                </div>
+                <!-- Sessions bar -->
+                <div class="flex-1 rounded-t-sm transition-all bg-blue-500 hover:opacity-80"
+                  [style.height.%]="week.totalSessions > 0 ? Math.max((week.totalSessions / maxWeeklyTrend()) * 100, 4) : 2"
+                  [class]="week.totalSessions > 0 ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'">
+                </div>
+              </div>
+              <!-- Week label -->
+              <span class="absolute -bottom-5 text-[10px] text-gray-500 dark:text-gray-400 whitespace-nowrap">{{ formatWeekLabel(week.weekStart) }}</span>
+            </div>
+          }
+        </div>
+
+        <!-- Summary -->
+        <div class="flex items-center justify-between mt-2 pt-3 border-t border-gray-200 dark:border-gray-700">
+          <span class="text-xs text-gray-500 dark:text-gray-400">Last 8 weeks</span>
+          <span class="text-xs text-gray-500 dark:text-gray-400">Data populates once tracking is active</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Activity Breakdown by Originator -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm mt-6 overflow-hidden">
+      <div class="flex items-center justify-between p-5 pb-4 bg-white dark:bg-gray-800 relative z-10">
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Activity Breakdown by Originator</h3>
+      </div>
+      @if (loading() && users().length === 0) {
+        <div class="text-center py-12 text-gray-500 dark:text-gray-400">
+          <svg class="animate-spin h-8 w-8 mx-auto mb-3 text-gray-400" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.961 3 8.12l3-2.829z"></path>
+          </svg>
+          <p class="text-sm">Loading...</p>
+        </div>
+      } @else if (users().length === 0) {
+        <div class="text-center py-12 text-gray-500 dark:text-gray-400">No data</div>
+      } @else {
+        <div class="overflow-auto max-h-[500px] px-4 pb-4">
+          <app-table [stickyHeader]="true">
+            <app-table-header>
+              <app-table-row>
+                <app-table-head>Originator</app-table-head>
+                <app-table-head thClass="text-center">Profiles Looked At</app-table-head>
+                <app-table-head thClass="text-center">Contracts Looked At</app-table-head>
+                <app-table-head thClass="text-center">Notes Placed</app-table-head>
+                <app-table-head thClass="text-center">Calls / Emails</app-table-head>
+                <app-table-head thClass="text-center">Lists Built</app-table-head>
+                <app-table-head thClass="text-center">Planting Intentions Added</app-table-head>
+                <app-table-head thClass="text-center">Producer Details</app-table-head>
+              </app-table-row>
+            </app-table-header>
+            <app-table-body>
+              @for (user of users(); track user.userId) {
+                <app-table-row>
+                  <app-table-cell>
+                    <div class="flex items-center gap-3">
+                      <div class="w-8 h-8 rounded-full bg-scoular-green-accessible flex items-center justify-center flex-shrink-0">
+                        <span class="text-xs font-semibold text-white">{{ getInitials(user.displayName) }}</span>
+                      </div>
+                      <div>
+                        <div class="font-medium text-gray-900 dark:text-white">{{ user.displayName }}</div>
+                      </div>
+                    </div>
+                  </app-table-cell>
+                  <app-table-cell tdClass="text-center">
+                    <span class="text-gray-400 dark:text-gray-500">—</span>
+                  </app-table-cell>
+                  <app-table-cell tdClass="text-center">
+                    <span class="text-gray-400 dark:text-gray-500">—</span>
+                  </app-table-cell>
+                  <app-table-cell tdClass="text-center">
+                    <span class="text-gray-400 dark:text-gray-500">—</span>
+                  </app-table-cell>
+                  <app-table-cell tdClass="text-center">
+                    <span class="text-gray-400 dark:text-gray-500">—</span>
+                  </app-table-cell>
+                  <app-table-cell tdClass="text-center">
+                    <span class="text-gray-400 dark:text-gray-500">—</span>
+                  </app-table-cell>
+                  <app-table-cell tdClass="text-center">
+                    <span class="text-gray-400 dark:text-gray-500">—</span>
+                  </app-table-cell>
+                  <app-table-cell tdClass="text-center">
+                    <span class="text-gray-400 dark:text-gray-500">—</span>
+                  </app-table-cell>
+                </app-table-row>
+              }
+            </app-table-body>
+          </app-table>
+        </div>
+      }
+    </div>
+  }
+
+  <!-- ==================== Who Isn't Using It ==================== -->
+  @if (activeTab() === 'whos-not') {
+
+    <!-- Top Row: Inactive Originators + Low Usage Originators -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+      <!-- Inactive Originators -->
+      <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Inactive Originators</h3>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">No login in the last {{ inactiveDaysThreshold() }} days</p>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button type="button" (click)="setInactiveDays(7)"
+              [class]="inactiveDaysThreshold() === 7
+                ? 'px-2.5 py-1 text-xs font-medium rounded-lg bg-scoular-green-accessible text-white'
+                : 'px-2.5 py-1 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'">
+              7d
+            </button>
+            <button type="button" (click)="setInactiveDays(30)"
+              [class]="inactiveDaysThreshold() === 30 && !inactiveCustomOpen()
+                ? 'px-2.5 py-1 text-xs font-medium rounded-lg bg-scoular-green-accessible text-white'
+                : 'px-2.5 py-1 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'">
+              30d
+            </button>
+            <div class="relative">
+              <button type="button" (click)="inactiveCustomOpen.set(!inactiveCustomOpen())"
+                [class]="inactiveDaysThreshold() !== 7 && inactiveDaysThreshold() !== 30
+                  ? 'px-2.5 py-1 text-xs font-medium rounded-lg bg-scoular-green-accessible text-white'
+                  : 'px-2.5 py-1 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'">
+                Custom
+              </button>
+              @if (inactiveCustomOpen()) {
+                <div class="absolute right-0 mt-2 p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-50 flex items-center gap-2">
+                  <input type="number" min="1" [ngModel]="inactiveCustomDays()" (ngModelChange)="inactiveCustomDays.set($event)"
+                    class="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white" placeholder="Days" />
+                  <span class="text-xs text-gray-500 dark:text-gray-400">days</span>
+                  <button type="button" (click)="applyCustomInactiveDays()"
+                    class="px-2.5 py-1 text-xs font-medium rounded-lg bg-scoular-green-accessible text-white hover:bg-scoular-green">
+                    Apply
+                  </button>
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+
+        <div class="space-y-3 max-h-[320px] overflow-auto">
+          @if (inactiveOriginators().length === 0) {
+            <div class="text-center py-8 text-gray-500 dark:text-gray-400">
+              <svg class="mx-auto h-8 w-8 text-gray-400 dark:text-gray-600 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <p class="text-sm">No inactive originators</p>
+            </div>
+          } @else {
+            @for (user of inactiveOriginators(); track user.userId) {
+              <div class="flex items-center gap-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+                <div class="w-9 h-9 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
+                  <span class="text-xs font-bold text-red-600 dark:text-red-400">{{ getInitials(user.displayName) }}</span>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ user.displayName }}</div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">
+                    Last login: {{ user.daysSinceLastLogin !== null ? user.daysSinceLastLogin + ' days ago' : 'Never' }}
+                  </div>
+                </div>
+                <div class="text-right flex-shrink-0">
+                  <span class="px-2 py-0.5 text-[10px] font-medium rounded-full" [class]="getStatusClasses(user.status)">
+                    {{ user.status }}
+                  </span>
+                  @if (user.avgSessionMinutes > 0) {
+                    <div class="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">Avg {{ formatSessionDuration(user.avgSessionMinutes) }}</div>
+                  }
+                </div>
+              </div>
+            }
+          }
+        </div>
+        <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+          <span class="text-xs text-gray-500 dark:text-gray-400">{{ inactiveOriginators().length }} originators</span>
+          <span class="text-xs font-medium" [class]="inactiveOriginators().length > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'">
+            {{ inactiveOriginators().length > 0 ? 'Needs follow-up' : 'All engaged' }}
+          </span>
+        </div>
+      </div>
+
+      <!-- Low Usage Originators -->
+      <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5">
+        <div class="mb-4">
+          <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Low Usage Originators</h3>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Fewer than 15 logins in the last 30 days</p>
+        </div>
+
+        <div class="space-y-3 max-h-[320px] overflow-auto">
+          @if (lowUsageOriginators().length === 0) {
+            <div class="text-center py-8 text-gray-500 dark:text-gray-400">
+              <svg class="mx-auto h-8 w-8 text-gray-400 dark:text-gray-600 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <p class="text-sm">No low usage originators</p>
+            </div>
+          } @else {
+            @for (user of lowUsageOriginators(); track user.userId) {
+              <div class="flex items-center gap-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+                <div class="w-9 h-9 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
+                  <span class="text-xs font-bold text-amber-600 dark:text-amber-400">{{ getInitials(user.displayName) }}</span>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ user.displayName }}</div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">
+                    Last login: {{ formatLastActive(user.lastActive) }}
+                  </div>
+                </div>
+                <div class="text-right flex-shrink-0">
+                  <div class="text-sm font-bold text-amber-600 dark:text-amber-400">{{ user.loginCount }}</div>
+                  <div class="text-[10px] text-gray-400 dark:text-gray-500">logins</div>
+                  @if (user.avgSessionMinutes > 0) {
+                    <div class="text-[10px] text-gray-400 dark:text-gray-500">Avg {{ formatSessionDuration(user.avgSessionMinutes) }}</div>
+                  }
+                </div>
+              </div>
+            }
+          }
+        </div>
+        <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+          <span class="text-xs text-gray-500 dark:text-gray-400">{{ lowUsageOriginators().length }} originators</span>
+          <span class="text-xs font-medium" [class]="lowUsageOriginators().length > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'">
+            {{ lowUsageOriginators().length > 0 ? 'Could use encouragement' : 'Good engagement' }}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Underused Features -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 mt-6">
+      <div class="mb-4">
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Underused Features</h3>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Features with the lowest usage — opportunities for training or adoption</p>
+      </div>
+      <div class="space-y-3">
+        @for (feat of underusedFeatures(); track feat.featureName) {
+          <div class="flex items-center gap-4">
+            <div class="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-500 dark:text-gray-400">
+                <rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>
+              </svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ feat.featureName }}</span>
+                <span class="text-xs text-gray-500 dark:text-gray-400">{{ feat.sessionCount }} sessions</span>
+              </div>
+              <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                <div class="bg-gray-400 dark:bg-gray-500 h-2 rounded-full transition-all" [style.width.%]="2"></div>
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+  }
+</div>

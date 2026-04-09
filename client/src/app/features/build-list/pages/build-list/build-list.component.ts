@@ -9,6 +9,7 @@ import { ApiService } from '@core/services/api.service';
 import { AppStateService, BuildListState } from '@core/services/app-state.service';
 import { DataPreloadService } from '@core/services/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
+import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, ProducerDetails, RefinementFilters } from '@models';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '@shared/components/card/card.component';
@@ -54,6 +55,7 @@ export class BuildListComponent {
   private readonly msalService = inject(MsalService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly usageTracking = inject(UsageTrackingService);
 
   // Trade units captured at init — used to detect changes on destroy
   private _initTradeUnits: string[] = [];
@@ -768,6 +770,7 @@ export class BuildListComponent {
   }
 
   useExampleQuery(example: string): void {
+    this.usageTracking.postClickEvent('interaction', 'build-a-list', 'example-queries', example);
     // Reset non-visual state from any previous query or saved list.
     // Keep hasGenerated and filteredCustomers intact so the old results stay visible
     // until the new NLQ filter runs — prevents a flash of empty state between queries.
@@ -807,6 +810,7 @@ export class BuildListComponent {
 
   processQuery(overrideTradeUnits?: string[]): void {
     if (!this.queryText().trim()) return;
+    this.usageTracking.postClickEvent('interaction', 'build-a-list', 'natural-language-query');
     // Don't run if core data hasn't loaded yet — the staged query will auto-run when data arrives
     // (hasGenerated stays false so _loadFresh's auto-run at completion picks it up)
     if (!this.coreDataLoaded()) {
@@ -1246,8 +1250,21 @@ export class BuildListComponent {
     this.showSaveDialog.set(false);
   }
 
+  toggleRefinePanel(): void {
+    const opening = !this.showRefinePanel();
+    this.showRefinePanel.update(v => !v);
+    if (opening) this.usageTracking.postClickEvent('interaction', 'build-a-list', 'refine-filters');
+  }
+
+  toggleManageMembersPanel(): void {
+    const opening = !this.showManageMembersPanel();
+    this.showManageMembersPanel.update(v => !v);
+    if (opening) this.usageTracking.postClickEvent('interaction', 'build-a-list', 'manage-members');
+  }
+
   saveList(): void {
     if (!this.newListName().trim() || this.displayedCustomers().length === 0) return;
+    this.usageTracking.postClickEvent('interaction', 'build-a-list', 'save-list');
 
     const tradeUnits = this.effectiveTradeUnits();
     const includedIds = this.manuallyIncludedCustomers().map(c => c.id);

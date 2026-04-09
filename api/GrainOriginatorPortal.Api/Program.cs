@@ -82,8 +82,22 @@ builder.Services.AddProblemDetails();
 // Configuration in appsettings.json "AzureAd" section.
 // =============================================================================
 builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration);
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminOnly", policy =>
+        policy.RequireClaim("roles", "Admin"));
+});
 builder.Services.AddScoped<IUserEntitlementService, UserEntitlementService>();
+
+// Usage tracking: bounded in-memory channel + background batch writer
+builder.Services.AddSingleton(System.Threading.Channels.Channel.CreateBounded<GrainOriginatorPortal.Api.Middleware.UserActivityRecord>(
+    new System.Threading.Channels.BoundedChannelOptions(10_000)
+    { FullMode = System.Threading.Channels.BoundedChannelFullMode.DropWrite }));
+builder.Services.AddSingleton(System.Threading.Channels.Channel.CreateBounded<GrainOriginatorPortal.Api.Middleware.UserClickEventRecord>(
+    new System.Threading.Channels.BoundedChannelOptions(5_000)
+    { FullMode = System.Threading.Channels.BoundedChannelFullMode.DropWrite }));
+builder.Services.AddHostedService<UsageTrackingBackgroundService>();
+builder.Services.AddHostedService<UsageAggregationBackgroundService>();
 
 // Hook JWT bearer events to log token validation failures per security-guide.md §8.1.
 // OnAuthenticationFailed fires when the token is present but invalid (bad signature,
@@ -452,6 +466,10 @@ app.UseMiddleware<RequestContextMiddleware>();
 // Security audit logging — logs 401 and 403 outcomes per security-guide.md §8.1.
 // Must run after UseAuthorization so the response status code is already finalized.
 app.UseMiddleware<SecurityAuditMiddleware>();
+
+// Usage tracking — records every authenticated API request for the usage dashboard.
+// Runs after auth so UserId is resolved. Non-blocking: writes to a bounded channel.
+app.UseMiddleware<UsageTrackingMiddleware>();
 
 // Map controller routes and require a valid Azure AD bearer token on every endpoint.
 // Health check and OpenAPI endpoints are mapped separately and are not covered here.
