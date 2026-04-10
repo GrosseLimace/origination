@@ -176,7 +176,7 @@ export class CustomerProfileComponent {
 
       // Update tabs cache
       this._tabs = [
-        { id: 'contracts', label: 'Contracts', shortLabel: 'Cont', count: contracts.length },
+        { id: 'contracts', label: 'Contracts', shortLabel: 'Cont', count: contracts.filter(c => !c.closedDate).length },
         { id: 'tickets', label: 'Unapplied Tickets', shortLabel: 'Tick', count: this._unappliedTicketCount },
         { id: 'planting', label: 'Planting', shortLabel: 'Plan', count: this.plantingIntentions().length },
         { id: 'storage', label: 'Storage', shortLabel: 'Stor', count: new Set(this.storedGrain().map(g => g.crop || 'Unknown')).size }
