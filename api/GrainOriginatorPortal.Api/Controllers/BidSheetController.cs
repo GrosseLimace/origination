@@ -130,10 +130,10 @@ public class BidSheetController : ControllerBase
     /// <summary>Deletes all bids for a specific commodity on a location.</summary>
     [HttpDelete("locations/{id:int}/bids/{commodityCode}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> DeleteBids(int id, string commodityCode, [FromQuery] string tradeUnitCode, CancellationToken ct = default)
+    public async Task<IActionResult> DeleteBids(int id, string commodityCode, [FromQuery] string tradeUnitCode, [FromQuery] int? month = null, CancellationToken ct = default)
     {
         await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
-        await _dataService.DeleteBidSheetBidsAsync(id, commodityCode, ct);
+        await _dataService.DeleteBidSheetBidsAsync(id, commodityCode, month, ct);
         return NoContent();
     }
 
@@ -188,44 +188,21 @@ public class BidSheetController : ControllerBase
         return Ok(await _dataService.GetBidCommoditiesAsync(tradeUnitCode, ct));
     }
 
-    // -------------------------------------------------------------------------
-    // Reference
-    // -------------------------------------------------------------------------
-
     /// <summary>Parses a composite trade-unit key ("2040,2050") into individual codes for entitlement validation.</summary>
     private static IEnumerable<string> ParseTradeUnitKey(string tradeUnitCode) =>
         tradeUnitCode.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    /// <summary>Gets the reference location for the current user and a trade unit key (may be composite, e.g. "2040,2050").</summary>
-    [HttpGet("reference")]
-    [ProducesResponseType(typeof(BidSheetReference), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<ActionResult<BidSheetReference>> GetReference([FromQuery] string tradeUnitCode, CancellationToken ct = default)
-    {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync(ParseTradeUnitKey(tradeUnitCode), ct);
-        var reference = await _dataService.GetBidSheetReferenceAsync(CurrentUserId, tradeUnitCode, ct);
-        if (reference is null) return NoContent();
-        return Ok(reference);
-    }
+    // -------------------------------------------------------------------------
+    // Bid Months
+    // -------------------------------------------------------------------------
 
-    /// <summary>Sets or updates the reference location for the current user and a trade unit key (may be composite).</summary>
-    [HttpPut("reference")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> SetReference([FromBody] SetBidSheetReferenceRequest request, CancellationToken ct = default)
+    /// <summary>Gets distinct months that have bids for a trade unit and crop year.</summary>
+    [HttpGet("bidmonths")]
+    [ProducesResponseType(typeof(List<int>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<int>>> GetBidMonths([FromQuery] string tradeUnitCode, [FromQuery] int cropYear, CancellationToken ct = default)
     {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync(ParseTradeUnitKey(request.TradeUnitCode), ct);
-        await _dataService.SetBidSheetReferenceAsync(CurrentUserId, request.TradeUnitCode, request.LocationId, request.Name, ct);
-        return NoContent();
-    }
-
-    /// <summary>Clears the reference location for the current user and a trade unit key (may be composite).</summary>
-    [HttpDelete("reference")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> ClearReference([FromQuery] string tradeUnitCode, CancellationToken ct = default)
-    {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync(ParseTradeUnitKey(tradeUnitCode), ct);
-        await _dataService.ClearBidSheetReferenceAsync(CurrentUserId, tradeUnitCode, ct);
-        return NoContent();
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
+        return Ok(await _dataService.GetBidMonthsAsync(tradeUnitCode, cropYear, ct));
     }
 
     // -------------------------------------------------------------------------

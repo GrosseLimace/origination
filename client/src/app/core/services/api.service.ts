@@ -590,24 +590,12 @@ export class ApiService {
     );
   }
 
-  /** Gets the reference location for the current user and a trade unit. Returns null if not set. */
-  getBidSheetReference(tradeUnitCode: string): Observable<{ tradeUnitCode: string; locationId: number; name: string } | null> {
-    return this._dedupe(`bidsheet-reference-${tradeUnitCode}`,
-      this.http.get<{ tradeUnitCode: string; locationId: number; name: string }>(`${this.baseUrl}/bidsheet/reference`, { params: { tradeUnitCode } })
-        .pipe(catchError(() => of(null)))
+  /** Gets distinct bid months for a trade unit and crop year */
+  getBidMonths(tradeUnitCode: string, cropYear: number): Observable<number[]> {
+    return this._dedupe(`bidsheet-months-${tradeUnitCode}-${cropYear}`,
+      this.http.get<number[]>(`${this.baseUrl}/bidsheet/bidmonths`, { params: { tradeUnitCode, cropYear: cropYear.toString() } })
+        .pipe(catchError(e => this.handleError(e)))
     );
-  }
-
-  /** Sets or updates the reference location for the current user and a trade unit. */
-  setBidSheetReference(tradeUnitCode: string, locationId: number, name: string): Observable<void> {
-    return this.http.put<void>(`${this.baseUrl}/bidsheet/reference`, { tradeUnitCode, locationId, name })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Clears the reference location for the current user and a trade unit. */
-  clearBidSheetReference(tradeUnitCode: string): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/bidsheet/reference`, { params: { tradeUnitCode } })
-      .pipe(catchError(e => this.handleError(e)));
   }
 
   /** Gets the saved location order for the current user and a trade unit key. Returns null if not set. */
