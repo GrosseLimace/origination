@@ -205,13 +205,18 @@ export class ContractsTableComponent {
     return Array.from(expanded);
   }
 
+  /** Open contracts only (closedDate is null) — excludes prior-year closed contracts
+   *  that are loaded for pacing comparison but shouldn't appear in the table. */
+  get openContracts(): Contract[] {
+    return this.contracts().filter(c => !c.closedDate);
+  }
+
   get sortedContracts(): Contract[] {
-    // Contracts are already filtered by parent component (home.component.ts)
     if (!this.currentSortColumn() || this.currentSortDirection() === 'none') {
-      return this.contracts();
+      return this.openContracts;
     }
 
-    const sorted = [...this.contracts()].sort((a, b) => {
+    const sorted = [...this.openContracts].sort((a, b) => {
       let comparison = 0;
       switch (this.currentSortColumn()) {
         case 'contractNumber': {

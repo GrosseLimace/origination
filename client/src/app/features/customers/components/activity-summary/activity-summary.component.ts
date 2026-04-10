@@ -122,15 +122,16 @@ export class ActivitySummaryComponent {
   }
 
   private _generateContractSummary(): string {
-    if (!this.contracts() || this.contracts().length === 0) return '';
+    const openContracts = (this.contracts() || []).filter(c => c && !c.closedDate);
+    if (openContracts.length === 0) return '';
 
     const now = new Date();
-    const activeContracts = this.contracts().filter(c => c && c.status === 'Active');
-    const pendingContracts = this.contracts().filter(c => c && c.status === 'Pending');
-    const fulfilledContracts = this.contracts().filter(c => c && c.status === 'Fulfilled');
-    const unsignedContracts = this.contracts().filter(c => c && c.signed === false);
+    const activeContracts = openContracts.filter(c => c.status === 'Active');
+    const pendingContracts = openContracts.filter(c => c.status === 'Pending');
+    const fulfilledContracts: Contract[] = []; // Fulfilled contracts are closed and excluded
+    const unsignedContracts = openContracts.filter(c => c.signed === false);
 
-    const overdueContracts = this.contracts().filter(c => {
+    const overdueContracts = openContracts.filter(c => {
       if (!c || !c.deliveryEnd) return false;
       try {
         const endDate = new Date(c.deliveryEnd);
@@ -346,14 +347,15 @@ export class ActivitySummaryComponent {
   }
 
   private _generateActionItems(): string {
-    if (!this.contracts() || this.contracts().length === 0) return '';
+    const openOnly = (this.contracts() || []).filter(c => c && !c.closedDate);
+    if (openOnly.length === 0) return '';
 
     const now = new Date();
     const alerts: string[] = [];
 
     // Check for overdue contracts with date validation
-    const overdueContracts = this.contracts().filter(c => {
-      if (!c || !c.deliveryEnd) return false;
+    const overdueContracts = openOnly.filter(c => {
+      if (!c.deliveryEnd) return false;
       try {
         const endDate = new Date(c.deliveryEnd);
         return !isNaN(endDate.getTime()) &&
@@ -370,12 +372,12 @@ export class ActivitySummaryComponent {
       alerts.push(`${overdueContracts.length} contract${overdueContracts.length !== 1 ? 's have' : ' has'} passed the delivery deadline${balanceStr}`);
     }
 
-    const unsignedContracts = this.contracts().filter(c => c && c.signed === false);
+    const unsignedContracts = openOnly.filter(c => c.signed === false);
     if (unsignedContracts.length > 0) {
       alerts.push(`${unsignedContracts.length} contract${unsignedContracts.length !== 1 ? 's are' : ' is'} still unsigned`);
     }
 
-    const upcomingDeliveries = this.contracts()
+    const upcomingDeliveries = openOnly
       .filter(c => {
         if (!c || !c.deliveryEnd || c.status !== 'Active') return false;
         try {

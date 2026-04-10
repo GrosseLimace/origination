@@ -756,9 +756,10 @@ export class DashboardComponent {
   }
 
   private _calculateMetrics(): void {
+    const openContracts = this.contracts().filter(c => !c.closedDate);
     this.totalAcres.set(this.customers().reduce((sum, c) => sum + c.totalAcres, 0));
-    this.activeContracts.set(this.contracts().filter(c => c.status === 'Active').length);
-    this.totalContractValue.set(this.contracts().reduce((sum, c) => sum + (c.totalValue || 0), 0));
+    this.activeContracts.set(openContracts.filter(c => c.status === 'Active').length);
+    this.totalContractValue.set(openContracts.reduce((sum, c) => sum + (c.totalValue || 0), 0));
 
     this._calculateCropDistribution();
     this._calculateContractStatus();
@@ -770,7 +771,7 @@ export class DashboardComponent {
 
   private _calculateCropDistribution(): void {
     const cropMap = new Map<string, number>();
-    for (const contract of this.contracts()) {
+    for (const contract of this.contracts().filter(c => !c.closedDate)) {
       const commodity = contract.commodityDescription || contract.commodityCode || 'Unknown';
       cropMap.set(commodity, (cropMap.get(commodity) || 0) + (contract.quantity || 0));
     }
@@ -797,7 +798,7 @@ export class DashboardComponent {
 
   private _calculateContractStatus(): void {
     const statusMap = new Map<string, number>();
-    for (const contract of this.contracts()) {
+    for (const contract of this.contracts().filter(c => !c.closedDate)) {
       statusMap.set(contract.status, (statusMap.get(contract.status) || 0) + 1);
     }
 

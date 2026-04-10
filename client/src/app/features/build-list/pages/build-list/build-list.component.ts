@@ -130,7 +130,7 @@ export class BuildListComponent {
   readonly displayedCustomers = computed(() => {
     let list = this.filteredCustomers();
     const r = this.appliedRefinements();
-    const contractMap = this._contractsByCustomer();
+    const contractMap = this._openContractsByCustomer(); // Open contracts only for refinements
     const contactMap = this.lastContactByCustomer();
 
     if (r.noActiveContracts) {
@@ -291,11 +291,22 @@ export class BuildListComponent {
 
   // ── Pre-indexed computed signals for O(1) lookups ────────────────────────
 
-  /** Contracts grouped by ctrmCustomerId — used by displayedCustomers refinements and pacing. */
+  /** ALL contracts grouped by ctrmCustomerId — includes prior-year closed contracts for pacing. */
   private readonly _contractsByCustomer = computed(() => {
     const map = new Map<string, Contract[]>();
     for (const c of this.contracts()) {
       if (!c.ctrmCustomerId) continue;
+      const arr = map.get(c.ctrmCustomerId);
+      if (arr) arr.push(c); else map.set(c.ctrmCustomerId, [c]);
+    }
+    return map;
+  });
+
+  /** Open contracts only — used by refinement filters (no active, unsigned, etc.). */
+  private readonly _openContractsByCustomer = computed(() => {
+    const map = new Map<string, Contract[]>();
+    for (const c of this.contracts()) {
+      if (!c.ctrmCustomerId || c.closedDate) continue;
       const arr = map.get(c.ctrmCustomerId);
       if (arr) arr.push(c); else map.set(c.ctrmCustomerId, [c]);
     }
@@ -972,9 +983,12 @@ export class BuildListComponent {
 
   /** Runs the NLQ filter against the current in-memory data and updates filteredCustomers. */
   private _applyNlqFilter(): void {
+    // Pass only open contracts to NLQ — closed prior-year contracts are kept in the
+    // signal for pacing calculations but shouldn't affect NLQ query results.
+    const openContracts = this.contracts().filter(c => !c.closedDate);
     const context: NlqFilterContext = {
       customers: this.customers(),
-      contracts: this.contracts(),
+      contracts: openContracts,
       tickets: this.tickets(),
       notes: this.notes(),
       plantingIntentions: this.plantingIntentions(),
