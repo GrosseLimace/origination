@@ -173,7 +173,7 @@ export class InsightsComponent {
   readonly allInsights = computed(() => {
     const customers = this.customers();
     if (customers.length === 0) return [] as Insight[];
-    const contracts = this.contracts();
+    const contracts = this.contracts().filter(c => !c.closedDate);
     const todaysTickets = this.todaysTickets();
     // Skip the O(n) customer loop if neither contracts nor today's tickets have arrived yet.
     if (contracts.length === 0 && todaysTickets.length === 0) return [] as Insight[];

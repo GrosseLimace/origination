@@ -768,9 +768,12 @@ public class SqlDataService : IDataService
                     .Select(c => c.SourceCustomerId)
                     .ToListAsync(cancellationToken);
 
+                // Load open contracts + prior-year contracts (for pacing comparison)
+                var pacingCutoffYear = DateTime.Today.Year - 1;
                 contracts = await _context.Contracts
                     .AsNoTracking()
-                    .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId != null && customerCtrmIds.Contains(c.CtrmCustomerId))
+                    .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId != null && customerCtrmIds.Contains(c.CtrmCustomerId)
+                        && (c.ClosedDate == null || c.CropYear >= pacingCutoffYear))
                     .OrderByDescending(c => c.Id)
                     .ToListAsync(cancellationToken);
             }
@@ -802,7 +805,8 @@ public class SqlDataService : IDataService
                             SELECT c.* FROM base.vw_CurrentContracts c
                             INNER JOIN STRING_SPLIT({ctrmIdsCsv}, ',') ids
                                 ON c.CtrmCustomerId = ids.value
-                            WHERE c.IsActive = 1 AND c.ContractPrefixType = 'P'")
+                            WHERE c.IsActive = 1 AND c.ContractPrefixType = 'P'
+                              AND (c.ClosedDate IS NULL OR c.CropYear >= {DateTime.Today.Year - 1})")
                         .AsNoTracking()
                         .OrderByDescending(c => c.Id)
                         .ToListAsync(cancellationToken);
@@ -888,10 +892,12 @@ public class SqlDataService : IDataService
                 sourceCustomerId = customer.SourceCustomerId;
             }
 
-            // Match contracts using CtrmCustomerId = sourceCustomerId (string matching), purchase contracts only
+            // Match contracts: open contracts + prior-year (for pacing comparison)
+            var pacingCutoffYear = DateTime.Today.Year - 1;
             var contracts = await _context.Contracts
                 .AsNoTracking()
-                .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId == sourceCustomerId)
+                .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId == sourceCustomerId
+                    && (c.ClosedDate == null || c.CropYear >= pacingCutoffYear))
                 .OrderByDescending(c => c.Id)
                 .ToListAsync(cancellationToken);
 
