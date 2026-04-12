@@ -159,6 +159,17 @@ Stop and say so when:
 - a suspected issue may be intentional and needs product or architectural context
 - a security concern dominates the review and should be handed to a dedicated security review
 
+## Scope-Based Audit Skills
+
+For deeper analysis beyond what `/code-review` covers, use the scope-based audit skills:
+
+- `/audit-method` — deep-dive on a single method (smells, parameters, guard clauses, bug signals)
+- `/audit-component` — single class/component (responsibility cohesion, design quality)
+- `/audit-feature` — cross-layer feature area (dependency flow, layer boundary violations)
+- `/audit-arch` — system-level (dependency graph, hotspot ranking, security sweep)
+
+These skills use smell definitions from `style-guides/refactoring-guide.md` and work best with `.claude/rules/project-config.md` configured.
+
 ## Reporting Rules
 
 - Include file and line references whenever possible.
