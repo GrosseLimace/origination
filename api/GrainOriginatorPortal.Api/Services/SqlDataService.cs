@@ -933,6 +933,136 @@ public class SqlDataService : IDataService
         }
     }
 
+    /// <summary>
+    /// Loads historical closed contracts from base.Contract for the Contract Pacing year-over-year comparison.
+    /// Only returns closed purchase contracts from the current or prior crop year for the given customer.
+    /// The main contracts endpoint already delivers open contracts — this fills in the historical gap.
+    /// </summary>
+    public async Task<List<Contract>> GetHistoricalContractsForPacingAsync(long customerId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive, cancellationToken);
+            if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
+            {
+                _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId — returning empty historical contracts", customerId);
+                return [];
+            }
+
+            var pacingCutoffYear = DateTime.Today.Year - 1;
+            var contracts = await _context.Contracts
+                .FromSqlInterpolated($@"
+                    SELECT c.* FROM base.Contract c
+                    WHERE c.IsActive = 1
+                      AND c.IsDeleted = 0
+                      AND c.ContractPrefixType = 'P'
+                      AND c.CtrmCustomerId = {customer.SourceCustomerId}
+                      AND c.ClosedDate IS NOT NULL
+                      AND c.CropYear >= {pacingCutoffYear}")
+                .AsNoTracking()
+                .OrderByDescending(c => c.Id)
+                .ToListAsync(cancellationToken);
+
+            var today = DateTime.Today;
+            foreach (var contract in contracts)
+            {
+                contract.Status = CalculateContractStatus(contract, today);
+                contract.Signed = true;
+            }
+
+            _logger.LogInformation("Loaded {Count} historical closed contracts for pacing (customer {CustomerId}, cutoff {Cutoff})",
+                contracts.Count, customerId, pacingCutoffYear);
+            return contracts;
+        }
+        catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
+        {
+            _logger.LogWarning(ex, "base.Contract view/column not found — returning empty historical pacing list. SQL {Number} [{TraceId}]",
+                ex.Number, GetTraceId());
+            return [];
+        }
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
+        {
+            _logger.LogWarning(ex, "DB connection error retrieving historical pacing contracts for customer {CustomerId} [{TraceId}]",
+                customerId, GetTraceId());
+            return [];
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving historical pacing contracts for customer {CustomerId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                customerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Loads ALL purchase contracts (open + closed) for a specific crop year from base.Contract,
+    /// scoped to the given trade units. Used by the Planting Intentions Dashboard's Harvest &amp; Contracts
+    /// tab so that selecting an older planting year doesn't drop closed historical contracts that
+    /// vw_CurrentContracts has filtered out.
+    /// </summary>
+    public async Task<List<Contract>> GetContractsByCropYearAsync(int cropYear, List<string>? tradeUnits, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Resolve producer CtrmCustomerIds from the snapshot, scoped by trade unit (mirrors GetContractsAsync TU-filtered path).
+            var ctrmIdsQuery = _appContext.CustomerSnapshots
+                .AsNoTracking()
+                .Where(c => c.SourceCustomerId != null && c.IsActive);
+            if (tradeUnits != null && tradeUnits.Count > 0)
+            {
+                ctrmIdsQuery = ctrmIdsQuery.Where(c => c.TradeUnit != null && tradeUnits.Contains(c.TradeUnit));
+            }
+            var ctrmIds = await ctrmIdsQuery
+                .Select(c => c.SourceCustomerId!)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+
+            if (ctrmIds.Count == 0) return [];
+
+            var ctrmIdsCsv = SanitizeCsv(ctrmIds);
+            var contracts = await _context.Contracts
+                .FromSqlInterpolated($@"
+                    SELECT c.* FROM base.Contract c
+                    INNER JOIN STRING_SPLIT({ctrmIdsCsv}, ',') ids
+                        ON c.CtrmCustomerId = ids.value
+                    WHERE c.IsActive = 1
+                      AND c.IsDeleted = 0
+                      AND c.ContractPrefixType = 'P'
+                      AND c.CropYear = {cropYear}")
+                .AsNoTracking()
+                .OrderByDescending(c => c.Id)
+                .ToListAsync(cancellationToken);
+
+            var today = DateTime.Today;
+            foreach (var contract in contracts)
+            {
+                contract.Status = CalculateContractStatus(contract, today);
+                contract.Signed = true;
+            }
+
+            _logger.LogInformation("Loaded {Count} base.Contract rows for crop year {CropYear} (tradeUnitCount: {TuCount})",
+                contracts.Count, cropYear, tradeUnits?.Count ?? 0);
+            return contracts;
+        }
+        catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
+        {
+            _logger.LogWarning(ex, "base.Contract not accessible for crop year {CropYear} — returning empty list. SQL {Number} [{TraceId}]",
+                cropYear, ex.Number, GetTraceId());
+            return [];
+        }
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
+        {
+            _logger.LogWarning(ex, "DB connection error retrieving contracts for crop year {CropYear} [{TraceId}]", cropYear, GetTraceId());
+            return [];
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving contracts for crop year {CropYear} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                cropYear, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            throw;
+        }
+    }
+
     public async Task<List<Contract>> GetContractsByFarmAsync(string farmId, CancellationToken cancellationToken = default)
     {
         try

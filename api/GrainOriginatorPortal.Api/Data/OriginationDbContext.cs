@@ -162,6 +162,7 @@ public class OriginationDbContext : DbContext
 
             // Metadata
             entity.Property(e => e.IsActive).HasColumnName("IsActive").IsRequired();
+            entity.Ignore(e => e.IsDeleted); // Not in vw_CurrentContracts; used only by historical pacing query on base.Contract
             entity.Property(e => e.EffectiveStartDate).HasColumnName("EffectiveStartDate").IsRequired(false);
             entity.Property(e => e.EffectiveEndDate).HasColumnName("EffectiveEndDate").IsRequired(false);
 

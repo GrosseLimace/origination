@@ -98,6 +98,14 @@ public interface IDataService
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<List<Contract>> GetContractsByFarmAsync(string farmId, CancellationToken cancellationToken = default);
 
+    /// <summary>Gets historical closed contracts for a customer from base.Contract (used by Contract Pacing year-over-year comparison).</summary>
+    /// <param name="customerId">The internal customer id.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<Contract>> GetHistoricalContractsForPacingAsync(long customerId, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets all purchase contracts (open + closed) from base.Contract for a specific crop year, scoped to the given trade units. Used by the Planting Intentions Dashboard's Harvest &amp; Contracts tab so historical years aren't missing closed contracts.</summary>
+    Task<List<Contract>> GetContractsByCropYearAsync(int cropYear, List<string>? tradeUnits, CancellationToken cancellationToken = default);
+
     /// <summary>Gets contracts matching a specific SourceContractId (used for entitlement resolution).</summary>
     /// <param name="sourceContractId">The source system contract identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
