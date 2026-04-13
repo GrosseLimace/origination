@@ -1004,18 +1004,34 @@ public class SqlDataService : IDataService
     {
         try
         {
-            // Resolve producer CtrmCustomerIds from the snapshot, scoped by trade unit (mirrors GetContractsAsync TU-filtered path).
-            var ctrmIdsQuery = _appContext.CustomerSnapshots
-                .AsNoTracking()
-                .Where(c => c.SourceCustomerId != null && c.IsActive);
+            // Resolve producer CtrmCustomerIds — TWO paths, mirroring GetContractsAsync:
+            //   - With TU filter: snapshot rows whose TradeUnit is in the requested set.
+            //   - Without TU filter (admin/dev sandbox): cap at 15 customers from the ODS Customer
+            //     view who actually have purchase contracts or P/U tickets. Matches the existing
+            //     no-TU pattern in GetContractsAsync and prevents an unfiltered call from returning
+            //     contracts across every trade unit in the company.
+            List<string> ctrmIds;
             if (tradeUnits != null && tradeUnits.Count > 0)
             {
-                ctrmIdsQuery = ctrmIdsQuery.Where(c => c.TradeUnit != null && tradeUnits.Contains(c.TradeUnit));
+                ctrmIds = await _appContext.CustomerSnapshots
+                    .AsNoTracking()
+                    .Where(c => c.SourceCustomerId != null && c.IsActive
+                        && c.TradeUnit != null && tradeUnits.Contains(c.TradeUnit))
+                    .Select(c => c.SourceCustomerId!)
+                    .Distinct()
+                    .ToListAsync(cancellationToken);
             }
-            var ctrmIds = await ctrmIdsQuery
-                .Select(c => c.SourceCustomerId!)
-                .Distinct()
-                .ToListAsync(cancellationToken);
+            else
+            {
+                ctrmIds = await _context.Customers
+                    .AsNoTracking()
+                    .Where(c => c.SourceCustomerId != null && (
+                        _context.Contracts.Any(ct => ct.IsActive && ct.ContractPrefixType == "P" && ct.CtrmCustomerId == c.SourceCustomerId) ||
+                        _context.Tickets.Any(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerId == c.Id)))
+                    .Take(15)
+                    .Select(c => c.SourceCustomerId!)
+                    .ToListAsync(cancellationToken);
+            }
 
             if (ctrmIds.Count == 0) return [];
 
