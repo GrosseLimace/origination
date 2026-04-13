@@ -1785,8 +1785,20 @@ export class BidSheetComponent {
 
       // Below zoom threshold: colored dot — but when searching, always show name labels
       if (zoom < 8 && !searchQ) {
-        const color = isRef ? '#2563eb' : (isActiveTu && hasIndividualTu) ? '#00875F' : '#9ca3af';
-        const border = isRef ? '#1d4ed8' : (isActiveTu && hasIndividualTu) ? '#006B4C' : '#6b7280';
+        // Compute dot color from bid status (matches the pill colors used when zoomed in)
+        let color: string, border: string;
+        if (isRef) {
+          color = statusColors['reference'].bg; border = statusColors['reference'].border;
+        } else if (hasIndividualTu && refName && crop) {
+          // Use beating/matching/none color based on this location's bid vs the reference
+          const bidVal = this._getLatestBid(locs[0].name, year, crop, month);
+          const status = bidVal ? this._computeItemStatus(bidVal, false, refBid) : 'none';
+          color = statusColors[status].bg; border = statusColors[status].border;
+        } else if (isActiveTu && hasIndividualTu) {
+          color = '#00875F'; border = '#006B4C';
+        } else {
+          color = '#9ca3af'; border = '#6b7280';
+        }
         const dotIcon = L.divIcon({
           className: 'custom-marker',
           html: `<div style="width:14px;height:14px;background:${color};border:2px solid ${border};border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.3);cursor:pointer;"></div>`,
@@ -1845,9 +1857,20 @@ export class BidSheetComponent {
         }
       }
 
-      // Default: name labels (blue for reference, green for active TU, gray otherwise)
-      const bg = isRef ? '#2563eb' : (isActiveTu && hasIndividualTu) ? '#00875F' : '#9ca3af';
-      const border = isRef ? '#1d4ed8' : (isActiveTu && hasIndividualTu) ? '#006B4C' : '#6b7280';
+      // Default: name labels — match the pill color story used elsewhere
+      let bg: string, border: string;
+      if (isRef) {
+        bg = statusColors['reference'].bg; border = statusColors['reference'].border;
+      } else if (hasIndividualTu && refName && crop) {
+        // Use beating/matching/none color based on this location's bid vs the reference
+        const bidVal = this._getLatestBid(locs[0].name, year, crop, month);
+        const status = bidVal ? this._computeItemStatus(bidVal, false, refBid) : 'none';
+        bg = statusColors[status].bg; border = statusColors[status].border;
+      } else if (isActiveTu && hasIndividualTu) {
+        bg = '#00875F'; border = '#006B4C';
+      } else {
+        bg = '#9ca3af'; border = '#6b7280';
+      }
       const maxWidth = Math.max(80, ...names.map(n => n.length * 6 + 20));
       const nameIcon = L.divIcon({
         className: 'custom-marker',

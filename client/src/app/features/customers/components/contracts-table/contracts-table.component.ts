@@ -60,21 +60,30 @@ export class ContractsTableComponent {
   private _statusCache = new Map<number, string>();
 
   constructor() {
+    // Invalidate per-row caches whenever the underlying contracts or tickets change.
+    // Expansion state is intentionally NOT touched here — tickets often arrive a beat
+    // after contracts, and clearing expansion on every data tick was collapsing rows
+    // the user had just clicked open.
     effect(() => {
-      // React to contracts or tickets changing
-      const _contracts = this.contracts();
-      const _tickets = this.tickets();
+      this.contracts();
+      this.tickets();
       this._deliveryStatsCache.clear();
       this._statusCache.clear();
+    });
+
+    // Reset expansion + search and apply any deep-link openContractId only when the
+    // customer changes (or openContractId itself changes). This is what the user
+    // experiences as "switching customers".
+    effect(() => {
+      const _customerId = this.customer()?.id;
+      const openId = this.openContractId();
       this.expandedRows.clear();
       this.expandedTicketSections.clear();
       this.expandedPricingSections.clear();
       this.searchQuery.set('');
-      // Apply openContractId after clearing expandedRows so it always wins
-      const openId = this.openContractId();
-      if (openId != null && _contracts.length > 0) {
+      if (openId != null) {
         this.expandedRows.add(openId);
-        // Poll for the rendered element — Angular may not have flushed the DOM yet
+        // Defer scroll so contracts render before we try to find the row.
         this._scrollToContract(openId);
       }
     });
