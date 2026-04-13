@@ -13,6 +13,8 @@ import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain } from
 export class ProducerInsightsComponent {
   public customer = input.required<Customer>();
   public contracts = input<Contract[]>([]);
+  /** Historical closed contracts from base.Contract, supplied by parent (fetched once, shared with pacing card). */
+  public historicalContracts = input<Contract[]>([]);
   public tickets = input<Ticket[]>([]);
   public plantingIntentions = input<PlantingIntention[]>([]);
   public notes = input<Note[]>([]);
@@ -86,13 +88,36 @@ export class ProducerInsightsComponent {
 
   // ─── Stats ────────────────────────────────────────────────────────────────
 
+  /** Open + historical merged (deduped by id). Historical comes from base.Contract via parent. */
+  private get allContracts(): Contract[] {
+    const open = this.contracts();
+    const hist = this.historicalContracts();
+    if (hist.length === 0) return open;
+    const seen = new Set<number>(open.map(c => c.id));
+    const merged = [...open];
+    for (const h of hist) if (!seen.has(h.id)) { merged.push(h); seen.add(h.id); }
+    return merged;
+  }
+
+  /** Contracts whose delivery period falls in the current calendar year. */
+  private get currentYearContracts() {
+    const year = new Date().getFullYear();
+    return this.allContracts.filter(c => {
+      if (!c.deliveryStart && !c.deliveryEnd) return false;
+      const start = c.deliveryStart ? new Date(c.deliveryStart) : new Date(c.deliveryEnd!);
+      const end = c.deliveryEnd ? new Date(c.deliveryEnd) : new Date(c.deliveryStart!);
+      return start.getFullYear() <= year && end.getFullYear() >= year;
+    });
+  }
+
   get totalContracted(): number {
-    return this.contracts().reduce((sum, c) => sum + c.quantity, 0);
+    return this.currentYearContracts.reduce((sum, c) => sum + c.quantity, 0);
   }
 
   get averageContractSize(): number {
-    if (this.contracts().length === 0) return 0;
-    return this.totalContracted / this.contracts().length;
+    const list = this.currentYearContracts;
+    if (list.length === 0) return 0;
+    return this.totalContracted / list.length;
   }
 
   get totalInteractions(): number {

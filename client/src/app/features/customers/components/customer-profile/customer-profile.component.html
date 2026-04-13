@@ -194,17 +194,17 @@
             </div>
 
             <!-- Contract Pace Percentage (Year-over-Year) -->
-            <div>
-              <h3 class="text-sm sm:text-base font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-2.5">Contract Pace Percentage</h3>
-              @if (yoyCurrentYear === 0) {
+            <div class="justify-self-start w-fit">
+              <h3 class="text-sm sm:text-base font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-2.5">Harvest Contract Pace</h3>
+              @if (harvestPacingSummary().direction === 'none') {
                 <p class="text-sm text-gray-400 dark:text-gray-500 py-2">No contract data available.</p>
               } @else {
-                <div class="rounded-lg border p-3 text-center cursor-pointer transition-opacity hover:opacity-80 select-none"
-                     [class]="pacingBoxClass"
+                <div class="block w-full rounded-lg border p-3 text-center cursor-pointer transition-opacity hover:opacity-80 select-none"
+                     [class]="harvestPacingBoxClass"
                      (click)="toggleProducerInsights()"
-                     title="Click to {{ showProducerInsights() ? 'hide' : 'show' }} Contract Pacing details">
-                  <div class="text-3xl font-bold">{{ yoyThisPctDisplay }}</div>
-                  <div class="text-xs mt-1 opacity-60">{{ yoyCurrentYear - 1 }} vs {{ yoyCurrentYear }}</div>
+                     title="Click to {{ showProducerInsights() ? 'hide' : 'show' }} Harvest Contract Pace details">
+                  <div class="text-3xl font-bold leading-none">{{ harvestPacingArrow }}</div>
+                  <div class="text-xs mt-1 opacity-60">{{ harvestPacingSummary().year - 1 }} vs {{ harvestPacingSummary().year }}</div>
                 </div>
               }
             </div>
@@ -218,13 +218,19 @@
         <app-producer-insights
           [customer]="customer()"
           [contracts]="contracts()"
+          [historicalContracts]="historicalContracts()"
           [tickets]="tickets()"
           [plantingIntentions]="plantingIntentions()"
           [notes]="notes()"
           [storedGrain]="storedGrain()">
         </app-producer-insights>
 
-        <app-contract-pacing-card [contracts]="contracts()"></app-contract-pacing-card>
+        <app-contract-pacing-card
+          [contracts]="contracts()"
+          [historicalContracts]="historicalContracts()"
+          [harvestWindows]="harvestWindows()"
+          [customerId]="customer().id">
+        </app-contract-pacing-card>
 
         <!-- AI Growth Forecast -->
         <app-ai-growth-forecast

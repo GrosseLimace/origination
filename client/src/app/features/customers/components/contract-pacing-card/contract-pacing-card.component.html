@@ -7,70 +7,52 @@
             <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
             <polyline points="16 7 22 7 22 13"/>
           </svg>
-          <h3 class="text-xl font-semibold text-white">Contract Pacing</h3>
-          @if (pacingPercentChange !== null) {
-            <span class="ml-auto inline-flex items-center gap-0.5 px-2.5 py-1 rounded-full text-sm font-bold"
-              [style]="getPacingBadgeStyle(pacingPercentChange)">
-              {{ pacingPercentChange >= 0 ? '▲' : '▼' }}&nbsp;{{ pacingPercentChange | number:'1.0-0' }}% vs last year
+          <h3 class="text-xl font-semibold text-white">Harvest Contract Pace</h3>
+          @if (totalBushelsThisYear() > 0 || totalBushelsLastYear() > 0) {
+            <span class="ml-auto text-2xl leading-none" [style]="getArrowStyle(totalDirection())">
+              {{ totalDirection() === 'up' ? '▲' : totalDirection() === 'down' ? '▼' : '—' }}
             </span>
           }
         </div>
 
         <!-- Summary stat row -->
-        <div class="grid grid-cols-3 gap-4 mb-4">
+        <div class="grid grid-cols-2 gap-4 mb-4">
           <div class="rounded-xl p-4" [style]="cardStyle">
-            <div [style]="labelStyle">{{ currentDeliveryYear - 1 }}</div>
-            <div class="text-2xl text-white mt-1">{{ totalBushelsLastYear > 0 ? (totalBushelsLastYear | number:'1.0-0') : '—' }}</div>
-            <div [style]="sublabelStyle">at same point last year</div>
+            <div [style]="labelStyle">{{ currentCropYear() - 1 }}</div>
+            <div class="text-2xl text-white mt-1">{{ totalBushelsLastYear() > 0 ? (totalBushelsLastYear() | number:'1.0-0') : '—' }}</div>
+            <div [style]="sublabelStyle">bushels contracted in harvest window</div>
           </div>
           <div class="rounded-xl p-4" [style]="cardStyle">
-            <div [style]="labelStyle">{{ currentDeliveryYear }}</div>
-            <div class="text-2xl text-white mt-1">{{ totalBushelsThisYear | number:'1.0-0' }}</div>
-            <div [style]="sublabelStyle">bushels contracted</div>
-          </div>
-          <div class="rounded-xl p-4" [style]="cardStyle">
-            <div [style]="labelStyle">Net Change</div>
-            <div class="text-2xl text-white mt-1">
-              @if (pacingPercentChange !== null) {
-                {{ pacingPercentChange >= 0 ? '+' : '' }}{{ pacingPercentChange | number:'1.0-0' }}%
-              } @else {
-                —
-              }
-            </div>
-            <div [style]="sublabelStyle">year-over-year</div>
+            <div [style]="labelStyle">{{ currentCropYear() }}</div>
+            <div class="text-2xl text-white mt-1">{{ totalBushelsThisYear() > 0 ? (totalBushelsThisYear() | number:'1.0-0') : '—' }}</div>
+            <div [style]="sublabelStyle">bushels contracted in harvest window</div>
           </div>
         </div>
 
         <!-- Commodity breakdown -->
-        @if (pacingByCommodity.length > 0) {
+        @if (pacingByCommodity().length > 0) {
           <div>
             <div class="mb-3" style="height: 1px; background: rgba(148, 163, 184, 0.15);"></div>
             <div class="flex items-center gap-4 mb-3">
               <span class="flex-1" [style]="colHeaderStyle">Commodity</span>
-              <span class="w-28 text-right" [style]="colHeaderStyle">{{ currentDeliveryYear - 1 }} (bu)</span>
-              <span class="w-28 text-right" [style]="colHeaderStyle">{{ currentDeliveryYear }} (bu)</span>
-              <span class="w-20 text-right" [style]="colHeaderStyle">Change</span>
+              <span class="w-28 text-right" [style]="colHeaderStyle">{{ currentCropYear() - 1 }} (bu)</span>
+              <span class="w-28 text-right" [style]="colHeaderStyle">{{ currentCropYear() }} (bu)</span>
+              <span class="w-12 text-right" [style]="colHeaderStyle">Trend</span>
             </div>
             <div class="space-y-2.5">
-              @for (row of pacingByCommodity; track row.commodity) {
+              @for (row of pacingByCommodity(); track row.commodity) {
                 <div class="flex items-center gap-4">
-                  <span class="flex-1 text-white text-sm font-medium">{{ row.commodity }}</span>
+                  <span class="flex-1 text-white text-sm font-medium cursor-help" [title]="'Harvest window: ' + row.windowLabel">{{ row.commodity }}</span>
                   <span class="w-28 text-right text-sm tabular-nums font-medium" [style]="sublabelStyle">
                     {{ row.lastYear > 0 ? (row.lastYear | number:'1.0-0') : '—' }}
                   </span>
                   <span class="w-28 text-right text-sm tabular-nums font-bold text-white">
-                    {{ row.thisYear | number:'1.0-0' }}
+                    {{ row.thisYear > 0 ? (row.thisYear | number:'1.0-0') : '—' }}
                   </span>
-                  <div class="w-20 text-right">
-                    @if (row.pct !== null) {
-                      <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-bold"
-                        [style]="getPacingBadgeStyle(row.pct)">
-                        {{ row.pct >= 0 ? '▲' : '▼' }}&nbsp;{{ row.pct | number:'1.0-0' }}%
-                      </span>
-                    } @else {
-                      <span class="inline-flex px-2 py-0.5 rounded text-xs font-bold"
-                        style="background: rgba(148,163,184,0.15); color: #cbd5e1;">new</span>
-                    }
+                  <div class="w-12 text-right">
+                    <span class="text-lg leading-none" [style]="getArrowStyle(row.direction)">
+                      {{ row.direction === 'up' ? '▲' : row.direction === 'down' ? '▼' : '—' }}
+                    </span>
                   </div>
                 </div>
               }
@@ -79,18 +61,15 @@
             <div class="mt-4 pt-3 flex items-center gap-4" style="border-top: 1px solid rgba(148,163,184,0.2);">
               <span class="flex-1" [style]="colHeaderStyle">Total Bushels</span>
               <span class="w-28 text-right text-sm tabular-nums font-semibold" [style]="sublabelStyle">
-                {{ totalBushelsLastYear > 0 ? (totalBushelsLastYear | number:'1.0-0') : '—' }}
+                {{ totalBushelsLastYear() > 0 ? (totalBushelsLastYear() | number:'1.0-0') : '—' }}
               </span>
               <span class="w-28 text-right text-sm tabular-nums font-bold text-white">
-                {{ totalBushelsThisYear | number:'1.0-0' }}
+                {{ totalBushelsThisYear() > 0 ? (totalBushelsThisYear() | number:'1.0-0') : '—' }}
               </span>
-              <div class="w-20 text-right">
-                @if (pacingPercentChange !== null) {
-                  <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-bold"
-                    [style]="getPacingBadgeStyle(pacingPercentChange)">
-                    {{ pacingPercentChange >= 0 ? '▲' : '▼' }}&nbsp;{{ pacingPercentChange | number:'1.0-0' }}%
-                  </span>
-                }
+              <div class="w-12 text-right">
+                <span class="text-lg leading-none" [style]="getArrowStyle(totalDirection())">
+                  {{ totalDirection() === 'up' ? '▲' : totalDirection() === 'down' ? '▼' : '—' }}
+                </span>
               </div>
             </div>
           </div>
