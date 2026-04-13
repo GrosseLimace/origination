@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, signal, computed } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, signal, computed, viewChild, ElementRef, isDevMode } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -22,14 +22,34 @@ interface EditBidsRow {
   originalBids: Record<string, string>;
 }
 
+/** Status for a bid value vs the session reference. */
+type BidStatus = 'reference' | 'beating' | 'matching' | 'none';
+
+/** Row in the panel list view (`filteredBidItems`). */
+interface BidSheetPanelItem {
+  type: 'entry';
+  name: string;
+  isScoular: boolean;
+  isRef: boolean;
+  latitude: number | null;
+  longitude: number | null;
+  oldBid: string;
+  newBid: string;
+  oldStatus?: BidStatus;
+  newStatus?: BidStatus;
+  status: BidStatus;
+}
+
+/** Width threshold (px) below which the filter bar wraps the search/clear group to a centered second row. */
+const FILTER_BAR_WRAP_WIDTH = 1050;
+
 @Component({
   selector: 'app-bid-sheet',
   standalone: true,
   imports: [CommonModule, FormsModule, TradeUnitSelectorComponent, CdkDropList, CdkDrag, CdkDragHandle],
   templateUrl: './bid-sheet.component.html',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { style: 'display:block;height:calc(100vh - 160px);' },
-  styles: [`:host ::ng-deep .cdk-drag-placeholder { opacity: 0.3; } :host ::ng-deep .cdk-drag-preview { background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-radius: 4px; }`]
+  styleUrl: './bid-sheet.component.css',
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class BidSheetComponent {
   private readonly destroyRef = inject(DestroyRef);
@@ -152,7 +172,14 @@ export class BidSheetComponent {
   showPanel = signal<boolean>(false);
   showLegend = signal<boolean>(true);
   showFilters = signal<boolean>(true);
-  filteredBidItems = signal<any[]>([]);
+  /** True when the filter bar container is narrow enough that search/clear should wrap to a centered second row. */
+  filterBarNarrow = signal<boolean>(false);
+  private _filterBarObserver: ResizeObserver | null = null;
+  /** Reference to the filter bar div so we can observe its width with ResizeObserver. */
+  private filterBarRef = viewChild<ElementRef<HTMLElement>>('filterBar');
+  /** Reference to the map container div for Leaflet initialization (replaces document.getElementById). */
+  private mapElRef = viewChild<ElementRef<HTMLElement>>('mapEl');
+  filteredBidItems = signal<BidSheetPanelItem[]>([]);
   selectedLocationName = signal<string>('');
   panelSelectedLocation = signal<string>('');
   showDeleteLocationConfirm = signal(false);
@@ -225,7 +252,7 @@ export class BidSheetComponent {
   newLocationCrops = signal<{ commodityCode: string; searchQuery: string; showDropdown: boolean; oldYear: number; oldBid: string; newYear: number; newBid: string }[]>([]);
   readonly addLocationYears: number[] = (() => { const y = new Date().getFullYear(); return [y - 1, y]; })();
   // (commodityCode stores the category value, e.g. "CORN", "WHEAT")
-  private _addLocationPin: any = null;
+  private _addLocationPin: Leaflet.Marker | null = null;
 
   // TUs available for selection when adding a location.
   // Falls back to all TUs the user has access to when no TU/group is selected.
@@ -308,15 +335,16 @@ export class BidSheetComponent {
   // --- Refresh timer ---
   lastRefreshed = signal<Date>(new Date());
   timeSinceRefresh = signal<string>('Just now');
-  private _refreshTimer: any = null;
+  private _refreshTimer: ReturnType<typeof setInterval> | null = null;
 
   // --- Map ---
-  private _map: any = null;
+  private _map: Leaflet.Map | null = null;
+  // markercluster's MarkerClusterGroup isn't in @types/leaflet — keep loose-typed
   private _clusterGroup: any = null;
   private _isMapInitialized = false;
   private _lastTuSet = '';
-  private _searchDebounceTimer: any = null;
-  private _zoomDebounceTimer: any = null;
+  private _searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private _zoomDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Emits to cancel the previous _loadBidData subscription when TU selection changes rapidly. */
   private readonly _loadBidData$ = new Subject<{ tus: string[]; onLoaded?: () => void }>();
@@ -352,6 +380,19 @@ export class BidSheetComponent {
   readonly activeTradeUnitKey = computed(() => [...this.activeTradeUnits()].sort().join(','));
 
   constructor() {
+    // Observe the filter bar's actual width so we can wrap search/clear to a centered second row when narrow.
+    effect(() => {
+      const ref = this.filterBarRef();
+      if (this._filterBarObserver) { this._filterBarObserver.disconnect(); this._filterBarObserver = null; }
+      if (!ref?.nativeElement) return;
+      this._filterBarObserver = new ResizeObserver(entries => {
+        const width = entries[0]?.contentRect.width ?? 0;
+        const narrow = width > 0 && width < FILTER_BAR_WRAP_WIDTH;
+        if (this.filterBarNarrow() !== narrow) this.filterBarNarrow.set(narrow);
+      });
+      this._filterBarObserver.observe(ref.nativeElement);
+    });
+
     // Load all bid sheet locations for map display (once)
     this._loadAllMapLocations();
 
@@ -429,6 +470,7 @@ export class BidSheetComponent {
       if (this._refreshTimer) clearInterval(this._refreshTimer);
       if (this._searchDebounceTimer) clearTimeout(this._searchDebounceTimer);
       if (this._zoomDebounceTimer) clearTimeout(this._zoomDebounceTimer);
+      if (this._filterBarObserver) this._filterBarObserver.disconnect();
     });
   }
 
@@ -567,12 +609,34 @@ export class BidSheetComponent {
     if (key) {
       this.apiService.setBidSheetPreference(key, cropCode, month, cropYear)
         .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe({ error: () => {} });
+        .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save per-TU bid sheet preference', err); } });
     }
     // Always save globally so choices carry over to new TU/group selections
     this.apiService.setBidSheetPreference(BidSheetComponent.GLOBAL_PREF_KEY, cropCode, month, cropYear)
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({ error: () => {} });
+      .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save global bid sheet preference', err); } });
+  }
+
+  /** Pixel width of the side panel when open. */
+  private static readonly PANEL_WIDTH_PX = 440;
+
+  /** Computes the lat/lng that, when used as map center, places (lat, lng) at the visual center of the map area not covered by the panel. */
+  private _offsetCenter(lat: number, lng: number, zoom: number): Leaflet.LatLng {
+    if (!this._map || !this._L) return this._L!.latLng(lat, lng);
+    if (!this.showPanel()) return this._L.latLng(lat, lng);
+    // Panel covers right side. To keep marker centered in the visible area,
+    // we shift the map center LEFT (in pixel space) by half the panel width.
+    const point = this._map.project([lat, lng], zoom);
+    const adjusted = point.add([BidSheetComponent.PANEL_WIDTH_PX / 2, 0]);
+    return this._map.unproject(adjusted, zoom);
+  }
+
+  /** Smoothly moves the map to a single location, accounting for the side panel if open. */
+  private _flyToLocation(lat: number, lng: number, zoom?: number): void {
+    if (!this._map || !this._L) return;
+    const targetZoom = zoom ?? Math.max(this._map.getZoom(), 11);
+    const center = this._offsetCenter(lat, lng, targetZoom);
+    this._map.flyTo(center, targetZoom, { duration: 0.6 });
   }
 
   private _zoomToBidLocations(): void {
@@ -584,17 +648,16 @@ export class BidSheetComponent {
     const refName = this.selectedLocationName();
     const refLoc = refName ? locs.find(l => l.name === refName) : null;
     const panelOpen = this.showPanel();
-    const rightPad = panelOpen ? 440 : 50;
+    const rightPad = panelOpen ? BidSheetComponent.PANEL_WIDTH_PX + 20 : 50;
 
     if (refLoc) {
-      this._map.setView([refLoc.latitude!, refLoc.longitude!], 10, { animate: true });
-      if (panelOpen) setTimeout(() => this._map?.panBy([-(rightPad / 2), 0]), 300);
+      this._flyToLocation(refLoc.latitude!, refLoc.longitude!, 10);
     } else if (locs.length === 1) {
-      this._map.setView([locs[0].latitude!, locs[0].longitude!], 10, { animate: true });
-      if (panelOpen) setTimeout(() => this._map?.panBy([-(rightPad / 2), 0]), 300);
+      this._flyToLocation(locs[0].latitude!, locs[0].longitude!, 10);
     } else {
       const bounds = this._L.latLngBounds(locs.map(l => [l.latitude!, l.longitude!] as [number, number]));
-      this._map.fitBounds(bounds, { paddingTopLeft: [50, 50], paddingBottomRight: [rightPad, 50], maxZoom: 12 });
+      // fitBounds with right padding ensures bounds fit in the visible area (excluding the panel)
+      this._map.fitBounds(bounds, { paddingTopLeft: [50, 50], paddingBottomRight: [rightPad, 80], maxZoom: 12 });
     }
   }
 
@@ -693,7 +756,7 @@ export class BidSheetComponent {
     const hasIndividualTu = this.hasIndividualTu();
     const basis = this.selectedBasis();
 
-    let items: any[] = [];
+    let items: BidSheetPanelItem[] = [];
 
     if (!hasTu) {
       // No selection — show all locations by name, no bid values
@@ -816,7 +879,7 @@ export class BidSheetComponent {
     return isNaN(n) ? null : n;
   }
 
-  private _computeItemStatus(bidStr: string, isRef: boolean, refBid: number | null): string {
+  private _computeItemStatus(bidStr: string, isRef: boolean, refBid: number | null): BidStatus {
     if (isRef) return 'reference';
     const num = this._parseBid(bidStr);
     if (refBid !== null && num !== null) {
@@ -890,6 +953,7 @@ export class BidSheetComponent {
       iconSize: [28, 28],
       iconAnchor: [14, 14]
     });
+    if (!this._map) return;
     this._addLocationPin = _L.marker([lat, lng], { icon: pinIcon }).addTo(this._map);
 
     // Auto-select TU if only one is available
@@ -1302,31 +1366,29 @@ export class BidSheetComponent {
   // Panel helpers
   // =========================================================================
 
-  selectItemFromTable(item: any): void {
+  selectItemFromTable(item: BidSheetPanelItem): void {
     // Open the detail view for this location — does NOT set it as the session reference.
     // Use the "Set as Reference" button in the detail view to make it the reference.
     const alreadyOpen = this.panelSelectedLocation() === item.name;
     this.panelSelectedLocation.set(alreadyOpen ? '' : item.name);
     this.showPanel.set(true);
 
-    // Auto-select the location's TU only if no TUs are active OR the location's TU isn't in the active set.
+    // Populate the TU dropdown if no individual TU is selected (group-only counts as empty here),
+    // or if the location's TU isn't already in the individual selection.
     if (!alreadyOpen && item.latitude != null) {
       const loc = this.allMapLocations().find(l => l.name === item.name);
       const tu = loc?.tradeUnitCode;
       if (tu) {
-        const activeTus = this.activeTradeUnits();
-        if (activeTus.length === 0 || !activeTus.includes(tu)) {
+        const individualTus = this.appState.selectedTradeUnits();
+        if (!individualTus.includes(tu)) {
           this.appState.setTradeUnits([tu]);
         }
       }
     }
 
     // Pan the map to the selected location so the user can see the enlarged pin
-    if (!alreadyOpen && this._map && item.latitude != null && item.longitude != null) {
-      this._map.flyTo([item.latitude, item.longitude], Math.max(this._map.getZoom(), 11));
-      if (this.showPanel()) {
-        setTimeout(() => this._map?.panBy([-200, 0]), 300);
-      }
+    if (!alreadyOpen && item.latitude != null && item.longitude != null) {
+      this._flyToLocation(item.latitude, item.longitude);
     }
 
     this._refreshMapMarkers();
@@ -1471,16 +1533,13 @@ export class BidSheetComponent {
     });
   }
 
-  selectPanelItem(item: any): void {
+  selectPanelItem(item: BidSheetPanelItem): void {
     if (item.type === 'entry') {
       this.selectItemFromTable(item);
     }
-    // Pan map to the selected location, offset left if panel is open
-    if (this._map && item.latitude != null && item.longitude != null) {
-      this._map.flyTo([item.latitude, item.longitude], Math.max(this._map.getZoom(), 11));
-      if (this.showPanel()) {
-        setTimeout(() => this._map?.panBy([-200, 0]), 300);
-      }
+    // Pan map to the selected location, offset for the panel if open
+    if (item.latitude != null && item.longitude != null) {
+      this._flyToLocation(item.latitude, item.longitude);
     }
   }
 
@@ -1497,12 +1556,12 @@ export class BidSheetComponent {
       return;
     }
 
-    // Only change TU/group if the clicked location's TU is NOT already in the active set.
-    // When multiple TUs are selected (or this TU is already part of the selection), keep the existing selection.
-    const activeTus = this.activeTradeUnits();
-    const tuAlreadyActive = tu && activeTus.includes(tu);
-    if (!tuAlreadyActive) {
-      if (groupName) {
+    // Populate the TU dropdown if no individual TU is selected, OR if the clicked location's TU
+    // isn't already in the individual selection. Keeps existing selection when the TU is already there.
+    const individualTus = this.appState.selectedTradeUnits();
+    const tuInIndividual = tu && individualTus.includes(tu);
+    if (!tuInIndividual) {
+      if (groupName && this.appState.selectedGroupNames().length === 0) {
         this.appState.setSelectedGroupNames([groupName]);
       }
       if (tu) {
@@ -1510,14 +1569,12 @@ export class BidSheetComponent {
       }
     }
 
-    // Zoom to location, offset left to account for panel opening
-    if (this._map && loc.latitude && loc.longitude) {
-      this._map.flyTo([loc.latitude, loc.longitude], Math.max(this._map.getZoom(), 11));
-      setTimeout(() => this._map?.panBy([-200, 0]), 300);
-    }
-
+    // Open the panel BEFORE flying so the offset calculation knows about it
     this.panelSelectedLocation.set('');
     this.showPanel.set(true);
+    if (loc.latitude && loc.longitude) {
+      this._flyToLocation(loc.latitude, loc.longitude);
+    }
     this.filterBids();
     this._refreshMapMarkers();
   }
@@ -1598,7 +1655,7 @@ export class BidSheetComponent {
       }
     }
 
-    const mapElement = document.getElementById('bid-locations-map');
+    const mapElement = this.mapElRef()?.nativeElement;
     if (mapElement && mapElement.offsetHeight > 0) {
       this._initializeMap(mapElement);
     } else if (this._mapRetries < 30) {
@@ -1692,7 +1749,7 @@ export class BidSheetComponent {
     const panelOpenName = this.panelSelectedLocation();
 
     // Build set of location names visible in the panel (respects crop/TU/search filters)
-    const panelNames = new Set(this.filteredBidItems().map((i: any) => i.name as string));
+    const panelNames = new Set(this.filteredBidItems().map(i => i.name));
 
     for (const [, locs] of locsByPos) {
       // If searching, skip this pin group unless at least one location name matches
@@ -1704,9 +1761,27 @@ export class BidSheetComponent {
       const hasIndividualTu = this.hasIndividualTu();
       const showBidValues = isActiveTu && hasIndividualTu && crop;
       const isRef = hasIndividualTu && refName && names.includes(refName);
+      const isPanelOpen = panelOpenName && names.includes(panelOpenName);
 
       // When filters are active, only show locations that appear in the panel
       if (hasTu && !names.some(n => panelNames.has(n))) continue;
+
+      // Panel-open location — render expanded with name + bid (uses status color if reference, otherwise gray)
+      if (isPanelOpen) {
+        const bidStr = crop ? this._getLatestBid(panelOpenName, year, crop, month) : '';
+        let pinBg = '#6b7280', pinBorder = '#4b5563';
+        if (isRef) { pinBg = '#2563eb'; pinBorder = '#1d4ed8'; }
+        else if (hasIndividualTu && refName && bidStr) {
+          const status = this._computeItemStatus(bidStr, false, refBid);
+          const c = statusColors[status] ?? statusColors['none'];
+          pinBg = c.bg; pinBorder = c.border;
+        } else if (isActiveTu && hasIndividualTu) { pinBg = '#00875F'; pinBorder = '#006B4C'; }
+        const expandedIcon = this._buildHoverIcon(panelOpenName, bidStr, pinBg, pinBorder);
+        const marker = L.marker([lat, lng], { icon: expandedIcon, zIndexOffset: 1000 });
+        marker.on('click', () => this._selectMapLocation(locs[0]));
+        this._clusterGroup.addLayer(marker);
+        continue;
+      }
 
       // Below zoom threshold: colored dot — but when searching, always show name labels
       if (zoom < 8 && !searchQ) {

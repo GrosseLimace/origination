@@ -1,7 +1,7 @@
     <div class="relative overflow-hidden isolate rounded-lg h-full" style="min-height: 400px;">
 
         <!-- Full-screen map -->
-        <div id="bid-locations-map" style="height: 100%; width: 100%;"></div>
+        <div #mapEl id="bid-locations-map" style="height: 100%; width: 100%;"></div>
 
         <!-- Loading overlay (map only, shifts left when panel is open) -->
         @if (isRefreshing()) {
@@ -13,7 +13,7 @@
 
         @if (!addLocationMode()) {
           <!-- Floating filter bar (top-left, constrained to not overlap panel) -->
-          <div class="absolute top-2.5 left-14 z-[1000] flex items-center gap-2 flex-wrap bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm p-2 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 transition-all duration-300"
+          <div #filterBar class="absolute top-2.5 left-14 z-[1000] flex items-center gap-2 flex-wrap bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm p-2 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 transition-all duration-300"
                [style.max-width]="showPanel() ? 'calc(100% - 510px)' : 'calc(100% - 80px)'">
             <button (click)="showFilters.set(!showFilters())" class="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors" [title]="showFilters() ? 'Collapse filters' : 'Expand filters'">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -64,18 +64,21 @@
             </select>
             }
             }
-            <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
-            <input
-              type="text"
-              [ngModel]="searchQuery()"
-              (ngModelChange)="searchQuery.set($event)"
-              (input)="onSearchInput()"
-              placeholder="Search locations..."
-              class="w-48 px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
-            />
-            @if (activeTradeUnits().length > 0 || searchQuery()) {
-            <button (click)="clearAllFilters()" class="px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:text-scoular-red hover:bg-gray-100 dark:text-gray-400 dark:hover:text-scoular-red dark:hover:bg-gray-700 transition-colors">Clear</button>
-            }
+            <!-- Search + Clear group: flows naturally with dropdowns, fitting on row 2 if there's room or wrapping further if needed -->
+            <div class="flex items-center gap-2">
+              <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
+              <input
+                type="text"
+                [ngModel]="searchQuery()"
+                (ngModelChange)="searchQuery.set($event)"
+                (input)="onSearchInput()"
+                placeholder="Search locations..."
+                class="w-44 @4xl:w-48 px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
+              />
+              @if (activeTradeUnits().length > 0 || searchQuery()) {
+              <button (click)="clearAllFilters()" class="px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:text-scoular-red hover:bg-gray-100 dark:text-gray-400 dark:hover:text-scoular-red dark:hover:bg-gray-700 transition-colors">Clear</button>
+              }
+            </div>
             }
           </div>
 
@@ -107,7 +110,7 @@
             <button
               (click)="togglePanel()"
               class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg shadow-lg transition-colors"
-              [ngClass]="showPanel() ? 'text-white bg-scoular-blue hover:bg-blue-700' : 'text-white bg-gray-700 hover:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500'"
+              [ngClass]="showPanel() ? 'text-white bg-scoular-blue hover:bg-scoular-blue-dark' : 'text-white bg-gray-700 hover:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500'"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="3" x2="21" y1="6" y2="6"/><line x1="3" x2="21" y1="12" y2="12"/><line x1="3" x2="21" y1="18" y2="18"/>
@@ -360,7 +363,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  @for (item of filteredBidItems(); track (item.elevatorCode || item.name) + item.type) {
+                  @for (item of filteredBidItems(); track item.name) {
                     <tr
                       (click)="selectPanelItem(item)"
                       class="group border-b border-gray-200 dark:border-gray-700 cursor-pointer transition-colors"
@@ -378,14 +381,12 @@
                         'text-scoular-blue-medium dark:text-scoular-blue': item.oldStatus === 'reference',
                         'text-scoular-yellow dark:text-scoular-yellow': item.oldStatus === 'matching',
                         'text-scoular-red-accessible dark:text-scoular-red': item.oldStatus === 'beating',
-                        'text-scoular-green-accessible dark:text-scoular-green': item.oldStatus === 'changed',
                         'text-gray-900 dark:text-white': item.oldStatus === 'none'
                       }">{{ item.oldBid || '--' }}</td>
                       <td class="px-1 py-3 text-base font-mono font-semibold text-center" [ngClass]="{
                         'text-scoular-blue-medium dark:text-scoular-blue': item.newStatus === 'reference',
                         'text-scoular-yellow dark:text-scoular-yellow': item.newStatus === 'matching',
                         'text-scoular-red-accessible dark:text-scoular-red': item.newStatus === 'beating',
-                        'text-scoular-green-accessible dark:text-scoular-green': item.newStatus === 'changed',
                         'text-gray-900 dark:text-white': item.newStatus === 'none'
                       }">{{ item.newBid || '--' }}</td>
                     </tr>
