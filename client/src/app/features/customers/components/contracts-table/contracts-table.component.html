@@ -341,8 +341,8 @@
                         <!-- Column 2 -->
                         <div class="space-y-5">
                           <div class="flex flex-col">
-                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Delivery Window</span>
-                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ getDeliveryWindowStatus(contract) }}</span>
+                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Contract Number</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ contract.contractNumber || 'N/A' }}</span>
                           </div>
                           <div class="flex flex-col">
                             <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Delivery Period</span>

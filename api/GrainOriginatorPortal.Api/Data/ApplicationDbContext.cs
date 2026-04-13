@@ -31,8 +31,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
     public DbSet<BidSheetLocation> BidSheetLocations => Set<BidSheetLocation>();
     public DbSet<BidSheetLocationBid> BidSheetLocationBids => Set<BidSheetLocationBid>();
-    public DbSet<BidSheetReference> BidSheetReferences => Set<BidSheetReference>();
     public DbSet<BidSheetLocationOrder> BidSheetLocationOrders => Set<BidSheetLocationOrder>();
+    public DbSet<BidSheetPreference> BidSheetPreferences => Set<BidSheetPreference>();
     public DbSet<ElevatorCache> ElevatorCaches => Set<ElevatorCache>();
     public DbSet<HarvestWindow> HarvestWindows => Set<HarvestWindow>();
 
@@ -325,26 +325,13 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.CommodityName).HasMaxLength(200).IsRequired(false);
             entity.Property(e => e.CommodityCategory).HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.CropYear).IsRequired();
+            entity.Property(e => e.Month).HasDefaultValue(0).IsRequired();
             entity.Property(e => e.Bid).HasMaxLength(50).IsRequired();
             entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.Property(e => e.ModifiedBy).HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.ModifiedAt).IsRequired(false);
-            entity.HasIndex(e => new { e.LocationId, e.CommodityCode, e.CropYear }).IsUnique().HasDatabaseName("UQ_BidSheetLocationBids_Location_Commodity_Year");
-        });
-
-        modelBuilder.Entity<BidSheetReference>(entity =>
-        {
-            entity.ToTable("BidSheetReferences", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
-            entity.Property(e => e.TradeUnitCode).HasMaxLength(100).IsRequired();
-            entity.Property(e => e.LocationId).IsRequired();
-            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
-            entity.Property(e => e.ModifiedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
-            entity.HasIndex(e => new { e.UserId, e.TradeUnitCode }).IsUnique().HasDatabaseName("UQ_BidSheetReferences_User_TradeUnit");
-            entity.HasIndex(e => e.UserId).HasDatabaseName("IX_BidSheetReferences_UserId");
+            entity.HasIndex(e => new { e.LocationId, e.CommodityCode, e.CropYear, e.Month }).IsUnique().HasDatabaseName("UQ_BidSheetLocationBids_Location_Commodity_Year_Month");
         });
 
         modelBuilder.Entity<BidSheetLocationOrder>(entity =>
@@ -358,6 +345,21 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ModifiedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.HasIndex(e => new { e.UserId, e.TradeUnitKey }).IsUnique().HasDatabaseName("UQ_BidSheetLocationOrders_User_TradeUnitKey");
             entity.HasIndex(e => e.UserId).HasDatabaseName("IX_BidSheetLocationOrders_UserId");
+        });
+
+        modelBuilder.Entity<BidSheetPreference>(entity =>
+        {
+            entity.ToTable("BidSheetPreferences", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.TradeUnitKey).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.CropCode).HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.Month).IsRequired(false);
+            entity.Property(e => e.CropYear).IsRequired(false);
+            entity.Property(e => e.ModifiedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.HasIndex(e => new { e.UserId, e.TradeUnitKey }).IsUnique().HasDatabaseName("UQ_BidSheetPreferences_User_TradeUnitKey");
+            entity.HasIndex(e => e.UserId).HasDatabaseName("IX_BidSheetPreferences_UserId");
         });
 
         modelBuilder.Entity<HarvestWindow>(entity =>

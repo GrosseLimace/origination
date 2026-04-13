@@ -5,6 +5,7 @@ export interface BidSheetLocationBid {
   commodityName?: string;
   commodityCategory?: string;
   cropYear: number;
+  month: number;
   bid: string;
   createdBy: string;
   createdAt: string;
@@ -47,6 +48,7 @@ export interface BidSheetEntry {
   commodityName?: string;
   commodityCategory?: string;
   cropYear: number;
+  month: number;
   bid: string;
   createdBy: string;
   createdAt: string;

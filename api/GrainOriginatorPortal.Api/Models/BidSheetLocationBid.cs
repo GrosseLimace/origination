@@ -10,6 +10,7 @@ public class BidSheetLocationBid
     public string? CommodityName { get; set; }
     public string? CommodityCategory { get; set; }
     public int CropYear { get; set; }
+    public int Month { get; set; } // 0=yearly, 1-12=monthly
     public string Bid { get; set; } = string.Empty;
     public string CreatedBy { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }

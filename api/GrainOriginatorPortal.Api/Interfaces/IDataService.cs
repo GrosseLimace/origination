@@ -388,7 +388,7 @@ public interface IDataService
     Task DeleteBidSheetLocationAsync(int id, CancellationToken cancellationToken = default);
 
     /// <summary>Deletes all bids for a specific commodity on a location.</summary>
-    Task DeleteBidSheetBidsAsync(int locationId, string commodityCode, CancellationToken cancellationToken = default);
+    Task DeleteBidSheetBidsAsync(int locationId, string commodityCode, int? month = null, CancellationToken cancellationToken = default);
 
     /// <summary>Bulk upserts bids by finding or creating locations, then upserting each bid by (LocationId, CommodityCode, CropYear).</summary>
     Task BulkUpsertBidSheetBidsAsync(IEnumerable<GrainOriginatorPortal.Api.Models.Requests.UpsertBidSheetBidRequest> requests, string tradeUnitCode, string userId, CancellationToken cancellationToken = default);
@@ -399,18 +399,18 @@ public interface IDataService
     /// <summary>Gets the distinct commodity codes that have bids for a trade unit.</summary>
     Task<List<string>> GetBidCommoditiesAsync(string tradeUnitCode, CancellationToken cancellationToken = default);
 
-    /// <summary>Gets the reference elevator for a user and trade unit. Returns null if not set.</summary>
-    Task<BidSheetReference?> GetBidSheetReferenceAsync(string userId, string tradeUnitCode, CancellationToken cancellationToken = default);
-
-    /// <summary>Creates or updates the reference location for a user and trade unit.</summary>
-    Task SetBidSheetReferenceAsync(string userId, string tradeUnitCode, int locationId, string name, CancellationToken cancellationToken = default);
-
-    /// <summary>Clears the reference location for a user and trade unit.</summary>
-    Task ClearBidSheetReferenceAsync(string userId, string tradeUnitCode, CancellationToken cancellationToken = default);
+    /// <summary>Gets the distinct months that have bids for a trade unit and crop year.</summary>
+    Task<List<int>> GetBidMonthsAsync(string tradeUnitCode, int cropYear, CancellationToken cancellationToken = default);
 
     /// <summary>Gets the saved location order for a user and trade unit key. Returns null if not set.</summary>
     Task<BidSheetLocationOrder?> GetBidSheetLocationOrderAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken = default);
 
     /// <summary>Creates or updates the location order for a user and trade unit key.</summary>
     Task SetBidSheetLocationOrderAsync(string userId, string tradeUnitKey, string locationOrderJson, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets the saved bid sheet preferences (e.g. selected crop) for a user and trade unit key. Returns null if not set.</summary>
+    Task<BidSheetPreference?> GetBidSheetPreferenceAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken = default);
+
+    /// <summary>Creates or updates the bid sheet preferences (crop, month, year) for a user and trade unit key.</summary>
+    Task SetBidSheetPreferenceAsync(string userId, string tradeUnitKey, string? cropCode, int? month, int? cropYear, CancellationToken cancellationToken = default);
 }

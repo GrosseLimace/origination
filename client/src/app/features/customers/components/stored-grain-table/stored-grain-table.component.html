@@ -75,6 +75,10 @@
                 <p class="text-xs text-gray-500 dark:text-gray-400">Accumulated Cost</p>
                 <p class="text-sm font-medium text-scoular-red-accessible dark:text-scoular-red">{{ group.totalCost | currency:'USD':'symbol':'1.2-2' }}</p>
               </div>
+              <div class="w-24 text-center">
+                <p class="text-xs text-gray-500 dark:text-gray-400">Cents/Bu</p>
+                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ group.totalBushels > 0 ? ((group.totalCost / group.totalBushels) * 100 | number:'1.2-2') + '¢' : '—' }}</p>
+              </div>
             </div>
           </div>
 

@@ -2521,11 +2521,13 @@ public class SqlDataService : IDataService
         }
     }
 
-    public async Task DeleteBidSheetBidsAsync(int locationId, string commodityCode, CancellationToken cancellationToken = default)
+    public async Task DeleteBidSheetBidsAsync(int locationId, string commodityCode, int? month = null, CancellationToken cancellationToken = default)
     {
-        var bids = await _appContext.BidSheetLocationBids
-            .Where(b => b.LocationId == locationId && b.CommodityCode == commodityCode)
-            .ToListAsync(cancellationToken);
+        var query = _appContext.BidSheetLocationBids
+            .Where(b => b.LocationId == locationId && b.CommodityCode == commodityCode);
+        if (month.HasValue)
+            query = query.Where(b => b.Month == month.Value);
+        var bids = await query.ToListAsync(cancellationToken);
 
         if (bids.Count > 0)
         {
@@ -2600,9 +2602,9 @@ public class SqlDataService : IDataService
         var existingBids = await _appContext.BidSheetLocationBids
             .Where(b => locationIds.Contains(b.LocationId))
             .ToListAsync(cancellationToken);
-        var bidLookup = new Dictionary<(int, string, int), BidSheetLocationBid>();
+        var bidLookup = new Dictionary<(int, string, int, int), BidSheetLocationBid>();
         foreach (var b in existingBids)
-            bidLookup.TryAdd((b.LocationId, b.CommodityCode, b.CropYear), b);
+            bidLookup.TryAdd((b.LocationId, b.CommodityCode, b.CropYear, b.Month), b);
 
         // Second pass: upsert bids using in-memory lookups (0 queries)
         foreach (var req in requestList)
@@ -2614,7 +2616,7 @@ public class SqlDataService : IDataService
                 byName.TryGetValue(req.Name.Trim(), out loc);
             if (loc == null) continue;
 
-            var key = (loc.Id, req.CommodityCode, req.CropYear);
+            var key = (loc.Id, req.CommodityCode, req.CropYear, req.Month);
             if (bidLookup.TryGetValue(key, out var bid))
             {
                 bid.Bid = req.Bid;
@@ -2630,6 +2632,7 @@ public class SqlDataService : IDataService
                     CommodityName = req.CommodityName,
                     CommodityCategory = req.CommodityCategory,
                     CropYear = req.CropYear,
+                    Month = req.Month,
                     Bid = req.Bid,
                     CreatedBy = userId,
                     CreatedAt = now
@@ -2665,49 +2668,15 @@ public class SqlDataService : IDataService
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<BidSheetReference?> GetBidSheetReferenceAsync(string userId, string tradeUnitCode, CancellationToken cancellationToken = default)
+    public async Task<List<int>> GetBidMonthsAsync(string tradeUnitCode, int cropYear, CancellationToken cancellationToken = default)
     {
-        return await _appContext.BidSheetReferences
+        return await _appContext.BidSheetLocationBids
             .AsNoTracking()
-            .FirstOrDefaultAsync(r => r.UserId == userId && r.TradeUnitCode == tradeUnitCode, cancellationToken);
-    }
-
-    public async Task SetBidSheetReferenceAsync(string userId, string tradeUnitCode, int locationId, string name, CancellationToken cancellationToken = default)
-    {
-        var existing = await _appContext.BidSheetReferences
-            .FirstOrDefaultAsync(r => r.UserId == userId && r.TradeUnitCode == tradeUnitCode, cancellationToken);
-
-        if (existing is not null)
-        {
-            existing.LocationId = locationId;
-            existing.Name = name;
-            existing.ModifiedAt = DateTime.UtcNow;
-        }
-        else
-        {
-            _appContext.BidSheetReferences.Add(new BidSheetReference
-            {
-                UserId = userId,
-                TradeUnitCode = tradeUnitCode,
-                LocationId = locationId,
-                Name = name,
-                ModifiedAt = DateTime.UtcNow
-            });
-        }
-
-        await _appContext.SaveChangesAsync(cancellationToken);
-    }
-
-    public async Task ClearBidSheetReferenceAsync(string userId, string tradeUnitCode, CancellationToken cancellationToken = default)
-    {
-        var existing = await _appContext.BidSheetReferences
-            .FirstOrDefaultAsync(r => r.UserId == userId && r.TradeUnitCode == tradeUnitCode, cancellationToken);
-
-        if (existing is not null)
-        {
-            _appContext.BidSheetReferences.Remove(existing);
-            await _appContext.SaveChangesAsync(cancellationToken);
-        }
+            .Where(b => b.Location.TradeUnitCode == tradeUnitCode && b.CropYear == cropYear)
+            .Select(b => b.Month)
+            .Distinct()
+            .OrderBy(m => m)
+            .ToListAsync(cancellationToken);
     }
 
     // =========================================================================
@@ -2738,6 +2707,45 @@ public class SqlDataService : IDataService
                 UserId = userId,
                 TradeUnitKey = tradeUnitKey,
                 LocationOrder = locationOrderJson,
+                ModifiedAt = DateTime.UtcNow
+            });
+        }
+
+        await _appContext.SaveChangesAsync(cancellationToken);
+    }
+
+    // =========================================================================
+    // Bid Sheet Preferences (per-user per-TU UI preferences)
+    // =========================================================================
+
+    public async Task<BidSheetPreference?> GetBidSheetPreferenceAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken = default)
+    {
+        return await _appContext.BidSheetPreferences
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.UserId == userId && p.TradeUnitKey == tradeUnitKey, cancellationToken);
+    }
+
+    public async Task SetBidSheetPreferenceAsync(string userId, string tradeUnitKey, string? cropCode, int? month, int? cropYear, CancellationToken cancellationToken = default)
+    {
+        var existing = await _appContext.BidSheetPreferences
+            .FirstOrDefaultAsync(p => p.UserId == userId && p.TradeUnitKey == tradeUnitKey, cancellationToken);
+
+        if (existing is not null)
+        {
+            existing.CropCode = cropCode;
+            existing.Month = month;
+            existing.CropYear = cropYear;
+            existing.ModifiedAt = DateTime.UtcNow;
+        }
+        else
+        {
+            _appContext.BidSheetPreferences.Add(new BidSheetPreference
+            {
+                UserId = userId,
+                TradeUnitKey = tradeUnitKey,
+                CropCode = cropCode,
+                Month = month,
+                CropYear = cropYear,
                 ModifiedAt = DateTime.UtcNow
             });
         }
