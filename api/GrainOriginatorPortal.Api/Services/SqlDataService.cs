@@ -1867,6 +1867,8 @@ public class SqlDataService : IDataService
     // The CTE deduplicates to exactly one row per receipt+location+customer by taking the STATUS='S'
     // row from the most recent REPORT_RUN_STAMP, eliminating both cross-run and F/S duplicates.
     // Callers append "AND ..." (not "WHERE ...") since the base query already has WHERE rn = 1.
+    // Storage query reads only from ODS (ctrm.vw_GNTA39D1). CustomerId is resolved in C#
+    // from dbo.CustomerSnapshot (Origination DB) — Azure SQL doesn't support cross-DB joins.
     private const string StoredGrainSql = """
         WITH LatestReceipts AS (
             SELECT
@@ -1893,7 +1895,7 @@ public class SqlDataService : IDataService
         SELECT
             CAST(sg.WHR_RECEIPT_NUMBER AS varchar(50)) + '|' + ISNULL(sg.LOCATION_CODE, '') AS Id,
             CAST(sg.WHR_RECEIPT_NUMBER AS varchar(50)) AS ReceiptNumber,
-            c.CustomerId AS CustomerId,
+            CAST(0 AS bigint) AS CustomerId,
             sg.CUSTOMER_ID AS CustomerCode,
             ISNULL(sg.COMMODITY_CODE, '') AS Crop,
             ISNULL(sg.NET_QUANTITY, 0) AS Quantity,
@@ -1906,15 +1908,43 @@ public class SqlDataService : IDataService
             sg.CHARGED_FROM_DATE AS ChargedFromDate,
             sg.CHARGED_THRU_DATE AS ChargedThruDate
         FROM LatestReceipts sg
-        INNER JOIN originations.vw_CurrentCustomers c ON sg.CUSTOMER_ID = c.SourceCustomerId
         WHERE sg.rn = 1
         """;
+
+    /// <summary>Looks up CustomerId for each storage record from the CustomerSnapshot table (Origination DB).</summary>
+    private async Task EnrichStorageWithCustomerIdsAsync(List<StoredGrain> records, CancellationToken cancellationToken)
+    {
+        if (records.Count == 0) return;
+
+        var customerCodes = records.Select(r => r.CustomerCode).Where(c => !string.IsNullOrEmpty(c)).Distinct().ToList();
+        if (customerCodes.Count == 0) return;
+
+        var snapshots = await _appContext.CustomerSnapshots
+            .AsNoTracking()
+            .Where(s => s.SourceCustomerId != null && customerCodes.Contains(s.SourceCustomerId))
+            .Select(s => new { s.SourceCustomerId, s.CustomerId })
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var lookup = snapshots
+            .GroupBy(s => s.SourceCustomerId!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().CustomerId, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var record in records)
+        {
+            if (!string.IsNullOrEmpty(record.CustomerCode) && lookup.TryGetValue(record.CustomerCode, out var id))
+            {
+                record.CustomerId = id;
+            }
+        }
+    }
 
     public async Task<List<StoredGrain>> GetStoredGrainAsync(IEnumerable<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
         try
         {
             var tuList = tradeUnits?.ToList();
+            List<StoredGrain> records;
             if (tuList is { Count: > 0 })
             {
                 // Find customer codes in these TUs, then load ALL their storage (cross-TU)
@@ -1930,13 +1960,19 @@ public class SqlDataService : IDataService
 
                 var csv = SanitizeCsv(customerCodes);
                 var sql = StoredGrainSql + " AND sg.CUSTOMER_ID IN (SELECT value FROM STRING_SPLIT(@customerCsv, ','))";
-                return await _context.Database
+                records = await _context.Database
                     .SqlQueryRaw<StoredGrain>(sql, new SqlParameter("@customerCsv", csv))
                     .ToListAsync(cancellationToken);
             }
-            return await _context.Database
-                .SqlQueryRaw<StoredGrain>(StoredGrainSql)
-                .ToListAsync(cancellationToken);
+            else
+            {
+                records = await _context.Database
+                    .SqlQueryRaw<StoredGrain>(StoredGrainSql)
+                    .ToListAsync(cancellationToken);
+            }
+
+            await EnrichStorageWithCustomerIdsAsync(records, cancellationToken);
+            return records;
         }
         catch (Exception ex)
         {
@@ -1949,10 +1985,24 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var sql = StoredGrainSql + " AND c.CustomerId = @customerId";
-            return await _context.Database
-                .SqlQueryRaw<StoredGrain>(sql, new SqlParameter("@customerId", customerId))
+            // Look up the customer's source ID from CustomerSnapshot, then filter by it in ODS.
+            var sourceCustomerId = await _appContext.CustomerSnapshots
+                .AsNoTracking()
+                .Where(s => s.CustomerId == customerId && s.SourceCustomerId != null)
+                .Select(s => s.SourceCustomerId!)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (string.IsNullOrEmpty(sourceCustomerId)) return [];
+
+            var sql = StoredGrainSql + " AND sg.CUSTOMER_ID = @customerCode";
+            var records = await _context.Database
+                .SqlQueryRaw<StoredGrain>(sql, new SqlParameter("@customerCode", sourceCustomerId))
                 .ToListAsync(cancellationToken);
+
+            // Set CustomerId for all records (we already know it from the input)
+            foreach (var r in records) r.CustomerId = customerId;
+
+            return records;
         }
         catch (Exception ex)
         {
