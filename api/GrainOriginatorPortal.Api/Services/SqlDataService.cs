@@ -751,31 +751,41 @@ public class SqlDataService : IDataService
         {
             var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
 
-            // Two-path strategy:
-            // - Unfiltered: Take(15) caps customer list so the IN clause stays well under 2100 params
-            // - Filtered: TradeUnit IN (small list of TU codes) — fast indexed lookup on the ODS view
+            // Two-path strategy. Both paths now use STRING_SPLIT downstream so we never hit
+            // SQL Server's 2100-parameter IN-clause limit even when the unfiltered path returns
+            // thousands of producer IDs.
             List<Contract> contracts;
 
             if (!hasTradeUnitFilter)
             {
-                // Get up to 15 customer CtrmCustomerIds (have contracts OR tickets) — 15 params = safe
-                var customerCtrmIds = await _context.Customers
+                // Unfiltered: every active producer in CustomerSnapshot. Trade unit selection is a
+                // narrowing convenience, not an entitlement boundary — when nothing is selected
+                // the user can search across the full producer base.
+                var customerCtrmIds = await _appContext.CustomerSnapshots
                     .AsNoTracking()
-                    .Where(c => c.SourceCustomerId != null && (
-                        _context.Contracts.Any(ct => ct.IsActive && ct.ContractPrefixType == "P" && ct.CtrmCustomerId == c.SourceCustomerId) ||
-                        _context.Tickets.Any(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerId == c.Id)))
-                    .Take(15)
-                    .Select(c => c.SourceCustomerId)
+                    .Where(s => s.IsActive && s.SourceCustomerId != null)
+                    .Select(s => s.SourceCustomerId!)
+                    .Distinct()
                     .ToListAsync(cancellationToken);
 
-                // Load open contracts + prior-year contracts (for pacing comparison)
-                var pacingCutoffYear = DateTime.Today.Year - 1;
-                contracts = await _context.Contracts
-                    .AsNoTracking()
-                    .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId != null && customerCtrmIds.Contains(c.CtrmCustomerId)
-                        && (c.ClosedDate == null || c.CropYear >= pacingCutoffYear))
-                    .OrderByDescending(c => c.Id)
-                    .ToListAsync(cancellationToken);
+                if (customerCtrmIds.Count == 0)
+                {
+                    contracts = [];
+                }
+                else
+                {
+                    var ctrmIdsCsv = SanitizeCsv(customerCtrmIds);
+                    contracts = await _context.Contracts
+                        .FromSqlInterpolated($@"
+                            SELECT c.* FROM base.vw_CurrentContracts c
+                            INNER JOIN STRING_SPLIT({ctrmIdsCsv}, ',') ids
+                                ON c.CtrmCustomerId = ids.value
+                            WHERE c.IsActive = 1 AND c.ContractPrefixType = 'P'
+                              AND (c.ClosedDate IS NULL OR c.CropYear >= {DateTime.Today.Year - 1})")
+                        .AsNoTracking()
+                        .OrderByDescending(c => c.Id)
+                        .ToListAsync(cancellationToken);
+                }
             }
             else
             {
@@ -1004,34 +1014,20 @@ public class SqlDataService : IDataService
     {
         try
         {
-            // Resolve producer CtrmCustomerIds — TWO paths, mirroring GetContractsAsync:
-            //   - With TU filter: snapshot rows whose TradeUnit is in the requested set.
-            //   - Without TU filter (admin/dev sandbox): cap at 15 customers from the ODS Customer
-            //     view who actually have purchase contracts or P/U tickets. Matches the existing
-            //     no-TU pattern in GetContractsAsync and prevents an unfiltered call from returning
-            //     contracts across every trade unit in the company.
-            List<string> ctrmIds;
+            // Resolve producer CtrmCustomerIds from CustomerSnapshot. Trade unit selection is a
+            // narrowing convenience, not an entitlement boundary — when nothing is selected we
+            // return contracts for every active producer.
+            var ctrmIdsQuery = _appContext.CustomerSnapshots
+                .AsNoTracking()
+                .Where(s => s.IsActive && s.SourceCustomerId != null);
             if (tradeUnits != null && tradeUnits.Count > 0)
             {
-                ctrmIds = await _appContext.CustomerSnapshots
-                    .AsNoTracking()
-                    .Where(c => c.SourceCustomerId != null && c.IsActive
-                        && c.TradeUnit != null && tradeUnits.Contains(c.TradeUnit))
-                    .Select(c => c.SourceCustomerId!)
-                    .Distinct()
-                    .ToListAsync(cancellationToken);
+                ctrmIdsQuery = ctrmIdsQuery.Where(s => s.TradeUnit != null && tradeUnits.Contains(s.TradeUnit));
             }
-            else
-            {
-                ctrmIds = await _context.Customers
-                    .AsNoTracking()
-                    .Where(c => c.SourceCustomerId != null && (
-                        _context.Contracts.Any(ct => ct.IsActive && ct.ContractPrefixType == "P" && ct.CtrmCustomerId == c.SourceCustomerId) ||
-                        _context.Tickets.Any(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerId == c.Id)))
-                    .Take(15)
-                    .Select(c => c.SourceCustomerId!)
-                    .ToListAsync(cancellationToken);
-            }
+            var ctrmIds = await ctrmIdsQuery
+                .Select(s => s.SourceCustomerId!)
+                .Distinct()
+                .ToListAsync(cancellationToken);
 
             if (ctrmIds.Count == 0) return [];
 
@@ -1176,27 +1172,38 @@ public class SqlDataService : IDataService
         {
             var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
 
-            // Two-path strategy to avoid SQL Server's 2100-parameter IN-clause limit:
-            // - Unfiltered: safe because Take(15) caps customer list at 15 items (well under 2100 params)
-            // - Filtered: use EXISTS subqueries (Any() → SQL EXISTS) — no parameter count regardless of data volume
+            // Two-path strategy. Both paths use STRING_SPLIT downstream to avoid SQL Server's
+            // 2100-parameter IN-clause limit when the producer set is large.
             List<Ticket> tickets;
 
             if (!hasTradeUnitFilter)
             {
-                var customerCodes = await _context.Customers
+                // Unfiltered: every active producer in CustomerSnapshot. Trade unit selection is
+                // a narrowing convenience, not an entitlement boundary.
+                var customerCodes = await _appContext.CustomerSnapshots
                     .AsNoTracking()
-                    .Where(c => c.SourceCustomerId != null && (
-                        _context.Contracts.Any(ct => ct.IsActive && ct.ContractPrefixType == "P" && ct.CtrmCustomerId == c.SourceCustomerId) ||
-                        _context.Tickets.Any(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerCode == c.SourceCustomerId)))
-                    .Take(15)
-                    .Select(c => c.SourceCustomerId!)
+                    .Where(s => s.IsActive && s.SourceCustomerId != null)
+                    .Select(s => s.SourceCustomerId!)
+                    .Distinct()
                     .ToListAsync(cancellationToken);
 
-                tickets = await _context.Tickets
-                    .AsNoTracking()
-                    .Where(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode))
-                    .OrderByDescending(t => t.Date)
-                    .ToListAsync(cancellationToken);
+                if (customerCodes.Count == 0)
+                {
+                    tickets = [];
+                }
+                else
+                {
+                    var codesCsv = SanitizeCsv(customerCodes);
+                    tickets = await _context.Tickets
+                        .FromSqlInterpolated($@"
+                            SELECT t.* FROM base.vw_CurrentTickets t
+                            INNER JOIN STRING_SPLIT({codesCsv}, ',') ids
+                                ON t.CustomerCode = ids.value
+                            WHERE t.IsActive = 1 AND t.TicketType IN ('U','P')")
+                        .AsNoTracking()
+                        .OrderByDescending(t => t.Date)
+                        .ToListAsync(cancellationToken);
+                }
             }
             else
             {
@@ -1379,20 +1386,33 @@ public class SqlDataService : IDataService
 
             if (!hasTradeUnitFilter)
             {
-                var customerCodes = await _context.Customers
+                // Unfiltered: every active producer in CustomerSnapshot. Trade unit selection is
+                // a narrowing convenience, not an entitlement boundary.
+                var customerCodes = await _appContext.CustomerSnapshots
                     .AsNoTracking()
-                    .Where(c => c.SourceCustomerId != null && (
-                        _context.Contracts.Any(ct => ct.IsActive && ct.ContractPrefixType == "P" && ct.CtrmCustomerId == c.SourceCustomerId) ||
-                        _context.Tickets.Any(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerCode == c.SourceCustomerId)))
-                    .Take(15)
-                    .Select(c => c.SourceCustomerId!)
+                    .Where(s => s.IsActive && s.SourceCustomerId != null)
+                    .Select(s => s.SourceCustomerId!)
+                    .Distinct()
                     .ToListAsync(cancellationToken);
 
-                tickets = await _context.Tickets
-                    .AsNoTracking()
-                    .Where(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode) && t.Date != null && string.Compare(t.Date, cutoffStr) >= 0)
-                    .OrderByDescending(t => t.Date)
-                    .ToListAsync(cancellationToken);
+                if (customerCodes.Count == 0)
+                {
+                    tickets = [];
+                }
+                else
+                {
+                    var codesCsv = SanitizeCsv(customerCodes);
+                    tickets = await _context.Tickets
+                        .FromSqlInterpolated($@"
+                            SELECT t.* FROM base.vw_CurrentTickets t
+                            INNER JOIN STRING_SPLIT({codesCsv}, ',') ids
+                                ON t.CustomerCode = ids.value
+                            WHERE t.IsActive = 1 AND t.TicketType IN ('U','P')
+                              AND t.[Date] IS NOT NULL AND t.[Date] >= {cutoffStr}")
+                        .AsNoTracking()
+                        .OrderByDescending(t => t.Date)
+                        .ToListAsync(cancellationToken);
+                }
             }
             else
             {
