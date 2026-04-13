@@ -40,6 +40,29 @@ public class ContractsController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
+    /// <summary>Gets historical closed contracts for a customer, used by Contract Pacing year-over-year comparison.
+    /// Queries base.Contract (not vw_CurrentContracts) to retrieve prior-year closed contracts.</summary>
+    [HttpGet("pacing/{customerId:long}")]
+    [ProducesResponseType(typeof(List<Contract>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<Contract>>> GetPacingHistorical(long customerId, CancellationToken cancellationToken = default)
+    {
+        await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
+        return Ok(await _dataService.GetHistoricalContractsForPacingAsync(customerId, cancellationToken));
+    }
+
+    // -------------------------------------------------------------------------
+    /// <summary>Gets ALL purchase contracts (open + closed) for a specific crop year from base.Contract,
+    /// scoped to the user's selected trade units. Used by the Planting Intentions Dashboard's
+    /// Harvest &amp; Contracts tab so older planting years still show closed historical contracts.</summary>
+    [HttpGet("by-crop-year/{cropYear:int}")]
+    [EnforceTradeUnitAccess]
+    [ProducesResponseType(typeof(List<Contract>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<Contract>>> GetByCropYear(int cropYear, [FromQuery] List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
+    {
+        return Ok(await _dataService.GetContractsByCropYearAsync(cropYear, tradeUnits, cancellationToken));
+    }
+
+    // -------------------------------------------------------------------------
     /// <summary>Gets all contracts for a specific farm.</summary>
     [HttpGet("farm/{farmId}")]
     [ProducesResponseType(typeof(List<Contract>), StatusCodes.Status200OK)]

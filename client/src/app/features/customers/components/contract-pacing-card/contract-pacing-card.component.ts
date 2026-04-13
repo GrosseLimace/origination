@@ -1,7 +1,20 @@
-import { Component, inject, input } from '@angular/core';
+import { Component, DestroyRef, computed, effect, inject, input, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ThemeService } from '@core/services/theme.service';
-import { Contract } from '@models';
+import { ApiService } from '@core/services/api.service';
+import { Contract, HarvestWindow } from '@models';
+
+type PacingDirection = 'up' | 'down' | 'flat';
+
+interface CommodityPacingRow {
+  commodity: string;
+  thisYear: number;
+  lastYear: number;
+  direction: PacingDirection;
+  /** Pre-formatted harvest window range, e.g. "Jul 1 – Aug 31". Shown in the row tooltip. */
+  windowLabel: string;
+}
 
 @Component({
   selector: 'app-contract-pacing-card',
@@ -11,13 +24,63 @@ import { Contract } from '@models';
   templateUrl: './contract-pacing-card.component.html'
 })
 export class ContractPacingCardComponent {
+  // Open contracts from parent (pre-filtered to !closedDate)
   public contracts = input<Contract[]>([]);
+  // Harvest windows from app state (drives the delivery-window filter)
+  public harvestWindows = input<HarvestWindow[]>([]);
+  // Customer id — used to fetch historical closed contracts when the parent doesn't supply them
+  public customerId = input<number | null>(null);
+  /**
+   * Optional: historical closed contracts supplied by parent (single fetch shared
+   * across pacing card + producer insights). When provided (length > 0 OR explicitly
+   * set), the card skips its own fetch.
+   */
+  public historicalContracts = input<Contract[]>([]);
 
-  private themeService = inject(ThemeService);
+  private readonly themeService = inject(ThemeService);
+  private readonly apiService = inject(ApiService);
+  private readonly destroyRef = inject(DestroyRef);
 
-  get isDarkMode(): boolean {
-    return this.themeService.isDarkMode();
+  /** Closed historical contracts — supplied by parent OR self-fetched if parent doesn't pass them. */
+  private readonly _selfFetchedHistorical = signal<Contract[]>([]);
+
+  constructor() {
+    // Self-fetch only when the parent did NOT supply historical contracts (length 0 AND customerId set).
+    // The parent (customer-profile) typically owns the fetch and shares the result with both
+    // this card and producer-insights, so this fallback is for standalone usage.
+    effect(() => {
+      const id = this.customerId();
+      const parentSupplied = this.historicalContracts();
+      if (id == null || parentSupplied.length > 0) {
+        this._selfFetchedHistorical.set([]);
+        return;
+      }
+      this.apiService.getHistoricalContractsForPacing(id)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(contracts => this._selfFetchedHistorical.set(contracts));
+    });
   }
+
+  /** Open + historical merged for pacing calculations. */
+  private readonly allContracts = computed<Contract[]>(() => {
+    const open = this.contracts() || [];
+    const historical = this.historicalContracts().length > 0
+      ? this.historicalContracts()
+      : this._selfFetchedHistorical();
+    const seen = new Set<number>(open.map(c => c.id));
+    const merged = [...open];
+    for (const h of historical) {
+      if (!seen.has(h.id)) {
+        merged.push(h);
+        seen.add(h.id);
+      }
+    }
+    return merged;
+  });
+
+  // ── Style getters (unchanged) ──────────────────────────────────────────────
+
+  get isDarkMode(): boolean { return this.themeService.isDarkMode(); }
 
   get gradientStyle(): string {
     return this.isDarkMode
@@ -31,93 +94,110 @@ export class ContractPacingCardComponent {
       : 'background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(148, 163, 184, 0.3);';
   }
 
-  get labelStyle(): string {
-    return 'color: #e2e8f0; font-size: 0.875rem;';
-  }
-
-  get sublabelStyle(): string {
-    return 'color: #cbd5e1; font-size: 0.75rem;';
-  }
-
+  get labelStyle(): string { return 'color: #e2e8f0; font-size: 0.875rem;'; }
+  get sublabelStyle(): string { return 'color: #cbd5e1; font-size: 0.75rem;'; }
   get colHeaderStyle(): string {
     return 'color: #cbd5e1; font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700;';
   }
 
-  getPacingBadgeStyle(pct: number): string {
-    return pct >= 0
-      ? 'background: rgba(74, 222, 128, 0.15); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.3);'
-      : 'background: rgba(248, 113, 113, 0.15); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.3);';
+  getArrowStyle(direction: PacingDirection): string {
+    if (direction === 'up') {
+      return 'color: #4ade80;'; // green
+    }
+    if (direction === 'down') {
+      return 'color: #f87171;'; // red
+    }
+    return 'color: #94a3b8;'; // neutral gray
   }
 
-  /** Most recent delivery year seen across all contracts. */
-  get currentDeliveryYear(): number {
-    let max = 0;
-    for (const c of this.contracts()) {
-      if (c.deliveryStart) {
-        const y = new Date(c.deliveryStart).getFullYear();
-        if (y > max) max = y;
+  // ── Harvest window matching ────────────────────────────────────────────────
+
+  /** Calendar year drives the harvest-window comparison.
+   *  "This year" = current calendar year, "last year" = current year - 1. */
+  readonly currentCropYear = computed(() => new Date().getFullYear());
+
+  /**
+   * Returns true if the contract's delivery period overlaps the harvest window
+   * for `hw.commodity` in `cropYear`.
+   */
+  private contractMatchesHarvestWindow(c: Contract, hw: HarvestWindow, cropYear: number): boolean {
+    if (!c.deliveryStart && !c.deliveryEnd) return false;
+    const windowStart = new Date(cropYear, hw.deliveryStartMonth - 1, hw.deliveryStartDay);
+    const windowEnd = new Date(cropYear, hw.deliveryEndMonth - 1, hw.deliveryEndDay);
+    windowEnd.setHours(23, 59, 59, 999); // include the full end day
+
+    const delStart = c.deliveryStart ? new Date(c.deliveryStart) : new Date(c.deliveryEnd!);
+    const delEnd = c.deliveryEnd ? new Date(c.deliveryEnd) : new Date(c.deliveryStart!);
+    return delStart <= windowEnd && delEnd >= windowStart;
+  }
+
+  /** Match contract's commodity to a harvest window's commodity (case-insensitive, group or description). */
+  private contractMatchesCommodity(c: Contract, hwCommodity: string): boolean {
+    const target = hwCommodity.trim().toUpperCase();
+    if (!target) return false;
+    const group = (c.commodityGroup || '').trim().toUpperCase();
+    if (group && group === target) return true;
+    const desc = (c.commodityDescription || '').trim().toUpperCase();
+    if (desc && desc.includes(target)) return true;
+    const code = (c.commodityCode || '').trim().toUpperCase();
+    if (code && code.includes(target)) return true;
+    return false;
+  }
+
+  /** Format a harvest window's start/end as "Mon D – Mon D" for tooltip display. */
+  private formatHarvestWindow(hw: HarvestWindow): string {
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const startMon = months[hw.deliveryStartMonth - 1] ?? '';
+    const endMon = months[hw.deliveryEndMonth - 1] ?? '';
+    return `${startMon} ${hw.deliveryStartDay} – ${endMon} ${hw.deliveryEndDay}`;
+  }
+
+  /** Compute pacing direction from two totals. */
+  private direction(thisYear: number, lastYear: number): PacingDirection {
+    if (thisYear > lastYear) return 'up';
+    if (thisYear < lastYear) return 'down';
+    return 'flat';
+  }
+
+  // ── Computed rollups ───────────────────────────────────────────────────────
+
+  readonly pacingByCommodity = computed<CommodityPacingRow[]>(() => {
+    const windows = this.harvestWindows().filter(hw => hw.isActive !== false);
+    const year = this.currentCropYear();
+    const priorYear = year - 1;
+    const contracts = this.allContracts();
+    const rows: CommodityPacingRow[] = [];
+
+    for (const hw of windows) {
+      let thisYear = 0;
+      let lastYear = 0;
+      for (const c of contracts) {
+        if (!this.contractMatchesCommodity(c, hw.commodity)) continue;
+        if (this.contractMatchesHarvestWindow(c, hw, year)) thisYear += c.quantity;
+        if (this.contractMatchesHarvestWindow(c, hw, priorYear)) lastYear += c.quantity;
+      }
+      if (thisYear > 0 || lastYear > 0) {
+        rows.push({
+          commodity: hw.commodity,
+          thisYear,
+          lastYear,
+          direction: this.direction(thisYear, lastYear),
+          windowLabel: this.formatHarvestWindow(hw)
+        });
       }
     }
-    return max > 0 ? max : new Date().getFullYear();
-  }
+    return rows.sort((a, b) => b.thisYear - a.thisYear);
+  });
 
-  private get _samePointLastYear(): Date {
-    const today = new Date();
-    return new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
-  }
+  readonly totalBushelsThisYear = computed(() =>
+    this.pacingByCommodity().reduce((sum, r) => sum + r.thisYear, 0)
+  );
 
-  private get _contractsThisYear(): Contract[] {
-    const year = this.currentDeliveryYear;
-    return this.contracts().filter(c =>
-      c.deliveryStart && new Date(c.deliveryStart).getFullYear() === year
-    );
-  }
+  readonly totalBushelsLastYear = computed(() =>
+    this.pacingByCommodity().reduce((sum, r) => sum + r.lastYear, 0)
+  );
 
-  private get _contractsLastYear(): Contract[] {
-    const priorYear = this.currentDeliveryYear - 1;
-    const cutoff = this._samePointLastYear;
-    return this.contracts().filter(c => {
-      if (!c.deliveryStart || new Date(c.deliveryStart).getFullYear() !== priorYear) return false;
-      if (!c.contractDate) return true;
-      return new Date(c.contractDate) <= cutoff;
-    });
-  }
-
-  get totalBushelsThisYear(): number {
-    return this._contractsThisYear.reduce((sum, c) => sum + c.quantity, 0);
-  }
-
-  get totalBushelsLastYear(): number {
-    return this._contractsLastYear.reduce((sum, c) => sum + c.quantity, 0);
-  }
-
-  get pacingPercentChange(): number | null {
-    if (this.totalBushelsLastYear === 0) return null;
-    return ((this.totalBushelsThisYear - this.totalBushelsLastYear) / this.totalBushelsLastYear) * 100;
-  }
-
-  get pacingByCommodity(): { commodity: string; thisYear: number; lastYear: number; pct: number | null }[] {
-    const label = (c: Contract) => c.commodityDescription || c.commodityGroup || '';
-    const rowMap = new Map<string, { thisYear: number; lastYear: number }>();
-    const ensureRow = (commodity: string) => {
-      if (!rowMap.has(commodity)) rowMap.set(commodity, { thisYear: 0, lastYear: 0 });
-      return rowMap.get(commodity)!;
-    };
-    for (const c of this._contractsThisYear) {
-      const commodity = label(c);
-      if (commodity) ensureRow(commodity).thisYear += c.quantity;
-    }
-    for (const c of this._contractsLastYear) {
-      const commodity = label(c);
-      if (commodity) ensureRow(commodity).lastYear += c.quantity;
-    }
-    return Array.from(rowMap.entries())
-      .map(([commodity, row]) => ({
-        commodity,
-        thisYear: row.thisYear,
-        lastYear: row.lastYear,
-        pct: row.lastYear > 0 ? ((row.thisYear - row.lastYear) / row.lastYear) * 100 : null
-      }))
-      .sort((a, b) => b.thisYear - a.thisYear);
-  }
+  readonly totalDirection = computed<PacingDirection>(() =>
+    this.direction(this.totalBushelsThisYear(), this.totalBushelsLastYear())
+  );
 }

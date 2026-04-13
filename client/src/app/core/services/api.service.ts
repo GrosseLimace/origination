@@ -149,6 +149,27 @@ export class ApiService {
     );
   }
 
+  /** Fetches closed historical contracts for Contract Pacing year-over-year comparison. */
+  getHistoricalContractsForPacing(customerId: number): Observable<Contract[]> {
+    return this._dedupe(`contracts-pacing:${customerId}`,
+      this.http.get<Contract[]>(`${this.baseUrl}/contracts/pacing/${customerId}`)
+        .pipe(catchError(() => of([] as Contract[])))
+    );
+  }
+
+  /** Fetches ALL purchase contracts (open + closed) from base.Contract for a specific crop year, scoped to the given trade units. Used by the Planting Intentions Dashboard's Harvest & Contracts tab. */
+  getContractsByCropYear(cropYear: number, tradeUnits?: string[]): Observable<Contract[]> {
+    let params = new HttpParams();
+    if (tradeUnits && tradeUnits.length > 0) {
+      for (const tu of tradeUnits) params = params.append('tradeUnits', tu);
+    }
+    const tuKey = (tradeUnits && tradeUnits.length > 0) ? tradeUnits.slice().sort().join(',') : '';
+    return this._dedupe(`contracts-by-crop-year:${cropYear}:${tuKey}`,
+      this.http.get<Contract[]>(`${this.baseUrl}/contracts/by-crop-year/${cropYear}`, { params })
+        .pipe(catchError(() => of([] as Contract[])))
+    );
+  }
+
   /** Fetches all contracts for a specific customer */
   getContractsByCustomer(customerId: number, sourceCustomerId?: string): Observable<Contract[]> {
     let params = new HttpParams();

@@ -29,6 +29,12 @@ export class DashboardComponent {
   readonly customers = this.appStateService.customers;
   readonly contracts = this.appStateService.contracts;
   readonly plantingIntentions = this.appStateService.plantingIntentions;
+
+  // Crop-year contracts from base.Contract (open + closed). Loaded reactively when the
+  // user changes the selected planting year or trade unit selection. Used by the
+  // Harvest & Contracts tab so older planting years still surface closed historical contracts
+  // that vw_CurrentContracts (which feeds appState.contracts) has filtered out.
+  private readonly _cropYearContracts = signal<Contract[]>([]);
   private readonly _customerIdSet = computed(() => new Set(this.customers().map(c => c.id)));
   readonly storedGrain = computed(() => {
     const customerIds = new Set(this.appStateService.customers().map(c => c.id));
@@ -374,7 +380,12 @@ export class DashboardComponent {
   readonly contractsForYear = computed(() => {
     const year = this.selectedPlantingYear();
     const cropFilter = this.selectedCropFilter();
-    return this.contracts().filter(c => {
+    // Prefer the base.Contract feed for the selected year (open + closed historical).
+    // Falls back to appState.contracts() while the crop-year fetch is in flight or empty
+    // so the UI never goes blank during the swap.
+    const cropYearContracts = this._cropYearContracts();
+    const source = cropYearContracts.length > 0 ? cropYearContracts : this.contracts();
+    return source.filter(c => {
       if (c.cropYear !== year) return false;
       if (cropFilter) {
         const group = (c.commodityGroup || c.commodityDescription || c.commodityCode || '').toLowerCase();
@@ -506,6 +517,19 @@ export class DashboardComponent {
     } else {
       this._loadLocalData();
     }
+
+    // Fetch crop-year contracts from base.Contract whenever the selected planting year or
+    // trade-unit selection changes. Powers the Harvest & Contracts tab so historical years
+    // include closed contracts not present in vw_CurrentContracts.
+    effect(() => {
+      const year = this.selectedPlantingYear();
+      const tus = this.appStateService.selectedTradeUnits();
+      untracked(() => {
+        this.apiService.getContractsByCropYear(year, tus.length > 0 ? tus : undefined)
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe(contracts => this._cropYearContracts.set(contracts));
+      });
+    });
 
     // Sync commodities from appState when DataPreloadService populates them.
     // This avoids a duplicate getCommodities() fetch — the dashboard uses what

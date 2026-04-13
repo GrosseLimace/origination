@@ -62,6 +62,7 @@ public class Contract
 
     // ODS metadata fields
     public bool IsActive { get; set; }
+    public bool IsDeleted { get; set; }
     public DateTime? EffectiveStartDate { get; set; }
     public DateTime? EffectiveEndDate { get; set; }
 }
