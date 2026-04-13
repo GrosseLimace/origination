@@ -32,6 +32,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<BidSheetLocation> BidSheetLocations => Set<BidSheetLocation>();
     public DbSet<BidSheetLocationBid> BidSheetLocationBids => Set<BidSheetLocationBid>();
     public DbSet<BidSheetLocationOrder> BidSheetLocationOrders => Set<BidSheetLocationOrder>();
+    public DbSet<BidSheetPreference> BidSheetPreferences => Set<BidSheetPreference>();
     public DbSet<ElevatorCache> ElevatorCaches => Set<ElevatorCache>();
     public DbSet<HarvestWindow> HarvestWindows => Set<HarvestWindow>();
 
@@ -344,6 +345,21 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ModifiedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.HasIndex(e => new { e.UserId, e.TradeUnitKey }).IsUnique().HasDatabaseName("UQ_BidSheetLocationOrders_User_TradeUnitKey");
             entity.HasIndex(e => e.UserId).HasDatabaseName("IX_BidSheetLocationOrders_UserId");
+        });
+
+        modelBuilder.Entity<BidSheetPreference>(entity =>
+        {
+            entity.ToTable("BidSheetPreferences", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.TradeUnitKey).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.CropCode).HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.Month).IsRequired(false);
+            entity.Property(e => e.CropYear).IsRequired(false);
+            entity.Property(e => e.ModifiedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.HasIndex(e => new { e.UserId, e.TradeUnitKey }).IsUnique().HasDatabaseName("UQ_BidSheetPreferences_User_TradeUnitKey");
+            entity.HasIndex(e => e.UserId).HasDatabaseName("IX_BidSheetPreferences_UserId");
         });
 
         modelBuilder.Entity<HarvestWindow>(entity =>

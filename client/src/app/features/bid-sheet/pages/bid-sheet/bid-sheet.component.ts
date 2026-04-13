@@ -44,7 +44,7 @@ export class BidSheetComponent {
   selectedCrop = signal<string>('');
   searchQuery = signal<string>('');
   selectedBasis = signal<string>('all');
-  selectedMonth = signal<number>(-1); // -1=all months, 0=yearly, 1-12=monthly
+  selectedMonth = signal<number>(0); // 0=yearly, 1-12=monthly
 
   // --- Data ---
   allElevators = signal<Elevator[]>([]);           // ALL elevators from ODS (loaded once)
@@ -92,18 +92,6 @@ export class BidSheetComponent {
     }
     return lookup;
   });
-  /** Lookup by name|commodityCode|cropYear only (ignoring month) — picks latest modifiedAt entry per key. Used when selectedMonth is -1 (All Months). */
-  private readonly bidLookupByYear = computed(() => {
-    const lookup = new Map<string, BidSheetEntry>();
-    for (const e of this.bidEntries()) {
-      const key = `${e.name}|${e.commodityCode}|${e.cropYear}`;
-      const existing = lookup.get(key);
-      if (!existing || new Date(e.modifiedAt || e.createdAt).getTime() > new Date(existing.modifiedAt || existing.createdAt).getTime()) {
-        lookup.set(key, e);
-      }
-    }
-    return lookup;
-  });
   cropYears = signal<number[]>([]);
   crops = signal<string[]>([]);
   isLoading = signal<boolean>(false);
@@ -125,10 +113,37 @@ export class BidSheetComponent {
     return idx >= 0 && idx < years.length ? years[idx] : null;
   });
   canShiftYearsBack = computed(() => {
+    if (this.selectedMonth() > 0) return true; // monthly mode always allows shift back
     const years = this.cropYears();
     return years.length >= 2 && (years.length - 2 + this.yearOffset()) > 0;
   });
-  canShiftYearsForward = computed(() => this.yearOffset() < 0);
+  canShiftYearsForward = computed(() => {
+    if (this.selectedMonth() > 0) return true; // monthly mode always allows shift forward
+    return this.yearOffset() < 0;
+  });
+
+  // --- Old/New (month, year) pair for the panel comparison columns ---
+  // Yearly mode: returns just years (month=0).
+  // Monthly mode: returns the previous month vs selected month, rolling years over at January.
+  newDisplay = computed(() => ({ month: this.selectedMonth(), year: this.selectedYear() }));
+  oldDisplay = computed(() => {
+    const month = this.selectedMonth();
+    const year = this.selectedYear();
+    if (month === 0) {
+      // Yearly mode — old year column (one less than new)
+      return { month: 0, year: this.oldYear() ?? year - 1 };
+    }
+    // Monthly mode — previous month, rolling year at January
+    if (month === 1) return { month: 12, year: year - 1 };
+    return { month: month - 1, year };
+  });
+  /** Returns "Mar 26" / "Apr 26" / "2025" / "2026" depending on month context. */
+  formatMonthYear(month: number, year: number | null): string {
+    if (year == null) return '';
+    if (month === 0) return year.toString();
+    const names = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${names[month]} ${year.toString().slice(-2)}`;
+  }
 
   // --- Location order (per trade unit, persisted to DB) ---
   private locationOrderByTu = signal<Map<string, string[]>>(new Map());
@@ -151,20 +166,29 @@ export class BidSheetComponent {
   readonly panelLocationBids = computed(() => {
     const name = this.panelSelectedLocation();
     if (!name) return [];
-    const oldYr = this.oldYear();
-    const newYr = this.newYear();
-    const month = this.selectedMonth();
+    const oldD = this.oldDisplay();
+    const newD = this.newDisplay();
     const entries = this.bidEntries().filter(e => e.name === name);
     let cropSet = [...new Set(entries.map(e => e.commodityCode).filter(Boolean))].sort();
-    // When a specific month is selected, only show crops that have bids for that month
-    if (month !== -1) {
-      cropSet = cropSet.filter(crop => this._getLatestBid(name, newYr, crop!, month) || this._getLatestBid(name, oldYr, crop!, month));
-    }
-    return cropSet.map(crop => ({
-      crop: crop!,
-      oldBid: this._getLatestBid(name, oldYr, crop!, month),
-      newBid: this._getLatestBid(name, newYr, crop!, month)
-    }));
+    // Only show crops that have bids for the displayed old/new periods
+    cropSet = cropSet.filter(crop =>
+      this._getLatestBid(name, newD.year, crop!, newD.month) ||
+      this._getLatestBid(name, oldD.year, crop!, oldD.month));
+
+    // Reference comparison — color-code each crop row vs the session reference (selectedLocationName)
+    const refName = this.selectedLocationName();
+    const isRef = refName === name;
+
+    return cropSet.map(crop => {
+      const oldBid = this._getLatestBid(name, oldD.year, crop!, oldD.month);
+      const newBid = this._getLatestBid(name, newD.year, crop!, newD.month);
+      // Get reference bid for this crop (if any). If reference doesn't have this crop → leave white (status 'none').
+      const oldRefBid = refName && !isRef ? this._parseBid(this._getLatestBid(refName, oldD.year, crop!, oldD.month)) : null;
+      const newRefBid = refName && !isRef ? this._parseBid(this._getLatestBid(refName, newD.year, crop!, newD.month)) : null;
+      const oldStatus = isRef ? 'reference' : this._computeItemStatus(oldBid, false, oldRefBid);
+      const newStatus = isRef ? 'reference' : this._computeItemStatus(newBid, false, newRefBid);
+      return { crop: crop!, oldBid, newBid, oldStatus, newStatus };
+    });
   });
 
   // --- Edit Bids ---
@@ -444,6 +468,8 @@ export class BidSheetComponent {
       if (this.editBidsMode()) this.editBidsGridLoading.set(true);
       this._loadBidData(tus, () => {
         this._zoomToBidLocations();
+        // Apply saved crop preference after bid data loads (so we know available crops)
+        this._loadPreference(tus);
         // If edit bids is open, rebuild the grid with new data
         if (this.editBidsMode()) {
           this._buildEditGrid(this.editBidsYear());
@@ -483,6 +509,70 @@ export class BidSheetComponent {
         this._buildEditGrid(this.editBidsYear());
       }
     });
+  }
+
+  /** Special key used to store the user's global (cross-TU) crop preference. */
+  private static readonly GLOBAL_PREF_KEY = '__global__';
+
+  /** Loads saved preferences (crop, month, year) for the current TU combo, falling back to global if no per-key entry. */
+  private _loadPreference(tus: string[]): void {
+    if (tus.length === 0) return;
+    const key = [...tus].sort().join(',');
+    forkJoin({
+      perKey: this.apiService.getBidSheetPreference(key),
+      global: this.apiService.getBidSheetPreference(BidSheetComponent.GLOBAL_PREF_KEY)
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(({ perKey, global }) => {
+      // Per-key takes priority; fall back to global if per-key is missing the field
+      const desiredCrop = perKey?.cropCode ?? global?.cropCode ?? null;
+      const desiredMonth = perKey?.month ?? global?.month ?? null;
+      const desiredYear = perKey?.cropYear ?? global?.cropYear ?? null;
+
+      let changed = false;
+
+      // Apply crop if available
+      const available = this.crops();
+      if (desiredCrop && available.includes(desiredCrop) && this.selectedCrop() !== desiredCrop) {
+        this.selectedCrop.set(desiredCrop);
+        changed = true;
+      }
+
+      // Apply month (always valid 0-12)
+      if (desiredMonth != null && this.selectedMonth() !== desiredMonth) {
+        this.selectedMonth.set(desiredMonth);
+        changed = true;
+      }
+
+      // Apply year if available in current cropYears
+      if (desiredYear != null && this.cropYears().includes(desiredYear) && this.selectedYear() !== desiredYear) {
+        const years = this.cropYears();
+        const idx = years.indexOf(desiredYear);
+        this.selectedYear.set(desiredYear);
+        if (idx >= 0) this.yearOffset.set(idx - (years.length - 1));
+        changed = true;
+      }
+
+      if (changed) {
+        this.filterBids();
+        this._refreshMapMarkers();
+      }
+    });
+  }
+
+  /** Persists the current crop, month, and year preferences for the active TU combo AND globally (fire-and-forget). */
+  private _savePreference(): void {
+    const cropCode = this.selectedCrop() || null;
+    const month = this.selectedMonth();
+    const cropYear = this.selectedYear() || null;
+    const key = this.activeTradeUnitKey();
+    if (key) {
+      this.apiService.setBidSheetPreference(key, cropCode, month, cropYear)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({ error: () => {} });
+    }
+    // Always save globally so choices carry over to new TU/group selections
+    this.apiService.setBidSheetPreference(BidSheetComponent.GLOBAL_PREF_KEY, cropCode, month, cropYear)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({ error: () => {} });
   }
 
   private _zoomToBidLocations(): void {
@@ -526,6 +616,7 @@ export class BidSheetComponent {
 
   onMapCropChange(): void {
     this.onFilterChange();
+    this._savePreference();
   }
 
   onYearDropdownChange(year: number): void {
@@ -537,9 +628,30 @@ export class BidSheetComponent {
       this.yearOffset.set(idx - (years.length - 1));
     }
     this.onFilterChange();
+    this._savePreference();
+  }
+
+  onMonthDropdownChange(month: number): void {
+    this.selectedMonth.set(month);
+    this.onFilterChange();
+    this._savePreference();
   }
 
   shiftYearsBack(): void {
+    // Monthly mode: shift by one month (rolling year at January)
+    if (this.selectedMonth() > 0) {
+      const m = this.selectedMonth();
+      if (m === 1) {
+        this.selectedMonth.set(12);
+        this.selectedYear.update(y => y - 1);
+      } else {
+        this.selectedMonth.set(m - 1);
+      }
+      this.onFilterChange();
+      this._savePreference();
+      return;
+    }
+    // Yearly mode: shift the year offset
     if (this.canShiftYearsBack()) {
       this.yearOffset.update(o => o - 1);
       const yr = this.newYear();
@@ -549,6 +661,19 @@ export class BidSheetComponent {
   }
 
   shiftYearsForward(): void {
+    // Monthly mode: shift by one month forward (rolling year at December)
+    if (this.selectedMonth() > 0) {
+      const m = this.selectedMonth();
+      if (m === 12) {
+        this.selectedMonth.set(1);
+        this.selectedYear.update(y => y + 1);
+      } else {
+        this.selectedMonth.set(m + 1);
+      }
+      this.onFilterChange();
+      this._savePreference();
+      return;
+    }
     if (this.canShiftYearsForward()) {
       this.yearOffset.update(o => o + 1);
       const yr = this.newYear();
@@ -590,10 +715,10 @@ export class BidSheetComponent {
       }
     } else {
       const crop = this.selectedCrop();
-      const oldYr = this.oldYear();
-      const newYr = this.newYear();
+      const oldD = this.oldDisplay();
+      const newD = this.newDisplay();
 
-      // Compute reference bids per year for status comparison
+      // Compute reference bids per period for status comparison
       const refName = this.selectedLocationName();
       const selectedYr = this.selectedYear();
       const month = this.selectedMonth();
@@ -601,8 +726,8 @@ export class BidSheetComponent {
       let newRefBid: number | null = null;
       let selectedRefBid: number | null = null;
       if (hasIndividualTu && refName) {
-        oldRefBid = this._parseBid(this._getLatestBid(refName, oldYr, crop, month));
-        newRefBid = this._parseBid(this._getLatestBid(refName, newYr, crop, month));
+        oldRefBid = this._parseBid(this._getLatestBid(refName, oldD.year, crop, oldD.month));
+        newRefBid = this._parseBid(this._getLatestBid(refName, newD.year, crop, newD.month));
         selectedRefBid = this._parseBid(this._getLatestBid(refName, selectedYr, crop, month));
       }
 
@@ -618,8 +743,8 @@ export class BidSheetComponent {
       }
 
       for (const name of uniqueNames) {
-        const oldBid = this._getLatestBid(name, oldYr, crop, month);
-        const newBid = this._getLatestBid(name, newYr, crop, month);
+        const oldBid = this._getLatestBid(name, oldD.year, crop, oldD.month);
+        const newBid = this._getLatestBid(name, newD.year, crop, newD.month);
         const selectedBid = this._getLatestBid(name, selectedYr, crop, month);
         const entryWithCoords = this.bidEntries().find(e => e.name === name);
         const isRef = hasIndividualTu && name === refName;
@@ -678,13 +803,11 @@ export class BidSheetComponent {
 
   private _getLatestBid(name: string, year: number | null, commodityCode: string, month: number): string {
     if (!year || !commodityCode) return '';
-    if (month === -1) return this.bidLookupByYear().get(`${name}|${commodityCode}|${year}`)?.bid ?? '';
     return this.bidLookup().get(`${name}|${commodityCode}|${year}|${month}`)?.bid ?? '';
   }
 
   private _getLatestEntry(name: string, year: number | null, commodityCode: string, month: number): BidSheetEntry | null {
     if (!year || !commodityCode) return null;
-    if (month === -1) return this.bidLookupByYear().get(`${name}|${commodityCode}|${year}`) ?? null;
     return this.bidLookup().get(`${name}|${commodityCode}|${year}|${month}`) ?? null;
   }
 
@@ -913,8 +1036,11 @@ export class BidSheetComponent {
 
   openEditBids(): void {
     const year = this.selectedYear();
+    const month = this.selectedMonth();
     const focusLocation = this.panelSelectedLocation();
+    // Sync year + month with the panel/map selection; crop always resets to "All Crops"
     this.editBidsYear.set(year);
+    this.editBidsMonth.set(month);
     this.editBidsCrop.set('');
     this._buildEditGrid(year);
     this.editBidsMode.set(true);
@@ -936,16 +1062,39 @@ export class BidSheetComponent {
   }
 
   prevEditYear(): void {
+    // Monthly mode: shift by month (rolling year at January)
+    if (this.editBidsMonth() > 0) {
+      const m = this.editBidsMonth();
+      if (m === 1) {
+        this.editBidsMonth.set(12);
+        this.onEditBidsYearChange(this.editBidsYear() - 1);
+      } else {
+        this.editBidsMonth.set(m - 1);
+        this.onEditBidsYearChange(this.editBidsYear());
+      }
+      return;
+    }
     this.onEditBidsYearChange(this.editBidsYear() - 1);
   }
 
   nextEditYear(): void {
+    // Monthly mode: shift by month forward (rolling year at December)
+    if (this.editBidsMonth() > 0) {
+      const m = this.editBidsMonth();
+      if (m === 12) {
+        this.editBidsMonth.set(1);
+        this.onEditBidsYearChange(this.editBidsYear() + 1);
+      } else {
+        this.editBidsMonth.set(m + 1);
+        this.onEditBidsYearChange(this.editBidsYear());
+      }
+      return;
+    }
     this.onEditBidsYearChange(this.editBidsYear() + 1);
   }
 
   private _buildEditGrid(year: number): void {
     const lookup = this.bidLookup();
-    const lookupByYear = this.bidLookupByYear();
     const month = this.editBidsMonth();
     const crops = this.crops();
     const rows: EditBidsRow[] = [];
@@ -1028,6 +1177,38 @@ export class BidSheetComponent {
       this._buildEditGrid(year);
       this.editBidsGridLoading.set(false);
     });
+    // Sync the panel/map's year + month to match the edit grid
+    this._syncPanelFromEdit();
+  }
+
+  /** Called when the month dropdown in Edit Bids changes. Rebuilds grid + syncs panel/map. */
+  onEditBidsMonthChange(month: number): void {
+    this.editBidsMonth.set(month);
+    this.onEditBidsYearChange(this.editBidsYear()); // rebuild grid (also syncs panel)
+  }
+
+  /** Pushes editBidsYear/editBidsMonth back to the panel/map state (selectedYear, selectedMonth, yearOffset) and saves preference. */
+  private _syncPanelFromEdit(): void {
+    const year = this.editBidsYear();
+    const month = this.editBidsMonth();
+    let changed = false;
+    if (this.selectedMonth() !== month) {
+      this.selectedMonth.set(month);
+      changed = true;
+    }
+    if (this.selectedYear() !== year) {
+      this.selectedYear.set(year);
+      // Keep yearOffset in sync if year is in the cropYears list (yearly mode navigation)
+      const years = this.cropYears();
+      const idx = years.indexOf(year);
+      if (idx >= 0) this.yearOffset.set(idx - (years.length - 1));
+      changed = true;
+    }
+    if (changed) {
+      this.filterBids();
+      this._refreshMapMarkers();
+      this._savePreference();
+    }
   }
 
   updateBid(rowIndex: number, crop: string, value: string): void {
@@ -1093,9 +1274,8 @@ export class BidSheetComponent {
   }
 
   private _closeEditBids(): void {
+    // Close the edit grid but keep the session reference and panel state intact
     this.editBidsMode.set(false);
-    this.panelSelectedLocation.set('');
-    this.selectedLocationName.set('');
     this._refreshMapMarkers();
   }
 
@@ -1123,25 +1303,52 @@ export class BidSheetComponent {
   // =========================================================================
 
   selectItemFromTable(item: any): void {
-    const alreadySelected = this.selectedLocationName() === item.name;
-    this.panelSelectedLocation.set(alreadySelected ? '' : item.name);
-    this.selectedLocationName.set(alreadySelected ? '' : item.name);
+    // Open the detail view for this location — does NOT set it as the session reference.
+    // Use the "Set as Reference" button in the detail view to make it the reference.
+    const alreadyOpen = this.panelSelectedLocation() === item.name;
+    this.panelSelectedLocation.set(alreadyOpen ? '' : item.name);
     this.showPanel.set(true);
 
-    // Auto-select the location's TU if no individual TU is selected (enables reference + status features)
-    if (!alreadySelected && !this.hasIndividualTu() && item.latitude != null) {
+    // Auto-select the location's TU only if no TUs are active OR the location's TU isn't in the active set.
+    if (!alreadyOpen && item.latitude != null) {
       const loc = this.allMapLocations().find(l => l.name === item.name);
-      if (loc?.tradeUnitCode) {
-        this.appState.setTradeUnits([loc.tradeUnitCode]);
+      const tu = loc?.tradeUnitCode;
+      if (tu) {
+        const activeTus = this.activeTradeUnits();
+        if (activeTus.length === 0 || !activeTus.includes(tu)) {
+          this.appState.setTradeUnits([tu]);
+        }
+      }
+    }
+
+    // Pan the map to the selected location so the user can see the enlarged pin
+    if (!alreadyOpen && this._map && item.latitude != null && item.longitude != null) {
+      this._map.flyTo([item.latitude, item.longitude], Math.max(this._map.getZoom(), 11));
+      if (this.showPanel()) {
+        setTimeout(() => this._map?.panBy([-200, 0]), 300);
       }
     }
 
     this._refreshMapMarkers();
   }
 
+  /** Sets the currently-open panel detail location as the session reference. */
+  panelSetReference(): void {
+    const name = this.panelSelectedLocation();
+    if (!name) return;
+    // Toggle: clicking again clears the reference
+    if (this.selectedLocationName() === name) {
+      this.selectedLocationName.set('');
+    } else {
+      this.selectedLocationName.set(name);
+    }
+    this.filterBids();
+    this._refreshMapMarkers();
+  }
+
   panelGoBack(): void {
+    // Close detail view but keep the session reference (selectedLocationName) intact
     this.panelSelectedLocation.set('');
-    this.selectedLocationName.set('');
     this.showDeleteLocationConfirm.set(false);
     this.deleteMode.set(false);
     this.showDeleteCropConfirm.set(false);
@@ -1290,12 +1497,17 @@ export class BidSheetComponent {
       return;
     }
 
-    // Set the group and trade unit in app state — this triggers _onTradeUnitsChanged via the effect
-    if (groupName) {
-      this.appState.setSelectedGroupNames([groupName]);
-    }
-    if (tu) {
-      this.appState.setTradeUnits([tu]);
+    // Only change TU/group if the clicked location's TU is NOT already in the active set.
+    // When multiple TUs are selected (or this TU is already part of the selection), keep the existing selection.
+    const activeTus = this.activeTradeUnits();
+    const tuAlreadyActive = tu && activeTus.includes(tu);
+    if (!tuAlreadyActive) {
+      if (groupName) {
+        this.appState.setSelectedGroupNames([groupName]);
+      }
+      if (tu) {
+        this.appState.setTradeUnits([tu]);
+      }
     }
 
     // Zoom to location, offset left to account for panel opening
@@ -1406,7 +1618,8 @@ export class BidSheetComponent {
       }).addTo(this._map);
 
       this._clusterGroup = (L as any).markerClusterGroup({
-        maxClusterRadius: 40,
+        maxClusterRadius: 12,
+        disableClusteringAtZoom: 5,
         spiderfyOnMaxZoom: true,
         showCoverageOnHover: false,
         zoomToBoundsOnClick: true
@@ -1476,6 +1689,7 @@ export class BidSheetComponent {
     }
 
     const selectedName = this.selectedLocationName();
+    const panelOpenName = this.panelSelectedLocation();
 
     // Build set of location names visible in the panel (respects crop/TU/search filters)
     const panelNames = new Set(this.filteredBidItems().map((i: any) => i.name as string));
@@ -1493,38 +1707,6 @@ export class BidSheetComponent {
 
       // When filters are active, only show locations that appear in the panel
       if (hasTu && !names.some(n => panelNames.has(n))) continue;
-      const isSelected = selectedName && names.includes(selectedName);
-
-      // Selected location — enlarged pin: name on top, crop + bid underneath, keeps status color
-      if (isSelected) {
-        const selName = selectedName;
-        const bidStr = crop ? this._getLatestBid(selName, year, crop, month) : '';
-        const isSelRef = selName === refName;
-        const status = hasIndividualTu ? this._computeItemStatus(bidStr, isSelRef, refBid) : 'none';
-        const { bg: selBg, border: selBorder } = statusColors[status] ?? statusColors['none'];
-        const nameHtml = `<div style="font-size:11px;font-weight:700;color:#fff;white-space:nowrap;line-height:1.2;">${this._esc(selName)}</div>`;
-        const cropLabel = crop || '';
-        const bidLabel = bidStr || '--';
-        const subHtml = cropLabel
-          ? `<div style="font-size:10px;font-weight:500;color:rgba(255,255,255,0.85);white-space:nowrap;line-height:1.2;margin-top:2px;">${this._esc(cropLabel)} · ${this._esc(bidLabel)}</div>`
-          : '';
-        const textLen = Math.max(selName.length, cropLabel.length + bidLabel.length + 3);
-        const w = Math.max(100, textLen * 7 + 24);
-        const h = cropLabel ? 54 : 40;
-        const selIcon = L.divIcon({
-          className: 'custom-marker',
-          html: `<div style="position:relative;text-align:center;display:flex;flex-direction:column;align-items:center;">
-            <div style="background:${selBg};border:2.5px solid ${selBorder};border-radius:8px;padding:6px 10px;box-shadow:0 4px 12px rgba(0,0,0,0.35);cursor:pointer;">${nameHtml}${subHtml}</div>
-            <div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-top:10px solid ${selBg};margin:-1px auto 0;"></div>
-          </div>`,
-          iconSize: [w, h],
-          iconAnchor: [w / 2, h]
-        });
-        const m = L.marker([lat, lng], { icon: selIcon, zIndexOffset: 1000 });
-        m.on('click', () => this._selectMapLocation(locs[0]));
-        this._clusterGroup.addLayer(m);
-        continue;
-      }
 
       // Below zoom threshold: colored dot — but when searching, always show name labels
       if (zoom < 8 && !searchQ) {
@@ -1646,8 +1828,8 @@ export class BidSheetComponent {
   /** Binds hover expand behavior to a marker — swaps icon on mouseover/mouseout. */
   private _bindHoverExpand(marker: any, originalIcon: any, name: string, bid: string, bg: string, border: string): void {
     const hoverIcon = this._buildHoverIcon(name, bid, bg, border);
-    marker.on('mouseover', () => { if (!this.selectedLocationName() || this.selectedLocationName() !== name) marker.setIcon(hoverIcon); });
-    marker.on('mouseout', () => { if (!this.selectedLocationName() || this.selectedLocationName() !== name) marker.setIcon(originalIcon); });
+    marker.on('mouseover', () => marker.setIcon(hoverIcon));
+    marker.on('mouseout', () => marker.setIcon(originalIcon));
   }
 
   private _esc(str: string): string {

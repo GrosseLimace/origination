@@ -230,4 +230,35 @@ public class BidSheetController : ControllerBase
         await _dataService.SetBidSheetLocationOrderAsync(CurrentUserId, request.TradeUnitKey, request.LocationOrder, ct);
         return NoContent();
     }
+
+    // -------------------------------------------------------------------------
+    // Bid Sheet Preferences (per-user per-TU UI preferences, e.g. selected crop)
+    // -------------------------------------------------------------------------
+
+    /// <summary>Special key for user's global (cross-TU) preference — skips TU entitlement validation.</summary>
+    private const string GlobalPreferenceKey = "__global__";
+
+    /// <summary>Gets the saved bid sheet preferences for the current user and a trade unit key (or global with "__global__").</summary>
+    [HttpGet("preference")]
+    [ProducesResponseType(typeof(BidSheetPreference), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<ActionResult<BidSheetPreference>> GetPreference([FromQuery] string tradeUnitKey, CancellationToken ct = default)
+    {
+        if (tradeUnitKey != GlobalPreferenceKey)
+            await _entitlementService.ValidateTradeUnitsOrThrowAsync(ParseTradeUnitKey(tradeUnitKey), ct);
+        var pref = await _dataService.GetBidSheetPreferenceAsync(CurrentUserId, tradeUnitKey, ct);
+        if (pref is null) return NoContent();
+        return Ok(pref);
+    }
+
+    /// <summary>Saves the bid sheet preferences for the current user and a trade unit key (or global with "__global__").</summary>
+    [HttpPut("preference")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> SetPreference([FromBody] SetBidSheetPreferenceRequest request, CancellationToken ct = default)
+    {
+        if (request.TradeUnitKey != GlobalPreferenceKey)
+            await _entitlementService.ValidateTradeUnitsOrThrowAsync(ParseTradeUnitKey(request.TradeUnitKey), ct);
+        await _dataService.SetBidSheetPreferenceAsync(CurrentUserId, request.TradeUnitKey, request.CropCode, request.Month, request.CropYear, ct);
+        return NoContent();
+    }
 }

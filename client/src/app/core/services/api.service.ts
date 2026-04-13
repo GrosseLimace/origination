@@ -612,6 +612,20 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
+  /** Gets saved bid sheet preferences (crop, month, year) for the current user and a trade unit key. */
+  getBidSheetPreference(tradeUnitKey: string): Observable<{ tradeUnitKey: string; cropCode: string | null; month: number | null; cropYear: number | null } | null> {
+    return this._dedupe(`bidsheet-preference-${tradeUnitKey}`,
+      this.http.get<{ tradeUnitKey: string; cropCode: string | null; month: number | null; cropYear: number | null }>(`${this.baseUrl}/bidsheet/preference`, { params: { tradeUnitKey } })
+        .pipe(catchError(() => of(null)))
+    );
+  }
+
+  /** Saves bid sheet preferences (crop, month, year) for the current user and a trade unit key. */
+  setBidSheetPreference(tradeUnitKey: string, cropCode: string | null, month: number | null, cropYear: number | null): Observable<void> {
+    return this.http.put<void>(`${this.baseUrl}/bidsheet/preference`, { tradeUnitKey, cropCode, month, cropYear })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
   // =========================================================================
   // Geocoding
   // =========================================================================

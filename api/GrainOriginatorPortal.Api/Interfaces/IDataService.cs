@@ -399,4 +399,10 @@ public interface IDataService
 
     /// <summary>Creates or updates the location order for a user and trade unit key.</summary>
     Task SetBidSheetLocationOrderAsync(string userId, string tradeUnitKey, string locationOrderJson, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets the saved bid sheet preferences (e.g. selected crop) for a user and trade unit key. Returns null if not set.</summary>
+    Task<BidSheetPreference?> GetBidSheetPreferenceAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken = default);
+
+    /// <summary>Creates or updates the bid sheet preferences (crop, month, year) for a user and trade unit key.</summary>
+    Task SetBidSheetPreferenceAsync(string userId, string tradeUnitKey, string? cropCode, int? month, int? cropYear, CancellationToken cancellationToken = default);
 }

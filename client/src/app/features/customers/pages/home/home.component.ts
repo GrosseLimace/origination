@@ -219,13 +219,13 @@ export class HomeComponent {
     const customerIdNum = parseInt(customerId, 10);
     const customer = this.customers().find(c => c.id === customerIdNum);
     if (customer) {
-      this.handleSelectCustomer(customer);
+      this.handleSelectCustomer(customer, true); // fromDeepLink=true, preserve pending state
     } else {
       const checkInterval = setInterval(() => {
         const c = this.customers().find(cust => cust.id === customerIdNum);
         if (c) {
           clearInterval(checkInterval);
-          this.handleSelectCustomer(c);
+          this.handleSelectCustomer(c, true); // fromDeepLink=true
         }
       }, 100);
       setTimeout(() => clearInterval(checkInterval), 5000);
@@ -503,7 +503,13 @@ export class HomeComponent {
     }
   }
 
-  handleSelectCustomer(customer: Customer): void {
+  handleSelectCustomer(customer: Customer, fromDeepLink = false): void {
+    // Reset navigation context when user manually selects (but NOT when coming from a deep link)
+    if (!fromDeepLink) {
+      this.pendingContractId.set(null);
+      this.pendingTab.set(null);
+      this.pendingTicketCrop.set(null);
+    }
     const pdMap = this.producerDetailsMap();
     const pd = pdMap.get(customer.id);
     if (pd) {
@@ -909,6 +915,10 @@ export class HomeComponent {
 
   handleSelectLinkedCustomer(customerId: number): void {
     if (customerId === this.selectedCustomer()?.id) return;
+    // Reset navigation context — user is manually selecting a linked producer
+    this.pendingContractId.set(null);
+    this.pendingTab.set(null);
+    this.pendingTicketCrop.set(null);
     // Cache the departing customer so getLinkedGroup can still find it for reverse-link
     // lookups after the new customer is selected (prevents the dropdown from disappearing).
     const departing = this.selectedCustomer();

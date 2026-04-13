@@ -306,6 +306,8 @@ export class ContractsTableComponent {
       this.expandedPricingSections.delete(contractId);
     } else {
       this.expandedRows.add(contractId);
+      // Defer scroll so the expanded content renders first
+      setTimeout(() => this._scrollToContract(contractId), 0);
     }
   }
 

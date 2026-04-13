@@ -298,4 +298,10 @@ public class ApimDataService : IDataService
 
     public Task SetBidSheetLocationOrderAsync(string userId, string tradeUnitKey, string locationOrderJson, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for SetBidSheetLocationOrder");
+
+    public Task<BidSheetPreference?> GetBidSheetPreferenceAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetBidSheetPreference");
+
+    public Task SetBidSheetPreferenceAsync(string userId, string tradeUnitKey, string? cropCode, int? month, int? cropYear, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for SetBidSheetPreference");
 }

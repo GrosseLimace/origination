@@ -2533,4 +2533,43 @@ public class SqlDataService : IDataService
 
         await _appContext.SaveChangesAsync(cancellationToken);
     }
+
+    // =========================================================================
+    // Bid Sheet Preferences (per-user per-TU UI preferences)
+    // =========================================================================
+
+    public async Task<BidSheetPreference?> GetBidSheetPreferenceAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken = default)
+    {
+        return await _appContext.BidSheetPreferences
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.UserId == userId && p.TradeUnitKey == tradeUnitKey, cancellationToken);
+    }
+
+    public async Task SetBidSheetPreferenceAsync(string userId, string tradeUnitKey, string? cropCode, int? month, int? cropYear, CancellationToken cancellationToken = default)
+    {
+        var existing = await _appContext.BidSheetPreferences
+            .FirstOrDefaultAsync(p => p.UserId == userId && p.TradeUnitKey == tradeUnitKey, cancellationToken);
+
+        if (existing is not null)
+        {
+            existing.CropCode = cropCode;
+            existing.Month = month;
+            existing.CropYear = cropYear;
+            existing.ModifiedAt = DateTime.UtcNow;
+        }
+        else
+        {
+            _appContext.BidSheetPreferences.Add(new BidSheetPreference
+            {
+                UserId = userId,
+                TradeUnitKey = tradeUnitKey,
+                CropCode = cropCode,
+                Month = month,
+                CropYear = cropYear,
+                ModifiedAt = DateTime.UtcNow
+            });
+        }
+
+        await _appContext.SaveChangesAsync(cancellationToken);
+    }
 }
