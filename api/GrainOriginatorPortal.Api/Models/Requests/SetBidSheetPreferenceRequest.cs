@@ -12,4 +12,7 @@ public class SetBidSheetPreferenceRequest
 
     public int? Month { get; set; }
     public int? CropYear { get; set; }
+    public string? CropOrder { get; set; }
+    public string? HiddenCrops { get; set; }
+    public string? SelectedMonths { get; set; }
 }

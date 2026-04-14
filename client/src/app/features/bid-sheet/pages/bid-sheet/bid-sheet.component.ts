@@ -167,6 +167,8 @@ export class BidSheetComponent {
 
   // --- Location order (per trade unit, persisted to DB) ---
   private locationOrderByTu = signal<Map<string, string[]>>(new Map());
+  // --- Crop column order (per trade unit, persisted in BidSheetPreferences.CropOrder) ---
+  private cropOrderByTu = signal<Map<string, string[]>>(new Map());
 
   // --- Panel ---
   showPanel = signal<boolean>(false);
@@ -223,15 +225,57 @@ export class BidSheetComponent {
   showAddCommoditySearch = signal(false);
   addCommodityQuery = signal('');
   editBidsYear = signal<number>(new Date().getFullYear());
-  editBidsMonth = signal<number>(0); // default yearly
-  editBidsCrop = signal<string>('');
+  editBidsMonths = signal<number[]>([0]); // [0]=yearly, [4,5,6]=Apr+May+Jun
+  showMonthDropdown = signal(false);
+  /** Crop code currently being dragged (for group highlight). Empty when not dragging. */
+  draggingCrop = signal<string>('');
+  /** Pending month selection (staged until user clicks Done). */
+  pendingMonths = signal<number[]>([0]);
   editBidsRows = signal<EditBidsRow[]>([]);
+  /** Set of crop codes hidden by the user via the multi-select crop dropdown. Empty = all visible. */
+  hiddenCrops = signal<Set<string>>(new Set());
+  showCropDropdown = signal(false);
   editBidsSaving = signal(false);
   editBidsGridLoading = signal(false);
 
   readonly editBidsCrops = computed(() => {
-    const filter = this.editBidsCrop();
-    return filter ? this.crops().filter(c => c === filter) : this.crops();
+    const hidden = this.hiddenCrops();
+    let result = [...this.crops()].filter(c => !hidden.has(c));
+    // Apply saved crop column order (unknown crops go to end)
+    const savedOrder = this.cropOrderByTu().get(this.activeTradeUnitKey());
+    if (savedOrder && savedOrder.length > 0) {
+      const orderMap = new Map(savedOrder.map((code, idx) => [code, idx]));
+      result.sort((a, b) => {
+        const ai = orderMap.get(a) ?? Number.MAX_SAFE_INTEGER;
+        const bi = orderMap.get(b) ?? Number.MAX_SAFE_INTEGER;
+        return ai - bi;
+      });
+    }
+    return result;
+  });
+
+  /** Month name abbreviations for column labels. */
+  private static readonly MONTH_NAMES = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  /** Grid column definitions: in yearly mode columns = crops, in monthly mode columns = crop x month pairs. */
+  readonly editGridColumns = computed(() => {
+    const months = this.editBidsMonths();
+    const crops = this.editBidsCrops();
+    const year = this.editBidsYear();
+    // Cross-product of crops × selected months. Yearly (0) goes LAST (after specific months).
+    const sortedMonths = [...months].sort((a, b) => {
+      if (a === 0) return 1;  // yearly goes to end
+      if (b === 0) return -1;
+      return a - b;           // months in calendar order
+    });
+    return crops.flatMap(crop =>
+      sortedMonths.map(m => ({
+        key: `${crop}#${m}`,
+        crop,
+        month: m,
+        label: m === 0 ? `${crop} ${year}` : `${crop} ${BidSheetComponent.MONTH_NAMES[m]}`
+      }))
+    );
   });
 
   // --- Commodities lookup ---
@@ -591,6 +635,32 @@ export class BidSheetComponent {
         this.selectedYear.set(desiredYear);
         if (idx >= 0) this.yearOffset.set(idx - (years.length - 1));
         changed = true;
+      }
+
+      // Apply hidden crops if available
+      const hiddenCropsJson = perKey?.hiddenCrops ?? null;
+      if (hiddenCropsJson) {
+        try { this.hiddenCrops.set(new Set(JSON.parse(hiddenCropsJson))); }
+        catch { this.hiddenCrops.set(new Set()); }
+      } else {
+        this.hiddenCrops.set(new Set());
+      }
+
+      // Apply selected months if available
+      const selectedMonthsJson = perKey?.selectedMonths ?? null;
+      if (selectedMonthsJson) {
+        try { this.editBidsMonths.set(JSON.parse(selectedMonthsJson)); }
+        catch { this.editBidsMonths.set([0]); }
+      }
+
+      // Apply crop column order if available
+      const cropOrderJson = perKey?.cropOrder ?? null;
+      if (cropOrderJson) {
+        try {
+          const orderMap = new Map(this.cropOrderByTu());
+          orderMap.set(key, JSON.parse(cropOrderJson));
+          this.cropOrderByTu.set(orderMap);
+        } catch { /* invalid JSON — skip */ }
       }
 
       if (changed) {
@@ -1100,12 +1170,13 @@ export class BidSheetComponent {
 
   openEditBids(): void {
     const year = this.selectedYear();
-    const month = this.selectedMonth();
     const focusLocation = this.panelSelectedLocation();
-    // Sync year + month with the panel/map selection; crop always resets to "All Crops"
+    // Sync year with the panel; keep persisted month selection if it exists, otherwise use panel's month
     this.editBidsYear.set(year);
-    this.editBidsMonth.set(month);
-    this.editBidsCrop.set('');
+    if (this.editBidsMonths().length === 1 && this.editBidsMonths()[0] === 0 && this.selectedMonth() > 0) {
+      // No persisted multi-month — initialize from the panel's single month
+      this.editBidsMonths.set([this.selectedMonth()]);
+    }
     this._buildEditGrid(year);
     this.editBidsMode.set(true);
 
@@ -1113,9 +1184,9 @@ export class BidSheetComponent {
     if (focusLocation) {
       setTimeout(() => {
         const rowIdx = this.editBidsRows().findIndex(r => r.name === focusLocation);
-        const firstCrop = this.editBidsCrops()[0];
-        if (rowIdx >= 0 && firstCrop) {
-          const el = document.getElementById(`bid-${rowIdx}-${firstCrop}`);
+        const firstCol = this.editGridColumns()[0];
+        if (rowIdx >= 0 && firstCol) {
+          const el = document.getElementById(`bid-${rowIdx}-${firstCol.key}`);
           if (el) {
             el.scrollIntoView({ block: 'center', behavior: 'smooth' });
             (el as HTMLInputElement).focus();
@@ -1126,32 +1197,25 @@ export class BidSheetComponent {
   }
 
   prevEditYear(): void {
-    // Monthly mode: shift by month (rolling year at January)
-    if (this.editBidsMonth() > 0) {
-      const m = this.editBidsMonth();
-      if (m === 1) {
-        this.editBidsMonth.set(12);
-        this.onEditBidsYearChange(this.editBidsYear() - 1);
-      } else {
-        this.editBidsMonth.set(m - 1);
-        this.onEditBidsYearChange(this.editBidsYear());
-      }
+    const months = this.editBidsMonths();
+    if (months.length > 0 && months[0] !== 0) {
+      // Monthly mode: shift all months back by 1 (rolling year at January)
+      const shifted = months.map(m => m === 1 ? 12 : m - 1);
+      const yearChange = months.some(m => m === 1);
+      this.editBidsMonths.set(shifted);
+      this.onEditBidsYearChange(this.editBidsYear() + (yearChange ? -1 : 0));
       return;
     }
     this.onEditBidsYearChange(this.editBidsYear() - 1);
   }
 
   nextEditYear(): void {
-    // Monthly mode: shift by month forward (rolling year at December)
-    if (this.editBidsMonth() > 0) {
-      const m = this.editBidsMonth();
-      if (m === 12) {
-        this.editBidsMonth.set(1);
-        this.onEditBidsYearChange(this.editBidsYear() + 1);
-      } else {
-        this.editBidsMonth.set(m + 1);
-        this.onEditBidsYearChange(this.editBidsYear());
-      }
+    const months = this.editBidsMonths();
+    if (months.length > 0 && months[0] !== 0) {
+      const shifted = months.map(m => m === 12 ? 1 : m + 1);
+      const yearChange = months.some(m => m === 12);
+      this.editBidsMonths.set(shifted);
+      this.onEditBidsYearChange(this.editBidsYear() + (yearChange ? 1 : 0));
       return;
     }
     this.onEditBidsYearChange(this.editBidsYear() + 1);
@@ -1159,8 +1223,7 @@ export class BidSheetComponent {
 
   private _buildEditGrid(year: number): void {
     const lookup = this.bidLookup();
-    const month = this.editBidsMonth();
-    const crops = this.crops();
+    const columns = this.editGridColumns();
     const rows: EditBidsRow[] = [];
     const addedNames = new Set<string>();
 
@@ -1170,8 +1233,8 @@ export class BidSheetComponent {
       addedNames.add(name);
       const rep = this.bidEntries().find(e => e.name === name);
       const bids: Record<string, string> = {};
-      for (const crop of crops) {
-        bids[crop] = lookup.get(`${name}|${crop}|${year}|${month}`)?.bid ?? '';
+      for (const col of columns) {
+        bids[col.key] = lookup.get(`${name}|${col.crop}|${year}|${col.month}`)?.bid ?? '';
       }
       rows.push({ name, type: 'entry', elevatorCode: rep?.elevatorCode, tradeUnitCode: rep?.tradeUnitCode, latitude: rep?.latitude, longitude: rep?.longitude, bids, originalBids: { ...bids } });
     }
@@ -1181,7 +1244,7 @@ export class BidSheetComponent {
       if (addedNames.has(loc.name)) continue;
       addedNames.add(loc.name);
       const bids: Record<string, string> = {};
-      for (const crop of crops) { bids[crop] = ''; }
+      for (const col of columns) { bids[col.key] = ''; }
       rows.push({ name: loc.name, type: 'entry', elevatorCode: loc.elevatorCode, tradeUnitCode: loc.tradeUnitCode, latitude: loc.latitude, longitude: loc.longitude, bids, originalBids: { ...bids } });
     }
 
@@ -1221,6 +1284,64 @@ export class BidSheetComponent {
       .subscribe({ error: () => this.toastService.error('Failed to save row order') });
   }
 
+  /** Called when a crop column header is dragged to a new position in the edit grid.
+   *  In monthly mode (crop×month columns), moving one column moves ALL columns for that crop as a group. */
+  onCropColumnDrop(event: CdkDragDrop<string[]>): void {
+    if (event.previousIndex === event.currentIndex) return;
+
+    const columns = this.editGridColumns();
+    const draggedCrop = columns[event.previousIndex]?.crop;
+    const targetCrop = columns[event.currentIndex]?.crop;
+    if (!draggedCrop || !targetCrop || draggedCrop === targetCrop) return;
+
+    // Reorder at the CROP level (not individual columns) so all months for a crop move together
+    const visible = [...this.editBidsCrops()];
+    const fromIdx = visible.indexOf(draggedCrop);
+    const toIdx = visible.indexOf(targetCrop);
+    if (fromIdx === -1 || toIdx === -1) return;
+    moveItemInArray(visible, fromIdx, toIdx);
+
+    // Rebuild the full crops list: visible crops in new order, then hidden crops at the end
+    const hidden = this.crops().filter(c => this.hiddenCrops().has(c));
+    this.crops.set([...visible, ...hidden]);
+
+    // Persist the new order
+    const key = this.activeTradeUnitKey();
+    if (!key) return;
+    const orderedCrops = this.crops();
+    const orderMap = new Map(this.cropOrderByTu());
+    orderMap.set(key, orderedCrops);
+    this.cropOrderByTu.set(orderMap);
+
+    // Save via preference (cropOrder only — don't overwrite crop/month/year)
+    this.apiService.setBidSheetPreference(key, this.selectedCrop() || null, this.selectedMonth(), this.selectedYear() || null, JSON.stringify(orderedCrops))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save crop order', err); } });
+  }
+
+  /** Toggles a crop's visibility in the edit bids grid and persists the change. */
+  toggleCropVisibility(crop: string): void {
+    this.hiddenCrops.update(set => {
+      const updated = new Set(set);
+      if (updated.has(crop)) updated.delete(crop);
+      else updated.add(crop);
+      return updated;
+    });
+    this._saveHiddenCrops();
+    // Rebuild the grid so columns update
+    this._buildEditGrid(this.editBidsYear());
+  }
+
+  /** Persists hidden crops to the preference API. */
+  private _saveHiddenCrops(): void {
+    const key = this.activeTradeUnitKey();
+    if (!key) return;
+    const hidden = [...this.hiddenCrops()];
+    this.apiService.setBidSheetPreference(key, this.selectedCrop() || null, this.selectedMonth(), this.selectedYear() || null, undefined, JSON.stringify(hidden))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save hidden crops', err); } });
+  }
+
   applyEditBidsTuFilter(): void {
     const tus = this.activeTradeUnits();
     if (tus.length === 0) return;
@@ -1241,40 +1362,51 @@ export class BidSheetComponent {
       this._buildEditGrid(year);
       this.editBidsGridLoading.set(false);
     });
-    // Sync the panel/map's year + month to match the edit grid
-    this._syncPanelFromEdit();
   }
 
-  /** Called when the month dropdown in Edit Bids changes. Rebuilds grid + syncs panel/map. */
-  onEditBidsMonthChange(month: number): void {
-    this.editBidsMonth.set(month);
-    this.onEditBidsYearChange(this.editBidsYear()); // rebuild grid (also syncs panel)
+  /** Opens the month dropdown with the current selection staged as pending. */
+  openMonthDropdown(): void {
+    this.pendingMonths.set([...this.editBidsMonths()]);
+    this.showMonthDropdown.set(true);
   }
 
-  /** Pushes editBidsYear/editBidsMonth back to the panel/map state (selectedYear, selectedMonth, yearOffset) and saves preference. */
-  private _syncPanelFromEdit(): void {
-    const year = this.editBidsYear();
-    const month = this.editBidsMonth();
-    let changed = false;
-    if (this.selectedMonth() !== month) {
-      this.selectedMonth.set(month);
-      changed = true;
-    }
-    if (this.selectedYear() !== year) {
-      this.selectedYear.set(year);
-      // Keep yearOffset in sync if year is in the cropYears list (yearly mode navigation)
-      const years = this.cropYears();
-      const idx = years.indexOf(year);
-      if (idx >= 0) this.yearOffset.set(idx - (years.length - 1));
-      changed = true;
-    }
-    if (changed) {
-      this.filterBids();
-      this._refreshMapMarkers();
-      this._savePreference();
-    }
+  /** Toggles a month in the pending selection (not yet applied). Yearly (0) can be selected alongside specific months. */
+  toggleEditMonth(month: number): void {
+    this.pendingMonths.update(arr => {
+      let updated = [...arr];
+      if (updated.includes(month)) {
+        updated = updated.filter(m => m !== month);
+      } else {
+        updated.push(month);
+      }
+      // If nothing selected, fall back to yearly
+      return updated.length === 0 ? [0] : updated;
+    });
   }
 
+  /** Applies the pending month selection and closes the dropdown. */
+  confirmMonthSelection(): void {
+    this.editBidsMonths.set([...this.pendingMonths()]);
+    this.showMonthDropdown.set(false);
+    this._buildEditGrid(this.editBidsYear());
+    this._saveSelectedMonths();
+  }
+
+  /** Cancels the pending month selection and closes the dropdown. */
+  cancelMonthSelection(): void {
+    this.pendingMonths.set([...this.editBidsMonths()]);
+    this.showMonthDropdown.set(false);
+  }
+
+  private _saveSelectedMonths(): void {
+    const key = this.activeTradeUnitKey();
+    if (!key) return;
+    this.apiService.setBidSheetPreference(key, this.selectedCrop() || null, this.selectedMonth(), this.selectedYear() || null, undefined, undefined, JSON.stringify(this.editBidsMonths()))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save selected months', err); } });
+  }
+
+  /** Pushes editBidsYear/editBidsMonths back to the panel/map state (selectedYear, selectedMonth, yearOffset) and saves preference. */
   updateBid(rowIndex: number, crop: string, value: string): void {
     this.editBidsRows.update(rows => {
       const updated = [...rows];
@@ -1290,11 +1422,11 @@ export class BidSheetComponent {
     const toCreate: Array<{ name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string }> = [];
 
     for (const row of this.editBidsRows()) {
-      for (const crop of this.crops()) {
-        const current = (row.bids[crop] ?? '').trim();
-        const original = (row.originalBids[crop] ?? '').trim();
+      for (const col of this.editGridColumns()) {
+        const current = (row.bids[col.key] ?? '').trim();
+        const original = (row.originalBids[col.key] ?? '').trim();
         if (current !== original && current) {
-          const commodity = commodityLookup.get(crop);
+          const commodity = commodityLookup.get(col.crop);
           toCreate.push({
             name: row.name,
             latitude: row.latitude,
@@ -1302,12 +1434,12 @@ export class BidSheetComponent {
             elevatorCode: row.elevatorCode,
             tradeUnitCode: row.tradeUnitCode || tu,
             groupName: this._getGroupNameForTu(row.tradeUnitCode || tu) || undefined,
-            commodityCode: crop,
+            commodityCode: col.crop,
             commodityName: commodity?.name,
             commodityCategory: commodity?.category ?? undefined,
             cropYear: year,
             bid: current,
-            month: this.editBidsMonth()
+            month: col.month
           } as any);
         }
       }
@@ -1765,6 +1897,8 @@ export class BidSheetComponent {
 
       // When filters are active, only show locations that appear in the panel
       if (hasTu && !names.some(n => panelNames.has(n))) continue;
+      // Skip locations with no bid for the selected crop/year/month
+      if (crop && !names.some(n => this._getLatestBid(n, year, crop, month))) continue;
 
       // Panel-open location — render expanded with name + bid (uses status color if reference, otherwise gray)
       if (isPanelOpen) {
