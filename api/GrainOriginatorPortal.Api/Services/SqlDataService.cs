@@ -2788,4 +2788,31 @@ public class SqlDataService : IDataService
 
         await _appContext.SaveChangesAsync(cancellationToken);
     }
+
+    // =========================================================================
+    // Query Library Operations
+    // =========================================================================
+
+    public async Task<List<QueryLibraryItem>> GetQueryLibraryAsync(CancellationToken cancellationToken = default)
+    {
+        return await _appContext.QueryLibrary
+            .AsNoTracking()
+            .Where(q => q.IsActive)
+            .OrderBy(q => q.Category)
+            .ThenBy(q => q.SortOrder)
+            .ThenBy(q => q.Name)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task LogQuerySearchAsync(string searchText, int? matchedQueryId, CancellationToken cancellationToken = default)
+    {
+        _appContext.QuerySearchLogs.Add(new QuerySearchLog
+        {
+            UserId = GetCurrentUser(),
+            SearchText = searchText,
+            MatchedQueryId = matchedQueryId,
+            Timestamp = DateTime.UtcNow
+        });
+        await _appContext.SaveChangesAsync(cancellationToken);
+    }
 }

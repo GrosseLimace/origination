@@ -413,4 +413,14 @@ public interface IDataService
 
     /// <summary>Creates or updates the bid sheet preferences (crop, month, year) for a user and trade unit key.</summary>
     Task SetBidSheetPreferenceAsync(string userId, string tradeUnitKey, string? cropCode, int? month, int? cropYear, CancellationToken cancellationToken = default);
+
+    // =========================================================================
+    // Query Library Operations
+    // =========================================================================
+
+    /// <summary>Gets all active query library items, sorted by category then sort order.</summary>
+    Task<List<QueryLibraryItem>> GetQueryLibraryAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Logs a user's query library search for gap analysis.</summary>
+    Task LogQuerySearchAsync(string searchText, int? matchedQueryId, CancellationToken cancellationToken = default);
 }

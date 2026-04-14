@@ -35,6 +35,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<BidSheetPreference> BidSheetPreferences => Set<BidSheetPreference>();
     public DbSet<ElevatorCache> ElevatorCaches => Set<ElevatorCache>();
     public DbSet<HarvestWindow> HarvestWindows => Set<HarvestWindow>();
+    public DbSet<QueryLibraryItem> QueryLibrary => Set<QueryLibraryItem>();
+    public DbSet<QuerySearchLog> QuerySearchLogs => Set<QuerySearchLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -374,6 +376,31 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.DeliveryEndDay).IsRequired();
             entity.Property(e => e.IsActive).HasDefaultValue(true).IsRequired();
             entity.HasIndex(e => e.Commodity).HasDatabaseName("IX_HarvestWindows_Commodity");
+        });
+
+        modelBuilder.Entity<QueryLibraryItem>(entity =>
+        {
+            entity.ToTable("QueryLibrary", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.Category).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Description).HasMaxLength(500);
+            entity.Property(e => e.QueryText).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.Tags).HasMaxLength(500);
+            entity.Property(e => e.SortOrder).HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.IsActive).HasDefaultValue(true).IsRequired();
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
+        });
+
+        modelBuilder.Entity<QuerySearchLog>(entity =>
+        {
+            entity.ToTable("QuerySearchLog", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.SearchText).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.Timestamp).HasPrecision(3).HasDefaultValueSql("SYSUTCDATETIME()").IsRequired();
         });
     }
 }

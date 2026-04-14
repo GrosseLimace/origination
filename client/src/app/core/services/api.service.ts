@@ -23,7 +23,8 @@ import {
   BidSheetLocationBid,
   Elevator,
   CommodityConversion,
-  HarvestWindow
+  HarvestWindow,
+  QueryLibraryItem
 } from '@models';
 import { environment } from '@env/environment';
 import { ToastService } from '@core/services/toast.service';
@@ -470,6 +471,24 @@ export class ApiService {
       this.http.get<HarvestWindow[]>(`${this.baseUrl}/commodities/harvest-windows`)
         .pipe(catchError(e => this.handleError(e)))
     );
+  }
+
+  // ==========================================================================
+  // Query Library Operations
+  // ==========================================================================
+
+  /** Fetches all active query library items, sorted by category then sort order. */
+  getQueryLibrary(): Observable<QueryLibraryItem[]> {
+    return this.http.get<QueryLibraryItem[]>(`${this.baseUrl}/query-library`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Logs a query library search for gap analysis. Fire-and-forget. */
+  logQuerySearch(searchText: string, matchedQueryId?: number): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/query-library/search-log`, {
+      searchText,
+      matchedQueryId: matchedQueryId ?? null
+    }).pipe(catchError(() => of(undefined as unknown as void)));
   }
 
   // ==========================================================================
