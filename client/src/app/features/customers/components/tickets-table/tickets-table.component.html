@@ -61,7 +61,7 @@
                   </div>
                   <div class="text-center">
                     <p class="text-[10px] lg:text-xs text-gray-500 dark:text-gray-400">Total Net Bu</p>
-                    <p class="text-xs lg:text-sm font-medium text-gray-900 dark:text-white">{{ toBushels(group.totalNetWeight, group.productCode) | number:'1.2-2' }}</p>
+                    <p class="text-xs lg:text-sm font-medium text-gray-900 dark:text-white">{{ (toBushels(group.totalNetWeight, group.productCode) | number:'1.2-2') || '—' }}</p>
                   </div>
                   <div class="text-center">
                     <p class="text-[10px] lg:text-xs text-gray-500 dark:text-gray-400">Avg Moisture</p>
@@ -161,7 +161,7 @@
                           <app-table-cell class="text-center">{{ ticket.date | date:'M/d/yyyy' }}</app-table-cell>
                           <app-table-cell class="text-center">{{ ticket.productCode }}</app-table-cell>
                           <app-table-cell class="text-center text-xs">{{ ticket.elevatorCity && ticket.elevatorState ? ticket.elevatorCity + ', ' + ticket.elevatorState : ticket.elevatorCity || ticket.elevatorState || '—' }}</app-table-cell>
-                          <app-table-cell class="text-center">{{ toBushels(ticket.appliedDockQuantity, ticket.productCode) | number:'1.2-2' }}</app-table-cell>
+                          <app-table-cell class="text-center">{{ (toBushels(ticket.appliedDockQuantity, ticket.productCode) | number:'1.2-2') || '—' }}</app-table-cell>
                           <app-table-cell class="text-center">{{ ticket.moisture | number:'1.1-1' }}%</app-table-cell>
                           <app-table-cell class="text-center" >
                             @if (ticket.testWeight !== null && ticket.testWeight !== undefined) {

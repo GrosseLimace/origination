@@ -476,7 +476,7 @@
                                   </div>
                                   <div class="text-center">
                                     <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Net Bu</p>
-                                    <p class="font-medium text-gray-900 dark:text-gray-100">{{ toBushels(ticket.appliedDockQuantity, ticket.productCode) | number:'1.2-2' }}</p>
+                                    <p class="font-medium text-gray-900 dark:text-gray-100">{{ (toBushels(ticket.appliedDockQuantity, ticket.productCode) | number:'1.2-2') || '—' }}</p>
                                   </div>
                                   <div class="text-center">
                                     <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Moisture %</p>

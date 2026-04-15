@@ -450,6 +450,12 @@ export class ContractsTableComponent {
     const appliedTickets = this.getAppliedTickets(contract);
     const lbsPerBushel = this._getLbsPerBushel(contract.commodityDescription || contract.commodityCode || '');
 
+    // If no conversion data available (GNP024 unavailable or commodity not in view),
+    // return zeros so the UI shows "—" instead of potentially wrong numbers.
+    if (lbsPerBushel == null) {
+      return { deliveredBushels: 0, remainingBushels: 0, progressPercent: 0 };
+    }
+
     // Calculate delivered pounds from tickets (appliedDockQuantity/AppliedNetQuantity is in pounds)
     const deliveredLbs = appliedTickets.reduce((sum, t) => sum + (t.appliedDockQuantity || 0), 0);
 
@@ -527,37 +533,33 @@ export class ContractsTableComponent {
     return pounds / lbsPerBushel;
   }
 
-  private _getLbsPerBushel(code: string): number {
+  private _getLbsPerBushel(code: string): number | null {
     return this._lookupLbsPerBushel(code);
   }
 
-  private _lookupLbsPerBushel(productCode: string): number {
+  /**
+   * Looks up lbs-per-bushel from the ODS commodity conversion view (ctrm.vw_GNP024).
+   * Returns null if conversions are unavailable or the commodity is not in the view.
+   * No hardcoded fallback — callers must handle missing data explicitly.
+   */
+  private _lookupLbsPerBushel(productCode: string): number | null {
     const code = (productCode || '').trim().toUpperCase();
-    if (!code) return 56;
+    if (!code) return null;
 
     const conversions = this.appState.commodityConversions();
-    if (conversions.length > 0) {
-      if (!this._conversionMap || this._conversionMap.size !== conversions.length) {
-        this._conversionMap = new Map(conversions.map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit]));
-      }
-      const lbs = this._conversionMap.get(code);
-      if (lbs && lbs > 0) return lbs;
-    }
+    if (conversions.length === 0) return null;
 
-    // Fallback
-    if (code.includes('CORN') || code.includes('YC'))                              return 56;
-    if (code.includes('SOY') || code.includes('BEAN') || code.includes('SB'))      return 60;
-    if (code.includes('WHEAT') || code.includes('HRW') || code.includes('HRS') ||
-        code.includes('HWS') || code.includes('SRW') || code.includes('WW'))       return 60;
-    if (code.includes('SORGHUM') || code.includes('MILO') || code.includes('SOR') || code.includes('SG'))  return 56;
-    if (code.includes('BARLEY'))                                                    return 48;
-    if (code.includes('OAT'))                                                       return 32;
-    if (code.includes('RYE'))                                                       return 56;
-    return 56;
+    if (!this._conversionMap || this._conversionMap.size !== conversions.length) {
+      this._conversionMap = new Map(conversions.map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit]));
+    }
+    const lbs = this._conversionMap.get(code);
+    return lbs && lbs > 0 ? lbs : null;
   }
 
-  toBushels(lbs: number | null | undefined, productCode: string | undefined | null): number {
-    return (lbs || 0) / this._lookupLbsPerBushel(productCode || '');
+  toBushels(lbs: number | null | undefined, productCode: string | undefined | null): number | null {
+    const lbsPerBushel = this._lookupLbsPerBushel(productCode || '');
+    if (lbsPerBushel == null) return null;
+    return (lbs || 0) / lbsPerBushel;
   }
 
   getAppliedTickets(contract: Contract): Ticket[] {
