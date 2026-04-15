@@ -101,7 +101,6 @@ src/
 - **Variables**: camelCase (e.g., `userName`, `isLoading`)
 - **Functions/Methods**: camelCase (e.g., `getUserById`, `handleClick`)
 - **Constants**: UPPER_SNAKE_CASE (e.g., `MAX_RETRY_COUNT`, `API_BASE_URL`)
-- **Private members**: Prefix with underscore (e.g., `_privateMethod`)
 - **Observables**: Suffix with `$` (e.g., `users$`, `isLoading$`)
 - **Signals**: No special suffix (e.g., `users`, `isLoading`)
 
@@ -117,17 +116,46 @@ src/
 
 ### Type Annotations
 
-Always provide explicit types:
+Rely on TypeScript inference where the type is obvious. Add explicit types where inference is insufficient or where it improves clarity:
 
 ```typescript
-// ✅ Good
-public userName: string = '';
-public users: User[] = [];
-public getUserById(id: number): Observable<User> { }
+// ✅ Let inference work — type is obvious from the right-hand side
+userName = '';                          // inferred as string
+users = signal<User[]>([]);            // generic already specifies the type
+http = inject(HttpClient);             // inferred from inject()
 
-// ❌ Bad
-public userName = '';  // Implicit type
-public getUserById(id) { }  // Missing types
+// ✅ Explicit types where they add value
+getUserById(id: number): Observable<User> { }  // return types on methods
+user!: User;                                    // uninitialized properties
+items: Record<string, number> = {};             // complex types
+
+// ❌ Bad — no parameter types, no return type on public methods
+getUserById(id) { }
+processData(input) { return input.value; }
+```
+
+**Rule of thumb:** Always type method parameters and return types. For properties, let inference do its job — don't annotate what the compiler already knows.
+
+**Avoid `any`:** Do not use `any` as a type. Use `unknown` when the type is genuinely not known, then narrow with type guards. If interfacing with untyped third-party code, define an interface or use a specific type.
+
+### Strict TypeScript
+
+Enable `strict: true` in `tsconfig.json` — this is the Angular CLI default and must not be disabled. It enables `strictNullChecks`, `noImplicitAny`, `strictBindCallApply`, and other checks that catch bugs at compile time. Additionally, enable these Angular-specific strict options in `angularCompilerOptions`:
+
+```json
+{
+  "compilerOptions": {
+    "strict": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "angularCompilerOptions": {
+    "strictTemplates": true,
+    "strictInjectionParameters": true,
+    "strictInputAccessModifiers": true
+  }
+}
 ```
 
 ### Interface Definitions
@@ -162,7 +190,7 @@ export interface PaginatedResponse<T> {
 ### Component Structure
 
 ```typescript
-import { Component, inject, signal, computed, DestroyRef } from '@angular/core';
+import { Component, OnInit, inject, signal, computed, DestroyRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { UserService } from '../../services/user.service';
@@ -173,27 +201,28 @@ import { User } from '../../models/user.model';
   templateUrl: './user-list.component.html',
   styleUrls: ['./user-list.component.css']
 })
-export class UserListComponent {
-  // 1. Dependency injection
+export class UserListComponent implements OnInit {
+  // 1. Dependency injection (inject() fields)
   private readonly userService = inject(UserService);
   private readonly destroyRef = inject(DestroyRef);
 
   // 2. Signals
-  public users = signal<User[]>([]);
-  public isLoading = signal<boolean>(false);
-  public errorMessage = signal<string | null>(null);
+  users = signal<User[]>([]);
+  isLoading = signal<boolean>(false);
+  errorMessage = signal<string | null>(null);
 
-  // 3. Constructor — initialization
-  constructor() {
+  // 3. Constructor — effect() and afterNextRender() setup only
+  // 4. ngOnInit — initialization logic (data loading, service calls)
+  ngOnInit(): void {
     this.loadUsers();
   }
 
-  // 4. Public methods
-  public onUserSelect(user: User): void {
+  // 5. Public methods
+  onUserSelect(user: User): void {
     // Handle user selection
   }
 
-  public onRefresh(): void {
+  onRefresh(): void {
     this.loadUsers();
   }
 
@@ -231,18 +260,18 @@ import { Component, input, output, model, computed } from '@angular/core';
 })
 export class UserCardComponent {
   // Required input — compile error if parent doesn't provide it
-  public user = input.required<User>();
+  user = input.required<User>();
 
   // Optional input with default
-  public showEmail = input<boolean>(false);
+  showEmail = input<boolean>(false);
 
   // Derived value from input — replaces ngOnChanges
-  public fullName = computed(() => `${this.user().firstName} ${this.user().lastName}`);
+  fullName = computed(() => `${this.user().firstName} ${this.user().lastName}`);
 
   // Output event
-  public userSelected = output<User>();
+  userSelected = output<User>();
 
-  public onSelect(): void {
+  onSelect(): void {
     this.userSelected.emit(this.user());
   }
 }
@@ -257,9 +286,9 @@ For two-way binding, use `model()`:
 })
 export class ToggleComponent {
   // Writable signal with two-way binding support
-  public checked = model<boolean>(false);
+  checked = model<boolean>(false);
 
-  public toggle(): void {
+  toggle(): void {
     this.checked.update(v => !v);
   }
 }
@@ -271,9 +300,9 @@ For derived writable state that resets when a source changes, use `linkedSignal(
 ```typescript
 import { signal, linkedSignal } from '@angular/core';
 
-public selectedUser = signal<User | null>(null);
+selectedUser = signal<User | null>(null);
 // Resets when selectedUser changes, but can be manually overridden
-public selectedTab = linkedSignal(() => this.selectedUser() ? 'details' : 'list');
+selectedTab = linkedSignal(() => this.selectedUser() ? 'details' : 'list');
 ```
 
 ### Component Best Practices
@@ -286,6 +315,45 @@ public selectedTab = linkedSignal(() => this.selectedUser() ? 'details' : 'list'
 6. **Use signal-based inputs and outputs** — `input()`, `output()`, and `model()`
 7. **For data fetching**, consider `toSignal()`, `rxResource`, or `httpResource` in addition to manual subscribe. See [Angular Data Fetching Patterns](angular-data-fetching-patterns.md) for detailed comparisons.
 8. **Use external template files** — Always use `templateUrl` instead of inline `template`, except for components with very simple, single-element templates.
+
+### Lifecycle Hooks and Initialization
+
+Lifecycle hooks (`ngOnInit`, `ngOnDestroy`, etc.) are **not deprecated** and remain a core part of Angular. Use them appropriately alongside signals and `inject()`.
+
+**Constructor** — Use for:
+- `inject()` field declarations (preferred as class fields, but can also be in constructor)
+- `effect()` setup (requires injection context)
+- `afterNextRender()` / `afterEveryRender()` setup (requires injection context)
+- Do **not** read `input.required()` values here — inputs are not yet populated during construction
+
+**`ngOnInit`** — Use for:
+- Initialization logic (data loading, service calls)
+- Reading input values — all inputs are guaranteed to have their initial values
+- Setting up subscriptions that depend on input values
+- Any setup that should run once after the component is fully wired up
+
+**`ngOnDestroy`** — Use when cleanup is needed beyond what `takeUntilDestroyed()` handles (e.g., removing DOM event listeners, clearing timers). Prefer `DestroyRef` + `takeUntilDestroyed()` for observable cleanup.
+
+**`effect()` vs `ngOnInit`** — Use `effect()` when you need to **react to signal changes over time** (including signal inputs). Use `ngOnInit` for **one-time initialization**. They serve different purposes and complement each other.
+
+```typescript
+export class ExampleComponent implements OnInit {
+  private readonly userService = inject(UserService);
+  user = input.required<User>();
+
+  // ✅ effect() in constructor — reacts to input changes over time
+  constructor() {
+    effect(() => {
+      console.log('User changed:', this.user().name);
+    });
+  }
+
+  // ✅ ngOnInit — one-time setup after inputs are ready
+  ngOnInit(): void {
+    this.userService.trackView(this.user().id);
+  }
+}
+```
 
 ## Service Style
 
@@ -304,8 +372,7 @@ export class UserService {
   private readonly http = inject(HttpClient);
   private readonly apiUrl = `${environment.apiUrl}/users`;
 
-  // ---------------------------------------------------------
-  public getUsers(page: number = 1, pageSize: number = 10): Observable<PaginatedResponse<User>> {
+  getUsers(page: number = 1, pageSize: number = 10): Observable<PaginatedResponse<User>> {
     const params = new HttpParams()
       .set('page', page.toString())
       .set('pageSize', pageSize.toString());
@@ -314,31 +381,26 @@ export class UserService {
       .pipe(catchError(this.handleError));
   }
 
-  // ---------------------------------------------------------
-  public getUserById(id: number): Observable<User> {
+  getUserById(id: number): Observable<User> {
     return this.http.get<User>(`${this.apiUrl}/${id}`)
       .pipe(catchError(this.handleError));
   }
 
-  // ---------------------------------------------------------
-  public createUser(user: Partial<User>): Observable<User> {
+  createUser(user: Partial<User>): Observable<User> {
     return this.http.post<User>(this.apiUrl, user)
       .pipe(catchError(this.handleError));
   }
 
-  // ---------------------------------------------------------
-  public updateUser(id: number, user: Partial<User>): Observable<User> {
+  updateUser(id: number, user: Partial<User>): Observable<User> {
     return this.http.put<User>(`${this.apiUrl}/${id}`, user)
       .pipe(catchError(this.handleError));
   }
 
-  // ---------------------------------------------------------
-  public deleteUser(id: number): Observable<void> {
+  deleteUser(id: number): Observable<void> {
     return this.http.delete<void>(`${this.apiUrl}/${id}`)
       .pipe(catchError(this.handleError));
   }
 
-  // ---------------------------------------------------------
   private handleError(error: any): Observable<never> {
     console.error('API Error:', error);
     return throwError(() => new Error(error.message || 'Server error'));
@@ -804,6 +866,6 @@ export class ChartComponent {
 
 ---
 
-*Style Guide Version: 2.0*
-*Last Updated: February 2026*
+*Style Guide Version: 2.1*
+*Last Updated: April 2026*
 *Based on Angular 21 with standalone components and zoneless change detection*

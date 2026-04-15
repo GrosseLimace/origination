@@ -27,20 +27,6 @@ These skills are synced automatically from `dev-standards` via GitHub Actions. U
 | Audit Logging | `/audit-logging` | Review structured application logging, correlation, Azure Monitor and Application Insights usage, Azure SQL logging, retention, and observability documentation against `style-guides/logging-guide.md` |
 | Permissions Model | `/permissions-model` | Implement or review authorization patterns, roles, scopes, and enforcement boundaries against `style-guides/permissions-model-guide.md` |
 
-### Scope-Based Audit Skills
-
-These skills audit code by scope and abstraction level rather than by technology domain. They use smell definitions from `style-guides/refactoring-guide.md`, `style-guides/model-smells-guide.md`, `style-guides/error-smells-guide.md`, and `style-guides/integration-smells-guide.md`. For best results, configure `.claude/rules/project-config.md` with your project's architecture layers and conventions.
-
-| Skill | Command | Description |
-|-------|---------|-------------|
-| Audit Method | `/audit-method` | Deep-dive on a single method for code smells, parameter quality, guard clauses, and bug signals |
-| Audit Component | `/audit-component` | Analyze a single class or component for responsibility cohesion, design quality, and structural health |
-| Audit Feature | `/audit-feature` | Cross-layer feature area analysis for dependency flow, layer boundary violations, and integration quality |
-| Audit Architecture | `/audit-arch` | System-level architecture scan for dependency health, boundary violations, hotspot ranking, and security |
-| Audit Models | `/audit-models` | Cross-layer model type tracing, coupling maps, and blast-radius classification |
-| Audit Error Paths | `/audit-error-paths` | Trace error propagation end-to-end from database to user display, check response shape consistency |
-| Audit Integrations | `/audit-integrations` | External service pattern matrix for auth, retry, timeout, error shape, logging, and async consistency |
-
 ### Quality Skills
 
 | Skill | Command | Description |

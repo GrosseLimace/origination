@@ -67,4 +67,3 @@ Produce a security-focused findings report with escalations and release blockers
 - `style-guides/security-guide.md`
 - `style-guides/error-handling-guide.md` when error contracts are part of the finding
 - `style-guides/logging-guide.md` when logging or observability controls are part of the finding
-- For external service pattern consistency (auth, retry, logging across services), use `/audit-integrations` which builds a pattern matrix using `style-guides/integration-smells-guide.md`

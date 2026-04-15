@@ -70,4 +70,3 @@ Produce a findings-first report with explicit references to the violated standar
 
 - `style-guides/error-handling-guide.md`
 - `style-guides/logging-guide.md` when application logging and observability findings dominate
-- For cross-layer error path tracing (DB → repository → service → controller → frontend → user), use `/audit-error-paths` which traces actual propagation and finds broken paths using `style-guides/error-smells-guide.md`
