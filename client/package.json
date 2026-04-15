@@ -44,7 +44,9 @@
     "postcss": "8.5.8",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
-    "vitest": "4.0.18"
+    "vitest": "4.0.18",
+    "@emnapi/core": "1.9.2",
+    "@emnapi/runtime": "1.9.2"
   },
   "overrides": {
     "vite": ">=7.3.2 <8",
