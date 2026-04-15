@@ -2084,13 +2084,16 @@ public class SqlDataService : IDataService
     // Storage Operations — ctrm.vw_GNTA39D1 joined with originations.vw_CurrentCustomers
     // =========================================================================
 
-    // Each night run inserts a new copy of every receipt into vw_GNTA39D1.
-    // Each receipt also has two rows per run: STATUS='F' (free days) and STATUS='S' (paid storage).
+    // ctrm.vw_GNTA39D1 is a nightly snapshot — every active receipt reappears each run.
+    // A receipt absent from the most recent run means the grain is no longer in storage,
+    // so we anchor on MAX(REPORT_RUN_STAMP) and ignore all older runs entirely.
+    // Within that single run, each receipt can have multiple status rows:
+    //   'S' = paid storage (being charged), 'D' = deferred/delayed billing, 'F' = free days.
+    // Other statuses (closed/voided/etc.) are excluded — they represent grain no longer stored.
     // A single receipt can also be split across multiple customers (e.g. ADELAG + ADELDI on the
     // same receipt+location+timestamp), so CUSTOMER_ID is included in the partition to ensure
     // each customer gets their own rn=1 row rather than one winning arbitrarily.
-    // The CTE deduplicates to exactly one row per receipt+location+customer by taking the STATUS='S'
-    // row from the most recent REPORT_RUN_STAMP, eliminating both cross-run and F/S duplicates.
+    // Tiebreaker priority inside the run: S > D > F.
     // Callers append "AND ..." (not "WHERE ...") since the base query already has WHERE rn = 1.
     // Storage query reads only from ODS (ctrm.vw_GNTA39D1). CustomerId is resolved in C#
     // from dbo.CustomerSnapshot (Origination DB) — Azure SQL doesn't support cross-DB joins.
@@ -2111,11 +2114,13 @@ public class SqlDataService : IDataService
                 CHARGED_THRU_DATE,
                 ROW_NUMBER() OVER (
                     PARTITION BY WHR_RECEIPT_NUMBER, LOCATION_CODE, CUSTOMER_ID
-                    ORDER BY REPORT_RUN_STAMP DESC,
-                             CASE WHEN STATUS = 'S' THEN 0 ELSE 1 END
+                    ORDER BY CASE WHEN STATUS = 'S' THEN 0
+                                  WHEN STATUS = 'D' THEN 1
+                                  ELSE 2 END
                 ) AS rn
             FROM ctrm.vw_GNTA39D1
-            WHERE STATUS IN ('S', 'F')
+            WHERE STATUS IN ('S', 'F', 'D')
+              AND REPORT_RUN_STAMP = (SELECT MAX(REPORT_RUN_STAMP) FROM ctrm.vw_GNTA39D1)
         )
         SELECT
             CAST(sg.WHR_RECEIPT_NUMBER AS varchar(50)) + '|' + ISNULL(sg.LOCATION_CODE, '') AS Id,

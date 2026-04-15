@@ -176,7 +176,7 @@ export class CustomerProfileComponent {
     effect(() => {
       const contracts = this.contracts();
 
-      // Update unapplied ticket count — isApplied uses contract prefix type (P/S in ctrmContractNumber)
+      // Update unapplied ticket count — a ticket is unapplied only when its contract prefix is U or L
       const tickets = this.tickets();
       this._unappliedTicketCount = tickets.filter(t => !t.isApplied).length;
 
