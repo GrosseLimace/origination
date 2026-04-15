@@ -485,36 +485,28 @@ export class TicketsTableComponent {
     return 'text-gray-400 dark:text-gray-600';
   }
 
-  /** Looks up lbs-per-bushel from ODS ctrm.vw_GNP024 via commodity code.
-   *  Falls back to standard U.S. grain conversions if ODS data isn't loaded yet. */
-  getLbsPerBushel(productCode: string | undefined | null): number {
+  /**
+   * Looks up lbs-per-bushel from the ODS commodity conversion view (ctrm.vw_GNP024).
+   * Returns null if conversions are unavailable or the commodity is not in the view.
+   * No hardcoded fallback — callers must handle missing data explicitly.
+   */
+  getLbsPerBushel(productCode: string | undefined | null): number | null {
     const code = (productCode || '').trim().toUpperCase();
-    if (!code) return 56;
+    if (!code) return null;
 
-    // Build map lazily from appState signal
     const conversions = this.appState.commodityConversions();
-    if (conversions.length > 0) {
-      if (!this._conversionMap || this._conversionMap.size !== conversions.length) {
-        this._conversionMap = new Map(conversions.map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit]));
-      }
-      const lbs = this._conversionMap.get(code);
-      if (lbs && lbs > 0) return lbs;
-    }
+    if (conversions.length === 0) return null;
 
-    // Fallback — standard U.S. grain conversions
-    if (code.includes('CORN') || code.includes('YC'))                              return 56;
-    if (code.includes('SOY') || code.includes('BEAN') || code.includes('SB'))      return 60;
-    if (code.includes('WHEAT') || code.includes('HRW') || code.includes('HRS') ||
-        code.includes('HWS') || code.includes('SRW') || code.includes('WW'))       return 60;
-    if (code.includes('SORGHUM') || code.includes('MILO') || code.includes('SOR') || code.includes('SG'))  return 56;
-    if (code.includes('BARLEY'))                                                    return 48;
-    if (code.includes('OAT'))                                                       return 32;
-    if (code.includes('RYE'))                                                       return 56;
-    if (code.includes('RICE'))                                                      return 45;
-    return 1; // unknown crop — show raw value
+    if (!this._conversionMap || this._conversionMap.size !== conversions.length) {
+      this._conversionMap = new Map(conversions.map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit]));
+    }
+    const lbs = this._conversionMap.get(code);
+    return lbs && lbs > 0 ? lbs : null;
   }
 
-  toBushels(lbs: number | null | undefined, productCode: string | undefined | null): number {
-    return (lbs || 0) / this.getLbsPerBushel(productCode);
+  toBushels(lbs: number | null | undefined, productCode: string | undefined | null): number | null {
+    const lbsPerBushel = this.getLbsPerBushel(productCode);
+    if (lbsPerBushel == null) return null;
+    return (lbs || 0) / lbsPerBushel;
   }
 }

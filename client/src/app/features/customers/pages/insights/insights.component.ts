@@ -84,21 +84,16 @@ const CATEGORY_META: Record<InsightCategory, {
   },
 };
 
-/** Convert pounds to bushels using ODS conversion map with hardcoded fallback. */
-function getLbsPerBushel(productCode: string | undefined | null, conversionMap?: Map<string, number>): number {
+/**
+ * Looks up lbs-per-bushel from the ODS commodity conversion map (ctrm.vw_GNP024).
+ * Returns null if conversions are unavailable or the commodity is not in the view.
+ * No hardcoded fallback — callers must handle missing data explicitly.
+ */
+function getLbsPerBushel(productCode: string | undefined | null, conversionMap?: Map<string, number>): number | null {
   const code = (productCode || '').trim().toUpperCase();
-  if (!code) return 56;
-  if (conversionMap) {
-    const lbs = conversionMap.get(code);
-    if (lbs && lbs > 0) return lbs;
-  }
-  // Fallback
-  if (code.includes('SOY') || code.includes('BEAN') || code.includes('SB')) return 60;
-  if (code.includes('WHEAT') || code.includes('HRW') || code.includes('HRS') ||
-      code.includes('HWS') || code.includes('SRW') || code.includes('WW')) return 60;
-  if (code.includes('BARLEY')) return 48;
-  if (code.includes('OAT')) return 32;
-  return 56; // corn, sorghum, default
+  if (!code || !conversionMap) return null;
+  const lbs = conversionMap.get(code);
+  return lbs && lbs > 0 ? lbs : null;
 }
 
 /** Pre-compute summary text for a customer group */
@@ -255,7 +250,8 @@ export class InsightsComponent {
         });
         if (!hasContractCoverage) {
           const lbs = ticket.appliedDockQuantity || ticket.unloadQuantity || 0;
-          const bu = lbs ? Math.round(lbs / getLbsPerBushel(ticket.productCode, conversionMap)) : null;
+          const lbsPerBu = getLbsPerBushel(ticket.productCode, conversionMap);
+          const bu = lbs && lbsPerBu ? Math.round(lbs / lbsPerBu) : null;
           const dateLabel = ticketDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
           insights.push({
             customer,
