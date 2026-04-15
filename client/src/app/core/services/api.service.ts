@@ -32,7 +32,8 @@ import {
   ExampleQueryUsage,
   WeeklyTrend,
   ActivityBreakdown,
-  UnderusedFeature
+  UnderusedFeature,
+  QueryLibraryItem
 } from '@models';
 import { environment } from '@env/environment';
 import { ToastService } from '@core/services/toast.service';
@@ -133,6 +134,12 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
+  /** Fetches customers whose linkedProducerIds contains the given source id (incoming links). */
+  getCustomersLinkedTo(sourceId: string): Observable<Customer[]> {
+    return this.http.get<Customer[]>(`${this.baseUrl}/customers/linked-to/${encodeURIComponent(sourceId)}`)
+      .pipe(catchError(() => of([] as Customer[])));
+  }
+
   /** Updates an existing customer's information (sends only fields accepted by UpdateCustomerRequest DTO) */
   updateCustomer(customer: Customer): Observable<Customer> {
     return this.http.put<Customer>(`${this.baseUrl}/customers/${customer.id}`, {
@@ -155,6 +162,27 @@ export class ApiService {
     return this._dedupe(key,
       this.http.get<Contract[]>(`${this.baseUrl}/contracts`, { params })
         .pipe(catchError(e => this.handleError(e)))
+    );
+  }
+
+  /** Fetches closed historical contracts for Contract Pacing year-over-year comparison. */
+  getHistoricalContractsForPacing(customerId: number): Observable<Contract[]> {
+    return this._dedupe(`contracts-pacing:${customerId}`,
+      this.http.get<Contract[]>(`${this.baseUrl}/contracts/pacing/${customerId}`)
+        .pipe(catchError(() => of([] as Contract[])))
+    );
+  }
+
+  /** Fetches ALL purchase contracts (open + closed) from base.Contract for a specific crop year, scoped to the given trade units. Used by the Planting Intentions Dashboard's Harvest & Contracts tab. */
+  getContractsByCropYear(cropYear: number, tradeUnits?: string[]): Observable<Contract[]> {
+    let params = new HttpParams();
+    if (tradeUnits && tradeUnits.length > 0) {
+      for (const tu of tradeUnits) params = params.append('tradeUnits', tu);
+    }
+    const tuKey = (tradeUnits && tradeUnits.length > 0) ? tradeUnits.slice().sort().join(',') : '';
+    return this._dedupe(`contracts-by-crop-year:${cropYear}:${tuKey}`,
+      this.http.get<Contract[]>(`${this.baseUrl}/contracts/by-crop-year/${cropYear}`, { params })
+        .pipe(catchError(() => of([] as Contract[])))
     );
   }
 
@@ -461,6 +489,24 @@ export class ApiService {
   }
 
   // ==========================================================================
+  // Query Library Operations
+  // ==========================================================================
+
+  /** Fetches all active query library items, sorted by category then sort order. */
+  getQueryLibrary(): Observable<QueryLibraryItem[]> {
+    return this.http.get<QueryLibraryItem[]>(`${this.baseUrl}/query-library`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Logs a query library search for gap analysis. Fire-and-forget. */
+  logQuerySearch(searchText: string, matchedQueryId?: number): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/query-library/search-log`, {
+      searchText,
+      matchedQueryId: matchedQueryId ?? null
+    }).pipe(catchError(() => of(undefined as unknown as void)));
+  }
+
+  // ==========================================================================
   // Saved List Operations (Customer query lists)
   // ==========================================================================
 
@@ -599,24 +645,12 @@ export class ApiService {
     );
   }
 
-  /** Gets the reference location for the current user and a trade unit. Returns null if not set. */
-  getBidSheetReference(tradeUnitCode: string): Observable<{ tradeUnitCode: string; locationId: number; name: string } | null> {
-    return this._dedupe(`bidsheet-reference-${tradeUnitCode}`,
-      this.http.get<{ tradeUnitCode: string; locationId: number; name: string }>(`${this.baseUrl}/bidsheet/reference`, { params: { tradeUnitCode } })
-        .pipe(catchError(() => of(null)))
+  /** Gets distinct bid months for a trade unit and crop year */
+  getBidMonths(tradeUnitCode: string, cropYear: number): Observable<number[]> {
+    return this._dedupe(`bidsheet-months-${tradeUnitCode}-${cropYear}`,
+      this.http.get<number[]>(`${this.baseUrl}/bidsheet/bidmonths`, { params: { tradeUnitCode, cropYear: cropYear.toString() } })
+        .pipe(catchError(e => this.handleError(e)))
     );
-  }
-
-  /** Sets or updates the reference location for the current user and a trade unit. */
-  setBidSheetReference(tradeUnitCode: string, locationId: number, name: string): Observable<void> {
-    return this.http.put<void>(`${this.baseUrl}/bidsheet/reference`, { tradeUnitCode, locationId, name })
-      .pipe(catchError(e => this.handleError(e)));
-  }
-
-  /** Clears the reference location for the current user and a trade unit. */
-  clearBidSheetReference(tradeUnitCode: string): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/bidsheet/reference`, { params: { tradeUnitCode } })
-      .pipe(catchError(e => this.handleError(e)));
   }
 
   /** Gets the saved location order for the current user and a trade unit key. Returns null if not set. */
@@ -630,6 +664,20 @@ export class ApiService {
   /** Saves the location order for the current user and a trade unit key. */
   setBidSheetLocationOrder(tradeUnitKey: string, locationOrder: string): Observable<void> {
     return this.http.put<void>(`${this.baseUrl}/bidsheet/location-order`, { tradeUnitKey, locationOrder })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Gets saved bid sheet preferences (crop, month, year) for the current user and a trade unit key. */
+  getBidSheetPreference(tradeUnitKey: string): Observable<{ tradeUnitKey: string; cropCode: string | null; month: number | null; cropYear: number | null; cropOrder: string | null; hiddenCrops: string | null; selectedMonths: string | null } | null> {
+    return this._dedupe(`bidsheet-preference-${tradeUnitKey}`,
+      this.http.get<{ tradeUnitKey: string; cropCode: string | null; month: number | null; cropYear: number | null; cropOrder: string | null; hiddenCrops: string | null; selectedMonths: string | null }>(`${this.baseUrl}/bidsheet/preference`, { params: { tradeUnitKey } })
+        .pipe(catchError(() => of(null)))
+    );
+  }
+
+  /** Saves bid sheet preferences for the current user and a trade unit key. */
+  setBidSheetPreference(tradeUnitKey: string, cropCode: string | null, month: number | null, cropYear: number | null, cropOrder?: string | null, hiddenCrops?: string | null, selectedMonths?: string | null): Observable<void> {
+    return this.http.put<void>(`${this.baseUrl}/bidsheet/preference`, { tradeUnitKey, cropCode, month, cropYear, cropOrder, hiddenCrops, selectedMonths })
       .pipe(catchError(e => this.handleError(e)));
   }
 

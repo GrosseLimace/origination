@@ -31,8 +31,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
     public DbSet<BidSheetLocation> BidSheetLocations => Set<BidSheetLocation>();
     public DbSet<BidSheetLocationBid> BidSheetLocationBids => Set<BidSheetLocationBid>();
-    public DbSet<BidSheetReference> BidSheetReferences => Set<BidSheetReference>();
     public DbSet<BidSheetLocationOrder> BidSheetLocationOrders => Set<BidSheetLocationOrder>();
+    public DbSet<BidSheetPreference> BidSheetPreferences => Set<BidSheetPreference>();
     public DbSet<ElevatorCache> ElevatorCaches => Set<ElevatorCache>();
     public DbSet<HarvestWindow> HarvestWindows => Set<HarvestWindow>();
     public DbSet<UserActivity> UserActivities => Set<UserActivity>();
@@ -42,6 +42,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<FeatureUsageDaily> FeatureUsageDailies => Set<FeatureUsageDaily>();
     public DbSet<WeeklyLoginAggregate> WeeklyLoginAggregates => Set<WeeklyLoginAggregate>();
     public DbSet<UserTradeUnitSnapshot> UserTradeUnitSnapshots => Set<UserTradeUnitSnapshot>();
+    public DbSet<QueryLibraryItem> QueryLibrary => Set<QueryLibraryItem>();
+    public DbSet<QuerySearchLog> QuerySearchLogs => Set<QuerySearchLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -332,26 +334,13 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.CommodityName).HasMaxLength(200).IsRequired(false);
             entity.Property(e => e.CommodityCategory).HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.CropYear).IsRequired();
+            entity.Property(e => e.Month).HasDefaultValue(0).IsRequired();
             entity.Property(e => e.Bid).HasMaxLength(50).IsRequired();
             entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.Property(e => e.ModifiedBy).HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.ModifiedAt).IsRequired(false);
-            entity.HasIndex(e => new { e.LocationId, e.CommodityCode, e.CropYear }).IsUnique().HasDatabaseName("UQ_BidSheetLocationBids_Location_Commodity_Year");
-        });
-
-        modelBuilder.Entity<BidSheetReference>(entity =>
-        {
-            entity.ToTable("BidSheetReferences", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
-            entity.Property(e => e.TradeUnitCode).HasMaxLength(100).IsRequired();
-            entity.Property(e => e.LocationId).IsRequired();
-            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
-            entity.Property(e => e.ModifiedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
-            entity.HasIndex(e => new { e.UserId, e.TradeUnitCode }).IsUnique().HasDatabaseName("UQ_BidSheetReferences_User_TradeUnit");
-            entity.HasIndex(e => e.UserId).HasDatabaseName("IX_BidSheetReferences_UserId");
+            entity.HasIndex(e => new { e.LocationId, e.CommodityCode, e.CropYear, e.Month }).IsUnique().HasDatabaseName("UQ_BidSheetLocationBids_Location_Commodity_Year_Month");
         });
 
         modelBuilder.Entity<BidSheetLocationOrder>(entity =>
@@ -365,6 +354,24 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ModifiedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.HasIndex(e => new { e.UserId, e.TradeUnitKey }).IsUnique().HasDatabaseName("UQ_BidSheetLocationOrders_User_TradeUnitKey");
             entity.HasIndex(e => e.UserId).HasDatabaseName("IX_BidSheetLocationOrders_UserId");
+        });
+
+        modelBuilder.Entity<BidSheetPreference>(entity =>
+        {
+            entity.ToTable("BidSheetPreferences", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.TradeUnitKey).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.CropCode).HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.Month).IsRequired(false);
+            entity.Property(e => e.CropYear).IsRequired(false);
+            entity.Property(e => e.CropOrder).HasColumnType("nvarchar(max)").IsRequired(false);
+            entity.Property(e => e.HiddenCrops).HasColumnType("nvarchar(max)").IsRequired(false);
+            entity.Property(e => e.SelectedMonths).HasColumnType("nvarchar(max)").IsRequired(false);
+            entity.Property(e => e.ModifiedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.HasIndex(e => new { e.UserId, e.TradeUnitKey }).IsUnique().HasDatabaseName("UQ_BidSheetPreferences_User_TradeUnitKey");
+            entity.HasIndex(e => e.UserId).HasDatabaseName("IX_BidSheetPreferences_UserId");
         });
 
         modelBuilder.Entity<HarvestWindow>(entity =>
@@ -494,6 +501,31 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.GroupName).HasMaxLength(100);
             entity.Property(e => e.SnapshotDate).HasDefaultValueSql("CAST(SYSUTCDATETIME() AS DATE)").IsRequired();
             entity.HasIndex(e => e.TradeUnitCode).HasDatabaseName("IX_UserTradeUnitSnapshot_TradeUnitCode");
+        });
+
+        modelBuilder.Entity<QueryLibraryItem>(entity =>
+        {
+            entity.ToTable("QueryLibrary", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.Category).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Description).HasMaxLength(500);
+            entity.Property(e => e.QueryText).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.Tags).HasMaxLength(500);
+            entity.Property(e => e.SortOrder).HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.IsActive).HasDefaultValue(true).IsRequired();
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
+        });
+
+        modelBuilder.Entity<QuerySearchLog>(entity =>
+        {
+            entity.ToTable("QuerySearchLog", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.SearchText).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.Timestamp).HasPrecision(3).HasDefaultValueSql("SYSUTCDATETIME()").IsRequired();
         });
     }
 }

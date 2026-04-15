@@ -11,7 +11,7 @@ import { DataPreloadService } from '@core/services/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, ProducerDetails, RefinementFilters } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, ProducerDetails, RefinementFilters, QueryLibraryItem } from '@models';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '@shared/components/card/card.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
@@ -44,6 +44,7 @@ import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-select
     TradeUnitSelectorComponent
   ],
   templateUrl: './build-list.component.html',
+  styles: [`input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }`],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class BuildListComponent {
@@ -119,38 +120,110 @@ export class BuildListComponent {
   readonly activeRefinementCount = computed(() => {
     const r = this.appliedRefinements();
     return [
-      r.noActiveContracts,
-      r.hasUnsignedContracts,
-      r.hasNegativePacing,
-      r.neverContacted,
-      r.notContactedDays != null && r.notContactedDays > 0,
-      r.crops && r.crops.length > 0,
-      r.states && r.states.length > 0
+      r.noActiveContracts, r.hasUnsignedContracts, r.downHarvestPace,
+      r.hasUnpricedContracts, r.hasOverdueContracts, r.noContractsAtAll,
+      r.contractQuantityOver != null && r.contractQuantityOver > 0,
+      r.contractsExpiringThisMonth, r.multipleCommoditiesContracted,
+      r.neverContacted, r.notContactedDays != null && r.notContactedDays > 0,
+      r.contactedOnlyOnce, r.contactedMoreThan5,
+      r.contactedByMeOnly, r.contactedBySomeoneElse,
+      r.hasPinnedNotes, r.noteKeyword?.trim(),
+      r.acresOver != null && r.acresOver > 0, r.hasBinCapacity, r.noBinCapacity,
+      r.hasPrimaryContact, r.noPrimaryContact, r.hasEmail, r.hasPhone, r.hasLinkedProducers, r.notEsignEnrolled,
+      r.hasActiveContracts, r.hasDeliveriesThisYear, r.hasPlantingIntentions, r.hasGrainInStorage,
+      r.ticketQuantityOver != null && r.ticketQuantityOver > 0,
+      r.ticketsInLastDays != null && r.ticketsInLastDays > 0,
+      r.avgMoistureOver != null, r.avgMoistureUnder != null,
+      r.avgTestWeightOver != null, r.avgTestWeightUnder != null,
+      r.avgProteinOver != null, r.avgProteinUnder != null,
+      r.storageDaysOver != null && r.storageDaysOver > 0,
+      r.storageQuantityOver != null && r.storageQuantityOver > 0,
+      r.storageReceivableOver != null && r.storageReceivableOver > 0,
+      r.plantingYear != null, r.irrigatedOnly, r.drylandOnly,
+      r.plantingAcresOver != null && r.plantingAcresOver > 0,
+      r.crops && r.crops.length > 0, r.states && r.states.length > 0
     ].filter(Boolean).length;
   });
+
+  /** Matches a commodity string against selected crop filters (with aliases). */
+  private _matchesCropFilter(value: string, selectedCrops: Set<string>): boolean {
+    if (selectedCrops.size === 0) return true; // no crop filter = match all
+    const v = value.trim().toLowerCase();
+    return [...selectedCrops].some(crop => v.includes(crop) || crop.includes(v));
+  }
 
   readonly displayedCustomers = computed(() => {
     let list = this.filteredCustomers();
     const r = this.appliedRefinements();
-    const contractMap = this._contractsByCustomer();
+    const contractMap = this._openContractsByCustomer(); // Open contracts only for refinements
+
+    // Build expanded crop set for contextual filtering (used by ticket/contract/storage filters)
+    const aliasMap: Record<string, string[]> = {
+      'milo': ['milo', 'sorghum'], 'sorghum': ['milo', 'sorghum'],
+      'beans': ['beans', 'soybeans', 'soy'], 'soybeans': ['soybeans', 'beans', 'soy'], 'soy': ['soy', 'soybeans', 'beans'],
+    };
+    const selectedCrops = new Set<string>();
+    if (r.crops && r.crops.length > 0) {
+      for (const crop of r.crops) {
+        const lower = crop.trim().toLowerCase();
+        for (const alias of (aliasMap[lower] ?? [lower])) selectedCrops.add(alias);
+      }
+    }
     const contactMap = this.lastContactByCustomer();
 
+    // Helper: get contracts for a customer, optionally scoped to selected crops
+    const getContracts = (c: Customer): Contract[] => {
+      let contracts = contractMap.get(c.sourceCustomerId!) || [];
+      if (selectedCrops.size > 0) {
+        contracts = contracts.filter(ct =>
+          this._matchesCropFilter(ct.commodityCode || '', selectedCrops) ||
+          this._matchesCropFilter(ct.commodityDescription || '', selectedCrops) ||
+          this._matchesCropFilter(ct.commodityGroup || '', selectedCrops)
+        );
+      }
+      return contracts;
+    };
+
+    // Contract status filters
     if (r.noActiveContracts) {
-      list = list.filter(c => {
-        const contracts = contractMap.get(c.sourceCustomerId!) || [];
-        return !contracts.some(ct => ct.status === 'Active' || ct.status === 'Pending' || ct.status === 'Overdue');
-      });
+      list = list.filter(c => !getContracts(c).some(ct => ct.status === 'Active' || ct.status === 'Pending' || ct.status === 'Overdue'));
     }
     if (r.hasUnsignedContracts) {
+      list = list.filter(c => getContracts(c).some(ct => ct.signed === false));
+    }
+    if (r.downHarvestPace) {
+      list = list.filter(c => this._getCustomerPacingDirection(c) === 'down');
+    }
+    if (r.hasUnpricedContracts) {
+      list = list.filter(c => getContracts(c).some(ct => ct.priceTypeCode === 'U' || ct.priceTypeCode === 'D'));
+    }
+    if (r.hasOverdueContracts) {
+      list = list.filter(c => getContracts(c).some(ct => ct.status === 'Overdue'));
+    }
+    if (r.noContractsAtAll) {
+      list = list.filter(c => getContracts(c).length === 0);
+    }
+    // Contract detail filters
+    if (r.contractQuantityOver != null && r.contractQuantityOver > 0) {
       list = list.filter(c => {
-        const contracts = contractMap.get(c.sourceCustomerId!) || [];
-        return contracts.some(ct => ct.signed === false);
+        const totalQty = getContracts(c).reduce((sum, ct) => sum + (ct.quantity ?? 0), 0);
+        return totalQty > r.contractQuantityOver!;
       });
     }
-    if (r.hasNegativePacing) {
+    if (r.contractsExpiringThisMonth) {
+      const now = new Date();
+      const thisMonth = now.getMonth();
+      const thisYear = now.getFullYear();
+      list = list.filter(c => getContracts(c).some(ct => {
+        if (!ct.deliveryEnd) return false;
+        const end = new Date(ct.deliveryEnd);
+        return end.getMonth() === thisMonth && end.getFullYear() === thisYear;
+      }));
+    }
+    if (r.multipleCommoditiesContracted) {
       list = list.filter(c => {
-        const pacing = this._getCustomerPacing(c);
-        return pacing !== null && pacing < 0;
+        const commodities = new Set(getContracts(c).map(ct => ct.commodityCode || ct.commodityDescription || '').filter(Boolean));
+        return commodities.size >= 2;
       });
     }
     if (r.neverContacted) {
@@ -162,18 +235,243 @@ export class BuildListComponent {
         return info.daysAgo >= r.notContactedDays!;
       });
     }
-    if (r.crops && r.crops.length > 0) {
-      // Expand selected crops with aliases (e.g., "Milo" also matches "Sorghum")
-      const aliasMap: Record<string, string[]> = {
-        'milo': ['milo', 'sorghum'], 'sorghum': ['milo', 'sorghum'],
-        'beans': ['beans', 'soybeans', 'soy'], 'soybeans': ['soybeans', 'beans', 'soy'], 'soy': ['soy', 'soybeans', 'beans'],
-      };
-      const expandedCrops = new Set<string>();
-      for (const crop of r.crops) {
-        const lower = crop.trim().toLowerCase();
-        for (const alias of (aliasMap[lower] ?? [lower])) expandedCrops.add(alias);
+
+    // Contact frequency — index note count per customer
+    if (r.contactedOnlyOnce || r.contactedMoreThan5) {
+      const noteCountByCustomer = new Map<number, number>();
+      for (const n of this.notes()) {
+        noteCountByCustomer.set(n.customerId, (noteCountByCustomer.get(n.customerId) || 0) + 1);
       }
-      list = list.filter(c => (c.commodities ?? []).some(crop => expandedCrops.has(crop.trim().toLowerCase())));
+      if (r.contactedOnlyOnce) {
+        list = list.filter(c => (noteCountByCustomer.get(c.id) || 0) === 1);
+      }
+      if (r.contactedMoreThan5) {
+        list = list.filter(c => (noteCountByCustomer.get(c.id) || 0) > 5);
+      }
+    }
+
+    // Contact author — check who created the notes
+    if (r.contactedByMeOnly || r.contactedBySomeoneElse) {
+      const account = this.msalService.instance.getActiveAccount()
+        ?? this.msalService.instance.getAllAccounts()[0];
+      const myName = (account?.name ?? '').toLowerCase();
+      const myUsername = (account?.username ?? '').toLowerCase();
+      // Build per-customer: has note by me, has note by someone else
+      const noteAuthorship = new Map<number, { byMe: boolean; byOthers: boolean }>();
+      for (const n of this.notes()) {
+        const author = (n.createdBy || '').toLowerCase();
+        const isMine = author.includes(myName) || author.includes(myUsername);
+        const entry = noteAuthorship.get(n.customerId) || { byMe: false, byOthers: false };
+        if (isMine) entry.byMe = true; else entry.byOthers = true;
+        noteAuthorship.set(n.customerId, entry);
+      }
+      if (r.contactedByMeOnly) {
+        list = list.filter(c => {
+          const a = noteAuthorship.get(c.id);
+          return !!a && a.byMe && !a.byOthers;
+        });
+      }
+      if (r.contactedBySomeoneElse) {
+        list = list.filter(c => {
+          const a = noteAuthorship.get(c.id);
+          return !!a && a.byOthers;
+        });
+      }
+    }
+
+    // Notes content
+    if (r.hasPinnedNotes) {
+      const pinnedCustomerIds = new Set<number>(
+        this.notes().filter(n => n.isPinned).map(n => n.customerId)
+      );
+      list = list.filter(c => pinnedCustomerIds.has(c.id));
+    }
+    if (r.noteKeyword?.trim()) {
+      const kw = r.noteKeyword.trim().toLowerCase();
+      const matchingCustomerIds = new Set<number>(
+        this.notes().filter(n => (n.content || '').toLowerCase().includes(kw)).map(n => n.customerId)
+      );
+      list = list.filter(c => matchingCustomerIds.has(c.id));
+    }
+    // Customer size
+    if (r.acresOver != null && r.acresOver > 0) {
+      list = list.filter(c => (c.totalAcres ?? 0) > r.acresOver!);
+    }
+    if (r.hasBinCapacity) {
+      list = list.filter(c => (c.binCapacity ?? 0) > 0);
+    }
+    if (r.noBinCapacity) {
+      list = list.filter(c => !c.binCapacity || c.binCapacity === 0);
+    }
+
+    // Customer info
+    if (r.hasPrimaryContact) {
+      list = list.filter(c => !!c.primaryContact?.trim());
+    }
+    if (r.noPrimaryContact) {
+      list = list.filter(c => !c.primaryContact?.trim());
+    }
+    if (r.hasEmail) {
+      list = list.filter(c => !!c.email?.trim() || !!c.supplementalEmail?.trim());
+    }
+    if (r.hasPhone) {
+      list = list.filter(c => !!c.phone?.trim() || !!c.extendedPrimaryPhone?.trim());
+    }
+    if (r.hasLinkedProducers) {
+      list = list.filter(c => (c.linkedProducerIds?.length ?? 0) > 0);
+    }
+    if (r.notEsignEnrolled) {
+      list = list.filter(c => !c.eSignEnabled);
+    }
+
+    // Customer activity
+    if (r.hasActiveContracts) {
+      list = list.filter(c => {
+        const contracts = contractMap.get(c.sourceCustomerId!) || [];
+        return contracts.some(ct => ct.status === 'Active' || ct.status === 'Pending');
+      });
+    }
+    if (r.hasDeliveriesThisYear) {
+      const thisYear = new Date().getFullYear();
+      const ticketCustomers = new Set<string>(
+        this.tickets().filter(t => {
+          if (!t.date) return false;
+          const d = new Date(t.date);
+          return d.getFullYear() === thisYear;
+        }).map(t => t.customerCode!).filter(Boolean)
+      );
+      list = list.filter(c => ticketCustomers.has(c.sourceCustomerId!));
+    }
+    if (r.hasPlantingIntentions) {
+      const plantingCustomers = new Set<number>(this.plantingIntentions().map(p => p.customerId));
+      list = list.filter(c => plantingCustomers.has(c.id));
+    }
+    if (r.hasGrainInStorage) {
+      const storageCustomers = new Set<number>(this.storedGrain().map(s => s.customerId));
+      list = list.filter(c => storageCustomers.has(c.id));
+    }
+
+    // Storage filters — scoped to selected crops when active
+    const scopedStorage = selectedCrops.size > 0
+      ? this.storedGrain().filter(s => s.crop && this._matchesCropFilter(s.crop, selectedCrops))
+      : this.storedGrain();
+    if (r.storageDaysOver != null && r.storageDaysOver > 0) {
+      const minDays = r.storageDaysOver;
+      const ids = new Set<number>(
+        scopedStorage.filter(s => {
+          if (s.storageDays != null && s.storageDays > 0) return s.storageDays >= minDays;
+          if (!s.storageStartDate) return false;
+          const d = new Date(s.storageStartDate);
+          return d.getTime() < (Date.now() - minDays * 86400000);
+        }).map(s => s.customerId)
+      );
+      list = list.filter(c => ids.has(c.id));
+    }
+    if (r.storageQuantityOver != null && r.storageQuantityOver > 0) {
+      const customerTotals = new Map<number, number>();
+      for (const s of scopedStorage) {
+        customerTotals.set(s.customerId, (customerTotals.get(s.customerId) || 0) + s.quantity);
+      }
+      list = list.filter(c => (customerTotals.get(c.id) || 0) > r.storageQuantityOver!);
+    }
+    if (r.storageReceivableOver != null && r.storageReceivableOver > 0) {
+      const customerTotals = new Map<number, number>();
+      for (const s of scopedStorage) {
+        customerTotals.set(s.customerId, (customerTotals.get(s.customerId) || 0) + (s.receivableAmount || 0));
+      }
+      list = list.filter(c => (customerTotals.get(c.id) || 0) > r.storageReceivableOver!);
+    }
+
+    // Ticket filters — pre-build lookup and scope tickets to selected crops
+    const hasTicketFilter = r.ticketQuantityOver != null || r.ticketsInLastDays != null ||
+      r.avgMoistureOver != null || r.avgMoistureUnder != null ||
+      r.avgTestWeightOver != null || r.avgTestWeightUnder != null ||
+      r.avgProteinOver != null || r.avgProteinUnder != null;
+    if (hasTicketFilter) {
+      const codeToId = new Map<string, number>();
+      for (const c of this.customers()) {
+        if (c.sourceCustomerId) codeToId.set(c.sourceCustomerId, c.id);
+      }
+      // Scope tickets to selected crops when a crop filter is active
+      const scopedTickets = selectedCrops.size > 0
+        ? this.tickets().filter(t => t.productCode && this._matchesCropFilter(t.productCode, selectedCrops))
+        : this.tickets();
+
+      if (r.ticketQuantityOver != null && r.ticketQuantityOver > 0) {
+        const customerTotals = new Map<number, number>();
+        for (const t of scopedTickets) {
+          if (!t.customerCode) continue;
+          const custId = codeToId.get(t.customerCode);
+          if (custId != null) customerTotals.set(custId, (customerTotals.get(custId) || 0) + (t.netWeight || 0));
+        }
+        list = list.filter(c => (customerTotals.get(c.id) || 0) > r.ticketQuantityOver!);
+      }
+      if (r.ticketsInLastDays != null && r.ticketsInLastDays > 0) {
+        const cutoff = Date.now() - r.ticketsInLastDays * 86400000;
+        const recentCustomers = new Set<string>();
+        for (const t of scopedTickets) {
+          if (!t.customerCode || !t.date) continue;
+          if (new Date(t.date).getTime() >= cutoff) recentCustomers.add(t.customerCode);
+        }
+        list = list.filter(c => recentCustomers.has(c.sourceCustomerId!));
+      }
+      // Quality averages — scoped to selected crops
+      if (r.avgMoistureOver != null || r.avgMoistureUnder != null ||
+          r.avgTestWeightOver != null || r.avgTestWeightUnder != null ||
+          r.avgProteinOver != null || r.avgProteinUnder != null) {
+        const customerQuality = new Map<number, { moistureSum: number; moistureCount: number; twSum: number; twCount: number; proteinSum: number; proteinCount: number }>();
+        for (const t of scopedTickets) {
+          if (!t.customerCode) continue;
+          const custId = codeToId.get(t.customerCode);
+          if (custId == null) continue;
+          let entry = customerQuality.get(custId);
+          if (!entry) { entry = { moistureSum: 0, moistureCount: 0, twSum: 0, twCount: 0, proteinSum: 0, proteinCount: 0 }; customerQuality.set(custId, entry); }
+          if (t.moisture != null) { entry.moistureSum += t.moisture; entry.moistureCount++; }
+          if (t.testWeight != null) { entry.twSum += t.testWeight; entry.twCount++; }
+          if (t.proteinPercent != null) { entry.proteinSum += t.proteinPercent; entry.proteinCount++; }
+        }
+        list = list.filter(c => {
+          const q = customerQuality.get(c.id);
+          if (!q) return false;
+          if (r.avgMoistureOver != null && (q.moistureCount === 0 || q.moistureSum / q.moistureCount <= r.avgMoistureOver)) return false;
+          if (r.avgMoistureUnder != null && (q.moistureCount === 0 || q.moistureSum / q.moistureCount >= r.avgMoistureUnder)) return false;
+          if (r.avgTestWeightOver != null && (q.twCount === 0 || q.twSum / q.twCount <= r.avgTestWeightOver)) return false;
+          if (r.avgTestWeightUnder != null && (q.twCount === 0 || q.twSum / q.twCount >= r.avgTestWeightUnder)) return false;
+          if (r.avgProteinOver != null && (q.proteinCount === 0 || q.proteinSum / q.proteinCount <= r.avgProteinOver)) return false;
+          if (r.avgProteinUnder != null && (q.proteinCount === 0 || q.proteinSum / q.proteinCount >= r.avgProteinUnder)) return false;
+          return true;
+        });
+      }
+    }
+
+    // Planting filters
+    if (r.plantingYear) {
+      const year = r.plantingYear;
+      const ids = new Set<number>(this.plantingIntentions().filter(p => p.plantingYear === year).map(p => p.customerId));
+      list = list.filter(c => ids.has(c.id));
+    }
+    if (r.irrigatedOnly) {
+      const ids = new Set<number>(
+        this.plantingIntentions().filter(p => p.type?.toLowerCase().includes('irrigat')).map(p => p.customerId)
+      );
+      list = list.filter(c => ids.has(c.id));
+    }
+    if (r.drylandOnly) {
+      const ids = new Set<number>(
+        this.plantingIntentions().filter(p => p.type?.toLowerCase().includes('dryland') || p.type?.toLowerCase().includes('dry land')).map(p => p.customerId)
+      );
+      list = list.filter(c => ids.has(c.id));
+    }
+    if (r.plantingAcresOver != null && r.plantingAcresOver > 0) {
+      const customerAcres = new Map<number, number>();
+      for (const p of this.plantingIntentions()) {
+        customerAcres.set(p.customerId, (customerAcres.get(p.customerId) || 0) + p.acres);
+      }
+      list = list.filter(c => (customerAcres.get(c.id) || 0) > r.plantingAcresOver!);
+    }
+
+    if (selectedCrops.size > 0) {
+      list = list.filter(c => (c.commodities ?? []).some(crop => selectedCrops.has(crop.trim().toLowerCase())));
     }
     if (r.states && r.states.length > 0) {
       list = list.filter(c => {
@@ -229,7 +527,6 @@ export class BuildListComponent {
   loading = signal(false);
   loadingSavedLists = signal(false);
   detectedState = signal<string | null>(null);
-  queryUnrecognized = signal(false);
   queryReturnedNoMatches = signal(false);
   showRefinePanel = signal(false);
   pendingRefinements = signal<RefinementFilters>({});
@@ -293,11 +590,22 @@ export class BuildListComponent {
 
   // ── Pre-indexed computed signals for O(1) lookups ────────────────────────
 
-  /** Contracts grouped by ctrmCustomerId — used by displayedCustomers refinements and pacing. */
+  /** ALL contracts grouped by ctrmCustomerId — includes prior-year closed contracts for pacing. */
   private readonly _contractsByCustomer = computed(() => {
     const map = new Map<string, Contract[]>();
     for (const c of this.contracts()) {
       if (!c.ctrmCustomerId) continue;
+      const arr = map.get(c.ctrmCustomerId);
+      if (arr) arr.push(c); else map.set(c.ctrmCustomerId, [c]);
+    }
+    return map;
+  });
+
+  /** Open contracts only — used by refinement filters (no active, unsigned, etc.). */
+  private readonly _openContractsByCustomer = computed(() => {
+    const map = new Map<string, Contract[]>();
+    for (const c of this.contracts()) {
+      if (!c.ctrmCustomerId || c.closedDate) continue;
       const arr = map.get(c.ctrmCustomerId);
       if (arr) arr.push(c); else map.set(c.ctrmCustomerId, [c]);
     }
@@ -423,22 +731,123 @@ export class BuildListComponent {
       const intentionCrops = [...(intentionCropsByCustomer.get(customer.id) || [])];
       const ticketCrops = [...(ticketCropsByCustomer.get(customer.id) || [])];
       const storageCrops = [...(storedGrainCropsByCustomer.get(customer.id) || [])];
-      map.set(customer.id, [...new Set([...detailCrops, ...contractCrops, ...intentionCrops, ...ticketCrops, ...storageCrops])].slice(0, 5));
+      // Dedupe by trimmed uppercase value, but keep original casing for display
+      const seen = new Set<string>();
+      const unique: string[] = [];
+      for (const crop of [...detailCrops, ...contractCrops, ...intentionCrops, ...ticketCrops, ...storageCrops]) {
+        const key = crop.trim().toUpperCase();
+        if (key && !seen.has(key)) { seen.add(key); unique.push(crop.trim()); }
+      }
+      map.set(customer.id, unique.slice(0, 5));
     }
     return map;
   });
 
-  exampleQueries = [
-    'Top 10 largest operations',
-    'Customers with corn or soybeans contracts',
-    'Farmers not contacted in over 30 days',
-    'Producers with contracts but no deliveries',
-    'Customers planting soybeans in 2026',
-    'Growers with unapplied tickets',
-    'Customers with unconfirmed contracts',
-    'Grain stored for over 60 days',
-    'Notes mentioning beans in the bin'
-  ];
+  // ── Query Library ──────────────────────────────────────────────────────
+  queryLibrary = signal<QueryLibraryItem[]>([]);
+  librarySearchText = signal('');
+  selectedCategory = signal<string | null>(null);
+  selectedLibraryQuery = signal<QueryLibraryItem | null>(null);
+  private _searchLogTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  showRequestForm = signal(false);
+  requestQueryText = signal('');
+
+  readonly filteredLibrary = computed(() => {
+    const search = this.librarySearchText().toLowerCase().trim();
+    const category = this.selectedCategory();
+    let items = this.queryLibrary();
+    if (category) items = items.filter(q => q.category === category);
+    if (search) {
+      items = items.filter(q =>
+        q.name.toLowerCase().includes(search) ||
+        (q.description || '').toLowerCase().includes(search) ||
+        (q.tags || '').toLowerCase().includes(search) ||
+        q.category.toLowerCase().includes(search) ||
+        q.queryText.toLowerCase().includes(search)
+      );
+    }
+    return items;
+  });
+
+  readonly libraryCategories = computed(() => {
+    const cats = new Set(this.queryLibrary().map(q => q.category));
+    return [...cats].sort();
+  });
+
+  /** Which refine filter sections are visible based on the selected query's category. */
+  readonly showContractFilters = computed(() => {
+    const cat = this.selectedLibraryQuery()?.category;
+    return cat === 'Contracts';
+  });
+  readonly showContactFilters = computed(() => {
+    const cat = this.selectedLibraryQuery()?.category;
+    return cat === 'Contacts' || cat === 'Notes';
+  });
+  /** Filters that are redundant given the selected query — hide them from the UI. */
+  readonly hiddenFilters = computed<Set<string>>(() => {
+    const q = (this.selectedLibraryQuery()?.queryText || '').toLowerCase();
+    const hidden = new Set<string>();
+    // Contract filters
+    if (q.includes('active contract'))      { hidden.add('noActiveContracts'); hidden.add('hasActiveContracts'); }
+    if (q.includes('unsigned') || q.includes('unconfirmed')) hidden.add('hasUnsignedContracts');
+    if (q.includes('unpriced'))             hidden.add('hasUnpricedContracts');
+    if (q.includes('pacing') || q.includes('contract pace')) hidden.add('downHarvestPace');
+    if (q.includes('overdue'))              hidden.add('hasOverdueContracts');
+    if (q.includes('no deliver'))           hidden.add('hasDeliveriesThisYear');
+    if (q.includes('expiring'))             hidden.add('contractsExpiringThisMonth');
+    // Contact filters
+    if (q.includes('never contacted'))      hidden.add('neverContacted');
+    if (/not contacted.*\d+\s*days/.test(q)) hidden.add('notContactedDays');
+    if (q.includes('i contacted') || q.includes('i have contacted')) { hidden.add('contactedByMeOnly'); hidden.add('neverContacted'); }
+    if (q.includes('i have never'))         { hidden.add('contactedByMeOnly'); hidden.add('neverContacted'); }
+    if (q.includes('contacted this week'))  hidden.add('neverContacted');
+    // Notes
+    if (q.includes('with notes'))           { hidden.add('hasPinnedNotes'); hidden.add('neverContacted'); }
+    if (q.includes('notes mentioning'))     { hidden.add('noteKeyword'); hidden.add('neverContacted'); }
+    // General
+    if (q.includes('linked producer'))      hidden.add('hasLinkedProducers');
+    if (q.includes('no primary contact'))   { hidden.add('noPrimaryContact'); hidden.add('hasPrimaryContact'); }
+    if (q.includes('without esign') || q.includes('not esign')) hidden.add('notEsignEnrolled');
+    if (q.includes('largest') || q.includes('by acres')) hidden.add('acresOver');
+    if (q.includes('planting'))             hidden.add('hasPlantingIntentions');
+    if (/planting.*\d{4}|\d{4}.*planting/.test(q)) hidden.add('plantingYear');
+    if (q.includes('irrigat'))              hidden.add('irrigatedOnly');
+    if (q.includes('dryland'))              hidden.add('drylandOnly');
+    if (q.includes('corn') && q.includes('planting')) hidden.add('plantingCrop');
+    if (q.includes('wheat') && q.includes('planting')) hidden.add('plantingCrop');
+    if (q.includes('in storage') || q.includes('stored')) hidden.add('hasGrainInStorage');
+    if (/stored.*over.*\d+\s*days|storage.*over.*\d+\s*days/.test(q)) hidden.add('storageDaysOver');
+    if (q.includes('unapplied') || q.includes('applied ticket')) hidden.add('hasDeliveriesThisYear');
+    return hidden;
+  });
+
+  readonly showTicketFilters = computed(() => {
+    const cat = this.selectedLibraryQuery()?.category;
+    return cat === 'Tickets';
+  });
+  readonly showStorageFilters = computed(() => {
+    const cat = this.selectedLibraryQuery()?.category;
+    return cat === 'Storage';
+  });
+  readonly showPlantingFilters = computed(() => {
+    const cat = this.selectedLibraryQuery()?.category;
+    return cat === 'Planting';
+  });
+  readonly showGeneralFilters = computed(() => {
+    const cat = this.selectedLibraryQuery()?.category;
+    return !cat || cat === 'General';
+  });
+
+  readonly groupedLibrary = computed(() => {
+    const items = this.filteredLibrary();
+    const map = new Map<string, QueryLibraryItem[]>();
+    for (const item of items) {
+      const arr = map.get(item.category);
+      if (arr) arr.push(item); else map.set(item.category, [item]);
+    }
+    return [...map.entries()].map(([category, queries]) => ({ category, queries }));
+  });
 
 
   constructor() {
@@ -459,6 +868,12 @@ export class BuildListComponent {
         error: () => { this.loadingSavedLists.set(false); }
       });
     }
+
+    // Load query library
+    this.apiService.getQueryLibrary().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (items) => this.queryLibrary.set(items),
+      error: () => this.toastService.error('Failed to load query library')
+    });
 
     // Load all user-accessible trade units so the TU selector works without prior home page visit
     this.apiService.getUserTradeUnits().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -490,14 +905,14 @@ export class BuildListComponent {
           hasGenerated: this.hasGenerated(),
           showMap: this.showMap(),
           detectedState: this.detectedState(),
-          queryUnrecognized: this.queryUnrecognized(),
           tradeUnits: this._initTradeUnits,
           appliedRefinements: this.appliedRefinements(),
           notContactedDaysInput: this.notContactedDaysInput(),
           showRefinePanel: this.showRefinePanel(),
           manuallyIncludedCustomerIds: this.manuallyIncludedCustomers().map(c => c.id),
           manuallyExcludedCustomerIds: [...this.manuallyExcludedCustomerIds()],
-          showManageMembersPanel: this.showManageMembersPanel()
+          showManageMembersPanel: this.showManageMembersPanel(),
+          selectedLibraryQuery: this.selectedLibraryQuery()
         });
       }
     });
@@ -696,7 +1111,7 @@ export class BuildListComponent {
     this.hasGenerated.set(saved.hasGenerated);
     this.showMap.set(saved.showMap);
     this.detectedState.set(saved.detectedState);
-    this.queryUnrecognized.set(saved.queryUnrecognized);
+    if (saved.selectedLibraryQuery) this.selectedLibraryQuery.set(saved.selectedLibraryQuery);
     if (saved.appliedRefinements) {
       this.appliedRefinements.set(saved.appliedRefinements);
       this.pendingRefinements.set(saved.appliedRefinements);
@@ -731,9 +1146,11 @@ export class BuildListComponent {
     this.filteredCustomers.set([]);
     this.matchedPatterns.set([]);
     this.detectedState.set(null);
-    this.queryUnrecognized.set(false);
     this.queryReturnedNoMatches.set(false);
     this.showMap.set(false);
+    this.librarySearchText.set('');
+    this.selectedCategory.set(this.selectedLibraryQuery()?.category ?? null);
+    this.selectedLibraryQuery.set(null);
     this.showRefinePanel.set(false);
     this.pendingRefinements.set({});
     this.appliedRefinements.set({});
@@ -747,37 +1164,12 @@ export class BuildListComponent {
     this.appState.clearBuildListState();
   }
 
-  onQueryChange(query: string): void {
-    if (!query.trim()) {
-      this.hasGenerated.set(false);
-      this.filteredCustomers.set([]);
-      this.detectedState.set(null);
-      this.queryUnrecognized.set(false);
-      this.queryReturnedNoMatches.set(false);
-    }
-  }
-
-  onQueryKeydown(event: KeyboardEvent): void {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      if (this.hasTradeUnits() && this.queryText().trim() && !this.isProcessing()) {
-        if (!this.loading()) {
-          this.processQuery();
-        }
-        // If loading: text is staged; _loadData() auto-runs processQuery() on completion
-      }
-    }
-  }
-
-  useExampleQuery(example: string): void {
-    this.usageTracking.postClickEvent('interaction', 'build-a-list', 'example-queries', example);
+  /** Called when user clicks a query card from the library. */
+  selectLibraryQuery(item: QueryLibraryItem): void {
     // Reset non-visual state from any previous query or saved list.
-    // Keep hasGenerated and filteredCustomers intact so the old results stay visible
-    // until the new NLQ filter runs — prevents a flash of empty state between queries.
     this._queryGenId++;
     this.isProcessing.set(false);
     this.waitingForTickets.set(false);
-    this.queryUnrecognized.set(false);
     this.queryReturnedNoMatches.set(false);
     this.showRefinePanel.set(false);
     this.pendingRefinements.set({});
@@ -791,21 +1183,43 @@ export class BuildListComponent {
     this.memberInResultsMatches.set([]);
     this.activeSavedList.set(null);
 
-    this.queryText.set(example);
-    if (this.coreDataLoaded() && !this.loading()) {
-      // If query needs data that isn't ready, go through processQuery()
-      // which handles the wait path. Otherwise run synchronously to avoid flash.
-      const needsTickets = this.nlqFilterService.queryInvolvesTickets(example);
-      const needsStorage = this.nlqFilterService.queryInvolvesStorage(example);
-      const needsNotes = this.nlqFilterService.queryInvolvesContact(example);
-      if ((needsTickets && !this._ticketsReady()) || (needsStorage && this.storedGrain().length === 0) || (needsNotes && this.notes().length === 0)) {
-        this.processQuery();
-      } else {
-        this._applyNlqFilter();
-        this.isProcessing.set(false);
+    this.queryText.set(item.queryText);
+    this.selectedLibraryQuery.set(item);
+    // Always route through processQuery — it handles data loading (tickets, storage),
+    // spinner state, and the NLQ filter. Avoids the edge case where _applyNlqFilter
+    // runs before secondary data (storage, tickets) has loaded.
+    this.processQuery();
+  }
+
+  /** Handles typing in the library search input. Logs unmatched searches after 2s debounce. */
+  onLibrarySearchChange(text: string): void {
+    this.librarySearchText.set(text);
+    if (this._searchLogTimeout) clearTimeout(this._searchLogTimeout);
+    if (!text.trim()) return;
+    this._searchLogTimeout = setTimeout(() => {
+      // Only auto-log if the request form isn't open (user hasn't clicked "Request a query")
+      // to avoid double-logging when they submit the form.
+      if (this.filteredLibrary().length === 0 && !this.showRequestForm()) {
+        this.apiService.logQuerySearch(text.trim())
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe();
       }
-    }
-    // If loading: text is staged; _loadFresh auto-runs processQuery() on completion
+    }, 2000);
+  }
+
+  /** Submits a query request to the search log so admins can see what users are asking for. */
+  submitQueryRequest(): void {
+    const text = this.requestQueryText().trim();
+    if (!text) return;
+    // Cancel any pending auto-log so we don't double-log
+    if (this._searchLogTimeout) { clearTimeout(this._searchLogTimeout); this._searchLogTimeout = null; }
+    this.apiService.logQuerySearch(text)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.toastService.success('Request submitted — we\'ll review and add it to the library');
+        this.requestQueryText.set('');
+        this.showRequestForm.set(false);
+      });
   }
 
   processQuery(overrideTradeUnits?: string[]): void {
@@ -842,6 +1256,23 @@ export class BuildListComponent {
         this.tickets.set(tickets);
         this._ticketsReady.set(true);
         this.waitingForTickets.set(false);
+        this._applyNlqFilter();
+        this.isProcessing.set(false);
+      });
+      return;
+    }
+
+    // If query involves storage and stored grain hasn't loaded yet, fetch it
+    const needsStorage = this.nlqFilterService.queryInvolvesStorage(this.queryText());
+    if (needsStorage && this.storedGrain().length === 0) {
+      const tuParam = this.appState.selectedTradeUnits();
+      this.apiService.getStoredGrain(tuParam.length > 0 ? tuParam : undefined).pipe(
+        timeout(60000),
+        catchError(() => of([] as StoredGrain[])),
+        takeUntilDestroyed(this.destroyRef)
+      ).subscribe(grain => {
+        if (queryGen !== this._queryGenId) return;
+        this.storedGrain.set(grain);
         this._applyNlqFilter();
         this.isProcessing.set(false);
       });
@@ -976,6 +1407,8 @@ export class BuildListComponent {
 
   /** Runs the NLQ filter against the current in-memory data and updates filteredCustomers. */
   private _applyNlqFilter(): void {
+    // Pass all contracts (open + prior-year closed) to NLQ — the filter service handles
+    // status-specific filtering internally, and pacing queries need both years to compare.
     const context: NlqFilterContext = {
       customers: this.customers(),
       contracts: this.contracts(),
@@ -990,37 +1423,38 @@ export class BuildListComponent {
     this.detectedState.set(result.detectedState);
     this.matchedPatterns.set(result.matchedPatterns);
     this.hasGenerated.set(true);
-    this.queryUnrecognized.set(result.matchedPatterns.length === 0);
     // Don't show "no match" if tickets are still loading and the query needs them
     const ticketsPending = this.nlqFilterService.queryInvolvesTickets(this.queryText()) && !this._ticketsReady();
-    this.queryReturnedNoMatches.set(result.matchedPatterns.length > 0 && result.customers.length === 0 && !ticketsPending);
-
-    if (this.queryUnrecognized()) {
-      // Unrecognized query: if other refinements are active use all customers as the
-      // base; otherwise show 0 (avoid dumping all customers on a meaningless query).
-      this.filteredCustomers.set(
-        this.hasAnyRefinement(this.appliedRefinements()) ? result.customers : []
-      );
-    } else {
-      this.filteredCustomers.set(result.customers);
-    }
+    this.queryReturnedNoMatches.set(result.customers.length === 0 && !ticketsPending);
+    this.filteredCustomers.set(result.customers);
 
     // If the query mentions pacing, apply direction filtering here at the component level
-    // using getCustomerPacing() so the result is definitive regardless of NLQ internals.
+    // Harvest-window-based pacing direction — overrides the NLQ service's internal pacing
+    // calculation with the same logic the customer profile pacing card uses.
     const lq = this.queryText().toLowerCase();
     if (lq.includes('pacing') || lq.includes('contract pace')) {
-      const isNegative = lq.includes('negative') || lq.includes('behind') || lq.includes('below') || lq.includes('slower');
-      const isPositive = lq.includes('positive') || lq.includes('ahead') || lq.includes('above') || lq.includes('faster');
+      const isNegative = lq.includes('negative') || lq.includes('behind') || lq.includes('below') || lq.includes('slower') || lq.includes('down');
+      const isPositive = lq.includes('positive') || lq.includes('ahead') || lq.includes('above') || lq.includes('faster') || lq.includes('up');
       if (isNegative || isPositive) {
-        this.filteredCustomers.update(list => list.filter(c => {
-          const pacing = this._getCustomerPacing(c);
-          if (pacing === null) return false;
-          return isNegative ? pacing < 0 : pacing >= 0;
+        const allCustomersWithContracts = this.customers().filter(c =>
+          (this._contractsByCustomer().get(c.sourceCustomerId!) || []).length > 0
+        );
+        this.filteredCustomers.set(allCustomersWithContracts.filter(c => {
+          const dir = this._getCustomerPacingDirection(c);
+          if (dir === null) return false;
+          return isNegative ? dir === 'down' : dir === 'up';
         }));
       }
     }
 
-
+    // Planting coverage queries — fetch from base.Contract for accurate historical matching.
+    // Overrides the NLQ cross-entity result which uses vw_CurrentContracts.
+    const isCoverageQuery = (lq.includes('planting') && (lq.includes('no contract') || lq.includes('no active contract')))
+      || lq.includes('percent contracted') || lq.includes('uncontracted');
+    if (isCoverageQuery) {
+      this._applyPlantingCoverageFilter(lq);
+      return; // async — will set filteredCustomers when done
+    }
   }
 
 
@@ -1200,42 +1634,229 @@ export class BuildListComponent {
     });
   }
 
-  private _getCustomerPacing(customer: Customer): number | null {
+  /**
+   * Harvest-window-based pacing direction for a customer.
+   * Returns 'down' if ANY commodity's bushels declined year-over-year,
+   * 'up' if at least one increased and none declined, 'flat' if no movement, null if no data.
+   * Mirrors the contract-pacing-card logic so the build-a-list result matches
+   * the arrow the user sees on the customer profile.
+   */
+  private _getCustomerPacingDirection(customer: Customer): 'up' | 'down' | 'flat' | null {
     const customerContracts = this._contractsByCustomer().get(customer.sourceCustomerId!) || [];
     if (customerContracts.length === 0) return null;
-    let maxYear = 0;
-    for (const c of customerContracts) {
-      if (c.deliveryStart) {
-        const y = new Date(c.deliveryStart).getFullYear();
-        if (y > maxYear) maxYear = y;
+    const windows = this.appState.harvestWindows().filter(hw => hw.isActive !== false);
+    if (windows.length === 0) return null;
+    const year = new Date().getFullYear();
+    let anyDown = false;
+    let anyData = false;
+    let anyMovement = false;
+    for (const hw of windows) {
+      let thisYear = 0;
+      let lastYear = 0;
+      for (const c of customerContracts) {
+        if (!this._contractMatchesPacingCommodity(c, hw.commodity)) continue;
+        if (this._contractOverlapsWindow(c, hw, year)) thisYear += c.quantity;
+        if (this._contractOverlapsWindow(c, hw, year - 1)) lastYear += c.quantity;
       }
+      if (thisYear === 0 && lastYear === 0) continue;
+      anyData = true;
+      if (thisYear < lastYear) { anyDown = true; anyMovement = true; }
+      else if (thisYear > lastYear) { anyMovement = true; }
     }
-    if (maxYear === 0) return null;
-    // Same-point-last-year cutoff: only count prior-year contracts that were
-    // booked on or before this calendar date last year (apples-to-apples comparison).
-    const today = new Date();
-    const samePointLastYear = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
-    const thisYearBu = customerContracts
-      .filter(c => c.deliveryStart && new Date(c.deliveryStart).getFullYear() === maxYear)
-      .reduce((sum, c) => sum + (c.quantity ?? 0), 0);
-    const lastYearBu = customerContracts
-      .filter(c => {
-        if (!c.deliveryStart || new Date(c.deliveryStart).getFullYear() !== maxYear - 1) return false;
-        if (!c.contractDate) return true;
-        return new Date(c.contractDate) <= samePointLastYear;
-      })
-      .reduce((sum, c) => sum + (c.quantity ?? 0), 0);
-    if (lastYearBu === 0) return null;
-    return ((thisYearBu - lastYearBu) / lastYearBu) * 100;
+    if (!anyData) return null;
+    if (anyDown) return 'down';
+    return anyMovement ? 'up' : 'flat';
+  }
+
+  private _contractOverlapsWindow(c: Contract, hw: { deliveryStartMonth: number; deliveryStartDay: number; deliveryEndMonth: number; deliveryEndDay: number }, cropYear: number): boolean {
+    if (!c.deliveryStart && !c.deliveryEnd) return false;
+    const wStart = new Date(cropYear, hw.deliveryStartMonth - 1, hw.deliveryStartDay);
+    const wEnd = new Date(cropYear, hw.deliveryEndMonth - 1, hw.deliveryEndDay);
+    wEnd.setHours(23, 59, 59, 999);
+    const dStart = c.deliveryStart ? new Date(c.deliveryStart) : new Date(c.deliveryEnd!);
+    const dEnd = c.deliveryEnd ? new Date(c.deliveryEnd) : new Date(c.deliveryStart!);
+    return dStart <= wEnd && dEnd >= wStart;
+  }
+
+  private _contractMatchesPacingCommodity(c: Contract, hwCommodity: string): boolean {
+    const target = hwCommodity.trim().toUpperCase();
+    if (!target) return false;
+    const group = (c.commodityGroup || '').trim().toUpperCase();
+    if (group && group === target) return true;
+    const desc = (c.commodityDescription || '').trim().toUpperCase();
+    if (desc && desc.includes(target)) return true;
+    const code = (c.commodityCode || '').trim().toUpperCase();
+    if (code && code.includes(target)) return true;
+    return false;
+  }
+
+  /**
+   * Fetches contracts from base.Contract for each planting year, then applies coverage logic.
+   * Used by "0% coverage", "under 50% contracted", and "highest uncontracted" queries.
+   */
+  private _applyPlantingCoverageFilter(lq: string): void {
+    const intentions = this.plantingIntentions();
+    if (intentions.length === 0) {
+      this.filteredCustomers.set([]);
+      this.queryReturnedNoMatches.set(true);
+      return;
+    }
+
+    // Unique planting years to fetch
+    const years = [...new Set(intentions.map(p => p.plantingYear).filter(Boolean))];
+    if (years.length === 0) {
+      this.filteredCustomers.set([]);
+      return;
+    }
+
+    this.isProcessing.set(true);
+    const tuParam = this.appState.selectedTradeUnits();
+    const tus = tuParam.length > 0 ? tuParam : undefined;
+
+    // Fetch contracts from base.Contract for each planting year in parallel
+    forkJoin(years.map(y => this.apiService.getContractsByCropYear(y, tus).pipe(
+      catchError(() => of([] as Contract[]))
+    ))).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(results => {
+      // Merge all fetched contracts
+      const allContracts: Contract[] = [];
+      for (const batch of results) allContracts.push(...batch);
+
+      // Index contracts by customer + year + commodity
+      const contractsByCustomer = new Map<string, Contract[]>();
+      for (const c of allContracts) {
+        if (!c.ctrmCustomerId) continue;
+        const arr = contractsByCustomer.get(c.ctrmCustomerId);
+        if (arr) arr.push(c); else contractsByCustomer.set(c.ctrmCustomerId, [c]);
+      }
+
+      // Group planting by customer → array of { year, crop, acres }
+      const plantingByCustomer = new Map<number, { year: number; crop: string; acres: number }[]>();
+      for (const p of intentions) {
+        const crop = (p.crop || '').trim().toUpperCase();
+        if (!crop || !p.plantingYear) continue;
+        const arr = plantingByCustomer.get(p.customerId);
+        const entry = { year: p.plantingYear, crop, acres: p.acres };
+        if (arr) arr.push(entry); else plantingByCustomer.set(p.customerId, [entry]);
+      }
+
+      const allCustomers = this.customers();
+
+      // Helper: check if a contract covers a specific crop
+      const contractMatchesCrop = (ct: Contract, crop: string): boolean => {
+        const code = (ct.commodityCode || '').trim().toUpperCase();
+        const desc = (ct.commodityDescription || '').trim().toUpperCase();
+        const group = (ct.commodityGroup || '').trim().toUpperCase();
+        return code.includes(crop) || crop.includes(code) ||
+               desc.includes(crop) || crop.includes(desc) ||
+               group.includes(crop) || crop.includes(group);
+      };
+
+      if (lq.includes('planting') && (lq.includes('no contract') || lq.includes('no active contract'))) {
+        // 0% coverage: any planting crop+year with zero matching contracts
+        this.filteredCustomers.set(allCustomers.filter(c => {
+          const plantings = plantingByCustomer.get(c.id);
+          if (!plantings) return false;
+          const custContracts = contractsByCustomer.get(c.sourceCustomerId!) || [];
+          return plantings.some(p =>
+            !custContracts.some(ct => ct.cropYear === p.year && contractMatchesCrop(ct, p.crop))
+          );
+        }));
+      } else if (lq.includes('under') && lq.includes('percent contracted')) {
+        // Under X% coverage: planting bushels vs contracted bushels per crop+year
+        const pctMatch = lq.match(/under\s+(\d+)\s*percent/);
+        const threshold = pctMatch ? parseInt(pctMatch[1]) / 100 : 0.5;
+        // Need yield estimates to calculate estimated production
+        const yieldEstimates = this.appState.dashboardCache()?.savedYieldEstimates || [];
+        const yieldMap = new Map<string, number>();
+        for (const e of yieldEstimates) {
+          if (e.yieldEstimate != null) yieldMap.set(e.crop, e.yieldEstimate);
+        }
+
+        this.filteredCustomers.set(allCustomers.filter(c => {
+          const plantings = plantingByCustomer.get(c.id);
+          if (!plantings) return false;
+          const custContracts = contractsByCustomer.get(c.sourceCustomerId!) || [];
+          // Check each planting crop: estimated production vs contracted bushels
+          return plantings.some(p => {
+            const yieldEst = yieldMap.get(p.crop);
+            if (!yieldEst) return false; // can't calculate without yield
+            const estimatedProduction = p.acres * yieldEst;
+            const contractedBu = custContracts
+              .filter(ct => ct.cropYear === p.year && contractMatchesCrop(ct, p.crop))
+              .reduce((sum, ct) => sum + (ct.quantity ?? 0), 0);
+            const coverage = estimatedProduction > 0 ? contractedBu / estimatedProduction : 0;
+            return coverage < threshold;
+          });
+        }));
+      } else if (lq.includes('uncontracted')) {
+        // Highest uncontracted bushels — top 10 by gap
+        const yieldEstimates = this.appState.dashboardCache()?.savedYieldEstimates || [];
+        const yieldMap = new Map<string, number>();
+        for (const e of yieldEstimates) {
+          if (e.yieldEstimate != null) yieldMap.set(e.crop, e.yieldEstimate);
+        }
+
+        const customerGaps: { customer: Customer; gap: number }[] = [];
+        for (const c of allCustomers) {
+          const plantings = plantingByCustomer.get(c.id);
+          if (!plantings) continue;
+          const custContracts = contractsByCustomer.get(c.sourceCustomerId!) || [];
+          let totalGap = 0;
+          for (const p of plantings) {
+            const yieldEst = yieldMap.get(p.crop);
+            if (!yieldEst) continue;
+            const estimatedProduction = p.acres * yieldEst;
+            const contractedBu = custContracts
+              .filter(ct => ct.cropYear === p.year && contractMatchesCrop(ct, p.crop))
+              .reduce((sum, ct) => sum + (ct.quantity ?? 0), 0);
+            totalGap += Math.max(0, estimatedProduction - contractedBu);
+          }
+          if (totalGap > 0) customerGaps.push({ customer: c, gap: totalGap });
+        }
+        customerGaps.sort((a, b) => b.gap - a.gap);
+        this.filteredCustomers.set(customerGaps.slice(0, 10).map(g => g.customer));
+      }
+
+      this.queryReturnedNoMatches.set(this.filteredCustomers().length === 0);
+      this.isProcessing.set(false);
+    });
   }
 
   hasAnyRefinement(filters: RefinementFilters): boolean {
     return !!(
       filters.noActiveContracts ||
       filters.hasUnsignedContracts ||
-      filters.hasNegativePacing ||
+      filters.downHarvestPace ||
+      filters.hasUnpricedContracts ||
+      filters.hasOverdueContracts ||
+      filters.noContractsAtAll ||
+      (filters.contractQuantityOver != null && filters.contractQuantityOver > 0) ||
+      filters.contractsExpiringThisMonth ||
+      filters.multipleCommoditiesContracted ||
       filters.neverContacted ||
       (filters.notContactedDays != null && filters.notContactedDays > 0) ||
+      filters.contactedOnlyOnce ||
+      filters.contactedMoreThan5 ||
+      filters.contactedByMeOnly ||
+      filters.contactedBySomeoneElse ||
+      filters.hasPinnedNotes ||
+      filters.noteKeyword?.trim() ||
+      (filters.acresOver != null && filters.acresOver > 0) ||
+      filters.hasBinCapacity || filters.noBinCapacity ||
+      filters.hasPrimaryContact || filters.noPrimaryContact ||
+      filters.hasEmail || filters.hasPhone || filters.hasLinkedProducers || filters.notEsignEnrolled ||
+      filters.hasActiveContracts || filters.hasDeliveriesThisYear ||
+      filters.hasPlantingIntentions || filters.hasGrainInStorage ||
+      (filters.ticketQuantityOver != null && filters.ticketQuantityOver > 0) ||
+      (filters.ticketsInLastDays != null && filters.ticketsInLastDays > 0) ||
+      filters.avgMoistureOver != null || filters.avgMoistureUnder != null ||
+      filters.avgTestWeightOver != null || filters.avgTestWeightUnder != null ||
+      filters.avgProteinOver != null || filters.avgProteinUnder != null ||
+      (filters.storageDaysOver != null && filters.storageDaysOver > 0) ||
+      (filters.storageQuantityOver != null && filters.storageQuantityOver > 0) ||
+      (filters.storageReceivableOver != null && filters.storageReceivableOver > 0) ||
+      filters.plantingYear != null || filters.irrigatedOnly || filters.drylandOnly ||
+      (filters.plantingAcresOver != null && filters.plantingAcresOver > 0) ||
       (filters.crops && filters.crops.length > 0) ||
       (filters.states && filters.states.length > 0)
     );

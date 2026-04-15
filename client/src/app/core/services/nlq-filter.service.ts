@@ -335,7 +335,7 @@ export class NlqFilterService {
         ct.ctrmCustomerId === c.sourceCustomerId && ct.signed === false
       ));
     }
-    if (filters.hasNegativePacing) {
+    if (filters.downHarvestPace) {
       const today = new Date();
       const samePointLastYear = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
       list = list.filter(c => {
@@ -517,7 +517,7 @@ export class NlqFilterService {
     if (lowerQuery.includes('unsigned contract') || lowerQuery.includes('not signed')) matched.push('unsigned_contract');
     if (lowerQuery.includes('pacing') || lowerQuery.includes('contract pace') || lowerQuery.includes('contract pacing')) {
       matched.push(
-        (lowerQuery.includes('negative') || lowerQuery.includes('behind') || lowerQuery.includes('below') || lowerQuery.includes('slower'))
+        (lowerQuery.includes('negative') || lowerQuery.includes('behind') || lowerQuery.includes('below') || lowerQuery.includes('slower') || lowerQuery.includes('down'))
           ? 'negative_pacing' : 'positive_pacing'
       );
     }
@@ -673,6 +673,12 @@ export class NlqFilterService {
     if (/farm\s+(?:named?\s+)?[a-z]/.test(lowerQuery) || /on\s+[a-z].+farm/.test(lowerQuery)) matched.push('farm_name');
 
     // --- Notes (enhanced) ---
+    // "customers with notes" — broad boolean check (has any notes at all)
+    if (/(?:with|has|have)\s+notes?\b/.test(lowerQuery) &&
+        !this._isNoteSearchQuery(lowerQuery) &&
+        !lowerQuery.includes('no note') && !lowerQuery.includes('without note')) {
+      matched.push('has_notes');
+    }
     if (lowerQuery.includes('pinned note') || lowerQuery.includes('pinned')) matched.push('has_pinned_notes');
     if (/note(?:s)?\s*(?:about|mentioning|containing|with|saying|that\s+(?:say|mention|include|contain))\s+/i.test(lowerQuery) ||
         /search\s+notes?\s+for\s+/i.test(lowerQuery) ||
@@ -843,7 +849,7 @@ export class NlqFilterService {
     result = this.applyPlantingFilters(lowerQuery, result, context.plantingIntentions);
     result = this.applyContractFilters(lowerQuery, result, context.contracts);
     result = this.applyMultiCommodityContractFilter(lowerQuery, result, context.contracts);
-    result = this.applyTicketFilters(lowerQuery, result, context.tickets);
+    result = this.applyTicketFilters(lowerQuery, result, context.tickets, context.contracts);
     result = this.applyQuarterDateFilter(lowerQuery, result, context.tickets);
     result = this.applyContractStatusOrFilter(lowerQuery, result, context.contracts);
     result = this.applyCrossEntityFilters(lowerQuery, result, context.contracts, context.tickets, context.plantingIntentions);
@@ -858,7 +864,8 @@ export class NlqFilterService {
     // SKIP when:
     // - Explicit note search ("notes mentioning X") — already handled by applyNoteFilters
     // - Ranking queries ("top 10") — note merging would dilute ranked results
-    if (!this._isNoteSearchQuery(lowerQuery) && !/^top\s*\d+/.test(lowerQuery)) {
+    if (!this._isNoteSearchQuery(lowerQuery) && !/^top\s*\d+/.test(lowerQuery) &&
+        !this.queryInvolvesPlanting(lowerQuery) && !this.queryInvolvesTickets(lowerQuery)) {
       const noteMatchedIds = this._findCustomersByNoteKeywords(lowerQuery, context.notes, context.customers);
       if (noteMatchedIds.size > 0) {
         const existingIds = new Set(result.map(c => c.id));
@@ -910,14 +917,40 @@ export class NlqFilterService {
     }
 
     // "planting but no contracts", "planting intentions without contracts"
-    if ((lowerQuery.includes('planting') && lowerQuery.includes('no contract')) ||
+    if ((lowerQuery.includes('planting') && (lowerQuery.includes('no contract') || lowerQuery.includes('no active contract'))) ||
         lowerQuery.includes('intentions without contract') ||
-        lowerQuery.includes('planting but no contract')) {
-      const plantingCustomers = new Set(plantingIntentions.map(p => p.customerId));
+        lowerQuery.includes('planting but no contract') ||
+        lowerQuery.includes('planting but no active contract')) {
+      // Group planting by customer → Set of "year|crop" keys
+      const plantingByCustomer = new Map<number, Set<string>>();
+      for (const p of plantingIntentions) {
+        const cropKey = (p.crop || '').trim().toUpperCase();
+        if (!cropKey || !p.plantingYear) continue;
+        const key = `${p.plantingYear}|${cropKey}`;
+        const existing = plantingByCustomer.get(p.customerId);
+        if (existing) existing.add(key); else plantingByCustomer.set(p.customerId, new Set([key]));
+      }
       result = result.filter(c => {
-        const hasPlanting = plantingCustomers.has(c.id);
-        const hasContracts = (contractsByCustomer.get(c.sourceCustomerId!) || []).length > 0;
-        return hasPlanting && !hasContracts;
+        const plantingKeys = plantingByCustomer.get(c.id);
+        if (!plantingKeys || plantingKeys.size === 0) return false;
+        // Get this customer's contracts indexed by crop year
+        const customerContracts = contractsByCustomer.get(c.sourceCustomerId!) || [];
+        // Return true if ANY planting crop+year has zero matching contracts in the same year
+        for (const key of plantingKeys) {
+          const [yearStr, crop] = key.split('|');
+          const year = parseInt(yearStr);
+          const hasCoverage = customerContracts.some(ct => {
+            if (ct.cropYear !== year) return false;
+            const code = (ct.commodityCode || '').trim().toUpperCase();
+            const desc = (ct.commodityDescription || '').trim().toUpperCase();
+            const group = (ct.commodityGroup || '').trim().toUpperCase();
+            return code.includes(crop) || crop.includes(code) ||
+                   desc.includes(crop) || crop.includes(desc) ||
+                   group.includes(crop) || crop.includes(group);
+          });
+          if (!hasCoverage) return true;
+        }
+        return false;
       });
     }
 
@@ -1183,8 +1216,12 @@ export class NlqFilterService {
     const commodityProducerMatch = isNoteSearchQuery ? null : lowerQuery.match(/(corn|soybeans?|wheat|oats|barley|sorghum|milo|beans|canola|sunflower)\s*(?:customers?|producers?|growers?|farmers?)/);
     let commodityCrop = commodityTradeMatch?.[1] || commodityProducerMatch?.[1] || null;
 
-    // If no hardcoded crop found, try detecting a dynamic commodity term from the DB
-    if (!commodityCrop && !isNoteSearchQuery) {
+    // If no hardcoded crop found, try detecting a dynamic commodity term from the DB.
+    // Skip when the query is a storage query — words like "storage" can accidentally match
+    // short commodity codes/names (e.g. "age", "tor") from the Commodities table.
+    const isStorageQuery = this.queryInvolvesStorage(lowerQuery);
+    const isTicketQuery = this.queryInvolvesTickets(lowerQuery);
+    if (!commodityCrop && !isNoteSearchQuery && !isStorageQuery && !isTicketQuery) {
       for (const term of this._allCommodityTerms) {
         if (term.length > 2 && lowerQuery.includes(term)) {
           commodityCrop = term;
@@ -1279,8 +1316,8 @@ export class NlqFilterService {
 
     // City/location search — "in [city]", "from [city]", "near [city]", "[city] customers"
     // Lookahead allows trailing "with/who/and/having" without consuming them so other filters still fire.
-    // Skip city matching for note-search queries to avoid "in the bin" being parsed as a city.
-    const cityMatch = this._isNoteSearchQuery(lowerQuery) ? null : lowerQuery.match(/(?:in|from|near|around)\s+([a-z][a-z\s]{1,25}?)(?=\s+(?:customers?|producers?|farmers?|growers?|area|region|with|who|and|that|having)|$)/);
+    // Skip city matching for note-search and storage queries to avoid "in the bin" / "in storage" being parsed as a city.
+    const cityMatch = (this._isNoteSearchQuery(lowerQuery) || isStorageQuery || isTicketQuery) ? null : lowerQuery.match(/(?:in|from|near|around)\s+([a-z][a-z\s]{1,25}?)(?=\s+(?:customers?|producers?|farmers?|growers?|area|region|with|who|and|that|having)|$)/);
     if (cityMatch && !this.stateNames[cityMatch[1].trim()]) {
       const city = cityMatch[1].trim();
       result = result.filter(c => {
@@ -1410,6 +1447,14 @@ export class NlqFilterService {
   // ============================================================
 
   private applyNoteFilters(lowerQuery: string, result: Customer[], notes: Note[], allCustomers: Customer[] = result): Customer[] {
+    // "Customers with notes" — broad boolean (has any note)
+    if (/(?:with|has|have)\s+notes?\b/.test(lowerQuery) &&
+        !this._isNoteSearchQuery(lowerQuery) &&
+        !lowerQuery.includes('no note') && !lowerQuery.includes('without note')) {
+      const customersWithNotes = new Set<number>(notes.map(n => n.customerId));
+      result = result.filter(c => customersWithNotes.has(c.id));
+    }
+
     // Pinned notes
     if (lowerQuery.includes('pinned note') || lowerQuery.includes('with pinned') || lowerQuery.includes('has pinned')) {
       const customersWithPinned = new Set<number>(
@@ -1754,9 +1799,11 @@ export class NlqFilterService {
       result = result.filter(c => ids.has(c.id));
     }
 
-    // General planting (has any planting intention)
-    if (lowerQuery.includes('planting intention') || lowerQuery.includes('planting plan') ||
-        lowerQuery.includes('planning to plant') || lowerQuery.includes('plans to grow')) {
+    // General planting (has any planting intention) — skip if query is asking for NO planting
+    const isNoPlanting = lowerQuery.includes('no planting') || lowerQuery.includes('without planting') ||
+                         lowerQuery.includes('not planting') || lowerQuery.includes('no plans to plant');
+    if (!isNoPlanting && (lowerQuery.includes('planting intention') || lowerQuery.includes('planting plan') ||
+        lowerQuery.includes('planning to plant') || lowerQuery.includes('plans to grow'))) {
       const ids = new Set<number>(filteredIntentions.map(p => p.customerId));
       result = result.filter(c => ids.has(c.id));
     }
@@ -1803,8 +1850,12 @@ export class NlqFilterService {
       c.sourceCustomerId ? contractsByCustomer.get(c.sourceCustomerId) ?? [] : [];
 
     // --- No active contracts ---
-    if (lowerQuery.includes('no active contract') || lowerQuery.includes('no contract') ||
-        lowerQuery.includes('without contract') || lowerQuery.includes('no contracts')) {
+    // Skip standalone "no contract" filter when this is a cross-entity query
+    // (e.g. "planting but no contracts") — the cross-entity filter handles it with proper AND logic.
+    const isCrossEntityNoContract = lowerQuery.includes('planting') && (lowerQuery.includes('no contract') || lowerQuery.includes('no active contract'));
+    if (!isCrossEntityNoContract &&
+        (lowerQuery.includes('no active contract') || lowerQuery.includes('no contract') ||
+         lowerQuery.includes('without contract') || lowerQuery.includes('no contracts'))) {
       result = result.filter(c =>
         !getCustomerContracts(c).some(ct => ct.status === 'Active' || ct.status === 'Pending')
       );
@@ -2068,7 +2119,8 @@ export class NlqFilterService {
     const hasPacingQuery = lowerQuery.includes('pacing') || lowerQuery.includes('contract pace') || lowerQuery.includes('contract pacing');
     if (hasPacingQuery) {
       const isNegative = lowerQuery.includes('negative') || lowerQuery.includes('behind') ||
-                         lowerQuery.includes('below') || lowerQuery.includes('slower');
+                         lowerQuery.includes('below') || lowerQuery.includes('slower') ||
+                         lowerQuery.includes('down');
       const today = new Date();
       const samePointLastYear = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
       result = result.filter(c => {
@@ -2107,7 +2159,7 @@ export class NlqFilterService {
   // TICKET / DELIVERY FILTER (all new)
   // ============================================================
 
-  private applyTicketFilters(lowerQuery: string, result: Customer[], tickets: Ticket[]): Customer[] {
+  private applyTicketFilters(lowerQuery: string, result: Customer[], tickets: Ticket[], contracts: Contract[] = []): Customer[] {
     // Build customerCode -> tickets map for efficient lookups
     const ticketsByCustomer = new Map<string, Ticket[]>();
     for (const t of tickets) {
@@ -2315,15 +2367,23 @@ export class NlqFilterService {
     }
 
     // --- Applied/unapplied tickets ---
+    // Build set of open contract IDs (no closedDate) — applied tickets should only count
+    // if they match an open contract, since the customer profile only shows open contracts.
+    const openContractIds = new Set<string>(
+      contracts.filter(c => !c.closedDate && c.sourceContractId).map(c => c.sourceContractId!)
+    );
+    const isTicketAppliedToOpenContract = (t: Ticket) =>
+      t.isApplied && !!t.ctrmContractNumber && openContractIds.has(t.ctrmContractNumber);
+
     if (lowerQuery.includes('unapplied ticket') || lowerQuery.includes('unmatched ticket') ||
         lowerQuery.includes('tickets not applied') || lowerQuery.includes('unapplied')) {
       result = result.filter(c =>
-        getCustomerTickets(c).some(t => !t.isApplied)
+        getCustomerTickets(c).some(t => !isTicketAppliedToOpenContract(t))
       );
     }
     if (lowerQuery.includes('applied ticket') && !lowerQuery.includes('unapplied')) {
       result = result.filter(c =>
-        getCustomerTickets(c).some(t => t.isApplied)
+        getCustomerTickets(c).some(t => isTicketAppliedToOpenContract(t))
       );
     }
 

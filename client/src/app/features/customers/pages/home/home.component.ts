@@ -107,6 +107,10 @@ export class HomeComponent {
   private _pendingProducerDetails: ProducerDetails[] | null = null;
   // Customers fetched from outside the current trade unit filter (e.g. linked producers in other TUs)
   private readonly _crossTradeUnitCustomers = signal<Map<number, Customer>>(new Map());
+  /** Flat array of cross-TU/linked producers fetched for the selected customer. Exposed so the
+   *  customer list can resolve last-contacted dates through incoming linked producers when no TU
+   *  is selected and the main customer roster is empty. */
+  readonly crossTradeUnitCustomers = computed<Customer[]>(() => [...this._crossTradeUnitCustomers().values()]);
 
   // Track last trade unit key to avoid duplicate loads triggered by the effect
   private _lastTradeUnitKey = '';
@@ -219,13 +223,13 @@ export class HomeComponent {
     const customerIdNum = parseInt(customerId, 10);
     const customer = this.customers().find(c => c.id === customerIdNum);
     if (customer) {
-      this.handleSelectCustomer(customer);
+      this.handleSelectCustomer(customer, true); // fromDeepLink=true, preserve pending state
     } else {
       const checkInterval = setInterval(() => {
         const c = this.customers().find(cust => cust.id === customerIdNum);
         if (c) {
           clearInterval(checkInterval);
-          this.handleSelectCustomer(c);
+          this.handleSelectCustomer(c, true); // fromDeepLink=true
         }
       }, 100);
       setTimeout(() => clearInterval(checkInterval), 5000);
@@ -503,7 +507,13 @@ export class HomeComponent {
     }
   }
 
-  handleSelectCustomer(customer: Customer): void {
+  handleSelectCustomer(customer: Customer, fromDeepLink = false): void {
+    // Reset navigation context when user manually selects (but NOT when coming from a deep link)
+    if (!fromDeepLink) {
+      this.pendingContractId.set(null);
+      this.pendingTab.set(null);
+      this.pendingTicketCrop.set(null);
+    }
     const pdMap = this.producerDetailsMap();
     const pd = pdMap.get(customer.id);
     if (pd) {
@@ -583,34 +593,52 @@ export class HomeComponent {
 
   private _fetchMissingLinkedProducers(customer: Customer): void {
     const linkedIds = customer.linkedProducerIds || [];
-    if (linkedIds.length === 0) return;
-
     const allCustomers = [...this.customers(), ...this._crossTradeUnitCustomers().values()];
     const missing = linkedIds.filter(sourceId =>
       !allCustomers.some(c => c.sourceCustomerId === sourceId)
     );
-    if (missing.length === 0) return;
 
-    // Fetch all missing linked producers in parallel, update UI once when all resolve
-    const requests = missing.map(sourceId =>
+    // Outgoing: fetch each linked producer id this customer points to.
+    const outgoingRequests = missing.map(sourceId =>
       this.apiService.getCustomerBySourceId(sourceId).pipe(catchError(() => of(null as Customer | null)))
     );
-    forkJoin(requests).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(results => {
+
+    // Incoming: fetch customers that link TO this one (reverse links). Needed because when no TU
+    // is selected the main customer roster is empty, so getLinkedGroup() can't discover reverse
+    // links from this.customers(). Safe when a TU IS selected — results are deduped in the cache.
+    const incoming$ = customer.sourceCustomerId
+      ? this.apiService.getCustomersLinkedTo(customer.sourceCustomerId)
+      : of([] as Customer[]);
+
+    // Nothing to fetch — skip network entirely.
+    if (outgoingRequests.length === 0 && !customer.sourceCustomerId) return;
+
+    forkJoin({
+      outgoing: outgoingRequests.length > 0 ? forkJoin(outgoingRequests) : of([] as (Customer | null)[]),
+      incoming: incoming$
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(({ outgoing, incoming }) => {
       const cache = new Map(this._crossTradeUnitCustomers());
-      for (let fetched of results) {
-        if (!fetched) continue;
+      const enrich = (fetched: Customer): Customer => {
         const pd = this.producerDetailsMap().get(fetched.id);
-        if (pd) {
-          fetched = {
-            ...fetched,
-            totalAcres: pd.totalAcres ?? fetched.totalAcres,
-            binCapacity: pd.binCapacity ?? fetched.binCapacity,
-            primaryContact: pd.primaryContact ?? fetched.primaryContact,
-            commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : fetched.commodities,
-            linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : fetched.linkedProducerIds
-          };
-        }
-        cache.set(fetched.id, fetched);
+        if (!pd) return fetched;
+        return {
+          ...fetched,
+          totalAcres: pd.totalAcres ?? fetched.totalAcres,
+          binCapacity: pd.binCapacity ?? fetched.binCapacity,
+          primaryContact: pd.primaryContact ?? fetched.primaryContact,
+          commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : fetched.commodities,
+          linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : fetched.linkedProducerIds
+        };
+      };
+
+      for (const fetched of outgoing) {
+        if (!fetched) continue;
+        cache.set(fetched.id, enrich(fetched));
+      }
+      for (const fetched of incoming) {
+        if (!fetched || fetched.id === customer.id) continue;
+        // Don't clobber an entry already in cache from the outgoing fetch
+        if (!cache.has(fetched.id)) cache.set(fetched.id, enrich(fetched));
       }
       this._crossTradeUnitCustomers.set(cache);
       const sel = this.selectedCustomer();
@@ -909,6 +937,10 @@ export class HomeComponent {
 
   handleSelectLinkedCustomer(customerId: number): void {
     if (customerId === this.selectedCustomer()?.id) return;
+    // Reset navigation context — user is manually selecting a linked producer
+    this.pendingContractId.set(null);
+    this.pendingTab.set(null);
+    this.pendingTicketCrop.set(null);
     // Cache the departing customer so getLinkedGroup can still find it for reverse-link
     // lookups after the new customer is selected (prevents the dropdown from disappearing).
     const departing = this.selectedCustomer();

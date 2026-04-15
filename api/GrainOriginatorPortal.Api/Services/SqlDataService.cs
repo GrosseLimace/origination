@@ -413,6 +413,65 @@ public class SqlDataService : IDataService
         }
     }
 
+    /// <summary>
+    /// Returns customers whose ProducerDetails.LinkedProducerIds contains the given source id —
+    /// i.e. customers that link TO this one (incoming / reverse links). Used by the cross-customer
+    /// search path so the customer profile can show bidirectional linked producers even when no TU
+    /// is selected and the main customer roster is empty.
+    /// </summary>
+    public async Task<List<Customer>> GetCustomersLinkedToAsync(string sourceCustomerId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sourceCustomerId)) return [];
+        try
+        {
+            // Match CSV entries safely — avoid false substring matches on similar ids by testing
+            // for ",<id>," after wrapping LinkedProducerIds in commas on both sides.
+            var needle = $"%,{sourceCustomerId},%";
+            var matchingCustomerIds = await _appContext.ProducerDetails
+                .AsNoTracking()
+                .Where(pd => pd.LinkedProducerIds != null && EF.Functions.Like("," + pd.LinkedProducerIds + ",", needle))
+                .Select(pd => pd.CustomerId)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+
+            if (matchingCustomerIds.Count == 0) return [];
+
+            var snapshots = await _appContext.CustomerSnapshots
+                .AsNoTracking()
+                .Where(s => s.IsActive && matchingCustomerIds.Contains(s.CustomerId))
+                .ToListAsync(cancellationToken);
+
+            var customers = snapshots
+                .GroupBy(s => s.CustomerId)
+                .Select(g => MapSnapshotToCustomer(g.First()))
+                .ToList();
+
+            // Enrich with LinkedProducerIds from ProducerDetails so the frontend can follow chains.
+            // Other ProducerDetails fields (bin capacity, primary contact, commodities) are applied
+            // by the frontend via its producerDetailsMap() cache.
+            var detailsMap = await _appContext.ProducerDetails
+                .AsNoTracking()
+                .Where(pd => matchingCustomerIds.Contains(pd.CustomerId))
+                .ToDictionaryAsync(pd => pd.CustomerId, cancellationToken);
+            foreach (var c in customers)
+            {
+                if (!detailsMap.TryGetValue(c.Id, out var pd)) continue;
+                if (pd.TotalAcres.HasValue) c.TotalAcres = (int)pd.TotalAcres.Value;
+                if (!string.IsNullOrWhiteSpace(pd.LinkedProducerIds))
+                    c.LinkedProducerIds = pd.LinkedProducerIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+            }
+
+            await EnrichCustomersWithESignAsync(customers, cancellationToken);
+            return customers;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving incoming linked customers for source {SourceId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                sourceCustomerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            return [];
+        }
+    }
+
     public async Task UpdateCustomerAsync(long customerId, string location, string phone, string email, List<string> farmIds, List<string> linkedProducerIds, CancellationToken cancellationToken = default)
     {
         try
@@ -751,28 +810,41 @@ public class SqlDataService : IDataService
         {
             var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
 
-            // Two-path strategy:
-            // - Unfiltered: Take(15) caps customer list so the IN clause stays well under 2100 params
-            // - Filtered: TradeUnit IN (small list of TU codes) — fast indexed lookup on the ODS view
+            // Two-path strategy. Both paths now use STRING_SPLIT downstream so we never hit
+            // SQL Server's 2100-parameter IN-clause limit even when the unfiltered path returns
+            // thousands of producer IDs.
             List<Contract> contracts;
 
             if (!hasTradeUnitFilter)
             {
-                // Get up to 15 customer CtrmCustomerIds (have contracts OR tickets) — 15 params = safe
-                var customerCtrmIds = await _context.Customers
+                // Unfiltered: every active producer in CustomerSnapshot. Trade unit selection is a
+                // narrowing convenience, not an entitlement boundary — when nothing is selected
+                // the user can search across the full producer base.
+                var customerCtrmIds = await _appContext.CustomerSnapshots
                     .AsNoTracking()
-                    .Where(c => c.SourceCustomerId != null && (
-                        _context.Contracts.Any(ct => ct.IsActive && ct.ContractPrefixType == "P" && ct.CtrmCustomerId == c.SourceCustomerId) ||
-                        _context.Tickets.Any(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerId == c.Id)))
-                    .Take(15)
-                    .Select(c => c.SourceCustomerId)
+                    .Where(s => s.IsActive && s.SourceCustomerId != null)
+                    .Select(s => s.SourceCustomerId!)
+                    .Distinct()
                     .ToListAsync(cancellationToken);
 
-                contracts = await _context.Contracts
-                    .AsNoTracking()
-                    .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId != null && customerCtrmIds.Contains(c.CtrmCustomerId))
-                    .OrderByDescending(c => c.Id)
-                    .ToListAsync(cancellationToken);
+                if (customerCtrmIds.Count == 0)
+                {
+                    contracts = [];
+                }
+                else
+                {
+                    var ctrmIdsCsv = SanitizeCsv(customerCtrmIds);
+                    contracts = await _context.Contracts
+                        .FromSqlInterpolated($@"
+                            SELECT c.* FROM base.vw_CurrentContracts c
+                            INNER JOIN STRING_SPLIT({ctrmIdsCsv}, ',') ids
+                                ON c.CtrmCustomerId = ids.value
+                            WHERE c.IsActive = 1 AND c.ContractPrefixType = 'P'
+                              AND (c.ClosedDate IS NULL OR c.CropYear >= {DateTime.Today.Year - 1})")
+                        .AsNoTracking()
+                        .OrderByDescending(c => c.Id)
+                        .ToListAsync(cancellationToken);
+                }
             }
             else
             {
@@ -802,7 +874,8 @@ public class SqlDataService : IDataService
                             SELECT c.* FROM base.vw_CurrentContracts c
                             INNER JOIN STRING_SPLIT({ctrmIdsCsv}, ',') ids
                                 ON c.CtrmCustomerId = ids.value
-                            WHERE c.IsActive = 1 AND c.ContractPrefixType = 'P'")
+                            WHERE c.IsActive = 1 AND c.ContractPrefixType = 'P'
+                              AND (c.ClosedDate IS NULL OR c.CropYear >= {DateTime.Today.Year - 1})")
                         .AsNoTracking()
                         .OrderByDescending(c => c.Id)
                         .ToListAsync(cancellationToken);
@@ -888,10 +961,12 @@ public class SqlDataService : IDataService
                 sourceCustomerId = customer.SourceCustomerId;
             }
 
-            // Match contracts using CtrmCustomerId = sourceCustomerId (string matching), purchase contracts only
+            // Match contracts: open contracts + prior-year (for pacing comparison)
+            var pacingCutoffYear = DateTime.Today.Year - 1;
             var contracts = await _context.Contracts
                 .AsNoTracking()
-                .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId == sourceCustomerId)
+                .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId == sourceCustomerId
+                    && (c.ClosedDate == null || c.CropYear >= pacingCutoffYear))
                 .OrderByDescending(c => c.Id)
                 .ToListAsync(cancellationToken);
 
@@ -923,6 +998,138 @@ public class SqlDataService : IDataService
         {
             _logger.LogError(ex, "Error retrieving contracts for customer {CustomerId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
                 customerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Loads historical closed contracts from base.Contract for the Contract Pacing year-over-year comparison.
+    /// Only returns closed purchase contracts from the current or prior crop year for the given customer.
+    /// The main contracts endpoint already delivers open contracts — this fills in the historical gap.
+    /// </summary>
+    public async Task<List<Contract>> GetHistoricalContractsForPacingAsync(long customerId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive, cancellationToken);
+            if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
+            {
+                _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId — returning empty historical contracts", customerId);
+                return [];
+            }
+
+            var pacingCutoffYear = DateTime.Today.Year - 1;
+            var contracts = await _context.Contracts
+                .FromSqlInterpolated($@"
+                    SELECT c.* FROM base.Contract c
+                    WHERE c.IsActive = 1
+                      AND c.IsDeleted = 0
+                      AND c.ContractPrefixType = 'P'
+                      AND c.CtrmCustomerId = {customer.SourceCustomerId}
+                      AND c.ClosedDate IS NOT NULL
+                      AND c.CropYear >= {pacingCutoffYear}")
+                .AsNoTracking()
+                .OrderByDescending(c => c.Id)
+                .ToListAsync(cancellationToken);
+
+            var today = DateTime.Today;
+            foreach (var contract in contracts)
+            {
+                contract.Status = CalculateContractStatus(contract, today);
+                contract.Signed = true;
+            }
+
+            _logger.LogInformation("Loaded {Count} historical closed contracts for pacing (customer {CustomerId}, cutoff {Cutoff})",
+                contracts.Count, customerId, pacingCutoffYear);
+            return contracts;
+        }
+        catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
+        {
+            _logger.LogWarning(ex, "base.Contract view/column not found — returning empty historical pacing list. SQL {Number} [{TraceId}]",
+                ex.Number, GetTraceId());
+            return [];
+        }
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
+        {
+            _logger.LogWarning(ex, "DB connection error retrieving historical pacing contracts for customer {CustomerId} [{TraceId}]",
+                customerId, GetTraceId());
+            return [];
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving historical pacing contracts for customer {CustomerId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                customerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Loads ALL purchase contracts (open + closed) for a specific crop year from base.Contract,
+    /// scoped to the given trade units. Used by the Planting Intentions Dashboard's Harvest &amp; Contracts
+    /// tab so that selecting an older planting year doesn't drop closed historical contracts that
+    /// vw_CurrentContracts has filtered out.
+    /// </summary>
+    public async Task<List<Contract>> GetContractsByCropYearAsync(int cropYear, List<string>? tradeUnits, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Resolve producer CtrmCustomerIds from CustomerSnapshot. Trade unit selection is a
+            // narrowing convenience, not an entitlement boundary — when nothing is selected we
+            // return contracts for every active producer.
+            var ctrmIdsQuery = _appContext.CustomerSnapshots
+                .AsNoTracking()
+                .Where(s => s.IsActive && s.SourceCustomerId != null);
+            if (tradeUnits != null && tradeUnits.Count > 0)
+            {
+                ctrmIdsQuery = ctrmIdsQuery.Where(s => s.TradeUnit != null && tradeUnits.Contains(s.TradeUnit));
+            }
+            var ctrmIds = await ctrmIdsQuery
+                .Select(s => s.SourceCustomerId!)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+
+            if (ctrmIds.Count == 0) return [];
+
+            var ctrmIdsCsv = SanitizeCsv(ctrmIds);
+            var contracts = await _context.Contracts
+                .FromSqlInterpolated($@"
+                    SELECT c.* FROM base.Contract c
+                    INNER JOIN STRING_SPLIT({ctrmIdsCsv}, ',') ids
+                        ON c.CtrmCustomerId = ids.value
+                    WHERE c.IsActive = 1
+                      AND c.IsDeleted = 0
+                      AND c.ContractPrefixType = 'P'
+                      AND c.CropYear = {cropYear}")
+                .AsNoTracking()
+                .OrderByDescending(c => c.Id)
+                .ToListAsync(cancellationToken);
+
+            var today = DateTime.Today;
+            foreach (var contract in contracts)
+            {
+                contract.Status = CalculateContractStatus(contract, today);
+                contract.Signed = true;
+            }
+
+            _logger.LogInformation("Loaded {Count} base.Contract rows for crop year {CropYear} (tradeUnitCount: {TuCount})",
+                contracts.Count, cropYear, tradeUnits?.Count ?? 0);
+            return contracts;
+        }
+        catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
+        {
+            _logger.LogWarning(ex, "base.Contract not accessible for crop year {CropYear} — returning empty list. SQL {Number} [{TraceId}]",
+                cropYear, ex.Number, GetTraceId());
+            return [];
+        }
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
+        {
+            _logger.LogWarning(ex, "DB connection error retrieving contracts for crop year {CropYear} [{TraceId}]", cropYear, GetTraceId());
+            return [];
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving contracts for crop year {CropYear} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                cropYear, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -1024,27 +1231,38 @@ public class SqlDataService : IDataService
         {
             var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
 
-            // Two-path strategy to avoid SQL Server's 2100-parameter IN-clause limit:
-            // - Unfiltered: safe because Take(15) caps customer list at 15 items (well under 2100 params)
-            // - Filtered: use EXISTS subqueries (Any() → SQL EXISTS) — no parameter count regardless of data volume
+            // Two-path strategy. Both paths use STRING_SPLIT downstream to avoid SQL Server's
+            // 2100-parameter IN-clause limit when the producer set is large.
             List<Ticket> tickets;
 
             if (!hasTradeUnitFilter)
             {
-                var customerCodes = await _context.Customers
+                // Unfiltered: every active producer in CustomerSnapshot. Trade unit selection is
+                // a narrowing convenience, not an entitlement boundary.
+                var customerCodes = await _appContext.CustomerSnapshots
                     .AsNoTracking()
-                    .Where(c => c.SourceCustomerId != null && (
-                        _context.Contracts.Any(ct => ct.IsActive && ct.ContractPrefixType == "P" && ct.CtrmCustomerId == c.SourceCustomerId) ||
-                        _context.Tickets.Any(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerCode == c.SourceCustomerId)))
-                    .Take(15)
-                    .Select(c => c.SourceCustomerId!)
+                    .Where(s => s.IsActive && s.SourceCustomerId != null)
+                    .Select(s => s.SourceCustomerId!)
+                    .Distinct()
                     .ToListAsync(cancellationToken);
 
-                tickets = await _context.Tickets
-                    .AsNoTracking()
-                    .Where(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode))
-                    .OrderByDescending(t => t.Date)
-                    .ToListAsync(cancellationToken);
+                if (customerCodes.Count == 0)
+                {
+                    tickets = [];
+                }
+                else
+                {
+                    var codesCsv = SanitizeCsv(customerCodes);
+                    tickets = await _context.Tickets
+                        .FromSqlInterpolated($@"
+                            SELECT t.* FROM base.vw_CurrentTickets t
+                            INNER JOIN STRING_SPLIT({codesCsv}, ',') ids
+                                ON t.CustomerCode = ids.value
+                            WHERE t.IsActive = 1 AND t.TicketType IN ('U','P')")
+                        .AsNoTracking()
+                        .OrderByDescending(t => t.Date)
+                        .ToListAsync(cancellationToken);
+                }
             }
             else
             {
@@ -1227,20 +1445,33 @@ public class SqlDataService : IDataService
 
             if (!hasTradeUnitFilter)
             {
-                var customerCodes = await _context.Customers
+                // Unfiltered: every active producer in CustomerSnapshot. Trade unit selection is
+                // a narrowing convenience, not an entitlement boundary.
+                var customerCodes = await _appContext.CustomerSnapshots
                     .AsNoTracking()
-                    .Where(c => c.SourceCustomerId != null && (
-                        _context.Contracts.Any(ct => ct.IsActive && ct.ContractPrefixType == "P" && ct.CtrmCustomerId == c.SourceCustomerId) ||
-                        _context.Tickets.Any(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerCode == c.SourceCustomerId)))
-                    .Take(15)
-                    .Select(c => c.SourceCustomerId!)
+                    .Where(s => s.IsActive && s.SourceCustomerId != null)
+                    .Select(s => s.SourceCustomerId!)
+                    .Distinct()
                     .ToListAsync(cancellationToken);
 
-                tickets = await _context.Tickets
-                    .AsNoTracking()
-                    .Where(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode) && t.Date != null && string.Compare(t.Date, cutoffStr) >= 0)
-                    .OrderByDescending(t => t.Date)
-                    .ToListAsync(cancellationToken);
+                if (customerCodes.Count == 0)
+                {
+                    tickets = [];
+                }
+                else
+                {
+                    var codesCsv = SanitizeCsv(customerCodes);
+                    tickets = await _context.Tickets
+                        .FromSqlInterpolated($@"
+                            SELECT t.* FROM base.vw_CurrentTickets t
+                            INNER JOIN STRING_SPLIT({codesCsv}, ',') ids
+                                ON t.CustomerCode = ids.value
+                            WHERE t.IsActive = 1 AND t.TicketType IN ('U','P')
+                              AND t.[Date] IS NOT NULL AND t.[Date] >= {cutoffStr}")
+                        .AsNoTracking()
+                        .OrderByDescending(t => t.Date)
+                        .ToListAsync(cancellationToken);
+                }
             }
             else
             {
@@ -1861,6 +2092,8 @@ public class SqlDataService : IDataService
     // The CTE deduplicates to exactly one row per receipt+location+customer by taking the STATUS='S'
     // row from the most recent REPORT_RUN_STAMP, eliminating both cross-run and F/S duplicates.
     // Callers append "AND ..." (not "WHERE ...") since the base query already has WHERE rn = 1.
+    // Storage query reads only from ODS (ctrm.vw_GNTA39D1). CustomerId is resolved in C#
+    // from dbo.CustomerSnapshot (Origination DB) — Azure SQL doesn't support cross-DB joins.
     private const string StoredGrainSql = """
         WITH LatestReceipts AS (
             SELECT
@@ -1887,7 +2120,7 @@ public class SqlDataService : IDataService
         SELECT
             CAST(sg.WHR_RECEIPT_NUMBER AS varchar(50)) + '|' + ISNULL(sg.LOCATION_CODE, '') AS Id,
             CAST(sg.WHR_RECEIPT_NUMBER AS varchar(50)) AS ReceiptNumber,
-            c.CustomerId AS CustomerId,
+            CAST(0 AS bigint) AS CustomerId,
             sg.CUSTOMER_ID AS CustomerCode,
             ISNULL(sg.COMMODITY_CODE, '') AS Crop,
             ISNULL(sg.NET_QUANTITY, 0) AS Quantity,
@@ -1900,15 +2133,43 @@ public class SqlDataService : IDataService
             sg.CHARGED_FROM_DATE AS ChargedFromDate,
             sg.CHARGED_THRU_DATE AS ChargedThruDate
         FROM LatestReceipts sg
-        INNER JOIN originations.vw_CurrentCustomers c ON sg.CUSTOMER_ID = c.SourceCustomerId
         WHERE sg.rn = 1
         """;
+
+    /// <summary>Looks up CustomerId for each storage record from the CustomerSnapshot table (Origination DB).</summary>
+    private async Task EnrichStorageWithCustomerIdsAsync(List<StoredGrain> records, CancellationToken cancellationToken)
+    {
+        if (records.Count == 0) return;
+
+        var customerCodes = records.Select(r => r.CustomerCode).Where(c => !string.IsNullOrEmpty(c)).Distinct().ToList();
+        if (customerCodes.Count == 0) return;
+
+        var snapshots = await _appContext.CustomerSnapshots
+            .AsNoTracking()
+            .Where(s => s.SourceCustomerId != null && customerCodes.Contains(s.SourceCustomerId))
+            .Select(s => new { s.SourceCustomerId, s.CustomerId })
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var lookup = snapshots
+            .GroupBy(s => s.SourceCustomerId!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().CustomerId, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var record in records)
+        {
+            if (!string.IsNullOrEmpty(record.CustomerCode) && lookup.TryGetValue(record.CustomerCode, out var id))
+            {
+                record.CustomerId = id;
+            }
+        }
+    }
 
     public async Task<List<StoredGrain>> GetStoredGrainAsync(IEnumerable<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
         try
         {
             var tuList = tradeUnits?.ToList();
+            List<StoredGrain> records;
             if (tuList is { Count: > 0 })
             {
                 // Find customer codes in these TUs, then load ALL their storage (cross-TU)
@@ -1924,13 +2185,19 @@ public class SqlDataService : IDataService
 
                 var csv = SanitizeCsv(customerCodes);
                 var sql = StoredGrainSql + " AND sg.CUSTOMER_ID IN (SELECT value FROM STRING_SPLIT(@customerCsv, ','))";
-                return await _context.Database
+                records = await _context.Database
                     .SqlQueryRaw<StoredGrain>(sql, new SqlParameter("@customerCsv", csv))
                     .ToListAsync(cancellationToken);
             }
-            return await _context.Database
-                .SqlQueryRaw<StoredGrain>(StoredGrainSql)
-                .ToListAsync(cancellationToken);
+            else
+            {
+                records = await _context.Database
+                    .SqlQueryRaw<StoredGrain>(StoredGrainSql)
+                    .ToListAsync(cancellationToken);
+            }
+
+            await EnrichStorageWithCustomerIdsAsync(records, cancellationToken);
+            return records;
         }
         catch (Exception ex)
         {
@@ -1943,10 +2210,24 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var sql = StoredGrainSql + " AND c.CustomerId = @customerId";
-            return await _context.Database
-                .SqlQueryRaw<StoredGrain>(sql, new SqlParameter("@customerId", customerId))
+            // Look up the customer's source ID from CustomerSnapshot, then filter by it in ODS.
+            var sourceCustomerId = await _appContext.CustomerSnapshots
+                .AsNoTracking()
+                .Where(s => s.CustomerId == customerId && s.SourceCustomerId != null)
+                .Select(s => s.SourceCustomerId!)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (string.IsNullOrEmpty(sourceCustomerId)) return [];
+
+            var sql = StoredGrainSql + " AND sg.CUSTOMER_ID = @customerCode";
+            var records = await _context.Database
+                .SqlQueryRaw<StoredGrain>(sql, new SqlParameter("@customerCode", sourceCustomerId))
                 .ToListAsync(cancellationToken);
+
+            // Set CustomerId for all records (we already know it from the input)
+            foreach (var r in records) r.CustomerId = customerId;
+
+            return records;
         }
         catch (Exception ex)
         {
@@ -2335,11 +2616,13 @@ public class SqlDataService : IDataService
         }
     }
 
-    public async Task DeleteBidSheetBidsAsync(int locationId, string commodityCode, CancellationToken cancellationToken = default)
+    public async Task DeleteBidSheetBidsAsync(int locationId, string commodityCode, int? month = null, CancellationToken cancellationToken = default)
     {
-        var bids = await _appContext.BidSheetLocationBids
-            .Where(b => b.LocationId == locationId && b.CommodityCode == commodityCode)
-            .ToListAsync(cancellationToken);
+        var query = _appContext.BidSheetLocationBids
+            .Where(b => b.LocationId == locationId && b.CommodityCode == commodityCode);
+        if (month.HasValue)
+            query = query.Where(b => b.Month == month.Value);
+        var bids = await query.ToListAsync(cancellationToken);
 
         if (bids.Count > 0)
         {
@@ -2414,9 +2697,9 @@ public class SqlDataService : IDataService
         var existingBids = await _appContext.BidSheetLocationBids
             .Where(b => locationIds.Contains(b.LocationId))
             .ToListAsync(cancellationToken);
-        var bidLookup = new Dictionary<(int, string, int), BidSheetLocationBid>();
+        var bidLookup = new Dictionary<(int, string, int, int), BidSheetLocationBid>();
         foreach (var b in existingBids)
-            bidLookup.TryAdd((b.LocationId, b.CommodityCode, b.CropYear), b);
+            bidLookup.TryAdd((b.LocationId, b.CommodityCode, b.CropYear, b.Month), b);
 
         // Second pass: upsert bids using in-memory lookups (0 queries)
         foreach (var req in requestList)
@@ -2428,7 +2711,7 @@ public class SqlDataService : IDataService
                 byName.TryGetValue(req.Name.Trim(), out loc);
             if (loc == null) continue;
 
-            var key = (loc.Id, req.CommodityCode, req.CropYear);
+            var key = (loc.Id, req.CommodityCode, req.CropYear, req.Month);
             if (bidLookup.TryGetValue(key, out var bid))
             {
                 bid.Bid = req.Bid;
@@ -2444,6 +2727,7 @@ public class SqlDataService : IDataService
                     CommodityName = req.CommodityName,
                     CommodityCategory = req.CommodityCategory,
                     CropYear = req.CropYear,
+                    Month = req.Month,
                     Bid = req.Bid,
                     CreatedBy = userId,
                     CreatedAt = now
@@ -2479,49 +2763,15 @@ public class SqlDataService : IDataService
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<BidSheetReference?> GetBidSheetReferenceAsync(string userId, string tradeUnitCode, CancellationToken cancellationToken = default)
+    public async Task<List<int>> GetBidMonthsAsync(string tradeUnitCode, int cropYear, CancellationToken cancellationToken = default)
     {
-        return await _appContext.BidSheetReferences
+        return await _appContext.BidSheetLocationBids
             .AsNoTracking()
-            .FirstOrDefaultAsync(r => r.UserId == userId && r.TradeUnitCode == tradeUnitCode, cancellationToken);
-    }
-
-    public async Task SetBidSheetReferenceAsync(string userId, string tradeUnitCode, int locationId, string name, CancellationToken cancellationToken = default)
-    {
-        var existing = await _appContext.BidSheetReferences
-            .FirstOrDefaultAsync(r => r.UserId == userId && r.TradeUnitCode == tradeUnitCode, cancellationToken);
-
-        if (existing is not null)
-        {
-            existing.LocationId = locationId;
-            existing.Name = name;
-            existing.ModifiedAt = DateTime.UtcNow;
-        }
-        else
-        {
-            _appContext.BidSheetReferences.Add(new BidSheetReference
-            {
-                UserId = userId,
-                TradeUnitCode = tradeUnitCode,
-                LocationId = locationId,
-                Name = name,
-                ModifiedAt = DateTime.UtcNow
-            });
-        }
-
-        await _appContext.SaveChangesAsync(cancellationToken);
-    }
-
-    public async Task ClearBidSheetReferenceAsync(string userId, string tradeUnitCode, CancellationToken cancellationToken = default)
-    {
-        var existing = await _appContext.BidSheetReferences
-            .FirstOrDefaultAsync(r => r.UserId == userId && r.TradeUnitCode == tradeUnitCode, cancellationToken);
-
-        if (existing is not null)
-        {
-            _appContext.BidSheetReferences.Remove(existing);
-            await _appContext.SaveChangesAsync(cancellationToken);
-        }
+            .Where(b => b.Location.TradeUnitCode == tradeUnitCode && b.CropYear == cropYear)
+            .Select(b => b.Month)
+            .Distinct()
+            .OrderBy(m => m)
+            .ToListAsync(cancellationToken);
     }
 
     // =========================================================================
@@ -2556,6 +2806,78 @@ public class SqlDataService : IDataService
             });
         }
 
+        await _appContext.SaveChangesAsync(cancellationToken);
+    }
+
+    // =========================================================================
+    // Bid Sheet Preferences (per-user per-TU UI preferences)
+    // =========================================================================
+
+    public async Task<BidSheetPreference?> GetBidSheetPreferenceAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken = default)
+    {
+        return await _appContext.BidSheetPreferences
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.UserId == userId && p.TradeUnitKey == tradeUnitKey, cancellationToken);
+    }
+
+    public async Task SetBidSheetPreferenceAsync(string userId, string tradeUnitKey, string? cropCode, int? month, int? cropYear, string? cropOrder = null, string? hiddenCrops = null, string? selectedMonths = null, CancellationToken cancellationToken = default)
+    {
+        var existing = await _appContext.BidSheetPreferences
+            .FirstOrDefaultAsync(p => p.UserId == userId && p.TradeUnitKey == tradeUnitKey, cancellationToken);
+
+        if (existing is not null)
+        {
+            existing.CropCode = cropCode;
+            existing.Month = month;
+            existing.CropYear = cropYear;
+            if (cropOrder is not null) existing.CropOrder = cropOrder;
+            if (hiddenCrops is not null) existing.HiddenCrops = hiddenCrops;
+            if (selectedMonths is not null) existing.SelectedMonths = selectedMonths;
+            existing.ModifiedAt = DateTime.UtcNow;
+        }
+        else
+        {
+            _appContext.BidSheetPreferences.Add(new BidSheetPreference
+            {
+                UserId = userId,
+                TradeUnitKey = tradeUnitKey,
+                CropCode = cropCode,
+                Month = month,
+                CropYear = cropYear,
+                CropOrder = cropOrder,
+                HiddenCrops = hiddenCrops,
+                SelectedMonths = selectedMonths,
+                ModifiedAt = DateTime.UtcNow
+            });
+        }
+
+        await _appContext.SaveChangesAsync(cancellationToken);
+    }
+
+    // =========================================================================
+    // Query Library Operations
+    // =========================================================================
+
+    public async Task<List<QueryLibraryItem>> GetQueryLibraryAsync(CancellationToken cancellationToken = default)
+    {
+        return await _appContext.QueryLibrary
+            .AsNoTracking()
+            .Where(q => q.IsActive)
+            .OrderBy(q => q.Category)
+            .ThenBy(q => q.SortOrder)
+            .ThenBy(q => q.Name)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task LogQuerySearchAsync(string searchText, int? matchedQueryId, CancellationToken cancellationToken = default)
+    {
+        _appContext.QuerySearchLogs.Add(new QuerySearchLog
+        {
+            UserId = GetCurrentUser(),
+            SearchText = searchText,
+            MatchedQueryId = matchedQueryId,
+            Timestamp = DateTime.UtcNow
+        });
         await _appContext.SaveChangesAsync(cancellationToken);
     }
 }

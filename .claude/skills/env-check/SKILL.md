@@ -72,7 +72,14 @@ Verify these configuration files exist and are valid:
 | Angular | `environment.ts`, `angular.json` |
 | Node.js | `.env`, `config.json` |
 
-### Step 5: Generate Report
+### Step 5: Check Audit Configuration
+
+Check whether `.claude/rules/project-config.md` exists. This file configures the scope-based audit skills (`/audit-method`, `/audit-component`, `/audit-feature`, `/audit-arch`, `/audit-models`, `/audit-error-paths`, `/audit-integrations`).
+
+- **If present:** Verify it has been filled in (not just the blank template with HTML comments). Check that at minimum the Project Identity and Architecture Layers sections are populated.
+- **If missing:** Flag it as optional but recommended. Note that scope-based audit skills will still work via auto-discovery but produce more accurate results with explicit configuration. The template is available in the dev-standards starter-pack.
+
+### Step 6: Generate Report
 
 ```text
 ENVIRONMENT CHECK COMPLETE
@@ -94,6 +101,9 @@ Dependencies:
 Configuration:
 - [config file]: [Found / Missing]
 - [config file]: [Found / Missing]
+
+Audit Configuration:
+- .claude/rules/project-config.md: [Configured / Template Only / Missing]
 
 Status: [Ready / Action Required]
 

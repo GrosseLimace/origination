@@ -20,3 +20,4 @@ export * from './bid-sheet.model';
 export * from './commodity-conversion.model';
 export * from './harvest-window.model';
 export * from './usage-dashboard.model';
+export * from './query-library.model';

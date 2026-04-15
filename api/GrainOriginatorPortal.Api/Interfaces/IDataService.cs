@@ -29,6 +29,9 @@ public interface IDataService
     /// <summary>Gets a single active customer by their source system customer identifier.</summary>
     Task<Customer?> GetCustomerBySourceIdAsync(string sourceCustomerId, CancellationToken cancellationToken = default);
 
+    /// <summary>Gets customers whose ProducerDetails.LinkedProducerIds contains the given source customer id — i.e. customers that link TO this one (incoming links).</summary>
+    Task<List<Customer>> GetCustomersLinkedToAsync(string sourceCustomerId, CancellationToken cancellationToken = default);
+
     /// <summary>Updates contact and relationship fields on an existing customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>
     /// <param name="location">The customer's location string.</param>
@@ -97,6 +100,14 @@ public interface IDataService
     /// <param name="farmId">The farm's string identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<List<Contract>> GetContractsByFarmAsync(string farmId, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets historical closed contracts for a customer from base.Contract (used by Contract Pacing year-over-year comparison).</summary>
+    /// <param name="customerId">The internal customer id.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<List<Contract>> GetHistoricalContractsForPacingAsync(long customerId, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets all purchase contracts (open + closed) from base.Contract for a specific crop year, scoped to the given trade units. Used by the Planting Intentions Dashboard's Harvest &amp; Contracts tab so historical years aren't missing closed contracts.</summary>
+    Task<List<Contract>> GetContractsByCropYearAsync(int cropYear, List<string>? tradeUnits, CancellationToken cancellationToken = default);
 
     /// <summary>Gets contracts matching a specific SourceContractId (used for entitlement resolution).</summary>
     /// <param name="sourceContractId">The source system contract identifier.</param>
@@ -380,7 +391,7 @@ public interface IDataService
     Task DeleteBidSheetLocationAsync(int id, CancellationToken cancellationToken = default);
 
     /// <summary>Deletes all bids for a specific commodity on a location.</summary>
-    Task DeleteBidSheetBidsAsync(int locationId, string commodityCode, CancellationToken cancellationToken = default);
+    Task DeleteBidSheetBidsAsync(int locationId, string commodityCode, int? month = null, CancellationToken cancellationToken = default);
 
     /// <summary>Bulk upserts bids by finding or creating locations, then upserting each bid by (LocationId, CommodityCode, CropYear).</summary>
     Task BulkUpsertBidSheetBidsAsync(IEnumerable<GrainOriginatorPortal.Api.Models.Requests.UpsertBidSheetBidRequest> requests, string tradeUnitCode, string userId, CancellationToken cancellationToken = default);
@@ -391,18 +402,28 @@ public interface IDataService
     /// <summary>Gets the distinct commodity codes that have bids for a trade unit.</summary>
     Task<List<string>> GetBidCommoditiesAsync(string tradeUnitCode, CancellationToken cancellationToken = default);
 
-    /// <summary>Gets the reference elevator for a user and trade unit. Returns null if not set.</summary>
-    Task<BidSheetReference?> GetBidSheetReferenceAsync(string userId, string tradeUnitCode, CancellationToken cancellationToken = default);
-
-    /// <summary>Creates or updates the reference location for a user and trade unit.</summary>
-    Task SetBidSheetReferenceAsync(string userId, string tradeUnitCode, int locationId, string name, CancellationToken cancellationToken = default);
-
-    /// <summary>Clears the reference location for a user and trade unit.</summary>
-    Task ClearBidSheetReferenceAsync(string userId, string tradeUnitCode, CancellationToken cancellationToken = default);
+    /// <summary>Gets the distinct months that have bids for a trade unit and crop year.</summary>
+    Task<List<int>> GetBidMonthsAsync(string tradeUnitCode, int cropYear, CancellationToken cancellationToken = default);
 
     /// <summary>Gets the saved location order for a user and trade unit key. Returns null if not set.</summary>
     Task<BidSheetLocationOrder?> GetBidSheetLocationOrderAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken = default);
 
     /// <summary>Creates or updates the location order for a user and trade unit key.</summary>
     Task SetBidSheetLocationOrderAsync(string userId, string tradeUnitKey, string locationOrderJson, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets the saved bid sheet preferences (e.g. selected crop) for a user and trade unit key. Returns null if not set.</summary>
+    Task<BidSheetPreference?> GetBidSheetPreferenceAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken = default);
+
+    /// <summary>Creates or updates the bid sheet preferences (crop, month, year) for a user and trade unit key.</summary>
+    Task SetBidSheetPreferenceAsync(string userId, string tradeUnitKey, string? cropCode, int? month, int? cropYear, string? cropOrder = null, string? hiddenCrops = null, string? selectedMonths = null, CancellationToken cancellationToken = default);
+
+    // =========================================================================
+    // Query Library Operations
+    // =========================================================================
+
+    /// <summary>Gets all active query library items, sorted by category then sort order.</summary>
+    Task<List<QueryLibraryItem>> GetQueryLibraryAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Logs a user's query library search for gap analysis.</summary>
+    Task LogQuerySearchAsync(string searchText, int? matchedQueryId, CancellationToken cancellationToken = default);
 }

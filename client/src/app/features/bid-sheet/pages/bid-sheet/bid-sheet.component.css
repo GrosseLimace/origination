@@ -1,0 +1,15 @@
+:host {
+  display: block;
+  height: calc(100vh - 160px);
+}
+
+/* CDK drag-drop styling for the edit bids grid */
+::ng-deep .cdk-drag-placeholder {
+  opacity: 0.3;
+}
+
+::ng-deep .cdk-drag-preview {
+  background: white;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+}

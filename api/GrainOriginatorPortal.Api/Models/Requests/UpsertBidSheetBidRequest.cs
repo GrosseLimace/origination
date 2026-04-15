@@ -34,6 +34,8 @@ public class UpsertBidSheetBidRequest
     [Required]
     public int CropYear { get; set; }
 
+    public int Month { get; set; } = 0; // 0=yearly, 1-12=monthly
+
     [Required, MaxLength(50)]
     public string Bid { get; set; } = string.Empty;
 }

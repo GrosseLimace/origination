@@ -7,7 +7,7 @@ import { MsalService } from '@azure/msal-angular';
 import { AppStateService } from './app-state.service';
 
 /** Minutes of inactivity before automatic logout. */
-const IDLE_TIMEOUT_MINUTES = 30;
+const IDLE_TIMEOUT_MINUTES = 480; // 8 hours
 
 @Injectable({ providedIn: 'root' })
 export class IdleTimeoutService {

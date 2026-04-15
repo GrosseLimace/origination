@@ -1,5 +1,5 @@
 import { Injectable, signal, computed } from '@angular/core';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, Commodity, CommodityConversion, HarvestWindow, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, RefinementFilters, ContractPricingLine } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, Commodity, CommodityConversion, HarvestWindow, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, RefinementFilters, ContractPricingLine, QueryLibraryItem } from '@models';
 import { ProducerDetails } from '../../models/producer-details.model';
 
 export interface DashboardCacheEntry {
@@ -21,7 +21,6 @@ export interface BuildListState {
   hasGenerated: boolean;
   showMap: boolean;
   detectedState: string | null;
-  queryUnrecognized: boolean;
   tradeUnits: string[];
   appliedRefinements?: RefinementFilters;
   notContactedDaysInput?: string;
@@ -29,6 +28,7 @@ export interface BuildListState {
   manuallyIncludedCustomerIds?: number[];
   manuallyExcludedCustomerIds?: number[];
   showManageMembersPanel?: boolean;
+  selectedLibraryQuery?: QueryLibraryItem | null;
 }
 
 @Injectable({
