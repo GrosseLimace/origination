@@ -1,0 +1,18 @@
+<Project>
+  <PropertyGroup>
+    <!--
+      Security finding B6 / L-001 — enable NuGet lockfiles so transitive .NET dependency
+      versions are pinned and reproducible across restores. Each .csproj gets a
+      packages.lock.json that is committed to source control.
+    -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+
+    <!--
+      In CI, require the lockfile to be in sync with the .csproj. If a dev adds or bumps
+      a package without also updating the lockfile, CI fails instead of silently
+      resolving to a new transitive graph. Local `dotnet restore` remains unlocked so
+      developers can add dependencies without extra steps.
+    -->
+    <RestoreLockedMode Condition="'$(ContinuousIntegrationBuild)' == 'true'">true</RestoreLockedMode>
+  </PropertyGroup>
+</Project>
