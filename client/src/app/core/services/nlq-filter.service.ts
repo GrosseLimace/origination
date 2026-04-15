@@ -843,7 +843,7 @@ export class NlqFilterService {
     result = this.applyStateFilter(result, detectedState);
     result = this.applyAcresFilter(lowerQuery, result);
     result = this.applyCustomerInfoFilters(lowerQuery, result, context.tickets, context.contracts);
-    result = this.applyContactFilters(lowerQuery, result, latestNoteByCustomer, customerIdsWithNotes);
+    result = this.applyContactFilters(lowerQuery, result, latestNoteByCustomer, customerIdsWithNotes, context.notes, context.customers);
     result = this.applyNoteFilters(lowerQuery, result, context.notes, context.customers);
     result = this.applyStorageFilters(lowerQuery, result, context.storedGrain);
     result = this.applyPlantingFilters(lowerQuery, result, context.plantingIntentions);
@@ -1380,7 +1380,9 @@ export class NlqFilterService {
     lowerQuery: string,
     result: Customer[],
     latestNoteByCustomer: Map<number, { note: Note; time: number }>,
-    customerIdsWithNotes: Set<number>
+    customerIdsWithNotes: Set<number>,
+    notes: Note[] = [],
+    customers: Customer[] = []
   ): Customer[] {
     const isNotContactedQuery = lowerQuery.includes('have not contacted') ||
                                 lowerQuery.includes("haven't contacted") ||
@@ -1388,20 +1390,80 @@ export class NlqFilterService {
                                 lowerQuery.includes('never contacted') ||
                                 (lowerQuery.includes('contacted') && lowerQuery.includes('over') && lowerQuery.includes('days'));
 
+    // Detect "never contacted BY <name>" or "<name> has never contacted" — author-scoped
+    // If an author is specified, filter by notes where createdBy matches the author name.
+    let authorName: string | null = null;
+    const authorNotMatch =
+      lowerQuery.match(/(?:have|has)\s+(?:never|not|n't)\s+(?:contacted|called|reached|noted)\s+by\s+(.+?)(?:\s|$)/) ||
+      lowerQuery.match(/(?:never|not|haven'?t)\s+(?:contacted|called|reached|noted)\s+by\s+(.+?)(?:\s|$)/) ||
+      lowerQuery.match(/customers?\s+(\w+(?:\s+\w+)?)\s+(?:has|have)\s+(?:never|not|n't)\s+(?:contacted|called|reached|noted)/) ||
+      lowerQuery.match(/(\w+(?:\s+\w+)?)\s+(?:has|have)\s+(?:never|not|n't)\s+(?:contacted|called|reached|noted)/);
+    if (authorNotMatch) authorName = authorNotMatch[1].trim();
+
+    // Build author-scoped note indexes if author detected
+    let authorContactedIds: Set<number> | null = null;
+    let authorLatestNoteByCustomer: Map<number, { time: number }> | null = null;
+    if (authorName && notes.length > 0) {
+      const authorLower = authorName.toLowerCase();
+      const parseUtc = (ts: string | Date) => {
+        const raw = typeof ts === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
+        return new Date(raw).getTime();
+      };
+      // Index notes by code for author-filtered lookups (matching linked producer logic)
+      const authorNoteTimeByCode = new Map<string, number>();
+      for (const n of notes) {
+        const createdByMatch = n.createdBy?.toLowerCase().includes(authorLower);
+        const modifiedByMatch = n.modifiedBy?.toLowerCase().includes(authorLower);
+        if (!createdByMatch && !modifiedByMatch) continue;
+        if (!n.customerCode) continue;
+        const time = parseUtc(n.createdAt);
+        const existing = authorNoteTimeByCode.get(n.customerCode);
+        if (!existing || time > existing) authorNoteTimeByCode.set(n.customerCode, time);
+      }
+      authorContactedIds = new Set<number>();
+      authorLatestNoteByCustomer = new Map<number, { time: number }>();
+      // Resolve via bidirectional linked producers (same as main index)
+      const incomingCodeLinks = new Map<string, Set<string>>();
+      for (const c of customers) {
+        if (!c.sourceCustomerId) continue;
+        for (const linkedCode of (c.linkedProducerIds || [])) {
+          if (!incomingCodeLinks.has(linkedCode)) incomingCodeLinks.set(linkedCode, new Set());
+          incomingCodeLinks.get(linkedCode)!.add(c.sourceCustomerId);
+        }
+      }
+      for (const customer of customers) {
+        const allCodes = new Set<string>();
+        if (customer.sourceCustomerId) allCodes.add(customer.sourceCustomerId);
+        for (const linkedCode of (customer.linkedProducerIds || [])) allCodes.add(linkedCode);
+        for (const incomingCode of (incomingCodeLinks.get(customer.sourceCustomerId || '') || new Set<string>())) {
+          allCodes.add(incomingCode);
+        }
+        let latest = 0;
+        for (const code of allCodes) {
+          const t = authorNoteTimeByCode.get(code);
+          if (t && t > latest) latest = t;
+        }
+        if (latest > 0) {
+          authorContactedIds.add(customer.id);
+          authorLatestNoteByCustomer.set(customer.id, { time: latest });
+        }
+      }
+    }
+
     if (isNotContactedQuery) {
-      // Narrow pattern: only match a day count when it follows contact-related words,
-      // so "delivered more than 30 days ago" doesn't accidentally set a contact cutoff.
       const notContactedMatch = lowerQuery.match(
         /(?:not contacted|no contact|not called|no call|haven'?t (?:called|contacted|reached)|not spoken|not contacted in|contacted over)\s*(?:in|for|within)?\s*(?:the\s+)?(?:last|past)?\s*(?:over\s+)?(\d+)\s*days?/
       ) || lowerQuery.match(/(\d+)\s*days?\s*(?:ago)?\s*(?:not\s+contacted|no\s+contact|without\s+contact)/);
       if (notContactedMatch) {
         const cutoffTime = Date.now() - parseInt(notContactedMatch[1]) * 86400000;
+        const mapToUse = authorLatestNoteByCustomer || latestNoteByCustomer;
         result = result.filter(c => {
-          const entry = latestNoteByCustomer.get(c.id);
+          const entry = mapToUse.get(c.id);
           return !entry || entry.time < cutoffTime;
         });
       } else if (lowerQuery.includes('never contacted') || lowerQuery.includes('no contact history')) {
-        result = result.filter(c => !customerIdsWithNotes.has(c.id));
+        const contactedSet = authorContactedIds || customerIdsWithNotes;
+        result = result.filter(c => !contactedSet.has(c.id));
       }
       return result;
     }
@@ -2377,13 +2439,15 @@ export class NlqFilterService {
 
     if (lowerQuery.includes('unapplied ticket') || lowerQuery.includes('unmatched ticket') ||
         lowerQuery.includes('tickets not applied') || lowerQuery.includes('unapplied')) {
+      // Use the server-provided isApplied flag directly — true unapplied tickets
+      // (no ctrmContractNumber or isApplied=false), not affected by contract filtering.
       result = result.filter(c =>
-        getCustomerTickets(c).some(t => !isTicketAppliedToOpenContract(t))
+        getCustomerTickets(c).some(t => !t.isApplied)
       );
     }
     if (lowerQuery.includes('applied ticket') && !lowerQuery.includes('unapplied')) {
       result = result.filter(c =>
-        getCustomerTickets(c).some(t => isTicketAppliedToOpenContract(t))
+        getCustomerTickets(c).some(t => t.isApplied)
       );
     }
 
