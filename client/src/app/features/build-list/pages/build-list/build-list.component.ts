@@ -1185,6 +1185,7 @@ export class BuildListComponent {
 
     this.queryText.set(item.queryText);
     this.selectedLibraryQuery.set(item);
+    this.usageTracking.postClickEvent('interaction', 'build-a-list', 'library-query-selected', item.id.toString());
     // Always route through processQuery — it handles data loading (tickets, storage),
     // spinner state, and the NLQ filter. Avoids the edge case where _applyNlqFilter
     // runs before secondary data (storage, tickets) has loaded.
@@ -1203,6 +1204,7 @@ export class BuildListComponent {
         this.apiService.logQuerySearch(text.trim())
           .pipe(takeUntilDestroyed(this.destroyRef))
           .subscribe();
+        this.usageTracking.postClickEvent('interaction', 'build-a-list', 'library-search-no-match', text.trim());
       }
     }, 2000);
   }
@@ -1220,11 +1222,11 @@ export class BuildListComponent {
         this.requestQueryText.set('');
         this.showRequestForm.set(false);
       });
+    this.usageTracking.postClickEvent('interaction', 'build-a-list', 'query-request-submitted', text);
   }
 
   processQuery(overrideTradeUnits?: string[]): void {
     if (!this.queryText().trim()) return;
-    this.usageTracking.postClickEvent('interaction', 'build-a-list', 'natural-language-query');
     // Don't run if core data hasn't loaded yet — the staged query will auto-run when data arrives
     // (hasGenerated stays false so _loadFresh's auto-run at completion picks it up)
     if (!this.coreDataLoaded()) {
@@ -1468,6 +1470,7 @@ export class BuildListComponent {
 
   loadSavedList(list: SavedList): void {
     if (this.loading() || this.isProcessing()) return;
+    this.usageTracking.postClickEvent('interaction', 'build-a-list', 'saved-list-loaded', list.id.toString());
     this.activeSavedList.set(list);
     this.queryText.set(list.query);
     this.pendingRefinements.set(list.filters ? { ...list.filters } : {});
@@ -1608,6 +1611,7 @@ export class BuildListComponent {
     this.memberSearchTerm.set('');
     this.memberSearchResults.set([]);
     this.memberInResultsMatches.set([]);
+    this.usageTracking.postClickEvent('interaction', 'build-a-list', 'member-added', customer.id.toString());
   }
 
   excludeCustomerFromList(customerId: number): void {
@@ -1627,6 +1631,7 @@ export class BuildListComponent {
     this.memberSearchTerm.set('');
     this.memberSearchResults.set([]);
     this.memberInResultsMatches.set([]);
+    this.usageTracking.postClickEvent('interaction', 'build-a-list', 'member-excluded', customerId.toString());
   }
 
   restoreCustomer(customerId: number): void {
@@ -1932,6 +1937,7 @@ export class BuildListComponent {
   confirmDeleteList(): void {
     if (!this.deleteListId()) return;
     const listId = this.deleteListId()!;
+    this.usageTracking.postClickEvent('interaction', 'build-a-list', 'saved-list-deleted', listId.toString());
     this.closeDeleteDialog();
 
     // Remove from local array immediately for instant UI feedback

@@ -1199,6 +1199,7 @@ export class BidSheetComponent {
     }
     this._buildEditGrid(year);
     this.editBidsMode.set(true);
+    this.usageTracking.postClickEvent('interaction', 'bidsheet', 'edit-bids-opened');
 
     // Focus the first crop input for the selected location
     if (focusLocation) {
@@ -1580,6 +1581,9 @@ export class BidSheetComponent {
     const alreadyOpen = this.panelSelectedLocation() === item.name;
     this.panelSelectedLocation.set(alreadyOpen ? '' : item.name);
     this.showPanel.set(true);
+    if (!alreadyOpen) {
+      this.usageTracking.postClickEvent('interaction', 'bidsheet', 'location-selected', item.name);
+    }
 
     // Populate the TU dropdown if no individual TU is selected (group-only counts as empty here),
     // or if the location's TU isn't already in the individual selection.
@@ -1607,10 +1611,12 @@ export class BidSheetComponent {
     const name = this.panelSelectedLocation();
     if (!name) return;
     // Toggle: clicking again clears the reference
-    if (this.selectedLocationName() === name) {
-      this.selectedLocationName.set('');
-    } else {
+    const isSetting = this.selectedLocationName() !== name;
+    if (isSetting) {
       this.selectedLocationName.set(name);
+      this.usageTracking.postClickEvent('interaction', 'bidsheet', 'reference-set', name);
+    } else {
+      this.selectedLocationName.set('');
     }
     this.filterBids();
     this._refreshMapMarkers();
@@ -1644,6 +1650,7 @@ export class BidSheetComponent {
         this.toastService.success(`Deleted ${name}`);
         this.filterBids();
         this._refreshMapMarkers();
+        this.usageTracking.postClickEvent('interaction', 'bidsheet', 'location-deleted', name);
       },
       error: () => {
         this.showDeleteLocationConfirm.set(false);

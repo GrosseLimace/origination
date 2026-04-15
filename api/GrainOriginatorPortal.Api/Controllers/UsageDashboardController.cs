@@ -503,8 +503,8 @@ public class UsageDashboardController : ControllerBase
         return Ok(result);
     }
 
-    [HttpGet("example-query-usage")]
-    public async Task<ActionResult<List<ExampleQueryUsageDto>>> GetExampleQueryUsage(
+    [HttpGet("query-library-usage")]
+    public async Task<ActionResult<List<QueryLibraryUsageDto>>> GetQueryLibraryUsage(
         [FromQuery] DateTime from, [FromQuery] DateTime to,
         [FromQuery] string? tradeUnitKey = null, CancellationToken ct = default)
     {
@@ -512,19 +512,61 @@ public class UsageDashboardController : ControllerBase
         var toUtc = to.ToUniversalTime().Date.AddDays(1);
         var userIds = await GetFilteredUserIdsAsync(tradeUnitKey, ct);
 
-        var queryUsage = await _appDb.UserClickEvents
+        // Group click events by query ID (TargetId) to find most-used library queries
+        var rawUsage = await _appDb.UserClickEvents
             .Where(c => c.Timestamp >= fromUtc && c.Timestamp < toUtc
                 && c.EventType == "interaction"
                 && c.FeatureCode == "build-a-list"
-                && c.SubFeatureCode == "example-queries"
+                && c.SubFeatureCode == "library-query-selected"
                 && c.TargetId != null
                 && userIds.Contains(c.UserId))
             .GroupBy(c => c.TargetId!)
-            .Select(g => new ExampleQueryUsageDto { QueryText = g.Key, TimesUsed = g.Count() })
+            .Select(g => new { QueryId = g.Key, TimesUsed = g.Count() })
             .OrderByDescending(q => q.TimesUsed)
             .ToListAsync(ct);
 
-        return Ok(queryUsage);
+        // Resolve query IDs to their display name from the QueryLibrary table
+        var ids = rawUsage
+            .Select(r => int.TryParse(r.QueryId, out var id) ? id : 0)
+            .Where(id => id > 0)
+            .ToList();
+        var names = await _appDb.QueryLibrary
+            .Where(q => ids.Contains(q.Id))
+            .ToDictionaryAsync(q => q.Id.ToString(), q => q.Name, ct);
+
+        var result = rawUsage.Select(r => new QueryLibraryUsageDto
+        {
+            QueryText = names.TryGetValue(r.QueryId, out var name) ? name : $"Query #{r.QueryId}",
+            TimesUsed = r.TimesUsed
+        }).ToList();
+
+        return Ok(result);
+    }
+
+    [HttpGet("query-search-gaps")]
+    public async Task<ActionResult<List<QuerySearchGapDto>>> GetQuerySearchGaps(
+        [FromQuery] DateTime from, [FromQuery] DateTime to,
+        [FromQuery] string? tradeUnitKey = null, CancellationToken ct = default)
+    {
+        var fromUtc = from.ToUniversalTime();
+        var toUtc = to.ToUniversalTime().Date.AddDays(1);
+        var userIds = await GetFilteredUserIdsAsync(tradeUnitKey, ct);
+
+        // Shows search terms that didn't match any library query — signal for what to add next
+        var gaps = await _appDb.UserClickEvents
+            .Where(c => c.Timestamp >= fromUtc && c.Timestamp < toUtc
+                && c.EventType == "interaction"
+                && c.FeatureCode == "build-a-list"
+                && c.SubFeatureCode == "library-search-no-match"
+                && c.TargetId != null
+                && userIds.Contains(c.UserId))
+            .GroupBy(c => c.TargetId!)
+            .Select(g => new QuerySearchGapDto { SearchText = g.Key, TimesSearched = g.Count() })
+            .OrderByDescending(q => q.TimesSearched)
+            .Take(20)
+            .ToListAsync(ct);
+
+        return Ok(gaps);
     }
 
     [HttpPost("click-event")]

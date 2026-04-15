@@ -15,7 +15,7 @@ import {
   UsageDashboardSummary, UsageDashboardUser,
   UsageDashboardInactiveUser, DailyActive,
   FeatureSessions, WeeklyTrend, ActivityBreakdown, UnderusedFeature,
-  ExampleQueryUsage
+  QueryLibraryUsage, QuerySearchGap
 } from '@models';
 
 @Component({
@@ -56,8 +56,10 @@ export class UsageDashboardComponent {
   readonly activityBreakdown = signal<ActivityBreakdown[]>([]);
   readonly inactiveUsers = signal<UsageDashboardInactiveUser[]>([]);
   readonly underusedFeatures = signal<UnderusedFeature[]>([]);
-  readonly exampleQueryUsage = signal<ExampleQueryUsage[]>([]);
-  readonly exampleQueriesOpen = signal(false);
+  readonly queryLibraryUsage = signal<QueryLibraryUsage[]>([]);
+  readonly queryLibraryOpen = signal(false);
+  readonly querySearchGaps = signal<QuerySearchGap[]>([]);
+  readonly querySearchGapsOpen = signal(false);
   readonly loading = signal(false);
 
   // Trade unit key derived from app state (shared trade unit selector)
@@ -306,9 +308,13 @@ export class UsageDashboardComponent {
 
     this.loadInactive(from, to, tradeUnitKey, this.inactiveDaysThreshold());
 
-    this.apiService.getUsageExampleQueryUsage(from, to, tradeUnitKey)
+    this.apiService.getUsageQueryLibraryUsage(from, to, tradeUnitKey)
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({ next: data => this.exampleQueryUsage.set(data), error: () => {} });
+      .subscribe({ next: data => this.queryLibraryUsage.set(data), error: () => {} });
+
+    this.apiService.getUsageQuerySearchGaps(from, to, tradeUnitKey)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({ next: data => this.querySearchGaps.set(data), error: () => {} });
 
     this.apiService.getUsageUnderusedFeatures(from, to, tradeUnitKey)
       .pipe(takeUntilDestroyed(this.destroyRef))

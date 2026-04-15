@@ -29,7 +29,8 @@ import {
   UsageDashboardInactiveUser,
   DailyActive,
   FeatureSessions,
-  ExampleQueryUsage,
+  QueryLibraryUsage,
+  QuerySearchGap,
   WeeklyTrend,
   ActivityBreakdown,
   UnderusedFeature,
@@ -745,8 +746,13 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  getUsageExampleQueryUsage(from: string, to: string, tradeUnitKey?: string): Observable<ExampleQueryUsage[]> {
-    return this.http.get<ExampleQueryUsage[]>(`${this.baseUrl}/usage-dashboard/example-query-usage`, { params: this.usageParams(from, to, tradeUnitKey) })
+  getUsageQueryLibraryUsage(from: string, to: string, tradeUnitKey?: string): Observable<QueryLibraryUsage[]> {
+    return this.http.get<QueryLibraryUsage[]>(`${this.baseUrl}/usage-dashboard/query-library-usage`, { params: this.usageParams(from, to, tradeUnitKey) })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  getUsageQuerySearchGaps(from: string, to: string, tradeUnitKey?: string): Observable<QuerySearchGap[]> {
+    return this.http.get<QuerySearchGap[]>(`${this.baseUrl}/usage-dashboard/query-search-gaps`, { params: this.usageParams(from, to, tradeUnitKey) })
       .pipe(catchError(e => this.handleError(e)));
   }
 

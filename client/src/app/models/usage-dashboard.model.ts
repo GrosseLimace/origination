@@ -68,9 +68,14 @@ export interface UnderusedFeature {
   sessionCount: number;
 }
 
-export interface ExampleQueryUsage {
+export interface QueryLibraryUsage {
   queryText: string;
   timesUsed: number;
+}
+
+export interface QuerySearchGap {
+  searchText: string;
+  timesSearched: number;
 }
 
 export interface ClickEventRequest {

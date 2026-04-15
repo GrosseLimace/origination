@@ -79,10 +79,16 @@ public class UnderusedFeatureDto
     public int SessionCount { get; set; }
 }
 
-public class ExampleQueryUsageDto
+public class QueryLibraryUsageDto
 {
     public string QueryText { get; set; } = string.Empty;
     public int TimesUsed { get; set; }
+}
+
+public class QuerySearchGapDto
+{
+    public string SearchText { get; set; } = string.Empty;
+    public int TimesSearched { get; set; }
 }
 
 public class ClickEventRequest
