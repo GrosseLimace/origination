@@ -36,6 +36,10 @@ export class CustomerListComponent {
   public notes = input<Note[]>([]);
   public loading = input(false);
   public producerDetailsMap = input(new Map<number, ProducerDetails>());
+  /** Extra customers fetched for incoming/outgoing linked-producer lookups (populated by the home
+   *  page when a customer is selected in no-TU mode). Folded into the incoming-link map so the
+   *  last-contacted date on the card reflects notes from reverse-linked producers. */
+  public linkedProducerCustomers = input<Customer[]>([]);
   public selectCustomer = output<Customer>();
   public clearSelection = output<void>();
 
@@ -144,6 +148,7 @@ export class CustomerListComponent {
       this.customers();
       this.filteredCustomers();
       this.notes();
+      this.linkedProducerCustomers();
       this._rebuildLastContactCache();
     });
 
@@ -453,10 +458,11 @@ export class CustomerListComponent {
     // and customers() input is empty). Fall back to customers() for TU-filtered loads.
     const customersToCache = this.filteredCustomers().length > 0 ? this.filteredCustomers() : this.customers();
 
-    // Build incoming-links map from the FULL customer list (not filteredCustomers) because
-    // filteredCustomers may hold stale objects from before _mergeProducerDetails populated
-    // linkedProducerIds. The full customers() list has the merged producer details.
-    const allCustomers = this.customers();
+    // Build incoming-links map from the FULL customer list + any linked producer customers
+    // fetched for selected customers (populated by home's _fetchMissingLinkedProducers). This
+    // makes last-contacted resolve notes from reverse-linked producers even in no-TU search mode
+    // where the main roster is empty.
+    const allCustomers = [...this.customers(), ...this.linkedProducerCustomers()];
     const linkedById = new Map<number, string[]>();
     for (const c of allCustomers) {
       if (c.linkedProducerIds?.length) linkedById.set(c.id, c.linkedProducerIds);

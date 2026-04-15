@@ -78,6 +78,18 @@ public class CustomersController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
+    /// <summary>Gets customers whose ProducerDetails.LinkedProducerIds contains the given source id —
+    /// i.e. customers that link TO this one (incoming / reverse links). Used by the cross-customer
+    /// search path so the customer profile can show bidirectional linked producers even when no TU
+    /// is selected.</summary>
+    [HttpGet("linked-to/{sourceId}")]
+    [ProducesResponseType(typeof(List<Customer>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<Customer>>> GetLinkedTo(string sourceId, CancellationToken cancellationToken = default)
+    {
+        return Ok(await _dataService.GetCustomersLinkedToAsync(sourceId, cancellationToken));
+    }
+
+    // -------------------------------------------------------------------------
     /// <summary>Updates an existing customer's contact and farm information.</summary>
     [HttpPut("{id:long}")]
     [ProducesResponseType(typeof(Customer), StatusCodes.Status200OK)]

@@ -29,6 +29,9 @@ public interface IDataService
     /// <summary>Gets a single active customer by their source system customer identifier.</summary>
     Task<Customer?> GetCustomerBySourceIdAsync(string sourceCustomerId, CancellationToken cancellationToken = default);
 
+    /// <summary>Gets customers whose ProducerDetails.LinkedProducerIds contains the given source customer id — i.e. customers that link TO this one (incoming links).</summary>
+    Task<List<Customer>> GetCustomersLinkedToAsync(string sourceCustomerId, CancellationToken cancellationToken = default);
+
     /// <summary>Updates contact and relationship fields on an existing customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>
     /// <param name="location">The customer's location string.</param>
@@ -412,7 +415,7 @@ public interface IDataService
     Task<BidSheetPreference?> GetBidSheetPreferenceAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken = default);
 
     /// <summary>Creates or updates the bid sheet preferences (crop, month, year) for a user and trade unit key.</summary>
-    Task SetBidSheetPreferenceAsync(string userId, string tradeUnitKey, string? cropCode, int? month, int? cropYear, CancellationToken cancellationToken = default);
+    Task SetBidSheetPreferenceAsync(string userId, string tradeUnitKey, string? cropCode, int? month, int? cropYear, string? cropOrder = null, string? hiddenCrops = null, string? selectedMonths = null, CancellationToken cancellationToken = default);
 
     // =========================================================================
     // Query Library Operations

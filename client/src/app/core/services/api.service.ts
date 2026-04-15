@@ -125,6 +125,12 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
+  /** Fetches customers whose linkedProducerIds contains the given source id (incoming links). */
+  getCustomersLinkedTo(sourceId: string): Observable<Customer[]> {
+    return this.http.get<Customer[]>(`${this.baseUrl}/customers/linked-to/${encodeURIComponent(sourceId)}`)
+      .pipe(catchError(() => of([] as Customer[])));
+  }
+
   /** Updates an existing customer's information (sends only fields accepted by UpdateCustomerRequest DTO) */
   updateCustomer(customer: Customer): Observable<Customer> {
     return this.http.put<Customer>(`${this.baseUrl}/customers/${customer.id}`, {
@@ -653,16 +659,16 @@ export class ApiService {
   }
 
   /** Gets saved bid sheet preferences (crop, month, year) for the current user and a trade unit key. */
-  getBidSheetPreference(tradeUnitKey: string): Observable<{ tradeUnitKey: string; cropCode: string | null; month: number | null; cropYear: number | null } | null> {
+  getBidSheetPreference(tradeUnitKey: string): Observable<{ tradeUnitKey: string; cropCode: string | null; month: number | null; cropYear: number | null; cropOrder: string | null; hiddenCrops: string | null; selectedMonths: string | null } | null> {
     return this._dedupe(`bidsheet-preference-${tradeUnitKey}`,
-      this.http.get<{ tradeUnitKey: string; cropCode: string | null; month: number | null; cropYear: number | null }>(`${this.baseUrl}/bidsheet/preference`, { params: { tradeUnitKey } })
+      this.http.get<{ tradeUnitKey: string; cropCode: string | null; month: number | null; cropYear: number | null; cropOrder: string | null; hiddenCrops: string | null; selectedMonths: string | null }>(`${this.baseUrl}/bidsheet/preference`, { params: { tradeUnitKey } })
         .pipe(catchError(() => of(null)))
     );
   }
 
-  /** Saves bid sheet preferences (crop, month, year) for the current user and a trade unit key. */
-  setBidSheetPreference(tradeUnitKey: string, cropCode: string | null, month: number | null, cropYear: number | null): Observable<void> {
-    return this.http.put<void>(`${this.baseUrl}/bidsheet/preference`, { tradeUnitKey, cropCode, month, cropYear })
+  /** Saves bid sheet preferences for the current user and a trade unit key. */
+  setBidSheetPreference(tradeUnitKey: string, cropCode: string | null, month: number | null, cropYear: number | null, cropOrder?: string | null, hiddenCrops?: string | null, selectedMonths?: string | null): Observable<void> {
+    return this.http.put<void>(`${this.baseUrl}/bidsheet/preference`, { tradeUnitKey, cropCode, month, cropYear, cropOrder, hiddenCrops, selectedMonths })
       .pipe(catchError(e => this.handleError(e)));
   }
 
