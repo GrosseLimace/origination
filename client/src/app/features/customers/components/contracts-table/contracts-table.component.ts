@@ -563,7 +563,8 @@ export class ContractsTableComponent {
   }
 
   getAppliedTickets(contract: Contract): Ticket[] {
-    // Only consider tickets that are actually applied (contract prefix type 'P' or 'S' in ctrmContractNumber)
+    // Only consider tickets that are actually applied (isApplied = prefix is not U or L).
+    // The sourceContractId match below further narrows to tickets on this specific P/S contract.
     return this.tickets().filter(t => {
       if (!t.isApplied) return false;
 

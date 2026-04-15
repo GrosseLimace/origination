@@ -116,8 +116,8 @@ export class TicketsTableComponent {
   }
 
   get unappliedTickets(): Ticket[] {
-    // isApplied = first char of ctrmContractNumber is 'P' or 'S' (contract prefix type) — server-computed.
-    // TicketType alone is unreliable: a U-type ticket can legitimately be applied to a contract.
+    // A ticket is "unapplied" only when its contract prefix is U (Unload) or L (Loadout).
+    // C-prefix (Customer Storage), P, S, B, and no-contract tickets are considered applied.
     return this.tickets()
       .filter(t => !t.isApplied)
       .sort((a, b) => {
