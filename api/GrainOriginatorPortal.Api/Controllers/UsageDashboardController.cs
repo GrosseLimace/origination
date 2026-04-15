@@ -275,6 +275,7 @@ public class UsageDashboardController : ControllerBase
             ["build-a-list"] = "Build a List",
             ["insights"] = "Actionable Insights",
             ["bidsheet"] = "Bid Sheet",
+            ["position-report"] = "Position Report",
         };
 
         // Build results: for "all" show time per screen, for specific screen show sub-feature click counts
@@ -374,7 +375,9 @@ public class UsageDashboardController : ControllerBase
         var userIds = await GetFilteredUserIdsAsync(tradeUnitKey, ct);
         var displayNames = await GetDisplayNameLookupAsync(userIds, ct);
 
-        // Activity data per user (date filtered only, NOT trade-unit filtered on the data itself)
+        // Notes created and planting intentions added are authoritative via POST API calls
+        // (server-side UserActivity log). Everything else is driven by explicit frontend
+        // click events (UserClickEvent) so counts reflect user intent — not list-loads.
         var userIdList = userIds.ToList();
         var activityByUser = await _appDb.UserActivities
             .Where(a => a.Timestamp >= fromUtc && a.Timestamp < toUtc && userIdList.Contains(a.UserId))
@@ -382,37 +385,48 @@ public class UsageDashboardController : ControllerBase
             .Select(g => new
             {
                 UserId = g.Key,
-                ProfilesViewed = g.Count(a => a.SubFeatureCode == "customer-details"),
-                ContractsViewed = g.Count(a => a.SubFeatureCode == "contracts"),
                 NotesTaken = g.Count(a => a.SubFeatureCode == "notes-create" && a.HttpMethod == "POST"),
-                ListsBuilt = g.Count(a => a.FeatureCode == "build-a-list" && a.SubFeatureCode == "save-list"),
-                PlantingIntentionsAdded = g.Count(a => a.SubFeatureCode == "planting-intentions" && a.HttpMethod == "POST"),
-                ProducerDetails = g.Count(a => a.SubFeatureCode == "producer-details")
+                PlantingIntentionsAdded = g.Count(a => a.SubFeatureCode == "planting-intentions" && a.HttpMethod == "POST")
             })
             .ToListAsync(ct);
+        var activityMap = activityByUser.ToDictionary(a => a.UserId, StringComparer.OrdinalIgnoreCase);
 
-        // Calls/emails from click events (date filtered only)
-        var clicksByUser = await _appDb.UserClickEvents
-            .Where(c => c.Timestamp >= fromUtc && c.Timestamp < toUtc
-                && userIdList.Contains(c.UserId)
-                && (c.EventType == "call_click" || c.EventType == "email_click"))
+        // All interaction-style counts come from the explicit click events the UI posts.
+        var clickCounts = await _appDb.UserClickEvents
+            .Where(c => c.Timestamp >= fromUtc && c.Timestamp < toUtc && userIdList.Contains(c.UserId))
             .GroupBy(c => c.UserId)
-            .Select(g => new { UserId = g.Key, Count = g.Count() })
+            .Select(g => new
+            {
+                UserId = g.Key,
+                ProfilesViewed   = g.Count(c => c.FeatureCode == "customers"    && c.SubFeatureCode == "profile-opened"    && c.EventType == "interaction"),
+                ContractsViewed  = g.Count(c => c.FeatureCode == "customers"    && c.SubFeatureCode == "contracts"         && c.EventType == "interaction"),
+                CallsEmails      = g.Count(c => c.EventType   == "call_click"   || c.EventType     == "email_click"),
+                ListsBuilt       = g.Count(c => c.FeatureCode == "build-a-list" && c.SubFeatureCode == "save-list"),
+                ProducerDetails  = g.Count(c => c.FeatureCode == "customers"    && c.SubFeatureCode == "producer-details"  && c.EventType == "interaction")
+            })
             .ToListAsync(ct);
-        var clicksMap = clicksByUser.ToDictionary(c => c.UserId, c => c.Count, StringComparer.OrdinalIgnoreCase);
+        var clicksMap = clickCounts.ToDictionary(c => c.UserId, StringComparer.OrdinalIgnoreCase);
 
-        return Ok(activityByUser.Select(d => new ActivityBreakdownDto
+        // Union of user ids that have any tracked activity in the range
+        var allUserIds = activityMap.Keys.Union(clicksMap.Keys, StringComparer.OrdinalIgnoreCase).ToList();
+
+        return Ok(allUserIds.Select(id =>
         {
-            UserId = d.UserId,
-            DisplayName = displayNames.GetValueOrDefault(d.UserId, d.UserId),
-            ProfilesViewed = d.ProfilesViewed,
-            ContractsViewed = d.ContractsViewed,
-            NotesTaken = d.NotesTaken,
-            CallsEmails = clicksMap.GetValueOrDefault(d.UserId, 0),
-            ListsBuilt = d.ListsBuilt,
-            PlantingIntentionsAdded = d.PlantingIntentionsAdded,
-            ProducerDetails = d.ProducerDetails
-        }).OrderByDescending(d => d.ProfilesViewed + d.ContractsViewed + d.NotesTaken).ToList());
+            activityMap.TryGetValue(id, out var a);
+            clicksMap.TryGetValue(id, out var c);
+            return new ActivityBreakdownDto
+            {
+                UserId                  = id,
+                DisplayName             = displayNames.GetValueOrDefault(id, id),
+                ProfilesViewed          = c?.ProfilesViewed          ?? 0,
+                ContractsViewed         = c?.ContractsViewed         ?? 0,
+                NotesTaken              = a?.NotesTaken              ?? 0,
+                CallsEmails             = c?.CallsEmails             ?? 0,
+                ListsBuilt              = c?.ListsBuilt              ?? 0,
+                PlantingIntentionsAdded = a?.PlantingIntentionsAdded ?? 0,
+                ProducerDetails         = c?.ProducerDetails         ?? 0
+            };
+        }).OrderByDescending(d => d.ProfilesViewed + d.ContractsViewed + d.NotesTaken + d.CallsEmails + d.ListsBuilt + d.PlantingIntentionsAdded + d.ProducerDetails).ToList());
     }
 
     [HttpGet("inactive")]
@@ -483,6 +497,7 @@ public class UsageDashboardController : ControllerBase
             ["build-a-list"] = "Build a List",
             ["insights"] = "Actionable Insights",
             ["bidsheet"] = "Bid Sheet",
+            ["position-report"] = "Position Report",
         };
 
         var featureData = await _appDb.FeatureUsageDailies

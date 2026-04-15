@@ -1969,6 +1969,7 @@ export class BuildListComponent {
   }
 
   selectCustomer(customer: Customer): void {
+    this.usageTracking.trackProfileOpened(customer.id.toString());
     this.router.navigate(['/'], { queryParams: { customerId: customer.id } });
   }
 

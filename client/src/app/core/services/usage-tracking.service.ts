@@ -45,6 +45,10 @@ export class UsageTrackingService {
   }
 
   // Customer Page interactions
+  trackProfileOpened(customerId: string): void {
+    this.postClickEvent('interaction', 'customers', 'profile-opened', customerId);
+  }
+
   trackCallClick(customerId: string): void {
     this.postClickEvent('call_click', 'customers', 'customer-details', customerId);
   }

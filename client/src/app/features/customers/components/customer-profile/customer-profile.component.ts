@@ -331,7 +331,6 @@ export class CustomerProfileComponent {
 
   openEditDialog(): void {
     this.showEditDialog.set(true);
-    this.usageTracking.trackProducerDetailsEdit(this.customer().id.toString());
   }
 
   closeEditDialog(): void {
@@ -343,6 +342,7 @@ export class CustomerProfileComponent {
   }
 
   handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean }): void {
+    this.usageTracking.trackProducerDetailsEdit(data.customerId.toString());
     this.onSaveCustomer.emit(data);
     this.closeEditDialog();
   }

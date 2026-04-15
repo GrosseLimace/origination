@@ -52,6 +52,7 @@ export class UsageDashboardComponent {
   readonly users = signal<UsageDashboardUser[]>([]);
   readonly dailyActive = signal<DailyActive[]>([]);
   readonly featureSessions = signal<FeatureSessions[]>([]);
+  readonly featureSessionsLoading = signal(false);
   readonly weeklyTrend = signal<WeeklyTrend[]>([]);
   readonly activityBreakdown = signal<ActivityBreakdown[]>([]);
   readonly inactiveUsers = signal<UsageDashboardInactiveUser[]>([]);
@@ -131,7 +132,15 @@ export class UsageDashboardComponent {
   readonly activeCount = computed(() => this.users().filter(u => u.status === 'Active').length);
   readonly lowUsageCount = computed(() => this.users().filter(u => u.status === 'Inactive').length);
   readonly inactiveCount = computed(() => this.users().filter(u => u.status === 'Never Logged In').length);
-  readonly needsAttentionCount = computed(() => this.lowUsageCount() + this.inactiveCount());
+  // Mirrors the union of the two panels on the "Who Isn't Using It" tab
+  // (Inactive Originators + Low Usage Originators) so the badge matches what's visible.
+  // Deduped by userId because a user can technically qualify for both.
+  readonly needsAttentionCount = computed(() => {
+    const ids = new Set<string>();
+    for (const u of this.inactiveOriginators()) ids.add(u.userId);
+    for (const u of this.lowUsageOriginators()) ids.add(u.userId);
+    return ids.size;
+  });
 
   // Donut chart segments for status breakdown (circumference = 2 * PI * 40 ≈ 251.33)
   readonly circumference = 2 * Math.PI * 40;
@@ -206,6 +215,68 @@ export class UsageDashboardComponent {
     return max > 0 ? max : 1;
   });
 
+  // Per-user activity lookup keyed by userId so the breakdown table can bind a value per cell
+  readonly activityByUserId = computed(() => {
+    const map = new Map<string, ActivityBreakdown>();
+    for (const row of this.activityBreakdown()) map.set(row.userId, row);
+    return map;
+  });
+
+  // Activity Breakdown table: search + sort (separate from All Originators table)
+  readonly activitySearch = signal('');
+  readonly activitySortColumn = signal<string | null>(null);
+  readonly activitySortDirection = signal<'none' | 'asc' | 'desc'>('none');
+
+  readonly filteredActivityUsers = computed(() => {
+    const search = this.activitySearch().toLowerCase().trim();
+    const byId = this.activityByUserId();
+    let result = this.users();
+
+    if (search) {
+      result = result.filter(u =>
+        u.displayName.toLowerCase().includes(search) ||
+        u.userId.toLowerCase().includes(search)
+      );
+    }
+
+    const col = this.activitySortColumn();
+    const dir = this.activitySortDirection();
+    if (col && dir !== 'none') {
+      result = [...result].sort((a, b) => {
+        const actA = byId.get(a.userId);
+        const actB = byId.get(b.userId);
+        let cmp = 0;
+        switch (col) {
+          case 'name':     cmp = a.displayName.localeCompare(b.displayName); break;
+          case 'profiles': cmp = (actA?.profilesViewed ?? 0) - (actB?.profilesViewed ?? 0); break;
+          case 'contracts':cmp = (actA?.contractsViewed ?? 0) - (actB?.contractsViewed ?? 0); break;
+          case 'notes':    cmp = (actA?.notesTaken ?? 0) - (actB?.notesTaken ?? 0); break;
+          case 'calls':    cmp = (actA?.callsEmails ?? 0) - (actB?.callsEmails ?? 0); break;
+          case 'lists':    cmp = (actA?.listsBuilt ?? 0) - (actB?.listsBuilt ?? 0); break;
+          case 'planting': cmp = (actA?.plantingIntentionsAdded ?? 0) - (actB?.plantingIntentionsAdded ?? 0); break;
+          case 'producer': cmp = (actA?.producerDetails ?? 0) - (actB?.producerDetails ?? 0); break;
+        }
+        return dir === 'desc' ? -cmp : cmp;
+      });
+    }
+    return result;
+  });
+
+  handleActivitySort(column: string): void {
+    if (this.activitySortColumn() === column) {
+      if (this.activitySortDirection() === 'none') this.activitySortDirection.set('asc');
+      else if (this.activitySortDirection() === 'asc') this.activitySortDirection.set('desc');
+      else { this.activitySortDirection.set('none'); this.activitySortColumn.set(null); }
+    } else {
+      this.activitySortColumn.set(column);
+      this.activitySortDirection.set('asc');
+    }
+  }
+
+  getActivitySortIconClass(column: string): string {
+    return this.activitySortColumn() === column ? 'text-gray-600 dark:text-gray-300' : 'text-gray-400 dark:text-gray-600';
+  }
+
   // Activity breakdown chart max
   readonly maxActivityBreakdown = computed(() => {
     const data = this.activityBreakdown();
@@ -224,6 +295,12 @@ export class UsageDashboardComponent {
 
   readonly lowUsageOriginators = computed(() => {
     return this.users().filter(u => u.status !== 'Never Logged In' && u.loginCount < 15 && u.loginCount > 0);
+  });
+
+  // Max session count across underused features — drives the relative bar widths
+  readonly maxUnderusedSessions = computed(() => {
+    const max = Math.max(0, ...this.underusedFeatures().map(f => f.sessionCount));
+    return max > 0 ? max : 1;
   });
 
   readonly tabs = [
@@ -328,9 +405,13 @@ export class UsageDashboardComponent {
   }
 
   loadFeatureSessions(from: string, to: string, tradeUnitKey?: string, screen?: string): void {
+    this.featureSessionsLoading.set(true);
     this.apiService.getUsageFeatureSessions(from, to, tradeUnitKey, screen)
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({ next: data => this.featureSessions.set(data), error: () => {} });
+      .subscribe({
+        next: data => { this.featureSessions.set(data); this.featureSessionsLoading.set(false); },
+        error: () => this.featureSessionsLoading.set(false)
+      });
   }
 
   loadInactive(from: string, to: string, tradeUnitKey?: string, daysThreshold?: number): void {

@@ -517,6 +517,7 @@ export class InsightsComponent {
       UnshippedBushels: 'unshipped-bushels'
     };
     this.usageTracking.postClickEvent('interaction', 'insights', subFeatureMap[insight.category], insight.customer.id.toString());
+    this.usageTracking.trackProfileOpened(insight.customer.id.toString());
     const params: Record<string, string | number> = { customerId: insight.customer.id };
     if (insight.contractId) params['contractId'] = insight.contractId;
     if (insight.category === 'SpotLoads') {
