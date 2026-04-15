@@ -48,7 +48,14 @@ export class HeaderComponent {
 
   readonly envName = environment.envName;
   readonly bidSheetEnabled = environment.bidSheetEnabled;
-  readonly usageDashboardEnabled = environment.usageDashboardEnabled;
+  // Gate the Usage Dashboard nav button to the single preview owner until the feature
+  // is ready for everyone. The route is guarded separately — this just hides the entry.
+  get usageDashboardEnabled(): boolean {
+    if (!environment.usageDashboardEnabled) return false;
+    const email = (this._getAccount()?.username ?? '').toLowerCase();
+    const normalized = email.includes('@') ? email : (email ? `${email}@scoular.com` : '');
+    return normalized === 'cegr@scoular.com';
+  }
 
   mobileMenuOpen = signal(false);
   profileMenuOpen = signal(false);
