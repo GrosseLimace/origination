@@ -61,15 +61,17 @@ public class Ticket
     // Classification — maps to GNP014.BCPFXT via ODS TicketType column
     public string? TicketType { get; set; } // P=Purchase, S=Sale, U=Unload, L=Loadout, B=Booking
 
-    // A ticket is applied when its contract prefix (first char of CtrmContractNumber) is P or S.
+    // A ticket is "unapplied" only when its contract prefix (first char of CtrmContractNumber)
+    // is U (Unload) or L (Loadout) — these represent tickets in limbo that haven't been applied
+    // to a real purchase/sale/storage contract yet. Everything else (P=Purchase, S=Sale,
+    // C=Customer Storage, B=Booking, or no contract) counts as applied. C-prefix tickets are
+    // customer storage and belong on storage reports, not unapplied reports.
     // CtrmContractNumber is built from ODS BCPFXC (prefix) + BCNTNO (number).
-    // This is more reliable than TicketType alone — a U-type ticket can legitimately be applied
-    // to a contract, but the contract prefix is the authoritative indicator.
     // [JsonInclude] required because System.Text.Json skips getter-only properties by default.
     [System.Text.Json.Serialization.JsonInclude]
     public bool IsApplied =>
-        CtrmContractNumber is { Length: > 0 } &&
-        (CtrmContractNumber[0] == 'P' || CtrmContractNumber[0] == 'S');
+        !(CtrmContractNumber is { Length: > 0 } &&
+          (CtrmContractNumber[0] == 'U' || CtrmContractNumber[0] == 'L'));
 
     // Status
     public string? TicketStatusDescription { get; set; } // e.g. "Unload", "Final Settled", "P/A"
