@@ -1439,11 +1439,14 @@ export class BuildListComponent {
         const allCustomersWithContracts = this.customers().filter(c =>
           (this._contractsByCustomer().get(c.sourceCustomerId!) || []).length > 0
         );
-        this.filteredCustomers.set(allCustomersWithContracts.filter(c => {
+        const pacingResults = allCustomersWithContracts.filter(c => {
           const dir = this._getCustomerPacingDirection(c);
           if (dir === null) return false;
           return isNegative ? dir === 'down' : dir === 'up';
-        }));
+        });
+        this.filteredCustomers.set(pacingResults);
+        // Recompute no-match banner based on the pacing-filtered results
+        this.queryReturnedNoMatches.set(pacingResults.length === 0);
       }
     }
 

@@ -228,6 +228,17 @@ export class BidSheetComponent {
   addCommodityQuery = signal('');
   editBidsYear = signal<number>(new Date().getFullYear());
   editBidsMonths = signal<number[]>([0]); // [0]=yearly, [4,5,6]=Apr+May+Jun
+
+  /** Label shown on the month-selector button.
+   *  Yearly-only → "Yearly". Months only → "N Months". Mixed → "N Months + Yearly". */
+  readonly editBidsMonthsLabel = computed(() => {
+    const months = this.editBidsMonths();
+    const hasYearly = months.includes(0);
+    const specificCount = months.filter(m => m !== 0).length;
+    if (specificCount === 0) return 'Yearly';
+    const base = `${specificCount} Month${specificCount === 1 ? '' : 's'}`;
+    return hasYearly ? `${base} + Yearly` : base;
+  });
   showMonthDropdown = signal(false);
   /** Crop code currently being dragged (for group highlight). Empty when not dragging. */
   draggingCrop = signal<string>('');
@@ -387,6 +398,9 @@ export class BidSheetComponent {
 
   // --- Map ---
   private _map: Leaflet.Map | null = null;
+  /** Track the currently-hovered marker so we can force-reset its icon when another marker is hovered.
+   *  Fixes Leaflet's stuck-hover bug where setIcon() swaps the DOM element and a pending mouseout never fires. */
+  private _hoveredMarker: { marker: any; resetIcon: any } | null = null;
   // markercluster's MarkerClusterGroup isn't in @types/leaflet — keep loose-typed
   private _clusterGroup: any = null;
   private _isMapInitialized = false;
@@ -2132,11 +2146,23 @@ export class BidSheetComponent {
     });
   }
 
-  /** Binds hover expand behavior to a marker — swaps icon on mouseover/mouseout. */
+  /** Binds hover expand behavior to a marker — swaps icon on mouseover/mouseout.
+   *  Tracks the currently-hovered marker and force-resets it when another marker is hovered,
+   *  which prevents stuck labels when markers sit close together and setIcon() eats the mouseout. */
   private _bindHoverExpand(marker: any, originalIcon: any, name: string, bid: string, bg: string, border: string): void {
     const hoverIcon = this._buildHoverIcon(name, bid, bg, border);
-    marker.on('mouseover', () => marker.setIcon(hoverIcon));
-    marker.on('mouseout', () => marker.setIcon(originalIcon));
+    marker.on('mouseover', () => {
+      // Reset any other marker that's still stuck on its hover icon
+      if (this._hoveredMarker && this._hoveredMarker.marker !== marker) {
+        try { this._hoveredMarker.marker.setIcon(this._hoveredMarker.resetIcon); } catch { /* marker may have been removed */ }
+      }
+      marker.setIcon(hoverIcon);
+      this._hoveredMarker = { marker, resetIcon: originalIcon };
+    });
+    marker.on('mouseout', () => {
+      marker.setIcon(originalIcon);
+      if (this._hoveredMarker?.marker === marker) this._hoveredMarker = null;
+    });
   }
 
   private _esc(str: string): string {
