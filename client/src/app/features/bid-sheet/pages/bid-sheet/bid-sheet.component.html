@@ -659,7 +659,7 @@
                 <div class="relative">
                   <button (click)="openMonthDropdown()"
                     class="flex items-center gap-2 px-3.5 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-base text-gray-900 dark:text-white hover:border-gray-400 dark:hover:border-gray-500 cursor-pointer shadow-sm transition-colors">
-                    <span class="font-medium">{{ editBidsMonths()[0] === 0 ? 'Yearly' : editBidsMonths().length + ' Months' }}</span>
+                    <span class="font-medium">{{ editBidsMonthsLabel() }}</span>
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><polyline points="6 9 12 15 18 9"/></svg>
                   </button>
                   @if (showMonthDropdown()) {
@@ -667,7 +667,7 @@
                     <div class="absolute left-0 top-full mt-1 w-44 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50 flex flex-col">
                       <div class="py-1 max-h-56 overflow-auto">
                       <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white font-medium border-b border-gray-100 dark:border-gray-700">
-                        <input type="checkbox" [checked]="pendingMonths()[0] === 0" (change)="toggleEditMonth(0)"
+                        <input type="checkbox" [checked]="pendingMonths().includes(0)" (change)="toggleEditMonth(0)"
                           class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
                         Yearly
                       </label>
