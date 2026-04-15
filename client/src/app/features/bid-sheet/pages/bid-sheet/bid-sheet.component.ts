@@ -231,6 +231,8 @@ export class BidSheetComponent {
   draggingCrop = signal<string>('');
   /** Pending month selection (staged until user clicks Done). */
   pendingMonths = signal<number[]>([0]);
+  /** Pending hidden crop selection (staged until user clicks Done). */
+  pendingHiddenCrops = signal<Set<string>>(new Set());
   editBidsRows = signal<EditBidsRow[]>([]);
   /** Set of crop codes hidden by the user via the multi-select crop dropdown. Empty = all visible. */
   hiddenCrops = signal<Set<string>>(new Set());
@@ -1281,7 +1283,10 @@ export class BidSheetComponent {
 
     this.apiService.setBidSheetLocationOrder(key, JSON.stringify(names))
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({ error: () => this.toastService.error('Failed to save row order') });
+      .subscribe({
+        next: () => this.toastService.success('Location order saved'),
+        error: () => this.toastService.error('Failed to save row order')
+      });
   }
 
   /** Called when a crop column header is dragged to a new position in the edit grid.
@@ -1316,20 +1321,44 @@ export class BidSheetComponent {
     // Save via preference (cropOrder only — don't overwrite crop/month/year)
     this.apiService.setBidSheetPreference(key, this.selectedCrop() || null, this.selectedMonth(), this.selectedYear() || null, JSON.stringify(orderedCrops))
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save crop order', err); } });
+      .subscribe({
+        next: () => this.toastService.success('Crop order saved'),
+        error: (err) => { if (isDevMode()) console.warn('Failed to save crop order', err); this.toastService.error('Failed to save crop order'); }
+      });
   }
 
-  /** Toggles a crop's visibility in the edit bids grid and persists the change. */
+  /** Opens the crop dropdown with the current hidden set staged as pending. */
+  openCropDropdown(): void {
+    this.pendingHiddenCrops.set(new Set(this.hiddenCrops()));
+    this.showCropDropdown.set(true);
+  }
+
+  /** Toggles a crop's visibility in the pending set (not yet applied). */
   toggleCropVisibility(crop: string): void {
-    this.hiddenCrops.update(set => {
+    this.pendingHiddenCrops.update(set => {
       const updated = new Set(set);
       if (updated.has(crop)) updated.delete(crop);
       else updated.add(crop);
       return updated;
     });
-    this._saveHiddenCrops();
-    // Rebuild the grid so columns update
+  }
+
+  /** Applies the pending crop visibility and closes the dropdown. */
+  confirmCropSelection(): void {
+    const changed = [...this.pendingHiddenCrops()].sort().join(',') !== [...this.hiddenCrops()].sort().join(',');
+    this.hiddenCrops.set(new Set(this.pendingHiddenCrops()));
+    this.showCropDropdown.set(false);
     this._buildEditGrid(this.editBidsYear());
+    if (changed) {
+      this._saveHiddenCrops();
+      this.toastService.success('Crop selection saved');
+    }
+  }
+
+  /** Cancels pending crop changes and closes the dropdown. */
+  cancelCropSelection(): void {
+    this.pendingHiddenCrops.set(new Set(this.hiddenCrops()));
+    this.showCropDropdown.set(false);
   }
 
   /** Persists hidden crops to the preference API. */
@@ -1386,10 +1415,14 @@ export class BidSheetComponent {
 
   /** Applies the pending month selection and closes the dropdown. */
   confirmMonthSelection(): void {
+    const changed = JSON.stringify(this.pendingMonths()) !== JSON.stringify(this.editBidsMonths());
     this.editBidsMonths.set([...this.pendingMonths()]);
     this.showMonthDropdown.set(false);
     this._buildEditGrid(this.editBidsYear());
-    this._saveSelectedMonths();
+    if (changed) {
+      this._saveSelectedMonths();
+      this.toastService.success('Month selection saved');
+    }
   }
 
   /** Cancels the pending month selection and closes the dropdown. */
@@ -1407,6 +1440,26 @@ export class BidSheetComponent {
   }
 
   /** Pushes editBidsYear/editBidsMonths back to the panel/map state (selectedYear, selectedMonth, yearOffset) and saves preference. */
+  /** Handles arrow key navigation between bid input cells in the edit grid. */
+  onBidKeyDown(event: KeyboardEvent, rowIdx: number, colIdx: number): void {
+    const key = event.key;
+    if (key !== 'ArrowUp' && key !== 'ArrowDown' && key !== 'ArrowLeft' && key !== 'ArrowRight') return;
+    const columns = this.editGridColumns();
+    const rowCount = this.editBidsRows().length;
+    let targetRow = rowIdx;
+    let targetCol = colIdx;
+    if (key === 'ArrowUp') targetRow = Math.max(0, rowIdx - 1);
+    else if (key === 'ArrowDown') targetRow = Math.min(rowCount - 1, rowIdx + 1);
+    else if (key === 'ArrowLeft') targetCol = Math.max(0, colIdx - 1);
+    else if (key === 'ArrowRight') targetCol = Math.min(columns.length - 1, colIdx + 1);
+    if (targetRow === rowIdx && targetCol === colIdx) return;
+    event.preventDefault();
+    const targetKey = columns[targetCol]?.key;
+    if (!targetKey) return;
+    const el = document.getElementById(`bid-${targetRow}-${targetKey}`) as HTMLInputElement | null;
+    if (el) { el.focus(); el.select(); }
+  }
+
   updateBid(rowIndex: number, crop: string, value: string): void {
     this.editBidsRows.update(rows => {
       const updated = [...rows];
@@ -1445,7 +1498,11 @@ export class BidSheetComponent {
       }
     }
 
-    if (toCreate.length === 0) { this._closeEditBids(); return; }
+    if (toCreate.length === 0) {
+      this._closeEditBids();
+      this.toastService.info('No changes to save');
+      return;
+    }
 
     this.editBidsSaving.set(true);
     this.apiService.bulkUpsertBidSheetBids(toCreate)
@@ -1454,7 +1511,7 @@ export class BidSheetComponent {
         next: () => {
           this.editBidsSaving.set(false);
           this._closeEditBids();
-          this.toastService.success(`Saved ${toCreate.length} bid update${toCreate.length !== 1 ? 's' : ''}`);
+          this.toastService.success(`Saved ${toCreate.length} bid ${toCreate.length !== 1 ? 'changes' : 'change'} successfully`, 4000);
           this._loadBidData(this.activeTradeUnits());
         },
         error: () => {
@@ -1727,11 +1784,20 @@ export class BidSheetComponent {
 
   refreshBids(): void {
     this.isRefreshing.set(true);
+    if (this.editBidsMode()) this.editBidsGridLoading.set(true);
     const tus = this.activeTradeUnits();
     if (tus.length > 0) {
       // Refresh map locations and TU bid data in parallel
       this._loadAllMapLocations();
-      this._loadBidData(tus, () => this.isRefreshing.set(false));
+      this._loadBidData(tus, () => {
+        // If edit bids is open, rebuild the grid with the fresh data
+        if (this.editBidsMode()) {
+          this._buildEditGrid(this.editBidsYear());
+          this.editBidsGridLoading.set(false);
+        }
+        this.isRefreshing.set(false);
+        this.toastService.success('Bids refreshed');
+      });
     } else {
       // No TU selected — just refresh the map locations
       this.apiService.getAllBidSheetLocations().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -1740,8 +1806,12 @@ export class BidSheetComponent {
           this.filterBids();
           this._refreshMapMarkers();
           this.isRefreshing.set(false);
+          this.toastService.success('Bids refreshed');
         },
-        error: () => this.isRefreshing.set(false)
+        error: () => {
+          this.isRefreshing.set(false);
+          this.toastService.error('Failed to refresh');
+        }
       });
     }
     this._startRefreshTimer();

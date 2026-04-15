@@ -658,9 +658,9 @@
                 <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
                 <div class="relative">
                   <button (click)="openMonthDropdown()"
-                    class="flex items-center gap-1.5 px-2.5 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white hover:border-gray-400 dark:hover:border-gray-500 cursor-pointer shadow-sm transition-colors">
+                    class="flex items-center gap-2 px-3.5 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-base text-gray-900 dark:text-white hover:border-gray-400 dark:hover:border-gray-500 cursor-pointer shadow-sm transition-colors">
                     <span class="font-medium">{{ editBidsMonths()[0] === 0 ? 'Yearly' : editBidsMonths().length + ' Months' }}</span>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><polyline points="6 9 12 15 18 9"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><polyline points="6 9 12 15 18 9"/></svg>
                   </button>
                   @if (showMonthDropdown()) {
                     <div class="fixed inset-0 z-40" (click)="cancelMonthSelection()"></div>
@@ -727,35 +727,51 @@
                     </div>
                   }
                 </div>
-              </div>
-
-              <!-- Trade unit selector + apply + crop filter (right) -->
-              <div class="flex items-center gap-2.5">
-                <app-trade-unit-selector [deferred]="true" (done)="applyEditBidsTuFilter()" />
-                <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
-                @if (editBidsRows().length > 0) {
-                  <span class="text-xs text-gray-400 dark:text-gray-500">{{ editBidsRows().length }} location{{ editBidsRows().length !== 1 ? 's' : '' }} · {{ editGridColumns().length }} column{{ editGridColumns().length !== 1 ? 's' : '' }}</span>
-                }
                 <div class="relative">
-                  <button (click)="showCropDropdown.set(!showCropDropdown())"
-                    class="flex items-center gap-1.5 px-2.5 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white hover:border-gray-400 dark:hover:border-gray-500 cursor-pointer shadow-sm transition-colors">
+                  <button (click)="openCropDropdown()"
+                    class="flex items-center gap-2 px-3.5 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-base text-gray-900 dark:text-white hover:border-gray-400 dark:hover:border-gray-500 cursor-pointer shadow-sm transition-colors">
                     <span class="font-medium">Crops</span>
-                    <span class="text-xs text-gray-400">({{ editBidsCrops().length }}/{{ crops().length }})</span>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><polyline points="6 9 12 15 18 9"/></svg>
+                    <span class="text-sm text-gray-400">({{ editBidsCrops().length }}/{{ crops().length }})</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><polyline points="6 9 12 15 18 9"/></svg>
                   </button>
                   @if (showCropDropdown()) {
-                    <div class="fixed inset-0 z-40" (click)="showCropDropdown.set(false)"></div>
-                    <div class="absolute left-0 top-full mt-1 w-52 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50 py-1 max-h-64 overflow-auto">
-                      @for (crop of crops(); track crop) {
-                        <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
-                          <input type="checkbox" [checked]="!hiddenCrops().has(crop)" (change)="toggleCropVisibility(crop)"
-                            class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                          {{ crop }}
-                        </label>
-                      }
+                    <div class="fixed inset-0 z-40" (click)="cancelCropSelection()"></div>
+                    <div class="absolute left-0 top-full mt-1 w-52 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50 flex flex-col">
+                      <div class="py-1 max-h-56 overflow-auto">
+                        @for (crop of crops(); track crop) {
+                          <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
+                            <input type="checkbox" [checked]="!pendingHiddenCrops().has(crop)" (change)="toggleCropVisibility(crop)"
+                              class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
+                            {{ crop }}
+                          </label>
+                        }
+                      </div>
+                      <div class="flex items-center gap-2 px-3 py-2 border-t border-gray-200 dark:border-gray-700">
+                        <button (click)="cancelCropSelection()" class="flex-1 px-2 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
+                        <button (click)="confirmCropSelection()" class="flex-1 px-2 py-1.5 text-xs font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg transition-colors">Done</button>
+                      </div>
                     </div>
                   }
                 </div>
+              </div>
+
+              <!-- Trade unit selector + refresh (right) -->
+              <div class="flex items-center gap-2.5">
+                <app-trade-unit-selector [deferred]="true" (done)="applyEditBidsTuFilter()" />
+                <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
+                <button
+                  (click)="refreshBids()"
+                  [disabled]="isRefreshing()"
+                  [title]="'Last refreshed: ' + timeSinceRefresh()"
+                  class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed shadow-sm">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [class.animate-spin]="isRefreshing()">
+                    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+                    <path d="M21 3v5h-5"/>
+                    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+                    <path d="M8 16H3v5"/>
+                  </svg>
+                  <span>{{ isRefreshing() ? 'Refreshing...' : timeSinceRefresh() }}</span>
+                </button>
               </div>
             </div>
 
@@ -861,7 +877,7 @@
                             <span class="text-sm font-medium text-gray-900 dark:text-white truncate max-w-[160px] lg:max-w-[220px]" [title]="row.name">{{ row.name }}</span>
                           </div>
                         </td>
-                        @for (col of editGridColumns(); track col.key) {
+                        @for (col of editGridColumns(); track col.key; let colIdx = $index) {
                           <td class="px-3 py-2.5 transition-colors"
                               [ngClass]="draggingCrop() === col.crop ? 'bg-scoular-green/5 dark:bg-scoular-green/10' : ''">
                             <input
@@ -869,6 +885,7 @@
                               [attr.id]="'bid-' + rowIdx + '-' + col.key"
                               [ngModel]="row.bids[col.key]"
                               (ngModelChange)="updateBid(rowIdx, col.key, $event)"
+                              (keydown)="onBidKeyDown($event, rowIdx, colIdx)"
                               placeholder="—"
                               class="w-full font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
                               [ngClass]="row.bids[col.key] !== row.originalBids[col.key]

@@ -413,6 +413,65 @@ public class SqlDataService : IDataService
         }
     }
 
+    /// <summary>
+    /// Returns customers whose ProducerDetails.LinkedProducerIds contains the given source id —
+    /// i.e. customers that link TO this one (incoming / reverse links). Used by the cross-customer
+    /// search path so the customer profile can show bidirectional linked producers even when no TU
+    /// is selected and the main customer roster is empty.
+    /// </summary>
+    public async Task<List<Customer>> GetCustomersLinkedToAsync(string sourceCustomerId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sourceCustomerId)) return [];
+        try
+        {
+            // Match CSV entries safely — avoid false substring matches on similar ids by testing
+            // for ",<id>," after wrapping LinkedProducerIds in commas on both sides.
+            var needle = $"%,{sourceCustomerId},%";
+            var matchingCustomerIds = await _appContext.ProducerDetails
+                .AsNoTracking()
+                .Where(pd => pd.LinkedProducerIds != null && EF.Functions.Like("," + pd.LinkedProducerIds + ",", needle))
+                .Select(pd => pd.CustomerId)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+
+            if (matchingCustomerIds.Count == 0) return [];
+
+            var snapshots = await _appContext.CustomerSnapshots
+                .AsNoTracking()
+                .Where(s => s.IsActive && matchingCustomerIds.Contains(s.CustomerId))
+                .ToListAsync(cancellationToken);
+
+            var customers = snapshots
+                .GroupBy(s => s.CustomerId)
+                .Select(g => MapSnapshotToCustomer(g.First()))
+                .ToList();
+
+            // Enrich with LinkedProducerIds from ProducerDetails so the frontend can follow chains.
+            // Other ProducerDetails fields (bin capacity, primary contact, commodities) are applied
+            // by the frontend via its producerDetailsMap() cache.
+            var detailsMap = await _appContext.ProducerDetails
+                .AsNoTracking()
+                .Where(pd => matchingCustomerIds.Contains(pd.CustomerId))
+                .ToDictionaryAsync(pd => pd.CustomerId, cancellationToken);
+            foreach (var c in customers)
+            {
+                if (!detailsMap.TryGetValue(c.Id, out var pd)) continue;
+                if (pd.TotalAcres.HasValue) c.TotalAcres = (int)pd.TotalAcres.Value;
+                if (!string.IsNullOrWhiteSpace(pd.LinkedProducerIds))
+                    c.LinkedProducerIds = pd.LinkedProducerIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+            }
+
+            await EnrichCustomersWithESignAsync(customers, cancellationToken);
+            return customers;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving incoming linked customers for source {SourceId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                sourceCustomerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            return [];
+        }
+    }
+
     public async Task UpdateCustomerAsync(long customerId, string location, string phone, string email, List<string> farmIds, List<string> linkedProducerIds, CancellationToken cancellationToken = default)
     {
         try

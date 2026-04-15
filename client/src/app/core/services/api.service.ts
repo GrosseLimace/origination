@@ -125,6 +125,12 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
+  /** Fetches customers whose linkedProducerIds contains the given source id (incoming links). */
+  getCustomersLinkedTo(sourceId: string): Observable<Customer[]> {
+    return this.http.get<Customer[]>(`${this.baseUrl}/customers/linked-to/${encodeURIComponent(sourceId)}`)
+      .pipe(catchError(() => of([] as Customer[])));
+  }
+
   /** Updates an existing customer's information (sends only fields accepted by UpdateCustomerRequest DTO) */
   updateCustomer(customer: Customer): Observable<Customer> {
     return this.http.put<Customer>(`${this.baseUrl}/customers/${customer.id}`, {
