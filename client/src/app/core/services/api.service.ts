@@ -24,6 +24,16 @@ import {
   Elevator,
   CommodityConversion,
   HarvestWindow,
+  UsageDashboardSummary,
+  UsageDashboardUser,
+  UsageDashboardInactiveUser,
+  DailyActive,
+  FeatureSessions,
+  QueryLibraryUsage,
+  QuerySearchGap,
+  WeeklyTrend,
+  ActivityBreakdown,
+  UnderusedFeature,
   QueryLibraryItem
 } from '@models';
 import { environment } from '@env/environment';
@@ -680,5 +690,74 @@ export class ApiService {
   geocodeSearch(query: string): Observable<Array<{ lat: number; lng: number }>> {
     return this.http.get<Array<{ lat: number; lng: number }>>(`${this.baseUrl}/geocode/search`, { params: { q: query, limit: '1' } })
       .pipe(catchError(() => of([])));
+  }
+
+  // =========================================================================
+  // Usage Dashboard
+  // =========================================================================
+
+  private usageParams(from: string, to: string, tradeUnitKey?: string, extra?: Record<string, string>): Record<string, string> {
+    const p: Record<string, string> = { from, to };
+    if (tradeUnitKey) p['tradeUnitKey'] = tradeUnitKey;
+    if (extra) Object.assign(p, extra);
+    return p;
+  }
+
+  getUsageDashboardSummary(from: string, to: string, tradeUnitKey?: string): Observable<UsageDashboardSummary> {
+    return this.http.get<UsageDashboardSummary>(`${this.baseUrl}/usage-dashboard/summary`, { params: this.usageParams(from, to, tradeUnitKey) })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  getUsageDashboardUsers(from: string, to: string, tradeUnitKey?: string, status?: string): Observable<UsageDashboardUser[]> {
+    const extra: Record<string, string> = {};
+    if (status && status !== 'all') extra['status'] = status;
+    return this.http.get<UsageDashboardUser[]>(`${this.baseUrl}/usage-dashboard/users`, { params: this.usageParams(from, to, tradeUnitKey, extra) })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  getUsageDailyActive(from: string, to: string, tradeUnitKey?: string): Observable<DailyActive[]> {
+    return this.http.get<DailyActive[]>(`${this.baseUrl}/usage-dashboard/daily-active`, { params: this.usageParams(from, to, tradeUnitKey) })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  getUsageFeatureSessions(from: string, to: string, tradeUnitKey?: string, screen?: string): Observable<FeatureSessions[]> {
+    const extra: Record<string, string> = {};
+    if (screen && screen !== 'all') extra['screen'] = screen;
+    return this.http.get<FeatureSessions[]>(`${this.baseUrl}/usage-dashboard/feature-sessions`, { params: this.usageParams(from, to, tradeUnitKey, extra) })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  getUsageWeeklyTrend(tradeUnitKey?: string): Observable<WeeklyTrend[]> {
+    const params: Record<string, string> = {};
+    if (tradeUnitKey) params['tradeUnitKey'] = tradeUnitKey;
+    return this.http.get<WeeklyTrend[]>(`${this.baseUrl}/usage-dashboard/weekly-trend`, { params })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  getUsageActivityBreakdown(from: string, to: string, tradeUnitKey?: string): Observable<ActivityBreakdown[]> {
+    return this.http.get<ActivityBreakdown[]>(`${this.baseUrl}/usage-dashboard/activity-breakdown`, { params: this.usageParams(from, to, tradeUnitKey) })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  getUsageDashboardInactive(from: string, to: string, tradeUnitKey?: string, daysThreshold?: number): Observable<UsageDashboardInactiveUser[]> {
+    const extra: Record<string, string> = {};
+    if (daysThreshold) extra['daysThreshold'] = daysThreshold.toString();
+    return this.http.get<UsageDashboardInactiveUser[]>(`${this.baseUrl}/usage-dashboard/inactive`, { params: this.usageParams(from, to, tradeUnitKey, extra) })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  getUsageQueryLibraryUsage(from: string, to: string, tradeUnitKey?: string): Observable<QueryLibraryUsage[]> {
+    return this.http.get<QueryLibraryUsage[]>(`${this.baseUrl}/usage-dashboard/query-library-usage`, { params: this.usageParams(from, to, tradeUnitKey) })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  getUsageQuerySearchGaps(from: string, to: string, tradeUnitKey?: string): Observable<QuerySearchGap[]> {
+    return this.http.get<QuerySearchGap[]>(`${this.baseUrl}/usage-dashboard/query-search-gaps`, { params: this.usageParams(from, to, tradeUnitKey) })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  getUsageUnderusedFeatures(from: string, to: string, tradeUnitKey?: string): Observable<UnderusedFeature[]> {
+    return this.http.get<UnderusedFeature[]>(`${this.baseUrl}/usage-dashboard/underused-features`, { params: this.usageParams(from, to, tradeUnitKey) })
+      .pipe(catchError(e => this.handleError(e)));
   }
 }

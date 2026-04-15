@@ -48,10 +48,19 @@ export class HeaderComponent {
 
   readonly envName = environment.envName;
   readonly bidSheetEnabled = environment.bidSheetEnabled;
+  // Gate the Usage Dashboard nav button to the single preview owner until the feature
+  // is ready for everyone. The route is guarded separately — this just hides the entry.
+  get usageDashboardEnabled(): boolean {
+    if (!environment.usageDashboardEnabled) return false;
+    const email = (this._getAccount()?.username ?? '').toLowerCase();
+    const normalized = email.includes('@') ? email : (email ? `${email}@scoular.com` : '');
+    return normalized === 'cegr@scoular.com';
+  }
 
   mobileMenuOpen = signal(false);
   profileMenuOpen = signal(false);
   profilePhotoUrl = signal<string | null>(null);
+  readonly isAdmin = signal(false);
   private readonly currentUrl = signal(this.router.url);
 
   constructor() {
@@ -69,6 +78,10 @@ export class HeaderComponent {
       switchMap(() => {
         const account = this._getAccount();
         if (!account) return EMPTY;
+
+        // Check admin role from ID token claims
+        const roles = (account.idTokenClaims as any)?.roles as string[] | undefined;
+        this.isAdmin.set(roles?.includes('Admin') ?? false);
         return from(this.msalService.instance.acquireTokenSilent({
           scopes: ['User.Read'],
           account

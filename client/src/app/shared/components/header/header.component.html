@@ -120,6 +120,15 @@
             <span>{{ isActive('/bid-sheet') ? 'Back' : 'Bid Sheet' }}</span>
           </app-button>
           }
+          @if (usageDashboardEnabled) {
+          <app-button [variant]="isActive('/usage-dashboard') ? 'default' : 'outline'" (onClick)="navigate('/usage-dashboard')" class="gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              @if (isActive('/usage-dashboard')) { <path d="m12 19-7-7 7-7"/><path d="M19 12H5"/> }
+              @else { <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/> }
+            </svg>
+            <span>{{ isActive('/usage-dashboard') ? 'Back' : 'Usage' }}</span>
+          </app-button>
+          }
           <!-- Profile -->
           <div class="relative" (click)="$event.stopPropagation()">
             <button type="button" (click)="toggleProfileMenu()" [title]="getAccountName()"
@@ -215,6 +224,15 @@
               @else { <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" x2="12" y1="18" y2="12"/><line x1="9" x2="15" y1="15" y2="15"/> }
             </svg>
             <span>{{ isActive('/bid-sheet') ? 'Back to Customers' : 'Bid Sheet' }}</span>
+          </app-button>
+          }
+          @if (usageDashboardEnabled) {
+          <app-button [variant]="isActive('/usage-dashboard') ? 'default' : 'outline'" (onClick)="navigate('/usage-dashboard')" class="gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              @if (isActive('/usage-dashboard')) { <path d="m12 19-7-7 7-7"/><path d="M19 12H5"/> }
+              @else { <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/> }
+            </svg>
+            <span>{{ isActive('/usage-dashboard') ? 'Back to Customers' : 'Usage Dashboard' }}</span>
           </app-button>
           }
           <!-- Profile -->
@@ -321,6 +339,14 @@
             <polyline points="14 2 14 8 20 8"/><line x1="12" x2="12" y1="18" y2="12"/><line x1="9" x2="15" y1="15" y2="15"/>
           </svg>
           <span>Bid Sheet</span>
+        </button>
+        }
+        @if (usageDashboardEnabled) {
+        <button type="button" [class]="getMobileNavClass('/usage-dashboard')" (click)="mobileNavigate('/usage-dashboard')">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          <span>Usage Dashboard</span>
         </button>
         }
       </nav>

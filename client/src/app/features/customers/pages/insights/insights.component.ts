@@ -7,6 +7,7 @@ import { debounceTime, filter, pairwise, take } from 'rxjs/operators';
 import { AppStateService } from '@core/services/app-state.service';
 import { DataPreloadService } from '@core/services/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
+import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket } from '@models';
 import { CardComponent } from '@shared/components/card/card.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
@@ -127,6 +128,7 @@ export class InsightsComponent {
   private readonly toastService = inject(ToastService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly usageTracking = inject(UsageTrackingService);
 
   // Read directly from appState — DataPreloadService populates these on TU change
   readonly customers = this.appState.customers;
@@ -505,6 +507,13 @@ export class InsightsComponent {
   // ── Navigation ──────────────────────────────────────────────────────────────
 
   selectInsight(insight: Insight): void {
+    const subFeatureMap: Record<string, string> = {
+      UnconfirmedContracts: 'unconfirmed-contracts',
+      SpotLoads: 'spot-loads',
+      UnshippedBushels: 'unshipped-bushels'
+    };
+    this.usageTracking.postClickEvent('interaction', 'insights', subFeatureMap[insight.category], insight.customer.id.toString());
+    this.usageTracking.trackProfileOpened(insight.customer.id.toString());
     const params: Record<string, string | number> = { customerId: insight.customer.id };
     if (insight.contractId) params['contractId'] = insight.contractId;
     if (insight.category === 'SpotLoads') {

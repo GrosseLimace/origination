@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
 import { AppStateService } from '@core/services/app-state.service';
+import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Ticket, Contract } from '@models';
 
 type SortColumn = 'id' | 'date' | 'crop' | 'location' | 'appliedDockQuantity' | 'moisture' | 'testWeight' | 'protein';
@@ -37,6 +38,7 @@ interface TicketGroup {
 })
 export class TicketsTableComponent {
   private readonly appState = inject(AppStateService);
+  private readonly usageTracking = inject(UsageTrackingService);
 
   public isLoading = input(false);
   public tickets = input<Ticket[]>([]);
@@ -435,6 +437,7 @@ export class TicketsTableComponent {
       this.expandedCommodities.delete(productCode);
     } else {
       this.expandedCommodities.add(productCode);
+      this.usageTracking.trackTicketDropdownOpen();
     }
   }
 

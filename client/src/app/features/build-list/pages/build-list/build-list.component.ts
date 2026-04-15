@@ -9,6 +9,7 @@ import { ApiService } from '@core/services/api.service';
 import { AppStateService, BuildListState } from '@core/services/app-state.service';
 import { DataPreloadService } from '@core/services/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
+import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, ProducerDetails, RefinementFilters, QueryLibraryItem } from '@models';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '@shared/components/card/card.component';
@@ -55,6 +56,7 @@ export class BuildListComponent {
   private readonly msalService = inject(MsalService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly usageTracking = inject(UsageTrackingService);
 
   // Trade units captured at init — used to detect changes on destroy
   private _initTradeUnits: string[] = [];
@@ -1183,6 +1185,7 @@ export class BuildListComponent {
 
     this.queryText.set(item.queryText);
     this.selectedLibraryQuery.set(item);
+    this.usageTracking.postClickEvent('interaction', 'build-a-list', 'library-query-selected', item.id.toString());
     // Always route through processQuery — it handles data loading (tickets, storage),
     // spinner state, and the NLQ filter. Avoids the edge case where _applyNlqFilter
     // runs before secondary data (storage, tickets) has loaded.
@@ -1201,6 +1204,7 @@ export class BuildListComponent {
         this.apiService.logQuerySearch(text.trim())
           .pipe(takeUntilDestroyed(this.destroyRef))
           .subscribe();
+        this.usageTracking.postClickEvent('interaction', 'build-a-list', 'library-search-no-match', text.trim());
       }
     }, 2000);
   }
@@ -1218,6 +1222,7 @@ export class BuildListComponent {
         this.requestQueryText.set('');
         this.showRequestForm.set(false);
       });
+    this.usageTracking.postClickEvent('interaction', 'build-a-list', 'query-request-submitted', text);
   }
 
   processQuery(overrideTradeUnits?: string[]): void {
@@ -1465,6 +1470,7 @@ export class BuildListComponent {
 
   loadSavedList(list: SavedList): void {
     if (this.loading() || this.isProcessing()) return;
+    this.usageTracking.postClickEvent('interaction', 'build-a-list', 'saved-list-loaded', list.id.toString());
     this.activeSavedList.set(list);
     this.queryText.set(list.query);
     this.pendingRefinements.set(list.filters ? { ...list.filters } : {});
@@ -1605,6 +1611,7 @@ export class BuildListComponent {
     this.memberSearchTerm.set('');
     this.memberSearchResults.set([]);
     this.memberInResultsMatches.set([]);
+    this.usageTracking.postClickEvent('interaction', 'build-a-list', 'member-added', customer.id.toString());
   }
 
   excludeCustomerFromList(customerId: number): void {
@@ -1624,6 +1631,7 @@ export class BuildListComponent {
     this.memberSearchTerm.set('');
     this.memberSearchResults.set([]);
     this.memberInResultsMatches.set([]);
+    this.usageTracking.postClickEvent('interaction', 'build-a-list', 'member-excluded', customerId.toString());
   }
 
   restoreCustomer(customerId: number): void {
@@ -1871,8 +1879,21 @@ export class BuildListComponent {
     this.showSaveDialog.set(false);
   }
 
+  toggleRefinePanel(): void {
+    const opening = !this.showRefinePanel();
+    this.showRefinePanel.update(v => !v);
+    if (opening) this.usageTracking.postClickEvent('interaction', 'build-a-list', 'refine-filters');
+  }
+
+  toggleManageMembersPanel(): void {
+    const opening = !this.showManageMembersPanel();
+    this.showManageMembersPanel.update(v => !v);
+    if (opening) this.usageTracking.postClickEvent('interaction', 'build-a-list', 'manage-members');
+  }
+
   saveList(): void {
     if (!this.newListName().trim() || this.displayedCustomers().length === 0) return;
+    this.usageTracking.postClickEvent('interaction', 'build-a-list', 'save-list');
 
     const tradeUnits = this.effectiveTradeUnits();
     const includedIds = this.manuallyIncludedCustomers().map(c => c.id);
@@ -1916,6 +1937,7 @@ export class BuildListComponent {
   confirmDeleteList(): void {
     if (!this.deleteListId()) return;
     const listId = this.deleteListId()!;
+    this.usageTracking.postClickEvent('interaction', 'build-a-list', 'saved-list-deleted', listId.toString());
     this.closeDeleteDialog();
 
     // Remove from local array immediately for instant UI feedback
@@ -1947,6 +1969,7 @@ export class BuildListComponent {
   }
 
   selectCustomer(customer: Customer): void {
+    this.usageTracking.trackProfileOpened(customer.id.toString());
     this.router.navigate(['/'], { queryParams: { customerId: customer.id } });
   }
 

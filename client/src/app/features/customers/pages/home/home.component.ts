@@ -7,6 +7,7 @@ import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
+import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity } from '@models';
 import { CustomerListComponent } from '../../components/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customer-profile/customer-profile.component';
@@ -31,6 +32,7 @@ export class HomeComponent {
   private readonly appState = inject(AppStateService);
   private readonly toastService = inject(ToastService);
   private readonly nlqFilterService = inject(NlqFilterService);
+  private readonly usageTracking = inject(UsageTrackingService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -514,6 +516,7 @@ export class HomeComponent {
       this.pendingTab.set(null);
       this.pendingTicketCrop.set(null);
     }
+    this.usageTracking.trackProfileOpened(customer.id.toString());
     const pdMap = this.producerDetailsMap();
     const pd = pdMap.get(customer.id);
     if (pd) {

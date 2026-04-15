@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
 import { AppStateService } from '@core/services/app-state.service';
+import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket, ContractPricingLine } from '@models';
 
 type SortColumn = 'contractNumber' | 'date' | 'crop' | 'quantity' | 'price' | 'deliveryStart' | 'status';
@@ -25,6 +26,7 @@ type SortDirection = 'none' | 'asc' | 'desc';
 })
 export class ContractsTableComponent {
   private readonly appState = inject(AppStateService);
+  private readonly usageTracking = inject(UsageTrackingService);
   private _conversionMap: Map<string, number> | null = null;
 
   public isLoading = input(false);
@@ -315,6 +317,7 @@ export class ContractsTableComponent {
       this.expandedPricingSections.delete(contractId);
     } else {
       this.expandedRows.add(contractId);
+      this.usageTracking.trackContractExpand(contractId.toString());
       // Defer scroll so the expanded content renders first
       setTimeout(() => this._scrollToContract(contractId), 0);
     }

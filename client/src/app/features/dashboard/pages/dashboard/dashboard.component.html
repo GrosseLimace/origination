@@ -162,7 +162,7 @@
       <div class="flex flex-wrap sm:flex-nowrap gap-1 bg-gray-100 dark:bg-gray-800/60 rounded-xl p-1 border border-gray-200 dark:border-gray-700">
         @for (tab of tabs; track tab.id) {
           <button
-            (click)="activeTab.set(tab.id)"
+            (click)="selectDashboardTab(tab.id)"
             class="flex-1 px-4 py-2 text-sm font-medium rounded-lg transition-colors"
             [class]="activeTab() === tab.id
               ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'

@@ -8,6 +8,7 @@ import { catchError } from 'rxjs/operators';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService, DashboardCacheEntry } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
+import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, Commodity } from '@models';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 
@@ -22,6 +23,7 @@ export class DashboardComponent {
   private readonly apiService = inject(ApiService);
   private readonly appStateService = inject(AppStateService);
   private readonly toastService = inject(ToastService);
+  private readonly usageTracking = inject(UsageTrackingService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -83,6 +85,16 @@ export class DashboardComponent {
 
   // Tab / filter state
   activeTab = signal<'byCrop' | 'topProducers' | 'harvestContracts'>('byCrop');
+
+  selectDashboardTab(tabId: 'byCrop' | 'topProducers' | 'harvestContracts'): void {
+    this.activeTab.set(tabId);
+    const subFeatureMap: Record<string, string> = {
+      byCrop: 'by-crop',
+      topProducers: 'top-producers',
+      harvestContracts: 'harvest-contracts'
+    };
+    this.usageTracking.trackDashboardTabClick(subFeatureMap[tabId]);
+  }
   selectedCropFilter = signal('');
 
   readonly tabs = [
@@ -1000,6 +1012,7 @@ export class DashboardComponent {
   }
 
   saveYieldEdit(): void {
+    this.usageTracking.trackSeasonTargetsSaved();
     const key = this.tradeUnitKey();
     if (!key) return;
     const estimates = this.yieldRows().map(row => ({
@@ -1044,6 +1057,7 @@ export class DashboardComponent {
   }
 
   saveMarketShareEdit(): void {
+    this.usageTracking.trackSeasonTargetsSaved();
     const key = this.tradeUnitKey();
     if (!key) return;
     const shares = this.categoryRows().map(row => ({

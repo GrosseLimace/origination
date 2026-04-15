@@ -8,6 +8,7 @@ import type * as Leaflet from 'leaflet';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
+import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { BidSheetEntry, BidSheetLocation, BidSheetLocationBid, Elevator, Commodity } from '@models';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 
@@ -56,6 +57,7 @@ export class BidSheetComponent {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
   private readonly toastService = inject(ToastService);
+  private readonly usageTracking = inject(UsageTrackingService);
 
   // --- Filters ---
   /** True when any TUs are active — either via individual checkboxes or group selection. Enables bid values, statuses, and reference features. */
@@ -985,6 +987,7 @@ export class BidSheetComponent {
   }
 
   selectEditBidCommodity(item: { code: string; name: string }): void {
+    this.usageTracking.postClickEvent('interaction', 'bidsheet', 'commodities-added', item.code);
     if (!this.crops().includes(item.code)) {
       this.crops.update(arr => [...arr, item.code].sort());
     }
@@ -1089,6 +1092,7 @@ export class BidSheetComponent {
   }
 
   confirmAddLocation(): void {
+    this.usageTracking.postClickEvent('interaction', 'bidsheet', 'locations-added');
     const name = this.newLocationName().trim();
     const tu = this.newLocationTu();
     const lat = this.newLocationLat();
@@ -1195,6 +1199,7 @@ export class BidSheetComponent {
     }
     this._buildEditGrid(year);
     this.editBidsMode.set(true);
+    this.usageTracking.postClickEvent('interaction', 'bidsheet', 'edit-bids-opened');
 
     // Focus the first crop input for the selected location
     if (focusLocation) {
@@ -1483,6 +1488,7 @@ export class BidSheetComponent {
   }
 
   saveEditBids(): void {
+    this.usageTracking.postClickEvent('interaction', 'bidsheet', 'bids-changed');
     const year = this.editBidsYear();
     const tu = this.activeTradeUnit();
     const commodityLookup = new Map(this.allCommodities().map(c => [c.code, c]));
@@ -1575,6 +1581,9 @@ export class BidSheetComponent {
     const alreadyOpen = this.panelSelectedLocation() === item.name;
     this.panelSelectedLocation.set(alreadyOpen ? '' : item.name);
     this.showPanel.set(true);
+    if (!alreadyOpen) {
+      this.usageTracking.postClickEvent('interaction', 'bidsheet', 'location-selected', item.name);
+    }
 
     // Populate the TU dropdown if no individual TU is selected (group-only counts as empty here),
     // or if the location's TU isn't already in the individual selection.
@@ -1602,10 +1611,12 @@ export class BidSheetComponent {
     const name = this.panelSelectedLocation();
     if (!name) return;
     // Toggle: clicking again clears the reference
-    if (this.selectedLocationName() === name) {
-      this.selectedLocationName.set('');
-    } else {
+    const isSetting = this.selectedLocationName() !== name;
+    if (isSetting) {
       this.selectedLocationName.set(name);
+      this.usageTracking.postClickEvent('interaction', 'bidsheet', 'reference-set', name);
+    } else {
+      this.selectedLocationName.set('');
     }
     this.filterBids();
     this._refreshMapMarkers();
@@ -1639,6 +1650,7 @@ export class BidSheetComponent {
         this.toastService.success(`Deleted ${name}`);
         this.filterBids();
         this._refreshMapMarkers();
+        this.usageTracking.postClickEvent('interaction', 'bidsheet', 'location-deleted', name);
       },
       error: () => {
         this.showDeleteLocationConfirm.set(false);

@@ -35,6 +35,13 @@ public class ApplicationDbContext : DbContext
     public DbSet<BidSheetPreference> BidSheetPreferences => Set<BidSheetPreference>();
     public DbSet<ElevatorCache> ElevatorCaches => Set<ElevatorCache>();
     public DbSet<HarvestWindow> HarvestWindows => Set<HarvestWindow>();
+    public DbSet<UserActivity> UserActivities => Set<UserActivity>();
+    public DbSet<UserClickEvent> UserClickEvents => Set<UserClickEvent>();
+    public DbSet<UserSession> UserSessions => Set<UserSession>();
+    public DbSet<UserActivityDaily> UserActivityDailies => Set<UserActivityDaily>();
+    public DbSet<FeatureUsageDaily> FeatureUsageDailies => Set<FeatureUsageDaily>();
+    public DbSet<WeeklyLoginAggregate> WeeklyLoginAggregates => Set<WeeklyLoginAggregate>();
+    public DbSet<UserTradeUnitSnapshot> UserTradeUnitSnapshots => Set<UserTradeUnitSnapshot>();
     public DbSet<QueryLibraryItem> QueryLibrary => Set<QueryLibraryItem>();
     public DbSet<QuerySearchLog> QuerySearchLogs => Set<QuerySearchLog>();
 
@@ -379,6 +386,121 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.DeliveryEndDay).IsRequired();
             entity.Property(e => e.IsActive).HasDefaultValue(true).IsRequired();
             entity.HasIndex(e => e.Commodity).HasDatabaseName("IX_HarvestWindows_Commodity");
+        });
+
+        modelBuilder.Entity<UserActivity>(entity =>
+        {
+            entity.ToTable("UserActivity", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.HttpMethod).HasMaxLength(10).IsRequired();
+            entity.Property(e => e.Path).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.StatusCode).IsRequired();
+            entity.Property(e => e.DurationMs).IsRequired();
+            entity.Property(e => e.FeatureCode).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.SubFeatureCode).HasMaxLength(50);
+            entity.Property(e => e.Timestamp).HasDefaultValueSql("SYSUTCDATETIME()").IsRequired();
+            entity.HasIndex(e => e.Timestamp).HasDatabaseName("IX_UserActivity_Timestamp");
+            entity.HasIndex(e => new { e.UserId, e.Timestamp }).HasDatabaseName("IX_UserActivity_UserId_Timestamp");
+            entity.HasIndex(e => new { e.FeatureCode, e.Timestamp }).HasDatabaseName("IX_UserActivity_FeatureCode_Timestamp");
+        });
+
+        modelBuilder.Entity<UserClickEvent>(entity =>
+        {
+            entity.ToTable("UserClickEvent", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.EventType).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.FeatureCode).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.SubFeatureCode).HasMaxLength(50);
+            entity.Property(e => e.TargetId).HasMaxLength(200);
+            entity.Property(e => e.Timestamp).HasDefaultValueSql("SYSUTCDATETIME()").IsRequired();
+            entity.HasIndex(e => new { e.UserId, e.Timestamp }).HasDatabaseName("IX_UserClickEvent_UserId_Timestamp");
+            entity.HasIndex(e => new { e.EventType, e.Timestamp }).HasDatabaseName("IX_UserClickEvent_EventType_Timestamp");
+            entity.HasIndex(e => e.Timestamp).HasDatabaseName("IX_UserClickEvent_Timestamp");
+        });
+
+        modelBuilder.Entity<UserSession>(entity =>
+        {
+            entity.ToTable("UserSession", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.LoginTime).IsRequired();
+            entity.Property(e => e.LastActivityTime).IsRequired();
+            entity.Property(e => e.DurationMinutes)
+                .HasComputedColumnSql("DATEDIFF(MINUTE, LoginTime, LastActivityTime)", stored: true);
+            entity.HasIndex(e => new { e.UserId, e.LoginTime }).HasDatabaseName("IX_UserSession_UserId_LoginTime");
+            entity.HasIndex(e => e.LoginTime).HasDatabaseName("IX_UserSession_LoginTime");
+        });
+
+        modelBuilder.Entity<UserActivityDaily>(entity =>
+        {
+            entity.ToTable("UserActivityDaily", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.ActivityDate).IsRequired();
+            entity.Property(e => e.RequestCount).HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.SessionCount).HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.TotalSessionMinutes).HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.CustomersViewed).HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.ContractsViewed).HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.NotesCreated).HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.ListsBuilt).HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.PlantingIntentionsAdded).HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.ProducerDetailsViewed).HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.CallClicks).HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.EmailClicks).HasDefaultValue(0).IsRequired();
+            entity.HasIndex(e => new { e.UserId, e.ActivityDate }).IsUnique()
+                .HasDatabaseName("UQ_UserActivityDaily_UserId_Date");
+            entity.HasIndex(e => e.ActivityDate).HasDatabaseName("IX_UserActivityDaily_Date");
+        });
+
+        modelBuilder.Entity<FeatureUsageDaily>(entity =>
+        {
+            entity.ToTable("FeatureUsageDaily", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.Property(e => e.ActivityDate).IsRequired();
+            entity.Property(e => e.FeatureCode).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.SubFeatureCode).HasMaxLength(50).HasDefaultValue("__total__").IsRequired();
+            entity.Property(e => e.SessionCount).HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.UniqueUsers).HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.RequestCount).HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.ClickCount).HasDefaultValue(0).IsRequired();
+            entity.HasIndex(e => new { e.ActivityDate, e.FeatureCode, e.SubFeatureCode }).IsUnique()
+                .HasDatabaseName("UQ_FeatureUsageDaily");
+            entity.HasIndex(e => new { e.FeatureCode, e.ActivityDate }).HasDatabaseName("IX_FeatureUsageDaily_FeatureCode");
+        });
+
+        modelBuilder.Entity<WeeklyLoginAggregate>(entity =>
+        {
+            entity.ToTable("WeeklyLoginAggregate", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.Property(e => e.WeekStartDate).IsRequired();
+            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.LoginCount).HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.SessionCount).HasDefaultValue(0).IsRequired();
+            entity.Property(e => e.TotalSessionMin).HasDefaultValue(0).IsRequired();
+            entity.HasIndex(e => new { e.WeekStartDate, e.UserId }).IsUnique()
+                .HasDatabaseName("UQ_WeeklyLoginAggregate");
+            entity.HasIndex(e => e.WeekStartDate).HasDatabaseName("IX_WeeklyLoginAggregate_WeekStart");
+        });
+
+        modelBuilder.Entity<UserTradeUnitSnapshot>(entity =>
+        {
+            entity.ToTable("UserTradeUnitSnapshot", schema: "dbo");
+            entity.HasKey(e => new { e.UserId, e.TradeUnitCode });
+            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.DisplayName).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.TradeUnitCode).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.GroupName).HasMaxLength(100);
+            entity.Property(e => e.SnapshotDate).HasDefaultValueSql("CAST(SYSUTCDATETIME() AS DATE)").IsRequired();
+            entity.HasIndex(e => e.TradeUnitCode).HasDatabaseName("IX_UserTradeUnitSnapshot_TradeUnitCode");
         });
 
         modelBuilder.Entity<QueryLibraryItem>(entity =>

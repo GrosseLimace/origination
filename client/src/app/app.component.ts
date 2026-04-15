@@ -6,6 +6,7 @@ import { ToastContainerComponent } from '@shared/components/toast-container/toas
 import { IdleTimeoutService } from '@core/services/idle-timeout.service';
 import { DataPreloadService } from '@core/services/data-preload.service';
 import { UserPreferencesService } from '@core/services/user-preferences.service';
+import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 import { filter } from 'rxjs';
@@ -40,5 +41,6 @@ export class AppComponent {
     inject(IdleTimeoutService).start();
     inject(DataPreloadService);
     inject(UserPreferencesService);
+    inject(UsageTrackingService); // initializes router listener for screen tracking
   }
 }
