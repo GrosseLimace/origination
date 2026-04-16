@@ -282,6 +282,19 @@
               </div>
 
               <div class="space-y-2">
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
+                <select
+                  [(ngModel)]="addForm.category"
+                  class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                >
+                  <option value="" disabled>Select category...</option>
+                  @for (opt of categoryOptionsForCrop; track opt) {
+                    <option [value]="opt">{{ opt }}</option>
+                  }
+                </select>
+              </div>
+
+              <div class="space-y-2">
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Acres</label>
                 <app-input type="text" inputmode="numeric" [maxlength]="10" [(ngModel)]="addForm.acres" placeholder="e.g., 1,200"></app-input>
               </div>
@@ -356,6 +369,19 @@
                   <p class="text-xs text-scoular-yellow dark:text-scoular-yellow mt-1">No crops available for this customer.</p>
                 }
               }
+            </div>
+
+            <div class="space-y-2">
+              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
+              <select
+                [(ngModel)]="editForm.category"
+                class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green"
+              >
+                <option value="" disabled>Select category...</option>
+                @for (opt of categoryOptionsForCrop; track opt) {
+                  <option [value]="opt">{{ opt }}</option>
+                }
+              </select>
             </div>
 
             <div class="space-y-2">

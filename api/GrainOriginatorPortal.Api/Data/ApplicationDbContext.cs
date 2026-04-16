@@ -92,6 +92,10 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Code).HasColumnName("Code").HasMaxLength(100).IsRequired();
             entity.Property(e => e.Name).HasColumnName("Name").HasMaxLength(255).IsRequired();
             entity.Property(e => e.Category).HasColumnName("Category").HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.Tier1).HasColumnName("Tier1").HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.Tier2).HasColumnName("Tier2").HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.Tier3).HasColumnName("Tier3").HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.BaseUOM).HasColumnName("BaseUOM").HasMaxLength(10).IsRequired(false);
             entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
 
             entity.HasIndex(e => e.Code).IsUnique().HasDatabaseName("IX_Commodities_Code");
@@ -131,6 +135,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.TradeUnit).HasColumnName("TradeUnit").HasMaxLength(100).IsRequired();
             entity.Property(e => e.PlantingYear).HasColumnName("PlantingYear").IsRequired();
             entity.Property(e => e.Crop).HasColumnName("Crop").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Category).HasColumnName("Category").HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.Type).HasColumnName("Type").HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.Description).HasColumnName("Description").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.Acres).HasColumnName("Acres").IsRequired();

@@ -274,6 +274,7 @@ export class ApiService {
     customerCode: string;
     tradeUnit: string;
     crop: string;
+    category?: string;
     type?: string;
     description?: string;
     acres: number;
@@ -286,6 +287,7 @@ export class ApiService {
   /** Updates an existing planting intention */
   updatePlantingIntention(id: number, data: {
     crop: string;
+    category?: string;
     type?: string;
     description?: string;
     acres: number;
