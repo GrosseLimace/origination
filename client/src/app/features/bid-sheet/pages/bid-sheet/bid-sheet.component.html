@@ -982,8 +982,8 @@
                                       <td style="padding:5px 8px;font-weight:500;color:#1f2937;border:1px solid #e5e7eb;white-space:nowrap;">{{ row.name }}</td>
                                       @for (col of group.columns; track col.key) {
                                         <td style="padding:5px 8px;text-align:center;border:1px solid #e5e7eb;font-family:'Cascadia Mono','Fira Code',monospace;">
-                                          @if ((row.bids[col.key] ?? '').trim()) {
-                                            {{ (row.bids[col.key] ?? '').trim() }}
+                                          @if ((row.bids[col.key] || '').trim()) {
+                                            {{ (row.bids[col.key] || '').trim() }}
                                           } @else {
                                             <span style="color:#d1d5db;">&mdash;</span>
                                           }

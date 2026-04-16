@@ -7,7 +7,11 @@ import { MsalService } from '@azure/msal-angular';
  * Everyone else gets redirected to the home page. Tracking still runs for all users —
  * this guard only gates the viewer UI, not the backend write endpoints.
  */
-const ALLOWED_EMAIL = 'cegr@scoular.com';
+const ALLOWED_EMAILS = new Set([
+  'cegr@scoular.com',
+  'hcollins@scoular.com',
+  'sfletcher@scoular.com',
+]);
 
 export const usageDashboardOwnerGuard: CanActivateFn = () => {
   const msal = inject(MsalService);
@@ -17,7 +21,7 @@ export const usageDashboardOwnerGuard: CanActivateFn = () => {
   const email = (account?.username ?? '').toLowerCase();
   const normalized = email.includes('@') ? email : (email ? `${email}@scoular.com` : '');
 
-  if (normalized === ALLOWED_EMAIL) return true;
+  if (ALLOWED_EMAILS.has(normalized)) return true;
   router.navigate(['/']);
   return false;
 };

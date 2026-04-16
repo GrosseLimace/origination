@@ -136,9 +136,10 @@ export class NlqFilterService {
         if (!found.includes(normalized)) found.push(normalized);
       }
     }
-    // Check dynamic commodity terms (codes/names from DB)
+    // Check dynamic commodity terms (codes/names from DB) — use word boundaries
+    // to avoid matching substrings of common English words (e.g. "act" inside "active").
     for (const term of this._allCommodityTerms) {
-      if (term.length > 2 && lower.includes(term) && !found.includes(term)) {
+      if (term.length > 2 && new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(lower) && !found.includes(term)) {
         // Don't add if it's a substring of an already-found crop (e.g. "corn" already found, skip "cor")
         if (!found.some(f => f.includes(term) || term.includes(f))) {
           found.push(term);
@@ -541,8 +542,10 @@ export class NlqFilterService {
         lowerQuery.includes('dry land')) matched.push('planting_type');
 
     // --- Contracts (existing + enhanced) ---
-    if (lowerQuery.includes('active contract') || lowerQuery.includes('have contract') ||
-        lowerQuery.includes('with active contract') || lowerQuery.includes('has contract')) matched.push('active_contract');
+    if ((lowerQuery.includes('active contract') || lowerQuery.includes('have contract') ||
+        lowerQuery.includes('with active contract') || lowerQuery.includes('with contract') ||
+        lowerQuery.includes('has contract')) &&
+        !lowerQuery.includes('no active') && !lowerQuery.includes('no contract') && !lowerQuery.includes('without contract')) matched.push('has_contract');
     if (lowerQuery.includes('no active contract') || lowerQuery.includes('no contract') ||
         lowerQuery.includes('without contract')) matched.push('no_contract');
     if (lowerQuery.includes('unsigned contract') || lowerQuery.includes('not signed')) matched.push('unsigned_contract');
@@ -921,10 +924,10 @@ export class NlqFilterService {
     tickets: Ticket[],
     plantingIntentions: PlantingIntention[]
   ): Customer[] {
-    // Pre-index contracts and tickets by customer
+    // Pre-index open contracts (closedDate is null) and tickets by customer — matches home page
     const contractsByCustomer = new Map<string, Contract[]>();
     for (const c of contracts) {
-      if (!c.ctrmCustomerId) continue;
+      if (!c.ctrmCustomerId || c.closedDate) continue;
       const arr = contractsByCustomer.get(c.ctrmCustomerId);
       if (arr) arr.push(c); else contractsByCustomer.set(c.ctrmCustomerId, [c]);
     }
@@ -940,8 +943,7 @@ export class NlqFilterService {
         lowerQuery.includes('contracted but not delivered') ||
         lowerQuery.includes('not yet delivered')) {
       result = result.filter(c => {
-        const hasContracts = (contractsByCustomer.get(c.sourceCustomerId!) || [])
-          .some(ct => ct.status === 'Active' || ct.status === 'Pending');
+        const hasContracts = (contractsByCustomer.get(c.sourceCustomerId!) || []).length > 0;
         const hasTickets = (ticketsByCustomer.get(c.sourceCustomerId!) || []).length > 0;
         return hasContracts && !hasTickets;
       });
@@ -1211,8 +1213,9 @@ export class NlqFilterService {
     }
 
     // Primary contact — "has a contact", "with primary contact", "contact person", "contact info", etc.
-    const hasContact = /(?:has|have|with)\s+(?:a\s+)?(?:primary\s+)?contact|contact\s*(?:person|info|name|details)/i.test(lowerQuery);
-    const noContact = /(?:no|without|missing|don'?t have|doesn'?t have)\s+(?:a\s+)?(?:primary\s+)?contact|no\s+contact\s*(?:person|info|name)?/i.test(lowerQuery);
+    // Use word boundary after "contact" to avoid matching "contracts" which contains "contact" as a substring.
+    const hasContact = /(?:has|have|with)\s+(?:a\s+)?(?:primary\s+)?contact\b(?!s?\s*(?:for|with|in))|contact\s*(?:person|info|name|details)/i.test(lowerQuery) && !lowerQuery.includes('contract');
+    const noContact = /(?:no|without|missing|don'?t have|doesn'?t have)\s+(?:a\s+)?(?:primary\s+)?contact\b(?!s)|no\s+contact\s*(?:person|info|name)?/i.test(lowerQuery) && !lowerQuery.includes('contract');
     if (hasContact && !noContact) {
       result = result.filter(c => c.primaryContact?.trim());
     }
@@ -1250,11 +1253,12 @@ export class NlqFilterService {
     // If no hardcoded crop found, try detecting a dynamic commodity term from the DB.
     // Skip when the query is a storage query — words like "storage" can accidentally match
     // short commodity codes/names (e.g. "age", "tor") from the Commodities table.
+    // Word-boundary matching prevents false hits like "act" inside "active" or "con" inside "contacted".
     const isStorageQuery = this.queryInvolvesStorage(lowerQuery);
     const isTicketQuery = this.queryInvolvesTickets(lowerQuery);
     if (!commodityCrop && !isNoteSearchQuery && !isStorageQuery && !isTicketQuery) {
       for (const term of this._allCommodityTerms) {
-        if (term.length > 2 && lowerQuery.includes(term)) {
+        if (term.length > 2 && new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(lowerQuery)) {
           commodityCrop = term;
           break;
         }
@@ -1276,28 +1280,41 @@ export class NlqFilterService {
         ticketCommoditiesByCustomer.get(t.customerCode)!.add(t.productCode);
       }
 
-      // Build customer → contract commodity codes map
-      const contractCommoditiesByCustomer = new Map<string, Set<string>>();
+      // Build customer → contract commodity group map (commodityGroup = "Corn", "Soybeans", "Wheat", etc.)
+      // Only consider open contracts (closedDate is null) — matches the home page contracts tab.
+      const contractGroupsByCustomer = new Map<string, Set<string>>();
+      const contractCodesByCustomer = new Map<string, Set<string>>();
       for (const c of contracts) {
-        if (!c.ctrmCustomerId) continue;
-        if (!contractCommoditiesByCustomer.has(c.ctrmCustomerId)) {
-          contractCommoditiesByCustomer.set(c.ctrmCustomerId, new Set());
+        if (!c.ctrmCustomerId || c.closedDate) continue;
+        if (!contractGroupsByCustomer.has(c.ctrmCustomerId)) {
+          contractGroupsByCustomer.set(c.ctrmCustomerId, new Set());
+          contractCodesByCustomer.set(c.ctrmCustomerId, new Set());
         }
-        if (c.commodityCode) contractCommoditiesByCustomer.get(c.ctrmCustomerId)!.add(c.commodityCode);
-        if (c.commodityDescription) contractCommoditiesByCustomer.get(c.ctrmCustomerId)!.add(c.commodityDescription);
+        if (c.commodityGroup) contractGroupsByCustomer.get(c.ctrmCustomerId)!.add(c.commodityGroup.toLowerCase());
+        if (c.commodityCode) contractCodesByCustomer.get(c.ctrmCustomerId)!.add(c.commodityCode.toLowerCase());
+        if (c.commodityDescription) contractCodesByCustomer.get(c.ctrmCustomerId)!.add(c.commodityDescription.toLowerCase());
       }
+
+      const cropWithContracts = lowerQuery.includes('contract');
+      const cropWithTickets = this.queryInvolvesTickets(lowerQuery);
 
       result = result.filter(c => {
         return cropsToMatch.some(crop => {
-          // Check customer's ProducerDetails commodities
-          const hasInDetails = c.commodities?.some(cm => this.matchesCommodity(cm, crop)) ?? false;
-          if (hasInDetails) return true;
-          // Check contract commodity codes/descriptions
-          const contractCodes = contractCommoditiesByCustomer.get(c.sourceCustomerId ?? '');
-          if (contractCodes && [...contractCodes].some(code => this.matchesCommodity(code, crop))) return true;
-          // Check ticket product codes
+          const cropLower = crop.toLowerCase();
+          if (cropWithContracts) {
+            // "corn contracts" → check contract commodityGroup directly (Corn, Soybeans, Wheat, Sorghum)
+            const groups = contractGroupsByCustomer.get(c.sourceCustomerId ?? '');
+            if (groups && groups.has(cropLower)) return true;
+            // Also try matching crop aliases against the group (e.g. "milo" → matches group "sorghum")
+            const codes = contractCodesByCustomer.get(c.sourceCustomerId ?? '');
+            return codes ? [...codes].some(code => this.matchesCommodity(code, cropLower)) : false;
+          }
+          // Non-contract queries: check contracts, tickets, and ProducerDetails broadly
+          const codes = contractCodesByCustomer.get(c.sourceCustomerId ?? '');
+          if (codes && [...codes].some(code => this.matchesCommodity(code, cropLower))) return true;
           const ticketCodes = ticketCommoditiesByCustomer.get(c.sourceCustomerId ?? '');
-          return ticketCodes ? [...ticketCodes].some(code => this.matchesCommodity(code, crop)) : false;
+          if (ticketCodes && [...ticketCodes].some(code => this.matchesCommodity(code, cropLower))) return true;
+          return c.commodities?.some(cm => this.matchesCommodity(cm, cropLower)) ?? false;
         });
       });
     }
@@ -1938,92 +1955,97 @@ export class NlqFilterService {
   // ============================================================
 
   private applyContractFilters(lowerQuery: string, result: Customer[], contracts: Contract[]): Customer[] {
-    // Build customer-to-contracts map (via string matching)
-    const contractsByCustomer = new Map<string, Contract[]>();
+    // Open contracts (closedDate is null) — matches the home page / customer profile contracts tab.
+    // Status-specific queries (fulfilled, cancelled) use the full set which includes recent closed contracts.
+    const openByCustomer = new Map<string, Contract[]>();
+    const allByCustomer = new Map<string, Contract[]>();
     for (const c of contracts) {
       if (!c.ctrmCustomerId) continue;
-      const existing = contractsByCustomer.get(c.ctrmCustomerId) || [];
-      existing.push(c);
-      contractsByCustomer.set(c.ctrmCustomerId, existing);
+      // Full set (open + recent closed from API)
+      const allArr = allByCustomer.get(c.ctrmCustomerId) || [];
+      allArr.push(c);
+      allByCustomer.set(c.ctrmCustomerId, allArr);
+      // Open only (no closedDate)
+      if (!c.closedDate) {
+        const openArr = openByCustomer.get(c.ctrmCustomerId) || [];
+        openArr.push(c);
+        openByCustomer.set(c.ctrmCustomerId, openArr);
+      }
     }
 
-    const getCustomerContracts = (c: Customer): Contract[] =>
-      c.sourceCustomerId ? contractsByCustomer.get(c.sourceCustomerId) ?? [] : [];
+    const getOpenContracts = (c: Customer): Contract[] =>
+      c.sourceCustomerId ? openByCustomer.get(c.sourceCustomerId) ?? [] : [];
+    const getAllContracts = (c: Customer): Contract[] =>
+      c.sourceCustomerId ? allByCustomer.get(c.sourceCustomerId) ?? [] : [];
 
     // --- No active contracts ---
-    // Skip standalone "no contract" filter when this is a cross-entity query
-    // (e.g. "planting but no contracts") — the cross-entity filter handles it with proper AND logic.
     const isCrossEntityNoContract = lowerQuery.includes('planting') && (lowerQuery.includes('no contract') || lowerQuery.includes('no active contract'));
     if (!isCrossEntityNoContract &&
         (lowerQuery.includes('no active contract') || lowerQuery.includes('no contract') ||
          lowerQuery.includes('without contract') || lowerQuery.includes('no contracts'))) {
-      result = result.filter(c =>
-        !getCustomerContracts(c).some(ct => ct.status === 'Active' || ct.status === 'Pending')
-      );
+      result = result.filter(c => getOpenContracts(c).length === 0);
     }
 
-    // --- Has active contracts ---
-    if ((lowerQuery.includes('with active contract') || lowerQuery.includes('have contract') ||
-         lowerQuery.includes('has contract') || lowerQuery.includes('active contract')) &&
+    // --- Has contracts (open = no closedDate, same as home page) ---
+    if ((lowerQuery.includes('with active contract') || lowerQuery.includes('active contract') ||
+         lowerQuery.includes('with contract') || lowerQuery.includes('have contract') ||
+         lowerQuery.includes('has contract')) &&
         !lowerQuery.includes('no active') && !lowerQuery.includes('no contract') && !lowerQuery.includes('without contract')) {
-      result = result.filter(c =>
-        getCustomerContracts(c).some(ct => ct.status === 'Active' || ct.status === 'Pending')
-      );
+      result = result.filter(c => getOpenContracts(c).length > 0);
     }
 
-    // --- Unsigned contracts ---
+    // --- Unsigned contracts (within active) ---
     if (lowerQuery.includes('unsigned contract') || lowerQuery.includes('not signed')) {
       result = result.filter(c =>
-        getCustomerContracts(c).some(ct => !ct.signed)
+        getOpenContracts(c).some(ct => !ct.signed)
       );
     }
 
-    // --- Status-specific filters ---
+    // --- Status-specific filters (use full set) ---
     if (lowerQuery.includes('fulfilled contract') || lowerQuery.includes('completed contract')) {
       result = result.filter(c =>
-        getCustomerContracts(c).some(ct => ct.status === 'Fulfilled')
+        getAllContracts(c).some(ct => ct.status === 'Fulfilled')
       );
     }
     if (lowerQuery.includes('cancelled contract') || lowerQuery.includes('canceled contract')) {
       result = result.filter(c =>
-        getCustomerContracts(c).some(ct => ct.status === 'Cancelled')
+        getAllContracts(c).some(ct => ct.status === 'Cancelled')
       );
     }
     if (lowerQuery.includes('overdue contract') || lowerQuery.includes('past due contract') ||
         (lowerQuery.includes('overdue') && !lowerQuery.includes('deliver'))) {
       result = result.filter(c =>
-        getCustomerContracts(c).some(ct => ct.status === 'Overdue')
+        getAllContracts(c).some(ct => ct.status === 'Overdue')
       );
     }
     if (lowerQuery.includes('pending contract')) {
       result = result.filter(c =>
-        getCustomerContracts(c).some(ct => ct.status === 'Pending')
+        getOpenContracts(c).some(ct => ct.status === 'Pending')
       );
     }
 
-    // --- Customer confirmation status ---
+    // --- Customer confirmation status (within active) ---
     if (lowerQuery.includes('unconfirmed contract') || lowerQuery.includes('unconfirmed') ||
         (lowerQuery.includes('not confirmed') && lowerQuery.includes('contract'))) {
       result = result.filter(c =>
-        getCustomerContracts(c).some(ct =>
+        getOpenContracts(c).some(ct =>
           ct.customerConfirmStatus != null && ct.customerConfirmStatus !== 'Confirmed'
         )
       );
     } else if (lowerQuery.includes('confirmed contract') || lowerQuery.includes('customer confirmed')) {
       result = result.filter(c =>
-        getCustomerContracts(c).some(ct => ct.customerConfirmStatus === 'Confirmed')
+        getOpenContracts(c).some(ct => ct.customerConfirmStatus === 'Confirmed')
       );
     }
 
-    // --- Unpriced contracts ---
-    // Unpriced / not priced / needs pricing / open price / deferred pricing
+    // --- Unpriced contracts (within active) ---
     if (lowerQuery.includes('unpriced') || lowerQuery.includes('not priced') ||
         lowerQuery.includes('not fully priced') || lowerQuery.includes('needs pricing') ||
         lowerQuery.includes('need to price') || lowerQuery.includes('open price') ||
         lowerQuery.includes('unprice') || lowerQuery.includes('deferred') ||
         lowerQuery.includes('without a price') || lowerQuery.includes('no price')) {
       result = result.filter(c =>
-        getCustomerContracts(c).some(ct =>
+        getOpenContracts(c).some(ct =>
           ct.priceTypeCode === 'U' || ct.priceTypeCode === 'D' ||
           (!ct.pricedQuantity || ct.pricedQuantity < (ct.quantity || 0))
         )
@@ -2035,7 +2057,7 @@ export class NlqFilterService {
          lowerQuery.includes('priced contract')) &&
         !lowerQuery.includes('not ') && !lowerQuery.includes('un')) {
       result = result.filter(c =>
-        getCustomerContracts(c).some(ct =>
+        getOpenContracts(c).some(ct =>
           ct.priceTypeCode === 'P' ||
           (ct.pricedQuantity && ct.pricedQuantity >= (ct.quantity || 0))
         )
@@ -2049,7 +2071,7 @@ export class NlqFilterService {
     if (contractQty) {
       const minQty = this.parseQuantity(contractQty);
       result = result.filter(c => {
-        const total = getCustomerContracts(c).reduce((sum, ct) => sum + (ct.quantity || 0), 0);
+        const total = getOpenContracts(c).reduce((sum, ct) => sum + (ct.quantity || 0), 0);
         return total >= minQty;
       });
     }
@@ -2059,7 +2081,7 @@ export class NlqFilterService {
     if (contractValueMatch) {
       const minValue = this.parseQuantity(contractValueMatch[1]);
       result = result.filter(c => {
-        const total = getCustomerContracts(c).reduce((sum, ct) => sum + (ct.totalValue || 0), 0);
+        const total = getOpenContracts(c).reduce((sum, ct) => sum + (ct.totalValue || 0), 0);
         return total >= minValue;
       });
     }
@@ -2069,14 +2091,14 @@ export class NlqFilterService {
     if (contractPriceOverMatch) {
       const minPrice = parseFloat(contractPriceOverMatch[1]);
       result = result.filter(c =>
-        getCustomerContracts(c).some(ct => (ct.price || 0) >= minPrice)
+        getOpenContracts(c).some(ct => (ct.price || 0) >= minPrice)
       );
     }
     const contractPriceUnderMatch = lowerQuery.match(/(?:contract\s*)?price\s*(?:below|under|less than)\s*\$?([\d.]+)/);
     if (contractPriceUnderMatch) {
       const maxPrice = parseFloat(contractPriceUnderMatch[1]);
       result = result.filter(c =>
-        getCustomerContracts(c).some(ct => ct.price != null && ct.price > 0 && ct.price <= maxPrice)
+        getOpenContracts(c).some(ct => ct.price != null && ct.price > 0 && ct.price <= maxPrice)
       );
     }
 
@@ -2086,7 +2108,7 @@ export class NlqFilterService {
         const now = new Date();
         const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
         result = result.filter(c =>
-          getCustomerContracts(c).some(ct => {
+          getOpenContracts(c).some(ct => {
             const end = this.parseDate(ct.deliveryEnd);
             return end && end >= now && end <= endOfMonth;
           })
@@ -2096,7 +2118,7 @@ export class NlqFilterService {
         const startNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
         const endNextMonth = new Date(now.getFullYear(), now.getMonth() + 2, 0);
         result = result.filter(c =>
-          getCustomerContracts(c).some(ct => {
+          getOpenContracts(c).some(ct => {
             const end = this.parseDate(ct.deliveryEnd);
             return end && end >= startNextMonth && end <= endNextMonth;
           })
@@ -2117,7 +2139,7 @@ export class NlqFilterService {
     }
     if (contractCrops.length > 0) {
       result = result.filter(c =>
-        getCustomerContracts(c).some(ct =>
+        getOpenContracts(c).some(ct =>
           contractCrops.some(crop =>
             this.matchesCommodity(ct.commodityDescription, crop) ||
             this.matchesCommodity(ct.commodityCode, crop)
@@ -2132,7 +2154,7 @@ export class NlqFilterService {
       const year = parseInt(cropYearMatch[1] || cropYearMatch[2]);
       if (!isNaN(year)) {
         result = result.filter(c =>
-          getCustomerContracts(c).some(ct => ct.cropYear === year)
+          getOpenContracts(c).some(ct => ct.cropYear === year)
         );
       }
     }
@@ -2145,7 +2167,7 @@ export class NlqFilterService {
     if (openBalThreshold) {
       const minBal = this.parseQuantity(openBalThreshold);
       result = result.filter(c => {
-        const total = getCustomerContracts(c).reduce((sum, ct) => sum + (ct.openBalanceQuantity || 0), 0);
+        const total = getOpenContracts(c).reduce((sum, ct) => sum + (ct.openBalanceQuantity || 0), 0);
         return total >= minBal;
       });
     }
@@ -2155,12 +2177,12 @@ export class NlqFilterService {
     const noOpenBal = /(?:no|without|zero)\s+(?:open\s*balance|unshipped\s*bushels?|remaining\s*bushels?)/i.test(lowerQuery);
     if (hasOpenBal && !noOpenBal && !openBalThreshold) {
       result = result.filter(c =>
-        getCustomerContracts(c).some(ct => (ct.openBalanceQuantity || 0) > 0)
+        getOpenContracts(c).some(ct => (ct.openBalanceQuantity || 0) > 0)
       );
     }
     if (noOpenBal) {
       result = result.filter(c =>
-        !getCustomerContracts(c).some(ct => (ct.openBalanceQuantity || 0) > 0)
+        !getOpenContracts(c).some(ct => (ct.openBalanceQuantity || 0) > 0)
       );
     }
 
@@ -2174,7 +2196,7 @@ export class NlqFilterService {
         : parseFloat(fulfillPctOverMatch![1]);
       const isUnder = !!fulfillPctMatch || halfDeliveredMatch;
       result = result.filter(c => {
-        const cContracts = getCustomerContracts(c).filter(ct =>
+        const cContracts = getOpenContracts(c).filter(ct =>
           ct.status === 'Active' || ct.status === 'Pending' || ct.status === 'Overdue'
         );
         if (cContracts.length === 0) return false;
@@ -2192,7 +2214,7 @@ export class NlqFilterService {
       const yearMatch = lowerQuery.match(/(?:booked|contracted)\s*in\s*(\d{4})/i);
       const year = yearMatch ? parseInt(yearMatch[1]) : new Date().getFullYear();
       result = result.filter(c =>
-        getCustomerContracts(c).some(ct => {
+        getOpenContracts(c).some(ct => {
           if (!ct.contractDate) return false;
           const d = this.parseDate(ct.contractDate);
           return d && d.getFullYear() === year;
@@ -2208,7 +2230,7 @@ export class NlqFilterService {
       if (monthIdx >= 0) {
         const cutoff = new Date(new Date().getFullYear(), monthIdx, 1);
         result = result.filter(c =>
-          getCustomerContracts(c).some(ct => {
+          getOpenContracts(c).some(ct => {
             const d = this.parseDate(ct.contractDate);
             return d && d >= cutoff;
           })
@@ -2225,7 +2247,7 @@ export class NlqFilterService {
       const today = new Date();
       const samePointLastYear = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
       result = result.filter(c => {
-        const cContracts = getCustomerContracts(c);
+        const cContracts = getOpenContracts(c);
         if (cContracts.length === 0) return false;
         let maxYear = 0;
         for (const ct of cContracts) {

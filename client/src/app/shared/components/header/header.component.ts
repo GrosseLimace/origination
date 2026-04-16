@@ -54,7 +54,7 @@ export class HeaderComponent {
     if (!environment.usageDashboardEnabled) return false;
     const email = (this._getAccount()?.username ?? '').toLowerCase();
     const normalized = email.includes('@') ? email : (email ? `${email}@scoular.com` : '');
-    return normalized === 'cegr@scoular.com';
+    return ['cegr@scoular.com', 'hcollins@scoular.com', 'sfletcher@scoular.com'].includes(normalized);
   }
 
   mobileMenuOpen = signal(false);

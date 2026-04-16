@@ -1634,7 +1634,7 @@ export class BidSheetComponent {
         const bg = i % 2 === 0 ? '#ffffff' : '#f9fafb';
         const cells = group.columns.map(col => {
           const val = (row.bids[col.key] ?? '').trim();
-          const display = val || '<span style="color:#d1d5db;">&mdash;</span>';
+          const display = val ? this._esc(val) : '<span style="color:#d1d5db;">&mdash;</span>';
           return `<td style="padding:9px 16px;text-align:center;font-size:12px;border:1px solid #e5e7eb;background:${bg};font-family:'Cascadia Mono','Fira Code',monospace;">${display}</td>`;
         }).join('');
         return `<tr>
