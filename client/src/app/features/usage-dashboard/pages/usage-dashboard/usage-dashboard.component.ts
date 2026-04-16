@@ -63,10 +63,22 @@ export class UsageDashboardComponent {
   readonly querySearchGapsOpen = signal(false);
   readonly loading = signal(false);
 
-  // Trade unit key derived from app state (shared trade unit selector)
+  // Trade unit key derived from app state (shared trade unit selector).
+  // When a group is selected but no individual TU, resolve the group's TU codes
+  // so the dashboard filters to originators in that group — not all originators.
   readonly tradeUnitKey = computed(() => {
     const selected = this.appState.selectedTradeUnits();
-    return selected.length > 0 ? selected.join(',') : undefined;
+    if (selected.length > 0) return selected.join(',');
+    // No individual TU selected — check if a group is selected and expand it
+    const groups = this.appState.selectedGroupNames();
+    if (groups.length > 0) {
+      const allGroups = this.appState.userGroups();
+      const codes = allGroups
+        .filter(g => groups.includes(g.groupName))
+        .flatMap(g => g.tradeUnitCodes);
+      if (codes.length > 0) return codes.join(',');
+    }
+    return undefined;
   });
 
   // Search and sort for originator table

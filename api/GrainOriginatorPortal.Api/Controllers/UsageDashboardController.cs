@@ -392,20 +392,26 @@ public class UsageDashboardController : ControllerBase
         var activityMap = activityByUser.ToDictionary(a => a.UserId, StringComparer.OrdinalIgnoreCase);
 
         // All interaction-style counts come from the explicit click events the UI posts.
-        var clickCounts = await _appDb.UserClickEvents
+        // Fetched into memory so we can do distinct-by-TargetId counts for profiles/contracts
+        // (clicking the same customer 5 times in one period = 1 profile viewed, not 5).
+        var rawClicks = await _appDb.UserClickEvents
             .Where(c => c.Timestamp >= fromUtc && c.Timestamp < toUtc && userIdList.Contains(c.UserId))
-            .GroupBy(c => c.UserId)
-            .Select(g => new
+            .Select(c => new { c.UserId, c.EventType, c.FeatureCode, c.SubFeatureCode, c.TargetId })
+            .ToListAsync(ct);
+
+        var clicksMap = rawClicks.GroupBy(c => c.UserId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => new
             {
                 UserId = g.Key,
-                ProfilesViewed   = g.Count(c => c.FeatureCode == "customers"    && c.SubFeatureCode == "profile-opened"    && c.EventType == "interaction"),
-                ContractsViewed  = g.Count(c => c.FeatureCode == "customers"    && c.SubFeatureCode == "contracts"         && c.EventType == "interaction"),
+                // Distinct by TargetId (customerId) — reopening the same profile doesn't re-count
+                ProfilesViewed   = g.Where(c => c.FeatureCode == "customers"    && c.SubFeatureCode == "profile-opened"    && c.EventType == "interaction").Select(c => c.TargetId).Distinct().Count(),
+                // Distinct by TargetId (contractId) — expanding the same contract row doesn't re-count
+                ContractsViewed  = g.Where(c => c.FeatureCode == "customers"    && c.SubFeatureCode == "contracts"         && c.EventType == "interaction").Select(c => c.TargetId).Distinct().Count(),
+                // Total count — each call/email click is a distinct action
                 CallsEmails      = g.Count(c => c.EventType   == "call_click"   || c.EventType     == "email_click"),
                 ListsBuilt       = g.Count(c => c.FeatureCode == "build-a-list" && c.SubFeatureCode == "save-list"),
                 ProducerDetails  = g.Count(c => c.FeatureCode == "customers"    && c.SubFeatureCode == "producer-details"  && c.EventType == "interaction")
-            })
-            .ToListAsync(ct);
-        var clicksMap = clickCounts.ToDictionary(c => c.UserId, StringComparer.OrdinalIgnoreCase);
+            }, StringComparer.OrdinalIgnoreCase);
 
         // Union of user ids that have any tracked activity in the range
         var allUserIds = activityMap.Keys.Union(clicksMap.Keys, StringComparer.OrdinalIgnoreCase).ToList();
