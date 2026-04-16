@@ -11,6 +11,7 @@ import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { BidSheetEntry, BidSheetLocation, BidSheetLocationBid, Elevator, Commodity } from '@models';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
+import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
 
 interface EditBidsRow {
   name: string;
@@ -327,18 +328,10 @@ export class BidSheetComponent {
     'CURRENCY', 'TRANSPORTATION', 'FEED & FERT INGREDIENTS', 'FEED &FERT INGREDIENTS'
   ]);
 
-  // Returns unique grain crop categories (Corn, Wheat, Milo, etc.) matching the query
-  private static readonly _commodityAliases: Record<string, string[]> = {
-    'milo': ['milo', 'sorghum', 'sor', 'sg'],
-    'sorghum': ['milo', 'sorghum', 'sor', 'sg'],
-    'beans': ['soybeans', 'soy', 'beans', 'sb'],
-    'soy': ['soybeans', 'soy', 'beans', 'sb'],
-  };
-
   filteredCommodities(query: string): { code: string; name: string }[] {
     if (!query || query.length < 1) return [];
     const q = query.toLowerCase();
-    const searchTerms = BidSheetComponent._commodityAliases[q] ?? [q];
+    const searchTerms = expandCommodityAliases(q);
     const seen = new Set<string>();
     const results: { code: string; name: string }[] = [];
     for (const c of this.allCommodities()) {
@@ -1498,7 +1491,7 @@ export class BidSheetComponent {
       for (const col of this.editGridColumns()) {
         const current = (row.bids[col.key] ?? '').trim();
         const original = (row.originalBids[col.key] ?? '').trim();
-        if (current !== original && current) {
+        if (current !== original) {
           const commodity = commodityLookup.get(col.crop);
           toCreate.push({
             name: row.name,

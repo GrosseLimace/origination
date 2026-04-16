@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
 import { Customer, StoredGrain } from '@models';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
+import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
 
 export interface CommodityGroup {
   crop: string;
@@ -33,20 +34,7 @@ export class StoredGrainTableComponent {
   currentSortColumn: string | null = null;
   currentSortDirection: 'none' | 'asc' | 'desc' = 'none';
 
-  private readonly _commodityAliases: Record<string, string[]> = {
-    'milo': ['milo', 'sorghum', 'sg'],
-    'sorghum': ['milo', 'sorghum', 'sg'],
-    'sg': ['milo', 'sorghum', 'sg'],
-    'corn': ['corn', 'yc', 'yellow corn'],
-    'yc': ['corn', 'yc', 'yellow corn'],
-    'soybeans': ['soybeans', 'soy', 'beans', 'sb'],
-    'soy': ['soybeans', 'soy', 'beans', 'sb'],
-    'beans': ['soybeans', 'soy', 'beans', 'sb'],
-    'sb': ['soybeans', 'soy', 'beans', 'sb'],
-    'wheat': ['wheat', 'hrw', 'hrs', 'srw', 'hrww', 'hw'],
-    'hrw': ['wheat', 'hrw', 'hrww'],
-    'hrww': ['wheat', 'hrw', 'hrww'],
-  };
+  // Commodity aliases are centralized in @shared/utils/commodity-aliases.ts
 
   constructor() {
     // Auto-expand the single commodity group so the user doesn't have to click
@@ -94,7 +82,7 @@ export class StoredGrainTableComponent {
     if (!term) return this.allCommodityGroups();
 
     // Expand search term through commodity aliases (e.g., "milo" → also matches "sorghum")
-    const searchTerms = this._commodityAliases[term] ?? [term];
+    const searchTerms = expandCommodityAliases(term);
 
     const result: CommodityGroup[] = [];
     for (const group of this.allCommodityGroups()) {

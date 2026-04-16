@@ -2875,7 +2875,16 @@ public class SqlDataService : IDataService
             if (loc == null) continue;
 
             var key = (loc.Id, req.CommodityCode, req.CropYear, req.Month);
-            if (bidLookup.TryGetValue(key, out var bid))
+            if (string.IsNullOrWhiteSpace(req.Bid))
+            {
+                // Empty bid = user cleared the input → delete the existing row if present
+                if (bidLookup.TryGetValue(key, out var toRemove))
+                {
+                    _appContext.BidSheetLocationBids.Remove(toRemove);
+                    bidLookup.Remove(key);
+                }
+            }
+            else if (bidLookup.TryGetValue(key, out var bid))
             {
                 bid.Bid = req.Bid;
                 bid.ModifiedBy = userId;

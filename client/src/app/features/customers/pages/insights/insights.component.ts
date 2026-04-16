@@ -9,6 +9,7 @@ import { DataPreloadService } from '@core/services/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket } from '@models';
+import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
 import { CardComponent } from '@shared/components/card/card.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
@@ -115,23 +116,9 @@ function computeSummary(items: Insight[], category: InsightCategory): string {
   }
 }
 
-/**
- * Commodity name aliases — users searching "sorghum" should also match "milo" (and vice versa)
- * since they're the same crop. Extend as needed for other crops with multiple common names.
- */
-const CROP_ALIAS_MAP: Record<string, string[]> = {
-  'milo':    ['milo', 'sorghum', 'sor'],
-  'sorghum': ['milo', 'sorghum', 'sor'],
-  'sor':     ['milo', 'sorghum', 'sor'],
-  'beans':   ['beans', 'soybeans', 'soy', 'sb'],
-  'soybeans':['beans', 'soybeans', 'soy', 'sb'],
-  'soy':     ['beans', 'soybeans', 'soy', 'sb'],
-};
-
-/** Expand a search term to include aliases (e.g. "sorghum" → ["sorghum", "milo", "sor"]). */
+// Commodity aliases now centralized in @shared/utils/commodity-aliases.ts
 function expandSearchTermWithAliases(term: string): string[] {
-  const lower = term.toLowerCase().trim();
-  return CROP_ALIAS_MAP[lower] ?? [lower];
+  return expandCommodityAliases(term);
 }
 
 @Component({

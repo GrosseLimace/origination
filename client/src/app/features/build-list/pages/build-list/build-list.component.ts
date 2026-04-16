@@ -19,6 +19,7 @@ import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDes
 import { InputComponent } from '@shared/components/input/input.component';
 import { CustomerMapComponent } from '@features/customers/components/map/customer-map.component';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
+import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
 
 @Component({
   selector: 'app-build-list',
@@ -158,15 +159,10 @@ export class BuildListComponent {
     const contractMap = this._openContractsByCustomer(); // Open contracts only for refinements
 
     // Build expanded crop set for contextual filtering (used by ticket/contract/storage filters)
-    const aliasMap: Record<string, string[]> = {
-      'milo': ['milo', 'sorghum'], 'sorghum': ['milo', 'sorghum'],
-      'beans': ['beans', 'soybeans', 'soy'], 'soybeans': ['soybeans', 'beans', 'soy'], 'soy': ['soy', 'soybeans', 'beans'],
-    };
     const selectedCrops = new Set<string>();
     if (r.crops && r.crops.length > 0) {
       for (const crop of r.crops) {
-        const lower = crop.trim().toLowerCase();
-        for (const alias of (aliasMap[lower] ?? [lower])) selectedCrops.add(alias);
+        for (const alias of expandCommodityAliases(crop)) selectedCrops.add(alias);
       }
     }
     const contactMap = this.lastContactByCustomer();
@@ -288,10 +284,36 @@ export class BuildListComponent {
     }
     if (r.noteKeyword?.trim()) {
       const kw = r.noteKeyword.trim().toLowerCase();
-      const matchingCustomerIds = new Set<number>(
-        this.notes().filter(n => (n.content || '').toLowerCase().includes(kw)).map(n => n.customerId)
-      );
-      list = list.filter(c => matchingCustomerIds.has(c.id));
+      // Index which customerCodes have notes matching the keyword
+      const matchingCodes = new Set<string>();
+      for (const n of this.notes()) {
+        if ((n.content || '').toLowerCase().includes(kw) && n.customerCode) {
+          matchingCodes.add(n.customerCode);
+        }
+      }
+      // Build incoming links map (bidirectional — same as contact history)
+      const incomingLinks = new Map<string, Set<string>>();
+      for (const c of this.customers()) {
+        if (!c.sourceCustomerId) continue;
+        for (const linkedCode of (c.linkedProducerIds || [])) {
+          if (!incomingLinks.has(linkedCode)) incomingLinks.set(linkedCode, new Set());
+          incomingLinks.get(linkedCode)!.add(c.sourceCustomerId);
+        }
+      }
+      // Match customers directly + via linked producers (bidirectional)
+      list = list.filter(c => {
+        const allCodes = new Set<string>();
+        if (c.sourceCustomerId) allCodes.add(c.sourceCustomerId);
+        // Outgoing links (I link to them)
+        for (const linkedCode of (c.linkedProducerIds || [])) allCodes.add(linkedCode);
+        // Incoming links (they link to me)
+        for (const inCode of (incomingLinks.get(c.sourceCustomerId || '') || [])) allCodes.add(inCode);
+        // Check if any code in the network has a matching note
+        for (const code of allCodes) {
+          if (matchingCodes.has(code)) return true;
+        }
+        return false;
+      });
     }
     // Customer size
     if (r.acresOver != null && r.acresOver > 0) {
@@ -745,6 +767,7 @@ export class BuildListComponent {
 
   // ── Query Library ──────────────────────────────────────────────────────
   queryLibrary = signal<QueryLibraryItem[]>([]);
+  queryLibraryLoaded = signal(false);
   librarySearchText = signal('');
   selectedCategory = signal<string | null>(null);
   selectedLibraryQuery = signal<QueryLibraryItem | null>(null);
@@ -871,8 +894,8 @@ export class BuildListComponent {
 
     // Load query library
     this.apiService.getQueryLibrary().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (items) => this.queryLibrary.set(items),
-      error: () => this.toastService.error('Failed to load query library')
+      next: (items) => { this.queryLibrary.set(items); this.queryLibraryLoaded.set(true); },
+      error: () => { this.queryLibraryLoaded.set(true); this.toastService.error('Failed to load query library'); }
     });
 
     // Load all user-accessible trade units so the TU selector works without prior home page visit
@@ -1372,39 +1395,7 @@ export class BuildListComponent {
   private _resolveUserReferences(query: string): string {
     const account = this.msalService.instance.getActiveAccount()
       ?? this.msalService.instance.getAllAccounts()[0];
-    if (!account) return query;
-
-    // Use first name from display name (e.g., "Caden Egr" → "Caden"),
-    // or fall back to the username prefix (e.g., "caden.egr@scoular.com" → "caden.egr")
-    const displayName = account.name ?? '';
-    const firstName = displayName.split(' ')[0] || '';
-    const username = (account.username ?? '').split('@')[0] || '';
-    const replacement = firstName || username;
-    if (!replacement) return query;
-
-    // Replace self-references with the user's name. More specific patterns FIRST
-    // so "I have left" matches before the generic "I have" replacement.
-    return query
-      .replace(/\bby me\b/gi, `by ${replacement}`)
-      .replace(/\bmy notes?\b/gi, `${replacement}'s notes`)
-      .replace(/\bmy customers?\b/gi, `${replacement}'s customers`)
-      // Full phrase replacements — "Notes I have left" → "notes entered by Caden"
-      .replace(/\bnotes?\s+I\s+(?:have\s+)?(?:wrote|left|made|placed|entered|created|added)\b/gi, `notes entered by ${replacement}`)
-      .replace(/\bI\s+(?:have\s+)?(?:wrote|left|made|placed|entered|created|added)\b/gi, `entered by ${replacement}`)
-      // Contact phrases — "Customers I contacted" → "customers contacted by Caden"
-      .replace(/\bwho\s+have\s+I\s+(?:contacted|called|reached|noted)\b/gi, `who has ${replacement} contacted`)
-      .replace(/\bI\s+(?:have\s+)?(?:contacted|called|reached|noted)\b/gi, `contacted by ${replacement}`)
-      // Generic "I have" / "I've" — only matches if not already caught above
-      .replace(/\bI have\b/gi, `${replacement} has`)
-      .replace(/\bI've\b/gi, `${replacement} has`)
-      .replace(/\bwho\s+have\s+I\s+(?:entered|placed|written|left|made)\s+(?:a\s+)?notes?\s+for\b/gi, `customers ${replacement} has entered a note for`)
-      .replace(/\bnoted by me\b/gi, `noted by ${replacement}`)
-      .replace(/\bcontacted by me\b/gi, `contacted by ${replacement}`)
-      .replace(/\bplaced by me\b/gi, `entered by ${replacement}`)
-      .replace(/\bentered by me\b/gi, `entered by ${replacement}`)
-      .replace(/\bwritten by me\b/gi, `entered by ${replacement}`)
-      .replace(/\bmade by me\b/gi, `entered by ${replacement}`)
-      .replace(/\bleft by me\b/gi, `entered by ${replacement}`);
+    return this.nlqFilterService.resolveUserReferences(query, account?.name ?? '', account?.username ?? '');
   }
 
   /** Runs the NLQ filter against the current in-memory data and updates filteredCustomers. */
@@ -1911,12 +1902,16 @@ export class BuildListComponent {
       ? this.apiService.updateSavedList(this.activeSavedList()!.id, payload)
       : this.apiService.createSavedList(payload);
 
+    // Clear state immediately so navigating away before the API responds
+    // doesn't leave stale results in the build list state cache.
+    const listName = this.newListName();
+    this.showSaveDialog.set(false);
+    this.clearQuery();
+
     request$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
-        this.toastService.success(`List "${this.newListName()}" saved`);
-        this.showSaveDialog.set(false);
+        this.toastService.success(`List "${listName}" saved`);
         this._refreshSavedLists();
-        this.clearQuery();
       },
       error: () => {
         this.toastService.error('Failed to save list');

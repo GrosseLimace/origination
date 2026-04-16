@@ -5,6 +5,7 @@ import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowCompo
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Ticket, Contract } from '@models';
+import { expandSearchWithAliases } from '@shared/utils/commodity-aliases';
 
 type SortColumn = 'id' | 'date' | 'crop' | 'location' | 'appliedDockQuantity' | 'moisture' | 'testWeight' | 'protein';
 type SortDirection = 'none' | 'asc' | 'desc';
@@ -247,28 +248,7 @@ export class TicketsTableComponent {
   }
 
   private _expandWithAliases(q: string): string[] {
-    const aliases: { [key: string]: string[] } = {
-      'yc':        ['yc', 'corn', 'yellow corn'],
-      'corn':      ['yc', 'corn', 'yellow corn'],
-      'yellow corn': ['yc', 'corn', 'yellow corn'],
-      'hrw':       ['hrw', 'wheat', 'hard red winter'],
-      'hw':        ['hw', 'wheat'],
-      'wheat':     ['wheat', 'hrw', 'hw', 'hard red winter'],
-      'sb':        ['sb', 'soybeans', 'beans', 'soy'],
-      'soybeans':  ['sb', 'soybeans', 'beans', 'soy'],
-      'beans':     ['sb', 'soybeans', 'beans', 'soy'],
-      'soy':       ['sb', 'soybeans', 'beans', 'soy'],
-      'milo':      ['milo', 'sorghum', 'sg'],
-      'sorghum':   ['milo', 'sorghum', 'sg'],
-      'sg':        ['milo', 'sorghum', 'sg'],
-    };
-    if (aliases[q]) return aliases[q];
-    // Partial prefix match — "yellow" matches "yellow corn" key and expands to corn terms
-    const expanded = new Set<string>([q]);
-    for (const [key, terms] of Object.entries(aliases)) {
-      if (key.startsWith(q)) terms.forEach(t => expanded.add(t));
-    }
-    return Array.from(expanded);
+    return expandSearchWithAliases(q);
   }
 
   private static readonly _STATE_NAMES: Record<string, string> = {
