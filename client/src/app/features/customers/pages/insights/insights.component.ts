@@ -9,6 +9,7 @@ import { DataPreloadService } from '@core/services/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket } from '@models';
+import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
 import { CardComponent } from '@shared/components/card/card.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
@@ -113,6 +114,11 @@ function computeSummary(items: Insight[], category: InsightCategory): string {
     }
     default: return '';
   }
+}
+
+// Commodity aliases now centralized in @shared/utils/commodity-aliases.ts
+function expandSearchTermWithAliases(term: string): string[] {
+  return expandCommodityAliases(term);
 }
 
 @Component({
@@ -360,15 +366,23 @@ export class InsightsComponent {
       }));
 
       if (global) {
+        const globalTerms = expandSearchTermWithAliases(global);
         groups = groups.reduce<CustomerGroup[]>((acc, g) => {
-          if (g.customer.name.toLowerCase().includes(global) ||
-              (g.customer.sourceCustomerId || '').toLowerCase().includes(global)) {
+          const nameLower = g.customer.name.toLowerCase();
+          const idLower = (g.customer.sourceCustomerId || '').toLowerCase();
+          if (globalTerms.some(t => nameLower.includes(t) || idLower.includes(t))) {
             acc.push(g);
             return acc;
           }
           const matchingItems = g.items.filter(item =>
-            item.searchTerms?.some(term => term.toLowerCase().includes(global)) ||
-            item.tags?.some(tag => tag.label.toLowerCase().includes(global))
+            item.searchTerms?.some(term => {
+              const t = term.toLowerCase();
+              return globalTerms.some(gt => t.includes(gt));
+            }) ||
+            item.tags?.some(tag => {
+              const label = tag.label.toLowerCase();
+              return globalTerms.some(gt => label.includes(gt));
+            })
           );
           if (matchingItems.length > 0) {
             acc.push({ customer: g.customer, items: matchingItems, summary: computeSummary(matchingItems, category) });
@@ -378,17 +392,25 @@ export class InsightsComponent {
       }
       const search = (searches[category] || '').toLowerCase().trim();
       if (search) {
+        const searchTerms = expandSearchTermWithAliases(search);
         groups = groups.reduce<CustomerGroup[]>((acc, g) => {
           // Customer-level match: show all items
-          if (g.customer.name.toLowerCase().includes(search) ||
-              (g.customer.sourceCustomerId || '').toLowerCase().includes(search)) {
+          const nameLower = g.customer.name.toLowerCase();
+          const idLower = (g.customer.sourceCustomerId || '').toLowerCase();
+          if (searchTerms.some(t => nameLower.includes(t) || idLower.includes(t))) {
             acc.push(g);
             return acc;
           }
           // Item-level match: filter to only matching items
           const matchingItems = g.items.filter(item =>
-            item.searchTerms?.some(term => term.toLowerCase().includes(search)) ||
-            item.tags?.some(tag => tag.label.toLowerCase().includes(search))
+            item.searchTerms?.some(term => {
+              const t = term.toLowerCase();
+              return searchTerms.some(st => t.includes(st));
+            }) ||
+            item.tags?.some(tag => {
+              const label = tag.label.toLowerCase();
+              return searchTerms.some(st => label.includes(st));
+            })
           );
           if (matchingItems.length > 0) {
             acc.push({ customer: g.customer, items: matchingItems, summary: computeSummary(matchingItems, category) });

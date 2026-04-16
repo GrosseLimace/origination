@@ -20,6 +20,37 @@ export interface NlqFilterResult {
 @Injectable({ providedIn: 'root' })
 export class NlqFilterService {
 
+  /**
+   * Resolves first-person references ("me", "my", "I") in a query to the user's
+   * display name so note author searches and contact queries work on saved lists
+   * loaded outside Build A List (e.g., on the home page customer list).
+   */
+  resolveUserReferences(query: string, displayName?: string, username?: string): string {
+    const firstName = (displayName ?? '').split(' ')[0] || '';
+    const userPrefix = (username ?? '').split('@')[0] || '';
+    const replacement = firstName || userPrefix;
+    if (!replacement) return query;
+
+    return query
+      .replace(/\bby me\b/gi, `by ${replacement}`)
+      .replace(/\bmy notes?\b/gi, `${replacement}'s notes`)
+      .replace(/\bmy customers?\b/gi, `${replacement}'s customers`)
+      .replace(/\bnotes?\s+I\s+(?:have\s+)?(?:wrote|left|made|placed|entered|created|added)\b/gi, `notes entered by ${replacement}`)
+      .replace(/\bI\s+(?:have\s+)?(?:wrote|left|made|placed|entered|created|added)\b/gi, `entered by ${replacement}`)
+      .replace(/\bwho\s+have\s+I\s+(?:contacted|called|reached|noted)\b/gi, `who has ${replacement} contacted`)
+      .replace(/\bI\s+(?:have\s+)?(?:contacted|called|reached|noted)\b/gi, `contacted by ${replacement}`)
+      .replace(/\bI have\b/gi, `${replacement} has`)
+      .replace(/\bI've\b/gi, `${replacement} has`)
+      .replace(/\bwho\s+have\s+I\s+(?:entered|placed|written|left|made)\s+(?:a\s+)?notes?\s+for\b/gi, `customers ${replacement} has entered a note for`)
+      .replace(/\bnoted by me\b/gi, `noted by ${replacement}`)
+      .replace(/\bcontacted by me\b/gi, `contacted by ${replacement}`)
+      .replace(/\bplaced by me\b/gi, `entered by ${replacement}`)
+      .replace(/\bentered by me\b/gi, `entered by ${replacement}`)
+      .replace(/\bwritten by me\b/gi, `entered by ${replacement}`)
+      .replace(/\bmade by me\b/gi, `entered by ${replacement}`)
+      .replace(/\bleft by me\b/gi, `entered by ${replacement}`);
+  }
+
   /** Returns true if the query involves ticket-related patterns that require ticket data. */
   queryInvolvesTickets(query: string): boolean {
     const q = query.toLowerCase();
@@ -1390,15 +1421,18 @@ export class NlqFilterService {
                                 lowerQuery.includes('never contacted') ||
                                 (lowerQuery.includes('contacted') && lowerQuery.includes('over') && lowerQuery.includes('days'));
 
-    // Detect "never contacted BY <name>" or "<name> has never contacted" — author-scoped
-    // If an author is specified, filter by notes where createdBy matches the author name.
+    // Detect author-scoped contact queries — both negative ("never contacted BY <name>")
+    // and positive ("contacted by <name> this week").
     let authorName: string | null = null;
-    const authorNotMatch =
+    const authorMatch =
+      // Negative: "never contacted by <name>", "<name> has never contacted"
       lowerQuery.match(/(?:have|has)\s+(?:never|not|n't)\s+(?:contacted|called|reached|noted)\s+by\s+(.+?)(?:\s|$)/) ||
       lowerQuery.match(/(?:never|not|haven'?t)\s+(?:contacted|called|reached|noted)\s+by\s+(.+?)(?:\s|$)/) ||
       lowerQuery.match(/customers?\s+(\w+(?:\s+\w+)?)\s+(?:has|have)\s+(?:never|not|n't)\s+(?:contacted|called|reached|noted)/) ||
-      lowerQuery.match(/(\w+(?:\s+\w+)?)\s+(?:has|have)\s+(?:never|not|n't)\s+(?:contacted|called|reached|noted)/);
-    if (authorNotMatch) authorName = authorNotMatch[1].trim();
+      lowerQuery.match(/(\w+(?:\s+\w+)?)\s+(?:has|have)\s+(?:never|not|n't)\s+(?:contacted|called|reached|noted)/) ||
+      // Positive: "contacted by <name>", "contacted by <name> this week"
+      lowerQuery.match(/(?:contacted|noted|called|reached)\s+by\s+(\w+(?:\s+\w+)?)(?:\s+(?:this|last|today|yesterday|in|within)|$)/);
+    if (authorMatch) authorName = authorMatch[1].trim();
 
     // Build author-scoped note indexes if author detected
     let authorContactedIds: Set<number> | null = null;
@@ -1468,11 +1502,14 @@ export class NlqFilterService {
       return result;
     }
 
-    // Recently contacted — helper to filter by cutoff
+    // Recently contacted — helper to filter by cutoff.
+    // Uses author-scoped map if an author was detected (e.g., "contacted by Caden this week"),
+    // otherwise uses the global contact map (any author).
+    const mapToUse = authorLatestNoteByCustomer || latestNoteByCustomer;
     const filterByCutoff = (days: number) => {
       const cutoffTime = Date.now() - days * 86400000;
       result = result.filter(c => {
-        const entry = latestNoteByCustomer.get(c.id);
+        const entry = mapToUse.get(c.id);
         return !!entry && entry.time >= cutoffTime;
       });
     };
@@ -1484,20 +1521,22 @@ export class NlqFilterService {
       filterByCutoff(14);
     }
 
-    if (lowerQuery.includes('contacted today') || lowerQuery.includes('called today') ||
-        lowerQuery.includes('list of contacted today') || lowerQuery.includes('reached today')) {
+    // Time-based contact filters — use loose matching (contacted ... today/this week/etc.)
+    // to handle resolved user references like "contacted by Caden this week"
+    const hasContacted = lowerQuery.includes('contacted') || lowerQuery.includes('called') || lowerQuery.includes('reached');
+    if (hasContacted && (lowerQuery.includes('today') || lowerQuery.includes('list of contacted today'))) {
       filterByCutoff(1);
     }
 
-    if (lowerQuery.includes('contacted yesterday') || lowerQuery.includes('called yesterday')) {
+    if (hasContacted && lowerQuery.includes('yesterday')) {
       filterByCutoff(2);
     }
 
-    if (lowerQuery.includes('contacted last week') || lowerQuery.includes('contacted this week')) {
+    if (hasContacted && (lowerQuery.includes('this week') || lowerQuery.includes('last week'))) {
       filterByCutoff(7);
     }
 
-    if (lowerQuery.includes('contacted last month') || lowerQuery.includes('contacted this month')) {
+    if (hasContacted && (lowerQuery.includes('this month') || lowerQuery.includes('last month'))) {
       filterByCutoff(30);
     }
 
@@ -2446,8 +2485,12 @@ export class NlqFilterService {
       );
     }
     if (lowerQuery.includes('applied ticket') && !lowerQuery.includes('unapplied')) {
+      // Only count tickets as "applied" if they're matched to an open contract.
+      // The server-provided isApplied flag may be true for tickets on closed contracts,
+      // but those contracts aren't loaded anymore so the customer would appear to have
+      // no contracts when viewed on the profile.
       result = result.filter(c =>
-        getCustomerTickets(c).some(t => t.isApplied)
+        getCustomerTickets(c).some(t => isTicketAppliedToOpenContract(t))
       );
     }
 

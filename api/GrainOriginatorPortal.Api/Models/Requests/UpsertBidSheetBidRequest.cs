@@ -36,6 +36,6 @@ public class UpsertBidSheetBidRequest
 
     public int Month { get; set; } = 0; // 0=yearly, 1-12=monthly
 
-    [Required, MaxLength(50)]
+    [MaxLength(50)]
     public string Bid { get; set; } = string.Empty;
 }

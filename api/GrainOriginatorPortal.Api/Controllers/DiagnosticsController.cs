@@ -18,7 +18,9 @@ namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
+// Defense in depth: AdminOnly caller claim + DenyIfNotDevelopment() per-route env gate.
+// Both must pass — admin caller running in a non-Dev/QA environment still gets 404.
+[Authorize(Policy = "AdminOnly")]
 [Produces("application/json")]
 public class DiagnosticsController : ControllerBase
 {

@@ -35,18 +35,88 @@ public class SqlDataService : IDataService
 
     /// <summary>Sanitizes a list of ID strings for safe use in STRING_SPLIT CSV parameters.
     /// Strips any character that isn't alphanumeric, hyphen, or underscore.</summary>
-    private static string SanitizeCsv(IEnumerable<string> values) =>
+    /// <summary>
+    /// Strips every character except [a-zA-Z0-9-_] from each value, then joins with commas.
+    /// The output is guaranteed safe to interpolate into a SQL statement — no quotes, semicolons,
+    /// whitespace, or SQL metacharacters can survive. Used with STRING_SPLIT to pass an identifier
+    /// collection (TradeUnit codes, SourceCustomerIds, etc.) into a parameterized SqlParameter value.
+    /// DO NOT bypass this method when passing caller-controlled identifier collections into raw SQL.
+    /// </summary>
+    internal static string SanitizeCsv(IEnumerable<string> values) =>
         string.Join(",", values.Select(v => System.Text.RegularExpressions.Regex.Replace(v, @"[^a-zA-Z0-9\-_]", "")));
 
+    /// <summary>
+    /// Returns a stable, unique identifier for the current user.
+    /// Priority: preferred_username (UPN) > UPN claim > oid (AAD object id) > Identity.Name > "System".
+    /// The display-name claim ("name") is intentionally NOT used — display names can collide across
+    /// users and are unstable, which would corrupt CreatedBy/ModifiedBy ownership on persisted rows.
+    /// For user-facing display, use <see cref="ResolveDisplayNamesAsync"/> to convert UPN to the
+    /// Azure AD display name via the UserTradeUnitSnapshot lookup.
+    /// </summary>
     private string GetCurrentUser()
     {
         var user = _httpContextAccessor.HttpContext?.User;
-        return user?.FindFirst("name")?.Value
-            ?? user?.FindFirst("preferred_username")?.Value
+        return user?.FindFirst("preferred_username")?.Value
+            ?? user?.FindFirst(System.Security.Claims.ClaimTypes.Upn)?.Value
             ?? user?.FindFirst("oid")?.Value
             ?? user?.Identity?.Name
             ?? "System";
     }
+
+    /// <summary>
+    /// Builds a UPN -> display-name dictionary from <c>UserTradeUnitSnapshot</c>. The snapshot
+    /// table stores the short UPN form (e.g. "CEgr") while persisted CreatedBy values are the full
+    /// UPN ("CEgr@scoular.com"), so we match on the short form and register both forms in the
+    /// resulting dictionary to make <see cref="ApplyDisplayName"/> a simple lookup.
+    /// Rows not found in the snapshot are absent from the dictionary; callers fall back to the
+    /// original value.
+    /// </summary>
+    private async Task<Dictionary<string, string>> ResolveDisplayNamesAsync(IEnumerable<string> userIds, CancellationToken ct)
+    {
+        var distinct = userIds
+            .Where(u => !string.IsNullOrEmpty(u))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (distinct.Count == 0) return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        // Snapshot stores the left-of-@ portion, so match by the short form.
+        var shortForms = distinct.Select(v =>
+        {
+            var at = v.IndexOf('@');
+            return at > 0 ? v[..at] : v;
+        }).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        var rows = await _appContext.UserTradeUnitSnapshots
+            .AsNoTracking()
+            .Where(u => shortForms.Contains(u.UserId))
+            .Select(u => new { u.UserId, u.DisplayName })
+            .Distinct()
+            .ToListAsync(ct);
+
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in rows.GroupBy(r => r.UserId, StringComparer.OrdinalIgnoreCase))
+        {
+            var displayName = r.First().DisplayName;
+            // Register the short form so direct lookups work
+            map[r.Key] = displayName;
+            // Also register every full-UPN form that came in for this short form so callers
+            // passing "CEgr@scoular.com" or "cegr@scoular.com" both resolve.
+            foreach (var full in distinct)
+            {
+                var at = full.IndexOf('@');
+                var shortForm = at > 0 ? full[..at] : full;
+                if (shortForm.Equals(r.Key, StringComparison.OrdinalIgnoreCase))
+                {
+                    map[full] = displayName;
+                }
+            }
+        }
+        return map;
+    }
+
+    /// <summary>Replace UPN in a single value with its display name, or leave unchanged if unknown.</summary>
+    private static string ApplyDisplayName(string? upn, IReadOnlyDictionary<string, string> map) =>
+        !string.IsNullOrEmpty(upn) && map.TryGetValue(upn, out var dn) ? dn : (upn ?? string.Empty);
 
     // =========================================================================
     // Customer Operations
@@ -1683,6 +1753,14 @@ public class SqlDataService : IDataService
                 .OrderByDescending(p => p.PlantingYear)
                 .ThenBy(p => p.CustomerName)
                 .ToListAsync(cancellationToken);
+            var nameMap = await ResolveDisplayNamesAsync(
+                results.Select(r => r.CreatedBy).Concat(results.Select(r => r.ModifiedBy ?? string.Empty)),
+                cancellationToken);
+            foreach (var r in results)
+            {
+                r.CreatedBy = ApplyDisplayName(r.CreatedBy, nameMap);
+                r.ModifiedBy = string.IsNullOrEmpty(r.ModifiedBy) ? r.ModifiedBy : ApplyDisplayName(r.ModifiedBy, nameMap);
+            }
             return results;
         }
         catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
@@ -1702,12 +1780,21 @@ public class SqlDataService : IDataService
     {
         try
         {
-            return await _appContext.PlantingIntentions
+            var results = await _appContext.PlantingIntentions
                 .AsNoTracking()
                 .Where(p => p.CustomerId == customerId)
                 .OrderByDescending(p => p.PlantingYear)
                 .ThenBy(p => p.Crop)
                 .ToListAsync(cancellationToken);
+            var nameMap = await ResolveDisplayNamesAsync(
+                results.Select(r => r.CreatedBy).Concat(results.Select(r => r.ModifiedBy ?? string.Empty)),
+                cancellationToken);
+            foreach (var r in results)
+            {
+                r.CreatedBy = ApplyDisplayName(r.CreatedBy, nameMap);
+                r.ModifiedBy = string.IsNullOrEmpty(r.ModifiedBy) ? r.ModifiedBy : ApplyDisplayName(r.ModifiedBy, nameMap);
+            }
+            return results;
         }
         catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
         {
@@ -1748,6 +1835,8 @@ public class SqlDataService : IDataService
             await _appContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Created planting intention {Id} for customer {CustomerId}", intention.Id, customerId);
+            var nameMap = await ResolveDisplayNamesAsync(new[] { intention.CreatedBy }, cancellationToken);
+            intention.CreatedBy = ApplyDisplayName(intention.CreatedBy, nameMap);
             return intention;
         }
         catch (Exception ex)
@@ -1779,6 +1868,10 @@ public class SqlDataService : IDataService
             await _appContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Updated planting intention {Id}", intentionId);
+            var nameMap = await ResolveDisplayNamesAsync(
+                new[] { intention.CreatedBy, intention.ModifiedBy ?? string.Empty }, cancellationToken);
+            intention.CreatedBy = ApplyDisplayName(intention.CreatedBy, nameMap);
+            intention.ModifiedBy = string.IsNullOrEmpty(intention.ModifiedBy) ? intention.ModifiedBy : ApplyDisplayName(intention.ModifiedBy, nameMap);
             return intention;
         }
         catch (Exception ex)
@@ -1825,9 +1918,18 @@ public class SqlDataService : IDataService
             {
                 query = query.Where(n => n.TradeUnit == null || tuList.Contains(n.TradeUnit));
             }
-            return await query
+            var notes = await query
                 .OrderByDescending(n => n.CreatedAt)
                 .ToListAsync(cancellationToken);
+            var nameMap = await ResolveDisplayNamesAsync(
+                notes.Select(n => n.CreatedBy).Concat(notes.Select(n => n.ModifiedBy ?? string.Empty)),
+                cancellationToken);
+            foreach (var n in notes)
+            {
+                n.CreatedBy = ApplyDisplayName(n.CreatedBy, nameMap);
+                n.ModifiedBy = string.IsNullOrEmpty(n.ModifiedBy) ? n.ModifiedBy : ApplyDisplayName(n.ModifiedBy, nameMap);
+            }
+            return notes;
         }
         catch (SqlException ex) when (ex.Number == 208) // Invalid object name
         {
@@ -1846,11 +1948,20 @@ public class SqlDataService : IDataService
     {
         try
         {
-            return await _appContext.Notes
+            var notes = await _appContext.Notes
                 .AsNoTracking()
                 .Where(n => n.CustomerId == customerId)
                 .OrderByDescending(n => n.CreatedAt)
                 .ToListAsync(cancellationToken);
+            var nameMap = await ResolveDisplayNamesAsync(
+                notes.Select(n => n.CreatedBy).Concat(notes.Select(n => n.ModifiedBy ?? string.Empty)),
+                cancellationToken);
+            foreach (var n in notes)
+            {
+                n.CreatedBy = ApplyDisplayName(n.CreatedBy, nameMap);
+                n.ModifiedBy = string.IsNullOrEmpty(n.ModifiedBy) ? n.ModifiedBy : ApplyDisplayName(n.ModifiedBy, nameMap);
+            }
+            return notes;
         }
         catch (SqlException ex) when (ex.Number == 208) // Invalid object name
         {
@@ -1894,6 +2005,10 @@ public class SqlDataService : IDataService
             await _appContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Created note {NoteId} for customer {CustomerId}", note.Id, customerId);
+            // Resolve display name on the return path so the client sees "Caden Egr", not the UPN.
+            // DB still has the UPN for stable ownership filtering.
+            var nameMap = await ResolveDisplayNamesAsync(new[] { note.CreatedBy }, cancellationToken);
+            note.CreatedBy = ApplyDisplayName(note.CreatedBy, nameMap);
             return note;
         }
         catch (Exception ex)
@@ -1918,6 +2033,10 @@ public class SqlDataService : IDataService
             await _appContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Toggled pin for note {NoteId} - IsPinned is now {IsPinned}", noteId, note.IsPinned);
+            var nameMap = await ResolveDisplayNamesAsync(
+                new[] { note.CreatedBy, note.ModifiedBy ?? string.Empty }, cancellationToken);
+            note.CreatedBy = ApplyDisplayName(note.CreatedBy, nameMap);
+            note.ModifiedBy = string.IsNullOrEmpty(note.ModifiedBy) ? note.ModifiedBy : ApplyDisplayName(note.ModifiedBy, nameMap);
             return note;
         }
         catch (Exception ex)
@@ -1944,6 +2063,10 @@ public class SqlDataService : IDataService
             await _appContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Updated note {NoteId}", noteId);
+            var nameMap = await ResolveDisplayNamesAsync(
+                new[] { note.CreatedBy, note.ModifiedBy ?? string.Empty }, cancellationToken);
+            note.CreatedBy = ApplyDisplayName(note.CreatedBy, nameMap);
+            note.ModifiedBy = string.IsNullOrEmpty(note.ModifiedBy) ? note.ModifiedBy : ApplyDisplayName(note.ModifiedBy, nameMap);
             return note;
         }
         catch (Exception ex)
@@ -1985,7 +2108,12 @@ public class SqlDataService : IDataService
     {
         try
         {
-            return await _appContext.ProducerDetails.AsNoTracking().FirstOrDefaultAsync(pd => pd.CustomerId == customerId, cancellationToken);
+            var pd = await _appContext.ProducerDetails.AsNoTracking().FirstOrDefaultAsync(p => p.CustomerId == customerId, cancellationToken);
+            if (pd == null) return null;
+            var nameMap = await ResolveDisplayNamesAsync(new[] { pd.CreatedBy, pd.ModifiedBy ?? string.Empty }, cancellationToken);
+            pd.CreatedBy = ApplyDisplayName(pd.CreatedBy, nameMap);
+            pd.ModifiedBy = string.IsNullOrEmpty(pd.ModifiedBy) ? pd.ModifiedBy : ApplyDisplayName(pd.ModifiedBy, nameMap);
+            return pd;
         }
         catch (Exception ex)
         {
@@ -1999,7 +2127,16 @@ public class SqlDataService : IDataService
     {
         try
         {
-            return await _appContext.ProducerDetails.AsNoTracking().ToListAsync(cancellationToken);
+            var all = await _appContext.ProducerDetails.AsNoTracking().ToListAsync(cancellationToken);
+            var nameMap = await ResolveDisplayNamesAsync(
+                all.Select(p => p.CreatedBy).Concat(all.Select(p => p.ModifiedBy ?? string.Empty)),
+                cancellationToken);
+            foreach (var p in all)
+            {
+                p.CreatedBy = ApplyDisplayName(p.CreatedBy, nameMap);
+                p.ModifiedBy = string.IsNullOrEmpty(p.ModifiedBy) ? p.ModifiedBy : ApplyDisplayName(p.ModifiedBy, nameMap);
+            }
+            return all;
         }
         catch (Exception ex)
         {
@@ -2028,6 +2165,10 @@ public class SqlDataService : IDataService
 
                 await _appContext.SaveChangesAsync(cancellationToken);
                 _logger.LogInformation("Updated ProducerDetails for customer {CustomerId}", customerId);
+                var nameMap1 = await ResolveDisplayNamesAsync(
+                    new[] { existing.CreatedBy, existing.ModifiedBy ?? string.Empty }, cancellationToken);
+                existing.CreatedBy = ApplyDisplayName(existing.CreatedBy, nameMap1);
+                existing.ModifiedBy = string.IsNullOrEmpty(existing.ModifiedBy) ? existing.ModifiedBy : ApplyDisplayName(existing.ModifiedBy, nameMap1);
                 return existing;
             }
             else
@@ -2049,6 +2190,8 @@ public class SqlDataService : IDataService
                 _appContext.ProducerDetails.Add(details);
                 await _appContext.SaveChangesAsync(cancellationToken);
                 _logger.LogInformation("Created ProducerDetails for customer {CustomerId}", customerId);
+                var nameMap2 = await ResolveDisplayNamesAsync(new[] { details.CreatedBy }, cancellationToken);
+                details.CreatedBy = ApplyDisplayName(details.CreatedBy, nameMap2);
                 return details;
             }
         }
@@ -2250,11 +2393,20 @@ public class SqlDataService : IDataService
         try
         {
             var currentUser = GetCurrentUser();
-            return await _appContext.SavedLists
+            var lists = await _appContext.SavedLists
                 .AsNoTracking()
                 .Where(s => s.IsActive && s.CreatedBy == currentUser)
                 .OrderByDescending(s => s.CreatedAt)
                 .ToListAsync(cancellationToken);
+            var nameMap = await ResolveDisplayNamesAsync(
+                lists.Select(l => l.CreatedBy).Concat(lists.Select(l => l.ModifiedBy ?? string.Empty)),
+                cancellationToken);
+            foreach (var l in lists)
+            {
+                l.CreatedBy = ApplyDisplayName(l.CreatedBy, nameMap);
+                l.ModifiedBy = string.IsNullOrEmpty(l.ModifiedBy) ? l.ModifiedBy : ApplyDisplayName(l.ModifiedBy, nameMap);
+            }
+            return lists;
         }
         catch (Exception ex)
         {
@@ -2281,6 +2433,8 @@ public class SqlDataService : IDataService
             };
             _appContext.SavedLists.Add(savedList);
             await _appContext.SaveChangesAsync(cancellationToken);
+            var nameMap = await ResolveDisplayNamesAsync(new[] { savedList.CreatedBy }, cancellationToken);
+            savedList.CreatedBy = ApplyDisplayName(savedList.CreatedBy, nameMap);
             return savedList;
         }
         catch (Exception ex)
@@ -2307,6 +2461,10 @@ public class SqlDataService : IDataService
             list.ModifiedAt = DateTime.UtcNow;
             list.ModifiedBy = currentUser;
             await _appContext.SaveChangesAsync(cancellationToken);
+            var nameMap = await ResolveDisplayNamesAsync(
+                new[] { list.CreatedBy, list.ModifiedBy ?? string.Empty }, cancellationToken);
+            list.CreatedBy = ApplyDisplayName(list.CreatedBy, nameMap);
+            list.ModifiedBy = string.IsNullOrEmpty(list.ModifiedBy) ? list.ModifiedBy : ApplyDisplayName(list.ModifiedBy, nameMap);
             return list;
         }
         catch (Exception ex)
@@ -2717,7 +2875,16 @@ public class SqlDataService : IDataService
             if (loc == null) continue;
 
             var key = (loc.Id, req.CommodityCode, req.CropYear, req.Month);
-            if (bidLookup.TryGetValue(key, out var bid))
+            if (string.IsNullOrWhiteSpace(req.Bid))
+            {
+                // Empty bid = user cleared the input → delete the existing row if present
+                if (bidLookup.TryGetValue(key, out var toRemove))
+                {
+                    _appContext.BidSheetLocationBids.Remove(toRemove);
+                    bidLookup.Remove(key);
+                }
+            }
+            else if (bidLookup.TryGetValue(key, out var bid))
             {
                 bid.Bid = req.Bid;
                 bid.ModifiedBy = userId;
