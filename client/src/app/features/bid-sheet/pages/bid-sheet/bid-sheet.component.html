@@ -772,6 +772,13 @@
                   </svg>
                   <span>{{ isRefreshing() ? 'Refreshing...' : timeSinceRefresh() }}</span>
                 </button>
+                <button (click)="printEditBids()" title="Print Bids"
+                  class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/>
+                  </svg>
+                  <span>Print</span>
+                </button>
               </div>
             </div>
 
@@ -928,6 +935,142 @@
                 [ngClass]="editBidsSaving() ? 'bg-gray-400 cursor-not-allowed' : 'bg-scoular-green-accessible hover:bg-scoular-green'"
               >{{ editBidsSaving() ? 'Saving…' : 'Save Changes' }}</button>
             </div>
+
+            <!-- Print Preview Dialog -->
+            @if (showPrintDialog()) {
+              <div class="fixed inset-0 z-[1200] flex items-center justify-center bg-black/50" (click)="closePrintDialog()">
+                <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-[95vw] max-w-[1400px] max-h-[80vh] flex flex-col" (click)="$event.stopPropagation()">
+
+                  <!-- Dialog header -->
+                  <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                    <h3 class="text-lg font-bold text-gray-900 dark:text-white">Print Bids</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Select which crops and months to include</p>
+                  </div>
+
+                  <!-- Dialog body -->
+                  <div class="flex flex-1 overflow-hidden">
+
+                    <!-- Preview (left) -->
+                    <div class="flex-1 min-w-0 p-5 overflow-auto border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                      <div class="bg-white rounded-lg shadow-sm p-5" style="font-family:'Open Sans','Segoe UI',system-ui,sans-serif;color:#1a1a1a;line-height:1.5;">
+                        <!-- Header -->
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:3px solid #00875F;">
+                          <div style="display:flex;align-items:center;gap:12px;">
+                            <img src="assets/images/scoular-logo-dark.webp" alt="Scoular" style="height:32px;width:auto;" />
+                          </div>
+                          <div style="text-align:right;font-size:10px;color:#4b5563;line-height:1.6;">
+                            @if (printAddress().trim()) { <p>{{ printAddress().trim() }}</p> }
+                            @if (printPhone().trim()) { <p>{{ printPhone().trim() }}</p> }
+                          </div>
+                        </div>
+                        <!-- Preview tables grouped by crop -->
+                        @if (printCropGroups().length > 0) {
+                          @for (group of printCropGroups(); track group.crop) {
+                            <div>
+                              <table style="width:100%;border-collapse:collapse;font-size:10px;">
+                                <thead>
+                                  <tr>
+                                    <th style="padding:5px 8px;text-align:left;font-weight:700;color:#fff;background:#007CC0;border:1px solid #e5e7eb;white-space:nowrap;">{{ group.crop }} Basis</th>
+                                    @for (col of group.columns; track col.key) {
+                                      <th style="padding:5px 8px;text-align:center;font-weight:600;color:#fff;background:#007CC0;border:1px solid #e5e7eb;white-space:nowrap;">{{ col.month === 0 ? 'Yearly ' + editBidsYear() : getMonthName(col.month) + ' ' + editBidsYear() }}</th>
+                                    }
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  @for (row of editBidsRows(); track row.name; let i = $index) {
+                                    <tr [style.background]="i % 2 === 0 ? '#fff' : '#f9fafb'">
+                                      <td style="padding:5px 8px;font-weight:500;color:#1f2937;border:1px solid #e5e7eb;white-space:nowrap;">{{ row.name }}</td>
+                                      @for (col of group.columns; track col.key) {
+                                        <td style="padding:5px 8px;text-align:center;border:1px solid #e5e7eb;font-family:'Cascadia Mono','Fira Code',monospace;">
+                                          @if ((row.bids[col.key] ?? '').trim()) {
+                                            {{ (row.bids[col.key] ?? '').trim() }}
+                                          } @else {
+                                            <span style="color:#d1d5db;">&mdash;</span>
+                                          }
+                                        </td>
+                                      }
+                                    </tr>
+                                  }
+                                </tbody>
+                              </table>
+                            </div>
+                          }
+                        } @else {
+                          <p class="text-center text-gray-400 py-8 text-sm">Select at least one crop and one month</p>
+                        }
+                        <!-- Footer -->
+                        <div style="margin-top:16px;padding-top:8px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;">
+                          <p style="font-size:9px;color:#9ca3af;">The Scoular Company &mdash; Confidential</p>
+                          <p style="font-size:9px;color:#9ca3af;">{{ todayFormatted() }}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Options (right) -->
+                    <div class="w-72 shrink-0 p-5 overflow-auto space-y-5">
+                      <!-- Contact info -->
+                      <div>
+                        <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Contact Info</h4>
+                        <div class="space-y-2">
+                          <div>
+                            <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Address</label>
+                            <input type="text" [value]="printAddress()" (input)="printAddress.set($any($event.target).value)"
+                              placeholder="123 Main St, City, KS"
+                              class="w-full h-8 px-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                          </div>
+                          <div>
+                            <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Phone</label>
+                            <input type="text" [value]="printPhone()" (input)="onPrintPhoneInput($event)"
+                              placeholder="(555) 123-4567"
+                              class="w-full h-8 px-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green" />
+                          </div>
+                        </div>
+                      </div>
+                      <!-- Crops -->
+                      <div>
+                        <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Crops</h4>
+                        <div class="space-y-2">
+                          @for (crop of editBidsCrops(); track crop) {
+                            <label class="flex items-center gap-2.5 cursor-pointer">
+                              <input type="checkbox" [checked]="printSelectedCrops().has(crop)" (change)="togglePrintCrop(crop)"
+                                class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
+                              <span class="text-sm text-gray-700 dark:text-gray-300">{{ crop }}</span>
+                            </label>
+                          }
+                        </div>
+                      </div>
+                      <!-- Months -->
+                      <div>
+                        <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Months</h4>
+                        <div class="space-y-2">
+                          @for (month of editBidsMonths(); track month) {
+                            <label class="flex items-center gap-2.5 cursor-pointer">
+                              <input type="checkbox" [checked]="printSelectedMonths().has(month)" (change)="togglePrintMonth(month)"
+                                class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
+                              <span class="text-sm text-gray-700 dark:text-gray-300">{{ getMonthName(month) }}</span>
+                            </label>
+                          }
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  <!-- Dialog footer -->
+                  <div class="px-6 py-3.5 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end gap-2">
+                    <button (click)="closePrintDialog()" class="px-3 py-1.5 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors">Cancel</button>
+                    <button (click)="confirmPrint()" [disabled]="printFilteredColumns().length === 0"
+                      class="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white rounded-lg transition-all shadow-sm"
+                      [ngClass]="printFilteredColumns().length === 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-scoular-green-accessible hover:bg-scoular-green'">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/>
+                      </svg>
+                      Print
+                    </button>
+                  </div>
+                </div>
+              </div>
+            }
 
           </div>
         }

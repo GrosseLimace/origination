@@ -1545,6 +1545,151 @@ export class BidSheetComponent {
     this._refreshMapMarkers();
   }
 
+  // ── Print dialog state ──
+  showPrintDialog = signal(false);
+  printSelectedCrops = signal<Set<string>>(new Set());
+  printSelectedMonths = signal<Set<number>>(new Set());
+  readonly todayFormatted = computed(() => new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }));
+  printAddress = signal('');
+  printPhone = signal('');
+
+  onPrintPhoneInput(event: Event): void {
+    const raw = (event.target as HTMLInputElement).value.replace(/\D/g, '').slice(0, 10);
+    let formatted = raw;
+    if (raw.length > 6) formatted = `(${raw.slice(0, 3)}) ${raw.slice(3, 6)}-${raw.slice(6)}`;
+    else if (raw.length > 3) formatted = `(${raw.slice(0, 3)}) ${raw.slice(3)}`;
+    else if (raw.length > 0) formatted = `(${raw}`;
+    this.printPhone.set(formatted);
+    (event.target as HTMLInputElement).value = formatted;
+  }
+
+  readonly printFilteredColumns = computed(() => {
+    const crops = this.printSelectedCrops();
+    const months = this.printSelectedMonths();
+    return this.editGridColumns().filter(c => crops.has(c.crop) && months.has(c.month));
+  });
+
+  /** Columns grouped by crop for the print preview — each group is one table section. */
+  readonly printCropGroups = computed(() => {
+    const cols = this.printFilteredColumns();
+    const map = new Map<string, typeof cols>();
+    for (const col of cols) {
+      if (!map.has(col.crop)) map.set(col.crop, []);
+      map.get(col.crop)!.push(col);
+    }
+    return [...map.entries()].map(([crop, columns]) => ({ crop, columns }));
+  });
+
+  printEditBids(): void {
+    // Initialize selections with whatever is currently visible on the edit grid
+    this.printSelectedCrops.set(new Set(this.editBidsCrops()));
+    this.printSelectedMonths.set(new Set(this.editBidsMonths()));
+    this.showPrintDialog.set(true);
+  }
+
+  closePrintDialog(): void {
+    this.showPrintDialog.set(false);
+  }
+
+  togglePrintCrop(crop: string): void {
+    this.printSelectedCrops.update(s => {
+      const next = new Set(s);
+      next.has(crop) ? next.delete(crop) : next.add(crop);
+      return next;
+    });
+  }
+
+  togglePrintMonth(month: number): void {
+    this.printSelectedMonths.update(s => {
+      const next = new Set(s);
+      next.has(month) ? next.delete(month) : next.add(month);
+      return next;
+    });
+  }
+
+  getMonthName(month: number): string {
+    if (month === 0) return 'Yearly';
+    return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][month - 1] ?? '';
+  }
+
+  confirmPrint(): void {
+    const rows = this.editBidsRows();
+    const cropGroups = this.printCropGroups();
+    const year = this.editBidsYear();
+    const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+    if (cropGroups.length === 0) return;
+
+    const address = this.printAddress().trim();
+    const phone = this.printPhone().trim();
+
+    // Build one table per crop — tables touch (no margin between)
+    const sections = cropGroups.map((group, gi) => {
+      const monthHeaders = group.columns.map(c => {
+        const label = c.month === 0 ? `Yearly ${year}` : `${this.getMonthName(c.month)} ${year}`;
+        return `<th style="padding:10px 16px;text-align:center;font-size:12px;font-weight:600;color:#fff;background:#007CC0;border:1px solid #e5e7eb;white-space:nowrap;">${this._esc(label)}</th>`;
+      }).join('');
+
+      const dataRows = rows.map((row, i) => {
+        const bg = i % 2 === 0 ? '#ffffff' : '#f9fafb';
+        const cells = group.columns.map(col => {
+          const val = (row.bids[col.key] ?? '').trim();
+          const display = val || '<span style="color:#d1d5db;">&mdash;</span>';
+          return `<td style="padding:9px 16px;text-align:center;font-size:12px;border:1px solid #e5e7eb;background:${bg};font-family:'Cascadia Mono','Fira Code',monospace;">${display}</td>`;
+        }).join('');
+        return `<tr>
+          <td style="padding:9px 16px;font-size:12px;font-weight:500;color:#1f2937;border:1px solid #e5e7eb;background:${bg};white-space:nowrap;">${this._esc(row.name)}</td>
+          ${cells}
+        </tr>`;
+      }).join('');
+
+      return `
+        <div style="page-break-inside:avoid;">
+          <table style="width:100%;border-collapse:collapse;">
+            <thead><tr>
+              <th style="padding:10px 16px;text-align:left;font-size:13px;font-weight:700;color:#fff;background:#007CC0;border:1px solid #e5e7eb;white-space:nowrap;">${this._esc(group.crop)} Basis</th>
+              ${monthHeaders}
+            </tr></thead>
+            <tbody>${dataRows}</tbody>
+          </table>
+        </div>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html><html><head>
+      <title>Scoular Bids</title>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Open Sans', 'Segoe UI', system-ui, sans-serif; color: #1a1a1a; line-height: 1.5; padding: 0.4in; }
+        @page { margin: 0.4in; size: landscape; }
+        @media print { body { padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+        table { width: 100%; border-collapse: collapse; }
+      </style>
+    </head><body>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid #00875F;">
+        <div style="display:flex;align-items:center;gap:16px;">
+          <img src="assets/images/scoular-logo-dark.webp" alt="Scoular" style="height:40px;width:auto;" />
+        </div>
+        <div style="text-align:right;font-size:12px;color:#4b5563;line-height:1.6;">
+          ${address ? `<p>${this._esc(address)}</p>` : ''}
+          ${phone ? `<p>${this._esc(phone)}</p>` : ''}
+        </div>
+      </div>
+      ${sections}
+      <div style="margin-top:16px;padding-top:12px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;">
+        <p style="font-size:10px;color:#9ca3af;">The Scoular Company &mdash; Confidential</p>
+        <p style="font-size:10px;color:#9ca3af;">${today}</p>
+      </div>
+    </body></html>`;
+
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(html);
+      printWindow.document.close();
+      printWindow.onload = () => printWindow.print();
+    }
+    this.showPrintDialog.set(false);
+  }
+
   private _removeAddLocationPin(): void {
     if (this._addLocationPin && this._map) {
       this._map.removeLayer(this._addLocationPin);
