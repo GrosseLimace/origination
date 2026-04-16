@@ -72,6 +72,29 @@ export class BuildListComponent {
   // All trade units the user can access (union of all groups from Entitlements DB)
   private _allUserTradeUnits = signal<string[]>([]);
 
+  // Re-trigger a staged query when needed data arrives from the background refresh.
+  // When processQuery() detects missing data, it keeps isProcessing=true and returns.
+  // This effect watches the data signals and re-triggers processQuery when they update.
+  private _dataReadyEffect = effect(() => {
+    this.notes();
+    this.storedGrain();
+    this._ticketsReady();
+    if (this.queryText().trim() && this.isProcessing() && this.coreDataLoaded()) {
+      untracked(() => {
+        // Re-check if the needed data is now available
+        const q = this.queryText();
+        const ticketsOk = !this.nlqFilterService.queryInvolvesTickets(q) || this._ticketsReady();
+        const storageOk = !this.nlqFilterService.queryInvolvesStorage(q) || this.storedGrain().length > 0;
+        const notesOk = !this.nlqFilterService.queryInvolvesContact(q) || this.notes().length > 0;
+        if (ticketsOk && storageOk && notesOk) {
+          this.waitingForTickets.set(false);
+          this._applyNlqFilter();
+          this.isProcessing.set(false);
+        }
+      });
+    }
+  });
+
   private _tuEffect = effect(() => {
     this.appState.selectedTradeUnits();
     if (!this._initialized) {
@@ -1062,9 +1085,14 @@ export class BuildListComponent {
         this.loading.set(false);
         this.coreDataLoaded.set(true);
 
-        // Don't auto-run queries on background refresh completion.
-        // Restored queries show their cached results (if hasGenerated was saved).
-        // New queries require the user to click Generate or select an example.
+        // Re-run active query with fresh data — cached data may have been stale/incomplete
+        // (e.g., notes hadn't finished loading on home page before user navigated here).
+        // The _dataReadyEffect handles the case where isProcessing is true (query staged
+        // before data loaded). This handles the case where a query already ran against
+        // stale cache and needs to silently refresh with the now-complete data.
+        if (this.queryText().trim() && this.hasGenerated() && !this.isProcessing()) {
+          this._applyNlqFilter();
+        }
       },
       error: () => {
         if (requestId !== this._loadRequestId) return;
@@ -1250,10 +1278,10 @@ export class BuildListComponent {
 
   processQuery(overrideTradeUnits?: string[]): void {
     if (!this.queryText().trim()) return;
-    // Don't run if core data hasn't loaded yet — the staged query will auto-run when data arrives
-    // (hasGenerated stays false so _loadFresh's auto-run at completion picks it up)
+    // Don't run if core data hasn't loaded yet — set isProcessing so the _dataReadyEffect
+    // auto-triggers this query when coreDataLoaded becomes true.
     if (!this.coreDataLoaded()) {
-      this.hasGenerated.set(false);
+      this.isProcessing.set(true);
       return;
     }
 
@@ -1267,53 +1295,20 @@ export class BuildListComponent {
       return;
     }
 
-    // If query involves tickets and tickets haven't loaded yet, wait for them
+    // If query needs tickets and they haven't loaded yet, wait for them specifically.
+    // Tickets are the only data loaded outside the main forkJoin (background subscription),
+    // so they're the only ones that might genuinely not be available yet.
     const needsTickets = this.nlqFilterService.queryInvolvesTickets(this.queryText());
     if (needsTickets && !this._ticketsReady()) {
       this.waitingForTickets.set(true);
-      const tuParam = this.appState.selectedTradeUnits();
-      this.apiService.getTickets(tuParam.length > 0 ? tuParam : undefined).pipe(
-        timeout(60000),
-        catchError(() => of([] as Ticket[])),
-        takeUntilDestroyed(this.destroyRef)
-      ).subscribe(tickets => {
-        if (queryGen !== this._queryGenId) return;
-        this.tickets.set(tickets);
-        this._ticketsReady.set(true);
-        this.waitingForTickets.set(false);
-        this._applyNlqFilter();
-        this.isProcessing.set(false);
-      });
       return;
     }
 
-    // If query involves storage and stored grain hasn't loaded yet, fetch it
-    const needsStorage = this.nlqFilterService.queryInvolvesStorage(this.queryText());
-    if (needsStorage && this.storedGrain().length === 0) {
-      const tuParam = this.appState.selectedTradeUnits();
-      this.apiService.getStoredGrain(tuParam.length > 0 ? tuParam : undefined).pipe(
-        timeout(60000),
-        catchError(() => of([] as StoredGrain[])),
-        takeUntilDestroyed(this.destroyRef)
-      ).subscribe(grain => {
-        if (queryGen !== this._queryGenId) return;
-        this.storedGrain.set(grain);
-        this._applyNlqFilter();
-        this.isProcessing.set(false);
-      });
-      return;
-    }
-
-    // Run NLQ on the next tick so the "Generating..." spinner renders on re-runs.
-    // Without this, synchronous execution means Angular never shows the processing state.
-    if (this.hasGenerated()) {
-      this.filteredCustomers.set([]);
-    }
-    setTimeout(() => {
-      if (queryGen !== this._queryGenId) return;
-      this._applyNlqFilter();
-      this.isProcessing.set(false);
-    });
+    // All other data (notes, contracts, storage, planting) comes from the forkJoin
+    // which completes before coreDataLoaded is set. Run the NLQ immediately.
+    this.waitingForTickets.set(false);
+    this._applyNlqFilter();
+    this.isProcessing.set(false);
   }
 
   /** Fetches fresh data for specific trade units and runs the NLQ filter. */
