@@ -134,7 +134,7 @@ export class DashboardComponent {
     const map = new Map<string, PlantingIntention[]>();
     for (const p of this.filteredIntentionsForYear()) {
       const commodity = this._commodityByCode().get(p.crop);
-      const category = commodity?.category || p.crop;
+      const category = p.category || commodity?.category || p.crop;
       const key = this.selectedCropFilter()
         ? [p.type, category].filter(Boolean).join(' ')
         : category;
@@ -144,12 +144,15 @@ export class DashboardComponent {
     return map;
   });
 
-  // Pre-indexed contracted quantity by commodity description — O(n) lookup for contractCoverageRows
-  private readonly _contractedByDesc = computed(() => {
+  // Pre-indexed contracted quantity by resolved category — uses Commodities table lookup
+  // so contracts group by the same category name as planting intentions.
+  private readonly _contractedByCategory = computed(() => {
+    const commodityMap = this._commodityByCode();
     const map = new Map<string, number>();
     for (const c of this.contractsForYear()) {
-      const desc = (c.commodityDescription || c.commodityGroup || c.commodityCode || '').toLowerCase();
-      map.set(desc, (map.get(desc) || 0) + (c.quantity || 0));
+      const commodity = commodityMap.get(c.commodityCode || '') || commodityMap.get(c.commodityDescription || '');
+      const category = (commodity?.category || c.commodityDescription || c.commodityGroup || c.commodityCode || '').toLowerCase();
+      map.set(category, (map.get(category) || 0) + (c.quantity || 0));
     }
     return map;
   });
@@ -215,7 +218,7 @@ export class DashboardComponent {
       if (!customerIdSet.has(p.customerId)) return false;
       if (this.selectedCropFilter()) {
         const commodity = this._commodityByCode().get(p.crop);
-        const category = commodity?.category || p.crop;
+        const category = p.category || commodity?.category || p.crop;
         if (category !== this.selectedCropFilter()) return false;
       }
       return true;
@@ -248,7 +251,7 @@ export class DashboardComponent {
     const yieldMap = this._yieldEstimateMap();
     return this.filteredIntentionsForYear().map(p => {
       const commodity = this._commodityByCode().get(p.crop);
-      const category = commodity?.category || p.crop;
+      const category = p.category || commodity?.category || p.crop;
       const cropKey = [p.type, category].filter(Boolean).join(' ');
       return { acres: p.acres, yieldEst: yieldMap.get(cropKey) ?? null };
     });
@@ -279,7 +282,7 @@ export class DashboardComponent {
     for (const p of this.plantingIntentions()) {
       if (!customerIdSet.has(p.customerId)) continue;
       const commodity = this._commodityByCode().get(p.crop);
-      const category = commodity?.category || p.crop;
+      const category = p.category || commodity?.category || p.crop;
       if (category) crops.add(category);
     }
 
@@ -295,7 +298,7 @@ export class DashboardComponent {
     const cropAcresMap = new Map<string, number>();
     for (const p of this.filteredIntentionsForYear()) {
       const commodity = this._commodityByCode().get(p.crop);
-      const category = commodity?.category || p.crop;
+      const category = p.category || commodity?.category || p.crop;
       const key = this.selectedCropFilter()
         ? [p.type, category].filter(Boolean).join(' ')
         : category;
@@ -343,7 +346,7 @@ export class DashboardComponent {
       let totalAcresWeighted = 0;
       for (const p of matching) {
         const commodity = this._commodityByCode().get(p.crop);
-        const category = commodity?.category || p.crop;
+        const category = p.category || commodity?.category || p.crop;
         const cropKey = [p.type, category].filter(Boolean).join(' ');
         const yieldEst = yieldMap.get(cropKey);
         if (yieldEst != null) {
@@ -363,7 +366,7 @@ export class DashboardComponent {
     const map = new Map<number, { customerName: string; tradeUnit: string; acres: number; production: number; cropSet: Set<string> }>();
     for (const p of this.filteredIntentionsForYear()) {
       const commodity = this._commodityByCode().get(p.crop);
-      const category = commodity?.category || p.crop;
+      const category = p.category || commodity?.category || p.crop;
       const cropKey = [p.type, category].filter(Boolean).join(' ');
       const yieldEst = yieldMap.get(cropKey);
       const production = yieldEst != null ? p.acres * yieldEst : 0;
@@ -463,19 +466,10 @@ export class DashboardComponent {
   });
 
   readonly contractCoverageRows = computed(() => {
-    const contractedMap = this._contractedByDesc();
+    const contractedMap = this._contractedByCategory();
     return this.categoryRows().map((row, i) => {
       const categoryLower = row.category.toLowerCase();
-      // Look up contracted quantity from pre-indexed map
-      let contracted = contractedMap.get(categoryLower) || 0;
-      // Also check partial matches (e.g., "corn" matches "corn #2 yellow")
-      if (contracted === 0) {
-        for (const [desc, qty] of contractedMap) {
-          if (desc.includes(categoryLower) || categoryLower.startsWith(desc.split(' ')[0])) {
-            contracted += qty;
-          }
-        }
-      }
+      const contracted = contractedMap.get(categoryLower) || 0;
       const pct = row.totalEstimatedProduction > 0
         ? Math.min(Math.round((contracted / row.totalEstimatedProduction) * 100), 999)
         : 0;
@@ -886,7 +880,7 @@ export class DashboardComponent {
     const cropCategoryMap = new Map<string, string>();
     for (const p of filtered) {
       const commodity = this._commodityByCode().get(p.crop);
-      const category = commodity?.category || p.crop;
+      const category = p.category || commodity?.category || p.crop;
       const cropKey = [p.type, category].filter(Boolean).join(' ');
       cropAcresMap.set(cropKey, (cropAcresMap.get(cropKey) || 0) + p.acres);
       cropCategoryMap.set(cropKey, category);

@@ -47,8 +47,8 @@ export class PlantingIntentionsTableComponent {
   public customerCommodityCodes = input<string[]>([]);
   public yieldEstimateCrops = input<string[]>([]);
   public selectedYear = input<number>(0);
-  public add = output<{crop: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
-  public edit = output<{intentionId: number, crop: string, type?: string, description?: string, acres: number, plantingYear: number}>();
+  public add = output<{crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
+  public edit = output<{intentionId: number, crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number}>();
   public delete = output<number>();
   public yearSelect = output<number>();
 
@@ -96,6 +96,7 @@ export class PlantingIntentionsTableComponent {
 
   addForm = {
     crop: '',
+    category: '',
     type: '',
     description: '',
     acres: '',
@@ -105,6 +106,7 @@ export class PlantingIntentionsTableComponent {
 
   editForm = {
     crop: '',
+    category: '',
     type: '',
     description: '',
     acres: '',
@@ -113,11 +115,29 @@ export class PlantingIntentionsTableComponent {
 
   originalEditForm = {
     crop: '',
+    category: '',
     type: '',
     description: '',
     acres: '',
     plantingYear: ''
   };
+
+  /** Unique category options for the selected crop — includes Category + unique Tier2/Tier3 values, no duplicates. */
+  get categoryOptionsForCrop(): string[] {
+    const crop = this.addForm.crop || this.editForm.crop;
+    if (!crop) return [];
+    const commodity = this.allCommodities.find(c => c.code === crop);
+    if (!commodity) return [];
+    // Collect unique values from category and tiers for this commodity's category group
+    const sameCategory = this.allCommodities.filter(c => c.category === commodity.category);
+    const options = new Set<string>();
+    if (commodity.category) options.add(commodity.category);
+    for (const c of sameCategory) {
+      if (c.tier2) options.add(c.tier2);
+      if (c.tier3) options.add(c.tier3);
+    }
+    return [...options].sort();
+  }
 
   get sortedIntentions(): PlantingIntention[] {
     // Default sort: newest year first (descending by year)
@@ -232,6 +252,8 @@ export class PlantingIntentionsTableComponent {
     const commodity = this.availableCrops.find(c => c.code === code);
     const name = commodity?.name || '';
     this.addForm.description = [this.addForm.type, name].filter(Boolean).join(' ');
+    // Auto-populate category from the commodity's category
+    this.addForm.category = commodity?.category || '';
   }
 
   onAddTypeChange(): void {
@@ -244,6 +266,7 @@ export class PlantingIntentionsTableComponent {
     const commodity = this.availableCrops.find(c => c.code === code);
     const name = commodity?.name || '';
     this.editForm.description = [this.editForm.type, name].filter(Boolean).join(' ');
+    this.editForm.category = commodity?.category || '';
   }
 
   onEditTypeChange(): void {
@@ -259,6 +282,7 @@ export class PlantingIntentionsTableComponent {
 
     this.addForm = {
       crop: '',
+      category: '',
       type: '',
       description: '',
       acres: '',
@@ -308,6 +332,7 @@ export class PlantingIntentionsTableComponent {
         this.edit.emit({
           intentionId: existing.id,
           crop: existing.crop,
+          category: this.addForm.category || undefined,
           type: existing.type || undefined,
           description: existing.description || undefined,
           acres: existing.acres + newAcres,
@@ -316,6 +341,7 @@ export class PlantingIntentionsTableComponent {
       } else {
         this.add.emit({
           crop: newCrop,
+          category: this.addForm.category || undefined,
           type: newType,
           description: this.addForm.description || undefined,
           acres: newAcres,
@@ -329,8 +355,12 @@ export class PlantingIntentionsTableComponent {
 
   openEditDialog(intention: PlantingIntention): void {
     this.selectedIntention = intention;
+    // Resolve category: use saved value if set, otherwise look up from Commodities table
+    const commodity = this.allCommodities.find(c => c.code === intention.crop);
+    const category = intention.category || commodity?.category || '';
     const formData = {
       crop: intention.crop,
+      category,
       type: intention.type || '',
       description: intention.description || '',
       acres: intention.acres.toString(),
@@ -351,6 +381,7 @@ export class PlantingIntentionsTableComponent {
 
   hasEditFormChanged(): boolean {
     return this.editForm.crop !== this.originalEditForm.crop
+      || this.editForm.category !== this.originalEditForm.category
       || this.editForm.type !== this.originalEditForm.type
       || this.editForm.description !== this.originalEditForm.description
       || this.editForm.acres !== this.originalEditForm.acres
@@ -373,6 +404,7 @@ export class PlantingIntentionsTableComponent {
       this.edit.emit({
         intentionId: this.selectedIntention.id,
         crop: this.editForm.crop,
+        category: this.editForm.category || undefined,
         type: this.editForm.type || undefined,
         description: this.editForm.description || undefined,
         acres: this._parseIntInput(this.editForm.acres),
