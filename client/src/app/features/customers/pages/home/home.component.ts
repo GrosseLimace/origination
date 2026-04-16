@@ -3,6 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
+import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
@@ -30,6 +31,7 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
 export class HomeComponent {
   private readonly apiService = inject(ApiService);
   private readonly appState = inject(AppStateService);
+  private readonly msalService = inject(MsalService);
   private readonly toastService = inject(ToastService);
   private readonly nlqFilterService = inject(NlqFilterService);
   private readonly usageTracking = inject(UsageTrackingService);
@@ -276,6 +278,9 @@ export class HomeComponent {
         const fkExtras = this.contracts().filter(c => !batchIds.has(c.id));
         this.contracts.set([...data, ...fkExtras]);
         this.appState.setContracts(this.contracts());
+        // Re-enrich saved lists now that contracts are loaded — the initial enrichment
+        // may have run before contracts arrived, producing wrong customerIds.
+        this._enrichSavedLists(true);
       },
       error: () => {}
     });
@@ -442,11 +447,14 @@ export class HomeComponent {
     });
   }
 
-  private _enrichSavedLists(): void {
+  private _enrichSavedLists(forceRefresh = false): void {
     if (!this.savedLists().length || !this.customers().length) return;
-    // Skip lists that already have cached customerIds (resolved by a previous run)
-    const needsEnrich = this.savedLists().some(l => !l.customerIds?.length);
-    if (!needsEnrich) return;
+    // Skip if all lists already have cached customerIds — unless forceRefresh is true
+    // (e.g., when contracts/tickets/stored grain arrive after initial enrichment).
+    if (!forceRefresh) {
+      const needsEnrich = this.savedLists().some(l => !l.customerIds?.length);
+      if (!needsEnrich) return;
+    }
 
     const context: NlqFilterContext = {
       customers: this.customers(),
@@ -457,12 +465,18 @@ export class HomeComponent {
       storedGrain: this.storedGrain(),
       commodities: this.appState.commodities()
     };
+    const account = this.msalService.instance.getActiveAccount()
+      ?? this.msalService.instance.getAllAccounts()[0];
     this.savedLists.set(this.savedLists().map(list => {
-      if (list.customerIds?.length) return list; // Already resolved
-      const nlqCustomers = this.nlqFilterService.parseAndFilter(list.query, context).customers;
+      if (!forceRefresh && list.customerIds?.length) return list; // Already resolved
+      // Resolve "I"/"me"/"my" to the user's name so author-based queries work
+      const resolvedQuery = this.nlqFilterService.resolveUserReferences(list.query, account?.name ?? '', account?.username ?? '');
+      const result = this.nlqFilterService.parseAndFilter(resolvedQuery, context);
+      // If no patterns matched, the NLQ returned all customers — don't cache that as valid
+      if (result.matchedPatterns.length === 0) return list;
       const refined = list.filters
-        ? this.nlqFilterService.applyRefinementFilters(nlqCustomers, list.filters, this.contracts(), this.notes())
-        : nlqCustomers;
+        ? this.nlqFilterService.applyRefinementFilters(result.customers, list.filters, this.contracts(), this.notes())
+        : result.customers;
       const ids = this.nlqFilterService.applyCustomerOverrides(
         refined.map(c => c.id), list.includedCustomerIds, list.excludedCustomerIds
       );

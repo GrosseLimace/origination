@@ -6,6 +6,7 @@ import { Subject, of, forkJoin, takeUntil } from 'rxjs';
 import { catchError, debounceTime, switchMap } from 'rxjs/operators';
 import { StoredGrain, Ticket, PlantingIntention } from '@models';
 import { Customer, SavedList, Note, ProducerDetails } from '@models';
+import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
@@ -45,6 +46,7 @@ export class CustomerListComponent {
 
   private readonly apiService = inject(ApiService);
   private readonly appStateService = inject(AppStateService);
+  private readonly msalService = inject(MsalService);
   private readonly nlqFilterService = inject(NlqFilterService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly _cdr = inject(ChangeDetectorRef);
@@ -396,7 +398,11 @@ export class CustomerListComponent {
       storedGrain: this.appStateService.storedGrain(),
       commodities: this.appStateService.commodities()
     };
-    const result = this.nlqFilterService.parseAndFilter(savedList.query, context);
+    // Resolve "I"/"me"/"my" to the user's name so author-based queries work
+    const account = this.msalService.instance.getActiveAccount()
+      ?? this.msalService.instance.getAllAccounts()[0];
+    const resolvedQuery = this.nlqFilterService.resolveUserReferences(savedList.query, account?.name ?? '', account?.username ?? '');
+    const result = this.nlqFilterService.parseAndFilter(resolvedQuery, context);
     const refined = savedList.filters
       ? this.nlqFilterService.applyRefinementFilters(result.customers, savedList.filters, contracts, notes)
       : result.customers;
