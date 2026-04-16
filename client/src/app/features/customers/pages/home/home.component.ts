@@ -1041,12 +1041,12 @@ export class HomeComponent {
     }
   }
 
-  addPlantingIntention(data: {crop: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}): void {
+  addPlantingIntention(data: {crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}): void {
     const sel = this.selectedCustomer();
     if (!sel) return;
     this.apiService.createPlantingIntention({
       customerId: sel.id, customerName: sel.name, customerCode: sel.sourceCustomerId || '',
-      tradeUnit: data.tradeUnit, crop: data.crop, type: data.type,
+      tradeUnit: data.tradeUnit, crop: data.crop, category: data.category, type: data.type,
       description: data.description, acres: data.acres, plantingYear: data.plantingYear
     }).subscribe({
       next: (intention) => {
@@ -1060,9 +1060,9 @@ export class HomeComponent {
     });
   }
 
-  editPlantingIntention(data: {intentionId: number, crop: string, type?: string, description?: string, acres: number, plantingYear: number}): void {
+  editPlantingIntention(data: {intentionId: number, crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number}): void {
     this.apiService.updatePlantingIntention(data.intentionId, {
-      crop: data.crop, type: data.type, description: data.description, acres: data.acres, plantingYear: data.plantingYear
+      crop: data.crop, category: data.category, type: data.type, description: data.description, acres: data.acres, plantingYear: data.plantingYear
     }).subscribe({
       next: (updated) => {
         const update = (arr: PlantingIntention[]) => arr.map(p => p.id === data.intentionId ? updated : p);
