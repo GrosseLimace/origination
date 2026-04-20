@@ -84,8 +84,11 @@ builder.Services.AddProblemDetails();
 builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration);
 builder.Services.AddAuthorization(options =>
 {
+    // RequireRole honors the identity's RoleClaimType so it works whether the
+    // JWT middleware surfaced the claim as `roles` (Microsoft.Identity.Web default)
+    // or as `ClaimTypes.Role` (mapped). Both paths resolve to the same "Admin" check.
     options.AddPolicy("AdminOnly", policy =>
-        policy.RequireClaim("roles", "Admin"));
+        policy.RequireRole("Admin"));
 });
 builder.Services.AddScoped<IUserEntitlementService, UserEntitlementService>();
 

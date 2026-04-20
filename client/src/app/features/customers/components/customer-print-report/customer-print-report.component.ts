@@ -569,7 +569,7 @@ export class CustomerPrintReportComponent {
         table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
         th { text-align: center; padding: 10px 14px; font-weight: 600; color: #374151; vertical-align: middle; }
         td { padding: 10px 14px; text-align: center; vertical-align: middle; word-wrap: break-word; overflow-wrap: break-word; }
-        .section { margin-bottom: 28px; page-break-inside: avoid; }
+        .section { margin-bottom: 28px; }
         .section-title { font-size: 14px; font-weight: 700; color: ${accent}; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 14px; }
         .table-wrap { border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
         .table-header { background: ${accentLight}; }
@@ -648,7 +648,7 @@ export class CustomerPrintReportComponent {
       html += `<div class="section">
         <div class="section-title">Contracts</div>
         ${this.contractsByCommodity().map(group => `
-          <div style="margin-bottom: 18px; page-break-inside: avoid;">
+          <div style="margin-bottom: 18px;">
             <div style="font-size: 12px; font-weight: 700; color: #374151; padding: 6px 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px 6px 0 0;">${this._esc(group.commodity)}</div>
             <div style="border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px; padding: 8px;">
               ${group.contracts.map(ct => {

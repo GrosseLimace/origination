@@ -10,7 +10,16 @@ namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
 [Route("api/usage-dashboard")]
-[Authorize] // TODO: Change to [Authorize(Policy = "AdminOnly")] when Azure AD Admin role is configured
+// Baseline: any authenticated user. Individual data-read endpoints require the
+// `Admin` app role (applied as `[Authorize(Policy = "AdminOnly")]` per method)
+// because ASP.NET combines Authorize attributes with AND — a class-level
+// AdminOnly would also block the telemetry endpoint below, which needs to
+// accept click events from every signed-in user for user-activity tracking.
+// Per developer-docs/ENTRA-ID-GROUPS-GUIDE.md, the "Origination App Dev Super
+// Users" security group is assigned the `Admin` role on the API Enterprise
+// Application, so its members receive `"roles": ["Admin"]` in their token
+// and are permitted on the GETs.
+[Authorize]
 [Produces("application/json")]
 public class UsageDashboardController : ControllerBase
 {
@@ -57,6 +66,7 @@ public class UsageDashboardController : ControllerBase
     }
 
     [HttpGet("summary")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<UsageDashboardSummaryDto>> GetSummary(
         [FromQuery] DateTime from, [FromQuery] DateTime to,
         [FromQuery] string? tradeUnitKey = null, CancellationToken ct = default)
@@ -98,6 +108,7 @@ public class UsageDashboardController : ControllerBase
     }
 
     [HttpGet("users")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<UsageDashboardUserDto>>> GetUsers(
         [FromQuery] DateTime from, [FromQuery] DateTime to,
         [FromQuery] string? tradeUnitKey = null, [FromQuery] string? status = null,
@@ -175,6 +186,7 @@ public class UsageDashboardController : ControllerBase
     }
 
     [HttpGet("daily-active")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<DailyActiveDto>>> GetDailyActive(
         [FromQuery] DateTime from, [FromQuery] DateTime to,
         [FromQuery] string? tradeUnitKey = null, CancellationToken ct = default)
@@ -207,6 +219,7 @@ public class UsageDashboardController : ControllerBase
     }
 
     [HttpGet("feature-sessions")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<FeatureSessionsDto>>> GetFeatureSessions(
         [FromQuery] DateTime from, [FromQuery] DateTime to,
         [FromQuery] string? tradeUnitKey = null, [FromQuery] string? screen = null,
@@ -333,6 +346,7 @@ public class UsageDashboardController : ControllerBase
     }
 
     [HttpGet("weekly-trend")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<WeeklyTrendDto>>> GetWeeklyTrend(
         [FromQuery] string? tradeUnitKey = null, CancellationToken ct = default)
     {
@@ -366,6 +380,7 @@ public class UsageDashboardController : ControllerBase
     }
 
     [HttpGet("activity-breakdown")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<ActivityBreakdownDto>>> GetActivityBreakdown(
         [FromQuery] DateTime from, [FromQuery] DateTime to,
         [FromQuery] string? tradeUnitKey = null, CancellationToken ct = default)
@@ -436,6 +451,7 @@ public class UsageDashboardController : ControllerBase
     }
 
     [HttpGet("inactive")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<UsageDashboardInactiveUserDto>>> GetInactiveUsers(
         [FromQuery] DateTime from, [FromQuery] DateTime to,
         [FromQuery] string? tradeUnitKey = null, [FromQuery] int daysThreshold = 30,
@@ -489,6 +505,7 @@ public class UsageDashboardController : ControllerBase
     }
 
     [HttpGet("underused-features")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<UnderusedFeatureDto>>> GetUnderusedFeatures(
         [FromQuery] DateTime from, [FromQuery] DateTime to,
         [FromQuery] string? tradeUnitKey = null, CancellationToken ct = default)
@@ -525,6 +542,7 @@ public class UsageDashboardController : ControllerBase
     }
 
     [HttpGet("query-library-usage")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<QueryLibraryUsageDto>>> GetQueryLibraryUsage(
         [FromQuery] DateTime from, [FromQuery] DateTime to,
         [FromQuery] string? tradeUnitKey = null, CancellationToken ct = default)
@@ -565,6 +583,7 @@ public class UsageDashboardController : ControllerBase
     }
 
     [HttpGet("query-search-gaps")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<QuerySearchGapDto>>> GetQuerySearchGaps(
         [FromQuery] DateTime from, [FromQuery] DateTime to,
         [FromQuery] string? tradeUnitKey = null, CancellationToken ct = default)
@@ -590,6 +609,9 @@ public class UsageDashboardController : ControllerBase
         return Ok(gaps);
     }
 
+    // Telemetry endpoint — every signed-in user posts click events from the UI,
+    // not just Admin. Intentionally left without the per-method AdminOnly policy
+    // so the class-level `[Authorize]` (any authenticated user) applies.
     [HttpPost("click-event")]
     public ActionResult TrackClickEvent(
         [FromBody] ClickEventRequest request,
