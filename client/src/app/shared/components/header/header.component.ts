@@ -22,6 +22,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 // Project services
 import { ThemeService } from '@core/services/theme.service';
 import { AppStateService } from '@core/services/app-state.service';
+import { UserRolesService } from '@core/services/user-roles.service';
 
 // Shared components
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -45,22 +46,24 @@ export class HeaderComponent {
   private readonly msalBroadcast = inject(MsalBroadcastService);
   private readonly http = inject(HttpClient);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly userRoles = inject(UserRolesService);
 
   readonly envName = environment.envName;
   readonly bidSheetEnabled = environment.bidSheetEnabled;
-  // Gate the Usage Dashboard nav button to the single preview owner until the feature
-  // is ready for everyone. The route is guarded separately — this just hides the entry.
+  // Gate the Usage Dashboard nav button to users with the `Admin` app role.
+  // The "Origination App Dev Super Users" security group is assigned the Admin role on
+  // the API Enterprise Application, so members see this entry. Route still re-enforces
+  // via `adminGuard`.
   get usageDashboardEnabled(): boolean {
-    if (!environment.usageDashboardEnabled) return false;
-    const email = (this._getAccount()?.username ?? '').toLowerCase();
-    const normalized = email.includes('@') ? email : (email ? `${email}@scoular.com` : '');
-    return ['cegr@scoular.com', 'hcollins@scoular.com', 'sfletcher@scoular.com'].includes(normalized);
+    return environment.usageDashboardEnabled && this.isAdmin();
   }
 
   mobileMenuOpen = signal(false);
   profileMenuOpen = signal(false);
   profilePhotoUrl = signal<string | null>(null);
-  readonly isAdmin = signal(false);
+  // Delegates to UserRolesService.isAdmin — the SPA's ID token has no `roles`
+  // claim, so we read from /api/me instead (populated by UserRolesService).
+  readonly isAdmin = this.userRoles.isAdmin;
   private readonly currentUrl = signal(this.router.url);
 
   constructor() {
@@ -79,9 +82,8 @@ export class HeaderComponent {
         const account = this._getAccount();
         if (!account) return EMPTY;
 
-        // Check admin role from ID token claims
-        const roles = (account.idTokenClaims as any)?.roles as string[] | undefined;
-        this.isAdmin.set(roles?.includes('Admin') ?? false);
+        // Admin role is populated by UserRolesService via /api/me — no need to
+        // read idTokenClaims.roles here (SPA ID token doesn't carry it).
         return from(this.msalService.instance.acquireTokenSilent({
           scopes: ['User.Read'],
           account

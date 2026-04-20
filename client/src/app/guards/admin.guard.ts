@@ -1,25 +1,15 @@
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
-import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
-import { InteractionStatus } from '@azure/msal-browser';
-import { filter, take, map } from 'rxjs/operators';
+import { map } from 'rxjs/operators';
+import { UserRolesService } from '@core/services/user-roles.service';
 
+// Gates routes to users whose app-role set (from /api/me) includes `Admin`.
+// Waits for UserRolesService to finish loading so the first navigation after
+// sign-in doesn't race the `/api/me` response and redirect admins away.
 export const adminGuard: CanActivateFn = () => {
-  const msalService = inject(MsalService);
-  const broadcastService = inject(MsalBroadcastService);
+  const userRoles = inject(UserRolesService);
   const router = inject(Router);
-
-  return broadcastService.inProgress$.pipe(
-    filter(status => status === InteractionStatus.None),
-    take(1),
-    map(() => {
-      const account = msalService.instance.getActiveAccount()
-        ?? msalService.instance.getAllAccounts()[0];
-      const roles = (account?.idTokenClaims as any)?.roles as string[] | undefined;
-      if (roles?.includes('Admin')) {
-        return true;
-      }
-      return router.createUrlTree(['/']);
-    })
+  return userRoles.ready$().pipe(
+    map(roles => roles.includes('Admin') ? true : router.createUrlTree(['/']))
   );
 };
