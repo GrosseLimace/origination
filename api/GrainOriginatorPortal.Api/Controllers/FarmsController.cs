@@ -12,12 +12,10 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class FarmsController : ControllerBase
 {
     private readonly IDataService _dataService;
-    private readonly IUserEntitlementService _entitlementService;
 
-    public FarmsController(IDataService dataService, IUserEntitlementService entitlementService)
+    public FarmsController(IDataService dataService)
     {
         _dataService = dataService;
-        _entitlementService = entitlementService;
     }
 
     // -------------------------------------------------------------------------
@@ -43,12 +41,12 @@ public class FarmsController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Gets all farms for a specific customer.</summary>
+    /// <summary>Gets all farms for a specific customer. Open to any authenticated originator —
+    /// trade-unit entitlements are a UX default, not an access-control boundary.</summary>
     [HttpGet("customer/{customerId:long}")]
     [ProducesResponseType(typeof(List<Farm>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<Farm>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
         return Ok(await _dataService.GetFarmsByCustomerAsync(customerId, cancellationToken));
     }
 

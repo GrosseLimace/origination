@@ -4,7 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import { bootstrapApplication } from '@angular/platform-browser';
 
 // 2. Angular router/http
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { provideHttpClient, withInterceptorsFromDi, HTTP_INTERCEPTORS } from '@angular/common/http';
 
 // 3. Third-party (MSAL)
@@ -61,7 +61,7 @@ bootstrapApplication(AppComponent, {
     },
     {
       provide: APP_INITIALIZER,
-      useFactory: (msalService: MsalService) => async () => {
+      useFactory: (msalService: MsalService, router: Router) => async () => {
         await msalService.instance.initialize();
         // Process any pending redirect response before guards run.
         // Without this, the auth code from Azure AD is unprocessed when guards
@@ -71,8 +71,22 @@ bootstrapApplication(AppComponent, {
         } catch {
           // Auth errors are handled via MsalBroadcastService; don't block bootstrap.
         }
+        // After a successful login redirect, restore the deep link the user originally requested.
+        const hasAccount = !!msalService.instance.getActiveAccount()
+          || msalService.instance.getAllAccounts().length > 0;
+        if (hasAccount) {
+          try {
+            const savedUrl = sessionStorage.getItem('deepLinkUrl');
+            if (savedUrl && savedUrl.startsWith('/') && savedUrl !== '/') {
+              sessionStorage.removeItem('deepLinkUrl');
+              await router.navigateByUrl(savedUrl);
+            }
+          } catch {
+            // Ignore navigation errors; user falls through to default route.
+          }
+        }
       },
-      deps: [MsalService],
+      deps: [MsalService, Router],
       multi: true,
     },
     {

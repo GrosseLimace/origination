@@ -42,13 +42,12 @@ public class StoredGrainController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Gets stored grain records for a specific customer.</summary>
+    /// <summary>Gets stored grain records for a specific customer. Open to any authenticated
+    /// originator — trade-unit entitlements are a UX default, not an access-control boundary.</summary>
     [HttpGet("customer/{customerId:long}")]
     [ProducesResponseType(typeof(List<StoredGrain>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<List<StoredGrain>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
         return Ok(await _dataService.GetStoredGrainByCustomerAsync(customerId, cancellationToken));
     }
 }

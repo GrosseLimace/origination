@@ -2762,6 +2762,7 @@ public class SqlDataService : IDataService
         existing.State = location.State;
         existing.Latitude = location.Latitude;
         existing.Longitude = location.Longitude;
+        existing.IsScoularFacility = location.IsScoularFacility;
         existing.ModifiedBy = location.ModifiedBy;
         existing.ModifiedAt = DateTime.UtcNow;
 

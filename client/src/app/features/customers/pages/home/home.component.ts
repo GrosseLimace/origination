@@ -251,8 +251,9 @@ export class HomeComponent {
       next: (data) => {
         // Discard result if a newer request has already been issued.
         if (requestId !== this._customerRequestId) return;
-        this.customers.set(data);
-        this.appState.setCustomers(data);
+        const list = data ?? [];
+        this.customers.set(list);
+        this.appState.setCustomers(list);
         this.loading.set(false);
         this._isLoading = false;
         this._enrichSavedLists();
@@ -274,9 +275,10 @@ export class HomeComponent {
 
     this.apiService.getContracts(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
-        const batchIds = new Set(data.map(c => c.id));
+        const list = data ?? [];
+        const batchIds = new Set(list.map(c => c.id));
         const fkExtras = this.contracts().filter(c => !batchIds.has(c.id));
-        this.contracts.set([...data, ...fkExtras]);
+        this.contracts.set([...list, ...fkExtras]);
         this.appState.setContracts(this.contracts());
         // Re-enrich saved lists now that contracts are loaded — the initial enrichment
         // may have run before contracts arrived, producing wrong customerIds.
@@ -287,9 +289,10 @@ export class HomeComponent {
 
     this.apiService.getTickets(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
-        const batchIds = new Set(data.map(t => t.id));
+        const list = data ?? [];
+        const batchIds = new Set(list.map(t => t.id));
         const fkExtras = this.tickets().filter(t => !batchIds.has(t.id));
-        this.tickets.set([...data, ...fkExtras]);
+        this.tickets.set([...list, ...fkExtras]);
         this.appState.setTickets(this.tickets());
       },
       error: () => {}
@@ -297,8 +300,9 @@ export class HomeComponent {
 
     this.apiService.getPlantingIntentions(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
-        this.plantingIntentions.set(data);
-        this.appState.setPlantingIntentions(data);
+        const list = data ?? [];
+        this.plantingIntentions.set(list);
+        this.appState.setPlantingIntentions(list);
         this.isLoadingPlanting.set(false);
       },
       error: () => { this.isLoadingPlanting.set(false); }
@@ -306,8 +310,9 @@ export class HomeComponent {
 
     this.apiService.getNotes().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
-        this.notes.set(data);
-        this.appState.setNotes(data);
+        const list = data ?? [];
+        this.notes.set(list);
+        this.appState.setNotes(list);
         // Re-filter customer notes if a customer is already selected when notes arrive
         const sel = this.selectedCustomer();
         if (sel) this._loadCustomerData(sel.id);
@@ -317,8 +322,9 @@ export class HomeComponent {
 
     this.apiService.getStoredGrain(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
-        this.storedGrain.set(data);
-        this.appState.setStoredGrain(data);
+        const list = data ?? [];
+        this.storedGrain.set(list);
+        this.appState.setStoredGrain(list);
         // Re-filter stored grain if a customer is already selected when data arrives
         const sel = this.selectedCustomer();
         if (sel) this._loadCustomerData(sel.id);
@@ -330,8 +336,9 @@ export class HomeComponent {
 
     this.apiService.getSavedLists().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
-        this.savedLists.set(data);
-        this.appState.setSavedLists(data);
+        const list = data ?? [];
+        this.savedLists.set(list);
+        this.appState.setSavedLists(list);
         this._enrichSavedLists();
       },
       error: () => {}
@@ -341,14 +348,15 @@ export class HomeComponent {
   private _loadProducerDetails(): void {
     this.apiService.getAllProducerDetails().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (details) => {
+        const list = details ?? [];
         const map = new Map(this.producerDetailsMap());
-        details.forEach(d => map.set(d.customerId, d));
+        list.forEach(d => map.set(d.customerId, d));
         this.producerDetailsMap.set(map);
 
         if (this.customers().length > 0) {
-          this._mergeProducerDetails(details);
+          this._mergeProducerDetails(list);
         } else {
-          this._pendingProducerDetails = details;
+          this._pendingProducerDetails = list;
         }
       },
       error: () => {}

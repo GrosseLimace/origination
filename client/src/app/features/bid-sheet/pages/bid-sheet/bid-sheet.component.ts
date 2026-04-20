@@ -74,6 +74,31 @@ export class BidSheetComponent {
   tradeUnitElevators = signal<Elevator[]>([]);     // Filtered to selected trade unit
   allMapLocations = signal<BidSheetLocation[]>([]); // ALL locations across all TUs (for map)
   bidLocations = signal<BidSheetLocation[]>([]);
+  /** Set of location IDs that are marked as Scoular facilities — used for row highlighting in edit bids grid and print. */
+  readonly scoularLocationIds = computed<Set<number>>(() => {
+    const ids = new Set<number>();
+    for (const loc of this.allMapLocations()) {
+      if (loc.isScoularFacility) ids.add(loc.id);
+    }
+    return ids;
+  });
+  /** Set of location names that are marked as Scoular facilities — used for row highlighting in edit bids grid (which keys rows by name). */
+  readonly scoularLocationNames = computed<Set<string>>(() => {
+    const names = new Set<string>();
+    for (const loc of this.allMapLocations()) {
+      if (loc.isScoularFacility) names.add(loc.name);
+    }
+    for (const loc of this.bidLocations()) {
+      if (loc.isScoularFacility) names.add(loc.name);
+    }
+    return names;
+  });
+  /** True if the currently-selected panel location is a Scoular facility. */
+  readonly panelSelectedIsScoular = computed<boolean>(() => {
+    const name = this.panelSelectedLocation();
+    if (!name) return false;
+    return this.allMapLocations().some(l => l.name === name && l.isScoularFacility);
+  });
   /** Flattened view of locations — uses TU-filtered bidLocations when a TU is active, otherwise allMapLocations. */
   readonly bidEntries = computed<BidSheetEntry[]>(() => {
     const source = this.activeTradeUnits().length > 0 ? this.bidLocations() : this.allMapLocations();
@@ -309,6 +334,7 @@ export class BidSheetComponent {
   newLocationLat = signal<number | null>(null);
   newLocationLng = signal<number | null>(null);
   newLocationTu = signal<string>('');
+  newLocationIsScoular = signal<boolean>(false);
   newLocationCrops = signal<{ commodityCode: string; searchQuery: string; showDropdown: boolean; oldYear: number; oldBid: string; newYear: number; newBid: string }[]>([]);
   readonly addLocationYears: number[] = (() => { const y = new Date().getFullYear(); return [y - 1, y]; })();
   // (commodityCode stores the category value, e.g. "CORN", "WHEAT")
@@ -848,7 +874,7 @@ export class BidSheetComponent {
         items.push({
           type: 'entry',
           name: loc.name,
-          isScoular: false,
+          isScoular: !!loc.isScoularFacility,
           isRef: false,
           latitude: loc.latitude ?? null,
           longitude: loc.longitude ?? null,
@@ -893,10 +919,11 @@ export class BidSheetComponent {
         const entryWithCoords = this.bidEntries().find(e => e.name === name);
         const isRef = hasIndividualTu && name === refName;
 
+        const locForScoular = this.allMapLocations().find(l => l.name === name);
         items.push({
           type: 'entry',
           name,
-          isScoular: false,
+          isScoular: !!locForScoular?.isScoularFacility,
           isRef,
           latitude: entryWithCoords?.latitude ?? null,
           longitude: entryWithCoords?.longitude ?? null,
@@ -916,7 +943,7 @@ export class BidSheetComponent {
           items.push({
             type: 'entry',
             name: loc.name,
-            isScoular: false,
+            isScoular: !!loc.isScoularFacility,
             isRef,
             latitude: loc.latitude ?? null,
             longitude: loc.longitude ?? null,
@@ -1124,6 +1151,7 @@ export class BidSheetComponent {
       longitude: lng ?? undefined,
       tradeUnitCode: tu,
       groupName: this._getGroupNameForTu(tu) || undefined,
+      isScoularFacility: this.newLocationIsScoular(),
       bids
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (saved) => {
@@ -1211,27 +1239,10 @@ export class BidSheetComponent {
   }
 
   prevEditYear(): void {
-    const months = this.editBidsMonths();
-    if (months.length > 0 && months[0] !== 0) {
-      // Monthly mode: shift all months back by 1 (rolling year at January)
-      const shifted = months.map(m => m === 1 ? 12 : m - 1);
-      const yearChange = months.some(m => m === 1);
-      this.editBidsMonths.set(shifted);
-      this.onEditBidsYearChange(this.editBidsYear() + (yearChange ? -1 : 0));
-      return;
-    }
     this.onEditBidsYearChange(this.editBidsYear() - 1);
   }
 
   nextEditYear(): void {
-    const months = this.editBidsMonths();
-    if (months.length > 0 && months[0] !== 0) {
-      const shifted = months.map(m => m === 12 ? 1 : m + 1);
-      const yearChange = months.some(m => m === 12);
-      this.editBidsMonths.set(shifted);
-      this.onEditBidsYearChange(this.editBidsYear() + (yearChange ? 1 : 0));
-      return;
-    }
     this.onEditBidsYearChange(this.editBidsYear() + 1);
   }
 
@@ -1552,6 +1563,7 @@ export class BidSheetComponent {
   readonly todayFormatted = computed(() => new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }));
   printAddress = signal('');
   printPhone = signal('');
+  printHighlightScoularLocations = signal<boolean>(true);
 
   onPrintPhoneInput(event: Event): void {
     const raw = (event.target as HTMLInputElement).value.replace(/\D/g, '').slice(0, 10);
@@ -1585,6 +1597,21 @@ export class BidSheetComponent {
     this.printSelectedCrops.set(new Set(this.editBidsCrops()));
     this.printSelectedMonths.set(new Set(this.editBidsMonths()));
     this.showPrintDialog.set(true);
+  }
+
+  /** Rows to show in a given crop group's preview table — excludes locations with no bid for any column in that group; Scoular locations sorted to top. */
+  previewRowsForGroup(group: { columns: { key: string }[] }): EditBidsRow[] {
+    const scoularNames = this.scoularLocationNames();
+    return this.editBidsRows()
+      .filter(row => group.columns.some(col => (row.bids[col.key] ?? '').trim().length > 0))
+      .map((row, origIdx) => ({ row, origIdx }))
+      .sort((a, b) => {
+        const aS = scoularNames.has(a.row.name) ? 0 : 1;
+        const bS = scoularNames.has(b.row.name) ? 0 : 1;
+        if (aS !== bS) return aS - bS;
+        return a.origIdx - b.origIdx;
+      })
+      .map(x => x.row);
   }
 
   closePrintDialog(): void {
@@ -1622,32 +1649,59 @@ export class BidSheetComponent {
 
     const address = this.printAddress().trim();
     const phone = this.printPhone().trim();
+    const highlightScoular = this.printHighlightScoularLocations();
+    const scoularNames = this.scoularLocationNames();
+    const scoularBg = '#FFD400';
 
-    // Build one table per crop — tables touch (no margin between)
+    // Build one table per crop — tables touch (no margin between).
+    // Use fixed layout with a shared first-column width so every crop's columns line up across tables.
+    const firstColPct = 28;
+    const dataColPct = cropGroups[0] && cropGroups[0].columns.length > 0
+      ? (100 - firstColPct) / cropGroups[0].columns.length
+      : (100 - firstColPct);
+    const colgroup = `<colgroup>
+      <col style="width:${firstColPct}%" />
+      ${cropGroups[0].columns.map(() => `<col style="width:${dataColPct}%" />`).join('')}
+    </colgroup>`;
+
     const sections = cropGroups.map((group, gi) => {
       const monthHeaders = group.columns.map(c => {
         const label = c.month === 0 ? `Yearly ${year}` : `${this.getMonthName(c.month)} ${year}`;
         return `<th style="padding:10px 16px;text-align:center;font-size:12px;font-weight:600;color:#fff;background:#007CC0;border:1px solid #e5e7eb;white-space:nowrap;">${this._esc(label)}</th>`;
       }).join('');
 
-      const dataRows = rows.map((row, i) => {
-        const bg = i % 2 === 0 ? '#ffffff' : '#f9fafb';
+      // Only include rows that have at least one bid value for any column in this crop group
+      // Scoular locations sorted to the top (stable within each group)
+      const rowsWithBids = rows
+        .filter(row => group.columns.some(col => (row.bids[col.key] ?? '').trim().length > 0))
+        .map((row, origIdx) => ({ row, origIdx }))
+        .sort((a, b) => {
+          const aS = scoularNames.has(a.row.name) ? 0 : 1;
+          const bS = scoularNames.has(b.row.name) ? 0 : 1;
+          if (aS !== bS) return aS - bS;
+          return a.origIdx - b.origIdx;
+        })
+        .map(x => x.row);
+      const dataRows = rowsWithBids.map((row, i) => {
+        const isScoular = highlightScoular && scoularNames.has(row.name);
+        const bg = isScoular ? scoularBg : (i % 2 === 0 ? '#ffffff' : '#f9fafb');
         const cells = group.columns.map(col => {
           const val = (row.bids[col.key] ?? '').trim();
           const display = val ? this._esc(val) : '<span style="color:#d1d5db;">&mdash;</span>';
-          return `<td style="padding:9px 16px;text-align:center;font-size:12px;border:1px solid #e5e7eb;background:${bg};font-family:'Cascadia Mono','Fira Code',monospace;">${display}</td>`;
+          return `<td style="padding:9px 16px;text-align:center;font-size:12px;border:1px solid #e5e7eb;background:${bg};font-family:'Cascadia Mono','Fira Code',monospace;-webkit-print-color-adjust:exact;print-color-adjust:exact;">${display}</td>`;
         }).join('');
         return `<tr>
-          <td style="padding:9px 16px;font-size:12px;font-weight:500;color:#1f2937;border:1px solid #e5e7eb;background:${bg};white-space:nowrap;">${this._esc(row.name)}</td>
+          <td style="padding:9px 16px;font-size:12px;font-weight:${isScoular ? '700' : '500'};color:#1f2937;border:1px solid #e5e7eb;background:${bg};white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;">${this._esc(row.name)}</td>
           ${cells}
         </tr>`;
       }).join('');
 
       return `
         <div style="page-break-inside:avoid;">
-          <table style="width:100%;border-collapse:collapse;">
+          <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
+            ${colgroup}
             <thead><tr>
-              <th style="padding:10px 16px;text-align:left;font-size:13px;font-weight:700;color:#fff;background:#007CC0;border:1px solid #e5e7eb;white-space:nowrap;">${this._esc(group.crop)} Basis</th>
+              <th style="padding:10px 16px;text-align:left;font-size:13px;font-weight:700;color:#fff;background:#007CC0;border:1px solid #e5e7eb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${this._esc(group.crop)} Basis</th>
               ${monthHeaders}
             </tr></thead>
             <tbody>${dataRows}</tbody>
@@ -1706,6 +1760,7 @@ export class BidSheetComponent {
     this.newLocationLat.set(null);
     this.newLocationLng.set(null);
     this.newLocationTu.set('');
+    this.newLocationIsScoular.set(false);
     this.newLocationCrops.set([]);
   }
 
@@ -1869,6 +1924,7 @@ export class BidSheetComponent {
       elevatorCode: loc.elevatorCode,
       tradeUnitCode: loc.tradeUnitCode,
       groupName: loc.groupName,
+      isScoularFacility: loc.isScoularFacility ?? false,
       bids: []
     } as any).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
@@ -1883,6 +1939,39 @@ export class BidSheetComponent {
         if (tus.length > 0) this._loadBidData(tus);
       },
       error: () => this.toastService.error('Failed to rename location')
+    });
+  }
+
+  toggleLocationScoularStatus(): void {
+    const name = this.panelSelectedLocation();
+    if (!name) return;
+    const loc = this.allMapLocations().find(l => l.name === name);
+    if (!loc) return;
+    const newValue = !(loc.isScoularFacility ?? false);
+
+    this.apiService.updateBidSheetLocation(loc.id, {
+      name: loc.name,
+      address: loc.address,
+      city: loc.city,
+      state: loc.state,
+      latitude: loc.latitude,
+      longitude: loc.longitude,
+      elevatorCode: loc.elevatorCode,
+      tradeUnitCode: loc.tradeUnitCode,
+      groupName: loc.groupName,
+      isScoularFacility: newValue,
+      bids: []
+    } as any).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: () => {
+        this.allMapLocations.update(locs => locs.map(l =>
+          l.id === loc.id ? { ...l, isScoularFacility: newValue } : l
+        ));
+        this.bidLocations.update(locs => locs.map(l =>
+          l.id === loc.id ? { ...l, isScoularFacility: newValue } : l
+        ));
+        this.toastService.success(newValue ? `${name} marked as Scoular facility` : `${name} unmarked as Scoular facility`);
+      },
+      error: () => this.toastService.error('Failed to update Scoular status')
     });
   }
 

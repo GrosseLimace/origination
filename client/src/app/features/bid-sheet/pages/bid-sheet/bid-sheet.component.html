@@ -190,21 +190,24 @@
             <!-- Detail Body -->
             <div class="flex-1 overflow-auto">
               <!-- Action buttons -->
-              <div class="flex items-center gap-2 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-                <button (click)="panelSetReference()" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors"
+              <div class="flex items-center gap-2 flex-wrap px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                <button (click)="panelSetReference()" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap"
                   [ngClass]="selectedLocationName() === panelSelectedLocation()
                     ? 'text-white bg-scoular-blue border-scoular-blue hover:bg-blue-700'
                     : 'text-scoular-blue-medium dark:text-scoular-blue border-scoular-blue/30 dark:border-scoular-blue/40 hover:bg-scoular-blue/10 dark:hover:bg-scoular-blue/20'">
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
                   @if (selectedLocationName() === panelSelectedLocation()) { Reference } @else { Set as Reference }
                 </button>
-                @if (activeTradeUnits().length > 0) {
-                <button (click)="openEditBids()" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                  Edit Bids
+                <button (click)="toggleLocationScoularStatus()"
+                  [title]="panelSelectedIsScoular() ? 'Unmark as Scoular facility' : 'Mark as Scoular facility'"
+                  class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap"
+                  [ngClass]="panelSelectedIsScoular()
+                    ? 'text-gray-900 bg-scoular-yellow border-scoular-yellow hover:opacity-90'
+                    : 'text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800'">
+                  <span class="text-base leading-none">{{ panelSelectedIsScoular() ? '★' : '☆' }}</span>
+                  @if (panelSelectedIsScoular()) { Scoular } @else { Mark Scoular }
                 </button>
-                }
-                <button (click)="deleteMode.set(!deleteMode())" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors"
+                <button (click)="deleteMode.set(!deleteMode())" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap"
                   [ngClass]="deleteMode()
                     ? 'text-white bg-scoular-red-accessible border-scoular-red-accessible dark:bg-scoular-red dark:border-scoular-red'
                     : 'text-scoular-red-accessible dark:text-scoular-red border-scoular-red/30 dark:border-scoular-red/40 hover:bg-scoular-red/10 dark:hover:bg-scoular-red/20'">
@@ -532,6 +535,23 @@
                     <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Elevator Code</label>
                     <input type="text" [ngModel]="newLocationElevatorCode()" (ngModelChange)="newLocationElevatorCode.set($event)" placeholder="Optional" class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
                   </div>
+                </div>
+
+                <!-- Scoular facility toggle -->
+                <div>
+                  <button
+                    type="button"
+                    (click)="newLocationIsScoular.set(!newLocationIsScoular())"
+                    [class.bg-scoular-yellow]="newLocationIsScoular()"
+                    [class.text-gray-900]="newLocationIsScoular()"
+                    [class.bg-gray-100]="!newLocationIsScoular()"
+                    [class.dark:bg-gray-700]="!newLocationIsScoular()"
+                    [class.text-gray-700]="!newLocationIsScoular()"
+                    [class.dark:text-gray-300]="!newLocationIsScoular()"
+                    class="w-full text-sm font-medium rounded-lg px-3 py-2 flex items-center justify-center gap-2 border border-gray-300 dark:border-gray-600 hover:opacity-90 transition-colors">
+                    <span class="text-base">{{ newLocationIsScoular() ? '★' : '☆' }}</span>
+                    <span>{{ newLocationIsScoular() ? 'Scoular Facility' : 'Mark as Scoular Facility' }}</span>
+                  </button>
                 </div>
 
                 <!-- Address -->
@@ -872,11 +892,16 @@
                   </thead>
                   <tbody cdkDropList (cdkDropListDropped)="onRowDrop($event)">
                     @for (row of editBidsRows(); track row.name; let rowIdx = $index) {
-                      <tr cdkDrag class="border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors">
+                      <tr cdkDrag class="border-b border-gray-100 dark:border-gray-800 transition-colors"
+                          [ngClass]="scoularLocationNames().has(row.name)
+                            ? 'bg-green-50 dark:bg-green-900/30'
+                            : 'bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/40'">
                         <td class="sticky left-0 z-10 px-4 py-3 border-r border-gray-200 dark:border-gray-700"
-                            [ngClass]="row.type === 'elevator'
-                              ? 'bg-scoular-green/10 dark:bg-scoular-green/20'
-                              : 'bg-white dark:bg-gray-900'">
+                            [ngClass]="scoularLocationNames().has(row.name)
+                              ? 'bg-green-50 dark:bg-green-900/30'
+                              : (row.type === 'elevator'
+                                ? 'bg-scoular-green/10 dark:bg-scoular-green/20'
+                                : 'bg-white dark:bg-gray-900')">
                           <div class="flex items-center gap-2">
                             <span cdkDragHandle class="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400 flex-shrink-0">
                               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/></svg>
@@ -967,19 +992,26 @@
                         @if (printCropGroups().length > 0) {
                           @for (group of printCropGroups(); track group.crop) {
                             <div>
-                              <table style="width:100%;border-collapse:collapse;font-size:10px;">
+                              <table style="width:100%;border-collapse:collapse;font-size:10px;table-layout:fixed;">
+                                <colgroup>
+                                  <col [style.width.%]="28" />
+                                  @for (col of group.columns; track col.key) {
+                                    <col [style.width.%]="(100 - 28) / group.columns.length" />
+                                  }
+                                </colgroup>
                                 <thead>
                                   <tr>
-                                    <th style="padding:5px 8px;text-align:left;font-weight:700;color:#fff;background:#007CC0;border:1px solid #e5e7eb;white-space:nowrap;">{{ group.crop }} Basis</th>
+                                    <th style="padding:5px 8px;text-align:left;font-weight:700;color:#fff;background:#007CC0;border:1px solid #e5e7eb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ group.crop }} Basis</th>
                                     @for (col of group.columns; track col.key) {
                                       <th style="padding:5px 8px;text-align:center;font-weight:600;color:#fff;background:#007CC0;border:1px solid #e5e7eb;white-space:nowrap;">{{ col.month === 0 ? 'Yearly ' + editBidsYear() : getMonthName(col.month) + ' ' + editBidsYear() }}</th>
                                     }
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  @for (row of editBidsRows(); track row.name; let i = $index) {
-                                    <tr [style.background]="i % 2 === 0 ? '#fff' : '#f9fafb'">
-                                      <td style="padding:5px 8px;font-weight:500;color:#1f2937;border:1px solid #e5e7eb;white-space:nowrap;">{{ row.name }}</td>
+                                  @for (row of previewRowsForGroup(group); track row.name; let i = $index) {
+                                    @let isScoular = printHighlightScoularLocations() && scoularLocationNames().has(row.name);
+                                    <tr [style.background]="isScoular ? '#FFD400' : (i % 2 === 0 ? '#fff' : '#f9fafb')">
+                                      <td [style.font-weight]="isScoular ? '700' : '500'" style="padding:5px 8px;color:#1f2937;border:1px solid #e5e7eb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ row.name }}</td>
                                       @for (col of group.columns; track col.key) {
                                         <td style="padding:5px 8px;text-align:center;border:1px solid #e5e7eb;font-family:'Cascadia Mono','Fira Code',monospace;">
                                           @if ((row.bids[col.key] || '').trim()) {
@@ -1051,6 +1083,15 @@
                             </label>
                           }
                         </div>
+                      </div>
+                      <!-- Highlight Scoular facilities -->
+                      <div>
+                        <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Highlight</h4>
+                        <label class="flex items-center gap-2.5 cursor-pointer">
+                          <input type="checkbox" [checked]="printHighlightScoularLocations()" (change)="printHighlightScoularLocations.set(!printHighlightScoularLocations())"
+                            class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
+                          <span class="text-sm text-gray-700 dark:text-gray-300">Scoular facilities</span>
+                        </label>
                       </div>
                     </div>
 

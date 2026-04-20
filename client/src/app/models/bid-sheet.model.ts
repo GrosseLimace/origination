@@ -24,6 +24,7 @@ export interface BidSheetLocation {
   elevatorCode?: string;
   tradeUnitCode: string;
   groupName?: string;
+  isScoularFacility?: boolean;
   createdBy: string;
   createdAt: string;
   modifiedBy?: string;
