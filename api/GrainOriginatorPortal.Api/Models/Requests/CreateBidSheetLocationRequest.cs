@@ -28,5 +28,7 @@ public class CreateBidSheetLocationRequest
     [MaxLength(200)]
     public string? GroupName { get; set; }
 
+    public bool IsScoularFacility { get; set; }
+
     public List<UpsertBidSheetBidRequest> Bids { get; set; } = [];
 }

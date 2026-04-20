@@ -596,7 +596,7 @@ export class ApiService {
   createBidSheetLocation(location: {
     name?: string; address?: string; city?: string; state?: string;
     latitude?: number; longitude?: number; elevatorCode?: string;
-    tradeUnitCode?: string; groupName?: string;
+    tradeUnitCode?: string; groupName?: string; isScoularFacility?: boolean;
     bids: Array<{ commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string }>;
   }): Observable<BidSheetLocation> {
     return this.http.post<BidSheetLocation>(`${this.baseUrl}/bidsheet/locations`, location)

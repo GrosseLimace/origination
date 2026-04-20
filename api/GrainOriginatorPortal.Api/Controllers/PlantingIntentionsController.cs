@@ -42,13 +42,12 @@ public class PlantingIntentionsController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Gets all planting intentions for a specific customer.</summary>
+    /// <summary>Gets all planting intentions for a specific customer. Open to any authenticated
+    /// originator — trade-unit entitlements are a UX default, not an access-control boundary.</summary>
     [HttpGet("customer/{customerId:int}")]
     [ProducesResponseType(typeof(List<PlantingIntention>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<List<PlantingIntention>>> GetByCustomer(int customerId, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
         return Ok(await _dataService.GetPlantingIntentionsByCustomerAsync(customerId, cancellationToken));
     }
 

@@ -321,6 +321,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ElevatorCode).HasMaxLength(50).IsRequired(false);
             entity.Property(e => e.TradeUnitCode).HasMaxLength(100).IsRequired();
             entity.Property(e => e.GroupName).HasMaxLength(200).IsRequired(false);
+            entity.Property(e => e.IsScoularFacility).HasDefaultValue(false).IsRequired();
             entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.Property(e => e.ModifiedBy).HasMaxLength(255).IsRequired(false);

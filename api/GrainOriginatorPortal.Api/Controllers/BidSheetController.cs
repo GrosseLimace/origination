@@ -76,6 +76,7 @@ public class BidSheetController : ControllerBase
             ElevatorCode = request.ElevatorCode,
             TradeUnitCode = request.TradeUnitCode,
             GroupName = request.GroupName,
+            IsScoularFacility = request.IsScoularFacility,
             CreatedBy = CurrentUserId,
             CreatedAt = now,
             Bids = request.Bids.Select(b => new BidSheetLocationBid
@@ -109,6 +110,7 @@ public class BidSheetController : ControllerBase
             State = request.State,
             Latitude = request.Latitude,
             Longitude = request.Longitude,
+            IsScoularFacility = request.IsScoularFacility,
             ModifiedBy = CurrentUserId
         };
 

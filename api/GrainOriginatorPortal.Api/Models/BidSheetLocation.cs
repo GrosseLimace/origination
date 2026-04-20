@@ -12,6 +12,7 @@ public class BidSheetLocation
     public string? ElevatorCode { get; set; }
     public string TradeUnitCode { get; set; } = string.Empty;
     public string? GroupName { get; set; }
+    public bool IsScoularFacility { get; set; }
     public string CreatedBy { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public string? ModifiedBy { get; set; }

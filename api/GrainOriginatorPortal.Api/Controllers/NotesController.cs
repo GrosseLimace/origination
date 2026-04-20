@@ -42,13 +42,12 @@ public class NotesController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Gets all notes for a specific customer.</summary>
+    /// <summary>Gets all notes for a specific customer. Open to any authenticated originator —
+    /// trade-unit entitlements are a UX default, not an access-control boundary.</summary>
     [HttpGet("customer/{customerId:long}")]
     [ProducesResponseType(typeof(List<Note>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<List<Note>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
         return Ok(await _dataService.GetNotesByCustomerAsync(customerId, cancellationToken));
     }
 

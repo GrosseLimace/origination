@@ -41,13 +41,13 @@ public class ProducerDetailsController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Gets producer details for a specific customer. Returns an empty record if not yet saved.</summary>
+    /// <summary>Gets producer details for a specific customer. Returns an empty record if not yet saved.
+    /// Open to any authenticated originator — trade-unit entitlements are a UX default,
+    /// not an access-control boundary.</summary>
     [HttpGet("customer/{customerId:long}")]
     [ProducesResponseType(typeof(ProducerDetails), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<ProducerDetails>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
         var details = await _dataService.GetProducerDetailsAsync(customerId, cancellationToken);
         return Ok(details ?? new ProducerDetails { CustomerId = customerId });
     }

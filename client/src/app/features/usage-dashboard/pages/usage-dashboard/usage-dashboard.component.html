@@ -35,17 +35,23 @@
               <div class="flex items-center gap-2">
                 <label class="text-sm text-gray-600 dark:text-gray-400 w-10">From</label>
                 <input type="date" [value]="dateFrom()" (change)="onCustomDateChange('from', $any($event.target).value)"
-                  class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-scoular-green focus:border-transparent" />
+                  class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-scoular-green focus:border-transparent [color-scheme:light] dark:[color-scheme:dark]" />
               </div>
               <div class="flex items-center gap-2">
                 <label class="text-sm text-gray-600 dark:text-gray-400 w-10">To</label>
                 <input type="date" [value]="dateTo()" (change)="onCustomDateChange('to', $any($event.target).value)"
-                  class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-scoular-green focus:border-transparent" />
+                  class="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-scoular-green focus:border-transparent [color-scheme:light] dark:[color-scheme:dark]" />
               </div>
-              <button type="button" (click)="customRangeOpen.set(false)"
-                class="w-full px-3 py-1.5 text-sm font-medium rounded-lg bg-scoular-green-accessible text-white hover:bg-scoular-green">
-                Apply
-              </button>
+              <div class="flex items-center gap-2">
+                <button type="button" (click)="customRangeOpen.set(false)"
+                  class="flex-1 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
+                  Cancel
+                </button>
+                <button type="button" (click)="customRangeOpen.set(false)"
+                  class="flex-1 px-3 py-1.5 text-sm font-medium rounded-lg bg-scoular-green-accessible text-white hover:bg-scoular-green">
+                  Apply
+                </button>
+              </div>
             </div>
           }
         </div>
