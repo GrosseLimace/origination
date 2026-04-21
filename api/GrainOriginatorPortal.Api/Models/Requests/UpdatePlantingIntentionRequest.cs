@@ -9,6 +9,9 @@ public record UpdatePlantingIntentionRequest
     public required string Crop { get; init; }
 
     [StringLength(100)]
+    public string? Category { get; init; }
+
+    [StringLength(100)]
     public string? Type { get; init; }
 
     [StringLength(255)]

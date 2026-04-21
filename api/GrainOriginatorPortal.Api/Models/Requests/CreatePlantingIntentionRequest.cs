@@ -7,21 +7,26 @@ public record CreatePlantingIntentionRequest
     [Required]
     public required long CustomerId { get; init; }
 
-    [Required]
+    // Customer metadata is optional on the wire — the controller derives the
+    // authoritative value from CustomerSnapshot when the customer exists there,
+    // so the client can send blank/unknown values for these (e.g. when the user
+    // has no trade unit selected in the header filter) and the server will fill
+    // them in. ValidateCustomerAccessAsync on CustomerId is the real auth gate.
     [StringLength(255)]
-    public required string CustomerName { get; init; }
+    public string? CustomerName { get; init; }
 
-    [Required]
     [StringLength(50)]
-    public required string CustomerCode { get; init; }
+    public string? CustomerCode { get; init; }
 
-    [Required]
     [StringLength(100)]
-    public required string TradeUnit { get; init; }
+    public string? TradeUnit { get; init; }
 
     [Required]
     [StringLength(100)]
     public required string Crop { get; init; }
+
+    [StringLength(100)]
+    public string? Category { get; init; }
 
     [StringLength(100)]
     public string? Type { get; init; }

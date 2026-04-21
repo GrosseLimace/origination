@@ -67,8 +67,8 @@ public class PlantingIntentionsController : ControllerBase
         var snapshot = await _appContext.CustomerSnapshots
             .FirstOrDefaultAsync(cs => cs.CustomerId == request.CustomerId, cancellationToken);
 
-        var customerName = snapshot?.CustomerName ?? request.CustomerName;
-        var customerCode = snapshot?.SourceCustomerId ?? request.CustomerCode;
+        var customerName = snapshot?.CustomerName ?? request.CustomerName ?? string.Empty;
+        var customerCode = snapshot?.SourceCustomerId ?? request.CustomerCode ?? string.Empty;
         var tradeUnit = snapshot?.TradeUnit ?? request.TradeUnit;
 
         if (string.IsNullOrWhiteSpace(tradeUnit))
@@ -80,6 +80,7 @@ public class PlantingIntentionsController : ControllerBase
             customerCode,
             tradeUnit,
             request.Crop,
+            request.Category,
             request.Type,
             request.Description,
             request.Acres,
@@ -106,6 +107,7 @@ public class PlantingIntentionsController : ControllerBase
         var updated = await _dataService.UpdatePlantingIntentionAsync(
             id,
             request.Crop,
+            request.Category,
             request.Type,
             request.Description,
             request.Acres,
