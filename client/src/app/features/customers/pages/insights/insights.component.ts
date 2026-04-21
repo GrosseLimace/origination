@@ -198,6 +198,19 @@ export class InsightsComponent {
       const arr = contractsByCustomer.get(c.ctrmCustomerId);
       if (arr) { arr.push(c); } else { contractsByCustomer.set(c.ctrmCustomerId, [c]); }
     }
+
+    // Pre-index applied ticket pounds by contract (ctrmContractNumber = sourceContractId).
+    // Used by the Unshipped Bushels check to skip contracts whose tickets already cover
+    // the contract quantity — mirrors the Contracts Table delivery math, so both screens
+    // agree on whether a contract is fulfilled.
+    const allTickets = this.tickets();
+    const appliedLbsByContract = new Map<string, number>();
+    for (const t of allTickets) {
+      if (!t.isApplied) continue;
+      const key = t.ctrmContractNumber?.trim();
+      if (!key) continue;
+      appliedLbsByContract.set(key, (appliedLbsByContract.get(key) ?? 0) + (t.appliedDockQuantity ?? 0));
+    }
     // Pre-index recent tickets (last 30 days) by customer for O(1) spot-load lookup
     const recentTicketsByCustomer = new Map<string, Ticket[]>();
     for (const t of todaysTickets) {
@@ -246,12 +259,16 @@ export class InsightsComponent {
       }
 
       // --- 2. Spot Loads — No Contract Coverage (Last 30 Days) ---
-      // Each ticket is checked individually: if no active contract covers its delivery date, it's a spot load.
+      // Each ticket is checked individually: if no active same-commodity contract covers
+      // its delivery date, it's a spot load. Coverage requires BOTH date overlap AND
+      // matching commodity — a corn contract can't silently "cover" a wheat ticket.
       for (const ticket of customerRecentTickets) {
         if (!ticket.date) continue;
         const ticketDate = new Date(ticket.date);
-        const hasContractCoverage = customerContracts.some(c => {
+        const ticketCommodity = (ticket.productCode || '').trim().toUpperCase();
+        const hasContractCoverage = ticketCommodity && customerContracts.some(c => {
           if (c.status === 'Fulfilled' || c.status === 'Cancelled') return false;
+          if ((c.commodityCode || '').trim().toUpperCase() !== ticketCommodity) return false;
           const start = new Date(c.deliveryStart);
           const end = new Date(c.deliveryEnd);
           return start <= ticketDate && end >= ticketDate;
@@ -291,13 +308,50 @@ export class InsightsComponent {
         const deliveryEnd = new Date(contract.deliveryEnd);
         const isPastDue = deliveryEnd < today;
         const isOpen = contract.status === 'Active' || contract.status === 'Overdue';
-        const hasRemainingQty = (contract.openBalanceQuantity ?? 0) > 0;
+        // Match the Contracts Table display rule: if CTRM's balance rounds to 0 in the
+        // contract's unit (same rounding Contracts Table uses — whole for bu/lb, 2-dec
+        // for tons), it's a residue and Contract Detail would show Filled. Don't flag.
+        const openBal = contract.openBalanceQuantity ?? 0;
+        const unitL = (contract.unit || '').toLowerCase().trim();
+        const isTonsU = unitL === 'st' || unitL.includes('ton');
+        const roundedOpen = isTonsU ? Math.round(openBal * 100) / 100 : Math.round(openBal);
+        const hasRemainingQty = roundedOpen > 0;
+
+        // Compute the ticket-based remaining using the same math as Contracts Table —
+        // converts applied pounds back to the contract's unit, rounds the same way
+        // (whole for bu/lb/cwt, 2-decimal for tons). This is the authoritative remaining
+        // number when we have tickets + commodity conversion; used both to skip fulfilled
+        // contracts AND as the displayed quantity below so Insights agrees with the
+        // Contract Detail page's "Remaining Quantity" to the bushel.
+        let ticketRemaining: number | null = null;
+        const contractKey = contract.sourceContractId?.trim();
+        const lbsPerBu = getLbsPerBushel(contract.commodityCode, conversionMap);
+        if (contractKey && lbsPerBu && lbsPerBu > 0) {
+          const appliedLbs = appliedLbsByContract.get(contractKey) ?? 0;
+          const unitLower = (contract.unit || '').toLowerCase().trim();
+          const isTons = unitLower === 'st' || unitLower.includes('ton');
+          let deliveredInUnits: number;
+          if (isTons) deliveredInUnits = appliedLbs / 2000;
+          else if (unitLower.includes('pound') || unitLower.includes('lb')) deliveredInUnits = appliedLbs;
+          else if (unitLower === 'cwt' || unitLower.includes('hundredweight')) deliveredInUnits = appliedLbs / 100;
+          else deliveredInUnits = appliedLbs / lbsPerBu;
+          const remainingInUnits = Math.max(0, (contract.quantity || 0) - deliveredInUnits);
+          ticketRemaining = isTons
+            ? Math.round(remainingInUnits * 100) / 100
+            : Math.round(remainingInUnits);
+        }
+        // Tickets say it's already delivered — skip (matches Contract Detail "Filled").
+        if (ticketRemaining !== null && ticketRemaining <= 0) continue;
 
         if (isPastDue && isOpen && hasRemainingQty) {
           const desc = contract.commodityDescription?.trim();
           const code = contract.commodityCode?.trim();
           const commodity = desc && code ? `${desc} (${code})` : desc || code || 'Unknown commodity';
-          const rawQty = contract.openBalanceQuantity || contract.quantity || 0;
+          // Prefer the ticket-computed remaining (matches Contract Detail exactly);
+          // fall back to CTRM's OpenBalanceQuantity only when we can't compute.
+          const rawQty = ticketRemaining !== null && ticketRemaining > 0
+            ? ticketRemaining
+            : (contract.openBalanceQuantity || contract.quantity || 0);
           const unitLabel = contract.unit || 'bu';
           const qtyTag = rawQty ? `${Math.round(rawQty).toLocaleString()} ${unitLabel}` : null;
           const daysOverdue = Math.floor((today.getTime() - deliveryEnd.getTime()) / (1000 * 60 * 60 * 24));
