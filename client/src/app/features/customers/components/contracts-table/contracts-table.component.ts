@@ -59,7 +59,7 @@ export class ContractsTableComponent {
   showSearch = signal(false);
   searchQuery = signal('');
 
-  private _deliveryStatsCache = new Map<number, { deliveredBushels: number; remainingBushels: number; progressPercent: number }>();
+  private _deliveryStatsCache = new Map<number, { deliveredBushels: number; remainingBushels: number; progressPercent: number; computable: boolean }>();
   private _statusCache = new Map<number, string>();
 
   constructor() {
@@ -421,7 +421,7 @@ export class ContractsTableComponent {
     return 'Open';
   }
 
-  getDeliveryStats(contract: Contract): { deliveredBushels: number; remainingBushels: number; progressPercent: number } {
+  getDeliveryStats(contract: Contract): { deliveredBushels: number; remainingBushels: number; progressPercent: number; computable: boolean } {
     const cached = this._deliveryStatsCache.get(contract.id);
     if (cached) return cached;
     const result = this._computeDeliveryStats(contract);
@@ -429,14 +429,15 @@ export class ContractsTableComponent {
     return result;
   }
 
-  private _computeDeliveryStats(contract: Contract): { deliveredBushels: number; remainingBushels: number; progressPercent: number } {
+  private _computeDeliveryStats(contract: Contract): { deliveredBushels: number; remainingBushels: number; progressPercent: number; computable: boolean } {
     const appliedTickets = this.getAppliedTickets(contract);
-    const lbsPerBushel = this._getLbsPerBushel(contract.commodityDescription || contract.commodityCode || '');
+    // Strict match on commodityCode against GNP024.Commodity_Code only. If the code
+    // isn't in the view, bail out with computable=false so the UI shows dashes and
+    // the status logic can skip its "remaining <= 0 means filled" shortcut.
+    const lbsPerBushel = this._getLbsPerBushel(contract.commodityCode || '');
 
-    // If no conversion data available (GNP024 unavailable or commodity not in view),
-    // return zeros so the UI shows "—" instead of potentially wrong numbers.
     if (lbsPerBushel == null) {
-      return { deliveredBushels: 0, remainingBushels: 0, progressPercent: 0 };
+      return { deliveredBushels: 0, remainingBushels: 0, progressPercent: 0, computable: false };
     }
 
     // Calculate delivered pounds from tickets (appliedDockQuantity/AppliedNetQuantity is in pounds)
@@ -466,7 +467,8 @@ export class ContractsTableComponent {
     return {
       deliveredBushels: delivered,
       remainingBushels: remaining,
-      progressPercent
+      progressPercent,
+      computable: true
     };
   }
 
@@ -522,8 +524,9 @@ export class ContractsTableComponent {
 
   /**
    * Looks up lbs-per-bushel from the ODS commodity conversion view (ctrm.vw_GNP024).
-   * Returns null if conversions are unavailable or the commodity is not in the view.
-   * No hardcoded fallback — callers must handle missing data explicitly.
+   * Matches strictly on Commodity_Code — if the caller's code isn't in the view, returns null.
+   * No description matching, no hardcoded fallback — the UI must show a dash rather than
+   * display a potentially wrong number.
    */
   private _lookupLbsPerBushel(productCode: string): number | null {
     const code = (productCode || '').trim().toUpperCase();
@@ -597,9 +600,11 @@ export class ContractsTableComponent {
     const startDate = new Date(contract.deliveryStart);
     const endDate = new Date(contract.deliveryEnd);
 
-    // If delivery is complete, always show Fulfilled (overrides everything)
-    // Check both percentage and remaining quantity to handle rounding edge cases
-    if (stats.progressPercent >= 100 || stats.remainingBushels <= 0) {
+    // If delivery is complete, show Filled (overrides everything else).
+    // Gated on `computable` so contracts with missing GNP024 conversions — where all
+    // three stats default to 0 — can't accidentally be marked Filled. In that case
+    // we fall through to pure date-based status (Active / To Arrive / Past Due).
+    if (stats.computable && (stats.progressPercent >= 100 || stats.remainingBushels <= 0)) {
       return 'Filled';
     }
 

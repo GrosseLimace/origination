@@ -277,17 +277,24 @@
                       <!-- Delivery Progress at top -->
                       <div class="mb-8 w-full">
                         <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Delivery Progress</p>
-                        <!-- Custom progress bar: green for delivered, gray for remaining -->
-                        <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden w-full">
-                          <div
-                            class="h-full bg-green-500 rounded-full transition-all"
-                            [style.width.%]="getDeliveryStats(contract).progressPercent"
-                          ></div>
-                        </div>
-                        <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-2">
-                          <span>{{ getDeliveryStats(contract).deliveredBushels | number }} {{ contract.unit }} delivered</span>
-                          <span>{{ getDeliveryStats(contract).remainingBushels | number }} {{ contract.unit }} remaining</span>
-                        </div>
+                        @if (getDeliveryStats(contract).computable) {
+                          <!-- Custom progress bar: green for delivered, gray for remaining -->
+                          <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden w-full">
+                            <div
+                              class="h-full bg-green-500 rounded-full transition-all"
+                              [style.width.%]="getDeliveryStats(contract).progressPercent"
+                            ></div>
+                          </div>
+                          <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-2">
+                            <span>{{ getDeliveryStats(contract).deliveredBushels | number }} {{ contract.unit }} delivered</span>
+                            <span>{{ getDeliveryStats(contract).remainingBushels | number }} {{ contract.unit }} remaining</span>
+                          </div>
+                        } @else {
+                          <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden w-full"></div>
+                          <div class="text-xs text-gray-500 dark:text-gray-400 mt-2 italic">
+                            Commodity <span class="font-mono">{{ contract.commodityCode || '—' }}</span> is not in the lbs-per-bushel conversion view (GNP024) — delivery numbers can't be computed.
+                          </div>
+                        }
                       </div>
 
                       <!-- Three column layout -->
@@ -330,11 +337,23 @@
                           </div>
                           <div class="flex flex-col">
                             <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Delivered</span>
-                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ getDeliveryStats(contract).deliveredBushels | number }} {{ contract.unit }}</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">
+                              @if (getDeliveryStats(contract).computable) {
+                                {{ getDeliveryStats(contract).deliveredBushels | number }} {{ contract.unit }}
+                              } @else {
+                                —
+                              }
+                            </span>
                           </div>
                           <div class="flex flex-col">
                             <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Delivery Progress</span>
-                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ getDeliveryStats(contract).progressPercent | number:'1.0-0' }}%</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">
+                              @if (getDeliveryStats(contract).computable) {
+                                {{ getDeliveryStats(contract).progressPercent | number:'1.0-0' }}%
+                              } @else {
+                                —
+                              }
+                            </span>
                           </div>
                         </div>
 
@@ -354,7 +373,13 @@
                           </div>
                           <div class="flex flex-col">
                             <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Remaining Quantity</span>
-                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ getDeliveryStats(contract).remainingBushels | number }} {{ contract.unit }}</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">
+                              @if (getDeliveryStats(contract).computable) {
+                                {{ getDeliveryStats(contract).remainingBushels | number }} {{ contract.unit }}
+                              } @else {
+                                —
+                              }
+                            </span>
                           </div>
                           <div class="flex flex-col">
                             <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Market Zone</span>
