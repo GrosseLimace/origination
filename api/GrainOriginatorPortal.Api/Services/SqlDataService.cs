@@ -1812,7 +1812,7 @@ public class SqlDataService : IDataService
     public async Task<PlantingIntention?> GetPlantingIntentionByIdAsync(int intentionId, CancellationToken cancellationToken = default)
         => await _appContext.PlantingIntentions.AsNoTracking().FirstOrDefaultAsync(p => p.Id == intentionId, cancellationToken);
 
-    public async Task<PlantingIntention> AddPlantingIntentionAsync(long customerId, string customerName, string customerCode, string tradeUnit, string crop, string? type, string? description, int acres, int plantingYear, CancellationToken cancellationToken = default)
+    public async Task<PlantingIntention> AddPlantingIntentionAsync(long customerId, string customerName, string customerCode, string tradeUnit, string crop, string? category, string? type, string? description, int acres, int plantingYear, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -1823,6 +1823,7 @@ public class SqlDataService : IDataService
                 CustomerCode = customerCode,
                 TradeUnit = tradeUnit,
                 Crop = crop,
+                Category = category,
                 Type = type,
                 Description = description,
                 Acres = acres,
@@ -1847,7 +1848,7 @@ public class SqlDataService : IDataService
         }
     }
 
-    public async Task<PlantingIntention?> UpdatePlantingIntentionAsync(int intentionId, string crop, string? type, string? description, int acres, int plantingYear, CancellationToken cancellationToken = default)
+    public async Task<PlantingIntention?> UpdatePlantingIntentionAsync(int intentionId, string crop, string? category, string? type, string? description, int acres, int plantingYear, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -1858,6 +1859,7 @@ public class SqlDataService : IDataService
             }
 
             intention.Crop = crop;
+            intention.Category = category;
             intention.Type = type;
             intention.Description = description;
             intention.Acres = acres;
