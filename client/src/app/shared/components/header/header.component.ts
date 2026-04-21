@@ -51,9 +51,11 @@ export class HeaderComponent {
   readonly envName = environment.envName;
   readonly bidSheetEnabled = environment.bidSheetEnabled;
   // Gate the Usage Dashboard nav button to users with the `Admin` app role.
-  // The "Origination App Dev Super Users" security group is assigned the Admin role on
-  // the API Enterprise Application, so members see this entry. Route still re-enforces
-  // via `adminGuard`.
+  // The check is purely against the `Admin` role claim on the user's JWT — never
+  // against group membership directly. Each environment has its own Super Users
+  // security group (Origination App Dev / QA / Prod Super Users) that's assigned
+  // the Admin role on that env's API Enterprise Application, and membership flows
+  // into the access token's roles claim. Route still re-enforces via `adminGuard`.
   get usageDashboardEnabled(): boolean {
     return environment.usageDashboardEnabled && this.isAdmin();
   }
