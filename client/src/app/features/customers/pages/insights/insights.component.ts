@@ -143,6 +143,12 @@ export class InsightsComponent {
   readonly todaysTickets = this.appState.todaysTickets;
   readonly commodities = this.appState.commodities;
   readonly isLoading = computed(() => this.appState.dataLoading());
+  // Only Unshipped Bushels depends on the full ticket set — other categories can render
+  // as soon as core data is ready.
+  readonly isTicketsLoading = computed(() => this.appState.ticketsLoading());
+  isCategoryLoading(category: InsightCategory): boolean {
+    return category === 'UnshippedBushels' && this.isTicketsLoading();
+  }
   isBackgroundRefreshing = signal(false);
   private readonly _dataLoading$ = toObservable(this.appState.dataLoading);
   loadedAt = signal<Date | null>(null);
@@ -258,22 +264,17 @@ export class InsightsComponent {
         }
       }
 
-      // --- 2. Spot Loads — No Contract Coverage (Last 30 Days) ---
-      // Each ticket is checked individually: if no active same-commodity contract covers
-      // its delivery date, it's a spot load. Coverage requires BOTH date overlap AND
-      // matching commodity — a corn contract can't silently "cover" a wheat ticket.
+      // --- 2. Spot Loads — Unapplied Tickets (Last 30 Days) ---
+      // A spot load is a ticket with no contract assigned (prefix U/L or null). This matches
+      // the grain-industry meaning and the Unapplied Tickets tab, so clicking a spot load
+      // always takes the user to a ticket they can actually see. We intentionally do NOT
+      // flag applied-but-uncovered tickets (e.g. ticket applied to a now-closed contract)
+      // — those are completed deliveries, not spot loads.
       for (const ticket of customerRecentTickets) {
         if (!ticket.date) continue;
+        if (ticket.isApplied) continue;
         const ticketDate = new Date(ticket.date);
-        const ticketCommodity = (ticket.productCode || '').trim().toUpperCase();
-        const hasContractCoverage = ticketCommodity && customerContracts.some(c => {
-          if (c.status === 'Fulfilled' || c.status === 'Cancelled') return false;
-          if ((c.commodityCode || '').trim().toUpperCase() !== ticketCommodity) return false;
-          const start = new Date(c.deliveryStart);
-          const end = new Date(c.deliveryEnd);
-          return start <= ticketDate && end >= ticketDate;
-        });
-        if (!hasContractCoverage) {
+        {
           const lbs = ticket.appliedDockQuantity || ticket.unloadQuantity || 0;
           const lbsPerBu = getLbsPerBushel(ticket.productCode, conversionMap);
           const bu = lbs && lbsPerBu ? Math.round(lbs / lbsPerBu) : null;

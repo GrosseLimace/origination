@@ -360,14 +360,17 @@ public class SqlDataService : IDataService
 
         // For duplicates: find the first row with real ScoularViewRecipients
         // (not null, empty, or "No"). If none have recipients, value stays null.
+        // Case-insensitive CustomerCode so eSign enrollment lookups match Customer.SourceCustomerId
+        // regardless of casing drift between the two sources (SQL collation is already case-insensitive).
         var enrollments = enrollmentList
-            .GroupBy(e => e.CustomerCode)
+            .GroupBy(e => e.CustomerCode, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(
                 g => g.Key,
                 g => g.FirstOrDefault(e =>
                     !string.IsNullOrWhiteSpace(e.ScoularViewRecipients) &&
                     !e.ScoularViewRecipients!.Equals("No", StringComparison.OrdinalIgnoreCase)
-                )?.ScoularViewRecipients);
+                )?.ScoularViewRecipients,
+                StringComparer.OrdinalIgnoreCase);
 
         foreach (var customer in customers)
         {
@@ -1355,28 +1358,18 @@ public class SqlDataService : IDataService
 
                 var customerCodes = contractCustomerCodes.Union(snapshotCustomerCodes).ToList();
 
-                // Step 2: Get ALL contract numbers for these customers (cross-TU) so applied
-                // tickets from any TU are included if they match a loaded contract.
-                var allContractNumbers = await _context.Contracts
-                    .AsNoTracking()
-                    .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId != null && customerCodes.Contains(c.CtrmCustomerId)
-                        && c.SourceContractId != null)
-                    .Select(c => c.SourceContractId!)
-                    .Distinct()
-                    .ToListAsync(cancellationToken);
-                var contractNumberSet = allContractNumbers.ToHashSet();
-
-                // Step 3: Load all tickets for these customers
-                var rawTickets = await _context.Tickets
+                // Load all active U/P tickets for these customers — matches the behavior
+                // of GetTicketsByCustomerAsync (per-customer fetch) so Insights sees the
+                // same ticket set on initial load that Contract Detail sees after a visit.
+                // Previous implementation filtered out applied tickets whose contract
+                // wasn't in a Purchase-only contract set, which under-counted delivered
+                // pounds and produced false positives on the Unshipped Bushels insight
+                // whenever a contract had been deactivated or was a Sale contract.
+                tickets = await _context.Tickets
                     .AsNoTracking()
                     .Where(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode))
                     .OrderByDescending(t => t.Date)
                     .ToListAsync(cancellationToken);
-
-                // Keep unapplied tickets + applied tickets that match ANY contract for these customers
-                tickets = rawTickets
-                    .Where(t => !t.IsApplied || contractNumberSet.Contains(t.CtrmContractNumber!))
-                    .ToList();
             }
 
             _logger.LogInformation("Loading tickets (filtered: {IsFiltered}, tradeUnitCount: {TradeUnitCount})",
@@ -2547,12 +2540,16 @@ public class SqlDataService : IDataService
         {
             await using var transaction = await _appContext.Database.BeginTransactionAsync(cancellationToken);
 
-            // Load all existing records for this TU+year in one query, then do in-memory lookup
+            // Load all existing records for this TU+year in one query, then do in-memory lookup.
+            // Use OrdinalIgnoreCase on the dictionary because SQL Server's default collation is
+            // case-insensitive — a DB row stored as "Irrigated corn" must match a request for
+            // "Irrigated Corn" on the .NET side too, or the update branch is skipped and the
+            // insert branch then trips the unique key constraint on (TradeUnitKey, Crop, Year).
             var tuKey = estimates[0].TradeUnitKey;
             var year = estimates[0].PlantingYear;
             var existingMap = await _appContext.DashboardPlantingEstimates
                 .Where(e => e.TradeUnitKey == tuKey && e.PlantingYear == year)
-                .ToDictionaryAsync(e => e.Crop, cancellationToken);
+                .ToDictionaryAsync(e => e.Crop, StringComparer.OrdinalIgnoreCase, cancellationToken);
 
             foreach (var req in estimates)
             {
@@ -2565,6 +2562,11 @@ public class SqlDataService : IDataService
                 else if (existing != null)
                 {
                     existing.YieldEstimate = req.YieldEstimate;
+                    // Normalize the stored Crop casing to match the request — the unique index
+                    // is case-insensitive so this doesn't violate anything, and keeping the DB
+                    // in sync with the Commodities table's display casing means the UI can find
+                    // the value when it re-fetches after save.
+                    existing.Crop = req.Crop;
                     existing.ModifiedAt = DateTime.UtcNow;
                     existing.ModifiedBy = username;
                 }
@@ -2603,11 +2605,12 @@ public class SqlDataService : IDataService
         {
             await using var transaction = await _appContext.Database.BeginTransactionAsync(cancellationToken);
 
+            // OrdinalIgnoreCase — SQL collation is case-insensitive, so the dictionary must match.
             var tuKey = shares[0].TradeUnitKey;
             var year = shares[0].PlantingYear;
             var existingMap = await _appContext.DashboardMarketShares
                 .Where(e => e.TradeUnitKey == tuKey && e.PlantingYear == year)
-                .ToDictionaryAsync(e => e.CropCategory, cancellationToken);
+                .ToDictionaryAsync(e => e.CropCategory, StringComparer.OrdinalIgnoreCase, cancellationToken);
 
             foreach (var req in shares)
             {
@@ -2620,6 +2623,7 @@ public class SqlDataService : IDataService
                 else if (existing != null)
                 {
                     existing.MarketSharePct = req.MarketSharePct;
+                    existing.CropCategory = req.CropCategory;  // normalize casing to match request
                     existing.ModifiedAt = DateTime.UtcNow;
                     existing.ModifiedBy = username;
                 }
@@ -2659,11 +2663,12 @@ public class SqlDataService : IDataService
         {
             await using var transaction = await _appContext.Database.BeginTransactionAsync(cancellationToken);
 
+            // OrdinalIgnoreCase — SQL collation is case-insensitive, so the dictionary must match.
             var tuKey = items[0].TradeUnitKey;
             var year = items[0].PlantingYear;
             var existingMap = await _appContext.DashboardActualHarvests
                 .Where(e => e.TradeUnitKey == tuKey && e.PlantingYear == year)
-                .ToDictionaryAsync(e => e.CropCategory, cancellationToken);
+                .ToDictionaryAsync(e => e.CropCategory, StringComparer.OrdinalIgnoreCase, cancellationToken);
 
             foreach (var req in items)
             {
@@ -2671,6 +2676,7 @@ public class SqlDataService : IDataService
                 if (existing != null)
                 {
                     existing.Bushels = req.Bushels;
+                    existing.CropCategory = req.CropCategory;  // normalize casing to match request
                     existing.ModifiedAt = DateTime.UtcNow;
                     existing.ModifiedBy = username;
                 }
@@ -2863,9 +2869,12 @@ public class SqlDataService : IDataService
         var existingBids = await _appContext.BidSheetLocationBids
             .Where(b => locationIds.Contains(b.LocationId))
             .ToListAsync(cancellationToken);
+        // CommodityCode is normalized to uppercase on both the stored key and the lookup key
+        // so a DB value of "yc" matches a request value of "YC". Matches SQL Server's
+        // case-insensitive collation; avoids INSERT attempts that would trip the unique index.
         var bidLookup = new Dictionary<(int, string, int, int), BidSheetLocationBid>();
         foreach (var b in existingBids)
-            bidLookup.TryAdd((b.LocationId, b.CommodityCode, b.CropYear, b.Month), b);
+            bidLookup.TryAdd((b.LocationId, (b.CommodityCode ?? "").ToUpperInvariant(), b.CropYear, b.Month), b);
 
         // Second pass: upsert bids using in-memory lookups (0 queries)
         foreach (var req in requestList)
@@ -2877,7 +2886,7 @@ public class SqlDataService : IDataService
                 byName.TryGetValue(req.Name.Trim(), out loc);
             if (loc == null) continue;
 
-            var key = (loc.Id, req.CommodityCode, req.CropYear, req.Month);
+            var key = (loc.Id, (req.CommodityCode ?? "").ToUpperInvariant(), req.CropYear, req.Month);
             if (string.IsNullOrWhiteSpace(req.Bid))
             {
                 // Empty bid = user cleared the input → delete the existing row if present

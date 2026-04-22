@@ -84,10 +84,12 @@ export class DataPreloadService {
       switchMap(tradeUnits => {
         if (tradeUnits.length === 0) {
           this.appState.setDataLoading(false);
+          this.appState.setTicketsLoading(false);
           return of(null);
         }
 
         this.appState.setDataLoading(true);
+        this.appState.setTicketsLoading(true);
         this.appState.clearDashboardCache();
         this.appState.clearPreloadedDashboardSummary();
 
@@ -134,6 +136,7 @@ export class DataPreloadService {
           catchError(() => of([] as Ticket[])),
           tap(data => {
             this.appState.setTickets(data);
+            this.appState.setTicketsLoading(false);
             // Resolve any ensureTicketsLoaded() waiters — they share this load.
             if (this._ticketPreload$) {
               this._ticketPreload$.next();
