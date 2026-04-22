@@ -105,19 +105,28 @@ export class TicketsTableComponent {
    *  same window, because the ticket itself is what tells us it wasn't priced. */
   get spotTicketIds(): Set<number> {
     const ids = new Set<number>();
-    // Cutoff is start-of-UTC-day 30 days ago — not a precise timestamp.
-    // Ticket dates are day-precise in ODS; comparing time-precise cutoff to
-    // day-precise ticket dates causes an edge-case miss exactly at day 30
-    // (e.g. a ticket dated 3/23 gets excluded when "now" is 9:20am on 4/22
-    // because 3/23 midnight UTC < 3/23 9:20am UTC).
+    // Cutoff snaps to start-of-UTC-day 30 days ago so a ticket dated exactly 30 days
+    // ago isn't excluded just because "now" is past midnight.
     const cutoff = new Date();
     cutoff.setUTCHours(0, 0, 0, 0);
     cutoff.setUTCDate(cutoff.getUTCDate() - 30);
+    const contracts = this.contracts();
     for (const t of this.tickets()) {
       if (t.isApplied || !t.date) continue;
       const ticketDate = new Date(t.date);
       if (isNaN(ticketDate.getTime()) || ticketDate < cutoff) continue;
-      ids.add(t.id);
+      // Match Insights: a spot load is an unapplied ticket with no active,
+      // same-commodity contract whose delivery window covers the ticket's date.
+      const ticketCommodity = (t.productCode || '').trim().toUpperCase();
+      const hasContractCoverage = ticketCommodity && contracts.some(c => {
+        if (c.closedDate) return false;  // Closed contracts can't cover a new delivery
+        if (c.status === 'Fulfilled' || c.status === 'Cancelled') return false;
+        if ((c.commodityCode || '').trim().toUpperCase() !== ticketCommodity) return false;
+        const start = new Date(c.deliveryStart);
+        const end = new Date(c.deliveryEnd);
+        return start <= ticketDate && end >= ticketDate;
+      });
+      if (!hasContractCoverage) ids.add(t.id);
     }
     return ids;
   }
