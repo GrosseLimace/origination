@@ -58,7 +58,7 @@ jobs:
 
     steps:
       - name: Azure Login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -228,7 +228,7 @@ jobs:
   build:
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -239,7 +239,7 @@ jobs:
         run: dotnet publish src/Application.Api -c Release -o ./publish
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: app
           path: ./publish
@@ -254,13 +254,13 @@ jobs:
       contents: read
     steps:
       - name: Download artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: app
           path: ./publish
 
       - name: Azure Login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -282,13 +282,13 @@ jobs:
       contents: read
     steps:
       - name: Download artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: app
           path: ./publish
 
       - name: Azure Login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -310,13 +310,13 @@ jobs:
       contents: read
     steps:
       - name: Download artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: app
           path: ./publish
 
       - name: Azure Login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -459,23 +459,24 @@ If your application consumes `@it` scoped npm packages (e.g., `@it/design-system
 @it:registry=https://npm.scoular.ghe.com/
 ```
 
-2. **Add a workflow step** before `npm ci` to inject the `GITHUB_TOKEN`:
+2. **Configure `setup-node` with the GHE registry** and pass `GITHUB_TOKEN` via `NODE_AUTH_TOKEN`:
 
 ```yaml
-    - name: Authenticate to GHE npm registry
-      shell: pwsh
-      working-directory: ./your-frontend-directory
-      run: |
-        Add-Content -Path .npmrc -Value "//npm.scoular.ghe.com/:_authToken=$($env:GITHUB_TOKEN)"
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Setup Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: '24'
+        registry-url: 'https://npm.scoular.ghe.com/'
+        scope: '@it'
 
     - name: Install dependencies
       working-directory: ./your-frontend-directory
       run: npm ci
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-The `GITHUB_TOKEN` is auto-generated per workflow run — no PAT creation, rotation, or repo secrets required. The token injection only exists for the duration of the job and is never committed.
+The `registry-url` and `scope` parameters tell `setup-node` to create an `.npmrc` with auth for the `@it` scope. Only `@it/*` packages route to the GHE registry — all other packages resolve from the public npm registry as usual. The `GITHUB_TOKEN` is auto-generated per workflow run — no PAT creation, rotation, or repo secrets required.
 
 > **Requirement**: Both the consuming repo and the npm package source must be in the **IT** organization on `scoular.ghe.com`. For cross-org scenarios, use a classic PAT stored as a repository secret.
 
@@ -541,10 +542,10 @@ If this application has an external SPA, it deploys to Azure Static Web App via 
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Azure Login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -567,10 +568,10 @@ If this application has an external SPA, it deploys to Azure Static Web App via 
             --env production
 ```
 
-**Authentication:** The SWA deploy uses the same OIDC workload identity as App Service deployments — no deployment token needed. The `azure/login@v2` step authenticates, and the SWA CLI uses that context with `--resource-group` and `--app-name` instead of a token. The GitHub Actions service principal has Contributor on the SWA resource.
+**Authentication:** The SWA deploy uses the same OIDC workload identity as App Service deployments — no deployment token needed. The `azure/login@v3` step authenticates, and the SWA CLI uses that context with `--resource-group` and `--app-name` instead of a token. The GitHub Actions service principal has Contributor on the SWA resource.
 
 **Important:** Do NOT use `azure/static-web-apps-deploy@v1` — it requires Docker which is not available on our self-hosted runners. Use the `@azure/static-web-apps-cli` (SWA CLI) instead, which runs natively on Node.js.
 
 ---
 
-*Document version: 1.6 | 2026-03-31*
+*Document version: 1.9 | 2026-04-20*

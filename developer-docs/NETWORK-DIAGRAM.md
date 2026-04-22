@@ -8,6 +8,7 @@ How your app connects to the network and what outbound destinations are availabl
 - [Outbound Connections (What Your App Can Reach)](#outbound-connections-what-your-app-can-reach)
 - [Inbound Connections (How Users Reach Your App)](#inbound-connections-how-users-reach-your-app)
 - [Subnet Details](#subnet-details)
+- [Outbound IP Address](#outbound-ip-address)
 - [Need an Outbound Exception?](#need-an-outbound-exception)
 
 ---
@@ -51,7 +52,7 @@ The following destinations are allowed from your app. Private endpoint (PE) IPs 
 | # | Destination | Protocol/Port | How It Connects | Purpose |
 |---|-------------|--------------|-----------------|---------|
 | 1 | **SQL Database** | TDS/1433 | Private endpoint on SQL server | Origination database (all environments) |
-| 2 | **Key Vault** | HTTPS/443 | Private endpoint on inbound subnet | Secret storage (`kv-origination{-env}-eus`) |
+| 2 | **Key Vault** | HTTPS/443 | Private endpoint on inbound subnet | Secret storage (`kv-orig{-env}-eus`) |
 | 3 | **API Management (APIM)** | HTTPS/443 | Private endpoint(s) | Gateway for internal and external APIs |
 | 4 | **Microsoft Entra ID** | HTTPS/443 | Service endpoint (Azure backbone) | OAuth2/OIDC authentication, managed identity tokens |
 | 5 | **Azure Monitor** | HTTPS/443 | Service tag | Application Insights telemetry |
@@ -122,6 +123,18 @@ GitHub Actions deploys your app via the SCM/Kudu endpoint (`*.scm.azurewebsites.
 
 ---
 
+## Outbound IP Address
+
+When your app connects to an external service through the firewall, it appears to come from a single public IP:
+
+| | |
+|---|---|
+| **Outbound IP** | `52.186.36.88` |
+
+If a third-party service asks you to whitelist an IP address for your app's outbound traffic, provide this address. This IP is shared across all App Services routed through the firewall.
+
+---
+
 ## Need an Outbound Exception?
 
 If your app needs to reach a destination not in the allowed list (e.g., a new API, an external service, a storage account), contact the **Infrastructure team**.
@@ -133,25 +146,8 @@ If your app needs to reach a destination not in the allowed list (e.g., a new AP
 3. **Reason** — brief description of why the connection is needed
 4. **Environments** — which environments need the access (dev, qa, prod, or all)
 
-**What happens:**
-
-The Infrastructure team adds a `customOutboundRule` to your app's `app-config.json`. This creates an NSG rule in the P100-P199 priority range that allows the specific destination. The rule applies to **all environments** (dev, qa, and prod).
-
-**Example custom rule (for reference):**
-
-```json
-{
-  "name": "AllowExternalApiOutbound",
-  "description": "Allow HTTPS to partner API endpoint",
-  "priority": 100,
-  "protocol": "Tcp",
-  "destinationPortRange": "443",
-  "destinationAddressPrefix": "203.0.113.10/32"
-}
-```
-
-After the rule is added, Infrastructure runs a deployment to apply the change.
+The Infrastructure team will configure the necessary firewall and network rules and deploy the change.
 
 ---
 
-*Document version: 1.1 | 2026-03-04*
+*Document version: 1.2 | 2026-04-14*

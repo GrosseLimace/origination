@@ -91,7 +91,7 @@ export const environment = {
 };
 ```
 
-Use SPA Client ID for `clientId` and API Client ID for scopes (see table above).
+Use SPA Client ID for `clientId` and API Client ID for scopes (see table above). `redirectUri` must be the **site origin** (no path), and must match an entry in the SPA app registration's redirect URIs. Do **not** point `redirectUri` at a dedicated `/auth` route — the bootstrap handler below processes the redirect at any path.
 
 **Front-Channel Logout URL**: The SPA app registration's front-channel logout URL is configured to the environment's base URL (e.g., `https://origination-dev.scoular.com`). This enables single sign-out. Use the same URL as `postLogoutRedirectUri` in MSAL.
 
@@ -105,83 +105,248 @@ Use SPA Client ID for `clientId` and API Client ID for scopes (see table above).
 
 Add `fileReplacements` under `configurations` for each deployed environment to swap environment files at build time.
 
-**App bootstrap** (`main.ts` for standalone Angular apps):
+> ⚠️ **Critical: handle MSAL redirects BEFORE Angular bootstraps.**
+> Do NOT call `handleRedirectObservable().subscribe()` inside `AppComponent.ngOnInit` as your primary redirect handler. `ngOnInit` runs after Angular's router has already activated routes — the router clears the `#code=...` hash on first navigation before MSAL reads it, MSAL never gets the code, and `MsalGuard` triggers another login redirect. The user loops between `login.microsoftonline.com` and the app indefinitely. Always process the redirect in a `provideAppInitializer` so it completes before bootstrap.
+
+**App bootstrap** (`app.config.ts` — standalone Angular 18+):
+
 ```typescript
-import { MsalGuard, MsalInterceptor, MsalBroadcastService, MsalService, MsalRedirectComponent, MSAL_GUARD_CONFIG, MSAL_INSTANCE, MSAL_INTERCEPTOR_CONFIG } from '@azure/msal-angular';
-import { PublicClientApplication, InteractionType, BrowserCacheLocation } from '@azure/msal-browser';
+import { ApplicationConfig, ErrorHandler, inject, provideAppInitializer } from '@angular/core';
+import { provideRouter } from '@angular/router';
 import { HTTP_INTERCEPTORS, provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
-import { APP_INITIALIZER } from '@angular/core';
+import {
+  MsalGuard, MsalInterceptor, MsalBroadcastService, MsalService,
+  MSAL_GUARD_CONFIG, MSAL_INSTANCE, MSAL_INTERCEPTOR_CONFIG,
+} from '@azure/msal-angular';
+import {
+  PublicClientApplication, InteractionType, BrowserCacheLocation, IPublicClientApplication,
+} from '@azure/msal-browser';
 
-// Create MSAL instance before bootstrap so APP_INITIALIZER can reference it
-const msalInstance = new PublicClientApplication({
-  auth: {
-    ...environment.msalConfig.auth,
-    navigateToLoginRequestUrl: true,
-  },
-  cache: {
-    // SessionStorage: tokens cleared on tab close, tab-isolated (not shared across tabs)
-    cacheLocation: BrowserCacheLocation.SessionStorage,
-  }
-});
+import { routes } from './app.routes';
+import { environment } from '../environments/environment';
+import { AppInsightsService, AppInsightsErrorHandler } from './core/services/app-insights.service';
 
-bootstrapApplication(AppComponent, {
+export const appConfig: ApplicationConfig = {
   providers: [
     provideRouter(routes),
     provideHttpClient(withInterceptorsFromDi()),
-    { provide: MSAL_INSTANCE, useValue: msalInstance },
+
     {
-      // Initialize MSAL and process any returning redirect BEFORE the app renders.
-      // This prevents the brief flash of unauthenticated content.
-      provide: APP_INITIALIZER,
-      useFactory: (msalService: MsalService) => () => msalService.instance.initialize(),
-      deps: [MsalService],
-      multi: true
+      provide: MSAL_INSTANCE,
+      useFactory: () => new PublicClientApplication({
+        auth: { ...environment.msalConfig.auth },
+        cache: {
+          // SessionStorage: per-tab isolation. Tokens don't persist after tab close or
+          // across tabs — intentional defense-in-depth against XSS-stolen tokens.
+          // Transparent SSO across tabs comes from the Azure AD session cookie, not
+          // from MSAL's local cache — see Case C1 (ssoSilent) below.
+          cacheLocation: BrowserCacheLocation.SessionStorage,
+        },
+      }),
     },
+
     {
       provide: MSAL_GUARD_CONFIG,
       useValue: {
         interactionType: InteractionType.Redirect,
-        authRequest: { scopes: environment.apiConfig.scopes }
-      }
+        authRequest: { scopes: environment.apiConfig.scopes },
+      },
     },
+
     {
       provide: MSAL_INTERCEPTOR_CONFIG,
       useValue: {
         interactionType: InteractionType.Redirect,
-        protectedResourceMap: new Map([
-          [environment.apiConfig.uri, environment.apiConfig.scopes]
-        ])
-      }
+        protectedResourceMap: new Map<string, string[] | null>([
+          [`${environment.apiUrl}/health`, null],                         // health probe: no token required
+          [`${environment.apiConfig.uri}/*`, environment.apiConfig.scopes],
+        ]),
+      },
     },
+
     { provide: HTTP_INTERCEPTORS, useClass: MsalInterceptor, multi: true },
+    { provide: ErrorHandler, useClass: AppInsightsErrorHandler },         // see Application Insights section
     MsalService,
     MsalGuard,
-    MsalBroadcastService
-  ]
-});
+    MsalBroadcastService,
+
+    provideAppInitializer(async () => {
+      const appInsights = inject(AppInsightsService);
+      const msal = inject(MSAL_INSTANCE) as IPublicClientApplication;
+
+      try {
+        await msal.initialize();
+
+        // Case A: returning from login with a #code=... hash in the URL.
+        const result = await msal.handleRedirectPromise();
+        if (result?.account) {
+          msal.setActiveAccount(result.account);
+          appInsights.trackEvent('MSAL.BootstrapRedirectHandled', {
+            username: result.account.username,
+          });
+          return;
+        }
+
+        // Case B: same-tab cached account (SessionStorage survives hot-reload and
+        // route changes that don't close the tab).
+        const cached = msal.getAllAccounts();
+        if (cached.length > 0) {
+          msal.setActiveAccount(cached[0]);
+          appInsights.trackEvent('MSAL.BootstrapCachedAccount', {
+            username: cached[0].username,
+          });
+          return;
+        }
+
+        // Case C1: try silent SSO. Hidden iframe + prompt=none against
+        // login.microsoftonline.com. Completes in ~300ms when the user has a valid
+        // Azure AD session cookie (the typical case for the second, third, ... tab
+        // someone opens). No visible redirect, no user interaction.
+        try {
+          const silent = await msal.ssoSilent({
+            scopes: environment.apiConfig.scopes,
+          });
+          if (silent.account) {
+            msal.setActiveAccount(silent.account);
+            appInsights.trackEvent('MSAL.BootstrapSsoSilent', {
+              username: silent.account.username,
+            });
+            return;
+          }
+        } catch (silentErr) {
+          // ssoSilent fails when: no SSO cookie, third-party cookies blocked,
+          // CSP disallows the iframe, or Azure AD requires interaction (new device,
+          // MFA challenge, consent). Fall through to Case C2.
+          appInsights.trackEvent('MSAL.BootstrapSsoSilentFailed', {
+            errorCode: (silentErr as { errorCode?: string })?.errorCode,
+            errorMessage: silentErr instanceof Error ? silentErr.message : String(silentErr),
+          });
+        }
+
+        // Case C2: last resort — visible top-level redirect BEFORE bootstrap finishes.
+        // User sees login.microsoftonline.com briefly (SSO cookie usually auto-submits).
+        // This prevents the flash-of-unauthenticated-content because the Angular shell
+        // never renders with a guard failure.
+        appInsights.trackEvent('MSAL.BootstrapLoginRedirect');
+        await msal.loginRedirect({
+          scopes: environment.apiConfig.scopes,
+          redirectStartPage: window.location.href,                         // preserves deep link
+        });
+      } catch (err) {
+        // Stale storage, nonce mismatch, etc. Don't leave the guard to handle it —
+        // that's what causes loops. Log and continue; the guard will retry cleanly.
+        appInsights.trackException(err, undefined, { phase: 'MSAL.bootstrap' });
+        console.error('MSAL bootstrap failed', err);
+      }
+    }),
+  ],
+};
 ```
 
-**Route configuration** - use `MsalGuard` on routes and `MsalRedirectComponent` for auth callback:
+**`main.ts` stays minimal** — just bootstrap the app with the config:
 ```typescript
-import { MsalRedirectComponent } from '@azure/msal-angular';
+import { bootstrapApplication } from '@angular/platform-browser';
+import { appConfig } from './app/app.config';
+import { AppComponent } from './app/app.component';
+
+bootstrapApplication(AppComponent, appConfig).catch((err) => console.error(err));
+```
+
+**Route configuration** — use `MsalGuard` on protected routes. **No `MsalRedirectComponent` or `/auth` route is required** — the `provideAppInitializer` handles the redirect at any path:
+
+```typescript
+import { Routes } from '@angular/router';
+import { MsalGuard } from '@azure/msal-angular';
 
 export const routes: Routes = [
-  // MsalRedirectComponent processes the auth redirect before the app renders.
-  // Without this, the app briefly flashes unauthenticated content.
-  { path: 'auth', component: MsalRedirectComponent },
-  { path: 'dashboard', component: DashboardComponent, canActivate: [MsalGuard] }
+  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+  {
+    path: 'dashboard',
+    canActivate: [MsalGuard],
+    loadComponent: () => import('./features/dashboard/dashboard.component').then(m => m.DashboardComponent),
+  },
+  // Public routes (no guard) for error states the app or MsalGuard redirect to:
+  {
+    path: 'unauthorized',
+    loadComponent: () => import('./features/unauthorized/unauthorized.component').then(m => m.UnauthorizedComponent),
+  },
 ];
 ```
 
-**Root component** - subscribe to MSAL events (redirect is handled by `MsalRedirectComponent`):
+**Root component** — wire up MSAL event forwarding to App Insights, set the active account once interaction completes, and handle long-running-tab token expiry:
+
 ```typescript
-export class AppComponent implements OnInit {
-  constructor(private msalService: MsalService) {}
+import { Component, OnDestroy, OnInit, inject } from '@angular/core';
+import { MsalService, MsalBroadcastService } from '@azure/msal-angular';
+import { EventType, InteractionRequiredAuthError, InteractionStatus } from '@azure/msal-browser';
+import { Subject, filter, takeUntil } from 'rxjs';
+
+import { environment } from '../environments/environment';
+import { AppInsightsService } from './core/services/app-insights.service';
+import { forwardMsalEventsToAppInsights } from './core/services/msal-telemetry';
+
+@Component({ /* ... */ })
+export class AppComponent implements OnInit, OnDestroy {
+  private readonly destroying$ = new Subject<void>();
+  private readonly msalService = inject(MsalService);
+  private readonly msalBroadcastService = inject(MsalBroadcastService);
+  private readonly appInsights = inject(AppInsightsService);
+
   ngOnInit(): void {
-    this.msalService.handleRedirectObservable().subscribe();
+    // Forward every MSAL event (login, logout, token acquisition, failures) to
+    // App Insights. Makes the auth flow observable end-to-end.
+    forwardMsalEventsToAppInsights(this.msalBroadcastService, this.appInsights, this.destroying$);
+
+    // After interaction settles, set App Insights authenticated user context
+    // so subsequent telemetry is filterable by UPN.
+    this.msalBroadcastService.inProgress$
+      .pipe(
+        filter((status: InteractionStatus) => status === InteractionStatus.None),
+        takeUntil(this.destroying$),
+      )
+      .subscribe(() => {
+        const account = this.msalService.instance.getActiveAccount()
+          ?? this.msalService.instance.getAllAccounts()[0];
+        if (account) {
+          this.msalService.instance.setActiveAccount(account);
+          this.appInsights.setAuthenticatedUser(account.username);
+        }
+      });
+
+    // Long-running-tab recovery. When silent token refresh fails (refresh token
+    // expired after ~24h, Conditional Access session control fired, etc.), MSAL
+    // emits ACQUIRE_TOKEN_FAILURE. We force a visible redirect to re-establish a
+    // session. Without this handler, the UI silently breaks in tabs left open
+    // longer than the refresh-token lifetime.
+    this.msalBroadcastService.msalSubject$
+      .pipe(
+        filter((msg) => msg.eventType === EventType.ACQUIRE_TOKEN_FAILURE),
+        takeUntil(this.destroying$),
+      )
+      .subscribe((msg) => {
+        if (msg.error instanceof InteractionRequiredAuthError) {
+          this.msalService.instance.acquireTokenRedirect({
+            scopes: environment.apiConfig.scopes,
+          });
+        }
+      });
+  }
+
+  ngOnDestroy(): void {
+    this.destroying$.next();
+    this.destroying$.complete();
   }
 }
 ```
+
+**How this pattern handles token lifetimes transparently:**
+
+| Timescale | What expires | MSAL behavior | User sees |
+|---|---|---|---|
+| ~1 hour, every API call | Access token | Interceptor silent-refreshes via refresh token — background POST to `/oauth2/v2.0/token`, no redirect | Nothing |
+| ~24 hours (SPA max) | Refresh token | `ACQUIRE_TOKEN_FAILURE` handler fires `acquireTokenRedirect` | Brief flicker through `login.microsoftonline.com`, SSO auto-submits |
+| ~90 days (tenant-configurable) | Azure AD session cookie | `acquireTokenRedirect` can't auto-SSO; user prompted for credentials | Actual login prompt (expected) |
+| CA-configured | Conditional Access "sign-in frequency" | Same as refresh-token expiry, on the CA-enforced schedule | Brief redirect, auto-SSO if still in window |
 
 ### .NET API Authentication Setup
 
@@ -374,45 +539,226 @@ public class MyService(ILogger<MyService> logger)
 
 ### Angular (Client-Side)
 
-Add client-side telemetry to capture page views, JavaScript errors, and API call performance in the same App Insights instance as the .NET backend.
+Client-side telemetry is **required** for any Scoular Angular SPA that uses MSAL. Server-side App Insights (auto-configured via `APPLICATIONINSIGHTS_CONNECTION_STRING`) only captures what the .NET app sees — MSAL errors, Angular template errors, unhandled promise rejections, and interceptor failures all happen in the browser and are invisible to server-side telemetry.
 
 **Required packages:**
 ```
 @microsoft/applicationinsights-web @microsoft/applicationinsights-angularplugin-js
 ```
 
-**Setup** (in `app.config.ts` or bootstrap):
+**Wrapper service** — create `src/app/core/services/app-insights.service.ts`:
+
 ```typescript
-import { ApplicationInsights } from '@microsoft/applicationinsights-web';
+import { ErrorHandler, Injectable, inject } from '@angular/core';
+import { Router } from '@angular/router';
+import { ApplicationInsights, SeverityLevel } from '@microsoft/applicationinsights-web';
 import { AngularPlugin } from '@microsoft/applicationinsights-angularplugin-js';
 
-const angularPlugin = new AngularPlugin();
-const appInsights = new ApplicationInsights({
-  config: {
-    connectionString: environment.appInsightsConnectionString,
-    extensions: [angularPlugin],
-    extensionConfig: {
-      [angularPlugin.identifier]: { router: router }
+import { environment } from '../../../environments/environment';
+
+type EnvironmentWithAppInsights = typeof environment & {
+  appInsights?: { connectionString?: string };
+};
+
+function resolveConnectionString(): string | null {
+  const cs = (environment as EnvironmentWithAppInsights).appInsights?.connectionString;
+  if (!cs) return null;
+  if (cs.startsWith('<') && cs.endsWith('>')) return null;      // placeholder sentinel
+  return cs;
+}
+
+@Injectable({ providedIn: 'root' })
+export class AppInsightsService {
+  readonly instance: ApplicationInsights | null;
+  private readonly angularPlugin = new AngularPlugin();
+
+  constructor() {
+    const connectionString = resolveConnectionString();
+    if (!connectionString) {
+      this.instance = null;
+      return;
+    }
+
+    const router = inject(Router);
+    const ai = new ApplicationInsights({
+      config: {
+        connectionString,
+        extensions: [this.angularPlugin],
+        extensionConfig: { [this.angularPlugin.identifier]: { router } },
+        enableAutoRouteTracking: true,
+        autoTrackPageVisitTime: true,
+      },
+    });
+    ai.loadAppInsights();
+    ai.addTelemetryInitializer((envelope) => {
+      envelope.tags = envelope.tags ?? {};
+      const tags = envelope.tags as Record<string, string>;
+      tags['ai.cloud.role'] =
+        `origination-spa-${environment.environmentName ?? 'prod'}`;
+    });
+
+    this.instance = ai;
+  }
+
+  trackEvent(name: string, properties?: Record<string, unknown>): void {
+    this.instance?.trackEvent({ name, properties: properties as never });
+  }
+
+  trackException(
+    error: unknown,
+    severityLevel: SeverityLevel = SeverityLevel.Error,
+    properties?: Record<string, unknown>,
+  ): void {
+    if (!this.instance) return;
+    const exception = error instanceof Error ? error : new Error(String(error));
+    this.instance.trackException({ exception, severityLevel, properties: properties as never });
+  }
+
+  trackTrace(
+    message: string,
+    severityLevel: SeverityLevel = SeverityLevel.Information,
+    properties?: Record<string, unknown>,
+  ): void {
+    this.instance?.trackTrace({ message, severityLevel, properties: properties as never });
+  }
+
+  setAuthenticatedUser(userId: string | null): void {
+    if (!this.instance) return;
+    if (userId) {
+      this.instance.setAuthenticatedUserContext(userId, undefined, true);
+    } else {
+      this.instance.clearAuthenticatedUserContext();
     }
   }
-});
-appInsights.loadAppInsights();
+}
+
+@Injectable({ providedIn: 'root' })
+export class AppInsightsErrorHandler implements ErrorHandler {
+  private readonly appInsights = inject(AppInsightsService);
+
+  handleError(error: unknown): void {
+    this.appInsights.trackException(error);
+    console.error(error);
+  }
+}
 ```
 
-**What it captures automatically:**
-- Angular route changes (SPA page views)
-- Unhandled JavaScript exceptions
-- XMLHttpRequest/fetch dependency calls (durations, failures, response codes)
+**MSAL event forwarder** — create `src/app/core/services/msal-telemetry.ts`:
+
+```typescript
+import { MsalBroadcastService } from '@azure/msal-angular';
+import { EventMessage } from '@azure/msal-browser';
+import { SeverityLevel } from '@microsoft/applicationinsights-web';
+import { Subject, Subscription, takeUntil } from 'rxjs';
+
+import { AppInsightsService } from './app-insights.service';
+
+export function forwardMsalEventsToAppInsights(
+  broadcast: MsalBroadcastService,
+  appInsights: AppInsightsService,
+  destroying$: Subject<void>,
+): Subscription {
+  return broadcast.msalSubject$
+    .pipe(takeUntil(destroying$))
+    .subscribe((msg: EventMessage) => {
+      const err = msg.error as {
+        name?: string; message?: string; errorCode?: string; subError?: string;
+      } | null;
+      appInsights.trackEvent(`MSAL.${msg.eventType}`, {
+        interactionType: msg.interactionType,
+        errorName: err?.name,
+        errorCode: err?.errorCode,
+        errorSubcode: err?.subError,
+        errorMessage: err?.message,
+      });
+      if (msg.error) {
+        appInsights.trackException(msg.error, SeverityLevel.Warning, {
+          msalEventType: msg.eventType,
+        });
+      }
+    });
+}
+```
+
+**Wire into `app.config.ts`**: See the MSAL Setup section above — `AppInsightsErrorHandler` replaces Angular's default `ErrorHandler`, and the `provideAppInitializer` injects `AppInsightsService` to emit bootstrap events. The root component calls `forwardMsalEventsToAppInsights` in `ngOnInit`.
+
+**Connection string placement** — add to each environment file next to the MSAL config:
+
+```typescript
+export const environment = {
+  // ... existing MSAL / apiConfig ...
+  appInsights: {
+    connectionString: 'InstrumentationKey=...;IngestionEndpoint=https://{region}.in.applicationinsights.azure.com/;LiveEndpoint=https://{region}.livediagnostics.monitor.azure.com/;ApplicationId=...',
+  }
+};
+```
+
+Get each environment's connection string from its App Insights resource:
+```bash
+az monitor app-insights component show \
+  --app appi-origination-dev-eus \
+  --resource-group rg-origination-dev-eus \
+  --query connectionString -o tsv
+```
+
+For environments not yet provisioned (e.g., prod before first deploy), use a placeholder like `<PROD_CONNECTION_STRING_NOT_YET_PROVISIONED>`. The service detects the `<...>` pattern and skips initialization, so the app still runs — it just sends no telemetry.
+
+**What it captures automatically (via the Angular plugin):**
+- Angular route changes → `pageViews`
+- Unhandled JavaScript exceptions → `exceptions` (via the `AppInsightsErrorHandler` replacement)
+- XMLHttpRequest/fetch dependency calls → `dependencies` (URL, duration, response code)
 - Browser and device metrics
 
-**Custom events** (optional):
-```typescript
-appInsights.trackEvent({ name: 'TransferSubmitted', properties: { locationId: '42' } });
+**What the MSAL forwarder adds:**
+- Every `EventType.*` from `msalSubject$` → `customEvents` named `MSAL.{type}` (e.g., `MSAL.msal:acquireTokenSuccess`, `MSAL.msal:acquireTokenFailure`)
+- MSAL error codes and subcodes (`state_mismatch`, `interaction_required`, `consent_required`, `nonce_mismatch`, etc.) captured as event properties — invaluable for diagnosing auth failures
+- Bootstrap-phase events emitted from `provideAppInitializer`: `MSAL.BootstrapRedirectHandled`, `MSAL.BootstrapCachedAccount`, `MSAL.BootstrapSsoSilent`, `MSAL.BootstrapSsoSilentFailed`, `MSAL.BootstrapLoginRedirect` — these tell you which auth path a user took without having to read HAR files
+
+**Filter by user** (after `setAuthenticatedUser` fires):
+```kusto
+union customEvents, pageViews, exceptions, requests
+| where timestamp > ago(1h)
+| where user_AuthenticatedId == "john.doe@scoular.com"
+| order by timestamp asc
 ```
 
-**Connection string source:** The `APPLICATIONINSIGHTS_CONNECTION_STRING` is available as an App Setting. For Angular, pass it via the .NET backend's runtime configuration endpoint or embed it in the environment file at build time. The connection string is not a secret — it only allows writing telemetry, not reading it.
+This cross-table join gives you the full session timeline for a specific user on one screen — page loads, MSAL events, API calls, exceptions — which is usually what you actually want when someone says "the app broke for me at 3pm."
 
-**Security note:** The App Insights connection string is visible in the browser JS bundle. This is by design (Microsoft considers it semi-public for client-side SDKs). An attacker with the connection string can only *send* telemetry, not read existing data. Do not include sensitive data (PII, tokens) in custom event properties.
+**Custom events** (optional, for product analytics):
+```typescript
+this.appInsights.trackEvent('TransferSubmitted', { locationId: '42' });
+```
+
+**Security note:** The App Insights connection string is visible in the browser JS bundle. Microsoft classifies it as non-secret — it identifies *where* to send telemetry and authorizes *writes only*. An attacker with the connection string can send noise telemetry (costing ingestion budget) but cannot read existing data. **Do not** include PII, tokens, or connection strings in custom event properties — `trackEvent` data is subject to the same retention and query access as all App Insights telemetry.
+
+### CSP Allow-List for MSAL and App Insights
+
+The .NET middleware that sets the `Content-Security-Policy` response header must allow the domains the Angular SPA needs to reach. Without the correct `connect-src` and `frame-src` entries, the browser silently blocks `fetch()` / `XMLHttpRequest` / iframe loads to those hosts — the request never reaches the network, telemetry disappears, and silent SSO degrades to visible redirects. You'll see CSP violation errors only in `DevTools → Console`; they do **not** appear in HAR files (because the browser refuses to send the request) and do **not** appear in App Insights (because the SDK can't post to a blocked endpoint).
+
+**Required `connect-src` entries** (in `SecurityHeadersMiddleware.cs` and `CspNonceMiddleware.cs`):
+
+```csharp
+"connect-src 'self' " +
+    "https://login.microsoftonline.com https://*.login.microsoftonline.com " +   // MSAL auth endpoints
+    "https://graph.microsoft.com " +                                              // User profile/photo (optional)
+    "https://*.in.applicationinsights.azure.com " +                               // App Insights ingestion (any region)
+    "https://*.livediagnostics.monitor.azure.com; " +                             // App Insights live metrics
+```
+
+**Required `frame-src` entry:**
+```csharp
+"frame-src 'self' https://login.microsoftonline.com"
+```
+This allows MSAL's `ssoSilent` to load the Microsoft login page inside a hidden iframe. Without it, `ssoSilent` fails and MSAL falls back to the visible `loginRedirect` path (Case C2 in the MSAL Setup section above) — the auth still works but the "transparent SSO across tabs" experience degrades.
+
+**Wildcard semantics**: `https://*.in.applicationinsights.azure.com` matches any single-label subdomain (`eastus-8.in.applicationinsights.azure.com`, `westus2-0.in.applicationinsights.azure.com`, etc.). Azure uses region-specific ingest hostnames, so the wildcard pattern covers every Azure region without broadening beyond the ingestion layer. The same reasoning applies to `*.livediagnostics.monitor.azure.com`.
+
+**If the App Insights resource moves to a different region**, the connection string in your environment file updates automatically (pull it fresh via `az monitor app-insights component show --query connectionString`), but the CSP doesn't need to change — the wildcard handles it.
+
+**Failure mode to recognize**: if App Insights events stop flowing to the portal after a deploy that looked successful, open DevTools → Console and look for entries like:
+> Refused to connect to 'https://eastus-8.in.applicationinsights.azure.com/v2/track' because it violates the following Content Security Policy directive: "connect-src 'self' ...".
+
+That's CSP blocking the SDK. Fix by updating the middleware's allow-list.
 
 ## Startup Performance
 
@@ -444,7 +790,7 @@ permissions:
 
 steps:
   - name: Azure Login (OIDC)
-    uses: azure/login@v2
+    uses: azure/login@v3
     with:
       client-id: ${{ secrets.AZURE_CLIENT_ID }}
       tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -521,4 +867,4 @@ Do NOT expose the App Service to the internet. External access goes through APIM
 
 ---
 
-*Document version: 1.9 | 2026-03-31*
+*Document version: 1.11 | 2026-04-21*

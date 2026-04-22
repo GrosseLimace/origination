@@ -160,9 +160,9 @@ Include a README in the `openapi/` directory summarizing workflows and offline b
 ### Key Guidelines
 
 - **Separate build**: Create a separate Angular project or use a build configuration that only includes external routes/components. Do NOT serve the full desktop app.
-- **MSAL authentication**: Same Entra ID tenant (`1521f999-f722-4a4f-9747-166f93e9b0d1`). Uses a dedicated External SPA app registration (`Origination External - {Env}`).
+- **MSAL authentication**: Same Entra ID tenant (`1521f999-f722-4a4f-9747-166f93e9b0d1`). Uses a dedicated External SPA app registration (`Origination External - {Env}`). Use the same `provideAppInitializer` bootstrap pattern documented in the main [CLAUDE.md](CLAUDE.md) **Angular MSAL Setup** section — it applies here identically. The only practical difference: because external SPAs typically have **no public routes**, nearly every cold start lands in Case C1 (`ssoSilent`) or Case C2 (`loginRedirect`) rather than Case B (cached account). That's expected — filter App Insights `customEvents` on `name startswith "MSAL.Bootstrap"` to see the distribution for your app.
 - **API base URL**: Varies by environment (see table below). The Angular app stores the base URL and appends each endpoint path (e.g., `${environment.apiBaseUrl}/transactions/transfer`).
-- **App Insights**: Use `@microsoft/applicationinsights-angularplugin-js` pointing to the existing App Insights instance. See [CLAUDE.md](CLAUDE.md) for setup details.
+- **App Insights**: Use the `AppInsightsService` wrapper + `forwardMsalEventsToAppInsights` helper documented in [CLAUDE.md](CLAUDE.md) (sections **Angular (Client-Side)** and **CSP Allow-List for MSAL and App Insights**). The external SPA writes to the same App Insights instance as the desktop app — tag-via-`ai.cloud.role` distinguishes the two in queries (e.g., `cloud_RoleName startswith "origination-external-spa"`).
 - **Offline support**: Consider IndexedDB for queueing write operations and service workers for caching read-heavy data.
 
 ### API Base URL by Environment
@@ -259,7 +259,7 @@ export const environment = {
 Deployment uses GitHub Actions with the SWA CLI and OIDC workload identity (same authentication as App Service deploys — no deployment tokens needed):
 
 - The GitHub Actions service principal has **Contributor** on the SWA resource
-- Use `azure/login@v2` for OIDC authentication (same as App Service deploys)
+- Use `azure/login@v3` for OIDC authentication (same as App Service deploys)
 - Use the `@azure/static-web-apps-cli` npm package (`swa deploy`) with `--resource-group` and `--app-name`
 - Do NOT use `azure/static-web-apps-deploy@v1` (requires Docker, incompatible with self-hosted runners)
 
@@ -267,7 +267,7 @@ Deployment uses GitHub Actions with the SWA CLI and OIDC workload identity (same
 
 ```yaml
 - name: Azure Login (OIDC)
-  uses: azure/login@v2
+  uses: azure/login@v3
   with:
     client-id: ${{ secrets.AZURE_CLIENT_ID }}
     tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -309,4 +309,4 @@ Steps to request external access for Origination:
 
 ---
 
-*Document version: 1.5 | 2026-03-31*
+*Document version: 1.7 | 2026-04-21*
