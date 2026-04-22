@@ -65,6 +65,18 @@ export class DataPreloadService {
       this._forceReload$
     );
 
+    // Universal lookups — load once after sign-in regardless of trade-unit selection.
+    // These drive features (delivery progress, commodity resolution) that work even when
+    // no TU is selected, so they can't sit inside the TU-gated pipeline below.
+    msalBroadcast.inProgress$.pipe(
+      filter(s => s === InteractionStatus.None && msalService.instance.getAllAccounts().length > 0),
+      take(1),
+      switchMap(() => this.apiService.getCommodityConversions().pipe(
+        catchError(() => of([] as CommodityConversion[]))
+      )),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe(data => this.appState.commodityConversions.set(data));
+
     msalBroadcast.inProgress$.pipe(
       filter(s => s === InteractionStatus.None && msalService.instance.getAllAccounts().length > 0),
       take(1),
@@ -164,12 +176,6 @@ export class DataPreloadService {
             this.appState.setCommodities(data);
           })
         );
-        const conversions$ = this.apiService.getCommodityConversions().pipe(
-          catchError(() => of([] as CommodityConversion[])),
-          tap(data => {
-            this.appState.commodityConversions.set(data);
-          })
-        );
         const harvestWindows$ = this.apiService.getHarvestWindows().pipe(
           catchError(() => of([] as HarvestWindow[])),
           tap(data => {
@@ -195,7 +201,7 @@ export class DataPreloadService {
           })
         );
 
-        return merge(customers$, contracts$, todaysTickets$, tickets$, notes$, plantingIntentions$, storedGrain$, savedLists$, commodities$, conversions$, harvestWindows$, producerDetails$, dashboardSummary$);
+        return merge(customers$, contracts$, todaysTickets$, tickets$, notes$, plantingIntentions$, storedGrain$, savedLists$, commodities$, harvestWindows$, producerDetails$, dashboardSummary$);
       }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe();
