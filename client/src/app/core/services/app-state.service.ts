@@ -174,6 +174,16 @@ export class AppStateService {
     this.dataLoading.set(loading);
   }
 
+  // Tickets-specific loading flag — true while the full ticket set is still arriving.
+  // Flipped false independently of dataLoading so insights cards that don't depend on
+  // the full ticket set (Unconfirmed Contracts, Spot Loads) can render as soon as
+  // their own data is ready.
+  ticketsLoading = signal(false);
+
+  setTicketsLoading(loading: boolean): void {
+    this.ticketsLoading.set(loading);
+  }
+
   // Dashboard cache — keyed by trade unit so navigating back shows data instantly
   dashboardCache = signal<DashboardCacheEntry | null>(null);
 

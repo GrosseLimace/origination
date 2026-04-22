@@ -11,7 +11,6 @@ import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { BidSheetEntry, BidSheetLocation, BidSheetLocationBid, Elevator, Commodity } from '@models';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
-import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
 
 interface EditBidsRow {
   name: string;
@@ -356,10 +355,12 @@ export class BidSheetComponent {
 
   filteredCommodities(query: string): { code: string; name: string }[] {
     if (!query || query.length < 1) return [];
-    const q = query.toLowerCase();
-    const searchTerms = expandCommodityAliases(q);
+    // Split on whitespace so multi-word queries (e.g. "yellow corn") narrow results
+    // instead of broadening them. Every word must appear somewhere in the code OR name.
+    const words = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return [];
     const seen = new Set<string>();
-    const results: { code: string; name: string }[] = [];
+    const results: { code: string; name: string; rank: number }[] = [];
     for (const c of this.allCommodities()) {
       const code = (c.code ?? '').trim();
       const cat = (c.category ?? '').trim().toUpperCase();
@@ -367,13 +368,22 @@ export class BidSheetComponent {
       if (!code || seen.has(code) || BidSheetComponent._excludedCommodityCategories.has(cat)) continue;
       const codeLower = code.toLowerCase();
       const descLower = desc.toLowerCase();
-      const catLower = cat.toLowerCase();
-      if (searchTerms.some(t => codeLower.includes(t) || descLower.includes(t) || catLower.includes(t))) {
-        seen.add(code);
-        results.push({ code, name: `${(desc || cat).toUpperCase()} (${code.toUpperCase()})` });
-      }
+      // AND match: every word must be in either the code or the name (category ignored)
+      const allMatch = words.every(w => codeLower.includes(w) || descLower.includes(w));
+      if (!allMatch) continue;
+      seen.add(code);
+      // Rank: exact code match (0) < code starts-with (1) < name starts-with (2) < contains (3)
+      const fullQ = words.join(' ');
+      let rank = 3;
+      if (codeLower === fullQ) rank = 0;
+      else if (codeLower.startsWith(fullQ)) rank = 1;
+      else if (descLower.startsWith(fullQ)) rank = 2;
+      results.push({ code, name: `${(desc || cat).toUpperCase()} (${code.toUpperCase()})`, rank });
     }
-    return results.sort((a, b) => a.name.localeCompare(b.name)).slice(0, 20);
+    return results
+      .sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name))
+      .slice(0, 20)
+      .map(({ code, name }) => ({ code, name }));
   }
 
   selectCommodity(index: number, item: { code: string; name: string }): void {

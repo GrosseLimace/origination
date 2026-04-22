@@ -103,7 +103,27 @@
         </div>
 
         <!-- Category cards -->
-        @for (category of categories; track category) {
+        @for (category of categories; track category; let i = $index) {
+          @if (isCategoryLoading(category)) {
+            @let sk = skeletonCategories[i];
+            <app-card class="overflow-hidden">
+              <div [class]="sk.headerClass" class="p-4">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-3">
+                    <div class="w-6 h-6 rounded animate-pulse" [class]="sk.pulseClass"></div>
+                    <div>
+                      <div class="h-4 w-40 rounded animate-pulse mb-1.5" [class]="sk.pulseClass"></div>
+                      <div class="h-3 w-24 rounded animate-pulse" [class]="sk.pulseSubClass"></div>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <div class="w-6 h-6 rounded-full border-2 animate-spin" [class]="sk.spinnerClass"></div>
+                    <div class="w-4 h-4 rounded animate-pulse" [class]="sk.pulseClass"></div>
+                  </div>
+                </div>
+              </div>
+            </app-card>
+          } @else {
           @let groups = customerGroupsByCategory()[category];
           @let meta = categoryMeta[category];
           <app-card class="overflow-hidden">
@@ -252,6 +272,7 @@
             }
 
           </app-card>
+          }
         }
 
       }
