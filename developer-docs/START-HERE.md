@@ -18,7 +18,7 @@ This is your starting point for understanding the Azure infrastructure behind Or
 
 | Document | What It Covers |
 |----------|---------------|
-| [CLAUDE.md](CLAUDE.md) | Full Azure infrastructure context for Claude Code (auto-read) |
+| [CLAUDE.md](CLAUDE.md) | Full Azure infrastructure context for Claude Code (auto-read). Includes the canonical **Angular MSAL Setup** pattern (pre-bootstrap initializer + SessionStorage + ssoSilent), **Client-side App Insights** wiring (wrapper service + MSAL event forwarder), and the **CSP allow-list** required for the Angular SDK |
 | [APP-REGISTRATIONS.md](APP-REGISTRATIONS.md) | App registration client IDs, scopes, redirect URIs, MSAL setup |
 | [ENTRA-ID-GROUPS-GUIDE.md](ENTRA-ID-GROUPS-GUIDE.md) | Entra ID groups, Azure RBAC roles, SQL permission groups |
 | [ACCESS-PACKAGES-USER-GUIDE.md](ACCESS-PACKAGES-USER-GUIDE.md) | How to request access via My Access portal |
@@ -40,7 +40,7 @@ Your Origination application runs on fully managed Azure infrastructure with pri
 ### Data and Storage
 - **SQL Database** (Azure SQL, managed identity authentication)
   - Dev/QA: Serverless, 0.5-2 vCores, auto-pause 60 min
-  - Prod: Hyperscale Serverless, 0.5-2 vCores, no auto-pause
+  - Prod: Serverless, 0.5-2 vCores, auto-pause 60 min
 - **Key Vault** — Secure storage for secrets with RBAC-based access, private endpoint, and audit logging
 
 ### Networking
@@ -175,4 +175,4 @@ For new developers joining the Origination team:
 
 ---
 
-*Document version: 1.7 | 2026-04-01*
+*Document version: 1.8 | 2026-04-21*

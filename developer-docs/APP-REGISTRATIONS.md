@@ -49,6 +49,7 @@ User -> Origination SPA (Angular) -> Origination API (.NET Web API)
 - Only the **SPA** needs redirect URIs (it handles user authentication)
 - The **API** does not need redirect URIs (it only validates incoming tokens)
 - The API Enterprise App is hidden from users in the My Apps portal
+- **Redirect URIs must be the site origin** (e.g., `https://origination-dev.scoular.com`), not a dedicated `/auth` route. The Angular `provideAppInitializer` described in `developer-docs/CLAUDE.md` handles the returning `#code=...` hash at any path, so you do not need a separate auth-callback route component in your app
 
 ## Dev Environment
 
@@ -60,9 +61,9 @@ User -> Origination SPA (Angular) -> Origination API (.NET Web API)
 - **Tenant ID**: `1521f999-f722-4a4f-9747-166f93e9b0d1` (scoular.com)
 
 **Client Secret:**
-- **Stored in Key Vault**: `kv-origination-dev-eus`
+- **Stored in Key Vault**: `kv-orig-dev-eus`
 - **Secret Name**: `OriginationAPI-ClientSecret`
-- **Retrieve with**: `Get-AzKeyVaultSecret -VaultName 'kv-origination-dev-eus' -Name 'OriginationAPI-ClientSecret' -AsPlainText`
+- **Retrieve with**: `Get-AzKeyVaultSecret -VaultName 'kv-orig-dev-eus' -Name 'OriginationAPI-ClientSecret' -AsPlainText`
 
 **API Scope:**
 - **Scope Name**: `Origination.Application.Dev`
@@ -336,7 +337,7 @@ See [ACCESS-PACKAGES-USER-GUIDE.md](ACCESS-PACKAGES-USER-GUIDE.md) for detailed 
 Connect-AzAccount -TenantId '1521f999-f722-4a4f-9747-166f93e9b0d1' -SubscriptionId '9ae7649f-19b3-4bf0-b593-b51ce94b5ee5'
 
 # Get the secret from Key Vault
-$secret = Get-AzKeyVaultSecret -VaultName 'kv-origination-dev-eus' -Name 'OriginationAPI-ClientSecret' -AsPlainText
+$secret = Get-AzKeyVaultSecret -VaultName 'kv-orig-dev-eus' -Name 'OriginationAPI-ClientSecret' -AsPlainText
 Write-Host "Client Secret: $secret"
 ```
 
@@ -511,4 +512,4 @@ If you get "Forbidden" when accessing the Key Vault secret, ensure you are a mem
 
 ---
 
-*Document version: 1.4 | 2026-03-31*
+*Document version: 1.5 | 2026-04-21*
