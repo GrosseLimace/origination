@@ -96,24 +96,28 @@ export class TicketsTableComponent {
     this.showSearch = false;
   }
 
-  /** Set of ticket IDs that are spot loads (unapplied, last 30 days, no contract coverage).
-   *  Matches the same logic as Actionable Insights → Spot Loads. */
+  /** Set of ticket IDs that are spot loads — unapplied tickets in the last 30 days.
+   *  A ticket is "unapplied" when its CtrmContractNumber prefix is U (Unload) or L
+   *  (Loadout) — i.e. no contract is assigned. Matches Actionable Insights → Spot
+   *  Loads exactly, so the "Spot" badge on the customer ticket list lines up with
+   *  what that producer shows up for on /insights. No contract-date coverage check —
+   *  an unapplied ticket is a spot load regardless of what contracts exist in the
+   *  same window, because the ticket itself is what tells us it wasn't priced. */
   get spotTicketIds(): Set<number> {
-    const contracts = this.contracts();
     const ids = new Set<number>();
-    const now = new Date();
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    // Cutoff is start-of-UTC-day 30 days ago — not a precise timestamp.
+    // Ticket dates are day-precise in ODS; comparing time-precise cutoff to
+    // day-precise ticket dates causes an edge-case miss exactly at day 30
+    // (e.g. a ticket dated 3/23 gets excluded when "now" is 9:20am on 4/22
+    // because 3/23 midnight UTC < 3/23 9:20am UTC).
+    const cutoff = new Date();
+    cutoff.setUTCHours(0, 0, 0, 0);
+    cutoff.setUTCDate(cutoff.getUTCDate() - 30);
     for (const t of this.tickets()) {
       if (t.isApplied || !t.date) continue;
       const ticketDate = new Date(t.date);
-      if (ticketDate < thirtyDaysAgo) continue; // Only last 30 days
-      const hasCoverage = contracts.some(c => {
-        if (c.status === 'Fulfilled' || c.status === 'Cancelled') return false;
-        const start = new Date(c.deliveryStart);
-        const end = new Date(c.deliveryEnd);
-        return start <= ticketDate && end >= ticketDate;
-      });
-      if (!hasCoverage) ids.add(t.id);
+      if (isNaN(ticketDate.getTime()) || ticketDate < cutoff) continue;
+      ids.add(t.id);
     }
     return ids;
   }

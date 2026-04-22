@@ -273,12 +273,19 @@ export class InsightsComponent {
       for (const ticket of customerRecentTickets) {
         if (!ticket.date) continue;
         if (ticket.isApplied) continue;
-        const ticketDate = new Date(ticket.date);
         {
           const lbs = ticket.appliedDockQuantity || ticket.unloadQuantity || 0;
           const lbsPerBu = getLbsPerBushel(ticket.productCode, conversionMap);
           const bu = lbs && lbsPerBu ? Math.round(lbs / lbsPerBu) : null;
-          const dateLabel = ticketDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          // Parse the ticket date string as a LOCAL date to match Angular's date pipe
+          // behavior on the customer Unapplied Tickets tab. Passing "2026-03-23" to
+          // `new Date()` yields UTC midnight which toLocaleDateString then renders in
+          // local time — drifting to the previous day for users west of UTC.
+          const dateStr = typeof ticket.date === 'string' ? ticket.date.split('T')[0] : '';
+          const [yr, mo, dy] = dateStr.split('-').map(Number);
+          const dateLabel = (yr && mo && dy)
+            ? new Date(yr, mo - 1, dy).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            : '';
           insights.push({
             customer,
             category: 'SpotLoads',
