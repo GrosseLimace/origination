@@ -458,9 +458,10 @@ public class SqlDataService : IDataService
     {
         try
         {
-            return await _context.Customers
-                .AsNoTracking()
-                .FirstOrDefaultAsync(c => c.Id == id && c.IsActive, cancellationToken);
+            var snap = await _appContext.CustomerSnapshots.AsNoTracking()
+                .Where(s => s.CustomerId == id)
+                .FirstOrDefaultAsync(cancellationToken);
+            return snap == null ? null : MapSnapshotToCustomer(snap);
         }
         catch (Exception ex)
         {
@@ -474,9 +475,10 @@ public class SqlDataService : IDataService
     {
         try
         {
-            return await _context.Customers
-                .AsNoTracking()
-                .FirstOrDefaultAsync(c => c.SourceCustomerId == sourceCustomerId && c.IsActive, cancellationToken);
+            var snap = await _appContext.CustomerSnapshots.AsNoTracking()
+                .Where(s => s.SourceCustomerId == sourceCustomerId)
+                .FirstOrDefaultAsync(cancellationToken);
+            return snap == null ? null : MapSnapshotToCustomer(snap);
         }
         catch (Exception ex)
         {
@@ -549,28 +551,18 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var customer = await _context.Customers.FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive, cancellationToken);
-            if (customer == null)
+            var exists = await _appContext.CustomerSnapshots.AsNoTracking()
+                .AnyAsync(s => s.CustomerId == customerId, cancellationToken);
+            if (!exists)
             {
                 _logger.LogWarning("Customer {CustomerId} not found for update", customerId);
                 return;
             }
 
-            customer.Location = location;
-            customer.Phone = phone;
-            customer.Email = email;
-            customer.FarmIds = farmIds;
-            customer.LinkedProducerIds = linkedProducerIds;
-
-            // Recalculate TotalAcres based on associated farms
-            // Note: Farms table doesn't exist in ODS - skipping TotalAcres calculation
-            // customer.TotalAcres = _context.Farms
-            //     .Where(f => farmIds.Contains(f.Id))
-            //     .Sum(f => f.Acres);
-            customer.TotalAcres = 0;
-
-            await _context.SaveChangesAsync(cancellationToken);
-            _logger.LogInformation("Updated customer {CustomerId}", customerId);
+            // Location / Phone / Email originate from the ODS and cannot be written from here.
+            // FarmIds / LinkedProducerIds / TotalAcres are not persisted via this path — they live
+            // on ProducerDetails and are updated through the ProducerDetails endpoints.
+            _logger.LogInformation("UpdateCustomerAsync called for {CustomerId} — no-op (write path lives on ProducerDetails).", customerId);
         }
         catch (Exception ex)
         {
@@ -1025,13 +1017,15 @@ public class SqlDataService : IDataService
             // Resolve SourceCustomerId if not supplied by the caller (avoids a DB round-trip when the client already has it).
             if (string.IsNullOrEmpty(sourceCustomerId))
             {
-                var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive, cancellationToken);
-                if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
+                sourceCustomerId = await _appContext.CustomerSnapshots.AsNoTracking()
+                    .Where(s => s.CustomerId == customerId)
+                    .Select(s => s.SourceCustomerId)
+                    .FirstOrDefaultAsync(cancellationToken);
+                if (string.IsNullOrEmpty(sourceCustomerId))
                 {
                     _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
                     return [];
                 }
-                sourceCustomerId = customer.SourceCustomerId;
             }
 
             // Match contracts: open contracts + prior-year (for pacing comparison)
@@ -1084,8 +1078,11 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive, cancellationToken);
-            if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
+            var sourceCustomerId = await _appContext.CustomerSnapshots.AsNoTracking()
+                .Where(s => s.CustomerId == customerId)
+                .Select(s => s.SourceCustomerId)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (string.IsNullOrEmpty(sourceCustomerId))
             {
                 _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId — returning empty historical contracts", customerId);
                 return [];
@@ -1098,7 +1095,7 @@ public class SqlDataService : IDataService
                     WHERE c.IsActive = 1
                       AND c.IsDeleted = 0
                       AND c.ContractPrefixType = 'P'
-                      AND c.CtrmCustomerId = {customer.SourceCustomerId}
+                      AND c.CtrmCustomerId = {sourceCustomerId}
                       AND c.ClosedDate IS NOT NULL
                       AND c.CropYear >= {pacingCutoffYear}")
                 .AsNoTracking()
@@ -1646,13 +1643,15 @@ public class SqlDataService : IDataService
             // Resolve SourceCustomerId if not supplied by the caller (avoids a DB round-trip when the client already has it).
             if (string.IsNullOrEmpty(sourceCustomerId))
             {
-                var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId && c.IsActive, cancellationToken);
-                if (customer == null || string.IsNullOrEmpty(customer.SourceCustomerId))
+                sourceCustomerId = await _appContext.CustomerSnapshots.AsNoTracking()
+                    .Where(s => s.CustomerId == customerId)
+                    .Select(s => s.SourceCustomerId)
+                    .FirstOrDefaultAsync(cancellationToken);
+                if (string.IsNullOrEmpty(sourceCustomerId))
                 {
                     _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
                     return [];
                 }
-                sourceCustomerId = customer.SourceCustomerId;
             }
 
             // Match tickets using CustomerCode = sourceCustomerId (string matching, like contracts)
@@ -1996,18 +1995,17 @@ public class SqlDataService : IDataService
     {
         try
         {
-            // Get customer info for denormalized fields
-            var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId, cancellationToken);
-            if (customer == null)
-            {
-                throw new InvalidOperationException($"Customer with ID {customerId} not found");
-            }
+            // Resolve denormalized name/code from CustomerSnapshot (the UI's source of truth).
+            var snap = await _appContext.CustomerSnapshots.AsNoTracking()
+                .Where(s => s.CustomerId == customerId)
+                .Select(s => new { s.CustomerName, s.SourceCustomerId })
+                .FirstOrDefaultAsync(cancellationToken);
 
             var note = new Note
             {
                 CustomerId = customerId,
-                CustomerName = customer.Name,
-                CustomerCode = customer.SourceCustomerId,
+                CustomerName = snap?.CustomerName ?? string.Empty,
+                CustomerCode = snap?.SourceCustomerId,
                 TradeUnit = tradeUnit,
                 Description = content,
                 CreatedBy = GetCurrentUser(),
