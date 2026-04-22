@@ -1358,18 +1358,36 @@ public class SqlDataService : IDataService
 
                 var customerCodes = contractCustomerCodes.Union(snapshotCustomerCodes).ToList();
 
-                // Load all active U/P tickets for these customers — matches the behavior
-                // of GetTicketsByCustomerAsync (per-customer fetch) so Insights sees the
-                // same ticket set on initial load that Contract Detail sees after a visit.
-                // Previous implementation filtered out applied tickets whose contract
-                // wasn't in a Purchase-only contract set, which under-counted delivered
-                // pounds and produced false positives on the Unshipped Bushels insight
-                // whenever a contract had been deactivated or was a Sale contract.
-                tickets = await _context.Tickets
+                // Step 2: SourceContractIds of OPEN Purchase contracts for the visible
+                // customers — the exact set of contracts the app actually renders.
+                // Tickets applied to contracts outside this set (closed, non-P, out-of-scope)
+                // have nowhere to land in the UI, so we drop them to avoid wasted data.
+                // Case-insensitive hash set so case drift between Ticket.ContractNumber
+                // and Contract.SourceContractId doesn't silently miss matches.
+                var openContractNumbers = await _context.Contracts
+                    .AsNoTracking()
+                    .Where(c => c.IsActive && c.ContractPrefixType == "P"
+                        && c.ClosedDate == null
+                        && c.CtrmCustomerId != null && customerCodes.Contains(c.CtrmCustomerId)
+                        && c.SourceContractId != null)
+                    .Select(c => c.SourceContractId!)
+                    .Distinct()
+                    .ToListAsync(cancellationToken);
+                var openContractSet = new HashSet<string>(openContractNumbers, StringComparer.OrdinalIgnoreCase);
+
+                // Step 3: Load all active U/P tickets for these customers, then keep:
+                //   - every unapplied ticket (needed for the Unapplied Tickets tab and Spot Loads)
+                //   - applied tickets only if their CtrmContractNumber matches an open P contract
+                var rawTickets = await _context.Tickets
                     .AsNoTracking()
                     .Where(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode))
                     .OrderByDescending(t => t.Date)
                     .ToListAsync(cancellationToken);
+
+                tickets = rawTickets
+                    .Where(t => !t.IsApplied
+                        || (t.CtrmContractNumber != null && openContractSet.Contains(t.CtrmContractNumber)))
+                    .ToList();
             }
 
             _logger.LogInformation("Loading tickets (filtered: {IsFiltered}, tradeUnitCount: {TradeUnitCount})",

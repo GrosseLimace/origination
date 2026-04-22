@@ -264,16 +264,28 @@ export class InsightsComponent {
         }
       }
 
-      // --- 2. Spot Loads — Unapplied Tickets (Last 30 Days) ---
-      // A spot load is a ticket with no contract assigned (prefix U/L or null). This matches
-      // the grain-industry meaning and the Unapplied Tickets tab, so clicking a spot load
-      // always takes the user to a ticket they can actually see. We intentionally do NOT
-      // flag applied-but-uncovered tickets (e.g. ticket applied to a now-closed contract)
-      // — those are completed deliveries, not spot loads.
+      // --- 2. Spot Loads — Unapplied + No Matching-Commodity Coverage (Last 30 Days) ---
+      // Three-part rule, all must be true:
+      //   (a) ticket is not applied to any contract (prefix U/L or null);
+      //   (b) no active contract for the SAME commodity has a delivery window covering
+      //       the ticket's date. Commodity match is essential — a corn contract cannot
+      //       silently "cover" a wheat ticket (that was the original bug this check fixed).
+      // Applied tickets are never flagged, which avoids false positives on legitimate
+      // late-window deliveries against a real contract.
       for (const ticket of customerRecentTickets) {
         if (!ticket.date) continue;
         if (ticket.isApplied) continue;
-        {
+        const ticketDate = new Date(ticket.date);
+        const ticketCommodity = (ticket.productCode || '').trim().toUpperCase();
+        const hasContractCoverage = ticketCommodity && customerContracts.some(c => {
+          if (c.closedDate) return false;  // Closed contracts can't cover a new delivery
+          if (c.status === 'Fulfilled' || c.status === 'Cancelled') return false;
+          if ((c.commodityCode || '').trim().toUpperCase() !== ticketCommodity) return false;
+          const start = new Date(c.deliveryStart);
+          const end = new Date(c.deliveryEnd);
+          return start <= ticketDate && end >= ticketDate;
+        });
+        if (!hasContractCoverage) {
           const lbs = ticket.appliedDockQuantity || ticket.unloadQuantity || 0;
           const lbsPerBu = getLbsPerBushel(ticket.productCode, conversionMap);
           const bu = lbs && lbsPerBu ? Math.round(lbs / lbsPerBu) : null;
