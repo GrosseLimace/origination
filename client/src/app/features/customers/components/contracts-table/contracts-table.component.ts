@@ -70,8 +70,12 @@ export class ContractsTableComponent {
     effect(() => {
       this.contracts();
       this.tickets();
+      // Commodity conversions can arrive AFTER contracts — if we don't depend on it here,
+      // the first computeDeliveryStats call caches {computable: false} and never recovers.
+      this.appState.commodityConversions();
       this._deliveryStatsCache.clear();
       this._statusCache.clear();
+      this._conversionMap = null;
     });
 
     // Reset expansion + search and apply any deep-link openContractId only when the

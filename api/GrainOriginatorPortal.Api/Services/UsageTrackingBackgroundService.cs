@@ -1,9 +1,9 @@
-using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using System.Threading.Channels;
 using GrainOriginatorPortal.Api.Data;
 using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace GrainOriginatorPortal.Api.Services;
 
@@ -18,8 +18,6 @@ public class UsageTrackingBackgroundService : BackgroundService
     private readonly Channel<UserClickEventRecord> _clickChannel;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<UsageTrackingBackgroundService> _logger;
-
-    private readonly ConcurrentDictionary<string, (long SessionId, DateTime LastActivity)> _sessionCache = new();
 
     private static readonly TimeSpan SessionGap = TimeSpan.FromMinutes(30);
     private const int BatchSize = 50;
@@ -40,7 +38,6 @@ public class UsageTrackingBackgroundService : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("UsageTrackingBackgroundService started");
-        await SeedSessionCacheAsync(stoppingToken);
 
         var activityBatch = new List<UserActivityRecord>(BatchSize);
         var clickBatch = new List<UserClickEventRecord>(BatchSize);
@@ -150,65 +147,58 @@ public class UsageTrackingBackgroundService : BackgroundService
             await UpdateSessionsAsync(db, activities, ct);
     }
 
+    /// <summary>
+    /// For each user in the batch, either extends their most recent open session or creates a new one.
+    /// A session is "open" if its LastActivityTime is within the SessionGap window of the incoming activity.
+    /// The DB is the source of truth — no in-memory cache — so this is correct regardless of process
+    /// restarts, instance count, or deploy swaps.
+    /// </summary>
     private async Task UpdateSessionsAsync(ApplicationDbContext db, List<UserActivityRecord> batch, CancellationToken ct)
     {
         var userLatest = batch
             .GroupBy(r => r.UserId, StringComparer.OrdinalIgnoreCase)
             .Select(g => new { UserId = g.Key, LatestTimestamp = g.Max(r => r.Timestamp) })
             .ToList();
+        if (userLatest.Count == 0) return;
+
+        var userIds = userLatest.Select(x => x.UserId).ToList();
+        // Anyone whose most recent activity sits beyond this cutoff must start a new session.
+        var cutoff = userLatest.Min(x => x.LatestTimestamp) - SessionGap;
+
+        // Fetch candidate open sessions for these users in one query, then pick latest per user in memory
+        // (avoids the GroupBy+First LINQ translation pitfalls that caused the old seed query to fail).
+        var candidates = await db.UserSessions
+            .Where(s => userIds.Contains(s.UserId) && s.LastActivityTime >= cutoff)
+            .ToListAsync(ct);
+
+        var latestOpenByUser = candidates
+            .GroupBy(s => s.UserId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderByDescending(s => s.LastActivityTime).First(),
+                StringComparer.OrdinalIgnoreCase);
 
         foreach (var entry in userLatest)
         {
-            if (_sessionCache.TryGetValue(entry.UserId, out var cached) &&
-                (entry.LatestTimestamp - cached.LastActivity) < SessionGap)
+            if (latestOpenByUser.TryGetValue(entry.UserId, out var openSession)
+                && (entry.LatestTimestamp - openSession.LastActivityTime) < SessionGap)
             {
-                var session = await db.UserSessions.FindAsync([cached.SessionId], ct);
-                if (session != null)
-                {
-                    session.LastActivityTime = entry.LatestTimestamp;
-                    _sessionCache[entry.UserId] = (cached.SessionId, entry.LatestTimestamp);
-                }
+                // Extend the existing session — only update if the new timestamp is newer.
+                if (entry.LatestTimestamp > openSession.LastActivityTime)
+                    openSession.LastActivityTime = entry.LatestTimestamp;
             }
             else
             {
-                var newSession = new UserSession
+                db.UserSessions.Add(new UserSession
                 {
                     UserId = entry.UserId,
                     LoginTime = entry.LatestTimestamp,
                     LastActivityTime = entry.LatestTimestamp
-                };
-                db.UserSessions.Add(newSession);
-                await db.SaveChangesAsync(ct);
-                _sessionCache[entry.UserId] = (newSession.Id, entry.LatestTimestamp);
+                });
             }
         }
 
         await db.SaveChangesAsync(ct);
-    }
-
-    private async Task SeedSessionCacheAsync(CancellationToken ct)
-    {
-        try
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
-            var latestSessions = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
-                .ToListAsync(
-                    System.Linq.Queryable.Select(
-                        System.Linq.Queryable.GroupBy(db.UserSessions, s => s.UserId),
-                        g => new { UserId = g.Key, Session = g.OrderByDescending(s => s.LoginTime).First() }),
-                    ct);
-
-            foreach (var entry in latestSessions)
-                _sessionCache[entry.UserId] = (entry.Session.Id, entry.Session.LastActivityTime);
-
-            _logger.LogInformation("Seeded session cache with {Count} users", latestSessions.Count);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to seed session cache — sessions will be created fresh");
-        }
     }
 }
 
