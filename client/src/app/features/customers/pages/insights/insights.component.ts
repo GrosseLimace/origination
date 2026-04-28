@@ -205,17 +205,22 @@ export class InsightsComponent {
       if (arr) { arr.push(c); } else { contractsByCustomer.set(c.ctrmCustomerId, [c]); }
     }
 
-    // Pre-index applied ticket pounds by contract (ctrmContractNumber = sourceContractId).
-    // Used by the Unshipped Bushels check to skip contracts whose tickets already cover
-    // the contract quantity — mirrors the Contracts Table delivery math, so both screens
-    // agree on whether a contract is fulfilled.
+    // Pre-index applied ticket pounds by contract. Mirrors Contracts Table's
+    // getAppliedTickets matching — prefer string match (ctrmContractNumber → sourceContractId),
+    // fall back to FK match (ticket.contractId → contract.id) when the string isn't populated.
     const allTickets = this.tickets();
-    const appliedLbsByContract = new Map<string, number>();
+    const appliedLbsByCtrmNumber = new Map<string, number>();
+    const appliedLbsByContractId = new Map<number, number>();
     for (const t of allTickets) {
       if (!t.isApplied) continue;
-      const key = t.ctrmContractNumber?.trim();
-      if (!key) continue;
-      appliedLbsByContract.set(key, (appliedLbsByContract.get(key) ?? 0) + (t.appliedDockQuantity ?? 0));
+      const lbs = t.appliedDockQuantity ?? 0;
+      const ctrmKey = t.ctrmContractNumber?.trim();
+      if (ctrmKey) {
+        appliedLbsByCtrmNumber.set(ctrmKey, (appliedLbsByCtrmNumber.get(ctrmKey) ?? 0) + lbs);
+      } else if (t.contractId) {
+        // Only fall back to FK when the string key isn't there — matches Contracts Table priority
+        appliedLbsByContractId.set(t.contractId, (appliedLbsByContractId.get(t.contractId) ?? 0) + lbs);
+      }
     }
     // Pre-index recent tickets (last 30 days) by customer for O(1) spot-load lookup
     const recentTicketsByCustomer = new Map<string, Ticket[]>();
@@ -328,42 +333,54 @@ export class InsightsComponent {
         const deliveryEnd = new Date(contract.deliveryEnd);
         const isPastDue = deliveryEnd < today;
         const isOpen = contract.status === 'Active' || contract.status === 'Overdue';
-        // Match the Contracts Table display rule: if CTRM's balance rounds to 0 in the
-        // contract's unit (same rounding Contracts Table uses — whole for bu/lb, 2-dec
-        // for tons), it's a residue and Contract Detail would show Filled. Don't flag.
-        const openBal = contract.openBalanceQuantity ?? 0;
-        const unitL = (contract.unit || '').toLowerCase().trim();
-        const isTonsU = unitL === 'st' || unitL.includes('ton');
-        const roundedOpen = isTonsU ? Math.round(openBal * 100) / 100 : Math.round(openBal);
-        const hasRemainingQty = roundedOpen > 0;
 
         // Compute the ticket-based remaining using the same math as Contracts Table —
-        // converts applied pounds back to the contract's unit, rounds the same way
-        // (whole for bu/lb/cwt, 2-decimal for tons). This is the authoritative remaining
+        // converts applied pounds back to the contract's unit, rounds to 2dp regardless
+        // of unit (matches _computeDeliveryStats). This is the authoritative remaining
         // number when we have tickets + commodity conversion; used both to skip fulfilled
         // contracts AND as the displayed quantity below so Insights agrees with the
         // Contract Detail page's "Remaining Quantity" to the bushel.
         let ticketRemaining: number | null = null;
+        let isEffectivelyComplete = false;
         const contractKey = contract.sourceContractId?.trim();
         const lbsPerBu = getLbsPerBushel(contract.commodityCode, conversionMap);
-        if (contractKey && lbsPerBu && lbsPerBu > 0) {
-          const appliedLbs = appliedLbsByContract.get(contractKey) ?? 0;
+        if (lbsPerBu && lbsPerBu > 0) {
+          // Same priority as Contracts Table getAppliedTickets — string match first, FK fallback
+          const appliedLbs = (contractKey ? appliedLbsByCtrmNumber.get(contractKey) : undefined)
+            ?? appliedLbsByContractId.get(contract.id)
+            ?? 0;
           const unitLower = (contract.unit || '').toLowerCase().trim();
           const isTons = unitLower === 'st' || unitLower.includes('ton');
+          let contractLbs: number;
           let deliveredInUnits: number;
-          if (isTons) deliveredInUnits = appliedLbs / 2000;
-          else if (unitLower.includes('pound') || unitLower.includes('lb')) deliveredInUnits = appliedLbs;
-          else if (unitLower === 'cwt' || unitLower.includes('hundredweight')) deliveredInUnits = appliedLbs / 100;
-          else deliveredInUnits = appliedLbs / lbsPerBu;
+          if (isTons) {
+            contractLbs = (contract.quantity || 0) * 2000;
+            deliveredInUnits = appliedLbs / 2000;
+          } else if (unitLower.includes('pound') || unitLower.includes('lb')) {
+            contractLbs = (contract.quantity || 0);
+            deliveredInUnits = appliedLbs;
+          } else if (unitLower === 'cwt' || unitLower.includes('hundredweight')) {
+            contractLbs = (contract.quantity || 0) * 100;
+            deliveredInUnits = appliedLbs / 100;
+          } else {
+            contractLbs = (contract.quantity || 0) * lbsPerBu;
+            deliveredInUnits = appliedLbs / lbsPerBu;
+          }
           const remainingInUnits = Math.max(0, (contract.quantity || 0) - deliveredInUnits);
-          ticketRemaining = isTons
-            ? Math.round(remainingInUnits * 100) / 100
-            : Math.round(remainingInUnits);
+          ticketRemaining = Math.round(remainingInUnits * 100) / 100;
+          // Sub-bushel remainder = effectively complete (matches Contract Detail's 100% rule)
+          const remainingLbs = Math.max(0, contractLbs - appliedLbs);
+          isEffectivelyComplete = remainingLbs < lbsPerBu;
         }
-        // Tickets say it's already delivered — skip (matches Contract Detail "Filled").
+        // Tickets say it's already delivered (or within sub-bushel residue) — skip.
+        // No CTRM OpenBalanceQuantity gate — CTRM frequently has stale/null values for
+        // unshipped contracts, which silently dropped legitimate past-due flags. We trust
+        // the ticket math instead (or the absence of ticket math, which means we can't
+        // verify so we err on the side of flagging).
+        if (isEffectivelyComplete) continue;
         if (ticketRemaining !== null && ticketRemaining <= 0) continue;
 
-        if (isPastDue && isOpen && hasRemainingQty) {
+        if (isPastDue && isOpen) {
           const desc = contract.commodityDescription?.trim();
           const code = contract.commodityCode?.trim();
           const commodity = desc && code ? `${desc} (${code})` : desc || code || 'Unknown commodity';

@@ -1,4 +1,4 @@
-import { Component, input, effect, inject } from '@angular/core';
+import { Component, input, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
@@ -9,13 +9,17 @@ import { expandSearchWithAliases } from '@shared/utils/commodity-aliases';
 
 type SortColumn = 'id' | 'date' | 'crop' | 'location' | 'appliedDockQuantity' | 'moisture' | 'testWeight' | 'protein';
 type SortDirection = 'none' | 'asc' | 'desc';
+export type GroupMode = 'both' | 'crop' | 'elevator';
 
 interface TicketGroup {
-  productCode: string;
+  groupKey: string;        // unique key per group, format depends on groupMode
+  productCode: string;     // commodity for the group, or 'All' when grouping by elevator only
+  elevatorCode: string;    // elevator code for the group, or 'All' when grouping by crop only
   tickets: Ticket[];
   ticketCount: number;
   avgDate: Date | null;
   totalNetWeight: number;
+  totalNetBushels: number | null;  // each ticket converted by its own commodity (handles mixed-commodity elevator groups)
   avgMoisture: number;
   avgTestWeight: number | null;
   avgProtein: number | null;
@@ -56,6 +60,8 @@ export class TicketsTableComponent {
   showSearch = false;
   searchQuery = '';
   expandedCommodities = new Set<string>();
+  readonly summaryExpanded = signal(false);
+  readonly groupMode = signal<GroupMode>('both');
 
   private _previousCustomerId: number | null = null;
 
@@ -74,15 +80,23 @@ export class TicketsTableComponent {
       this._previousCustomerId = cust.id;
     });
 
-    // Auto-expand when there's only one commodity group, or when navigating from Insights with a specific crop
+    // Auto-expand when there's only one group, or when navigating from Insights with a
+    // specific crop — in that case we expand every group whose commodity matches.
     effect(() => {
       const tickets = this.tickets();
-      const crops = new Set(tickets.filter(t => !t.isApplied).map(t => t.productCode || 'Unknown'));
+      const mode = this.groupMode();
+      const unapplied = tickets.filter(t => !t.isApplied);
+      const allGroupKeys = new Set(unapplied.map(t => this._groupKeyFor(t, mode)));
+      const crops = new Set(unapplied.map(t => (t.productCode || 'Unknown').trim()));
       const openCrop = this.openCrop();
       if (openCrop && crops.has(openCrop)) {
-        this.expandedCommodities = new Set([openCrop]);
-      } else if (crops.size === 1) {
-        this.expandedCommodities = new Set(crops);
+        const matches = [...allGroupKeys].filter(k => {
+          const [productCode] = k.split('|');
+          return mode === 'elevator' ? true : productCode === openCrop;
+        });
+        this.expandedCommodities = new Set(matches);
+      } else if (allGroupKeys.size === 1) {
+        this.expandedCommodities = new Set(allGroupKeys);
       }
     });
   }
@@ -143,19 +157,31 @@ export class TicketsTableComponent {
       });
   }
 
+  /** Build the group key for a ticket given the active mode. Always uses
+   *  "productCode|elevatorCode" format so a single key parser handles all modes. */
+  private _groupKeyFor(ticket: Ticket, mode: GroupMode): string {
+    const productCode = (ticket.productCode || 'Unknown').trim();
+    const elevatorCode = (ticket.elevatorCode || 'Unknown').trim().toUpperCase();
+    if (mode === 'crop') return `${productCode}|All`;
+    if (mode === 'elevator') return `All|${elevatorCode}`;
+    return `${productCode}|${elevatorCode}`;
+  }
+
   get ticketGroups(): TicketGroup[] {
     const q = this.searchQuery.trim().toLowerCase();
     const terms = q ? this._expandWithAliases(q) : [];
+    const mode = this.groupMode();
 
     const groupMap = new Map<string, Ticket[]>();
     for (const ticket of this.unappliedTickets) {
-      const key = ticket.productCode || 'Unknown';
+      const key = this._groupKeyFor(ticket, mode);
       if (!groupMap.has(key)) groupMap.set(key, []);
       groupMap.get(key)!.push(ticket);
     }
 
     const groups: TicketGroup[] = [];
-    for (const [productCode, allTickets] of groupMap) {
+    for (const [groupKey, allTickets] of groupMap) {
+      const [productCode, elevatorCode] = groupKey.split('|');
       // Filter tickets by search within each group
       const filtered = !q ? allTickets : allTickets.filter(t => {
         const fmtDate = this._formatTicketDate(t.date);
@@ -181,14 +207,31 @@ export class TicketsTableComponent {
       const validDateMs = statsTickets
         .map(t => this._parseTicketDate(t.date)?.getTime() ?? null)
         .filter((d): d is number => d !== null && !isNaN(d));
-      const isWheat = this.isWheatProductCode(productCode);
+      // For elevator-only grouping, productCode is 'All' — derive wheat status from
+      // any ticket in the group so the protein column still appears when relevant.
+      const isWheat = mode === 'elevator'
+        ? statsTickets.some(t => this.isWheatProductCode(t.productCode))
+        : this.isWheatProductCode(productCode);
+
+      // Per-ticket bushel total — uses each ticket's own commodity factor so
+      // elevator-only groups (mixed crops) total correctly. Null if any ticket
+      // can't be converted (commodity missing from GNP024).
+      let totalNetBushels: number | null = 0;
+      for (const t of statsTickets) {
+        const bu = this.toBushels(t.appliedDockQuantity, t.productCode);
+        if (bu == null) { totalNetBushels = null; break; }
+        totalNetBushels += bu;
+      }
 
       groups.push({
+        groupKey,
         productCode,
+        elevatorCode,
         tickets: this._sortTicketList(filtered),
         ticketCount: statsTickets.length,
         avgDate: validDateMs.length ? new Date(validDateMs.reduce((s, d) => s + d, 0) / validDateMs.length) : null,
         totalNetWeight: statsTickets.reduce((s, t) => s + (t.appliedDockQuantity || 0), 0),
+        totalNetBushels,
         avgMoisture: validMoisture.length ? validMoisture.reduce((s, t) => s + (t.moisture || 0), 0) / validMoisture.length : 0,
         avgTestWeight: validTestWeight.length ? validTestWeight.reduce((s, t) => s + (t.testWeight || 0), 0) / validTestWeight.length : null,
         avgProtein: validProtein.length ? validProtein.reduce((s, t) => s + (t.proteinPercent || 0), 0) / validProtein.length : null,
@@ -197,7 +240,8 @@ export class TicketsTableComponent {
     }
     // Crop rotation is independent of ticket sort — persists even when another column is active
     if (this.cropSortActive) {
-      groups.sort((a, b) => a.productCode.localeCompare(b.productCode));
+      groups.sort((a, b) =>
+        a.productCode.localeCompare(b.productCode) || a.elevatorCode.localeCompare(b.elevatorCode));
       if (this.cropRotation > 0) {
         const offset = this.cropRotation % groups.length;
         groups.splice(0, groups.length, ...groups.slice(offset), ...groups.slice(0, offset));
@@ -423,6 +467,12 @@ export class TicketsTableComponent {
     });
 
     return this.currentSortDirection === 'desc' ? sorted.reverse() : sorted;
+  }
+
+  setGroupMode(mode: GroupMode): void {
+    if (this.groupMode() === mode) return;
+    this.groupMode.set(mode);
+    this.expandedCommodities.clear();
   }
 
   toggleCommodity(productCode: string): void {

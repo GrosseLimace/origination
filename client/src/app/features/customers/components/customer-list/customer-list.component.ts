@@ -291,21 +291,30 @@ export class CustomerListComponent {
     // No search term — client-side filter on loaded customers
     let result = [...this.customers()];
 
-    // Apply saved list filter (skip for "all" which means show all customers)
+    // Apply saved list filter (skip for "all" which means show all customers).
+    // Invariant: when a saved list is selected, the only valid outcomes are
+    // (a) filter by resolved customerIds, or (b) return early and keep the current
+    // view + spinner. We never fall through to "all customers" while a list is selected
+    // — that's the back-to-back bug where the second pick briefly showed everyone.
     if (this.selectedListId() && this.selectedListId() !== 'all') {
-      const savedList = this.savedLists().find(l => String(l.id) === this.selectedListId());
-      if (savedList) {
-        // Only run NLQ if customerIds haven't been resolved yet
-        if (!savedList.customerIds?.length) {
-          this._runSavedListNlq(savedList);
-        }
-        if (savedList.customerIds?.length) {
-          result = result.filter(c => savedList.customerIds!.includes(c.id));
-        } else if (this.savedListLoading()) {
-          // Data is still loading — don't show all customers, keep spinner visible
-          return;
-        }
+      let savedList = this.savedLists().find(l => String(l.id) === this.selectedListId());
+      if (!savedList) {
+        // Saved list not in the array yet (mid-refetch / pre-load). Keep current view.
+        return;
       }
+      if (!savedList.customerIds?.length) {
+        this._runSavedListNlq(savedList);
+        // _runSavedListNlq may have synchronously called _executeNlq which patches
+        // appState via setSavedLists. Re-read so we see the resolved customerIds
+        // without waiting for the savedLists effect to re-run applyFilters.
+        savedList = this.savedLists().find(l => String(l.id) === this.selectedListId());
+      }
+      if (!savedList?.customerIds?.length) {
+        // Async path (forkJoin in flight) or zero matches — keep current filteredCustomers
+        // until the next signal-driven re-run. _runSavedListNlq has set savedListLoading.
+        return;
+      }
+      result = result.filter(c => savedList!.customerIds!.includes(c.id));
     }
 
     this.filteredCustomers.set(result);
@@ -330,7 +339,10 @@ export class CustomerListComponent {
     this.savedListLoading.set(false);
     this.appStateService.setSelectedSavedListId(this.selectedListId());
     if (this.selectedListId() && this.selectedListId() !== 'all') {
-      // Clear cached customerIds so the NLQ re-runs for the new selection
+      // Clear cached customerIds so the NLQ re-runs for the new selection.
+      // We mutate directly because savedLists is fed via an input binding from the parent —
+      // an immutable swap on appState wouldn't propagate to our input, but a mutation on the
+      // shared object reference is visible everywhere that holds it.
       const savedList = this.savedLists().find(l => String(l.id) === this.selectedListId());
       if (savedList) savedList.customerIds = undefined as any;
     }
@@ -338,12 +350,18 @@ export class CustomerListComponent {
   }
 
   private _cancelSavedList$ = new Subject<void>();
+  private _activeSavedListRunId = 0;
 
   /** Runs the NLQ for the active saved list. Only fetches data the query actually needs. */
   private _runSavedListNlq(savedList: SavedList): void {
-    // Can't run NLQ without customers
-    if (this.customers().length === 0) return;
+    // Can't run NLQ without customers — keep spinner up; the customers-input effect
+    // re-runs applyFilters() once data lands, which re-enters this method.
+    if (this.customers().length === 0) {
+      this.savedListLoading.set(true);
+      return;
+    }
 
+    const runId = ++this._activeSavedListRunId;
     const query = savedList.query;
     const selectedTU = this.appStateService.selectedTradeUnits();
     const tuParam = selectedTU.length > 0 ? selectedTU : undefined;
@@ -364,6 +382,8 @@ export class CustomerListComponent {
       this.savedListLoading.set(true);
       forkJoin(missing).pipe(takeUntil(this._cancelSavedList$), takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (results: any) => {
+          // Stale-response guard — ignore callbacks from a superseded selection.
+          if (runId !== this._activeSavedListRunId) return;
           if (results.storedGrain) this.appStateService.setStoredGrain(results.storedGrain);
           if (results.tickets) this.appStateService.setTickets(results.tickets);
           if (results.plantingIntentions) this.appStateService.setPlantingIntentions(results.plantingIntentions);
@@ -372,6 +392,7 @@ export class CustomerListComponent {
           this.applyFilters();
         },
         error: () => {
+          if (runId !== this._activeSavedListRunId) return;
           this.savedListLoading.set(false);
           // Run NLQ with whatever data is available — don't retry the fetch
           this._executeNlq(savedList);
@@ -410,7 +431,7 @@ export class CustomerListComponent {
       refined.map(c => c.id), savedList.includedCustomerIds, savedList.excludedCustomerIds
     );
 
-    // Persist customerIds to appState so they survive component remount
+    // Persist customerIds to appState so they survive component remount.
     const lists = this.appStateService.savedLists().map(l =>
       l.id === savedList.id ? { ...l, customerIds: savedList.customerIds } : l
     );

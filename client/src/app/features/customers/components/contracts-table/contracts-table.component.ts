@@ -453,24 +453,21 @@ export class ContractsTableComponent {
     // Calculate delivered and remaining in the contract's original unit
     const deliveredInContractUnits = this._convertPoundsToContractUnits(deliveredLbs, contract.unit, lbsPerBushel);
     const remainingInContractUnits = Math.max(0, (contract.quantity || 0) - deliveredInContractUnits);
-    const progressPercent = contractLbs > 0 ? Math.min(100, (deliveredLbs / contractLbs) * 100) : 0;
+    // Treat sub-bushel remainders as fully delivered — those slivers can't realistically
+    // be delivered as a separate load, so the contract is effectively complete.
+    const remainingLbs = Math.max(0, contractLbs - deliveredLbs);
+    const isEffectivelyComplete = remainingLbs < lbsPerBushel;
+    const progressPercent = isEffectivelyComplete
+      ? 100
+      : (contractLbs > 0 ? Math.min(100, (deliveredLbs / contractLbs) * 100) : 0);
 
-    // Determine precision based on unit type
-    const unitLower = (contract.unit || '').toLowerCase().trim();
-    const isTons = unitLower === 'st' || unitLower.includes('ton');
-
-    // Apply appropriate precision: 2 decimals for tons, whole numbers for bushels/pounds
-    const delivered = isTons
-      ? Math.round(deliveredInContractUnits * 100) / 100  // 2 decimals for tons
-      : Math.round(deliveredInContractUnits);             // Whole numbers for bushels/pounds
-
-    const remaining = isTons
-      ? Math.round(remainingInContractUnits * 100) / 100  // 2 decimals for tons
-      : Math.round(remainingInContractUnits);             // Whole numbers for bushels/pounds
+    // Always keep 2 decimal places of precision so the template can render to 2dp
+    // regardless of unit. The number pipe handles display formatting.
+    const round = (n: number) => Math.round(n * 100) / 100;
 
     return {
-      deliveredBushels: delivered,
-      remainingBushels: remaining,
+      deliveredBushels: round(deliveredInContractUnits),
+      remainingBushels: round(remainingInContractUnits),
       progressPercent,
       computable: true
     };
@@ -632,9 +629,13 @@ export class ContractsTableComponent {
   }
 
   getRowHighlight(contract: Contract): string {
-    if (contract.customerConfirmStatus && contract.customerConfirmStatus !== 'Confirmed') return '!bg-amber-100 dark:!bg-amber-500/15';
+    if (contract.customerConfirmStatus && contract.customerConfirmStatus !== 'Confirmed') {
+      return '!bg-amber-100 dark:!bg-amber-500/15 hover:!bg-amber-100 dark:hover:!bg-amber-500/15';
+    }
     const status = this.getCalculatedStatus(contract);
-    if (status === 'Past Due') return '!bg-red-100 dark:!bg-red-500/15';
+    if (status === 'Past Due') {
+      return '!bg-red-100 dark:!bg-red-500/15 hover:!bg-red-100 dark:hover:!bg-red-500/15';
+    }
     return '';
   }
 

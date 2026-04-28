@@ -18,6 +18,13 @@ public class Note
     public DateTime? ModifiedAt { get; set; }
     public bool IsPinned { get; set; }
 
+    // Soft-delete fields. Notes are never hard-deleted so a record can be recovered.
+    // Reads filter on IsDeleted = false; the row stays in the table with DeletedAt/DeletedBy
+    // populated for audit + restoration.
+    public bool IsDeleted { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public string? DeletedBy { get; set; }
+
     // Computed alias for frontend compatibility
     public string Content => Description;
 }
