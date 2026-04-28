@@ -1336,24 +1336,19 @@ public class SqlDataService : IDataService
             }
             else
             {
-                // Step 1: Find customer codes from TU contracts (purchase only) and TU snapshot
-                var contractCustomerCodes = await _context.Contracts
-                    .AsNoTracking()
-                    .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId != null
-                        && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
-                    .Select(c => c.CtrmCustomerId!)
-                    .Distinct()
-                    .ToListAsync(cancellationToken);
-
-                var snapshotCustomerCodes = await _appContext.CustomerSnapshots
+                // Customer scope = producers in the selected TUs (per CustomerSnapshot).
+                // For those customers, load every ticket they have — regardless of which TU
+                // the ticket's contract is tagged to. This keeps the customer-level scope
+                // tight to the user's selection while ensuring all tickets for in-scope
+                // customers are returned (so Insights and Contract Detail agree on delivery
+                // state for any contract those customers own).
+                var customerCodes = await _appContext.CustomerSnapshots
                     .AsNoTracking()
                     .Where(s => s.IsActive && s.SourceCustomerId != null
                         && s.TradeUnit != null && tradeUnits!.Contains(s.TradeUnit))
                     .Select(s => s.SourceCustomerId!)
                     .Distinct()
                     .ToListAsync(cancellationToken);
-
-                var customerCodes = contractCustomerCodes.Union(snapshotCustomerCodes).ToList();
 
                 // Step 2: SourceContractIds of OPEN Purchase contracts for the visible
                 // customers — the exact set of contracts the app actually renders.
@@ -1461,24 +1456,48 @@ public class SqlDataService : IDataService
 
     private async Task PopulateElevatorLocations(List<Ticket> tickets, CancellationToken cancellationToken)
     {
-        // Collect unique (ElevatorCode, UnloadOrganizationCode) pairs from tickets
         var elevatorCodes = tickets
-            .Where(t => !string.IsNullOrEmpty(t.ElevatorCode))
-            .Select(t => t.ElevatorCode!)
+            .Where(t => !string.IsNullOrWhiteSpace(t.ElevatorCode))
+            .Select(t => t.ElevatorCode!.Trim())
             .Distinct()
             .ToList();
-        if (elevatorCodes.Count == 0) return;
+
+        // Tickets without a meaningful ElevatorCode (whitespace-only counts) fall back to
+        // a GNP003 (location) lookup keyed on OrganizationCode. Collect those org codes up
+        // front so we can run the fallback query in parallel with the main elevator query.
+        var fallbackLocationCodes = tickets
+            .Where(t => string.IsNullOrWhiteSpace(t.ElevatorCode) && !string.IsNullOrWhiteSpace(t.OrganizationCode))
+            .Select(t => t.OrganizationCode!.Trim())
+            .Distinct()
+            .ToList();
+
+        if (elevatorCodes.Count == 0 && fallbackLocationCodes.Count == 0) return;
 
         try
         {
-            // Load matching elevators from vw_GNP026
-            // Join: ticket.ElevatorCode = Elevator_Code AND ticket.UnloadOrganizationCode = Elevator_Location_Code
-            var elevatorList = await _context.Set<Elevator>()
-                .AsNoTracking()
-                .Where(e => e.ElevatorCode != null && elevatorCodes.Contains(e.ElevatorCode))
-                .ToListAsync(cancellationToken);
+            // Join ticket → vw_GNP026 on (ElevatorCode = Elevator_Code, OrganizationCode = Elevator_Location_Code).
+            // OrganizationCode is the ticket's owning org and is always populated; UnloadOrganizationCode
+            // only fills in once a ticket settles, so it can be empty on unapplied tickets.
+            var elevatorList = elevatorCodes.Count > 0
+                ? await _context.Set<Elevator>()
+                    .AsNoTracking()
+                    .Where(e => e.ElevatorCode != null && elevatorCodes.Contains(e.ElevatorCode))
+                    .ToListAsync(cancellationToken)
+                : new List<Elevator>();
 
-            // Build lookup keyed by (ElevatorCode, ElevatorLocationCode) for precise matching
+            // Fallback lookup against vw_GNP003 for tickets that don't have an ElevatorCode.
+            // We match the ticket's OrganizationCode to Location_Code and surface city/state.
+            var locationList = fallbackLocationCodes.Count > 0
+                ? await _context.Set<Location>()
+                    .AsNoTracking()
+                    .Where(l => l.LocationCode != null && fallbackLocationCodes.Contains(l.LocationCode))
+                    .ToListAsync(cancellationToken)
+                : new List<Location>();
+
+            // Elevator lookup keyed exclusively by composite (ElevatorCode + ElevatorLocationCode).
+            // We don't keep a bare-ElevatorCode fallback — codes like DIRECT are shared
+            // across many physical locations and the bare-code lookup would pick an
+            // arbitrary row, mislabeling every non-composite-matched ticket.
             var elevatorLookup = new Dictionary<string, Elevator>();
             foreach (var e in elevatorList)
             {
@@ -1486,29 +1505,43 @@ public class SqlDataService : IDataService
                 var compositeKey = $"{e.ElevatorCode.Trim()}|{(e.ElevatorLocationCode ?? "").Trim()}";
                 if (!elevatorLookup.ContainsKey(compositeKey))
                     elevatorLookup[compositeKey] = e;
-                // Also store by ElevatorCode alone as fallback
-                if (!elevatorLookup.ContainsKey(e.ElevatorCode.Trim()))
-                    elevatorLookup[e.ElevatorCode.Trim()] = e;
+            }
+
+            // Location fallback lookup keyed by Location_Code only.
+            var locationLookup = new Dictionary<string, Location>();
+            foreach (var l in locationList)
+            {
+                if (l.LocationCode == null) continue;
+                var key = l.LocationCode.Trim();
+                if (!locationLookup.ContainsKey(key))
+                    locationLookup[key] = l;
             }
 
             foreach (var ticket in tickets)
             {
-                if (string.IsNullOrEmpty(ticket.ElevatorCode)) continue;
-                var code = ticket.ElevatorCode.Trim();
-                var locCode = (ticket.UnloadOrganizationCode ?? "").Trim();
+                var orgCode = (ticket.OrganizationCode ?? "").Trim();
 
-                // Try precise match first (ElevatorCode + LocationCode), then fallback to ElevatorCode only
-                if (elevatorLookup.TryGetValue($"{code}|{locCode}", out var elev)
-                    || elevatorLookup.TryGetValue(code, out elev))
+                if (!string.IsNullOrWhiteSpace(ticket.ElevatorCode))
                 {
-                    ticket.ElevatorCity = elev.City?.Trim();
-                    ticket.ElevatorState = elev.State?.Trim();
+                    // Primary path — composite GNP026 lookup
+                    var code = ticket.ElevatorCode.Trim();
+                    if (elevatorLookup.TryGetValue($"{code}|{orgCode}", out var elev))
+                    {
+                        ticket.ElevatorCity = elev.City?.Trim();
+                        ticket.ElevatorState = elev.State?.Trim();
+                    }
+                }
+                else if (orgCode.Length > 0 && locationLookup.TryGetValue(orgCode, out var loc))
+                {
+                    // Fallback — ticket has no elevator code, resolve via GNP003 by OrganizationCode
+                    ticket.ElevatorCity = loc.City?.Trim();
+                    ticket.ElevatorState = loc.State?.Trim();
                 }
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Elevator lookup from vw_GNP026 failed — tickets will load without location data [{TraceId}]", GetTraceId());
+            _logger.LogWarning(ex, "Elevator/location lookup failed — tickets will load without location data [{TraceId}]", GetTraceId());
         }
     }
 
@@ -1924,7 +1957,7 @@ public class SqlDataService : IDataService
         {
             _logger.LogInformation("Attempting to retrieve notes from database");
 
-            var query = _appContext.Notes.AsNoTracking();
+            var query = _appContext.Notes.AsNoTracking().Where(n => !n.IsDeleted);
             var tuList = tradeUnits?.Where(t => !string.IsNullOrEmpty(t)).ToList();
             if (tuList is { Count: > 0 })
             {
@@ -1962,7 +1995,7 @@ public class SqlDataService : IDataService
         {
             var notes = await _appContext.Notes
                 .AsNoTracking()
-                .Where(n => n.CustomerId == customerId)
+                .Where(n => n.CustomerId == customerId && !n.IsDeleted)
                 .OrderByDescending(n => n.CreatedAt)
                 .ToListAsync(cancellationToken);
             var nameMap = await ResolveDisplayNamesAsync(
@@ -1989,7 +2022,7 @@ public class SqlDataService : IDataService
     }
 
     public async Task<Note?> GetNoteByIdAsync(long noteId, CancellationToken cancellationToken = default)
-        => await _appContext.Notes.AsNoTracking().FirstOrDefaultAsync(n => n.Id == noteId, cancellationToken);
+        => await _appContext.Notes.AsNoTracking().FirstOrDefaultAsync(n => n.Id == noteId && !n.IsDeleted, cancellationToken);
 
     public async Task<Note> AddNoteAsync(long customerId, string content, string? tradeUnit = null, CancellationToken cancellationToken = default)
     {
@@ -2034,7 +2067,7 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var note = await _appContext.Notes.FirstOrDefaultAsync(n => n.Id == noteId, cancellationToken);
+            var note = await _appContext.Notes.FirstOrDefaultAsync(n => n.Id == noteId && !n.IsDeleted, cancellationToken);
             if (note == null)
             {
                 return null;
@@ -2062,7 +2095,7 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var note = await _appContext.Notes.FirstOrDefaultAsync(n => n.Id == noteId, cancellationToken);
+            var note = await _appContext.Notes.FirstOrDefaultAsync(n => n.Id == noteId && !n.IsDeleted, cancellationToken);
             if (note == null)
             {
                 return null;
@@ -2092,16 +2125,21 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var note = await _appContext.Notes.FirstOrDefaultAsync(n => n.Id == noteId, cancellationToken);
+            // Soft delete: keep the row, mark IsDeleted/DeletedAt/DeletedBy. Reads filter on
+            // !IsDeleted so the user-facing behavior is unchanged, but the record can be
+            // recovered later by flipping IsDeleted back to false.
+            var note = await _appContext.Notes.FirstOrDefaultAsync(n => n.Id == noteId && !n.IsDeleted, cancellationToken);
             if (note == null)
             {
                 return;
             }
 
-            _appContext.Notes.Remove(note);
+            note.IsDeleted = true;
+            note.DeletedAt = DateTime.UtcNow;
+            note.DeletedBy = GetCurrentUser();
             await _appContext.SaveChangesAsync(cancellationToken);
 
-            _logger.LogInformation("Deleted note {NoteId}", noteId);
+            _logger.LogInformation("Soft-deleted note {NoteId} (DeletedBy={DeletedBy})", noteId, note.DeletedBy);
         }
         catch (Exception ex)
         {
