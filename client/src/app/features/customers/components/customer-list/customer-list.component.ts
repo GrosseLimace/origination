@@ -296,22 +296,27 @@ export class CustomerListComponent {
     // (a) filter by resolved customerIds, or (b) return early and keep the current
     // view + spinner. We never fall through to "all customers" while a list is selected
     // — that's the back-to-back bug where the second pick briefly showed everyone.
+    //
+    // We check `customerIds === undefined` (rather than .length) to distinguish
+    // "not yet computed" from "computed as zero matches". Zero matches must flow
+    // through to filteredCustomers.set([]) so the template renders "No customers
+    // found" instead of leaving the previous (often unfiltered) list visible.
     if (this.selectedListId() && this.selectedListId() !== 'all') {
       let savedList = this.savedLists().find(l => String(l.id) === this.selectedListId());
       if (!savedList) {
         // Saved list not in the array yet (mid-refetch / pre-load). Keep current view.
         return;
       }
-      if (!savedList.customerIds?.length) {
+      if (savedList.customerIds === undefined) {
         this._runSavedListNlq(savedList);
         // _runSavedListNlq may have synchronously called _executeNlq which patches
         // appState via setSavedLists. Re-read so we see the resolved customerIds
         // without waiting for the savedLists effect to re-run applyFilters.
         savedList = this.savedLists().find(l => String(l.id) === this.selectedListId());
       }
-      if (!savedList?.customerIds?.length) {
-        // Async path (forkJoin in flight) or zero matches — keep current filteredCustomers
-        // until the next signal-driven re-run. _runSavedListNlq has set savedListLoading.
+      if (savedList?.customerIds === undefined) {
+        // Async path (forkJoin in flight) — keep spinner up; the next signal-driven
+        // re-run will set filteredCustomers once customerIds resolves (even to []).
         return;
       }
       result = result.filter(c => savedList!.customerIds!.includes(c.id));
@@ -336,15 +341,23 @@ export class CustomerListComponent {
   /** Called when the user selects a saved list from the dropdown. */
   onSavedListChange(): void {
     this._cancelSavedList$.next(); // Cancel any in-flight NLQ from previous list
-    this.savedListLoading.set(false);
-    this.appStateService.setSelectedSavedListId(this.selectedListId());
-    if (this.selectedListId() && this.selectedListId() !== 'all') {
+    const id = this.selectedListId();
+    this.appStateService.setSelectedSavedListId(id);
+    if (id && id !== 'all') {
+      // Show spinner immediately on click so the user gets visual feedback.
+      // _runSavedListNlq will either keep it on (async fetch path) or _executeNlq
+      // will clear it (synchronous cached path). Without this set-true here, the
+      // sync path can paint a single frame of "all customers + no spinner" before
+      // the spinner flips on inside _runSavedListNlq.
+      this.savedListLoading.set(true);
       // Clear cached customerIds so the NLQ re-runs for the new selection.
       // We mutate directly because savedLists is fed via an input binding from the parent —
       // an immutable swap on appState wouldn't propagate to our input, but a mutation on the
       // shared object reference is visible everywhere that holds it.
-      const savedList = this.savedLists().find(l => String(l.id) === this.selectedListId());
+      const savedList = this.savedLists().find(l => String(l.id) === id);
       if (savedList) savedList.customerIds = undefined as any;
+    } else {
+      this.savedListLoading.set(false);
     }
     this.applyFilters();
   }
