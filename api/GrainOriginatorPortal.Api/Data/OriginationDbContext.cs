@@ -152,6 +152,7 @@ public class OriginationDbContext : DbContext
 
             // Pricing
             entity.Property(e => e.PriceTypeCode).HasColumnName("PriceTypeCode").HasMaxLength(10).IsRequired(false);
+            entity.Property(e => e.SpecialType).HasColumnName("SpecialType").HasMaxLength(50).IsRequired(false);
 
             // Customer confirmation status
             entity.Property(e => e.CustomerConfirmStatus).HasColumnName("CustomerConfirmStatus").HasMaxLength(100).IsRequired(false);

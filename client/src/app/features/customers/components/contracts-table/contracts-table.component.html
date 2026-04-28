@@ -35,12 +35,88 @@
             }
           </div>
         </div>
-        <div class="overflow-auto relative max-h-[400px] 2xl:max-h-[calc(100vh-14rem)]">
+
+        <!-- Summary bar: totals across currently visible contracts. Collapsible; designed to grow. -->
+        @if (displayedContracts.length > 0) {
+          <div class="border-b border-gray-100 dark:border-gray-700 transition-colors"
+               [ngClass]="summaryExpanded()
+                 ? 'bg-white dark:bg-gray-800'
+                 : 'bg-gray-50 dark:bg-gray-900/40'">
+            <button
+              (click)="summaryExpanded.set(!summaryExpanded())"
+              class="w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors"
+              [ngClass]="summaryExpanded()
+                ? 'text-gray-900 dark:text-white font-medium'
+                : 'text-gray-500 dark:text-gray-400'">
+              <svg class="w-4 h-4 text-gray-500 dark:text-gray-400 flex-shrink-0 transition-transform" [class.rotate-90]="summaryExpanded()" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 18 6-6-6-6"/>
+              </svg>
+              Customer Contract Summary
+            </button>
+            @if (summaryExpanded()) {
+              <dl class="px-3 pb-2 text-sm divide-y divide-gray-200 dark:divide-gray-700">
+                <div class="flex items-center gap-3 py-1.5 flex-wrap">
+                  <dt class="text-gray-600 dark:text-gray-400">
+                    Total Undelivered <span class="text-gray-500 dark:text-gray-500">({{ totalSummary().count }})</span>
+                  </dt>
+                  @if (totalSummary().byCommodity.length > 0) {
+                    <div class="flex items-center gap-1 flex-wrap">
+                      @for (c of totalSummary().byCommodity; track c.code) {
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
+                          {{ c.code }}&nbsp;<span class="xl:hidden">{{ formatCompactBu(c.bushels) }}</span><span class="hidden xl:inline">{{ c.bushels | number:'1.0-0' }} bu</span>
+                        </span>
+                      }
+                    </div>
+                  }
+                  <dd class="ml-auto font-medium text-gray-900 dark:text-white">
+                    {{ totalSummary().total | number:'1.0-0' }} bu
+                  </dd>
+                </div>
+                <div class="flex items-center gap-3 py-1.5 flex-wrap">
+                  <dt class="text-gray-600 dark:text-gray-400">
+                    {{ currentMonthLabel() }} Undelivered <span class="text-gray-500 dark:text-gray-500">({{ thisMonthSummary().count }})</span>
+                  </dt>
+                  @if (thisMonthSummary().byCommodity.length > 0) {
+                    <div class="flex items-center gap-1 flex-wrap">
+                      @for (c of thisMonthSummary().byCommodity; track c.code) {
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
+                          {{ c.code }}&nbsp;<span class="xl:hidden">{{ formatCompactBu(c.bushels) }}</span><span class="hidden xl:inline">{{ c.bushels | number:'1.0-0' }} bu</span>
+                        </span>
+                      }
+                    </div>
+                  }
+                  <dd class="ml-auto font-medium text-gray-900 dark:text-white">
+                    {{ thisMonthSummary().total | number:'1.0-0' }} bu
+                  </dd>
+                </div>
+                <div class="flex items-center gap-3 py-1.5 flex-wrap">
+                  <dt class="text-gray-600 dark:text-gray-400">
+                    Unsettled Total <span class="text-gray-500 dark:text-gray-500">({{ unsettledSummary().count }})</span>
+                  </dt>
+                  @if (unsettledSummary().byCommodity.length > 0) {
+                    <div class="flex items-center gap-1 flex-wrap">
+                      @for (c of unsettledSummary().byCommodity; track c.code) {
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
+                          {{ c.code }}&nbsp;<span class="xl:hidden">{{ formatCompactBu(c.bushels) }}</span><span class="hidden xl:inline">{{ c.bushels | number:'1.0-0' }} bu</span>
+                        </span>
+                      }
+                    </div>
+                  }
+                  <dd class="ml-auto font-medium text-gray-900 dark:text-white">
+                    {{ unsettledSummary().total | number:'1.0-0' }} bu
+                  </dd>
+                </div>
+              </dl>
+            }
+          </div>
+        }
+
+        <div class="overflow-auto relative max-h-[400px] 2xl:max-h-[calc(100vh-14rem)] [&_thead_th]:!px-2 [&_tbody_td]:!px-2">
         <app-table [stickyHeader]="true">
           <app-table-header>
             <app-table-row>
-              <app-table-head [sortable]="true" (click)="handleSort('contractNumber')">
-                <span class="flex items-center gap-1">
+              <app-table-head [sortable]="true" thClass="!text-center" (click)="handleSort('contractNumber')">
+                <span class="flex items-center justify-center gap-1">
                   Contract
                   <span [class]="getSortIconClass('contractNumber')">
                     @if (currentSortColumn() === 'contractNumber' && currentSortDirection() === 'asc') {
@@ -59,8 +135,8 @@
                   </span>
                 </span>
               </app-table-head>
-              <app-table-head [sortable]="true" (click)="handleSort('date')" >
-                <span class="flex items-center gap-1">
+              <app-table-head [sortable]="true" thClass="!text-center" (click)="handleSort('date')" >
+                <span class="flex items-center justify-center gap-1">
                   Date
                   <span [class]="getSortIconClass('date')">
                     @if (currentSortColumn() === 'date' && currentSortDirection() === 'asc') {
@@ -79,8 +155,8 @@
                   </span>
                 </span>
               </app-table-head>
-              <app-table-head [sortable]="true" (click)="handleSort('crop')">
-                <span class="flex items-center gap-1">
+              <app-table-head [sortable]="true" thClass="!text-center" (click)="handleSort('crop')">
+                <span class="flex items-center justify-center gap-1">
                   Crop
                   <span [class]="getSortIconClass('crop')">
                     @if (currentSortColumn() === 'crop' && currentSortDirection() === 'asc') {
@@ -99,8 +175,8 @@
                   </span>
                 </span>
               </app-table-head>
-              <app-table-head [sortable]="true" (click)="handleSort('quantity')">
-                <span class="flex items-center gap-1">
+              <app-table-head [sortable]="true" thClass="!text-center" (click)="handleSort('quantity')">
+                <span class="flex items-center justify-center gap-1">
                   Quantity
                   <span [class]="getSortIconClass('quantity')">
                     @if (currentSortColumn() === 'quantity' && currentSortDirection() === 'asc') {
@@ -119,8 +195,28 @@
                   </span>
                 </span>
               </app-table-head>
-              <app-table-head [sortable]="true" (click)="handleSort('price')">
-                <span class="flex items-center gap-1">
+              <app-table-head [sortable]="true" thClass="!text-center" (click)="handleSort('specialType')">
+                <span class="flex items-center justify-center gap-1">
+                  Special Type
+                  <span [class]="getSortIconClass('specialType')">
+                    @if (currentSortColumn() === 'specialType' && currentSortDirection() === 'asc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                      </svg>
+                    } @else if (currentSortColumn() === 'specialType' && currentSortDirection() === 'desc') {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                      </svg>
+                    } @else {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                      </svg>
+                    }
+                  </span>
+                </span>
+              </app-table-head>
+              <app-table-head [sortable]="true" thClass="!text-center" (click)="handleSort('price')">
+                <span class="flex items-center justify-center gap-1">
                   Price
                   <span [class]="getSortIconClass('price')">
                     @if (currentSortColumn() === 'price' && currentSortDirection() === 'asc') {
@@ -139,8 +235,8 @@
                   </span>
                 </span>
               </app-table-head>
-              <app-table-head [sortable]="true" (click)="handleSort('deliveryStart')" >
-                <span class="flex items-center gap-1">
+              <app-table-head [sortable]="true" thClass="!text-center" (click)="handleSort('deliveryStart')" >
+                <span class="flex items-center justify-center gap-1">
                   Delivery Period
                   <span [class]="getSortIconClass('deliveryStart')">
                     @if (currentSortColumn() === 'deliveryStart' && currentSortDirection() === 'asc') {
@@ -159,7 +255,7 @@
                   </span>
                 </span>
               </app-table-head>
-              <app-table-head [sortable]="true" (click)="handleSort('status')">
+              <app-table-head [sortable]="true" thClass="!text-center" (click)="handleSort('status')">
                 <span class="flex items-center justify-center gap-1">
                   Delivery Status
                   <span [class]="getSortIconClass('status')">
@@ -191,8 +287,8 @@
                 (rowClick)="toggleRow(contract.id)"
                 [class]="getRowHighlight(contract)"
               >
-                <app-table-cell>
-                  <div class="flex items-center gap-1.5">
+                <app-table-cell tdClass="!text-center">
+                  <div class="flex items-center justify-center gap-1.5">
                     <span class="text-gray-400 flex-shrink-0">
                       @if (expandedRows.has(contract.id)) {
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -209,19 +305,22 @@
                     </span>
                   </div>
                 </app-table-cell>
-                <app-table-cell >
-                  <span [class]="!contract.signed ? 'text-scoular-red-accessible dark:text-scoular-red' : ''">{{ contract.contractDate | date:'M/d/yyyy' }}</span>
+                <app-table-cell tdClass="!text-center">
+                  <span [class]="!contract.signed ? 'text-scoular-red-accessible dark:text-scoular-red' : ''">{{ contract.contractDate | date:'M/d/yy' }}</span>
                 </app-table-cell>
-                <app-table-cell>
+                <app-table-cell tdClass="!text-center">
                   <span [class]="!contract.signed ? 'text-scoular-red-accessible dark:text-scoular-red' : ''">{{ contract.commodityCode || contract.commodityDescription }}</span>
                 </app-table-cell>
-                <app-table-cell>
+                <app-table-cell tdClass="!text-center">
                   <span [class]="!contract.signed ? 'text-scoular-red-accessible dark:text-scoular-red' : ''">{{ contract.quantity | number }} {{ contract.unit }}</span>
                 </app-table-cell>
-                <app-table-cell>
+                <app-table-cell tdClass="!text-center">
+                  <span [class]="!contract.signed ? 'text-scoular-red-accessible dark:text-scoular-red' : ''">{{ contract.specialType || '—' }}</span>
+                </app-table-cell>
+                <app-table-cell tdClass="!text-center">
                   @if (getPricingInfo(contract); as info) {
                     @if (info.status === 'FLAT' && info.cashPrice != null) {
-                      <span [class]="!contract.signed ? 'text-scoular-red-accessible dark:text-scoular-red' : ''">{{ info.cashPrice | currency:'USD':'symbol':'1.2-2' }}/{{ getSingularUnit(contract.unit) }}</span>
+                      <span [class]="!contract.signed ? 'text-scoular-red-accessible dark:text-scoular-red' : ''">{{ info.cashPrice | currency:'USD':'symbol':'1.2-6' }}/{{ getSingularUnit(contract.unit) }}</span>
                     } @else if (info.status === 'FLAT') {
                       <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Priced</span>
                     } @else if (info.status === 'PRICED') {
@@ -229,7 +328,13 @@
                     } @else if (info.status === 'PARTIAL') {
                       <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-scoular-yellow/10 text-scoular-yellow dark:bg-scoular-yellow/20 dark:text-scoular-yellow">Partial</span>
                     } @else if (info.status === 'UNPRICED') {
-                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">Unpriced</span>
+                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
+                        @if (info.basisPrice != null) {
+                          {{ info.basisPrice | currency:'USD':'symbol':'1.2-2' }}/{{ getSingularUnit(contract.unit) }}
+                        } @else {
+                          Unpriced
+                        }
+                      </span>
                     } @else if (info.status === 'DEFERRED') {
                       <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Deferred</span>
                     } @else if (info.status === 'LOADING') {
@@ -239,10 +344,10 @@
                     }
                   }
                 </app-table-cell>
-                <app-table-cell >
-                  <span [class]="!contract.signed ? 'text-scoular-red-accessible dark:text-scoular-red' : ''">{{ contract.deliveryStart | date:'M/d/yyyy' }} - {{ contract.deliveryEnd | date:'M/d/yyyy' }}</span>
+                <app-table-cell tdClass="!text-center">
+                  <span [class]="!contract.signed ? 'text-scoular-red-accessible dark:text-scoular-red' : ''">{{ contract.deliveryStart | date:'M/d/yy' }} - {{ contract.deliveryEnd | date:'M/d/yy' }}</span>
                 </app-table-cell>
-                <app-table-cell class="text-center">
+                <app-table-cell tdClass="!text-center">
                   <span [class]="getStatusClass(getCalculatedStatus(contract))">
                     {{ getCalculatedStatus(contract) }}
                   </span>
@@ -252,7 +357,7 @@
               <!-- Expanded Row -->
               @if (expandedRows.has(contract.id)) {
                 <app-table-row [class]="'bg-gray-50 dark:bg-gray-800/50'">
-                  <app-table-cell [colspan]="7">
+                  <app-table-cell [colspan]="8">
                     <div class="block py-6 max-w-[calc(100vw-28rem)] 2xl:max-w-none">
                       @if ((contract.customerConfirmStatus && contract.customerConfirmStatus !== 'Confirmed') || getCalculatedStatus(contract) === 'Past Due') {
                         <div class="mb-4 flex items-center gap-2 flex-wrap">
@@ -286,8 +391,8 @@
                             ></div>
                           </div>
                           <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-2">
-                            <span>{{ getDeliveryStats(contract).deliveredBushels | number }} {{ contract.unit }} delivered</span>
-                            <span>{{ getDeliveryStats(contract).remainingBushels | number }} {{ contract.unit }} remaining</span>
+                            <span>{{ getDeliveryStats(contract).deliveredBushels | number:'1.0-0' }} {{ contract.unit }} delivered</span>
+                            <span>{{ getDeliveryStats(contract).remainingBushels | number:'1.0-0' }} {{ contract.unit }} remaining</span>
                           </div>
                         } @else {
                           <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden w-full"></div>
@@ -297,9 +402,29 @@
                         }
                       </div>
 
-                      <!-- Three column layout -->
+                      <!-- Three column layout: Contract identity → Pricing → Fulfillment -->
                       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8 w-full">
-                        <!-- Column 1 -->
+                        <!-- Column 1: Contract identity -->
+                        <div class="space-y-5">
+                          <div class="flex flex-col">
+                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Contract Number</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ contract.contractNumber || 'N/A' }}</span>
+                          </div>
+                          <div class="flex flex-col">
+                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Contract Date</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ contract.contractDate | date:'M/d/yyyy' }}</span>
+                          </div>
+                          <div class="flex flex-col">
+                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Delivery Period</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ contract.deliveryStart | date:'M/d/yyyy' }} - {{ contract.deliveryEnd | date:'M/d/yyyy' }}</span>
+                          </div>
+                          <div class="flex flex-col">
+                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Unit Type</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ contract.unit || 'N/A' }}</span>
+                          </div>
+                        </div>
+
+                        <!-- Column 2: Pricing -->
                         <div class="space-y-5">
                           <div class="flex flex-col">
                             <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Contract Value</span>
@@ -312,7 +437,7 @@
                             <span class="font-medium text-gray-900 dark:text-gray-100">
                               @if (getPricingInfo(contract); as info) {
                                 @if (info.status === 'FLAT' && info.cashPrice != null) {
-                                  {{ info.cashPrice | currency:'USD':'symbol':'1.4-4' }}
+                                  {{ info.cashPrice | currency:'USD':'symbol':'1.2-6' }}
                                 } @else if (info.status === 'FLAT') {
                                   <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Priced</span>
                                 } @else if (info.status === 'PRICED') {
@@ -320,7 +445,13 @@
                                 } @else if (info.status === 'PARTIAL') {
                                   <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-scoular-yellow/10 text-scoular-yellow dark:bg-scoular-yellow/20 dark:text-scoular-yellow">Partial</span>
                                 } @else if (info.status === 'UNPRICED') {
-                                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">Unpriced</span>
+                                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
+                                    @if (info.basisPrice != null) {
+                                      Unpriced Basis {{ info.basisPrice | currency:'USD':'symbol':'1.2-2' }}/{{ getSingularUnit(contract.unit) }}
+                                    } @else {
+                                      Unpriced
+                                    }
+                                  </span>
                                 } @else if (info.status === 'DEFERRED') {
                                   <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Deferred</span>
                                 } @else if (info.status === 'LOADING') {
@@ -331,15 +462,65 @@
                               }
                             </span>
                           </div>
+                          @if (getPricingInfo(contract).status === 'PARTIAL' || getPricingInfo(contract).status === 'UNPRICED') {
+                            <div class="flex flex-col">
+                              <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Unpriced Quantity</span>
+                              <span class="font-medium text-gray-900 dark:text-gray-100">
+                                @if (getUnpricedQty(contract); as unpriced) {
+                                  {{ unpriced | number }} {{ contract.unit }}
+                                } @else {
+                                  —
+                                }
+                              </span>
+                            </div>
+                          }
                           <div class="flex flex-col">
-                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Contract Date</span>
-                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ contract.contractDate | date:'M/d/yyyy' }}</span>
+                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Market Zone</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ contract.marketZone || 'N/A' }}</span>
                           </div>
+                          <div class="flex flex-col">
+                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Basis Price Location</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ contract.basisLocation || 'N/A' }}</span>
+                          </div>
+                        </div>
+
+                        <!-- Column 3: Fulfillment -->
+                        <div class="space-y-5">
                           <div class="flex flex-col">
                             <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Delivered</span>
                             <span class="font-medium text-gray-900 dark:text-gray-100">
                               @if (getDeliveryStats(contract).computable) {
-                                {{ getDeliveryStats(contract).deliveredBushels | number }} {{ contract.unit }}
+                                {{ getDeliveryStats(contract).deliveredBushels | number:'1.2-2' }} {{ contract.unit }}
+                              } @else {
+                                —
+                              }
+                            </span>
+                          </div>
+                          <div class="flex flex-col">
+                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Remaining Quantity</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">
+                              @if (getDeliveryStats(contract).computable) {
+                                {{ getDeliveryStats(contract).remainingBushels | number:'1.2-2' }} {{ contract.unit }}
+                              } @else {
+                                —
+                              }
+                            </span>
+                          </div>
+                          <div class="flex flex-col">
+                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Paid</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">
+                              @if (getDeliveryStats(contract).computable) {
+                                {{ getDeliveryStats(contract).paidBushels | number:'1.2-2' }} {{ contract.unit }}
+                              } @else {
+                                —
+                              }
+                            </span>
+                          </div>
+                          <div class="flex flex-col">
+                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Unsettled</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">
+                              @if (getDeliveryStats(contract).computable) {
+                                {{ getDeliveryStats(contract).unsettledBushels | number:'1.2-2' }} {{ contract.unit }}
                               } @else {
                                 —
                               }
@@ -354,44 +535,6 @@
                                 —
                               }
                             </span>
-                          </div>
-                        </div>
-
-                        <!-- Column 2 -->
-                        <div class="space-y-5">
-                          <div class="flex flex-col">
-                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Contract Number</span>
-                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ contract.contractNumber || 'N/A' }}</span>
-                          </div>
-                          <div class="flex flex-col">
-                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Delivery Period</span>
-                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ contract.deliveryStart | date:'M/d/yyyy' }} - {{ contract.deliveryEnd | date:'M/d/yyyy' }}</span>
-                          </div>
-                          <div class="flex flex-col">
-                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Unit Type</span>
-                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ contract.unit || 'N/A' }}</span>
-                          </div>
-                          <div class="flex flex-col">
-                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Remaining Quantity</span>
-                            <span class="font-medium text-gray-900 dark:text-gray-100">
-                              @if (getDeliveryStats(contract).computable) {
-                                {{ getDeliveryStats(contract).remainingBushels | number }} {{ contract.unit }}
-                              } @else {
-                                —
-                              }
-                            </span>
-                          </div>
-                          <div class="flex flex-col">
-                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Market Zone</span>
-                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ contract.marketZone || 'N/A' }}</span>
-                          </div>
-                        </div>
-
-                        <!-- Column 3 -->
-                        <div class="space-y-5">
-                          <div class="flex flex-col">
-                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Basis Price Location</span>
-                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ contract.basisLocation || 'N/A' }}</span>
                           </div>
                         </div>
                       </div>
@@ -435,7 +578,7 @@
                                   @for (line of getPricingLinesForContract(contract); track line.priceSequence) {
                                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/40">
                                       <td class="px-3 py-2 text-center text-gray-500 dark:text-gray-400">{{ line.priceSequence }}</td>
-                                      <td class="px-3 py-2 text-center text-gray-900 dark:text-gray-100">{{ (line.priceQuantity ?? 0) | number:'1.0-0' }} {{ contract.unit }}</td>
+                                      <td class="px-3 py-2 text-center text-gray-900 dark:text-gray-100">{{ getDisplayPricingQty(contract, line) | number:'1.0-0' }} {{ contract.unit }}</td>
                                       <td class="px-3 py-2 text-center text-gray-900 dark:text-gray-100">{{ line.basisPrice != null ? (line.basisPrice | currency:'USD':'symbol':'1.2-6') : '—' }}</td>
                                       <td class="px-3 py-2 text-center text-gray-900 dark:text-gray-100">{{ line.hedgePrice != null ? (line.hedgePrice | currency:'USD':'symbol':'1.2-6') : '—' }}</td>
                                       <td class="px-3 py-2 text-center font-medium text-gray-900 dark:text-gray-100">{{ line.flatPrice != null ? (line.flatPrice | currency:'USD':'symbol':'1.2-6') : '—' }}</td>

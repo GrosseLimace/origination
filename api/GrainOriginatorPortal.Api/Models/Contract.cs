@@ -53,6 +53,9 @@ public class Contract
     // Pricing type code from ODS (e.g. "P" = priced, "U" = unpriced)
     public string? PriceTypeCode { get; set; }
 
+    // Specialty attribute code from ODS (short code, e.g. "ORG", "NGMO", null for standard)
+    public string? SpecialType { get; set; }
+
     // Customer confirmation status from ODS (e.g. "Confirmed", "Pending", null)
     public string? CustomerConfirmStatus { get; set; }
 

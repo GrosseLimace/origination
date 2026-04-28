@@ -25,6 +25,7 @@ export interface Contract {
   status: ContractStatus;
   signed: boolean;
   priceTypeCode?: string; // ODS PriceTypeCode (e.g. "P" = priced, "U" = unpriced)
+  specialType?: string;   // ODS SpecialType (specialty attribute code; null for standard contracts)
   customerConfirmStatus?: string; // ODS CustomerConfirmStatus (e.g. "Confirmed", "Pending", null)
   closedDate?: Date; // Null = open contract; set = closed/fulfilled
   marketZone?: string; // Market zone from ODS
