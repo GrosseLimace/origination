@@ -567,12 +567,17 @@ export class ContractsTableComponent {
     const remainingInContractUnits = Math.max(0, (contract.quantity || 0) - deliveredInContractUnits);
     const paidInContractUnits = this._convertPoundsToContractUnits(paidLbs, contract.unit, lbsPerBushel);
     const unsettledInContractUnits = this._convertPoundsToContractUnits(unsettledLbs, contract.unit, lbsPerBushel);
-    const progressPercent = contractLbs > 0 ? Math.min(100, (deliveredLbs / contractLbs) * 100) : 0;
+    // Treat sub-bushel remainders as fully delivered — those slivers can't realistically
+    // be delivered as a separate load, so the contract is effectively complete.
+    const remainingLbs = Math.max(0, contractLbs - deliveredLbs);
+    const isEffectivelyComplete = remainingLbs < lbsPerBushel;
+    const progressPercent = isEffectivelyComplete
+      ? 100
+      : (contractLbs > 0 ? Math.min(100, (deliveredLbs / contractLbs) * 100) : 0);
 
-    // Determine precision based on unit type
-    const unitLower = (contract.unit || '').toLowerCase().trim();
-    const isTons = unitLower === 'st' || unitLower.includes('ton');
-    const round = (n: number) => isTons ? Math.round(n * 100) / 100 : Math.round(n);
+    // Always keep 2 decimal places of precision so the template can render to 2dp
+    // regardless of unit. The number pipe handles display formatting.
+    const round = (n: number) => Math.round(n * 100) / 100;
 
     return {
       deliveredBushels: round(deliveredInContractUnits),
@@ -740,9 +745,13 @@ export class ContractsTableComponent {
   }
 
   getRowHighlight(contract: Contract): string {
-    if (contract.customerConfirmStatus && contract.customerConfirmStatus !== 'Confirmed') return '!bg-amber-100 dark:!bg-amber-500/15';
+    if (contract.customerConfirmStatus && contract.customerConfirmStatus !== 'Confirmed') {
+      return '!bg-amber-100 dark:!bg-amber-500/15 hover:!bg-amber-100 dark:hover:!bg-amber-500/15';
+    }
     const status = this.getCalculatedStatus(contract);
-    if (status === 'Past Due') return '!bg-red-100 dark:!bg-red-500/15';
+    if (status === 'Past Due') {
+      return '!bg-red-100 dark:!bg-red-500/15 hover:!bg-red-100 dark:hover:!bg-red-500/15';
+    }
     return '';
   }
 

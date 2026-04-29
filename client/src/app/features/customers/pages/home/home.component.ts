@@ -293,7 +293,15 @@ export class HomeComponent {
         const batchIds = new Set(list.map(t => t.id));
         const fkExtras = this.tickets().filter(t => !batchIds.has(t.id));
         this.tickets.set([...list, ...fkExtras]);
-        this.appState.setTickets(this.tickets());
+        // Merge into appState rather than overwrite — appState may have cross-TU tickets
+        // (linked producers) that aren't in our local copy. Overwriting drops them and
+        // breaks downstream pages (Insights) that depend on the global ticket set.
+        const merged = [...this.tickets()];
+        const have = new Set(merged.map(t => t.id));
+        for (const t of this.appState.tickets()) {
+          if (!have.has(t.id)) merged.push(t);
+        }
+        this.appState.setTickets(merged);
       },
       error: () => {}
     });
@@ -616,7 +624,34 @@ export class HomeComponent {
     }
   }
 
-  private _fetchMissingLinkedProducers(customer: Customer): void {
+  /** Applies ProducerDetails enrichment onto a freshly-fetched Customer. */
+  private _enrichCustomer(fetched: Customer): Customer {
+    const pd = this.producerDetailsMap().get(fetched.id);
+    if (!pd) return fetched;
+    return {
+      ...fetched,
+      totalAcres: pd.totalAcres ?? fetched.totalAcres,
+      binCapacity: pd.binCapacity ?? fetched.binCapacity,
+      primaryContact: pd.primaryContact ?? fetched.primaryContact,
+      commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : fetched.commodities,
+      linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : fetched.linkedProducerIds
+    };
+  }
+
+  /**
+   * Fetches every producer transitively linked to `customer` (forward + reverse) and
+   * populates `_crossTradeUnitCustomers` with the full group so `getLinkedGroup()` can
+   * surface the whole chain — e.g. if A→B and A→C, viewing B still shows C via A.
+   *
+   * BFS walks the graph one hop at a time; each newly discovered customer's own links
+   * are fetched recursively. `visited` guards against cycles. `MAX_GROUP_SIZE` is a
+   * safety cap in case a customer is part of an unexpectedly large link web.
+   */
+  private _fetchMissingLinkedProducers(customer: Customer, visited: Set<number> = new Set()): void {
+    const MAX_GROUP_SIZE = 25;
+    if (visited.has(customer.id) || visited.size >= MAX_GROUP_SIZE) return;
+    visited.add(customer.id);
+
     const linkedIds = customer.linkedProducerIds || [];
     const allCustomers = [...this.customers(), ...this._crossTradeUnitCustomers().values()];
     const missing = linkedIds.filter(sourceId =>
@@ -628,9 +663,8 @@ export class HomeComponent {
       this.apiService.getCustomerBySourceId(sourceId).pipe(catchError(() => of(null as Customer | null)))
     );
 
-    // Incoming: fetch customers that link TO this one (reverse links). Needed because when no TU
-    // is selected the main customer roster is empty, so getLinkedGroup() can't discover reverse
-    // links from this.customers(). Safe when a TU IS selected — results are deduped in the cache.
+    // Incoming: fetch customers that link TO this one (reverse links). Needed so non-
+    // loaded producers who reverse-link to this customer still appear in the dropdown.
     const incoming$ = customer.sourceCustomerId
       ? this.apiService.getCustomersLinkedTo(customer.sourceCustomerId)
       : of([] as Customer[]);
@@ -642,30 +676,29 @@ export class HomeComponent {
       outgoing: outgoingRequests.length > 0 ? forkJoin(outgoingRequests) : of([] as (Customer | null)[]),
       incoming: incoming$
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(({ outgoing, incoming }) => {
-      const cache = new Map(this._crossTradeUnitCustomers());
-      const enrich = (fetched: Customer): Customer => {
-        const pd = this.producerDetailsMap().get(fetched.id);
-        if (!pd) return fetched;
-        return {
-          ...fetched,
-          totalAcres: pd.totalAcres ?? fetched.totalAcres,
-          binCapacity: pd.binCapacity ?? fetched.binCapacity,
-          primaryContact: pd.primaryContact ?? fetched.primaryContact,
-          commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : fetched.commodities,
-          linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : fetched.linkedProducerIds
-        };
-      };
+      // Merge new fetches into the cache. Use .update() so concurrent BFS branches
+      // from different customers don't clobber each other's additions.
+      this._crossTradeUnitCustomers.update(current => {
+        const next = new Map(current);
+        for (const fetched of outgoing) {
+          if (!fetched) continue;
+          if (!next.has(fetched.id)) next.set(fetched.id, this._enrichCustomer(fetched));
+        }
+        for (const fetched of incoming) {
+          if (!fetched || fetched.id === customer.id) continue;
+          if (!next.has(fetched.id)) next.set(fetched.id, this._enrichCustomer(fetched));
+        }
+        return next;
+      });
 
-      for (const fetched of outgoing) {
-        if (!fetched) continue;
-        cache.set(fetched.id, enrich(fetched));
+      // Recurse into each newly-discovered customer so their own links (both
+      // directions) get fetched too — completes the transitive closure.
+      const discovered = [...outgoing, ...incoming]
+        .filter((c): c is Customer => !!c && !visited.has(c.id));
+      for (const next of discovered) {
+        this._fetchMissingLinkedProducers(next, visited);
       }
-      for (const fetched of incoming) {
-        if (!fetched || fetched.id === customer.id) continue;
-        // Don't clobber an entry already in cache from the outgoing fetch
-        if (!cache.has(fetched.id)) cache.set(fetched.id, enrich(fetched));
-      }
-      this._crossTradeUnitCustomers.set(cache);
+
       const sel = this.selectedCustomer();
       if (sel?.id === customer.id) this._loadCustomerData(sel.id);
     });
@@ -738,7 +771,13 @@ export class HomeComponent {
         const merged = [...existing];
         tickets.forEach(t => { if (!merged.some(e => e.id === t.id)) merged.push(t); });
         this.tickets.set(merged);
-        this.appState.setTickets(merged);
+        // Merge into appState rather than overwrite — see comment in load path above.
+        const appMerged = [...merged];
+        const have = new Set(appMerged.map(t => t.id));
+        for (const t of this.appState.tickets()) {
+          if (!have.has(t.id)) appMerged.push(t);
+        }
+        this.appState.setTickets(appMerged);
         this.isLoadingTickets.set(false);
         this._loadCustomerData(customerId);
 
@@ -876,7 +915,11 @@ export class HomeComponent {
     });
 
     for (const linkedIdStr of data.removedIncomingIds) {
-      const linkedCustomer = this.customers().find(c => c.sourceCustomerId === linkedIdStr);
+      // Look in BOTH the main customer roster and the cross-TU cache — linked customers
+      // outside the currently-selected trade units live in the cross-TU cache and would
+      // be silently skipped otherwise.
+      const linkedCustomer = this.customers().find(c => c.sourceCustomerId === linkedIdStr)
+        ?? [...this._crossTradeUnitCustomers().values()].find(c => c.sourceCustomerId === linkedIdStr);
       if (!linkedCustomer) continue;
       const currentSourceId = customer.sourceCustomerId || '';
       const updatedLinkedIds = (linkedCustomer.linkedProducerIds || []).filter(id => id !== currentSourceId);
@@ -896,12 +939,21 @@ export class HomeComponent {
           map.set(pd.customerId, pd);
           this.producerDetailsMap.set(map);
           const updatedLinkedCustomer: Customer = { ...linkedCustomer, linkedProducerIds: updatedLinkedIds };
+          // Update whichever store the linked customer lives in so the transitive BFS
+          // sees the new state immediately (no stale A→C edge lingering after removal).
           const idx = this.customers().findIndex(c => c.id === linkedId);
           if (idx >= 0) {
             const arr = [...this.customers()];
             arr[idx] = updatedLinkedCustomer;
             this.customers.set(arr);
             this.appState.setCustomers(arr);
+          }
+          if (this._crossTradeUnitCustomers().has(linkedId)) {
+            this._crossTradeUnitCustomers.update(cache => {
+              const next = new Map(cache);
+              next.set(linkedId, updatedLinkedCustomer);
+              return next;
+            });
           }
         },
         error: () => {}
@@ -939,25 +991,75 @@ export class HomeComponent {
       this.customers.set([...customers, updated]);
     }
 
+    // Keep the cross-TU cache in sync too — a customer viewed across TU boundaries may
+    // live there instead of the main roster. Without this, the transitive BFS could
+    // still hit a stale copy with the pre-edit linkedProducerIds.
+    if (this._crossTradeUnitCustomers().has(updated.id)) {
+      this._crossTradeUnitCustomers.update(cache => {
+        const next = new Map(cache);
+        next.set(updated.id, updated);
+        return next;
+      });
+    }
+
     this.selectedCustomer.set(updated);
     this.appState.setCustomers(this.customers());
     this.appState.selectCustomer(updated);
 
-    // Fetch any newly linked producers that aren't loaded yet so the dropdown updates immediately
+    // Fetch any newly linked producers that aren't loaded yet so the dropdown updates
+    // immediately. Recursive BFS (transitive) so newly added edges extend the group.
     this._fetchMissingLinkedProducers(updated);
     this._loadCustomerData(updated.id, updated);
   }
 
+  /**
+   * Returns every producer transitively linked to `customer` — both forward (customers
+   * in `customer.linkedProducerIds`) and reverse (customers whose own `linkedProducerIds`
+   * includes `customer.sourceCustomerId`) — walked until the connected component is
+   * exhausted. Prevents infinite loops with a visited set. Caps at 50 members to avoid
+   * worst-case fanout. Relies on `_fetchMissingLinkedProducers` having populated the
+   * cache; if a transitively-linked producer isn't loaded yet, it's silently excluded
+   * until its fetch completes and triggers a re-render.
+   */
   getLinkedGroup(customer: Customer): Customer[] {
+    const MAX_GROUP_SIZE = 50;
     const all = [...this.customers(), ...this._crossTradeUnitCustomers().values()];
-    const outgoing = (customer.linkedProducerIds || [])
-      .map(id => all.find(c => c.sourceCustomerId === id))
-      .filter((c): c is Customer => !!c);
-    const incoming = all.filter(c =>
-      c.id !== customer.id &&
-      (c.linkedProducerIds || []).includes(customer.sourceCustomerId || '')
-    );
-    return [...new Map([...outgoing, ...incoming].map(c => [c.id, c])).values()];
+    const bySourceId = new Map<string, Customer>();
+    for (const c of all) {
+      if (c.sourceCustomerId) bySourceId.set(c.sourceCustomerId, c);
+    }
+
+    const visited = new Set<number>([customer.id]);
+    const result = new Map<number, Customer>();
+    const queue: Customer[] = [customer];
+
+    while (queue.length > 0 && visited.size < MAX_GROUP_SIZE) {
+      const cur = queue.shift()!;
+
+      // Forward: follow each id in the current customer's linkedProducerIds
+      for (const sourceId of cur.linkedProducerIds || []) {
+        const neighbor = bySourceId.get(sourceId);
+        if (neighbor && !visited.has(neighbor.id)) {
+          visited.add(neighbor.id);
+          result.set(neighbor.id, neighbor);
+          queue.push(neighbor);
+        }
+      }
+
+      // Reverse: find anyone whose linkedProducerIds mentions the current customer
+      const curSource = cur.sourceCustomerId || '';
+      if (curSource) {
+        for (const other of all) {
+          if (visited.has(other.id)) continue;
+          if ((other.linkedProducerIds || []).includes(curSource)) {
+            visited.add(other.id);
+            result.set(other.id, other);
+            queue.push(other);
+          }
+        }
+      }
+    }
+    return [...result.values()];
   }
 
   handleSelectLinkedCustomer(customerId: number): void {

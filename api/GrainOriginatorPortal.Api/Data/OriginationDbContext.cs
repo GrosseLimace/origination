@@ -120,8 +120,11 @@ public class OriginationDbContext : DbContext
             entity.Property(e => e.Id).HasColumnName("ContractId").IsRequired();
             entity.Property(e => e.CustomerId).HasColumnName("CustomerId"); // FK to Customer
             entity.Property(e => e.CtrmCustomerId).HasColumnName("CtrmCustomerId").HasMaxLength(400).IsRequired(false).HasConversion(v => v, v => v != null ? v.Trim() : v); // Used for saved lists
-            entity.Property(e => e.SourceContractId).HasColumnName("SourceContractId").HasMaxLength(64).IsRequired(false);
-            entity.Property(e => e.ContractNumber).HasColumnName("ContractNumber").HasMaxLength(100).IsRequired(false);
+            // Trim on read — ODS source columns are CHAR-padded, which causes mismatches when
+            // these IDs are compared against trimmed values from other places (e.g. ticket
+            // ContractNumber matched to contract SourceContractId).
+            entity.Property(e => e.SourceContractId).HasColumnName("SourceContractId").HasMaxLength(64).IsRequired(false).HasConversion(v => v, v => v != null ? v.Trim() : v);
+            entity.Property(e => e.ContractNumber).HasColumnName("ContractNumber").HasMaxLength(100).IsRequired(false).HasConversion(v => v, v => v != null ? v.Trim() : v);
             entity.Property(e => e.ContractPrefixType).HasColumnName("ContractPrefixType").HasMaxLength(10).IsRequired(false);
 
             // Customer and commodity info
@@ -202,7 +205,9 @@ public class OriginationDbContext : DbContext
             entity.Property(e => e.TicketNumber).HasColumnName("TicketNumber").HasMaxLength(100);
             entity.Property(e => e.TicketSuffix).HasColumnName("TicketSuffix").HasMaxLength(100);
             entity.Property(e => e.ShipmentTicketNumber).HasColumnName("ShipmentTicketNumber").HasMaxLength(100);
-            entity.Property(e => e.CtrmContractNumber).HasColumnName("ContractNumber").HasMaxLength(100);
+            // Trim on read — ODS pads ContractNumber with whitespace; HashSet/string compares
+            // against Contract.SourceContractId fail without this.
+            entity.Property(e => e.CtrmContractNumber).HasColumnName("ContractNumber").HasMaxLength(100).HasConversion(v => v, v => v != null ? v.Trim() : v);
             entity.Property(e => e.OrganizationCode).HasColumnName("OrganizationCode").HasMaxLength(100);
             entity.Property(e => e.ElevatorCode).HasColumnName("ElevatorCode").HasMaxLength(20).IsRequired(false);
             entity.Property(e => e.UnloadOrganizationCode).HasColumnName("UnloadOrganizationCode").HasMaxLength(20).IsRequired(false);
@@ -279,9 +284,10 @@ public class OriginationDbContext : DbContext
             entity.HasNoKey();
             entity.ToView("vw_ContractPricing", schema: "base");
 
-            // ContractId maps to SourceContractId — the string key used to link to Contract.SourceContractId
-            entity.Property(e => e.ContractId).HasColumnName("SourceContractId").HasMaxLength(64);
-            entity.Property(e => e.ContractNumber).HasColumnName("ContractNumber").HasMaxLength(50);
+            // ContractId maps to SourceContractId — the string key used to link to Contract.SourceContractId.
+            // Trim on read for parity with the Contract entity (CHAR-padded ODS columns).
+            entity.Property(e => e.ContractId).HasColumnName("SourceContractId").HasMaxLength(64).HasConversion(v => v, v => v != null ? v.Trim() : v);
+            entity.Property(e => e.ContractNumber).HasColumnName("ContractNumber").HasMaxLength(50).HasConversion(v => v, v => v != null ? v.Trim() : v);
             entity.Property(e => e.CustomerName).HasColumnName("CustomerName").HasMaxLength(500);
             entity.Property(e => e.PriceSequence).HasColumnName("PriceSequence");
             entity.Property(e => e.PriceQuantity).HasColumnName("PriceQuantity").HasColumnType("decimal(18,6)");
@@ -346,6 +352,18 @@ public class OriginationDbContext : DbContext
             entity.Property(e => e.ElevatorLocationCode).HasColumnName("Elevator_Location_Code").HasMaxLength(4);
             entity.Ignore(e => e.Latitude);
             entity.Ignore(e => e.Longitude);
+        });
+
+        // Configure Location — maps to ctrm.vw_GNP003 (read-only view, no PK).
+        // Used as the fallback for ticket location lookups when the ticket has no
+        // ElevatorCode — the ticket's OrganizationCode is matched against Location_Code.
+        modelBuilder.Entity<Location>(entity =>
+        {
+            entity.ToView("vw_GNP003", schema: "ctrm");
+            entity.HasNoKey();
+            entity.Property(e => e.LocationCode).HasColumnName("Location_Code").HasMaxLength(4);
+            entity.Property(e => e.City).HasColumnName("Location_City").HasMaxLength(30);
+            entity.Property(e => e.State).HasColumnName("Location_State").HasMaxLength(2);
         });
 
         // Configure CommodityConversion — maps to ctrm.vw_GNP024 (read-only view, no PK)
