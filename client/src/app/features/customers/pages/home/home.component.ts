@@ -57,6 +57,7 @@ export class HomeComponent {
   readonly selectedCustomer = signal<Customer | null>(null);
   readonly pendingContractId = signal<number | null>(null);
   readonly pendingTab = signal<string | null>(null);
+  readonly pendingPlantingYear = signal<number | null>(null);
   readonly pendingTicketCrop = signal<string | null>(null);
   readonly selectedTradeUnits = signal<string[]>([]);
   readonly customerContracts = signal<Contract[]>([]);
@@ -161,6 +162,9 @@ export class HomeComponent {
         this.pendingContractId.set(contractId ? parseInt(contractId, 10) : null);
         this.pendingTab.set(params['tab'] ?? null);
         this.pendingTicketCrop.set(params['ticketCrop'] ?? null);
+        const yearParam = params['year'];
+        const yearNum = yearParam ? parseInt(yearParam, 10) : NaN;
+        this.pendingPlantingYear.set(Number.isFinite(yearNum) && yearNum > 0 ? yearNum : null);
         this._selectCustomerById(customerId);
       }
     });

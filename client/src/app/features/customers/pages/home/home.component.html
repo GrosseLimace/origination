@@ -64,7 +64,8 @@
             (onSelectLinkedCustomer)="handleSelectLinkedCustomer($event)"
             [openContractId]="pendingContractId()"
             [openTab]="pendingTab()"
-            [openTicketCrop]="pendingTicketCrop()">
+            [openTicketCrop]="pendingTicketCrop()"
+            [openPlantingYear]="pendingPlantingYear()">
           </app-customer-profile>
         } @else {
           <!-- Empty state — shown on desktop when no customer is selected -->
