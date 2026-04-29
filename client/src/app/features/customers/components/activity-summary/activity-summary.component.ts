@@ -1,6 +1,7 @@
-import { Component, input, effect } from '@angular/core';
+import { Component, input, effect, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, HarvestWindow } from '@models';
+import { AppStateService } from '@core/services/app-state.service';
 
 @Component({
   selector: 'app-activity-summary',
@@ -10,13 +11,22 @@ import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain } from
   templateUrl: './activity-summary.component.html'
 })
 export class ActivitySummaryComponent {
+  private readonly appState = inject(AppStateService);
+  private _conversionMap: Map<string, number> | null = null;
+
   public customer = input.required<Customer>();
   public contracts = input<Contract[]>([]);
   public tickets = input<Ticket[]>([]);
   public plantingIntentions = input<PlantingIntention[]>([]);
   public notes = input<Note[]>([]);
   public storedGrain = input<StoredGrain[]>([]);
-  public allCustomers = input<Customer[]>([]);
+  /** Transitively-linked producers, resolved by home.getLinkedGroup() (BFS over forward + reverse
+   *  edges across both the TU-scoped customers signal and the cross-TU cache). */
+  public linkedCustomers = input<Customer[]>([]);
+  /** Closed historical contracts — needed for the harvest-pace year-over-year comparison.
+   *  customer-profile already maintains this signal and shares it with the contract-pacing
+   *  card; we receive it here as input to avoid a duplicate API fetch. */
+  public historicalContracts = input<Contract[]>([]);
 
   summaryText = '';
 
@@ -29,7 +39,13 @@ export class ActivitySummaryComponent {
       const _plantingIntentions = this.plantingIntentions();
       const _notes = this.notes();
       const _storedGrain = this.storedGrain();
-      const _allCustomers = this.allCustomers();
+      const _linked = this.linkedCustomers();
+      const _historical = this.historicalContracts();
+      // commodityConversions feeds _computeDeliveryStats; tracking it ensures the summary
+      // recalculates once GNP024 lookups become available after an initial empty load.
+      const _conv = this.appState.commodityConversions();
+      // Harvest windows drive _generateHarvestPaceSummary's year-over-year comparison.
+      const _hw = this.appState.harvestWindows();
       this.summaryText = this._generateSummaryParagraph();
     });
   }
@@ -40,6 +56,7 @@ export class ActivitySummaryComponent {
 
       paragraphs.push(this._generateCustomerIntro());
       paragraphs.push(this._generateContractSummary());
+      paragraphs.push(this._generateHarvestPaceSummary());
       paragraphs.push(this._generatePlantingOverview());
       paragraphs.push(this._generateStorageSummary());
       paragraphs.push(this._generateDeliverySummary());
@@ -61,13 +78,18 @@ export class ActivitySummaryComponent {
   private _generateCustomerIntro(): string {
     if (!this.customer()) return '';
 
-    const name = this.customer().name || 'This customer';
+    const customerName = this.customer().name || 'This customer';
     const acres = this.customer().totalAcres || 0;
     const binCapacity = this.customer().binCapacity || 0;
     const farm = this.customer().farm || '';
-    const primaryContact = this.customer().primaryContact || '';
+    const primaryContact = (this.customer().primaryContact || '').trim();
     const commodities = this.customer().commodities || [];
     const linkedGroup = this._getLinkedGroup();
+
+    // Prefer the primary-contact name as the subject of the narrative ("John operates 5,000
+    // acres...") since that's who the merchandiser actually talks to. Fall back to the
+    // producer/business name when no primary contact is on file.
+    const subject = primaryContact || customerName;
 
     const commStr = commodities.length === 1
       ? commodities[0]
@@ -78,7 +100,7 @@ export class ActivitySummaryComponent {
     const parts: string[] = [];
 
     // Opening sentence — who they are
-    let opening = name;
+    let opening = subject;
     if (acres > 0 && farm && farm !== 'Unknown Farm') {
       opening += ` operates ${this._formatQuantity(acres, 'acres')} at ${farm}`;
     } else if (acres > 0) {
@@ -89,12 +111,10 @@ export class ActivitySummaryComponent {
     if (commStr) opening += `, primarily growing ${commStr}`;
     parts.push(opening + '.');
 
-    // Contact + bin capacity
-    const details: string[] = [];
-    if (primaryContact) details.push(`primary contact is ${primaryContact}`);
-    if (binCapacity > 0) details.push(`${this._formatQuantity(binCapacity, 'bushels')} of on-farm bin capacity`);
-    if (details.length > 0) {
-      parts.push(details.map((d, i) => i === 0 ? d.charAt(0).toUpperCase() + d.slice(1) : d).join(', ') + '.');
+    // Bin capacity (the "primary contact is X" sentence is redundant now that the
+    // contact name is the subject of the opening sentence).
+    if (binCapacity > 0) {
+      parts.push(`${this._formatQuantity(binCapacity, 'bushels')} of on-farm bin capacity.`);
     }
 
     // Linked producers
@@ -109,78 +129,150 @@ export class ActivitySummaryComponent {
   }
 
   private _getLinkedGroup(): Customer[] {
-    if (!this.customer() || !this.allCustomers()) return [];
-    const mySourceId = this.customer().sourceCustomerId || '';
-    const outgoing = (this.customer().linkedProducerIds || [])
-      .map(id => this.allCustomers().find(c => c.sourceCustomerId === id))
-      .filter((c): c is Customer => !!c);
-    const incoming = this.allCustomers().filter(c =>
-      mySourceId && (c.linkedProducerIds || []).includes(mySourceId)
-    );
-    return [...new Map([...outgoing, ...incoming].map(c => [c.id, c])).values()]
-      .filter(c => c.id !== this.customer().id);
+    // Authoritative resolution lives on home.getLinkedGroup() — it walks the full
+    // transitive closure (forward + reverse) over customers + cross-TU cache with
+    // a visited guard. We accept the result via input so the intro narrative
+    // matches the linked-producer dropdown count exactly.
+    return this.linkedCustomers();
   }
 
   private _generateContractSummary(): string {
+    // Same scope contracts-table shows — every open contract (closedDate is null), regardless
+    // of status. Active / Pending / Overdue are all on screen; the narrative should describe
+    // the same list.
     const openContracts = (this.contracts() || []).filter(c => c && !c.closedDate);
     if (openContracts.length === 0) return '';
 
-    const now = new Date();
-    const activeContracts = openContracts.filter(c => c.status === 'Active');
     const pendingContracts = openContracts.filter(c => c.status === 'Pending');
-    const fulfilledContracts: Contract[] = []; // Fulfilled contracts are closed and excluded
-    const unsignedContracts = openContracts.filter(c => c.signed === false);
-
-    const overdueContracts = openContracts.filter(c => {
-      if (!c || !c.deliveryEnd) return false;
-      try {
-        const endDate = new Date(c.deliveryEnd);
-        return !isNaN(endDate.getTime()) && (c.status === 'Active' || c.status === 'Pending') && endDate < now;
-      } catch { return false; }
-    });
-
-    if (activeContracts.length === 0 && fulfilledContracts.length === 0) return '';
+    // Overdue + unsigned counts are surfaced in _generateActionItems (with richer
+    // bushel-context wording), so we don't recompute or report them here.
 
     const parts: string[] = [];
-    const activeVolume = activeContracts.reduce((sum, c) => sum + (c.quantity || 0), 0);
-    const activeValue = activeContracts.reduce((sum, c) => sum + (c.totalValue || 0), 0);
+    const totalVolume = openContracts.reduce((sum, c) => sum + (c.quantity || 0), 0);
+    // Contract totalValue from CTRM doesn't reflect discounts/adjustments — intentionally
+    // omitted to avoid showing the producer a misleading "contracts worth $X" number.
 
-    // Determine current crop year from contracts (max = newest/upcoming crop year).
-    // CropYear is when the grain was grown, not when the contract was signed.
-    // Using max ensures we reference the newest crop, not old crop which may dominate by volume.
-    let currentCropYear: number | null = null;
-    for (const c of this.contracts()) {
-      if (c.cropYear && (currentCropYear === null || c.cropYear > currentCropYear)) {
-        currentCropYear = c.cropYear;
-      }
+    // Sum Remaining / Paid / Unsettled bushels via ticket math (matches contracts-table's
+    // Customer Contract Summary bar). Skip contracts whose tickets show effectively complete
+    // (<1 bu remainder) so the narrative agrees with the page's 100%-Filled status.
+    let totalRemaining = 0;
+    let totalPaid = 0;
+    let totalUnsettled = 0;
+    for (const c of openContracts) {
+      const stats = this._computeDeliveryStats(c);
+      if (!stats.computable || stats.isEffectivelyComplete) continue;
+      totalRemaining += stats.remainingBushels;
+      totalPaid += stats.paidBushels;
+      totalUnsettled += stats.unsettledBushels;
     }
 
-    // Open balance: sum openBalanceQuantity from active contracts for current crop year
-    const currentYearActiveContracts = currentCropYear
-      ? activeContracts.filter(c => c.cropYear === currentCropYear)
-      : activeContracts;
-    const totalOpenBalance = currentYearActiveContracts.reduce((sum, c) => sum + (c.openBalanceQuantity || 0), 0);
+    parts.push(`On the contract side, they currently have ${openContracts.length} contract${openContracts.length !== 1 ? 's' : ''} totaling ${this._formatQuantity(totalVolume, 'bushels')}.`);
 
-    if (activeContracts.length > 0) {
-      const cropYearStr = currentCropYear ? ` (CY${currentCropYear})` : '';
-      parts.push(`On the contract side, they currently have ${activeContracts.length} active contract${activeContracts.length !== 1 ? 's' : ''}${cropYearStr} totaling ${this._formatQuantity(activeVolume, 'bushels')} — worth ${this._formatCurrency(activeValue)}.`);
-      if (totalOpenBalance > 0) {
-        parts.push(`${this._formatQuantity(Math.round(totalOpenBalance), 'bushels')} remain unshipped.`);
-      }
-    } else {
-      parts.push(`All ${fulfilledContracts.length} contract${fulfilledContracts.length !== 1 ? 's have' : ' has'} been fulfilled.`);
+    // Remaining / Paid / Unsettled sentence — fragments are conditional so we don't
+    // emit "0 bushels" filler. Skip the whole sentence when all three are zero.
+    const fragments: string[] = [];
+    if (totalRemaining > 0) {
+      fragments.push(`${this._formatQuantity(Math.round(totalRemaining), 'bushels')} remain unshipped`);
+    }
+    if (totalPaid > 0) {
+      fragments.push(`${this._formatQuantity(Math.round(totalPaid), 'bushels')} paid out`);
+    }
+    if (totalUnsettled > 0) {
+      fragments.push(`${this._formatQuantity(Math.round(totalUnsettled), 'bushels')} unsettled (payable now)`);
+    }
+    if (fragments.length === 1) {
+      parts.push(`${fragments[0].charAt(0).toUpperCase() + fragments[0].slice(1)}.`);
+    } else if (fragments.length > 1) {
+      const last = fragments[fragments.length - 1];
+      const rest = fragments.slice(0, -1).join(', ');
+      parts.push(`${rest.charAt(0).toUpperCase() + rest.slice(1)}, with ${last}.`);
     }
 
+    // Worth-noting only carries items that aren't already covered by Action Items
+    // (overdue + unsigned are surfaced there with bushel totals — listing them here
+    // too duplicated the same fact in two places).
     const notes: string[] = [];
     if (pendingContracts.length > 0) notes.push(`${pendingContracts.length} pending`);
-    if (overdueContracts.length > 0) notes.push(`${overdueContracts.length} past their delivery deadline`);
-    if (unsignedContracts.length > 0) notes.push(`${unsignedContracts.length} still awaiting signature`);
 
     if (notes.length > 0) {
       parts.push(`Worth noting: ${notes.join(', ')}.`);
     }
 
     return parts.join(' ');
+  }
+
+  /** Year-over-year harvest contract pace — same logic as the Contract Pacing card.
+   *  Compares total contracted bushels for this calendar year vs last year, gated by
+   *  active harvest windows so the comparison is apples-to-apples (same delivery window). */
+  private _generateHarvestPaceSummary(): string {
+    const open = this.contracts() || [];
+    const historical = this.historicalContracts() || [];
+    if (open.length === 0 && historical.length === 0) return '';
+
+    const windows = (this.appState.harvestWindows() || []).filter(hw => hw.isActive !== false);
+    if (windows.length === 0) return '';
+
+    // Merge open + historical (de-duped by id) the same way the pacing card does.
+    const seen = new Set<number>();
+    const allContracts: Contract[] = [];
+    for (const c of [...open, ...historical]) {
+      if (!c || seen.has(c.id)) continue;
+      seen.add(c.id);
+      allContracts.push(c);
+    }
+
+    const year = new Date().getFullYear();
+    const priorYear = year - 1;
+
+    let totalThisYear = 0;
+    let totalLastYear = 0;
+    for (const hw of windows) {
+      for (const c of allContracts) {
+        if (!this._contractMatchesCommodity(c, hw.commodity)) continue;
+        if (this._contractMatchesHarvestWindow(c, hw, year)) totalThisYear += c.quantity || 0;
+        if (this._contractMatchesHarvestWindow(c, hw, priorYear)) totalLastYear += c.quantity || 0;
+      }
+    }
+
+    if (totalThisYear === 0 && totalLastYear === 0) return '';
+
+    if (totalThisYear > 0 && totalLastYear > 0) {
+      const pct = Math.round(((totalThisYear - totalLastYear) / totalLastYear) * 100);
+      const lead = `Harvest contract pace: ${this._formatQuantity(totalThisYear, 'bushels')} booked for ${year} vs ${this._formatQuantity(totalLastYear, 'bushels')} for ${priorYear}`;
+      if (pct > 0) return `${lead} — running ${pct}% ahead of last year.`;
+      if (pct < 0) return `${lead} — running ${Math.abs(pct)}% behind last year.`;
+      return `${lead} — even with last year.`;
+    }
+    if (totalThisYear > 0) {
+      return `Harvest contract pace: ${this._formatQuantity(totalThisYear, 'bushels')} booked for ${year} (no comparable ${priorYear} contracts to pace against).`;
+    }
+    return `Harvest contract pace: ${this._formatQuantity(totalLastYear, 'bushels')} booked for ${priorYear}, none yet booked for ${year}.`;
+  }
+
+  /** Match a contract's commodity to a harvest-window commodity (case-insensitive,
+   *  checks group/description/code). Mirrors contract-pacing-card.contractMatchesCommodity. */
+  private _contractMatchesCommodity(c: Contract, hwCommodity: string): boolean {
+    const target = (hwCommodity || '').trim().toUpperCase();
+    if (!target) return false;
+    const group = (c.commodityGroup || '').trim().toUpperCase();
+    if (group && group === target) return true;
+    const desc = (c.commodityDescription || '').trim().toUpperCase();
+    if (desc && desc.includes(target)) return true;
+    const code = (c.commodityCode || '').trim().toUpperCase();
+    if (code && code.includes(target)) return true;
+    return false;
+  }
+
+  /** Returns true if the contract's delivery period overlaps the harvest window for
+   *  `cropYear`. Mirrors contract-pacing-card.contractMatchesHarvestWindow. */
+  private _contractMatchesHarvestWindow(c: Contract, hw: HarvestWindow, cropYear: number): boolean {
+    if (!c.deliveryStart && !c.deliveryEnd) return false;
+    const windowStart = new Date(cropYear, hw.deliveryStartMonth - 1, hw.deliveryStartDay);
+    const windowEnd = new Date(cropYear, hw.deliveryEndMonth - 1, hw.deliveryEndDay);
+    windowEnd.setHours(23, 59, 59, 999);
+    const delStart = c.deliveryStart ? new Date(c.deliveryStart) : new Date(c.deliveryEnd!);
+    const delEnd = c.deliveryEnd ? new Date(c.deliveryEnd) : new Date(c.deliveryStart!);
+    return delStart <= windowEnd && delEnd >= windowStart;
   }
 
   private _generatePlantingOverview(): string {
@@ -248,53 +340,49 @@ export class ActivitySummaryComponent {
     return `Currently holding ${rest}, and ${last}.`;
   }
 
+  /** Surfaces unapplied tickets only — same `!t.isApplied` filter the Unapplied Tickets
+   *  tab uses, with appliedDockQuantity (post-dock-deduction) summed via per-ticket GNP024
+   *  conversion to bushels. Applied tickets are already represented through the contract
+   *  Paid / Unsettled numbers, so no need to double-count them here. */
   private _generateDeliverySummary(): string {
-    if (!this.tickets() || this.tickets().length === 0) return '';
+    const unapplied = (this.tickets() || []).filter(t => t && !t.isApplied);
+    if (unapplied.length === 0) return '';
 
-    const totalTickets = this.tickets().length;
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const bushelTotal = this._sumTicketsAsBushels(unapplied);
+    const totalStr = bushelTotal != null && bushelTotal > 0
+      ? ` (${this._formatQuantity(Math.round(bushelTotal), 'bushels')})`
+      : '';
 
-    const recentTickets = this.tickets().filter(t => {
-      if (!t || !t.date) return false;
-      try {
-        const ticketDate = new Date(t.date);
-        return !isNaN(ticketDate.getTime()) && ticketDate >= thirtyDaysAgo;
-      } catch {
-        return false;
-      }
-    });
+    const parts: string[] = [];
+    parts.push(`${unapplied.length} unapplied ticket${unapplied.length !== 1 ? 's' : ''}${totalStr} not yet matched to a contract.`);
 
-    const last90Days = this.tickets().filter(t => {
-      if (!t || !t.date) return false;
-      try {
-        const ticketDate = new Date(t.date);
-        return !isNaN(ticketDate.getTime()) && ticketDate >= ninetyDaysAgo;
-      } catch {
-        return false;
-      }
-    });
-
-    if (recentTickets.length > 0) {
-      const totalDelivered = recentTickets.reduce((sum, t) => sum + (t.netWeight || 0), 0);
-      const parts: string[] = [];
-      parts.push(`${recentTickets.length} delivery ticket${recentTickets.length !== 1 ? 's' : ''} in the last 30 days totaling ${this._formatQuantity(totalDelivered, 'lbs')}.`);
-
-      const ticketsWithMoisture = recentTickets.filter(t => typeof t.moisture === 'number' && !isNaN(t.moisture) && t.moisture > 0);
-      const ticketsWithTestWeight = recentTickets.filter(t => typeof t.testWeight === 'number' && !isNaN(t.testWeight) && t.testWeight > 0);
-      if (ticketsWithMoisture.length > 0 && ticketsWithTestWeight.length > 0) {
-        const avgMoisture = ticketsWithMoisture.reduce((sum, t) => sum + (t.moisture || 0), 0) / ticketsWithMoisture.length;
-        const avgTestWeight = ticketsWithTestWeight.reduce((sum, t) => sum + (t.testWeight || 0), 0) / ticketsWithTestWeight.length;
-        parts.push(`Avg quality: ${avgMoisture.toFixed(1)}% moisture, ${avgTestWeight.toFixed(1)} lbs/bu test weight.`);
-      }
-
-      return parts.join(' ');
-    } else if (last90Days.length > 0) {
-      const total90Days = last90Days.reduce((sum, t) => sum + (t.netWeight || 0), 0);
-      return `${last90Days.length} deliver${last90Days.length !== 1 ? 'ies' : 'y'} in the past 90 days (${this._formatQuantity(total90Days, 'lbs')}), none in the last 30 days.`;
-    } else {
-      return `${totalTickets} delivery ticket${totalTickets !== 1 ? 's' : ''} on record, no activity in the past 90 days.`;
+    // Quality averages on unapplied tickets — useful context for spot-load conversations.
+    const withMoisture = unapplied.filter(t => typeof t.moisture === 'number' && !isNaN(t.moisture) && t.moisture > 0);
+    const withTestWeight = unapplied.filter(t => typeof t.testWeight === 'number' && !isNaN(t.testWeight) && t.testWeight > 0);
+    if (withMoisture.length > 0 && withTestWeight.length > 0) {
+      const avgMoisture = withMoisture.reduce((s, t) => s + (t.moisture || 0), 0) / withMoisture.length;
+      const avgTestWeight = withTestWeight.reduce((s, t) => s + (t.testWeight || 0), 0) / withTestWeight.length;
+      parts.push(`Avg quality: ${avgMoisture.toFixed(1)}% moisture, ${avgTestWeight.toFixed(1)} lbs/bu test weight.`);
     }
+
+    return parts.join(' ');
+  }
+
+  /** Sum a ticket list's appliedDockQuantity to bushels, converting per-ticket via GNP024.
+   *  Returns null when GNP024 isn't loaded yet. Tickets whose commodity isn't in GNP024
+   *  are silently dropped from the total (matches how contracts-table treats missing
+   *  conversions — better to under-report than display a misleading number).
+   *  Uses appliedDockQuantity (the same field tickets-table sums for unapplied groups)
+   *  rather than raw netWeight so totals match what the producer sees there. */
+  private _sumTicketsAsBushels(tickets: Ticket[]): number | null {
+    if (this.appState.commodityConversions().length === 0) return null;
+    let total = 0;
+    for (const t of tickets) {
+      const lbsPerBu = this._lbsPerBushel(t.productCode);
+      if (lbsPerBu == null) continue;
+      total += (t.appliedDockQuantity || 0) / lbsPerBu;
+    }
+    return total;
   }
 
   private _generateEngagementSummary(): string {
@@ -348,27 +436,36 @@ export class ActivitySummaryComponent {
 
   private _generateActionItems(): string {
     const openOnly = (this.contracts() || []).filter(c => c && !c.closedDate);
-    if (openOnly.length === 0) return '';
-
     const now = new Date();
     const alerts: string[] = [];
 
-    // Check for overdue contracts with date validation
-    const overdueContracts = openOnly.filter(c => {
-      if (!c.deliveryEnd) return false;
-      try {
-        const endDate = new Date(c.deliveryEnd);
-        return !isNaN(endDate.getTime()) &&
-               (c.status === 'Active' || c.status === 'Pending') &&
-               endDate < now;
-      } catch {
-        return false;
+    // Overdue contracts — past delivery end date AND ticket math says still unshipped.
+    // Mirrors Insights' Unshipped Bushels Past Delivery Date logic so the count agrees
+    // with what shows there (and with the red-highlight rule on the contracts page).
+    const overdueContracts: Contract[] = [];
+    let overdueRemainingBu = 0;
+    for (const c of openOnly) {
+      if (!c.deliveryEnd) continue;
+      const endDate = new Date(c.deliveryEnd);
+      if (isNaN(endDate.getTime()) || endDate >= now) continue;
+      if (!(c.status === 'Active' || c.status === 'Pending' || c.status === 'Overdue')) continue;
+      const stats = this._computeDeliveryStats(c);
+      // If ticket math says effectively complete, skip — contracts page calls it Filled.
+      if (stats.computable && stats.isEffectivelyComplete) continue;
+      overdueContracts.push(c);
+      if (stats.computable) {
+        overdueRemainingBu += stats.remainingBushels;
+      } else if (c.openBalanceQuantity) {
+        // Fallback: commodity not in GNP024, can't compute via tickets — surface CTRM's
+        // openBalanceQuantity rather than dropping the alert quantity entirely.
+        overdueRemainingBu += c.openBalanceQuantity;
       }
-    });
+    }
 
     if (overdueContracts.length > 0) {
-      const openBalance = overdueContracts.reduce((sum, c) => sum + (c.openBalanceQuantity || 0), 0);
-      const balanceStr = openBalance > 0 ? ` with ${this._formatQuantity(Math.round(openBalance), 'bushels')} still unshipped` : '';
+      const balanceStr = overdueRemainingBu > 0
+        ? ` with ${this._formatQuantity(Math.round(overdueRemainingBu), 'bushels')} still unshipped`
+        : '';
       alerts.push(`${overdueContracts.length} contract${overdueContracts.length !== 1 ? 's have' : ' has'} passed the delivery deadline${balanceStr}`);
     }
 
@@ -390,16 +487,60 @@ export class ActivitySummaryComponent {
     if (upcomingDeliveries.length > 0) {
       const nextContract = upcomingDeliveries[0];
       try {
-        const daysRemaining = this._calculateDaysBetween(now, new Date(nextContract.deliveryEnd));
+        // Calendar-day diff so "deadline 4/30, today 4/29" reads as 1 day, not 0.
+        const daysRemaining = this._calendarDaysBetween(now, new Date(nextContract.deliveryEnd));
         if (daysRemaining <= 30 && daysRemaining >= 0) {
           const crop = nextContract.commodityCode || nextContract.commodityDescription || 'grain';
-          if (daysRemaining <= 7) {
-            alerts.push(`their ${crop} delivery window closes in just ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}`);
+          // Identify the specific contract so the alert isn't ambiguous when the customer
+          // has multiple contracts in flight (e.g. 5 pending, several past-due).
+          const contractId = nextContract.sourceContractId || nextContract.contractNumber || '';
+          const contractStr = contractId ? `contract ${contractId}` : 'their next contract';
+          const cropStr = crop ? ` (${crop})` : '';
+          if (daysRemaining === 0) {
+            alerts.push(`${contractStr}${cropStr} closes today`);
+          } else if (daysRemaining <= 7) {
+            alerts.push(`${contractStr}${cropStr} closes in just ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}`);
           } else {
-            alerts.push(`their next ${crop} delivery deadline is ${daysRemaining} days away`);
+            alerts.push(`${contractStr}${cropStr} delivery deadline is ${daysRemaining} days away`);
           }
         }
       } catch { }
+    }
+
+    // Spot loads — unapplied tickets in the last 30 days with no active same-commodity
+    // contract covering the ticket's date. Mirrors Insights' Spot Loads category exactly
+    // so the count agrees with what shows on /insights for this customer.
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    let spotLoadCount = 0;
+    let spotLoadBu = 0;
+    for (const t of this.tickets() || []) {
+      if (!t || t.isApplied || !t.date) continue;
+      const ticketDate = new Date(t.date);
+      if (isNaN(ticketDate.getTime()) || ticketDate < thirtyDaysAgo) continue;
+      const ticketCommodity = (t.productCode || '').trim().toUpperCase();
+      const hasContractCoverage = ticketCommodity && openOnly.some(c => {
+        if (c.status === 'Fulfilled' || c.status === 'Cancelled') return false;
+        if ((c.commodityCode || '').trim().toUpperCase() !== ticketCommodity) return false;
+        const start = new Date(c.deliveryStart);
+        const end = new Date(c.deliveryEnd);
+        return start <= ticketDate && end >= ticketDate;
+      });
+      if (hasContractCoverage) continue;
+      spotLoadCount++;
+      const lbsPerBu = this._lbsPerBushel(t.productCode);
+      if (lbsPerBu) spotLoadBu += (t.appliedDockQuantity || 0) / lbsPerBu;
+    }
+    if (spotLoadCount > 0) {
+      const buStr = spotLoadBu > 0 ? ` (${this._formatQuantity(Math.round(spotLoadBu), 'bushels')})` : '';
+      alerts.push(`${spotLoadCount} spot load${spotLoadCount !== 1 ? 's' : ''}${buStr} in the last 30 days with no contract coverage — pricing opportunity`);
+    }
+
+    // Stale contact — promote into action items when the most recent customer note is older
+    // than 60 days. Computed independently of _generateEngagementSummary so the action items
+    // section keeps its current-state focus (engagement is descriptive, this is actionable).
+    const daysSinceContact = this._daysSinceLastNote();
+    if (daysSinceContact != null && daysSinceContact >= 60) {
+      alerts.push(`haven't been in contact in ${daysSinceContact} days`);
     }
 
     if (alerts.length === 0) return '';
@@ -407,6 +548,106 @@ export class ActivitySummaryComponent {
     const last = alerts[alerts.length - 1];
     const rest = alerts.slice(0, -1).join(', ');
     return rest.charAt(0).toUpperCase() + rest.slice(1) + ', and ' + last + '.';
+  }
+
+  /** Days since the most recent customer-scoped note, or null if no notes exist.
+   *  Pinned-status doesn't matter here (we want recency, not relevance). Uses the same
+   *  ISO-timezone-padding workaround _generateEngagementSummary uses so a pinned old
+   *  note doesn't suppress a real stale-contact alert. */
+  private _daysSinceLastNote(): number | null {
+    if (!this.notes() || this.notes().length === 0) return null;
+    if (!this.customer()) return null;
+    const ownNotes = this.notes().filter(n => n && n.createdAt && n.customerId === this.customer().id);
+    if (ownNotes.length === 0) return null;
+    let latestMs = 0;
+    for (const n of ownNotes) {
+      const raw = typeof n.createdAt === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(n.createdAt as any)
+        ? (n.createdAt as any) + 'Z' : n.createdAt;
+      const t = new Date(raw).getTime();
+      if (!isNaN(t) && t > latestMs) latestMs = t;
+    }
+    if (latestMs === 0) return null;
+    return Math.max(0, this._calendarDaysBetween(new Date(latestMs), new Date()));
+  }
+
+  // Delivery stats — mirrors contracts-table._computeDeliveryStats so the activity-summary
+  // narrative reports the same Remaining / Paid / Unsettled numbers the contracts page shows
+  // (and Insights' Unshipped Bushels Past Delivery Date uses for its skip rule).
+
+  /** Tickets applied to a specific contract — string match preferred, FK fallback. */
+  private _getAppliedTickets(contract: Contract): Ticket[] {
+    return this.tickets().filter(t => {
+      if (!t.isApplied) return false;
+      if (t.ctrmContractNumber && contract.sourceContractId) {
+        return t.ctrmContractNumber.trim() === contract.sourceContractId.trim();
+      }
+      if (t.contractId && contract.id) {
+        return t.contractId === contract.id;
+      }
+      return false;
+    });
+  }
+
+  private _lbsPerBushel(productCode: string | undefined | null): number | null {
+    const code = (productCode || '').trim().toUpperCase();
+    if (!code) return null;
+    const conversions = this.appState.commodityConversions();
+    if (conversions.length === 0) return null;
+    if (!this._conversionMap || this._conversionMap.size !== conversions.length) {
+      this._conversionMap = new Map(conversions.map(c => [c.commodityCode.trim().toUpperCase(), c.lbsPerUnit]));
+    }
+    const lbs = this._conversionMap.get(code);
+    return lbs && lbs > 0 ? lbs : null;
+  }
+
+  private _convertContractQuantityToPounds(quantity: number, unit: string, lbsPerBushel: number): number {
+    const u = (unit || '').toLowerCase().trim();
+    if (u === 'st' || u.includes('ton')) return quantity * 2000;
+    if (u.includes('bushel') || u === 'bu') return quantity * lbsPerBushel;
+    if (u.includes('pound') || u.includes('lb')) return quantity;
+    if (u === 'cwt' || u.includes('hundredweight')) return quantity * 100;
+    return quantity * lbsPerBushel;
+  }
+
+  private _convertPoundsToContractUnits(pounds: number, unit: string, lbsPerBushel: number): number {
+    const u = (unit || '').toLowerCase().trim();
+    if (u === 'st' || u.includes('ton')) return pounds / 2000;
+    if (u.includes('bushel') || u === 'bu') return pounds / lbsPerBushel;
+    if (u.includes('pound') || u.includes('lb')) return pounds;
+    if (u === 'cwt' || u.includes('hundredweight')) return pounds / 100;
+    return pounds / lbsPerBushel;
+  }
+
+  private _computeDeliveryStats(contract: Contract): {
+    deliveredBushels: number;
+    remainingBushels: number;
+    paidBushels: number;
+    unsettledBushels: number;
+    isEffectivelyComplete: boolean;
+    computable: boolean;
+  } {
+    const lbsPerBushel = this._lbsPerBushel(contract.commodityCode || '');
+    if (lbsPerBushel == null) {
+      return { deliveredBushels: 0, remainingBushels: 0, paidBushels: 0, unsettledBushels: 0, isEffectivelyComplete: false, computable: false };
+    }
+    const applied = this._getAppliedTickets(contract);
+    const deliveredLbs = applied.reduce((s, t) => s + (t.appliedDockQuantity || 0), 0);
+    const paidLbs = applied
+      .filter(t => !!t.finalSettledDate)
+      .reduce((s, t) => s + (t.appliedDockQuantity || 0), 0);
+    const unsettledLbs = Math.max(0, deliveredLbs - paidLbs);
+    const contractLbs = this._convertContractQuantityToPounds(contract.quantity || 0, contract.unit, lbsPerBushel);
+    const remainingLbs = Math.max(0, contractLbs - deliveredLbs);
+    const isEffectivelyComplete = remainingLbs < lbsPerBushel;
+    const round = (n: number) => Math.round(n * 100) / 100;
+    return {
+      deliveredBushels: round(this._convertPoundsToContractUnits(deliveredLbs, contract.unit, lbsPerBushel)),
+      remainingBushels: round(this._convertPoundsToContractUnits(remainingLbs, contract.unit, lbsPerBushel)),
+      paidBushels: round(this._convertPoundsToContractUnits(paidLbs, contract.unit, lbsPerBushel)),
+      unsettledBushels: round(this._convertPoundsToContractUnits(unsettledLbs, contract.unit, lbsPerBushel)),
+      isEffectivelyComplete,
+      computable: true,
+    };
   }
 
   // Helper utility methods
