@@ -62,7 +62,7 @@ const CATEGORY_META: Record<InsightCategory, {
     subtitleClass: 'text-scoular-yellow dark:text-scoular-yellow',
     badgeClass: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
     countClass: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
-    searchPlaceholder: 'Search by customer, contract, or commodity...',
+    searchPlaceholder: 'Search by producer, contract, or commodity...',
   },
   SpotLoads: {
     title: 'Spot Loads — Delivered, No Contract (Last 30 Days)',
@@ -72,7 +72,7 @@ const CATEGORY_META: Record<InsightCategory, {
     subtitleClass: 'text-scoular-yellow dark:text-scoular-yellow',
     badgeClass: 'bg-scoular-yellow/10 text-scoular-yellow dark:bg-scoular-yellow/20 dark:text-scoular-yellow',
     countClass: 'bg-scoular-yellow/10 text-scoular-yellow dark:bg-scoular-yellow/20 dark:text-scoular-yellow',
-    searchPlaceholder: 'Search by customer, code, or ticket #...',
+    searchPlaceholder: 'Search by producer, code, or ticket #...',
   },
   UnshippedBushels: {
     title: 'Unshipped Bushels Past Delivery Date',
@@ -82,7 +82,7 @@ const CATEGORY_META: Record<InsightCategory, {
     subtitleClass: 'text-scoular-red-accessible dark:text-scoular-red',
     badgeClass: 'bg-scoular-red/10 text-scoular-red-accessible dark:bg-scoular-red/20 dark:text-scoular-red',
     countClass: 'bg-scoular-red/10 text-scoular-red-accessible dark:bg-scoular-red/20 dark:text-scoular-red',
-    searchPlaceholder: 'Search by customer ID, name, commodity, or contract #...',
+    searchPlaceholder: 'Search by producer ID, name, commodity, or contract #...',
   },
 };
 

@@ -5,7 +5,7 @@
         <div class="px-4 pt-4 pb-3 border-b border-gray-200 dark:border-gray-700 space-y-3">
           <!-- Title Row -->
           <div class="flex items-center justify-between">
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Customers</h3>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Producers</h3>
             @if (searchInputValue || selectedListId() !== 'all' || selectedCustomer() || hasTradeUnitSelection()) {
               <button
                 (click)="clearAll()"
@@ -35,7 +35,7 @@
               type="text"
               [(ngModel)]="searchInputValue"
               (ngModelChange)="onSearchInput($event)"
-              placeholder="Search customers..."
+              placeholder="Search producers..."
               class="w-full h-9 pl-10 pr-10 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-base text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green"
             />
             @if (searchLoading()) {
@@ -66,7 +66,7 @@
               (ngModelChange)="selectedListId.set($event); onSavedListChange()"
               class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-base text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green"
             >
-              <option value="all">All Customers</option>
+              <option value="all">All Producers</option>
               @for (list of getVisibleSavedLists(); track list.id) {
                 <option [value]="list.id" class="text-gray-900 dark:text-white">{{ list.name }}{{ selectedListId() === '' + list.id && (list.customerIds || []).length ? ' (' + (list.customerIds || []).length + ')' : '' }}</option>
               }
@@ -85,7 +85,7 @@
           } @else if (loading() && selectedTradeUnits.length > 0) {
             <div class="p-8 text-center">
               <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green mb-4"></div>
-              <p class="text-gray-500 dark:text-gray-400 font-medium">Loading customers...</p>
+              <p class="text-gray-500 dark:text-gray-400 font-medium">Loading producers...</p>
             </div>
           } @else if (selectedTradeUnits.length === 0 && !searchInputValue) {
             <div class="p-8 text-center text-gray-500">
@@ -97,7 +97,7 @@
                 <path d="M3 15h18"/>
               </svg>
               <p class="font-medium">Select Trade Units</p>
-              <p class="text-sm mt-2">Choose one or more trade units from the dropdown above to view customers, or use the search box to search all trade units</p>
+              <p class="text-sm mt-2">Choose one or more trade units from the dropdown above to view producers, or use the search box to search all trade units</p>
             </div>
           } @else if (filteredCustomers().length === 0) {
             <div class="p-8 text-center text-gray-500">
@@ -107,7 +107,7 @@
                 <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
                 <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
               </svg>
-              <p>No customers found</p>
+              <p>No producers found</p>
             </div>
           } @else {
             @for (customer of filteredCustomers(); track customer.id) {

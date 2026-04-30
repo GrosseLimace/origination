@@ -55,19 +55,38 @@ export class PlantingIntentionsTableComponent {
   allCommodities: Commodity[] = [];
   isLoadingCommodities = false;
 
-  get availableCrops(): Commodity[] {
-    if (this.customerCommodityCodes().length === 0) return this.allCommodities;
-    const keys = this.customerCommodityCodes().map(s => s.toLowerCase());
-    const matched = this.allCommodities.filter(c =>
-      keys.includes(c.code.toLowerCase()) ||
-      (c.name && keys.includes(c.name.toLowerCase())) ||
-      (c.category && keys.includes(c.category.toLowerCase()))
-    );
-    return matched.length > 0 ? matched : this.allCommodities;
+  // ── Crop search-and-select state (Add + Edit dialogs) ─────────────────────
+  // Mirrors the pattern in edit-customer-dialog: user types into a search box,
+  // commodities table is filtered into a dropdown of suggestions, picking one
+  // sets the form's `crop` field. The producer is no longer limited to crops
+  // already on their producer-details — anything in the commodities table is
+  // selectable, and the parent auto-syncs the new crop into producer-details
+  // on save.
+  addCropSearchInput = '';
+  filteredAddCrops: Commodity[] = [];
+  showAddCropSuggestions = false;
+
+  editCropSearchInput = '';
+  filteredEditCrops: Commodity[] = [];
+  showEditCropSuggestions = false;
+
+  private readonly _commodityAliases: Record<string, string[]> = {
+    'milo':    ['milo', 'sorghum', 'sor', 'sg'],
+    'sorghum': ['milo', 'sorghum', 'sor', 'sg'],
+    'beans':   ['soybeans', 'soy', 'beans', 'sb'],
+    'soy':     ['soybeans', 'soy', 'beans', 'sb'],
+  };
+
+  /** Display label for the currently-selected Add crop ("Yellow Corn (YC)") */
+  get addSelectedCropDisplay(): string {
+    const c = this.allCommodities.find(c => c.code === this.addForm.crop);
+    return c ? `${c.name} (${c.code})` : '';
   }
 
-  get showNoCropsMessage(): boolean {
-    return this.customerCommodityCodes().length === 0 && this.allCommodities.length > 0;
+  /** Display label for the currently-selected Edit crop */
+  get editSelectedCropDisplay(): string {
+    const c = this.allCommodities.find(c => c.code === this.editForm.crop);
+    return c ? `${c.name} (${c.code})` : '';
   }
 
   constructor() {
@@ -249,11 +268,53 @@ export class PlantingIntentionsTableComponent {
   }
 
   onAddCropChange(code: string): void {
-    const commodity = this.availableCrops.find(c => c.code === code);
+    const commodity = this.allCommodities.find(c => c.code === code);
     const name = commodity?.name || '';
     this.addForm.description = [this.addForm.type, name].filter(Boolean).join(' ');
     // Auto-populate category from the commodity's category
     this.addForm.category = commodity?.category || '';
+  }
+
+  // ── Add Crop search-and-select handlers ──────────────────────────────────
+  onAddCropSearch(): void {
+    const term = this.addCropSearchInput.trim().toLowerCase();
+    if (!term) {
+      this.filteredAddCrops = [];
+      return;
+    }
+    const searchTerms = this._commodityAliases[term] ?? [term];
+    this.filteredAddCrops = this.allCommodities.filter(c => {
+      const name = c.name.toLowerCase();
+      const code = c.code.toLowerCase();
+      return searchTerms.some(t => name.includes(t) || code.includes(t));
+    });
+    this.showAddCropSuggestions = true;
+  }
+
+  selectAddCrop(commodity: Commodity): void {
+    this.addForm.crop = commodity.code;
+    this.addCropSearchInput = '';
+    this.filteredAddCrops = [];
+    this.showAddCropSuggestions = false;
+    this.onAddCropChange(commodity.code);
+  }
+
+  selectFirstAddCropSuggestion(): void {
+    if (this.filteredAddCrops.length > 0) {
+      this.selectAddCrop(this.filteredAddCrops[0]);
+    }
+  }
+
+  clearAddCrop(): void {
+    this.addForm.crop = '';
+    this.addForm.category = '';
+    this.addCropSearchInput = '';
+    this.filteredAddCrops = [];
+    this.showAddCropSuggestions = false;
+  }
+
+  hideAddCropSuggestionsDelayed(): void {
+    setTimeout(() => { this.showAddCropSuggestions = false; }, 150);
   }
 
   onAddTypeChange(): void {
@@ -263,10 +324,52 @@ export class PlantingIntentionsTableComponent {
   }
 
   onEditCropChange(code: string): void {
-    const commodity = this.availableCrops.find(c => c.code === code);
+    const commodity = this.allCommodities.find(c => c.code === code);
     const name = commodity?.name || '';
     this.editForm.description = [this.editForm.type, name].filter(Boolean).join(' ');
     this.editForm.category = commodity?.category || '';
+  }
+
+  // ── Edit Crop search-and-select handlers ─────────────────────────────────
+  onEditCropSearch(): void {
+    const term = this.editCropSearchInput.trim().toLowerCase();
+    if (!term) {
+      this.filteredEditCrops = [];
+      return;
+    }
+    const searchTerms = this._commodityAliases[term] ?? [term];
+    this.filteredEditCrops = this.allCommodities.filter(c => {
+      const name = c.name.toLowerCase();
+      const code = c.code.toLowerCase();
+      return searchTerms.some(t => name.includes(t) || code.includes(t));
+    });
+    this.showEditCropSuggestions = true;
+  }
+
+  selectEditCrop(commodity: Commodity): void {
+    this.editForm.crop = commodity.code;
+    this.editCropSearchInput = '';
+    this.filteredEditCrops = [];
+    this.showEditCropSuggestions = false;
+    this.onEditCropChange(commodity.code);
+  }
+
+  selectFirstEditCropSuggestion(): void {
+    if (this.filteredEditCrops.length > 0) {
+      this.selectEditCrop(this.filteredEditCrops[0]);
+    }
+  }
+
+  clearEditCrop(): void {
+    this.editForm.crop = '';
+    this.editForm.category = '';
+    this.editCropSearchInput = '';
+    this.filteredEditCrops = [];
+    this.showEditCropSuggestions = false;
+  }
+
+  hideEditCropSuggestionsDelayed(): void {
+    setTimeout(() => { this.showEditCropSuggestions = false; }, 150);
   }
 
   onEditTypeChange(): void {
@@ -289,6 +392,9 @@ export class PlantingIntentionsTableComponent {
       plantingYear: lastYear.toString(),
       tradeUnit: this.tradeUnits().length > 0 ? this.tradeUnits()[0] : ''
     };
+    this.addCropSearchInput = '';
+    this.filteredAddCrops = [];
+    this.showAddCropSuggestions = false;
     this._loadCommodities();
     this.showAddDialog = true;
     document.body.style.overflow = 'hidden';
@@ -368,6 +474,9 @@ export class PlantingIntentionsTableComponent {
     };
     this.editForm = { ...formData };
     this.originalEditForm = { ...formData };
+    this.editCropSearchInput = '';
+    this.filteredEditCrops = [];
+    this.showEditCropSuggestions = false;
     this._loadCommodities();
     this.showEditDialog = true;
     document.body.style.overflow = 'hidden';
