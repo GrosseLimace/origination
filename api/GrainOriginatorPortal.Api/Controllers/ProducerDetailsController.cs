@@ -62,7 +62,7 @@ public class ProducerDetailsController : ControllerBase
         await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
         var details = await _dataService.UpsertProducerDetailsAsync(
             customerId,
-            request.SourceCustomerId,
+            request.ScoularId,
             request.CustomerName,
             request.TotalAcres,
             request.BinCapacity,

@@ -2,7 +2,7 @@ export interface Ticket {
   id: number;             // Maps to bigint in C# API
   contractId?: number;    // FK to Contract - direct relationship
   customerId?: number;    // FK to Customer
-  customerCode?: string;  // Customer code for string matching with Customer.sourceCustomerId
+  customerCode?: string;  // Customer code for string matching with Customer.scoularId
   farmId: string;
 
   // Ticket identifiers

@@ -276,18 +276,18 @@ export class EditCustomerDialogComponent {
   }
 
   getProducerById(producerId: string): Customer | undefined {
-    return this._producerPool.find(c => c.sourceCustomerId === producerId)
-      ?? this.linkedCustomers().find(c => c.sourceCustomerId === producerId)
-      ?? this.allCustomers().find(c => c.sourceCustomerId === producerId);
+    return this._producerPool.find(c => c.scoularId === producerId)
+      ?? this.linkedCustomers().find(c => c.scoularId === producerId)
+      ?? this.allCustomers().find(c => c.scoularId === producerId);
   }
 
   getProducersLinkingToMe(): Customer[] {
     if (!this.customer()) return [];
-    const mySourceId = this.customer()!.sourceCustomerId || '';
+    const mySourceId = this.customer()!.scoularId || '';
     return this._producerPool.filter(c =>
       c.linkedProducerIds &&
       c.linkedProducerIds.includes(mySourceId) &&
-      !this.removedIncomingIds().includes(c.sourceCustomerId || '')
+      !this.removedIncomingIds().includes(c.scoularId || '')
     );
   }
 
@@ -300,18 +300,18 @@ export class EditCustomerDialogComponent {
     const currentCustomer = this.customer();
     this.filteredProducers.set(this._producerPool.filter(c =>
       c.id !== currentCustomer?.id &&
-      !this.editLinkedProducerIds().includes(c.sourceCustomerId || '') &&
+      !this.editLinkedProducerIds().includes(c.scoularId || '') &&
       (
         c.name.toLowerCase().includes(term) ||
         c.id.toString().includes(term) ||
-        (c.sourceCustomerId || '').toLowerCase().includes(term)
+        (c.scoularId || '').toLowerCase().includes(term)
       )
     ));
     this.showProducerSuggestions.set(true);
   }
 
   selectProducer(producer: Customer): void {
-    const idStr = producer.sourceCustomerId || producer.id.toString();
+    const idStr = producer.scoularId || producer.id.toString();
     if (!this.editLinkedProducerIds().includes(idStr)) {
       this.editLinkedProducerIds.update(ids => [...ids, idStr]);
     }

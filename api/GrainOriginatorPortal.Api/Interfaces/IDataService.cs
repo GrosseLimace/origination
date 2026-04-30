@@ -27,10 +27,10 @@ public interface IDataService
     Task<Customer?> GetCustomerByIdAsync(long id, CancellationToken cancellationToken = default);
 
     /// <summary>Gets a single active customer by their source system customer identifier.</summary>
-    Task<Customer?> GetCustomerBySourceIdAsync(string sourceCustomerId, CancellationToken cancellationToken = default);
+    Task<Customer?> GetCustomerByScoularIdAsync(string scoularId, CancellationToken cancellationToken = default);
 
     /// <summary>Gets customers whose ProducerDetails.LinkedProducerIds contains the given source customer id — i.e. customers that link TO this one (incoming links).</summary>
-    Task<List<Customer>> GetCustomersLinkedToAsync(string sourceCustomerId, CancellationToken cancellationToken = default);
+    Task<List<Customer>> GetCustomersLinkedToAsync(string scoularId, CancellationToken cancellationToken = default);
 
     /// <summary>Updates contact and relationship fields on an existing customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>
@@ -94,7 +94,7 @@ public interface IDataService
     /// <summary>Gets all contracts for a specific customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task<List<Contract>> GetContractsByCustomerAsync(long customerId, string? sourceCustomerId = null, CancellationToken cancellationToken = default);
+    Task<List<Contract>> GetContractsByCustomerAsync(long customerId, string? scoularId = null, CancellationToken cancellationToken = default);
 
     /// <summary>Gets all contracts associated with a specific farm.</summary>
     /// <param name="farmId">The farm's string identifier.</param>
@@ -120,9 +120,9 @@ public interface IDataService
     Task<List<ContractPricingLine>> GetPricingLinesAsync(string sourceContractId, CancellationToken cancellationToken = default);
 
     /// <summary>Gets all pricing lines for a specific customer across all contracts.</summary>
-    /// <param name="sourceCustomerId">The source system customer identifier.</param>
+    /// <param name="scoularId">The source system customer identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task<List<ContractPricingLine>> GetPricingLinesByCustomerAsync(string sourceCustomerId, CancellationToken cancellationToken = default);
+    Task<List<ContractPricingLine>> GetPricingLinesByCustomerAsync(string scoularId, CancellationToken cancellationToken = default);
 
     // =========================================================================
     // Ticket Operations
@@ -141,7 +141,7 @@ public interface IDataService
     /// <summary>Gets all tickets for a specific customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task<List<Ticket>> GetTicketsByCustomerAsync(long customerId, string? sourceCustomerId = null, CancellationToken cancellationToken = default);
+    Task<List<Ticket>> GetTicketsByCustomerAsync(long customerId, string? scoularId = null, CancellationToken cancellationToken = default);
 
     /// <summary>Gets all tickets associated with a specific farm.</summary>
     /// <param name="farmId">The farm's string identifier.</param>
@@ -246,7 +246,7 @@ public interface IDataService
     /// <summary>Creates or updates producer details for a customer.</summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The created or updated producer details record.</returns>
-    Task<ProducerDetails> UpsertProducerDetailsAsync(long customerId, string? sourceCustomerId, string customerName, decimal? totalAcres, decimal? binCapacity, string? primaryContact, string? commodities, string? linkedProducerIds = null, CancellationToken cancellationToken = default);
+    Task<ProducerDetails> UpsertProducerDetailsAsync(long customerId, string? scoularId, string customerName, decimal? totalAcres, decimal? binCapacity, string? primaryContact, string? commodities, string? linkedProducerIds = null, CancellationToken cancellationToken = default);
 
     /// <summary>Deletes producer details for a customer.</summary>
     /// <param name="customerId">The customer's unique identifier.</param>

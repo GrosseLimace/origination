@@ -2,7 +2,7 @@ import { Coordinates } from './coordinates.model';
 
 export interface Customer {
   id: number;             // Maps to bigint in C# API
-  sourceCustomerId?: string; // Used to match with contract ctrmCustomerId
+  scoularId?: string; // Used to match with contract ctrmCustomerId
   name: string;
   farm: string;
   location: string;

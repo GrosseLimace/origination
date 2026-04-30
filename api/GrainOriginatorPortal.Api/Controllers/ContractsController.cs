@@ -32,9 +32,9 @@ public class ContractsController : ControllerBase
     /// <summary>Gets all contracts for a specific customer.</summary>
     [HttpGet("customer/{customerId:long}")]
     [ProducesResponseType(typeof(List<Contract>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<Contract>>> GetByCustomer(long customerId, [FromQuery] string? sourceCustomerId = null, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<List<Contract>>> GetByCustomer(long customerId, [FromQuery] string? scoularId = null, CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetContractsByCustomerAsync(customerId, sourceCustomerId, cancellationToken));
+        return Ok(await _dataService.GetContractsByCustomerAsync(customerId, scoularId, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -87,16 +87,16 @@ public class ContractsController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Gets all pricing lines for a customer's contracts by sourceCustomerId.</summary>
+    /// <summary>Gets all pricing lines for a customer's contracts by scoularId.</summary>
     [HttpGet("pricing-lines/by-customer")]
     [ProducesResponseType(typeof(List<ContractPricingLine>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<List<ContractPricingLine>>> GetPricingLinesByCustomer([FromQuery] string sourceCustomerId, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<List<ContractPricingLine>>> GetPricingLinesByCustomer([FromQuery] string scoularId, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(sourceCustomerId))
+        if (string.IsNullOrWhiteSpace(scoularId))
         {
-            throw new ValidationException("sourceCustomerId", "sourceCustomerId is required.");
+            throw new ValidationException("scoularId", "scoularId is required.");
         }
-        return Ok(await _dataService.GetPricingLinesByCustomerAsync(sourceCustomerId, cancellationToken));
+        return Ok(await _dataService.GetPricingLinesByCustomerAsync(scoularId, cancellationToken));
     }
 }

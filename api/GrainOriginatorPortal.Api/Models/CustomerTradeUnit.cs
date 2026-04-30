@@ -9,7 +9,7 @@ public class CustomerTradeUnit
 {
     public long CustomerId { get; set; }
     public string? CustomerName { get; set; }
-    public string? SourceCustomerId { get; set; }
+    public string? ScoularId { get; set; }
     public string? MerchandisingPhone { get; set; }
     public string? MerchandisingEmail { get; set; }
     public string? ExtendedPrimaryPhone { get; set; }
@@ -36,7 +36,7 @@ public class CustomerTradeUnit
     {
         Id = CustomerId,
         Name = CustomerName ?? string.Empty,
-        SourceCustomerId = SourceCustomerId,
+        ScoularId = ScoularId,
         Phone = MerchandisingPhone,
         Email = MerchandisingEmail,
         ExtendedPrimaryPhone = ExtendedPrimaryPhone,

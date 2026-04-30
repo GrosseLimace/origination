@@ -240,7 +240,7 @@ public class ApplicationDbContext : DbContext
 
             entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
             entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
-            entity.Property(e => e.SourceCustomerId).HasColumnName("SourceCustomerId").HasMaxLength(400).IsRequired(false);
+            entity.Property(e => e.ScoularId).HasColumnName("ScoularId").HasMaxLength(400).IsRequired(false);
             entity.Property(e => e.CustomerName).HasColumnName("CustomerName").HasMaxLength(255).IsRequired();
             entity.Property(e => e.TotalAcres).HasColumnName("TotalAcres").HasColumnType("decimal(18,2)").IsRequired(false);
             entity.Property(e => e.BinCapacity).HasColumnName("BinCapacity").HasColumnType("decimal(18,2)").IsRequired(false);
@@ -262,7 +262,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd();
             entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
             entity.Property(e => e.CustomerName).HasColumnName("CustomerName").HasMaxLength(500).IsRequired();
-            entity.Property(e => e.SourceCustomerId).HasColumnName("SourceCustomerId").HasMaxLength(400).IsRequired(false);
+            entity.Property(e => e.ScoularId).HasColumnName("ScoularId").HasMaxLength(400).IsRequired(false);
             entity.Property(e => e.IndustryCode1).HasColumnName("IndustryCode1").HasMaxLength(50).IsRequired(false);
             entity.Property(e => e.TradeUnit).HasColumnName("TradeUnit").HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.SnapshotRefreshedAt).HasColumnName("SnapshotRefreshedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
@@ -274,8 +274,8 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => e.CustomerId)
                   .HasDatabaseName("IX_CustomerSnapshot_CustomerId");
             // eSign enrichment and contract/ticket customer code lookups
-            entity.HasIndex(e => e.SourceCustomerId)
-                  .HasDatabaseName("IX_CustomerSnapshot_SourceCustomerId");
+            entity.HasIndex(e => e.ScoularId)
+                  .HasDatabaseName("IX_CustomerSnapshot_ScoularId");
         });
 
         modelBuilder.Entity<UserPreference>(entity =>

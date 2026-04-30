@@ -119,7 +119,7 @@ export class ActivitySummaryComponent {
 
     // Linked producers
     if (linkedGroup.length === 1) {
-      parts.push(`Linked with ${linkedGroup[0].name}${linkedGroup[0].sourceCustomerId ? ' (' + linkedGroup[0].sourceCustomerId + ')' : ''}.`);
+      parts.push(`Linked with ${linkedGroup[0].name}${linkedGroup[0].scoularId ? ' (' + linkedGroup[0].scoularId + ')' : ''}.`);
     } else if (linkedGroup.length >= 2) {
       const names = linkedGroup.map(p => p.name).join(' and ');
       parts.push(`Linked with ${names}.`);

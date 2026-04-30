@@ -236,8 +236,8 @@ export class InsightsComponent {
     }
 
     for (const customer of customers) {
-      const customerContracts = contractsByCustomer.get(customer.sourceCustomerId!) || [];
-      const customerRecentTickets = recentTicketsByCustomer.get(customer.sourceCustomerId!) || [];
+      const customerContracts = contractsByCustomer.get(customer.scoularId!) || [];
+      const customerRecentTickets = recentTicketsByCustomer.get(customer.scoularId!) || [];
 
       // --- 1. Unconfirmed Contracts ---
       for (const contract of customerContracts) {
@@ -460,7 +460,7 @@ export class InsightsComponent {
         const globalTerms = expandSearchTermWithAliases(global);
         groups = groups.reduce<CustomerGroup[]>((acc, g) => {
           const nameLower = g.customer.name.toLowerCase();
-          const idLower = (g.customer.sourceCustomerId || '').toLowerCase();
+          const idLower = (g.customer.scoularId || '').toLowerCase();
           if (globalTerms.some(t => nameLower.includes(t) || idLower.includes(t))) {
             acc.push(g);
             return acc;
@@ -487,7 +487,7 @@ export class InsightsComponent {
         groups = groups.reduce<CustomerGroup[]>((acc, g) => {
           // Customer-level match: show all items
           const nameLower = g.customer.name.toLowerCase();
-          const idLower = (g.customer.sourceCustomerId || '').toLowerCase();
+          const idLower = (g.customer.scoularId || '').toLowerCase();
           if (searchTerms.some(t => nameLower.includes(t) || idLower.includes(t))) {
             acc.push(g);
             return acc;
