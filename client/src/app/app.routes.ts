@@ -25,11 +25,6 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./features/dashboard/pages/dashboard/dashboard.component').then(m => m.DashboardComponent)
   },
-  {
-    path: 'position-report',
-    canActivate: [authGuard],
-    loadComponent: () => import('./features/position-report/pages/position-report/position-report.component').then(m => m.PositionReportComponent)
-  },
   environment.bidSheetEnabled
     ? {
         path: 'bid-sheet',
