@@ -132,8 +132,8 @@ export class CustomerNotesComponent {
   }
 
   getCustomerLabel(customer: Customer): string {
-    return customer.sourceCustomerId
-      ? `${customer.name} (${customer.sourceCustomerId})`
+    return customer.scoularId
+      ? `${customer.name} (${customer.scoularId})`
       : customer.name;
   }
 

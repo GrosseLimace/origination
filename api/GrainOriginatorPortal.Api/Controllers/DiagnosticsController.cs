@@ -209,7 +209,7 @@ public class DiagnosticsController : ControllerBase
         {
             CustomerId           = c.CustomerId,
             CustomerName         = c.CustomerName ?? string.Empty,
-            SourceCustomerId     = c.SourceCustomerId,
+            ScoularId     = c.ScoularId,
             IndustryCode1        = c.IndustryCode1,
             IsActive             = c.IsActive,
             EffectiveStartDate   = c.EffectiveStartDate,

@@ -192,7 +192,7 @@ export class BuildListComponent {
 
     // Helper: get contracts for a customer, optionally scoped to selected crops
     const getContracts = (c: Customer): Contract[] => {
-      let contracts = contractMap.get(c.sourceCustomerId!) || [];
+      let contracts = contractMap.get(c.scoularId!) || [];
       if (selectedCrops.size > 0) {
         contracts = contracts.filter(ct =>
           this._matchesCropFilter(ct.commodityCode || '', selectedCrops) ||
@@ -317,20 +317,20 @@ export class BuildListComponent {
       // Build incoming links map (bidirectional — same as contact history)
       const incomingLinks = new Map<string, Set<string>>();
       for (const c of this.customers()) {
-        if (!c.sourceCustomerId) continue;
+        if (!c.scoularId) continue;
         for (const linkedCode of (c.linkedProducerIds || [])) {
           if (!incomingLinks.has(linkedCode)) incomingLinks.set(linkedCode, new Set());
-          incomingLinks.get(linkedCode)!.add(c.sourceCustomerId);
+          incomingLinks.get(linkedCode)!.add(c.scoularId);
         }
       }
       // Match customers directly + via linked producers (bidirectional)
       list = list.filter(c => {
         const allCodes = new Set<string>();
-        if (c.sourceCustomerId) allCodes.add(c.sourceCustomerId);
+        if (c.scoularId) allCodes.add(c.scoularId);
         // Outgoing links (I link to them)
         for (const linkedCode of (c.linkedProducerIds || [])) allCodes.add(linkedCode);
         // Incoming links (they link to me)
-        for (const inCode of (incomingLinks.get(c.sourceCustomerId || '') || [])) allCodes.add(inCode);
+        for (const inCode of (incomingLinks.get(c.scoularId || '') || [])) allCodes.add(inCode);
         // Check if any code in the network has a matching note
         for (const code of allCodes) {
           if (matchingCodes.has(code)) return true;
@@ -372,7 +372,7 @@ export class BuildListComponent {
     // Customer activity
     if (r.hasActiveContracts) {
       list = list.filter(c => {
-        const contracts = contractMap.get(c.sourceCustomerId!) || [];
+        const contracts = contractMap.get(c.scoularId!) || [];
         return contracts.some(ct => ct.status === 'Active' || ct.status === 'Pending');
       });
     }
@@ -385,7 +385,7 @@ export class BuildListComponent {
           return d.getFullYear() === thisYear;
         }).map(t => t.customerCode!).filter(Boolean)
       );
-      list = list.filter(c => ticketCustomers.has(c.sourceCustomerId!));
+      list = list.filter(c => ticketCustomers.has(c.scoularId!));
     }
     if (r.hasPlantingIntentions) {
       const plantingCustomers = new Set<number>(this.plantingIntentions().map(p => p.customerId));
@@ -435,7 +435,7 @@ export class BuildListComponent {
     if (hasTicketFilter) {
       const codeToId = new Map<string, number>();
       for (const c of this.customers()) {
-        if (c.sourceCustomerId) codeToId.set(c.sourceCustomerId, c.id);
+        if (c.scoularId) codeToId.set(c.scoularId, c.id);
       }
       // Scope tickets to selected crops when a crop filter is active
       const scopedTickets = selectedCrops.size > 0
@@ -458,7 +458,7 @@ export class BuildListComponent {
           if (!t.customerCode || !t.date) continue;
           if (new Date(t.date).getTime() >= cutoff) recentCustomers.add(t.customerCode);
         }
-        list = list.filter(c => recentCustomers.has(c.sourceCustomerId!));
+        list = list.filter(c => recentCustomers.has(c.scoularId!));
       }
       // Quality averages — scoped to selected crops
       if (r.avgMoistureOver != null || r.avgMoistureUnder != null ||
@@ -688,10 +688,10 @@ export class BuildListComponent {
     }
     const incomingCodeLinks = new Map<string, Set<string>>();
     for (const c of allCustomers) {
-      if (!c.sourceCustomerId) continue;
+      if (!c.scoularId) continue;
       for (const linkedCode of (c.linkedProducerIds || [])) {
         if (!incomingCodeLinks.has(linkedCode)) incomingCodeLinks.set(linkedCode, new Set());
-        incomingCodeLinks.get(linkedCode)!.add(c.sourceCustomerId);
+        incomingCodeLinks.get(linkedCode)!.add(c.scoularId);
       }
     }
 
@@ -700,9 +700,9 @@ export class BuildListComponent {
     for (const customer of allCustomers) {
       const freshLinked = linkedById.get(customer.id) ?? customer.linkedProducerIds ?? [];
       const allCodes = new Set<string>();
-      if (customer.sourceCustomerId) allCodes.add(customer.sourceCustomerId);
+      if (customer.scoularId) allCodes.add(customer.scoularId);
       for (const linkedCode of freshLinked) allCodes.add(linkedCode);
-      for (const incomingCode of (incomingCodeLinks.get(customer.sourceCustomerId || '') || new Set<string>())) {
+      for (const incomingCode of (incomingCodeLinks.get(customer.scoularId || '') || new Set<string>())) {
         allCodes.add(incomingCode);
       }
       let latestTime = 0;
@@ -766,9 +766,9 @@ export class BuildListComponent {
 
     for (const customer of this.customers()) {
       const detailCrops = customer.commodities?.length ? [...customer.commodities] : [];
-      const contractCrops = customer.sourceCustomerId
+      const contractCrops = customer.scoularId
         ? [...new Set(
-            (contractMap.get(customer.sourceCustomerId) || [])
+            (contractMap.get(customer.scoularId) || [])
               .map(c => c.commodityCode)
               .filter((crop): crop is string => !!crop)
           )]
@@ -1425,7 +1425,7 @@ export class BuildListComponent {
       const isPositive = lq.includes('positive') || lq.includes('ahead') || lq.includes('above') || lq.includes('faster') || lq.includes('up');
       if (isNegative || isPositive) {
         const allCustomersWithContracts = this.customers().filter(c =>
-          (this._contractsByCustomer().get(c.sourceCustomerId!) || []).length > 0
+          (this._contractsByCustomer().get(c.scoularId!) || []).length > 0
         );
         const pacingResults = allCustomersWithContracts.filter(c => {
           const dir = this._getCustomerPacingDirection(c);
@@ -1552,7 +1552,7 @@ export class BuildListComponent {
         .filter(c =>
           !excludedIds.has(c.id) &&
           (c.name.toLowerCase().includes(lower) ||
-           (c.sourceCustomerId || '').toLowerCase().includes(lower) ||
+           (c.scoularId || '').toLowerCase().includes(lower) ||
            (c.farm || '').toLowerCase().includes(lower))
         )
         .slice(0, 5)
@@ -1636,7 +1636,7 @@ export class BuildListComponent {
    * the arrow the user sees on the customer profile.
    */
   private _getCustomerPacingDirection(customer: Customer): 'up' | 'down' | 'flat' | null {
-    const customerContracts = this._contractsByCustomer().get(customer.sourceCustomerId!) || [];
+    const customerContracts = this._contractsByCustomer().get(customer.scoularId!) || [];
     if (customerContracts.length === 0) return null;
     const windows = this.appState.harvestWindows().filter(hw => hw.isActive !== false);
     if (windows.length === 0) return null;
@@ -1750,7 +1750,7 @@ export class BuildListComponent {
         this.filteredCustomers.set(allCustomers.filter(c => {
           const plantings = plantingByCustomer.get(c.id);
           if (!plantings) return false;
-          const custContracts = contractsByCustomer.get(c.sourceCustomerId!) || [];
+          const custContracts = contractsByCustomer.get(c.scoularId!) || [];
           return plantings.some(p =>
             !custContracts.some(ct => ct.cropYear === p.year && contractMatchesCrop(ct, p.crop))
           );
@@ -1769,7 +1769,7 @@ export class BuildListComponent {
         this.filteredCustomers.set(allCustomers.filter(c => {
           const plantings = plantingByCustomer.get(c.id);
           if (!plantings) return false;
-          const custContracts = contractsByCustomer.get(c.sourceCustomerId!) || [];
+          const custContracts = contractsByCustomer.get(c.scoularId!) || [];
           // Check each planting crop: estimated production vs contracted bushels
           return plantings.some(p => {
             const yieldEst = yieldMap.get(p.crop);
@@ -1794,7 +1794,7 @@ export class BuildListComponent {
         for (const c of allCustomers) {
           const plantings = plantingByCustomer.get(c.id);
           if (!plantings) continue;
-          const custContracts = contractsByCustomer.get(c.sourceCustomerId!) || [];
+          const custContracts = contractsByCustomer.get(c.scoularId!) || [];
           let totalGap = 0;
           for (const p of plantings) {
             const yieldEst = yieldMap.get(p.crop);

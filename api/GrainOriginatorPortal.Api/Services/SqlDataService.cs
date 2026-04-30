@@ -39,7 +39,7 @@ public class SqlDataService : IDataService
     /// Strips every character except [a-zA-Z0-9-_] from each value, then joins with commas.
     /// The output is guaranteed safe to interpolate into a SQL statement — no quotes, semicolons,
     /// whitespace, or SQL metacharacters can survive. Used with STRING_SPLIT to pass an identifier
-    /// collection (TradeUnit codes, SourceCustomerIds, etc.) into a parameterized SqlParameter value.
+    /// collection (TradeUnit codes, ScoularIds, etc.) into a parameterized SqlParameter value.
     /// DO NOT bypass this method when passing caller-controlled identifier collections into raw SQL.
     /// </summary>
     internal static string SanitizeCsv(IEnumerable<string> values) =>
@@ -236,7 +236,7 @@ public class SqlDataService : IDataService
 
                 whereClauses.Add($@"(
                     CustomerName LIKE '%' + {paramName} + '%'
-                    OR SourceCustomerId LIKE '%' + {paramName} + '%'
+                    OR ScoularId LIKE '%' + {paramName} + '%'
                     OR MerchandisingPhone LIKE '%' + {paramName} + '%'
                     OR ExtendedPrimaryPhone LIKE '%' + {paramName} + '%'
                     OR MerchandisingCity LIKE '%' + {paramName} + '%'
@@ -303,7 +303,7 @@ public class SqlDataService : IDataService
     {
         Id = snap.CustomerId,
         Name = snap.CustomerName,
-        SourceCustomerId = snap.SourceCustomerId?.Trim(),
+        ScoularId = snap.ScoularId?.Trim(),
         IndustryCode1 = snap.IndustryCode1,
         IsActive = snap.IsActive,
         EffectiveStartDate = snap.EffectiveStartDate,
@@ -336,8 +336,8 @@ public class SqlDataService : IDataService
         if (customers.Count == 0) return;
 
         var codes = customers
-            .Where(c => c.SourceCustomerId != null)
-            .Select(c => c.SourceCustomerId!)
+            .Where(c => c.ScoularId != null)
+            .Select(c => c.ScoularId!)
             .Distinct()
             .ToList();
 
@@ -360,7 +360,7 @@ public class SqlDataService : IDataService
 
         // For duplicates: find the first row with real ScoularViewRecipients
         // (not null, empty, or "No"). If none have recipients, value stays null.
-        // Case-insensitive CustomerCode so eSign enrollment lookups match Customer.SourceCustomerId
+        // Case-insensitive CustomerCode so eSign enrollment lookups match Customer.ScoularId
         // regardless of casing drift between the two sources (SQL collation is already case-insensitive).
         var enrollments = enrollmentList
             .GroupBy(e => e.CustomerCode, StringComparer.OrdinalIgnoreCase)
@@ -374,8 +374,8 @@ public class SqlDataService : IDataService
 
         foreach (var customer in customers)
         {
-            if (customer.SourceCustomerId != null &&
-                enrollments.TryGetValue(customer.SourceCustomerId, out var recipients))
+            if (customer.ScoularId != null &&
+                enrollments.TryGetValue(customer.ScoularId, out var recipients))
             {
                 customer.ESignEnabled = true;
                 customer.ScoularViewRecipients = recipients;
@@ -471,19 +471,19 @@ public class SqlDataService : IDataService
         }
     }
 
-    public async Task<Customer?> GetCustomerBySourceIdAsync(string sourceCustomerId, CancellationToken cancellationToken = default)
+    public async Task<Customer?> GetCustomerByScoularIdAsync(string scoularId, CancellationToken cancellationToken = default)
     {
         try
         {
             var snap = await _appContext.CustomerSnapshots.AsNoTracking()
-                .Where(s => s.SourceCustomerId == sourceCustomerId)
+                .Where(s => s.ScoularId == scoularId)
                 .FirstOrDefaultAsync(cancellationToken);
             return snap == null ? null : MapSnapshotToCustomer(snap);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving customer by source ID {SourceCustomerId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
-                sourceCustomerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            _logger.LogError(ex, "Error retrieving customer by source ID {ScoularId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                scoularId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -494,14 +494,14 @@ public class SqlDataService : IDataService
     /// search path so the customer profile can show bidirectional linked producers even when no TU
     /// is selected and the main customer roster is empty.
     /// </summary>
-    public async Task<List<Customer>> GetCustomersLinkedToAsync(string sourceCustomerId, CancellationToken cancellationToken = default)
+    public async Task<List<Customer>> GetCustomersLinkedToAsync(string scoularId, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(sourceCustomerId)) return [];
+        if (string.IsNullOrWhiteSpace(scoularId)) return [];
         try
         {
             // Match CSV entries safely — avoid false substring matches on similar ids by testing
             // for ",<id>," after wrapping LinkedProducerIds in commas on both sides.
-            var needle = $"%,{sourceCustomerId},%";
+            var needle = $"%,{scoularId},%";
             var matchingCustomerIds = await _appContext.ProducerDetails
                 .AsNoTracking()
                 .Where(pd => pd.LinkedProducerIds != null && EF.Functions.Like("," + pd.LinkedProducerIds + ",", needle))
@@ -542,7 +542,7 @@ public class SqlDataService : IDataService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving incoming linked customers for source {SourceId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
-                sourceCustomerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+                scoularId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             return [];
         }
     }
@@ -887,8 +887,8 @@ public class SqlDataService : IDataService
                 // the user can search across the full producer base.
                 var customerCtrmIds = await _appContext.CustomerSnapshots
                     .AsNoTracking()
-                    .Where(s => s.IsActive && s.SourceCustomerId != null)
-                    .Select(s => s.SourceCustomerId!)
+                    .Where(s => s.IsActive && s.ScoularId != null)
+                    .Select(s => s.ScoularId!)
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
@@ -917,9 +917,9 @@ public class SqlDataService : IDataService
                 // CustomerSnapshot already contains only producer customers — no additional type filter needed.
                 var ctrmIds = await _appContext.CustomerSnapshots
                     .AsNoTracking()
-                    .Where(c => c.SourceCustomerId != null && c.IsActive
+                    .Where(c => c.ScoularId != null && c.IsActive
                         && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
-                    .Select(c => c.SourceCustomerId!)
+                    .Select(c => c.ScoularId!)
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
@@ -1010,20 +1010,20 @@ public class SqlDataService : IDataService
         return ContractStatus.Pending;
     }
 
-    public async Task<List<Contract>> GetContractsByCustomerAsync(long customerId, string? sourceCustomerId = null, CancellationToken cancellationToken = default)
+    public async Task<List<Contract>> GetContractsByCustomerAsync(long customerId, string? scoularId = null, CancellationToken cancellationToken = default)
     {
         try
         {
-            // Resolve SourceCustomerId if not supplied by the caller (avoids a DB round-trip when the client already has it).
-            if (string.IsNullOrEmpty(sourceCustomerId))
+            // Resolve ScoularId if not supplied by the caller (avoids a DB round-trip when the client already has it).
+            if (string.IsNullOrEmpty(scoularId))
             {
-                sourceCustomerId = await _appContext.CustomerSnapshots.AsNoTracking()
+                scoularId = await _appContext.CustomerSnapshots.AsNoTracking()
                     .Where(s => s.CustomerId == customerId)
-                    .Select(s => s.SourceCustomerId)
+                    .Select(s => s.ScoularId)
                     .FirstOrDefaultAsync(cancellationToken);
-                if (string.IsNullOrEmpty(sourceCustomerId))
+                if (string.IsNullOrEmpty(scoularId))
                 {
-                    _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
+                    _logger.LogWarning("Customer {CustomerId} not found or has no ScoularId", customerId);
                     return [];
                 }
             }
@@ -1032,7 +1032,7 @@ public class SqlDataService : IDataService
             var pacingCutoffYear = DateTime.Today.Year - 1;
             var contracts = await _context.Contracts
                 .AsNoTracking()
-                .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId == sourceCustomerId
+                .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId == scoularId
                     && (c.ClosedDate == null || c.CropYear >= pacingCutoffYear))
                 .OrderByDescending(c => c.Id)
                 .ToListAsync(cancellationToken);
@@ -1045,8 +1045,8 @@ public class SqlDataService : IDataService
                 contract.Signed = true; // Default to signed since ODS doesn't have this field
             }
 
-            _logger.LogInformation("Found {ContractCount} contracts for customer {CustomerId} (SourceCustomerId: {SourceCustomerId})",
-                contracts.Count, customerId, sourceCustomerId);
+            _logger.LogInformation("Found {ContractCount} contracts for customer {CustomerId} (ScoularId: {ScoularId})",
+                contracts.Count, customerId, scoularId);
             return contracts;
         }
         catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
@@ -1078,13 +1078,13 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var sourceCustomerId = await _appContext.CustomerSnapshots.AsNoTracking()
+            var scoularId = await _appContext.CustomerSnapshots.AsNoTracking()
                 .Where(s => s.CustomerId == customerId)
-                .Select(s => s.SourceCustomerId)
+                .Select(s => s.ScoularId)
                 .FirstOrDefaultAsync(cancellationToken);
-            if (string.IsNullOrEmpty(sourceCustomerId))
+            if (string.IsNullOrEmpty(scoularId))
             {
-                _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId — returning empty historical contracts", customerId);
+                _logger.LogWarning("Customer {CustomerId} not found or has no ScoularId — returning empty historical contracts", customerId);
                 return [];
             }
 
@@ -1095,7 +1095,7 @@ public class SqlDataService : IDataService
                     WHERE c.IsActive = 1
                       AND c.IsDeleted = 0
                       AND c.ContractPrefixType = 'P'
-                      AND c.CtrmCustomerId = {sourceCustomerId}
+                      AND c.CtrmCustomerId = {scoularId}
                       AND c.ClosedDate IS NOT NULL
                       AND c.CropYear >= {pacingCutoffYear}")
                 .AsNoTracking()
@@ -1148,13 +1148,13 @@ public class SqlDataService : IDataService
             // return contracts for every active producer.
             var ctrmIdsQuery = _appContext.CustomerSnapshots
                 .AsNoTracking()
-                .Where(s => s.IsActive && s.SourceCustomerId != null);
+                .Where(s => s.IsActive && s.ScoularId != null);
             if (tradeUnits != null && tradeUnits.Count > 0)
             {
                 ctrmIdsQuery = ctrmIdsQuery.Where(s => s.TradeUnit != null && tradeUnits.Contains(s.TradeUnit));
             }
             var ctrmIds = await ctrmIdsQuery
-                .Select(s => s.SourceCustomerId!)
+                .Select(s => s.ScoularId!)
                 .Distinct()
                 .ToListAsync(cancellationToken);
 
@@ -1261,14 +1261,14 @@ public class SqlDataService : IDataService
         }
     }
 
-    public async Task<List<ContractPricingLine>> GetPricingLinesByCustomerAsync(string sourceCustomerId, CancellationToken cancellationToken = default)
+    public async Task<List<ContractPricingLine>> GetPricingLinesByCustomerAsync(string scoularId, CancellationToken cancellationToken = default)
     {
         try
         {
             // base.vw_ContractPricing has no customer_id column — resolve via contracts
             var sourceContractIds = await _context.Contracts
                 .AsNoTracking()
-                .Where(c => c.CtrmCustomerId == sourceCustomerId && c.ContractPrefixType == "P")
+                .Where(c => c.CtrmCustomerId == scoularId && c.ContractPrefixType == "P")
                 .Select(c => c.SourceContractId)
                 .Where(id => id != null)
                 .ToListAsync(cancellationToken);
@@ -1285,7 +1285,7 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning("vw_ContractPricing not accessible for customer {CustomerId}. Returning empty list. Error: {Error}", sourceCustomerId, ex.Message);
+            _logger.LogWarning("vw_ContractPricing not accessible for customer {CustomerId}. Returning empty list. Error: {Error}", scoularId, ex.Message);
             return new List<ContractPricingLine>();
         }
     }
@@ -1311,8 +1311,8 @@ public class SqlDataService : IDataService
                 // a narrowing convenience, not an entitlement boundary.
                 var customerCodes = await _appContext.CustomerSnapshots
                     .AsNoTracking()
-                    .Where(s => s.IsActive && s.SourceCustomerId != null)
-                    .Select(s => s.SourceCustomerId!)
+                    .Where(s => s.IsActive && s.ScoularId != null)
+                    .Select(s => s.ScoularId!)
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
@@ -1344,9 +1344,9 @@ public class SqlDataService : IDataService
                 // state for any contract those customers own).
                 var customerCodes = await _appContext.CustomerSnapshots
                     .AsNoTracking()
-                    .Where(s => s.IsActive && s.SourceCustomerId != null
+                    .Where(s => s.IsActive && s.ScoularId != null
                         && s.TradeUnit != null && tradeUnits!.Contains(s.TradeUnit))
-                    .Select(s => s.SourceCustomerId!)
+                    .Select(s => s.ScoularId!)
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
@@ -1560,8 +1560,8 @@ public class SqlDataService : IDataService
                 // a narrowing convenience, not an entitlement boundary.
                 var customerCodes = await _appContext.CustomerSnapshots
                     .AsNoTracking()
-                    .Where(s => s.IsActive && s.SourceCustomerId != null)
-                    .Select(s => s.SourceCustomerId!)
+                    .Where(s => s.IsActive && s.ScoularId != null)
+                    .Select(s => s.ScoularId!)
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
@@ -1602,9 +1602,9 @@ public class SqlDataService : IDataService
 
                 var snapshotCustomerCodes = await _appContext.CustomerSnapshots
                     .AsNoTracking()
-                    .Where(s => s.IsActive && s.SourceCustomerId != null
+                    .Where(s => s.IsActive && s.ScoularId != null
                         && s.TradeUnit != null && tradeUnits!.Contains(s.TradeUnit))
-                    .Select(s => s.SourceCustomerId!)
+                    .Select(s => s.ScoularId!)
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
@@ -1669,28 +1669,28 @@ public class SqlDataService : IDataService
         }
     }
 
-    public async Task<List<Ticket>> GetTicketsByCustomerAsync(long customerId, string? sourceCustomerId = null, CancellationToken cancellationToken = default)
+    public async Task<List<Ticket>> GetTicketsByCustomerAsync(long customerId, string? scoularId = null, CancellationToken cancellationToken = default)
     {
         try
         {
-            // Resolve SourceCustomerId if not supplied by the caller (avoids a DB round-trip when the client already has it).
-            if (string.IsNullOrEmpty(sourceCustomerId))
+            // Resolve ScoularId if not supplied by the caller (avoids a DB round-trip when the client already has it).
+            if (string.IsNullOrEmpty(scoularId))
             {
-                sourceCustomerId = await _appContext.CustomerSnapshots.AsNoTracking()
+                scoularId = await _appContext.CustomerSnapshots.AsNoTracking()
                     .Where(s => s.CustomerId == customerId)
-                    .Select(s => s.SourceCustomerId)
+                    .Select(s => s.ScoularId)
                     .FirstOrDefaultAsync(cancellationToken);
-                if (string.IsNullOrEmpty(sourceCustomerId))
+                if (string.IsNullOrEmpty(scoularId))
                 {
-                    _logger.LogWarning("Customer {CustomerId} not found or has no SourceCustomerId", customerId);
+                    _logger.LogWarning("Customer {CustomerId} not found or has no ScoularId", customerId);
                     return [];
                 }
             }
 
-            // Match tickets using CustomerCode = sourceCustomerId (string matching, like contracts)
+            // Match tickets using CustomerCode = scoularId (string matching, like contracts)
             var tickets = await _context.Tickets
                 .AsNoTracking()
-                .Where(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerCode == sourceCustomerId)
+                .Where(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerCode == scoularId)
                 .OrderByDescending(t => t.Date)
                 .ToListAsync(cancellationToken);
 
@@ -1716,8 +1716,8 @@ public class SqlDataService : IDataService
 
             await PopulateElevatorLocations(tickets, cancellationToken);
 
-            _logger.LogInformation("Found {TicketCount} tickets for customer {CustomerId} (SourceCustomerId: {SourceCustomerId})",
-                tickets.Count, customerId, sourceCustomerId);
+            _logger.LogInformation("Found {TicketCount} tickets for customer {CustomerId} (ScoularId: {ScoularId})",
+                tickets.Count, customerId, scoularId);
             return tickets;
         }
         catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
@@ -1779,9 +1779,9 @@ public class SqlDataService : IDataService
 
                 var snapshotCustomerCodes = await _appContext.CustomerSnapshots
                     .AsNoTracking()
-                    .Where(s => s.IsActive && s.SourceCustomerId != null
+                    .Where(s => s.IsActive && s.ScoularId != null
                         && s.TradeUnit != null && tuList.Contains(s.TradeUnit))
-                    .Select(s => s.SourceCustomerId!)
+                    .Select(s => s.ScoularId!)
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
@@ -2031,14 +2031,14 @@ public class SqlDataService : IDataService
             // Resolve denormalized name/code from CustomerSnapshot (the UI's source of truth).
             var snap = await _appContext.CustomerSnapshots.AsNoTracking()
                 .Where(s => s.CustomerId == customerId)
-                .Select(s => new { s.CustomerName, s.SourceCustomerId })
+                .Select(s => new { s.CustomerName, s.ScoularId })
                 .FirstOrDefaultAsync(cancellationToken);
 
             var note = new Note
             {
                 CustomerId = customerId,
                 CustomerName = snap?.CustomerName ?? string.Empty,
-                CustomerCode = snap?.SourceCustomerId,
+                CustomerCode = snap?.ScoularId,
                 TradeUnit = tradeUnit,
                 Description = content,
                 CreatedBy = GetCurrentUser(),
@@ -2194,7 +2194,7 @@ public class SqlDataService : IDataService
         }
     }
 
-    public async Task<ProducerDetails> UpsertProducerDetailsAsync(long customerId, string? sourceCustomerId, string customerName, decimal? totalAcres, decimal? binCapacity, string? primaryContact, string? commodities, string? linkedProducerIds = null, CancellationToken cancellationToken = default)
+    public async Task<ProducerDetails> UpsertProducerDetailsAsync(long customerId, string? scoularId, string customerName, decimal? totalAcres, decimal? binCapacity, string? primaryContact, string? commodities, string? linkedProducerIds = null, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -2202,7 +2202,7 @@ public class SqlDataService : IDataService
 
             if (existing != null)
             {
-                existing.SourceCustomerId = sourceCustomerId;
+                existing.ScoularId = scoularId;
                 existing.CustomerName = customerName;
                 existing.TotalAcres = totalAcres;
                 existing.BinCapacity = binCapacity;
@@ -2225,7 +2225,7 @@ public class SqlDataService : IDataService
                 var details = new ProducerDetails
                 {
                     CustomerId = customerId,
-                    SourceCustomerId = sourceCustomerId,
+                    ScoularId = scoularId,
                     CustomerName = customerName,
                     TotalAcres = totalAcres,
                     BinCapacity = binCapacity,
@@ -2343,13 +2343,13 @@ public class SqlDataService : IDataService
 
         var snapshots = await _appContext.CustomerSnapshots
             .AsNoTracking()
-            .Where(s => s.SourceCustomerId != null && customerCodes.Contains(s.SourceCustomerId))
-            .Select(s => new { s.SourceCustomerId, s.CustomerId })
+            .Where(s => s.ScoularId != null && customerCodes.Contains(s.ScoularId))
+            .Select(s => new { s.ScoularId, s.CustomerId })
             .Distinct()
             .ToListAsync(cancellationToken);
 
         var lookup = snapshots
-            .GroupBy(s => s.SourceCustomerId!, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(s => s.ScoularId!, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First().CustomerId, StringComparer.OrdinalIgnoreCase);
 
         foreach (var record in records)
@@ -2372,9 +2372,9 @@ public class SqlDataService : IDataService
                 // Find customer codes in these TUs, then load ALL their storage (cross-TU)
                 var customerCodes = await _appContext.CustomerSnapshots
                     .AsNoTracking()
-                    .Where(s => s.IsActive && s.SourceCustomerId != null
+                    .Where(s => s.IsActive && s.ScoularId != null
                         && s.TradeUnit != null && tuList.Contains(s.TradeUnit))
-                    .Select(s => s.SourceCustomerId!)
+                    .Select(s => s.ScoularId!)
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
@@ -2408,17 +2408,17 @@ public class SqlDataService : IDataService
         try
         {
             // Look up the customer's source ID from CustomerSnapshot, then filter by it in ODS.
-            var sourceCustomerId = await _appContext.CustomerSnapshots
+            var scoularId = await _appContext.CustomerSnapshots
                 .AsNoTracking()
-                .Where(s => s.CustomerId == customerId && s.SourceCustomerId != null)
-                .Select(s => s.SourceCustomerId!)
+                .Where(s => s.CustomerId == customerId && s.ScoularId != null)
+                .Select(s => s.ScoularId!)
                 .FirstOrDefaultAsync(cancellationToken);
 
-            if (string.IsNullOrEmpty(sourceCustomerId)) return [];
+            if (string.IsNullOrEmpty(scoularId)) return [];
 
             var sql = StoredGrainSql + " AND sg.CUSTOMER_ID = @customerCode";
             var records = await _context.Database
-                .SqlQueryRaw<StoredGrain>(sql, new SqlParameter("@customerCode", sourceCustomerId))
+                .SqlQueryRaw<StoredGrain>(sql, new SqlParameter("@customerCode", scoularId))
                 .ToListAsync(cancellationToken);
 
             // Set CustomerId for all records (we already know it from the input)

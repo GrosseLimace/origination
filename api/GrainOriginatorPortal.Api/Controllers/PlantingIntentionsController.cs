@@ -68,7 +68,7 @@ public class PlantingIntentionsController : ControllerBase
             .FirstOrDefaultAsync(cs => cs.CustomerId == request.CustomerId, cancellationToken);
 
         var customerName = snapshot?.CustomerName ?? request.CustomerName ?? string.Empty;
-        var customerCode = snapshot?.SourceCustomerId ?? request.CustomerCode ?? string.Empty;
+        var customerCode = snapshot?.ScoularId ?? request.CustomerCode ?? string.Empty;
         var tradeUnit = snapshot?.TradeUnit ?? request.TradeUnit;
 
         if (string.IsNullOrWhiteSpace(tradeUnit))
