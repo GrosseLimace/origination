@@ -509,10 +509,10 @@ export class CustomerListComponent {
     }
     const incomingCodeLinks = new Map<string, Set<string>>();
     for (const c of allCustomers) {
-      if (!c.sourceCustomerId) continue;
+      if (!c.scoularId) continue;
       for (const linkedCode of (c.linkedProducerIds || [])) {
         if (!incomingCodeLinks.has(linkedCode)) incomingCodeLinks.set(linkedCode, new Set());
-        incomingCodeLinks.get(linkedCode)!.add(c.sourceCustomerId);
+        incomingCodeLinks.get(linkedCode)!.add(c.scoularId);
       }
     }
 
@@ -521,9 +521,9 @@ export class CustomerListComponent {
       // Use linkedProducerIds from the full customer list (not the potentially stale filtered copy).
       const freshLinked = linkedById.get(customer.id) ?? customer.linkedProducerIds ?? [];
       const allCodes = new Set<string>();
-      if (customer.sourceCustomerId) allCodes.add(customer.sourceCustomerId);
+      if (customer.scoularId) allCodes.add(customer.scoularId);
       for (const linkedCode of freshLinked) allCodes.add(linkedCode);
-      for (const incomingCode of (incomingCodeLinks.get(customer.sourceCustomerId || '') || new Set<string>())) {
+      for (const incomingCode of (incomingCodeLinks.get(customer.scoularId || '') || new Set<string>())) {
         allCodes.add(incomingCode);
       }
       const customerNotes = [...allCodes].flatMap(code => notesByCode.get(code) || []);

@@ -1,7 +1,7 @@
 export interface ProducerDetails {
   id: number;
   customerId: number;
-  sourceCustomerId?: string;
+  scoularId?: string;
   customerName: string;
   totalAcres?: number;
   binCapacity?: number;

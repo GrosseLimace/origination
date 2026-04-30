@@ -468,7 +468,7 @@ export class DashboardComponent {
       return {
         customerId,
         customerName: v.customerName,
-        sourceCustomerId: customer?.sourceCustomerId ?? null,
+        scoularId: customer?.scoularId ?? null,
         customer,
         tradeUnit: v.tradeUnit,
         acres: v.acres,
@@ -495,7 +495,7 @@ export class DashboardComponent {
       }
     }
 
-    // Contracts grouped by ctrmCustomerId (the FK on contracts that maps to customer.sourceCustomerId)
+    // Contracts grouped by ctrmCustomerId (the FK on contracts that maps to customer.scoularId)
     const contractCropsBySrcId = new Map<string, string[]>();
     for (const c of this.contracts()) {
       const key = c.ctrmCustomerId;
@@ -508,8 +508,8 @@ export class DashboardComponent {
 
     for (const customer of this.customers()) {
       const detailCrops = pdByCustomer.get(customer.id) ?? customer.commodities ?? [];
-      const contractCrops = customer.sourceCustomerId
-        ? (contractCropsBySrcId.get(customer.sourceCustomerId) ?? [])
+      const contractCrops = customer.scoularId
+        ? (contractCropsBySrcId.get(customer.scoularId) ?? [])
         : [];
       const seen = new Set<string>();
       const merged: string[] = [];
@@ -559,7 +559,7 @@ export class DashboardComponent {
       .map(c => ({
         customerId: c.id,
         customerName: c.name,
-        sourceCustomerId: c.sourceCustomerId ?? null,
+        scoularId: c.scoularId ?? null,
         customer: c,
         crops: [...(cropsMap.get(c.id) ?? [])].sort(),
       }));
@@ -581,7 +581,7 @@ export class DashboardComponent {
     if (search) {
       result = result.filter(r =>
         r.customerName.toLowerCase().includes(search) ||
-        (r.sourceCustomerId && r.sourceCustomerId.toLowerCase().includes(search))
+        (r.scoularId && r.scoularId.toLowerCase().includes(search))
       );
     }
     if (cropFilter) {
@@ -635,10 +635,10 @@ export class DashboardComponent {
     }
     const incomingCodeLinks = new Map<string, Set<string>>();
     for (const c of all) {
-      if (!c.sourceCustomerId) continue;
+      if (!c.scoularId) continue;
       for (const linkedCode of (c.linkedProducerIds || [])) {
         if (!incomingCodeLinks.has(linkedCode)) incomingCodeLinks.set(linkedCode, new Set());
-        incomingCodeLinks.get(linkedCode)!.add(c.sourceCustomerId);
+        incomingCodeLinks.get(linkedCode)!.add(c.scoularId);
       }
     }
 
@@ -646,9 +646,9 @@ export class DashboardComponent {
     today.setHours(0, 0, 0, 0);
     for (const customer of all) {
       const codes = new Set<string>();
-      if (customer.sourceCustomerId) codes.add(customer.sourceCustomerId);
+      if (customer.scoularId) codes.add(customer.scoularId);
       for (const code of (linkedById.get(customer.id) ?? customer.linkedProducerIds ?? [])) codes.add(code);
-      for (const code of (incomingCodeLinks.get(customer.sourceCustomerId || '') || [])) codes.add(code);
+      for (const code of (incomingCodeLinks.get(customer.scoularId || '') || [])) codes.add(code);
       let latestTime = 0;
       for (const code of codes) {
         const e = notesByCode.get(code);

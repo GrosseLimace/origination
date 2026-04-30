@@ -592,7 +592,7 @@ export class HomeComponent {
     this.isLoadingContracts.set(true);
     this.isLoadingTickets.set(true);
     this.isLoadingStoredGrain.set(true);
-    this._loadCustomerContractsAndTickets(customer.id, customer.sourceCustomerId);
+    this._loadCustomerContractsAndTickets(customer.id, customer.scoularId);
     this._loadCustomerData(customer.id);
     this._fetchMissingLinkedProducers(customer);
 
@@ -659,7 +659,7 @@ export class HomeComponent {
     const linkedIds = customer.linkedProducerIds || [];
     const allCustomers = [...this.customers(), ...this._crossTradeUnitCustomers().values()];
     const missing = linkedIds.filter(sourceId =>
-      !allCustomers.some(c => c.sourceCustomerId === sourceId)
+      !allCustomers.some(c => c.scoularId === sourceId)
     );
 
     // Outgoing: fetch each linked producer id this customer points to.
@@ -669,12 +669,12 @@ export class HomeComponent {
 
     // Incoming: fetch customers that link TO this one (reverse links). Needed so non-
     // loaded producers who reverse-link to this customer still appear in the dropdown.
-    const incoming$ = customer.sourceCustomerId
-      ? this.apiService.getCustomersLinkedTo(customer.sourceCustomerId)
+    const incoming$ = customer.scoularId
+      ? this.apiService.getCustomersLinkedTo(customer.scoularId)
       : of([] as Customer[]);
 
     // Nothing to fetch — skip network entirely.
-    if (outgoingRequests.length === 0 && !customer.sourceCustomerId) return;
+    if (outgoingRequests.length === 0 && !customer.scoularId) return;
 
     forkJoin({
       outgoing: outgoingRequests.length > 0 ? forkJoin(outgoingRequests) : of([] as (Customer | null)[]),
@@ -714,7 +714,7 @@ export class HomeComponent {
     if (existingPd?.primaryContact || linkedCustomer.primaryContact) return;
 
     this.apiService.saveProducerDetails(linkedCustomer.id, {
-      sourceCustomerId: linkedCustomer.sourceCustomerId || null,
+      scoularId: linkedCustomer.scoularId || null,
       customerName: linkedCustomer.name,
       totalAcres: existingPd?.totalAcres ?? null,
       binCapacity: existingPd?.binCapacity ?? null,
@@ -744,15 +744,15 @@ export class HomeComponent {
     });
   }
 
-  private _loadCustomerContractsAndTickets(customerId: number, sourceCustomerId?: string): void {
-    if (sourceCustomerId) {
-      this.apiService.getPricingLinesByCustomer(sourceCustomerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+  private _loadCustomerContractsAndTickets(customerId: number, scoularId?: string): void {
+    if (scoularId) {
+      this.apiService.getPricingLinesByCustomer(scoularId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (lines) => { this.customerPricingLines.set(lines); this.appState.setPricingLines(lines); },
         error: () => this.customerPricingLines.set([])
       });
     }
 
-    this.apiService.getContractsByCustomer(customerId, sourceCustomerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.apiService.getContractsByCustomer(customerId, scoularId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (contracts) => {
         const existing = this.contracts();
         const merged = [...existing];
@@ -769,7 +769,7 @@ export class HomeComponent {
       error: () => { this.isLoadingContracts.set(false); }
     });
 
-    this.apiService.getTicketsByCustomer(customerId, sourceCustomerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.apiService.getTicketsByCustomer(customerId, scoularId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (tickets) => {
         const existing = this.tickets();
         const merged = [...existing];
@@ -808,8 +808,8 @@ export class HomeComponent {
     const currentCustomer = customer || this.selectedCustomer();
     if (!currentCustomer) return;
 
-    const allContracts = this.contracts().filter(c => c.ctrmCustomerId === currentCustomer.sourceCustomerId);
-    const allTickets = this.tickets().filter(t => t.customerCode === currentCustomer.sourceCustomerId);
+    const allContracts = this.contracts().filter(c => c.ctrmCustomerId === currentCustomer.scoularId);
+    const allTickets = this.tickets().filter(t => t.customerCode === currentCustomer.scoularId);
     this.allCustomerContracts.set([...allContracts]);
     this.allCustomerTickets.set([...allTickets]);
     this.customerContracts.set([...allContracts]);
@@ -822,7 +822,7 @@ export class HomeComponent {
     const linkedGroup = this.getLinkedGroup(currentCustomer);
     const linkedIds = new Set([customerId, ...linkedGroup.map(c => c.id)]);
     const codeMap = new Map<number, string>();
-    [currentCustomer, ...linkedGroup].forEach(c => { if (c?.sourceCustomerId) codeMap.set(c.id, c.sourceCustomerId); });
+    [currentCustomer, ...linkedGroup].forEach(c => { if (c?.scoularId) codeMap.set(c.id, c.scoularId); });
     this.customerCodeMap.set(codeMap);
     this.customerNotes.set(this._sortNotes(this.notes().filter(n => linkedIds.has(n.customerId))));
   }
@@ -842,7 +842,7 @@ export class HomeComponent {
     const merged = [...new Set([...storedCommodities, ...sourceCommodities])].sort();
     const existingPd = this.producerDetailsMap().get(customer.id);
     this.apiService.saveProducerDetails(customer.id, {
-      sourceCustomerId: customer.sourceCustomerId || null,
+      scoularId: customer.scoularId || null,
       customerName: customer.name,
       totalAcres: existingPd?.totalAcres ?? null,
       binCapacity: existingPd?.binCapacity ?? null,
@@ -892,7 +892,7 @@ export class HomeComponent {
     const savedCommodities = allCommodities.length > 0 ? allCommodities.join(',') : null;
     const savedLinkedIds = data.linkedProducerIds.length > 0 ? data.linkedProducerIds.join(',') : null;
     const savePayload = {
-      sourceCustomerId: customer.sourceCustomerId || null,
+      scoularId: customer.scoularId || null,
       customerName: customer.name,
       totalAcres: data.acres || null,
       binCapacity: data.binCapacity || null,
@@ -922,15 +922,15 @@ export class HomeComponent {
       // Look in BOTH the main customer roster and the cross-TU cache — linked customers
       // outside the currently-selected trade units live in the cross-TU cache and would
       // be silently skipped otherwise.
-      const linkedCustomer = this.customers().find(c => c.sourceCustomerId === linkedIdStr)
-        ?? [...this._crossTradeUnitCustomers().values()].find(c => c.sourceCustomerId === linkedIdStr);
+      const linkedCustomer = this.customers().find(c => c.scoularId === linkedIdStr)
+        ?? [...this._crossTradeUnitCustomers().values()].find(c => c.scoularId === linkedIdStr);
       if (!linkedCustomer) continue;
-      const currentSourceId = customer.sourceCustomerId || '';
+      const currentSourceId = customer.scoularId || '';
       const updatedLinkedIds = (linkedCustomer.linkedProducerIds || []).filter(id => id !== currentSourceId);
       const linkedId = linkedCustomer.id;
       const existingPd = this.producerDetailsMap().get(linkedId);
       this.apiService.saveProducerDetails(linkedId, {
-        sourceCustomerId: linkedCustomer.sourceCustomerId || null,
+        scoularId: linkedCustomer.scoularId || null,
         customerName: linkedCustomer.name,
         totalAcres: existingPd?.totalAcres ?? null,
         binCapacity: existingPd?.binCapacity ?? null,
@@ -968,7 +968,7 @@ export class HomeComponent {
       // Propagate primary contact to ALL linked producers that don't have one yet
       const allKnown = [...this.customers(), ...this._crossTradeUnitCustomers().values()];
       for (const linkedIdStr of data.linkedProducerIds) {
-        const linkedCustomer = allKnown.find(c => c.sourceCustomerId === linkedIdStr);
+        const linkedCustomer = allKnown.find(c => c.scoularId === linkedIdStr);
         if (linkedCustomer) {
           this._propagatePrimaryContact(linkedCustomer, data.primaryContact);
         } else {
@@ -1019,7 +1019,7 @@ export class HomeComponent {
   /**
    * Returns every producer transitively linked to `customer` — both forward (customers
    * in `customer.linkedProducerIds`) and reverse (customers whose own `linkedProducerIds`
-   * includes `customer.sourceCustomerId`) — walked until the connected component is
+   * includes `customer.scoularId`) — walked until the connected component is
    * exhausted. Prevents infinite loops with a visited set. Caps at 50 members to avoid
    * worst-case fanout. Relies on `_fetchMissingLinkedProducers` having populated the
    * cache; if a transitively-linked producer isn't loaded yet, it's silently excluded
@@ -1030,7 +1030,7 @@ export class HomeComponent {
     const all = [...this.customers(), ...this._crossTradeUnitCustomers().values()];
     const bySourceId = new Map<string, Customer>();
     for (const c of all) {
-      if (c.sourceCustomerId) bySourceId.set(c.sourceCustomerId, c);
+      if (c.scoularId) bySourceId.set(c.scoularId, c);
     }
 
     const visited = new Set<number>([customer.id]);
@@ -1051,7 +1051,7 @@ export class HomeComponent {
       }
 
       // Reverse: find anyone whose linkedProducerIds mentions the current customer
-      const curSource = cur.sourceCustomerId || '';
+      const curSource = cur.scoularId || '';
       if (curSource) {
         for (const other of all) {
           if (visited.has(other.id)) continue;
@@ -1084,7 +1084,7 @@ export class HomeComponent {
     if (customer) {
       this.selectedCustomer.set(customer);
       this._fetchMissingLinkedProducers(customer);
-      this._loadCustomerContractsAndTickets(customer.id, customer.sourceCustomerId);
+      this._loadCustomerContractsAndTickets(customer.id, customer.scoularId);
       this._loadCustomerData(customer.id);
       this.allCustomerPlantingIntentions.set([]);
       this.customerPlantingIntentions.set([]);
@@ -1121,7 +1121,7 @@ export class HomeComponent {
           this._crossTradeUnitCustomers.set(cache);
           this.selectedCustomer.set(fetched);
           this._fetchMissingLinkedProducers(fetched);
-          this._loadCustomerContractsAndTickets(fetched.id, fetched.sourceCustomerId);
+          this._loadCustomerContractsAndTickets(fetched.id, fetched.scoularId);
           this._loadCustomerData(fetched.id);
           this.allCustomerPlantingIntentions.set([]);
           this.customerPlantingIntentions.set([]);
@@ -1159,7 +1159,7 @@ export class HomeComponent {
     const sel = this.selectedCustomer();
     if (!sel) return;
     this.apiService.createPlantingIntention({
-      customerId: sel.id, customerName: sel.name, customerCode: sel.sourceCustomerId || '',
+      customerId: sel.id, customerName: sel.name, customerCode: sel.scoularId || '',
       tradeUnit: data.tradeUnit, crop: data.crop, category: data.category, type: data.type,
       description: data.description, acres: data.acres, plantingYear: data.plantingYear
     }).subscribe({

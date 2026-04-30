@@ -5,7 +5,7 @@ namespace GrainOriginatorPortal.Api.Models.Requests;
 public record UpsertProducerDetailsRequest
 {
     [StringLength(50)]
-    public string? SourceCustomerId { get; init; }
+    public string? ScoularId { get; init; }
 
     [Required]
     [StringLength(200)]
