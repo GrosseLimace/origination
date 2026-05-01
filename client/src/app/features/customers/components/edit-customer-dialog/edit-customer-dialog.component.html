@@ -249,7 +249,7 @@
                       type="text"
                       [ngModel]="newProducerSearch()"
                       (ngModelChange)="newProducerSearch.set($event)"
-                      placeholder="Search by name, ID, or customer code..."
+                      placeholder="Search by name, ID, or producer code..."
                       maxlength="100"
                       (input)="onProducerSearch()"
                       (focus)="showProducerSuggestions.set(true)"

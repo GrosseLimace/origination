@@ -913,7 +913,7 @@ export class HomeComponent {
         const map = new Map(this.producerDetailsMap());
         map.set(pd.customerId, pd);
         this.producerDetailsMap.set(map);
-        this.toastService.success('Customer updated successfully');
+        this.toastService.success('Producer updated successfully');
       },
       error: () => this.toastService.error('Failed to save producer details')
     });
@@ -1169,12 +1169,14 @@ export class HomeComponent {
         this.customerPlantingIntentions.update(arr => [...arr, intention]);
         this.allCustomerPlantingIntentions.update(arr => [...arr, intention]);
         this.toastService.success('Planting intention added');
+        this._ensureCommodityOnProducerDetails(sel, data.crop);
       },
       error: () => this.toastService.error('Failed to add planting intention')
     });
   }
 
   editPlantingIntention(data: {intentionId: number, crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number}): void {
+    const sel = this.selectedCustomer();
     this.apiService.updatePlantingIntention(data.intentionId, {
       crop: data.crop, category: data.category, type: data.type, description: data.description, acres: data.acres, plantingYear: data.plantingYear
     }).subscribe({
@@ -1185,8 +1187,46 @@ export class HomeComponent {
         this.customerPlantingIntentions.update(update);
         this.allCustomerPlantingIntentions.update(update);
         this.toastService.success('Planting intention updated');
+        if (sel) this._ensureCommodityOnProducerDetails(sel, data.crop);
       },
       error: () => this.toastService.error('Failed to update planting intention')
+    });
+  }
+
+  /**
+   * If the just-saved planting intention's crop isn't already on the producer's
+   * details, persist it there so the producer's commodities list stays in sync.
+   * Silent: any failure here is logged but doesn't surface to the user — the
+   * intention itself was already saved successfully.
+   */
+  private _ensureCommodityOnProducerDetails(customer: Customer, cropCode: string): void {
+    if (!cropCode) return;
+    const existing = customer.commodities ?? [];
+    const codeUpper = cropCode.trim().toUpperCase();
+    const alreadyPresent = existing.some(c => c.trim().toUpperCase() === codeUpper);
+    if (alreadyPresent) return;
+
+    const updated = [...existing, cropCode.trim()];
+    this.apiService.saveProducerDetails(customer.id, {
+      scoularId: customer.scoularId ?? null,
+      customerName: customer.name,
+      totalAcres: customer.totalAcres ?? null,
+      binCapacity: customer.binCapacity ?? null,
+      primaryContact: customer.primaryContact ?? null,
+      commodities: updated.join(','),
+      linkedProducerIds: (customer.linkedProducerIds ?? []).join(','),
+    }).subscribe({
+      next: (savedDetails) => {
+        // Reflect the new commodity in local state so the UI updates without a refresh.
+        const updatedCustomer = { ...customer, commodities: updated };
+        this.selectedCustomer.set(updatedCustomer);
+        this.customers.update(arr => arr.map(c => c.id === customer.id ? updatedCustomer : c));
+        // Keep the producer-details map in sync — same pattern as handleSaveCustomer.
+        const map = new Map(this.producerDetailsMap());
+        map.set(savedDetails.customerId, savedDetails);
+        this.producerDetailsMap.set(map);
+      },
+      error: () => { /* non-blocking — intention saved successfully */ }
     });
   }
 

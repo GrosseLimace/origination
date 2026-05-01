@@ -10,7 +10,7 @@
       <svg class="mx-auto h-12 w-12 text-gray-400 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
       </svg>
-      <p class="mt-4">No grain currently in storage for this customer</p>
+      <p class="mt-4">No grain currently in storage for this producer</p>
     </div>
   } @else {
 
@@ -98,15 +98,6 @@
                       </span>
                     </app-table-head>
                     <app-table-head><span class="flex items-center justify-center">Commodity</span></app-table-head>
-                    <app-table-head [sortable]="true" (click)="handleSort('grossBu')">
-                      <span class="flex items-center justify-center gap-1">Gross Bu
-                        <svg class="w-3.5 h-3.5" [class]="getSortIconClass('grossBu')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          @if (currentSortColumn === 'grossBu' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
-                          @else if (currentSortColumn === 'grossBu' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
-                          @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
-                        </svg>
-                      </span>
-                    </app-table-head>
                     <app-table-head [sortable]="true" (click)="handleSort('netBu')">
                       <span class="flex items-center justify-center gap-1">Net Bu
                         <svg class="w-3.5 h-3.5" [class]="getSortIconClass('netBu')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -159,7 +150,6 @@
                     <app-table-row>
                       <app-table-cell class="text-center">{{ grain.receiptNumber }}</app-table-cell>
                       <app-table-cell class="text-center">{{ grain.crop }}</app-table-cell>
-                      <app-table-cell class="text-center">{{ grain.grossQuantity | number }}</app-table-cell>
                       <app-table-cell class="text-center">{{ grain.quantity | number }}</app-table-cell>
                       <app-table-cell class="text-center">{{ grain.chargedFromDate | date:'M/d/yy' }} – {{ grain.chargedThruDate | date:'M/d/yy' }}</app-table-cell>
                       <app-table-cell class="text-center" >{{ grain.storageDays | number:'1.0-1' }}</app-table-cell>

@@ -196,7 +196,7 @@ export class UsageDashboardComponent {
   readonly selectedScreen = signal<string>('all');
   readonly featureScreens = [
     { id: 'all', label: 'All Features' },
-    { id: 'customers', label: 'Customer Page' },
+    { id: 'customers', label: 'Producer Page' },
     { id: 'dashboard', label: 'Planting Intention Dashboard' },
     { id: 'build-a-list', label: 'Build a List' },
     { id: 'insights', label: 'Actionable Insights' },
