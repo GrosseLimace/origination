@@ -47,6 +47,7 @@ public class SavedListsControllerTests
         _mockDataService
             .Setup(s => s.SaveListAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(),
+                It.IsAny<string?>(), It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(savedList);
 
@@ -63,6 +64,7 @@ public class SavedListsControllerTests
         _mockDataService
             .Setup(s => s.UpdateListAsync(
                 It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(),
+                It.IsAny<string?>(), It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync((SavedList?)null);
 
@@ -77,7 +79,7 @@ public class SavedListsControllerTests
         var updated = new SavedList { Id = 1, Name = "Updated", Query = "new query" };
         _mockDataService
             .Setup(s => s.UpdateListAsync(
-                1, "Updated", "new query", null, null,
+                1, "Updated", "new query", null, null, null, null,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(updated);
 

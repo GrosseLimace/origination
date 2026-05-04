@@ -277,17 +277,7 @@ export class PlantingIntentionsTableComponent {
 
   // ── Add Crop search-and-select handlers ──────────────────────────────────
   onAddCropSearch(): void {
-    const term = this.addCropSearchInput.trim().toLowerCase();
-    if (!term) {
-      this.filteredAddCrops = [];
-      return;
-    }
-    const searchTerms = this._commodityAliases[term] ?? [term];
-    this.filteredAddCrops = this.allCommodities.filter(c => {
-      const name = c.name.toLowerCase();
-      const code = c.code.toLowerCase();
-      return searchTerms.some(t => name.includes(t) || code.includes(t));
-    });
+    this.filteredAddCrops = this._rankedCropMatches(this.addCropSearchInput);
     this.showAddCropSuggestions = true;
   }
 
@@ -332,18 +322,42 @@ export class PlantingIntentionsTableComponent {
 
   // ── Edit Crop search-and-select handlers ─────────────────────────────────
   onEditCropSearch(): void {
-    const term = this.editCropSearchInput.trim().toLowerCase();
-    if (!term) {
-      this.filteredEditCrops = [];
-      return;
-    }
+    this.filteredEditCrops = this._rankedCropMatches(this.editCropSearchInput);
+    this.showEditCropSuggestions = true;
+  }
+
+  /**
+   * Filter + rank commodities for the crop search dropdown. Result is sorted so
+   * that **code matches sort above name matches**, with this priority ladder:
+   *   0 — exact code match  (typing "YC" → Yellow Corn (YC) tops the list)
+   *   1 — code starts with the term
+   *   2 — code contains the term
+   *   3 — name starts with the term
+   *   4 — name contains the term
+   * Within a tier rows are alphabetised by name. Aliases ("milo", "beans", etc.)
+   * expand into multiple search terms — we take the BEST rank across them.
+   */
+  private _rankedCropMatches(input: string): Commodity[] {
+    const term = input.trim().toLowerCase();
+    if (!term) return [];
     const searchTerms = this._commodityAliases[term] ?? [term];
-    this.filteredEditCrops = this.allCommodities.filter(c => {
+
+    const matches: { c: Commodity; rank: number }[] = [];
+    for (const c of this.allCommodities) {
       const name = c.name.toLowerCase();
       const code = c.code.toLowerCase();
-      return searchTerms.some(t => name.includes(t) || code.includes(t));
-    });
-    this.showEditCropSuggestions = true;
+      let best = Number.POSITIVE_INFINITY;
+      for (const t of searchTerms) {
+        if (code === t) best = Math.min(best, 0);
+        else if (code.startsWith(t)) best = Math.min(best, 1);
+        else if (code.includes(t)) best = Math.min(best, 2);
+        else if (name.startsWith(t)) best = Math.min(best, 3);
+        else if (name.includes(t)) best = Math.min(best, 4);
+      }
+      if (best < Number.POSITIVE_INFINITY) matches.push({ c, rank: best });
+    }
+    matches.sort((a, b) => a.rank - b.rank || a.c.name.localeCompare(b.c.name));
+    return matches.map(m => m.c);
   }
 
   selectEditCrop(commodity: Commodity): void {
