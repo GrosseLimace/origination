@@ -59,7 +59,7 @@ public class NotesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     public async Task<ActionResult<Note>> Create([FromBody] CreateNoteRequest request, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateCustomerAccessAsync(request.CustomerId, cancellationToken);
+        // Trade units are a UX filter, not an access boundary — any rep may add a note for any customer.
 
         // Derive TradeUnit from the authoritative CustomerSnapshot rather than trusting the client-supplied value.
         // This prevents a caller from assigning a foreign trade unit to manipulate note visibility.
@@ -94,9 +94,9 @@ public class NotesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<Note>> TogglePin(long id, CancellationToken cancellationToken = default)
     {
-        var existing = await _dataService.GetNoteByIdAsync(id, cancellationToken)
+        // Trade units are a UX filter, not an access boundary — any rep may pin any note.
+        _ = await _dataService.GetNoteByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("Note", id);
-        await _entitlementService.ValidateCustomerAccessAsync(existing.CustomerId, cancellationToken);
         var note = await _dataService.ToggleNotePinAsync(id, cancellationToken)
             ?? throw new NotFoundException("Note", id);
         _logger.LogInformation(
@@ -113,9 +113,9 @@ public class NotesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<Note>> Update(long id, [FromBody] UpdateNoteRequest request, CancellationToken cancellationToken = default)
     {
-        var existing = await _dataService.GetNoteByIdAsync(id, cancellationToken)
+        // Trade units are a UX filter, not an access boundary — any rep may edit any note.
+        _ = await _dataService.GetNoteByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("Note", id);
-        await _entitlementService.ValidateCustomerAccessAsync(existing.CustomerId, cancellationToken);
         var note = await _dataService.UpdateNoteAsync(id, request.Content, cancellationToken)
             ?? throw new NotFoundException("Note", id);
         _logger.LogInformation(
@@ -131,9 +131,9 @@ public class NotesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult> Delete(long id, CancellationToken cancellationToken = default)
     {
-        var note = await _dataService.GetNoteByIdAsync(id, cancellationToken)
+        // Trade units are a UX filter, not an access boundary — any rep may delete any note.
+        _ = await _dataService.GetNoteByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("Note", id);
-        await _entitlementService.ValidateCustomerAccessAsync(note.CustomerId, cancellationToken);
         await _dataService.DeleteNoteAsync(id, cancellationToken);
         _logger.LogInformation(
             "Note deleted [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}",

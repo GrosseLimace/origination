@@ -96,7 +96,7 @@ public class CustomersController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<Customer>> Update(long id, [FromBody] UpdateCustomerRequest request, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateCustomerAccessAsync(id, cancellationToken);
+        // Trade units are a UX filter, not an access boundary — any rep may act on any customer.
         var customer = await _dataService.GetCustomerByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("Customer", id);
 

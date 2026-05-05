@@ -59,7 +59,7 @@ public class PlantingIntentionsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<PlantingIntention>> Create([FromBody] CreatePlantingIntentionRequest request, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateCustomerAccessAsync(request.CustomerId, cancellationToken);
+        // Trade units are a UX filter, not an access boundary — any rep may create a planting intention for any customer.
 
         // Derive customer metadata from the authoritative CustomerSnapshot rather than trusting
         // client-supplied values. This prevents callers from spoofing trade units or customer identity
@@ -101,9 +101,9 @@ public class PlantingIntentionsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<PlantingIntention>> Update(int id, [FromBody] UpdatePlantingIntentionRequest request, CancellationToken cancellationToken = default)
     {
-        var existing = await _dataService.GetPlantingIntentionByIdAsync(id, cancellationToken)
+        // Trade units are a UX filter, not an access boundary — any rep may edit any planting intention.
+        _ = await _dataService.GetPlantingIntentionByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("PlantingIntention", id);
-        await _entitlementService.ValidateCustomerAccessAsync(existing.CustomerId, cancellationToken);
         var updated = await _dataService.UpdatePlantingIntentionAsync(
             id,
             request.Crop,
@@ -131,9 +131,9 @@ public class PlantingIntentionsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult> Delete(int id, CancellationToken cancellationToken = default)
     {
-        var intention = await _dataService.GetPlantingIntentionByIdAsync(id, cancellationToken)
+        // Trade units are a UX filter, not an access boundary — any rep may delete any planting intention.
+        _ = await _dataService.GetPlantingIntentionByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("PlantingIntention", id);
-        await _entitlementService.ValidateCustomerAccessAsync(intention.CustomerId, cancellationToken);
         await _dataService.DeletePlantingIntentionAsync(id, cancellationToken);
         _logger.LogInformation(
             "Planting intention deleted [{ErrorCode}] [{ErrorCategory}]: IntentionId={IntentionId}",
