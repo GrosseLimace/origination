@@ -334,10 +334,12 @@ export class HomeComponent {
 
     this.apiService.getStoredGrain(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
-        const list = data ?? [];
-        this.storedGrain.set(list);
-        this.appState.setStoredGrain(list);
-        // Re-filter stored grain if a customer is already selected when data arrives
+        const incoming = data ?? [];
+        const existing = this.storedGrain();
+        const seen = new Set(incoming.map(s => s.id));
+        const merged = [...incoming, ...existing.filter(s => !seen.has(s.id))];
+        this.storedGrain.set(merged);
+        this.appState.setStoredGrain(merged);
         const sel = this.selectedCustomer();
         if (sel) this._loadCustomerData(sel.id);
       },

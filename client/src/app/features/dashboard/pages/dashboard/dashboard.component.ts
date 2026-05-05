@@ -338,16 +338,30 @@ export class DashboardComponent {
       if (!customerIdSet.has(p.customerId)) continue;
       const commodity = this._commodityByCode().get(p.crop);
       const category = p.category || commodity?.category || p.crop;
-      if (category) crops.add(category);
+      if (category) crops.add(this._toTitleCase(category));
     }
 
+    // Contracts come from ODS, where strings are stored ALL-CAPS ("WHEAT",
+    // "HARD RED WINTER WHEAT"). Title-case them on the way into the dropdown
+    // so they merge with the already-Title-Cased planting-intention categories
+    // instead of appearing as duplicate "WHEAT" / "Wheat" options.
     for (const c of this.contracts()) {
       const group = c.commodityGroup || c.commodityDescription;
-      if (group) crops.add(group);
+      if (group) crops.add(this._toTitleCase(group));
     }
 
     return [...crops].sort();
   });
+
+  /**
+   * Convert any-case input to Title Case: "WHEAT" → "Wheat",
+   * "hard red winter wheat" → "Hard Red Winter Wheat", "Co-Product" → "Co-Product".
+   * Word boundaries are preserved so hyphenated and multi-word strings stay readable.
+   */
+  private _toTitleCase(s: string): string {
+    if (!s) return s;
+    return s.toLowerCase().replace(/\b\w/g, ch => ch.toUpperCase());
+  }
 
   readonly cropBreakdown = computed(() => {
     const cropAcresMap = new Map<string, number>();

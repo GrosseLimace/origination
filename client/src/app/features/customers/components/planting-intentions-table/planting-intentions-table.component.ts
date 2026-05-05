@@ -395,7 +395,7 @@ export class PlantingIntentionsTableComponent {
   // ────────────────────────────────────────────────────────────────────────────
 
   openAddDialog(): void {
-    const lastYear = new Date().getFullYear() - 1;
+    const currentYear = new Date().getFullYear();
 
     this.addForm = {
       crop: '',
@@ -403,7 +403,7 @@ export class PlantingIntentionsTableComponent {
       type: '',
       description: '',
       acres: '',
-      plantingYear: lastYear.toString(),
+      plantingYear: currentYear.toString(),
       tradeUnit: this.tradeUnits().length > 0 ? this.tradeUnits()[0] : ''
     };
     this.addCropSearchInput = '';
