@@ -84,3 +84,104 @@ export interface ClickEventRequest {
   subFeatureCode?: string;
   targetId?: string;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-user drill-down (UsageDashboardController.GetUserDetail)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface UserUsageDetail {
+  userId: string;
+  displayName: string;
+  status: 'Active' | 'Inactive' | 'Never Logged In';
+  lastActive: string | null;
+  loginCount: number;
+  avgSessionMinutes: number;
+  totalAppMinutes: number;
+  customersContactedCount: number;
+
+  dailyActivity: UserDailyActivity[];
+  customers: CustomerEngagement;
+  buildList: BuildListEngagement;
+  insights: InsightsEngagement;
+  bidSheet: BidSheetEngagement;
+  plantingDashboard: PlantingDashEngagement;
+  timePerScreen: ScreenTime[];
+  recentActivity: RecentActivity[];
+}
+
+export interface UserDailyActivity {
+  date: string;
+  eventCount: number;
+  screenMinutes: number;
+}
+
+export interface CustomerEngagement {
+  profilesViewed: number;
+  contractsExpanded: number;
+  callsClicked: number;
+  emailsClicked: number;
+  notesCreated: number;
+  plantingIntentionsAdded: number;
+  producerDetailsEdited: number;
+  ticketDropdownOpens: number;
+  storageDropdownOpens: number;
+  plantingTabClicks: number;
+}
+
+export interface BuildListEngagement {
+  listsSaved: number;
+  listsLoaded: number;
+  listsDeleted: number;
+  libraryPromptsClicked: number;
+  librarySearchNoMatch: number;
+  queryRequestsSubmitted: number;
+  membersAdded: number;
+  membersExcluded: number;
+  refineFiltersOpens: number;
+  manageMembersOpens: number;
+  topLibraryQueries: TopLibraryQuery[];
+}
+
+export interface TopLibraryQuery {
+  queryName: string;
+  timesUsed: number;
+}
+
+export interface InsightsEngagement {
+  unconfirmedContractsClicks: number;
+  spotLoadsClicks: number;
+  unshippedBushelsClicks: number;
+  otherCategoryClicks: number;
+}
+
+export interface BidSheetEngagement {
+  locationsAdded: number;
+  locationsDeleted: number;
+  locationsSelected: number;
+  commoditiesAdded: number;
+  bidsChanged: number;
+  editBidsOpens: number;
+  referenceSet: number;
+}
+
+export interface PlantingDashEngagement {
+  byCropTabClicks: number;
+  producersTabClicks: number;
+  harvestContractsTabClicks: number;
+  producerRowClicks: number;
+  seasonTargetsSaved: number;
+}
+
+export interface ScreenTime {
+  featureCode: string;
+  featureLabel: string;
+  minutes: number;
+}
+
+export interface RecentActivity {
+  timestamp: string;
+  eventType: string;
+  featureCode: string;
+  subFeatureCode: string | null;
+  targetId: string | null;
+}
