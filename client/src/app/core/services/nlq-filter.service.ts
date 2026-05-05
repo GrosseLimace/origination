@@ -396,7 +396,9 @@ export class NlqFilterService {
         return ((thisYearBu - lastYearBu) / lastYearBu) * 100 < 0;
       });
     }
-    if (filters.neverContacted || (filters.notContactedDays != null && filters.notContactedDays > 0)) {
+    if (filters.neverContacted
+        || (filters.notContactedDays != null && filters.notContactedDays > 0)
+        || (filters.notesInLastDays != null && filters.notesInLastDays > 0)) {
       // Pre-index latest note per customer — O(notes) build instead of O(customers × notes) scan
       const latestNoteTime = new Map<number, number>();
       const customerIdsWithNotes = new Set<number>();
@@ -408,11 +410,18 @@ export class NlqFilterService {
       }
       if (filters.neverContacted) {
         list = list.filter(c => !customerIdsWithNotes.has(c.id));
-      } else {
+      } else if (filters.notContactedDays != null && filters.notContactedDays > 0) {
         const cutoffTime = Date.now() - filters.notContactedDays! * 86400000;
         list = list.filter(c => {
           const time = latestNoteTime.get(c.id);
           return !time || time < cutoffTime;
+        });
+      }
+      if (filters.notesInLastDays != null && filters.notesInLastDays > 0) {
+        const cutoffTime = Date.now() - filters.notesInLastDays * 86400000;
+        list = list.filter(c => {
+          const time = latestNoteTime.get(c.id);
+          return !!time && time >= cutoffTime;
         });
       }
     }
@@ -1555,6 +1564,24 @@ export class NlqFilterService {
 
     if (hasContacted && (lowerQuery.includes('this month') || lowerQuery.includes('last month'))) {
       filterByCutoff(30);
+    }
+
+    // "notes added/made/entered/written/created/left ..." — same data as contacted,
+    // expressed from the note-author's perspective. Mirrors the contacted-* matchers above.
+    const hasNoteVerb = /notes?\s+(?:added|made|entered|written|created|left)/.test(lowerQuery);
+    if (hasNoteVerb) {
+      const numericMatch = lowerQuery.match(/notes?\s+(?:added|made|entered|written|created|left)\s*(?:in|within)?\s*(?:the\s+)?(?:last|past)?\s*(\d+)\s*days?/);
+      if (numericMatch) {
+        filterByCutoff(parseInt(numericMatch[1]));
+      } else if (lowerQuery.includes('today')) {
+        filterByCutoff(1);
+      } else if (lowerQuery.includes('yesterday')) {
+        filterByCutoff(2);
+      } else if (lowerQuery.includes('this week') || lowerQuery.includes('last week')) {
+        filterByCutoff(7);
+      } else if (lowerQuery.includes('this month') || lowerQuery.includes('last month')) {
+        filterByCutoff(30);
+      }
     }
 
     return result;

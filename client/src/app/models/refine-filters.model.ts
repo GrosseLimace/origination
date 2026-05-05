@@ -12,6 +12,7 @@ export interface RefinementFilters {
   multipleCommoditiesContracted?: boolean;
   // Contact history
   notContactedDays?: number | null;
+  notesInLastDays?: number | null;
   neverContacted?: boolean;
   // Contact frequency
   contactedOnlyOnce?: boolean;

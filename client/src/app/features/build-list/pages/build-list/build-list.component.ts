@@ -19,6 +19,7 @@ import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDes
 import { InputComponent } from '@shared/components/input/input.component';
 import { CustomerMapComponent } from '@features/customers/components/map/customer-map.component';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
+import { HighlightPipe } from '@shared/pipes/highlight.pipe';
 import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
 
 @Component({
@@ -42,7 +43,8 @@ import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
     DialogFooterComponent,
     InputComponent,
     CustomerMapComponent,
-    TradeUnitSelectorComponent
+    TradeUnitSelectorComponent,
+    HighlightPipe
   ],
   templateUrl: './build-list.component.html',
   styles: [`input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }`],
@@ -149,6 +151,7 @@ export class BuildListComponent {
       r.contractQuantityOver != null && r.contractQuantityOver > 0,
       r.contractsExpiringThisMonth, r.multipleCommoditiesContracted,
       r.neverContacted, r.notContactedDays != null && r.notContactedDays > 0,
+      r.notesInLastDays != null && r.notesInLastDays > 0,
       r.contactedOnlyOnce, r.contactedMoreThan5,
       r.contactedByMeOnly, r.contactedBySomeoneElse,
       r.hasPinnedNotes, r.noteKeyword?.trim(),
@@ -252,6 +255,13 @@ export class BuildListComponent {
         const info = contactMap.get(c.id);
         if (!info) return true; // never contacted → include
         return info.daysAgo >= r.notContactedDays!;
+      });
+    }
+    if (r.notesInLastDays != null && r.notesInLastDays > 0) {
+      list = list.filter(c => {
+        const info = contactMap.get(c.id);
+        if (!info) return false; // no notes → exclude (positive filter)
+        return info.daysAgo <= r.notesInLastDays!;
       });
     }
 
@@ -535,6 +545,49 @@ export class BuildListComponent {
       const toAdd = includedCustomers.filter(c => !existingIds.has(c.id) && !excludedIds.has(c.id));
       if (toAdd.length > 0) list = [...list, ...toAdd];
     }
+
+    // Collapse linked-customer groups: if X.linkedProducerIds includes Y, hide Y.
+    // For mutual links (A↔B), tie-break on lower id so output is stable.
+    // Only dedup when the linked-as-one-entity feature is active — for non-note prompts
+    // (contracts/tickets/storage/planting) each producer is its own peer row since their
+    // data is independent.
+    if (this.linkedFeatureActive()) {
+      const codeToCustomer = new Map<string, Customer>();
+      for (const c of list) if (c.scoularId) codeToCustomer.set(c.scoularId, c);
+      const toHide = new Set<number>();
+      for (const c of list) {
+        for (const linkedCode of (c.linkedProducerIds || [])) {
+          const linked = codeToCustomer.get(linkedCode);
+          if (!linked || linked.id === c.id) continue;
+          const isMutual = (linked.linkedProducerIds || []).includes(c.scoularId || '');
+          if (isMutual) {
+            if (c.id <= linked.id) toHide.add(linked.id);
+            else toHide.add(c.id);
+          } else {
+            toHide.add(linked.id);
+          }
+        }
+      }
+      if (toHide.size > 0) list = list.filter(c => !toHide.has(c.id));
+    }
+
+    // When a note filter is active, surface freshest activity first. Note: the per-customer list
+    // floats pinned notes to the top, so we can't take notes[0] as a timestamp here — it could
+    // be an old pinned note. Use the latest matching createdAt across the whole array instead.
+    if (this.noteFilterActive()) {
+      const notesMap = this.matchingNotesByCustomer();
+      const maxTimeFor = (customerId: number): number => {
+        const notes = notesMap.get(customerId);
+        if (!notes || notes.length === 0) return 0;
+        let max = 0;
+        for (const n of notes) {
+          const t = new Date(n.createdAt).getTime();
+          if (t > max) max = t;
+        }
+        return max;
+      };
+      list = [...list].sort((a, b) => maxTimeFor(b.id) - maxTimeFor(a.id));
+    }
     return list;
   });
 
@@ -578,6 +631,9 @@ export class BuildListComponent {
   appliedRefinements = signal<RefinementFilters>({});
   notContactedDaysInput = signal('');
   matchedPatterns = signal<string[]>([]);
+  expandedNoteCount = signal<Map<number, number>>(new Map());
+  readonly NOTE_PAGE_SIZE = 5;
+  expandedLinkedCustomerIds = signal<Set<number>>(new Set());
 
   // ── Manage Members ──────────────────────────────────────────────────────
   showManageMembersPanel = signal(false);
@@ -730,6 +786,199 @@ export class BuildListComponent {
     return map;
   });
 
+  // ── Note filters: derive whether a note-focused query/filter is active and surface the matching notes per customer for inline display in the result list. ───────────────
+  private static readonly _NLQ_NOTE_VERB = /notes?\s+(?:added|made|entered|written|created|left)/;
+
+  /** True when the linked-as-one-entity behavior should apply: dedup, badge,
+   *  and the linked-producer expand panel. Notes prompts trigger this (linked
+   *  notes are aggregated under the entity), and the dedicated "Producers with
+   *  linked records" prompt also triggers it. Other prompts (contracts/tickets/
+   *  storage/planting) keep linked producers as their own peer rows since they
+   *  have separate data per producer. */
+  readonly linkedFeatureActive = computed(() => {
+    if (this.noteFilterActive()) return true;
+    const q = this.queryText().toLowerCase();
+    return /linked\s+(?:producer|record)/.test(q);
+  });
+
+  /** True when the result list should render an inline note section per customer. */
+  readonly noteFilterActive = computed(() => {
+    const r = this.appliedRefinements();
+    if (r.notesInLastDays != null && r.notesInLastDays > 0) return true;
+    if (r.noteKeyword?.trim()) return true;
+    if (r.hasPinnedNotes) return true;
+    const q = this.queryText().toLowerCase();
+    return BuildListComponent._NLQ_NOTE_VERB.test(q)
+        || /pinned\s+note/.test(q)
+        || /(?:with|has|have)\s+notes?\b/.test(q)
+        || /notes?\s+(?:about|mentioning|containing|saying)/.test(q);
+  });
+
+  /** Predicate that matches a note against whichever note criteria are active. */
+  readonly noteFilterPredicate = computed<(n: Note) => boolean>(() => {
+    const r = this.appliedRefinements();
+    const q = this.queryText().toLowerCase();
+
+    let cutoffMs: number | null = null;
+    if (r.notesInLastDays != null && r.notesInLastDays > 0) {
+      cutoffMs = Date.now() - r.notesInLastDays * 86400000;
+    } else if (BuildListComponent._NLQ_NOTE_VERB.test(q)) {
+      const numeric = q.match(/notes?\s+(?:added|made|entered|written|created|left)\s*(?:in|within)?\s*(?:the\s+)?(?:last|past)?\s*(\d+)\s*days?/);
+      if (numeric) cutoffMs = Date.now() - parseInt(numeric[1], 10) * 86400000;
+      else if (q.includes('today')) cutoffMs = Date.now() - 1 * 86400000;
+      else if (q.includes('yesterday')) cutoffMs = Date.now() - 2 * 86400000;
+      else if (q.includes('this week') || q.includes('last week')) cutoffMs = Date.now() - 7 * 86400000;
+      else if (q.includes('this month') || q.includes('last month')) cutoffMs = Date.now() - 30 * 86400000;
+    }
+
+    const keyword = r.noteKeyword?.trim().toLowerCase() || null;
+    const requirePinned = !!r.hasPinnedNotes || /pinned\s+note/.test(q);
+
+    return (n: Note) => {
+      if (cutoffMs != null) {
+        const t = new Date(n.createdAt).getTime();
+        if (!t || t < cutoffMs) return false;
+      }
+      if (keyword && !(n.content || '').toLowerCase().includes(keyword)) return false;
+      if (requirePinned && !n.isPinned) return false;
+      return true;
+    };
+  });
+
+  /** Notes matching the active note filter, indexed by source customerCode.
+   *  Each note is tagged with `viaName = "{Name} ({Code})"` of the customer it was
+   *  placed on — applied uniformly to every note so the origin is always visible. */
+  private readonly _matchedNotesByCode = computed(() => {
+    const map = new Map<string, Array<Note & { viaName: string }>>();
+    if (!this.noteFilterActive()) return map;
+
+    const predicate = this.noteFilterPredicate();
+    const customerByCode = new Map<string, Customer>();
+    for (const c of this.customers()) {
+      if (c.scoularId) customerByCode.set(c.scoularId, c);
+    }
+
+    for (const n of this.notes()) {
+      if (!n.customerCode || !predicate(n)) continue;
+      const owner = customerByCode.get(n.customerCode);
+      const viaName = owner ? `${owner.name} (${owner.scoularId})` : n.customerCode;
+      const arr = map.get(n.customerCode);
+      const tagged = { ...n, viaName };
+      if (arr) arr.push(tagged);
+      else map.set(n.customerCode, [tagged]);
+    }
+
+    for (const arr of map.values()) {
+      arr.sort((a, b) => {
+        if (!!a.isPinned !== !!b.isPinned) return a.isPinned ? -1 : 1;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+    }
+    return map;
+  });
+
+  /** Per-customer aggregated matching notes (own + linked + incoming), pinned-first then newest-first.
+   *  Every note is tagged with viaName so its origin is always identifiable. */
+  readonly matchingNotesByCustomer = computed(() => {
+    const map = new Map<number, Array<Note & { viaName: string }>>();
+    if (!this.noteFilterActive()) return map;
+
+    const matchesByCode = this._matchedNotesByCode();
+    if (matchesByCode.size === 0) return map;
+    const customers = this.customers();
+
+    const incomingByCode = new Map<string, Set<string>>();
+    for (const c of customers) {
+      if (!c.scoularId) continue;
+      for (const linkedCode of (c.linkedProducerIds || [])) {
+        if (!incomingByCode.has(linkedCode)) incomingByCode.set(linkedCode, new Set());
+        incomingByCode.get(linkedCode)!.add(c.scoularId);
+      }
+    }
+
+    for (const customer of customers) {
+      const ownCode = customer.scoularId;
+      const codes = new Set<string>();
+      if (ownCode) codes.add(ownCode);
+      for (const linkedCode of (customer.linkedProducerIds || [])) codes.add(linkedCode);
+      for (const inc of (ownCode ? incomingByCode.get(ownCode) || [] : [])) codes.add(inc);
+
+      const out: Array<Note & { viaName: string }> = [];
+      for (const code of codes) {
+        const matches = matchesByCode.get(code);
+        if (!matches) continue;
+        for (const n of matches) out.push(n);
+      }
+      if (out.length === 0) continue;
+      out.sort((a, b) => {
+        if (!!a.isPinned !== !!b.isPinned) return a.isPinned ? -1 : 1;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+      map.set(customer.id, out);
+    }
+    return map;
+  });
+
+  /** Matching notes for one customer — own notes only (not aggregated). Used in the linked-producer expand panel. */
+  getOwnMatchingNotes(customer: Customer): Array<Note & { viaName: string }> {
+    return customer.scoularId ? (this._matchedNotesByCode().get(customer.scoularId) ?? []) : [];
+  }
+
+  /** Distinct linked-producer info per customer (bidirectional, excluding self).
+   *  Only includes producers whose Customer record is loaded — codes without a match are dropped.
+   *  Manually-excluded customers are filtered out so the exclude action affects the linked panel too.
+   *  Returns an empty map unless the linked-as-one-entity feature is active (notes prompts or
+   *  the "Producers with linked records" prompt) — for other queries each producer is its own row.
+   *  `producers` is the actual Customer[] for inline detail rendering. */
+  readonly linkedProducerInfoByCustomer = computed(() => {
+    const map = new Map<number, { count: number; producers: Customer[] }>();
+    if (!this.linkedFeatureActive()) return map;
+    const customers = this.customers();
+    const excludedIds = this.manuallyExcludedCustomerIds();
+
+    const incomingByCode = new Map<string, Set<string>>();
+    for (const c of customers) {
+      if (!c.scoularId) continue;
+      for (const linkedCode of (c.linkedProducerIds || [])) {
+        if (!incomingByCode.has(linkedCode)) incomingByCode.set(linkedCode, new Set());
+        incomingByCode.get(linkedCode)!.add(c.scoularId);
+      }
+    }
+    const customerByCode = new Map<string, Customer>();
+    for (const c of customers) {
+      if (c.scoularId) customerByCode.set(c.scoularId, c);
+    }
+
+    for (const customer of customers) {
+      const codes = new Set<string>();
+      for (const linkedCode of (customer.linkedProducerIds || [])) codes.add(linkedCode);
+      for (const inc of (customer.scoularId ? incomingByCode.get(customer.scoularId) || [] : [])) codes.add(inc);
+      if (customer.scoularId) codes.delete(customer.scoularId);
+      if (codes.size === 0) continue;
+      const producers: Customer[] = [];
+      for (const code of codes) {
+        const linked = customerByCode.get(code);
+        if (linked && !excludedIds.has(linked.id)) producers.push(linked);
+      }
+      if (producers.length === 0) continue;
+      map.set(customer.id, { count: producers.length, producers });
+    }
+    return map;
+  });
+
+  /** Customer ids that are reachable in the result list — either as their own
+   *  peer row or as a linked producer inside a peer row's expanded panel. */
+  readonly logicallyInResultsIds = computed(() => {
+    const ids = new Set<number>();
+    const linkedMap = this.linkedProducerInfoByCustomer();
+    for (const c of this.displayedCustomers()) {
+      ids.add(c.id);
+      const info = linkedMap.get(c.id);
+      if (info) for (const linked of info.producers) ids.add(linked.id);
+    }
+    return ids;
+  });
+
   /** Crops per customer — merged from ProducerDetails, contracts, intentions. */
   readonly cropsByCustomer = computed(() => {
     const map = new Map<number, string[]>();
@@ -845,6 +1094,7 @@ export class BuildListComponent {
     // Contact filters
     if (q.includes('never contacted'))      hidden.add('neverContacted');
     if (/not contacted.*\d+\s*days/.test(q)) hidden.add('notContactedDays');
+    if (/notes?\s+(?:added|made|entered|written|created|left).*(?:\d+\s*days?|today|yesterday|this\s+week)/.test(q)) hidden.add('notesInLastDays');
     if (q.includes('i contacted') || q.includes('i have contacted')) { hidden.add('contactedByMeOnly'); hidden.add('neverContacted'); }
     if (q.includes('i have never'))         { hidden.add('contactedByMeOnly'); hidden.add('neverContacted'); }
     if (q.includes('contacted this week'))  hidden.add('neverContacted');
@@ -934,6 +1184,15 @@ export class BuildListComponent {
 
     // Try to restore from cache first, otherwise load fresh
     this._initLoad();
+
+    // Collapse all expanded note rows whenever the filter inputs change. The
+    // matching-note set has changed, so previously expanded customers may not
+    // even be in the list anymore.
+    effect(() => {
+      this.appliedRefinements();
+      this.queryText();
+      untracked(() => this.expandedNoteCount.set(new Map()));
+    });
 
     this.destroyRef.onDestroy(() => {
       // If trade units changed while this component was alive, discard state entirely
@@ -1544,21 +1803,26 @@ export class BuildListComponent {
       return;
     }
 
-    // Immediately filter current results for exclude candidates (client-side, instant)
+    // Immediately filter current results for exclude candidates (client-side, instant).
+    // "In results" includes both visible peer rows and linked producers reachable
+    // through their expanded panels, so a linked producer doesn't get mislabeled as add-only.
     const lower = term.trim().toLowerCase();
     const excludedIds = this.manuallyExcludedCustomerIds();
+    const logicalIds = this.logicallyInResultsIds();
+    const allCustomers = this.customers();
+    const matchesTerm = (c: Customer) =>
+      c.name.toLowerCase().includes(lower) ||
+      (c.scoularId || '').toLowerCase().includes(lower) ||
+      (c.farm || '').toLowerCase().includes(lower);
+
     this.memberInResultsMatches.set(
-      this.displayedCustomers()
-        .filter(c =>
-          !excludedIds.has(c.id) &&
-          (c.name.toLowerCase().includes(lower) ||
-           (c.scoularId || '').toLowerCase().includes(lower) ||
-           (c.farm || '').toLowerCase().includes(lower))
-        )
+      allCustomers
+        .filter(c => logicalIds.has(c.id) && !excludedIds.has(c.id) && matchesTerm(c))
         .slice(0, 5)
     );
 
-    // Debounced API search for add candidates
+    // Debounced API search for add candidates — anything already logically in
+    // results (peer or linked sub-row) is filtered out.
     this.memberSearchLoading.set(true);
     this._memberSearchTimeout = setTimeout(() => {
       const tus = this.effectiveTradeUnits();
@@ -1567,9 +1831,9 @@ export class BuildListComponent {
         .subscribe({
           next: (results) => {
             const includedIds = new Set(this.manuallyIncludedCustomers().map(c => c.id));
-            const displayedIds = new Set(this.displayedCustomers().map(c => c.id));
+            const inList = this.logicallyInResultsIds();
             this.memberSearchResults.set(
-              results.filter(c => !includedIds.has(c.id) && !displayedIds.has(c.id)).slice(0, 5)
+              results.filter(c => !includedIds.has(c.id) && !inList.has(c.id)).slice(0, 5)
             );
             this.memberSearchLoading.set(false);
           },
@@ -1829,6 +2093,7 @@ export class BuildListComponent {
       filters.multipleCommoditiesContracted ||
       filters.neverContacted ||
       (filters.notContactedDays != null && filters.notContactedDays > 0) ||
+      (filters.notesInLastDays != null && filters.notesInLastDays > 0) ||
       filters.contactedOnlyOnce ||
       filters.contactedMoreThan5 ||
       filters.contactedByMeOnly ||
@@ -1960,7 +2225,113 @@ export class BuildListComponent {
 
   selectCustomer(customer: Customer): void {
     this.usageTracking.trackProfileOpened(customer.id.toString());
-    this.router.navigate(['/'], { queryParams: { customerId: customer.id } });
+    const tab = this._detectFocusTab();
+    const params: Record<string, string | number> = { customerId: customer.id };
+    if (tab) params['tab'] = tab;
+    this.router.navigate(['/'], { queryParams: params });
+  }
+
+  /** Map the active prompt/filter context to a customer-profile tab so that
+   *  clicking a producer lands on the section relevant to why they're in the
+   *  result list. Returns null when there's no clear focus (e.g., notes are
+   *  always visible in the sidebar, so no tab override is needed). */
+  private _detectFocusTab(): string | null {
+    const r = this.appliedRefinements();
+    const q = this.queryText().toLowerCase();
+
+    // Notes already visible in the sidebar — no tab override needed.
+    if (this.noteFilterActive()) return null;
+
+    // Storage
+    if (q.includes('storage') || q.includes('stored grain') ||
+        (r.storageDaysOver != null && r.storageDaysOver > 0) ||
+        (r.storageQuantityOver != null && r.storageQuantityOver > 0) ||
+        (r.storageReceivableOver != null && r.storageReceivableOver > 0) ||
+        r.hasGrainInStorage) {
+      return 'storage';
+    }
+
+    // Tickets — quantity, recency, or quality metrics
+    if (q.includes('ticket') || q.includes('unapplied') ||
+        (r.ticketQuantityOver != null && r.ticketQuantityOver > 0) ||
+        (r.ticketsInLastDays != null && r.ticketsInLastDays > 0) ||
+        r.avgMoistureOver != null || r.avgMoistureUnder != null ||
+        r.avgTestWeightOver != null || r.avgTestWeightUnder != null ||
+        r.avgProteinOver != null || r.avgProteinUnder != null) {
+      return 'tickets';
+    }
+
+    // Planting intentions
+    if (q.includes('planting') || q.includes('intention') ||
+        r.plantingYear != null || r.irrigatedOnly || r.drylandOnly ||
+        (r.plantingAcresOver != null && r.plantingAcresOver > 0) ||
+        r.hasPlantingIntentions) {
+      return 'planting';
+    }
+
+    // Contracts — explicit signals or contract-flavored query
+    if (q.includes('contract') || q.includes('unsigned') || q.includes('expir') ||
+        q.includes('unpriced') || q.includes('overdue') ||
+        r.noActiveContracts || r.hasUnsignedContracts || r.downHarvestPace ||
+        r.hasUnpricedContracts || r.hasOverdueContracts ||
+        (r.contractQuantityOver != null && r.contractQuantityOver > 0) ||
+        r.contractsExpiringThisMonth || r.multipleCommoditiesContracted ||
+        r.hasActiveContracts) {
+      return 'contracts';
+    }
+
+    return null;
+  }
+
+  /** How many earlier notes are currently revealed for this customer. */
+  getNoteExpandCount(customerId: number): number {
+    return this.expandedNoteCount().get(customerId) ?? 0;
+  }
+
+  /** Reveal the next page of earlier notes. Caller passes `totalEarlier` (count of notes
+   *  beyond the always-visible most-recent one) so the cap reflects the current display
+   *  context (aggregated for the parent vs own-only for split linked sub-rows). */
+  expandMoreNotes(customerId: number, totalEarlier: number): void {
+    this.expandedNoteCount.update(m => {
+      const next = new Map(m);
+      const current = next.get(customerId) ?? 0;
+      next.set(customerId, Math.min(totalEarlier, current + this.NOTE_PAGE_SIZE));
+      return next;
+    });
+  }
+
+  /** Collapse all earlier notes for this customer back to default (only the most-recent shown). */
+  collapseNotes(customerId: number): void {
+    this.expandedNoteCount.update(m => {
+      const next = new Map(m);
+      next.delete(customerId);
+      return next;
+    });
+  }
+
+  /** Active keyword used for inline highlight in matching notes. */
+  getActiveNoteKeyword(): string {
+    return this.appliedRefinements().noteKeyword?.trim() ?? '';
+  }
+
+  toggleLinkedExpand(customerId: number): void {
+    this.expandedLinkedCustomerIds.update(s => {
+      const next = new Set(s);
+      if (next.has(customerId)) next.delete(customerId);
+      else next.add(customerId);
+      return next;
+    });
+    // The parent's notes context flips between aggregated and own-only when this toggles,
+    // so reset its note pagination — counts from the previous context don't apply.
+    this.expandedNoteCount.update(m => {
+      const next = new Map(m);
+      next.delete(customerId);
+      return next;
+    });
+  }
+
+  isLinkedExpanded(customerId: number): boolean {
+    return this.expandedLinkedCustomerIds().has(customerId);
   }
 
   getInitials(name: string): string {

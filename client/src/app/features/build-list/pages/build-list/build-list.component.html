@@ -450,6 +450,17 @@
                           <span>days</span>
                         </div>
                       }
+                      @if (!hc.has('notesInLastDays')) {
+                        <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                          <span class="shrink-0">Notes added in last</span>
+                          <input type="number" min="1"
+                            [ngModel]="pendingRefinements().notesInLastDays || ''"
+                            (ngModelChange)="pendingRefinements.update(r => ({...r, notesInLastDays: $event ? +$event : null}))"
+                            placeholder="7"
+                            class="w-16 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
+                          <span>days</span>
+                        </div>
+                      }
                     </div>
 
                     <!-- Contact Frequency -->
@@ -968,50 +979,254 @@
                 @for (customer of displayed; track customer.id) {
                   @let contactInfo = getLastContactInfo(customer.id);
                   @let customerCrops = getCustomerCrops(customer.id);
-                  <div
-                    class="py-4 flex items-start justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 -mx-6 px-6 cursor-pointer transition-colors"
-                    (click)="selectCustomer(customer)"
-                  >
-                    <div class="flex items-start gap-3">
-                      <div class="w-10 h-10 rounded-full bg-scoular-green/10 dark:bg-scoular-green-accessible flex items-center justify-center flex-shrink-0">
-                        <span class="text-sm font-medium text-scoular-green-accessible dark:text-white">{{ getInitials(customer.name) }}</span>
-                      </div>
-                      <div>
-                        <div class="font-medium text-gray-900 dark:text-white">{{ customer.name }} <span class="text-gray-400 dark:text-gray-500 font-normal">({{ customer.scoularId }})</span></div>
-                        <div class="text-sm text-gray-500 dark:text-gray-400">{{ customer.farm }}</div>
-                        <div class="flex items-center gap-2 mt-1">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400">
-                            <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
-                            <circle cx="12" cy="10" r="3"/>
-                          </svg>
-                          <span class="text-xs text-gray-400">{{ getFormattedLocation(customer) }}</span>
-                          <span class="text-gray-300 dark:text-gray-600">•</span>
-                          <span class="text-sm text-gray-500 dark:text-gray-400">{{ customer.totalAcres | number }} acres</span>
+                  @let linkedInfo = linkedProducerInfoByCustomer().get(customer.id) ?? null;
+                  @let isLinkedOpen = isLinkedExpanded(customer.id);
+                  @let matchingNotes = noteFilterActive()
+                    ? (isLinkedOpen ? getOwnMatchingNotes(customer) : (matchingNotesByCustomer().get(customer.id) ?? null))
+                    : null;
+                  <div class="py-4 -mx-6 px-6 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                       [class.cursor-pointer]="!linkedFeatureActive()"
+                       (click)="!linkedFeatureActive() && selectCustomer(customer)">
+                    <div [ngClass]="noteFilterActive()
+                          ? 'grid grid-cols-[18rem_minmax(0,1fr)_auto] items-start gap-6'
+                          : 'flex items-start gap-4 justify-between'">
+                      <div class="flex items-start gap-3 shrink-0 w-72">
+                        <div class="w-10 h-10 rounded-full bg-scoular-green/10 dark:bg-scoular-green-accessible flex items-center justify-center flex-shrink-0">
+                          <span class="text-sm font-medium text-scoular-green-accessible dark:text-white">{{ getInitials(customer.name) }}</span>
                         </div>
-                      </div>
-                    </div>
-                    <div class="flex items-start gap-2">
-                      <div class="text-right">
-                        <span [class]="contactInfo.colorClass + ' text-sm'">
-                          {{ contactInfo.text }}
-                        </span>
-                        <div class="flex gap-1 mt-2 justify-end">
-                          @for (crop of customerCrops; track crop) {
-                            <app-badge variant="outline" class="text-xs">{{ crop }}</app-badge>
+                        <div class="min-w-0 flex-1">
+                          @if (linkedFeatureActive()) {
+                            <button type="button" (click)="$event.stopPropagation(); selectCustomer(customer)"
+                                    class="font-medium text-gray-900 dark:text-white hover:text-scoular-green-accessible dark:hover:text-scoular-green hover:underline cursor-pointer text-left truncate block w-full">
+                              {{ customer.name }} <span class="text-gray-400 dark:text-gray-500 font-normal">({{ customer.scoularId }})</span>
+                            </button>
+                          } @else {
+                            <div class="font-medium text-gray-900 dark:text-white truncate">
+                              {{ customer.name }} <span class="text-gray-400 dark:text-gray-500 font-normal">({{ customer.scoularId }})</span>
+                            </div>
+                          }
+                          <div class="text-sm text-gray-500 dark:text-gray-400 truncate">{{ customer.farm }}</div>
+                          <div class="flex items-center gap-2 mt-1 min-w-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400 shrink-0">
+                              <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+                              <circle cx="12" cy="10" r="3"/>
+                            </svg>
+                            <span class="text-xs text-gray-400 truncate">{{ getFormattedLocation(customer) }}</span>
+                            <span class="text-gray-300 dark:text-gray-600 shrink-0">•</span>
+                            <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ customer.totalAcres | number }} acres</span>
+                          </div>
+                          @if (linkedInfo) {
+                            <button type="button" (click)="$event.stopPropagation(); toggleLinkedExpand(customer.id)"
+                                    class="mt-1.5 inline-flex items-center gap-1 text-xs text-scoular-green-accessible dark:text-scoular-green hover:underline cursor-pointer focus:outline-none">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                              +{{ linkedInfo.count }} Linked {{ linkedInfo.count === 1 ? 'Producer' : 'Producers' }}
+                              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                                   [class.rotate-180]="isLinkedExpanded(customer.id)" class="transition-transform"><polyline points="6 9 12 15 18 9"/></svg>
+                            </button>
                           }
                         </div>
                       </div>
-                      @if (showManageMembersPanel()) {
-                        <button
-                          type="button"
-                          (click)="$event.stopPropagation(); excludeCustomerFromList(customer.id)"
-                          class="flex items-center justify-center w-8 h-8 rounded-full text-gray-300 hover:text-white hover:bg-scoular-red dark:text-gray-600 dark:hover:text-white transition-colors flex-shrink-0 self-center"
-                          title="Exclude from list"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                        </button>
+
+                      @if (noteFilterActive() && (!matchingNotes || matchingNotes.length === 0)) {
+                        <div></div>
                       }
+                      @if (matchingNotes && matchingNotes.length > 0) {
+                        <div class="min-w-0 max-w-3xl pl-3 border-l-2 border-scoular-green/30 dark:border-scoular-green-accessible/40 self-center">
+                          <!-- Most-recent matching note -->
+                          @let firstNote = matchingNotes[0];
+                          <div class="text-sm">
+                            <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                              <span class="font-medium">{{ firstNote.createdBy }}</span>
+                              <span class="text-gray-300 dark:text-gray-600">·</span>
+                              <span>{{ firstNote.createdAt | date:'MMM d, h:mm a' }}</span>
+                              @if (firstNote.isPinned) {
+                                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="currentColor" class="text-scoular-yellow"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
+                              }
+                              @if (linkedInfo && !isLinkedOpen && firstNote.viaName) {
+                                <span class="text-gray-300 dark:text-gray-600">·</span>
+                                <span class="italic text-gray-400 dark:text-gray-500">{{ firstNote.viaName }}</span>
+                              }
+                            </div>
+                            <p class="mt-0.5 text-gray-700 dark:text-gray-300 break-words" [innerHTML]="firstNote.content | highlight: getActiveNoteKeyword()"></p>
+                          </div>
+
+                          @if (matchingNotes.length > 1) {
+                            @let revealed = getNoteExpandCount(customer.id);
+                            @let totalEarlier = matchingNotes.length - 1;
+                            @let remaining = totalEarlier - revealed;
+
+                            @if (revealed > 0) {
+                              <div class="mt-2 divide-y divide-gray-200 dark:divide-gray-700">
+                                @for (note of matchingNotes.slice(1, 1 + revealed); track note.id) {
+                                  <div class="text-sm py-3 first:pt-0 last:pb-0">
+                                    <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                                      <span class="font-medium">{{ note.createdBy }}</span>
+                                      <span class="text-gray-300 dark:text-gray-600">·</span>
+                                      <span>{{ note.createdAt | date:'MMM d, h:mm a' }}</span>
+                                      @if (note.isPinned) {
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="currentColor" class="text-scoular-yellow"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
+                                      }
+                                      @if (linkedInfo && !isLinkedOpen && note.viaName) {
+                                        <span class="text-gray-300 dark:text-gray-600">·</span>
+                                        <span class="italic text-gray-400 dark:text-gray-500">{{ note.viaName }}</span>
+                                      }
+                                    </div>
+                                    <p class="mt-0.5 text-gray-700 dark:text-gray-300 break-words" [innerHTML]="note.content | highlight: getActiveNoteKeyword()"></p>
+                                  </div>
+                                }
+                              </div>
+                            }
+
+                            <div class="mt-2 flex items-center gap-3 text-xs">
+                              @if (remaining > 0) {
+                                <button type="button" (click)="expandMoreNotes(customer.id, totalEarlier)"
+                                        class="text-scoular-green-accessible hover:underline cursor-pointer focus:outline-none">
+                                  +{{ remaining }} earlier {{ remaining === 1 ? 'note' : 'notes' }}
+                                </button>
+                              }
+                              @if (revealed > 0) {
+                                <button type="button" (click)="collapseNotes(customer.id)"
+                                        class="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:underline cursor-pointer focus:outline-none">
+                                  Hide
+                                </button>
+                              }
+                            </div>
+                          }
+                        </div>
+                      }
+
+                      <div class="flex items-start gap-2 shrink-0">
+                        <div class="text-right">
+                          <span [class]="contactInfo.colorClass + ' text-sm'">
+                            {{ contactInfo.text }}
+                          </span>
+                          <div class="flex gap-1 mt-2 justify-end">
+                            @for (crop of customerCrops; track crop) {
+                              <app-badge variant="outline" class="text-xs">{{ crop }}</app-badge>
+                            }
+                          </div>
+                        </div>
+                        @if (showManageMembersPanel()) {
+                          <button type="button"
+                                  (click)="$event.stopPropagation(); excludeCustomerFromList(customer.id)"
+                                  class="flex items-center justify-center w-8 h-8 rounded-full text-gray-300 hover:text-white hover:bg-scoular-red dark:text-gray-600 dark:hover:text-white transition-colors flex-shrink-0 self-center"
+                                  title="Exclude from list">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                          </button>
+                        }
+                      </div>
                     </div>
+
+                    @if (linkedInfo && isLinkedOpen) {
+                      <div class="mt-3 space-y-3">
+                        @for (linked of linkedInfo.producers; track linked.id) {
+                          @let linkedContactInfo = getLastContactInfo(linked.id);
+                          @let linkedCrops = getCustomerCrops(linked.id);
+                          @let linkedNotes = noteFilterActive() ? getOwnMatchingNotes(linked) : null;
+                          <div [ngClass]="noteFilterActive()
+                                ? 'grid grid-cols-[18rem_minmax(0,1fr)_auto] items-start gap-4 pl-3 border-l-2 border-scoular-green/30 dark:border-scoular-green-accessible/40'
+                                : 'flex items-start gap-4 justify-between pl-3 border-l-2 border-scoular-green/30 dark:border-scoular-green-accessible/40'">
+                            <!-- Identity (matches main row format) -->
+                            <div class="flex items-start gap-3 shrink-0 w-72">
+                              <div class="w-10 h-10 rounded-full bg-scoular-green/10 dark:bg-scoular-green-accessible flex items-center justify-center flex-shrink-0">
+                                <span class="text-sm font-medium text-scoular-green-accessible dark:text-white">{{ getInitials(linked.name) }}</span>
+                              </div>
+                              <div class="min-w-0 flex-1">
+                                <button type="button" (click)="selectCustomer(linked)"
+                                        class="font-medium text-gray-900 dark:text-white hover:text-scoular-green-accessible dark:hover:text-scoular-green hover:underline cursor-pointer text-left truncate block w-full">
+                                  {{ linked.name }} <span class="text-gray-400 dark:text-gray-500 font-normal">({{ linked.scoularId }})</span>
+                                </button>
+                                <div class="text-sm text-gray-500 dark:text-gray-400 truncate">{{ linked.farm }}</div>
+                                <div class="flex items-center gap-2 mt-1 min-w-0">
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400 shrink-0">
+                                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+                                    <circle cx="12" cy="10" r="3"/>
+                                  </svg>
+                                  <span class="text-xs text-gray-400 truncate">{{ getFormattedLocation(linked) }}</span>
+                                  <span class="text-gray-300 dark:text-gray-600 shrink-0">•</span>
+                                  <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ linked.totalAcres | number }} acres</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <!-- Notes (own only) -->
+                            @if (noteFilterActive()) {
+                              @if (linkedNotes && linkedNotes.length > 0) {
+                                @let linkedFirst = linkedNotes[0];
+                                <div class="min-w-0 max-w-3xl pl-3 border-l-2 border-scoular-green/30 dark:border-scoular-green-accessible/40 self-center">
+                                  <div class="text-sm">
+                                    <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                                      <span class="font-medium">{{ linkedFirst.createdBy }}</span>
+                                      <span class="text-gray-300 dark:text-gray-600">·</span>
+                                      <span>{{ linkedFirst.createdAt | date:'MMM d, h:mm a' }}</span>
+                                      @if (linkedFirst.isPinned) {
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="currentColor" class="text-scoular-yellow"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
+                                      }
+                                    </div>
+                                    <p class="mt-0.5 text-gray-700 dark:text-gray-300 break-words" [innerHTML]="linkedFirst.content | highlight: getActiveNoteKeyword()"></p>
+                                  </div>
+
+                                  @if (linkedNotes.length > 1) {
+                                    @let linkedRevealed = getNoteExpandCount(linked.id);
+                                    @let linkedTotalEarlier = linkedNotes.length - 1;
+                                    @let linkedRemaining = linkedTotalEarlier - linkedRevealed;
+
+                                    @if (linkedRevealed > 0) {
+                                      <div class="mt-2 divide-y divide-gray-200 dark:divide-gray-700">
+                                        @for (note of linkedNotes.slice(1, 1 + linkedRevealed); track note.id) {
+                                          <div class="text-sm py-3 first:pt-0 last:pb-0">
+                                            <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                                              <span class="font-medium">{{ note.createdBy }}</span>
+                                              <span class="text-gray-300 dark:text-gray-600">·</span>
+                                              <span>{{ note.createdAt | date:'MMM d, h:mm a' }}</span>
+                                              @if (note.isPinned) {
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="currentColor" class="text-scoular-yellow"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
+                                              }
+                                            </div>
+                                            <p class="mt-0.5 text-gray-700 dark:text-gray-300 break-words" [innerHTML]="note.content | highlight: getActiveNoteKeyword()"></p>
+                                          </div>
+                                        }
+                                      </div>
+                                    }
+
+                                    <div class="mt-2 flex items-center gap-3 text-xs">
+                                      @if (linkedRemaining > 0) {
+                                        <button type="button" (click)="expandMoreNotes(linked.id, linkedTotalEarlier)"
+                                                class="text-scoular-green-accessible hover:underline cursor-pointer focus:outline-none">
+                                          +{{ linkedRemaining }} earlier {{ linkedRemaining === 1 ? 'note' : 'notes' }}
+                                        </button>
+                                      }
+                                      @if (linkedRevealed > 0) {
+                                        <button type="button" (click)="collapseNotes(linked.id)"
+                                                class="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:underline cursor-pointer focus:outline-none">
+                                          Hide
+                                        </button>
+                                      }
+                                    </div>
+                                  }
+                                </div>
+                              } @else {
+                                <div></div>
+                              }
+                            }
+
+                            <!-- Right: contact info + crops -->
+                            <div class="flex items-start gap-2 shrink-0">
+                              <div class="text-right">
+                                <span [class]="linkedContactInfo.colorClass + ' text-sm'">
+                                  {{ linkedContactInfo.text }}
+                                </span>
+                                <div class="flex gap-1 mt-2 justify-end">
+                                  @for (crop of linkedCrops; track crop) {
+                                    <app-badge variant="outline" class="text-xs">{{ crop }}</app-badge>
+                                  }
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        }
+                      </div>
+                    }
                   </div>
                 }
               </div>
