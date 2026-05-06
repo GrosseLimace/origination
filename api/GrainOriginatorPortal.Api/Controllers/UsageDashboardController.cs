@@ -24,13 +24,16 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class UsageDashboardController : ControllerBase
 {
     private readonly ApplicationDbContext _appDb;
+    private readonly OriginationDbContext _odsDb;
     private readonly ILogger<UsageDashboardController> _logger;
 
     public UsageDashboardController(
         ApplicationDbContext appDb,
+        OriginationDbContext odsDb,
         ILogger<UsageDashboardController> logger)
     {
         _appDb = appDb;
+        _odsDb = odsDb;
         _logger = logger;
     }
 
@@ -716,6 +719,42 @@ public class UsageDashboardController : ControllerBase
             });
         }
 
+        // ── Most-interacted producer (per-customer interaction count) ──
+        // Tally events whose TargetId is a customer id (profile-opened, tickets,
+        // storage, producer-details, call/email clicks). Resolve the top one
+        // through CustomerSnapshot for display.
+        var customerInteractionSubFeatures = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "profile-opened", "customer-details", "producer-details", "tickets", "storage"
+        };
+        var topProducerGroup = clicks
+            .Where(c => c.TargetId != null && long.TryParse(c.TargetId, out _) &&
+                ((c.FeatureCode == "customers" && c.SubFeatureCode != null && customerInteractionSubFeatures.Contains(c.SubFeatureCode))
+                 || c.EventType == "call_click" || c.EventType == "email_click"))
+            .GroupBy(c => c.TargetId!)
+            .Select(g => new { CustomerId = long.Parse(g.Key), Count = g.Count() })
+            .OrderByDescending(g => g.Count)
+            .FirstOrDefault();
+
+        TopProducerDto? topProducer = null;
+        if (topProducerGroup != null)
+        {
+            var snap = await _appDb.CustomerSnapshots
+                .Where(s => s.CustomerId == topProducerGroup.CustomerId)
+                .Select(s => new { s.CustomerName, s.ScoularId })
+                .FirstOrDefaultAsync(ct);
+            if (snap != null)
+            {
+                topProducer = new TopProducerDto
+                {
+                    CustomerId = topProducerGroup.CustomerId,
+                    CustomerName = snap.CustomerName,
+                    ScoularId = snap.ScoularId,
+                    InteractionCount = topProducerGroup.Count,
+                };
+            }
+        }
+
         // ── Customer Page counters ──
         var customers = new CustomerEngagementDto
         {
@@ -734,6 +773,7 @@ public class UsageDashboardController : ControllerBase
             TicketDropdownOpens = clicks.Count(c => c.FeatureCode == "customers" && c.SubFeatureCode == "tickets" && c.EventType == "interaction"),
             StorageDropdownOpens = clicks.Count(c => c.FeatureCode == "customers" && c.SubFeatureCode == "storage" && c.EventType == "interaction"),
             PlantingTabClicks = clicks.Count(c => c.FeatureCode == "customers" && c.SubFeatureCode == "planting-intentions" && c.EventType == "interaction"),
+            TopProducer = topProducer,
         };
 
         // ── Build a List counters + top library queries ──
@@ -787,6 +827,15 @@ public class UsageDashboardController : ControllerBase
         };
 
         // ── Bid Sheet counters ──
+        // bids-changed events carry the location name as TargetId (added in the
+        // saveEditBids tracker). Group to find the most-edited location + top 5.
+        var locationEditGroups = clicks
+            .Where(c => c.FeatureCode == "bidsheet" && c.SubFeatureCode == "bids-changed" && !string.IsNullOrEmpty(c.TargetId))
+            .GroupBy(c => c.TargetId!)
+            .Select(g => new TopBidLocationDto { LocationName = g.Key, EditCount = g.Count() })
+            .OrderByDescending(g => g.EditCount)
+            .ToList();
+
         var bidSheet = new BidSheetEngagementDto
         {
             LocationsAdded = clicks.Count(c => c.FeatureCode == "bidsheet" && c.SubFeatureCode == "locations-added"),
@@ -796,6 +845,8 @@ public class UsageDashboardController : ControllerBase
             BidsChanged = clicks.Count(c => c.FeatureCode == "bidsheet" && c.SubFeatureCode == "bids-changed"),
             EditBidsOpens = clicks.Count(c => c.FeatureCode == "bidsheet" && c.SubFeatureCode == "edit-bids-opened"),
             ReferenceSet = clicks.Count(c => c.FeatureCode == "bidsheet" && c.SubFeatureCode == "reference-set"),
+            MostEditedLocation = locationEditGroups.FirstOrDefault(),
+            TopEditedLocations = locationEditGroups.Take(5).ToList(),
         };
 
         // ── Planting Dashboard counters ──
@@ -839,9 +890,93 @@ public class UsageDashboardController : ControllerBase
                 EventType = c.EventType,
                 FeatureCode = c.FeatureCode,
                 SubFeatureCode = c.SubFeatureCode,
-                TargetId = c.TargetId
+                TargetId = c.TargetId,
+                TargetName = null,
             })
             .ToList();
+
+        // Enrich TargetIds that map to known entities so the UI shows a name instead
+        // of an opaque numeric id. Two resolution paths:
+        //   1. Customer ids — features that store customerId in TargetId. Resolved
+        //      via dbo.CustomerSnapshot (cached customer→trade-unit mapping with name).
+        //   2. QueryLibrary ids — featureCode='build-a-list' / sub='library-query-selected'.
+        //      Resolved via dbo.QueryLibrary.
+        var customerSubFeatures = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "profile-opened", "customer-details", "producer-details",
+            "tickets", "storage", "planting-intentions", "contracts",
+            "member-added", "member-excluded", "producer-row-click",
+            // Insights subFeatures (set by selectInsight in insights.component.ts)
+            "unconfirmed-contracts", "spot-loads", "unshipped-bushels",
+        };
+
+        var customerTargetIds = recentActivity
+            .Where(r => r.TargetId != null
+                && long.TryParse(r.TargetId, out _)
+                && (
+                    (r.FeatureCode == "customers" && (r.SubFeatureCode == null || customerSubFeatures.Contains(r.SubFeatureCode)))
+                    || (r.FeatureCode == "insights" && r.SubFeatureCode != null && customerSubFeatures.Contains(r.SubFeatureCode))
+                    || (r.FeatureCode == "dashboard" && r.SubFeatureCode == "producer-row-click")
+                    || (r.FeatureCode == "build-a-list" && (r.SubFeatureCode == "member-added" || r.SubFeatureCode == "member-excluded"))
+                ))
+            .Select(r => long.Parse(r.TargetId!))
+            .Distinct()
+            .ToList();
+
+        var customerNames = customerTargetIds.Count > 0
+            ? await _appDb.CustomerSnapshots
+                .Where(s => customerTargetIds.Contains(s.CustomerId))
+                .GroupBy(s => s.CustomerId)
+                .Select(g => new { CustomerId = g.Key, Name = g.First().CustomerName, Code = g.First().ScoularId })
+                .ToDictionaryAsync(g => g.CustomerId.ToString(), g => string.IsNullOrEmpty(g.Code) ? g.Name : $"{g.Name} ({g.Code})", ct)
+            : new Dictionary<string, string>();
+
+        var libraryTargetIds = recentActivity
+            .Where(r => r.TargetId != null
+                && r.FeatureCode == "build-a-list"
+                && r.SubFeatureCode == "library-query-selected"
+                && int.TryParse(r.TargetId, out _))
+            .Select(r => int.Parse(r.TargetId!))
+            .Distinct()
+            .ToList();
+
+        var libraryNames = libraryTargetIds.Count > 0
+            ? await _appDb.QueryLibrary
+                .Where(q => libraryTargetIds.Contains(q.Id))
+                .ToDictionaryAsync(q => q.Id.ToString(), q => q.Name, ct)
+            : new Dictionary<string, string>();
+
+        // Contracts: featureCode='customers' / sub='contracts'. TargetId is the
+        // long row id from base.vw_CurrentContracts. Resolve to ContractNumber +
+        // commodity so the row reads "C12345 — CORN" instead of "987654".
+        var contractTargetIds = recentActivity
+            .Where(r => r.TargetId != null
+                && r.FeatureCode == "customers"
+                && r.SubFeatureCode == "contracts"
+                && long.TryParse(r.TargetId, out _))
+            .Select(r => long.Parse(r.TargetId!))
+            .Distinct()
+            .ToList();
+
+        var contractNames = contractTargetIds.Count > 0
+            ? await _odsDb.Contracts
+                .Where(c => contractTargetIds.Contains(c.Id))
+                .Select(c => new { c.Id, c.ContractNumber, c.CommodityCode })
+                .ToDictionaryAsync(
+                    c => c.Id.ToString(),
+                    c => string.IsNullOrEmpty(c.CommodityCode)
+                        ? c.ContractNumber
+                        : $"{c.ContractNumber} — {c.CommodityCode}",
+                    ct)
+            : new Dictionary<string, string>();
+
+        foreach (var row in recentActivity)
+        {
+            if (row.TargetId == null) continue;
+            if (customerNames.TryGetValue(row.TargetId, out var custName)) { row.TargetName = custName; continue; }
+            if (libraryNames.TryGetValue(row.TargetId, out var libName))   { row.TargetName = libName;  continue; }
+            if (contractNames.TryGetValue(row.TargetId, out var ctName))   { row.TargetName = ctName;   continue; }
+        }
 
         var customersContacted = clicks.Count(c => c.EventType == "call_click" || c.EventType == "email_click");
 

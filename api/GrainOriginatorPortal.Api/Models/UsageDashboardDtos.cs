@@ -143,6 +143,16 @@ public class CustomerEngagementDto
     public int TicketDropdownOpens { get; set; }
     public int StorageDropdownOpens { get; set; }
     public int PlantingTabClicks { get; set; }
+    /// <summary>The single producer this user interacted with most in the window. Null if no customer-targeted events. </summary>
+    public TopProducerDto? TopProducer { get; set; }
+}
+
+public class TopProducerDto
+{
+    public long CustomerId { get; set; }
+    public string CustomerName { get; set; } = string.Empty;
+    public string? ScoularId { get; set; }
+    public int InteractionCount { get; set; }
 }
 
 public class BuildListEngagementDto
@@ -183,6 +193,16 @@ public class BidSheetEngagementDto
     public int BidsChanged { get; set; }
     public int EditBidsOpens { get; set; }
     public int ReferenceSet { get; set; }
+    /// <summary>The single location whose bids were edited the most in the window. Null if no bids-changed events have a location attached.</summary>
+    public TopBidLocationDto? MostEditedLocation { get; set; }
+    /// <summary>Top edited locations sorted desc by edit count. Up to 5 entries.</summary>
+    public List<TopBidLocationDto> TopEditedLocations { get; set; } = [];
+}
+
+public class TopBidLocationDto
+{
+    public string LocationName { get; set; } = string.Empty;
+    public int EditCount { get; set; }
 }
 
 public class PlantingDashEngagementDto
@@ -208,4 +228,6 @@ public class RecentActivityDto
     public string FeatureCode { get; set; } = string.Empty;
     public string? SubFeatureCode { get; set; }
     public string? TargetId { get; set; }
+    /// <summary>Resolved display string for TargetId (e.g., customer name + code, library prompt name). Null when no resolution applies.</summary>
+    public string? TargetName { get; set; }
 }

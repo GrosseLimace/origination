@@ -126,6 +126,14 @@ export interface CustomerEngagement {
   ticketDropdownOpens: number;
   storageDropdownOpens: number;
   plantingTabClicks: number;
+  topProducer: TopProducer | null;
+}
+
+export interface TopProducer {
+  customerId: number;
+  customerName: string;
+  scoularId: string | null;
+  interactionCount: number;
 }
 
 export interface BuildListEngagement {
@@ -162,6 +170,13 @@ export interface BidSheetEngagement {
   bidsChanged: number;
   editBidsOpens: number;
   referenceSet: number;
+  mostEditedLocation: TopBidLocation | null;
+  topEditedLocations: TopBidLocation[];
+}
+
+export interface TopBidLocation {
+  locationName: string;
+  editCount: number;
 }
 
 export interface PlantingDashEngagement {
@@ -184,4 +199,6 @@ export interface RecentActivity {
   featureCode: string;
   subFeatureCode: string | null;
   targetId: string | null;
+  /** Resolved display string for targetId (e.g., customer name + code, library prompt name). Null when no resolution applies. */
+  targetName: string | null;
 }

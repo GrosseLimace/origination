@@ -98,7 +98,9 @@ export class DashboardComponent {
   }
 
   goToCustomerProfile(customerId: number): void {
-    this.usageTracking.trackDashboardTabClick('producer-row-click');
+    // Pass the customerId as targetId so the Usage Dashboard's customer-name
+    // resolver can render the producer's name in the Recent Activity table.
+    this.usageTracking.postClickEvent('interaction', 'dashboard', 'producer-row-click', customerId.toString());
     this.router.navigate(['/'], {
       queryParams: { customerId, tab: 'planting', year: this.selectedPlantingYear() }
     });
@@ -1405,7 +1407,18 @@ export class DashboardComponent {
       : of(null);
 
     this.estimatesSaving.set(true);
-    this.usageTracking.trackSeasonTargetsSaved();
+    // Track one event per affected crop with what was set so the Usage Dashboard
+    // shows "CORN — yield 180 bu/ac, 15% share" instead of an opaque save event.
+    const allCrops = new Set<string>([...Object.keys(yieldEdits), ...Object.keys(shareEdits)]);
+    for (const crop of allCrops) {
+      const yieldVal = yieldEdits[crop];
+      const shareVal = shareEdits[crop];
+      const parts: string[] = [];
+      if (yieldVal !== undefined && yieldVal !== null) parts.push(`yield ${yieldVal} bu/ac`);
+      if (shareVal !== undefined && shareVal !== null) parts.push(`${shareVal}% share`);
+      if (parts.length === 0) continue;
+      this.usageTracking.postClickEvent('interaction', 'dashboard', 'set-season-targets', `${crop} — ${parts.join(', ')}`);
+    }
     forkJoin([yield$, share$])
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({

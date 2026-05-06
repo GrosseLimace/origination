@@ -12,7 +12,9 @@ import {
   TableComponent, TableHeaderComponent, TableBodyComponent,
   TableRowComponent, TableHeadComponent, TableCellComponent
 } from '@shared/components/table/table.component';
-import { UserUsageDetail } from '@models';
+import { UserUsageDetail, RecentActivity } from '@models';
+
+type TabId = 'producer-page' | 'build-a-list' | 'insights' | 'bidsheet' | 'dashboard';
 
 @Component({
   selector: 'app-user-usage-detail',
@@ -43,6 +45,15 @@ export class UserUsageDetailComponent {
   readonly customRangeOpen = signal(false);
   readonly detail = signal<UserUsageDetail | null>(null);
   readonly loading = signal(false);
+  readonly activeTab = signal<TabId>('producer-page');
+
+  readonly tabs: { id: TabId; label: string; featureCode: string }[] = [
+    { id: 'producer-page', label: 'Producer Page',       featureCode: 'customers' },
+    { id: 'build-a-list',  label: 'Build a List',        featureCode: 'build-a-list' },
+    { id: 'insights',      label: 'Actionable Insights', featureCode: 'insights' },
+    { id: 'bidsheet',      label: 'Bid Sheet',           featureCode: 'bidsheet' },
+    { id: 'dashboard',     label: 'Planting Dashboard',  featureCode: 'dashboard' },
+  ];
 
   // Trade unit key — same logic as the parent dashboard so the detail respects
   // group selection too.
@@ -79,6 +90,57 @@ export class UserUsageDetailComponent {
     if (!d) return [];
     return d.dailyActivity.slice(-30);
   });
+
+  /** Days in the window where the user had at least one event — manager-glanceable
+   *  "consistency" metric. Pairs with windowDays for the "X of Y" display. */
+  readonly activeDays = computed(() => {
+    const d = this.detail();
+    if (!d) return 0;
+    return d.dailyActivity.filter(a => a.eventCount > 0).length;
+  });
+
+  readonly windowDays = computed(() => {
+    const d = this.detail();
+    return d?.dailyActivity.length ?? 0;
+  });
+
+  /** Recent activity rows partitioned by featureCode so each tab can render only
+   *  its own events. Falls back to "other" for any featureCode not in the tab list. */
+  readonly recentActivityByFeature = computed(() => {
+    const d = this.detail();
+    const map = new Map<string, RecentActivity[]>();
+    if (!d) return map;
+    for (const ev of d.recentActivity) {
+      const key = ev.featureCode ?? 'other';
+      const arr = map.get(key);
+      if (arr) arr.push(ev);
+      else map.set(key, [ev]);
+    }
+    return map;
+  });
+
+  /** Recent activity for the currently selected tab. */
+  readonly currentTabRecentActivity = computed(() => {
+    const tab = this.tabs.find(t => t.id === this.activeTab());
+    if (!tab) return [];
+    return this.recentActivityByFeature().get(tab.featureCode) ?? [];
+  });
+
+  /** Display label for the active tab — used to title the per-feature sections. */
+  readonly activeTabLabel = computed(() => {
+    return this.tabs.find(t => t.id === this.activeTab())?.label ?? '';
+  });
+
+  setActiveTab(id: TabId): void {
+    this.activeTab.set(id);
+  }
+
+  getTabClass(id: TabId): string {
+    const base = 'px-3 py-1.5 text-sm font-medium rounded-lg transition-colors';
+    return this.activeTab() === id
+      ? `${base} bg-scoular-green-accessible text-white`
+      : `${base} text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700`;
+  }
 
   constructor() {
     // Read route params on construction
@@ -185,7 +247,11 @@ export class UserUsageDetailComponent {
   }
 
   formatTimestamp(dateStr: string): string {
-    const date = new Date(dateStr);
+    // Backend writes DateTime.UtcNow without a 'Z' suffix; JavaScript would parse
+    // such strings as local time. Append Z when missing so we treat the value as
+    // UTC and toLocaleString converts it to the viewer's local time correctly.
+    const raw = /[Zz]|[+-]\d{2}:?\d{2}$/.test(dateStr) ? dateStr : dateStr + 'Z';
+    const date = new Date(raw);
     return date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   }
 
@@ -209,22 +275,45 @@ export class UserUsageDetailComponent {
     return name.substring(0, 2).toUpperCase();
   }
 
+  /** True when the string is purely digits — i.e., an opaque numeric id that
+   *  the backend couldn't resolve. Used to render those distinctly (mono +
+   *  lighter) versus already-readable strings like location names or season
+   *  targets summaries. */
+  isNumericId(s: string): boolean {
+    return /^\d+$/.test(s);
+  }
+
   /** Pretty-print a sub-feature code for the recent-activity table. */
   formatSubFeature(code: string | null): string {
     if (!code) return '—';
     return code.replace(/-/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
   }
 
-  /** Human-readable feature label for the recent-activity table. */
+  /** Resolve the most useful "Action" label for a recent-activity row. Falls back
+   *  to the event type when sub-feature is null (mainly screen_enter events that
+   *  fire on every route navigation). */
+  formatAction(subFeatureCode: string | null, eventType: string, featureCode: string): string {
+    if (subFeatureCode) return this.formatSubFeature(subFeatureCode);
+    switch (eventType) {
+      case 'screen_enter': return `Viewed ${this.formatFeatureLabel(featureCode)}`;
+      case 'call_click':   return 'Called Producer';
+      case 'email_click':  return 'Emailed Producer';
+      case 'interaction':  return 'Interaction';
+      default:             return eventType.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
+    }
+  }
+
+  /** Human-readable feature label for the recent-activity table. Full names so
+   *  composed strings like "Viewed Producer Page" read naturally. */
   formatFeatureLabel(code: string): string {
     const map: Record<string, string> = {
-      'customers': 'Producer',
-      'dashboard': 'Planting Dash.',
+      'customers': 'Producer Page',
+      'dashboard': 'Planting Dashboard',
       'build-a-list': 'Build a List',
-      'insights': 'Insights',
+      'insights': 'Actionable Insights',
       'bidsheet': 'Bid Sheet',
-      'usage-dashboard': 'Usage Dash.',
-      'position-report': 'Position',
+      'usage-dashboard': 'Usage Dashboard',
+      'position-report': 'Position Report',
     };
     return map[code] ?? code;
   }

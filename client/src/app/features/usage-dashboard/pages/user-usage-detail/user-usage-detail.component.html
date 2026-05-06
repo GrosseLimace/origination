@@ -4,8 +4,8 @@
   <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
     <div class="flex items-center gap-3">
       <button type="button" (click)="goBack()"
-        class="inline-flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green hover:underline">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        class="inline-flex items-center gap-2 px-3 py-2 text-base font-medium rounded-lg border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-scoular-green-accessible dark:hover:text-scoular-green transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
         Usage Dashboard
       </button>
     </div>
@@ -77,7 +77,7 @@
   } @else {
 
     <!-- Identity card -->
-    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 mb-6 flex items-center gap-4">
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 mb-4 flex items-center gap-4">
       <div class="w-12 h-12 rounded-full bg-scoular-green-accessible flex items-center justify-center flex-shrink-0">
         <span class="text-base font-semibold text-white">{{ getInitials(d.displayName) }}</span>
       </div>
@@ -87,152 +87,94 @@
           <span class="px-2 py-1 text-xs font-medium rounded-full" [class]="getStatusClasses(d.status)">{{ d.status }}</span>
         </div>
         <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          {{ d.userId }}&#64;scoular.com · Last active: {{ formatLastActive(d.lastActive) }}
+          {{ d.userId }}&#64;scoular.com · Last active: {{ formatLastActive(d.lastActive) }} · Window: {{ formatDayLabel(dateFrom()) }} – {{ formatDayLabel(dateTo()) }}
         </div>
       </div>
     </div>
 
-    <!-- KPI cards -->
+    <!-- 4 KPI cards (engagement basics) -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-      <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5">
-        <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Logins</p>
-        <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.loginCount }}</div>
-        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">in the selected window</p>
+      <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+        <div class="w-10 h-10 rounded-lg bg-scoular-green/10 dark:bg-scoular-green/20 flex items-center justify-center flex-shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/></svg>
+        </div>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Logins</p>
+          <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.loginCount }}</div>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">in this window</p>
+        </div>
       </div>
-      <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5">
-        <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Total App Time</p>
-        <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ formatTimeSpent(d.totalAppMinutes) }}</div>
-        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">summed session duration</p>
+      <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+        <div class="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600 dark:text-blue-400"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Total App Time</p>
+          <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ formatTimeSpent(d.totalAppMinutes) }}</div>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">summed sessions</p>
+        </div>
       </div>
-      <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5">
-        <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Avg Session</p>
-        <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ formatSessionDuration(d.avgSessionMinutes) }}</div>
-        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">average session length</p>
+      <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+        <div class="w-10 h-10 rounded-lg bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center flex-shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-purple-600 dark:text-purple-400"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        </div>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Avg Session</p>
+          <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ formatSessionDuration(d.avgSessionMinutes) }}</div>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">per login</p>
+        </div>
       </div>
-      <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5">
-        <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Customers Contacted</p>
-        <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.customersContactedCount }}</div>
-        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">call + email clicks</p>
+      <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+        <div class="w-10 h-10 rounded-lg bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center flex-shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-amber-600 dark:text-amber-400"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
+        </div>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Active Days</p>
+          <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ activeDays() }} <span class="text-sm font-normal text-gray-500 dark:text-gray-400">/ {{ windowDays() }}</span></div>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">days with activity</p>
+        </div>
       </div>
     </div>
 
-    <!-- Daily activity chart -->
-    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 mb-6">
-      <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-4">Activity Over Time</h3>
-      @if (dailyActivitySlice().length === 0) {
-        <p class="text-sm text-gray-500 dark:text-gray-400">No activity in this window.</p>
-      } @else {
-        <div class="h-40 flex items-end gap-1 px-1 relative">
-          @for (day of dailyActivitySlice(); track day.date) {
-            <div class="flex-1 flex flex-col items-center justify-end h-full relative">
-              @if (day.eventCount > 0) {
-                <span class="text-[11px] font-semibold text-gray-700 dark:text-gray-300 mb-1">{{ day.eventCount }}</span>
-              }
-              <div class="w-full max-w-[36px] mx-auto rounded-t-sm transition-all hover:opacity-80"
-                [class]="day.eventCount > 0 ? 'bg-scoular-green' : 'bg-gray-300 dark:bg-gray-600'"
-                [style.height.%]="day.eventCount > 0 ? Math.max((day.eventCount / maxDaily()) * 100, 6) : 2"
-                [title]="formatDayLabel(day.date) + ': ' + day.eventCount + ' events, ' + day.screenMinutes + ' min on screen'">
-              </div>
-            </div>
-          }
-        </div>
-        <div class="flex justify-between px-1 mt-3">
-          <span class="text-[10px] text-gray-400 dark:text-gray-500">{{ formatDayLabel(dailyActivitySlice()[0].date) }}</span>
-          <span class="text-[10px] text-gray-400 dark:text-gray-500">{{ formatDayLabel(dailyActivitySlice()[dailyActivitySlice().length - 1].date) }}</span>
-        </div>
-      }
-    </div>
-
-    <!-- Per-feature engagement -->
+    <!-- Daily Activity + Time per Screen, side-by-side on lg -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
 
-      <!-- Producer Page -->
+      <!-- Daily Activity -->
       <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5">
-        <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">Producer Page</h3>
-        <div class="grid grid-cols-2 gap-2 text-sm">
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Profiles viewed</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.customers.profilesViewed }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Contracts expanded</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.customers.contractsExpanded }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Calls clicked</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.customers.callsClicked }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Emails clicked</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.customers.emailsClicked }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Notes created</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.customers.notesCreated }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Planting added</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.customers.plantingIntentionsAdded }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Producer details edited</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.customers.producerDetailsEdited }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Tickets opened</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.customers.ticketDropdownOpens }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Storage opened</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.customers.storageDropdownOpens }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Planting tab clicks</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.customers.plantingTabClicks }}</span></div>
+        <div class="flex items-baseline justify-between mb-4">
+          <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Daily Activity</h3>
+          <span class="text-xs text-gray-500 dark:text-gray-400">events per day</span>
         </div>
-      </div>
-
-      <!-- Build a List -->
-      <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5">
-        <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">Build a List</h3>
-        <div class="grid grid-cols-2 gap-2 text-sm">
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Lists saved</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.buildList.listsSaved }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Lists loaded</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.buildList.listsLoaded }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Lists deleted</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.buildList.listsDeleted }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Library clicks</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.buildList.libraryPromptsClicked }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">No-match searches</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.buildList.librarySearchNoMatch }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Query requests</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.buildList.queryRequestsSubmitted }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Members added</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.buildList.membersAdded }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Members excluded</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.buildList.membersExcluded }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Refine opens</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.buildList.refineFiltersOpens }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Manage members</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.buildList.manageMembersOpens }}</span></div>
-        </div>
-        @if (d.buildList.topLibraryQueries.length > 0) {
-          <div class="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
-            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">Top library prompts used</p>
-            <div class="space-y-1.5">
-              @for (q of d.buildList.topLibraryQueries; track q.queryName) {
-                <div class="flex items-center justify-between text-sm">
-                  <span class="text-gray-700 dark:text-gray-300 truncate mr-2">{{ q.queryName }}</span>
-                  <span class="font-semibold text-scoular-green-accessible dark:text-scoular-green flex-shrink-0">{{ q.timesUsed }}</span>
+        @if (dailyActivitySlice().length === 0) {
+          <p class="text-sm text-gray-500 dark:text-gray-400">No activity in this window.</p>
+        } @else {
+          <div class="h-40 flex items-end gap-1 px-1 relative">
+            @for (day of dailyActivitySlice(); track day.date) {
+              <div class="flex-1 flex flex-col items-center justify-end h-full relative">
+                @if (day.eventCount > 0) {
+                  <span class="text-[11px] font-semibold text-gray-700 dark:text-gray-300 mb-1">{{ day.eventCount }}</span>
+                }
+                <div class="w-full max-w-[36px] mx-auto rounded-t-sm transition-all hover:opacity-80"
+                  [class]="day.eventCount > 0 ? 'bg-scoular-green' : 'bg-gray-300 dark:bg-gray-600'"
+                  [style.height.%]="day.eventCount > 0 ? Math.max((day.eventCount / maxDaily()) * 100, 6) : 2"
+                  [title]="formatDayLabel(day.date) + ': ' + day.eventCount + ' events, ' + day.screenMinutes + ' min on screen'">
                 </div>
-              }
-            </div>
+              </div>
+            }
+          </div>
+          <div class="flex justify-between px-1 mt-3">
+            <span class="text-[10px] text-gray-400 dark:text-gray-500">{{ formatDayLabel(dailyActivitySlice()[0].date) }}</span>
+            <span class="text-[10px] text-gray-400 dark:text-gray-500">{{ formatDayLabel(dailyActivitySlice()[dailyActivitySlice().length - 1].date) }}</span>
           </div>
         }
       </div>
 
-      <!-- Actionable Insights -->
+      <!-- Time per Screen -->
       <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5">
-        <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">Actionable Insights</h3>
-        <div class="grid grid-cols-2 gap-2 text-sm">
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Unconfirmed Contracts</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.insights.unconfirmedContractsClicks }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Spot Loads</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.insights.spotLoadsClicks }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Unshipped Bushels</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.insights.unshippedBushelsClicks }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Other</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.insights.otherCategoryClicks }}</span></div>
+        <div class="flex items-baseline justify-between mb-4">
+          <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Time per Screen</h3>
+          <span class="text-xs text-gray-500 dark:text-gray-400">minutes per feature</span>
         </div>
-      </div>
-
-      <!-- Bid Sheet -->
-      <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5">
-        <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">Bid Sheet</h3>
-        <div class="grid grid-cols-2 gap-2 text-sm">
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Locations added</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.bidSheet.locationsAdded }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Locations deleted</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.bidSheet.locationsDeleted }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Locations selected</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.bidSheet.locationsSelected }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Commodities added</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.bidSheet.commoditiesAdded }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Bids changed</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.bidSheet.bidsChanged }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Edit grid opens</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.bidSheet.editBidsOpens }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Reference set</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.bidSheet.referenceSet }}</span></div>
-        </div>
-      </div>
-
-      <!-- Planting Dashboard -->
-      <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5">
-        <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">Planting Dashboard</h3>
-        <div class="grid grid-cols-2 gap-2 text-sm">
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">By Crop tab</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.plantingDashboard.byCropTabClicks }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Producers tab</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.plantingDashboard.producersTabClicks }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Harvest tab</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.plantingDashboard.harvestContractsTabClicks }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Producer rows</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.plantingDashboard.producerRowClicks }}</span></div>
-          <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Season targets saved</span><span class="font-semibold text-gray-900 dark:text-white">{{ d.plantingDashboard.seasonTargetsSaved }}</span></div>
-        </div>
-      </div>
-
-      <!-- Time per screen -->
-      <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5">
-        <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">Time per Screen</h3>
         @if (d.timePerScreen.length === 0) {
           <p class="text-sm text-gray-500 dark:text-gray-400">No screen-time data in this window.</p>
         } @else {
@@ -254,31 +196,398 @@
       </div>
     </div>
 
-    <!-- Recent activity -->
+    <!-- Per-feature drill-down: pill tab bar (matches parent dashboard style) -->
+    <div class="w-full bg-gray-100 dark:bg-gray-800 rounded-full p-0.5 sm:p-1 mb-4 overflow-x-auto">
+      <div class="flex min-w-0">
+        @for (tab of tabs; track tab.id) {
+          <button type="button"
+            (click)="setActiveTab(tab.id)"
+            [class]="activeTab() === tab.id
+              ? 'flex-1 text-center px-4 py-2 text-sm font-medium rounded-full transition-all duration-200 bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm whitespace-nowrap'
+              : 'flex-1 text-center px-4 py-2 text-sm font-medium rounded-full transition-all duration-200 bg-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white whitespace-nowrap'">
+            {{ tab.label }}
+          </button>
+        }
+      </div>
+    </div>
+
+    <!-- Tab content -->
+    @switch (activeTab()) {
+
+      @case ('producer-page') {
+        <!-- Highlight cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-scoular-green/10 dark:bg-scoular-green/20 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Producers Worked</p>
+              <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.customers.profilesViewed }}</div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">distinct profiles viewed</p>
+            </div>
+          </div>
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-amber-600 dark:text-amber-400"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Notes Created</p>
+              <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.customers.notesCreated }}</div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">new notes added</p>
+            </div>
+          </div>
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600 dark:text-blue-400"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Customers Contacted</p>
+              <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.customers.callsClicked + d.customers.emailsClicked }}</div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ d.customers.callsClicked }} calls · {{ d.customers.emailsClicked }} emails</p>
+            </div>
+          </div>
+          <!-- Most Interacted Producer -->
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-purple-600 dark:text-purple-400"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Most Interacted Producer</p>
+              @if (d.customers.topProducer; as tp) {
+                <div class="text-base font-bold text-gray-900 dark:text-white mt-1 truncate" [title]="tp.customerName">{{ tp.customerName }}</div>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  <span class="font-mono">{{ tp.scoularId ?? '—' }}</span> · {{ tp.interactionCount }} {{ tp.interactionCount === 1 ? 'interaction' : 'interactions' }}
+                </p>
+              } @else {
+                <div class="text-2xl font-bold text-gray-400 dark:text-gray-600 mt-1">—</div>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">no producer interactions</p>
+              }
+            </div>
+          </div>
+        </div>
+        <!-- Secondary metrics -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden mb-4">
+          <div class="px-5 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Other interactions</p>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 divide-y divide-gray-200 dark:divide-gray-700 sm:divide-y-0 sm:divide-x">
+            <div class="flex items-center justify-between px-5 py-3 text-sm">
+              <span class="text-gray-600 dark:text-gray-400">Contracts expanded</span>
+              <span class="font-semibold text-gray-900 dark:text-white tabular-nums">{{ d.customers.contractsExpanded }}</span>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3 text-sm">
+              <span class="text-gray-600 dark:text-gray-400">Tickets opened</span>
+              <span class="font-semibold text-gray-900 dark:text-white tabular-nums">{{ d.customers.ticketDropdownOpens }}</span>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3 text-sm">
+              <span class="text-gray-600 dark:text-gray-400">Storage opened</span>
+              <span class="font-semibold text-gray-900 dark:text-white tabular-nums">{{ d.customers.storageDropdownOpens }}</span>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3 text-sm">
+              <span class="text-gray-600 dark:text-gray-400">Planting tab clicks</span>
+              <span class="font-semibold text-gray-900 dark:text-white tabular-nums">{{ d.customers.plantingTabClicks }}</span>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3 text-sm">
+              <span class="text-gray-600 dark:text-gray-400">Planting added</span>
+              <span class="font-semibold text-gray-900 dark:text-white tabular-nums">{{ d.customers.plantingIntentionsAdded }}</span>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3 text-sm">
+              <span class="text-gray-600 dark:text-gray-400">Producer details edited</span>
+              <span class="font-semibold text-gray-900 dark:text-white tabular-nums">{{ d.customers.producerDetailsEdited }}</span>
+            </div>
+          </div>
+        </div>
+      }
+
+      @case ('build-a-list') {
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-scoular-green/10 dark:bg-scoular-green/20 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Lists Saved</p>
+              <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.buildList.listsSaved }}</div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ d.buildList.listsLoaded }} loaded · {{ d.buildList.listsDeleted }} deleted</p>
+            </div>
+          </div>
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-amber-600 dark:text-amber-400"><path d="M9 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-4"/><polyline points="9 7 12 4 15 7"/><line x1="12" x2="12" y1="4" y2="16"/></svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Library Used</p>
+              <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.buildList.libraryPromptsClicked }}</div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ d.buildList.librarySearchNoMatch }} no-match searches</p>
+            </div>
+          </div>
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-purple-600 dark:text-purple-400"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Most Used Prompt</p>
+              @if (d.buildList.topLibraryQueries.length > 0) {
+                @let topPrompt = d.buildList.topLibraryQueries[0];
+                <div class="text-base font-bold text-gray-900 dark:text-white mt-1 truncate" [title]="topPrompt.queryName">{{ topPrompt.queryName }}</div>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ topPrompt.timesUsed }} {{ topPrompt.timesUsed === 1 ? 'click' : 'clicks' }}</p>
+              } @else {
+                <div class="text-2xl font-bold text-gray-400 dark:text-gray-600 mt-1">—</div>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">no library prompts clicked</p>
+              }
+            </div>
+          </div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden mb-4">
+          <div class="px-5 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Other interactions</p>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 divide-y divide-gray-200 dark:divide-gray-700 sm:divide-y-0 sm:divide-x">
+            <div class="flex items-center justify-between px-5 py-3 text-sm">
+              <span class="text-gray-600 dark:text-gray-400">Members added</span>
+              <span class="font-semibold text-gray-900 dark:text-white tabular-nums">{{ d.buildList.membersAdded }}</span>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3 text-sm">
+              <span class="text-gray-600 dark:text-gray-400">Members excluded</span>
+              <span class="font-semibold text-gray-900 dark:text-white tabular-nums">{{ d.buildList.membersExcluded }}</span>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3 text-sm">
+              <span class="text-gray-600 dark:text-gray-400">Refine opens</span>
+              <span class="font-semibold text-gray-900 dark:text-white tabular-nums">{{ d.buildList.refineFiltersOpens }}</span>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3 text-sm">
+              <span class="text-gray-600 dark:text-gray-400">Manage members opens</span>
+              <span class="font-semibold text-gray-900 dark:text-white tabular-nums">{{ d.buildList.manageMembersOpens }}</span>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3 text-sm">
+              <span class="text-gray-600 dark:text-gray-400">Query requests</span>
+              <span class="font-semibold text-gray-900 dark:text-white tabular-nums">{{ d.buildList.queryRequestsSubmitted }}</span>
+            </div>
+          </div>
+        </div>
+        @if (d.buildList.topLibraryQueries.length > 0) {
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 mb-4">
+            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">Top library prompts used</p>
+            <div class="space-y-1.5">
+              @for (q of d.buildList.topLibraryQueries; track q.queryName) {
+                <div class="flex items-center justify-between text-sm">
+                  <span class="text-gray-700 dark:text-gray-300 truncate mr-2">{{ q.queryName }}</span>
+                  <span class="font-semibold text-scoular-green-accessible dark:text-scoular-green flex-shrink-0">{{ q.timesUsed }}</span>
+                </div>
+              }
+            </div>
+          </div>
+        }
+      }
+
+      @case ('insights') {
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-scoular-red/10 dark:bg-scoular-red/20 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-red"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Unconfirmed Contracts</p>
+              <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.insights.unconfirmedContractsClicks }}</div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">items clicked</p>
+            </div>
+          </div>
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-amber-600 dark:text-amber-400"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Spot Loads</p>
+              <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.insights.spotLoadsClicks }}</div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">items clicked</p>
+            </div>
+          </div>
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600 dark:text-blue-400"><path d="M3 6h18"/><path d="M3 12h18"/><path d="M3 18h18"/></svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Unshipped Bushels</p>
+              <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.insights.unshippedBushelsClicks }}</div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">items clicked</p>
+            </div>
+          </div>
+        </div>
+        @if (d.insights.otherCategoryClicks > 0) {
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-4 mb-4 flex items-center justify-between text-sm">
+            <span class="text-gray-600 dark:text-gray-400">Other categories</span>
+            <span class="font-semibold text-gray-900 dark:text-white">{{ d.insights.otherCategoryClicks }}</span>
+          </div>
+        }
+      }
+
+      @case ('bidsheet') {
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-scoular-green/10 dark:bg-scoular-green/20 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green"><line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Bids Changed</p>
+              <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.bidSheet.bidsChanged }}</div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">save events</p>
+            </div>
+          </div>
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-amber-600 dark:text-amber-400"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Locations Added</p>
+              <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.bidSheet.locationsAdded }}</div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ d.bidSheet.locationsDeleted }} deleted</p>
+            </div>
+          </div>
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-purple-600 dark:text-purple-400"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Most Edited Location</p>
+              @if (d.bidSheet.mostEditedLocation; as topLoc) {
+                <div class="text-base font-bold text-gray-900 dark:text-white mt-1 truncate" [title]="topLoc.locationName">{{ topLoc.locationName }}</div>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ topLoc.editCount }} {{ topLoc.editCount === 1 ? 'edit' : 'edits' }}</p>
+              } @else {
+                <div class="text-2xl font-bold text-gray-400 dark:text-gray-600 mt-1">—</div>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">no bid edits in window</p>
+              }
+            </div>
+          </div>
+        </div>
+        @if (d.bidSheet.topEditedLocations.length > 0) {
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 mb-4">
+            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">Top edited bid locations</p>
+            <div class="space-y-1.5">
+              @for (loc of d.bidSheet.topEditedLocations; track loc.locationName) {
+                <div class="flex items-center justify-between text-sm">
+                  <span class="text-gray-700 dark:text-gray-300 truncate mr-2">{{ loc.locationName }}</span>
+                  <span class="font-semibold text-scoular-green-accessible dark:text-scoular-green flex-shrink-0 tabular-nums">{{ loc.editCount }} {{ loc.editCount === 1 ? 'edit' : 'edits' }}</span>
+                </div>
+              }
+            </div>
+          </div>
+        }
+        <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden mb-4">
+          <div class="px-5 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Other interactions</p>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y divide-gray-200 dark:divide-gray-700 sm:divide-y-0 sm:divide-x">
+            <div class="flex items-center justify-between px-5 py-3 text-sm">
+              <span class="text-gray-600 dark:text-gray-400">Edit grid opens</span>
+              <span class="font-semibold text-gray-900 dark:text-white tabular-nums">{{ d.bidSheet.editBidsOpens }}</span>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3 text-sm">
+              <span class="text-gray-600 dark:text-gray-400">Locations selected</span>
+              <span class="font-semibold text-gray-900 dark:text-white tabular-nums">{{ d.bidSheet.locationsSelected }}</span>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3 text-sm">
+              <span class="text-gray-600 dark:text-gray-400">Commodities added</span>
+              <span class="font-semibold text-gray-900 dark:text-white tabular-nums">{{ d.bidSheet.commoditiesAdded }}</span>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3 text-sm">
+              <span class="text-gray-600 dark:text-gray-400">Reference set</span>
+              <span class="font-semibold text-gray-900 dark:text-white tabular-nums">{{ d.bidSheet.referenceSet }}</span>
+            </div>
+          </div>
+        </div>
+      }
+
+      @case ('dashboard') {
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-scoular-green/10 dark:bg-scoular-green/20 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><line x1="3" x2="21" y1="9" y2="9"/><line x1="9" x2="9" y1="21" y2="9"/></svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-gray-500 dark:text-gray-400">By-Crop Tab</p>
+              <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.plantingDashboard.byCropTabClicks }}</div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">tab opens</p>
+            </div>
+          </div>
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-amber-600 dark:text-amber-400"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Producer Drill-In</p>
+              <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.plantingDashboard.producerRowClicks }}</div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">producer rows clicked</p>
+            </div>
+          </div>
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600 dark:text-blue-400"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Season Targets Saved</p>
+              <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.plantingDashboard.seasonTargetsSaved }}</div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">target updates</p>
+            </div>
+          </div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden mb-4">
+          <div class="px-5 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Other tabs</p>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 divide-y divide-gray-200 dark:divide-gray-700 sm:divide-y-0 sm:divide-x">
+            <div class="flex items-center justify-between px-5 py-3 text-sm">
+              <span class="text-gray-600 dark:text-gray-400">Producers tab</span>
+              <span class="font-semibold text-gray-900 dark:text-white tabular-nums">{{ d.plantingDashboard.producersTabClicks }}</span>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3 text-sm">
+              <span class="text-gray-600 dark:text-gray-400">Harvest tab</span>
+              <span class="font-semibold text-gray-900 dark:text-white tabular-nums">{{ d.plantingDashboard.harvestContractsTabClicks }}</span>
+            </div>
+          </div>
+        </div>
+      }
+    }
+
+    <!-- Per-feature recent activity (filtered to whatever tab is active) -->
     <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
       <div class="p-5 pb-3">
-        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Recent Activity</h3>
-        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Last 50 click events for this user in the selected window</p>
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ activeTabLabel() }} Recent Activity</h3>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Latest interaction events on this screen during the selected window</p>
       </div>
-      @if (d.recentActivity.length === 0) {
-        <div class="text-center py-12 text-gray-500 dark:text-gray-400 text-sm">No recent activity in this window.</div>
+      @if (currentTabRecentActivity().length === 0) {
+        <div class="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">No recent activity for this feature in the window.</div>
       } @else {
         <app-table>
           <app-table-header>
             <app-table-row>
-              <app-table-head>When</app-table-head>
-              <app-table-head>Feature</app-table-head>
-              <app-table-head>Action</app-table-head>
+              <app-table-head [minWidth]="'10rem'">When</app-table-head>
+              <app-table-head [minWidth]="'12rem'">Action</app-table-head>
               <app-table-head>Target</app-table-head>
             </app-table-row>
           </app-table-header>
           <app-table-body>
-            @for (a of d.recentActivity; track a.timestamp + '|' + a.subFeatureCode + '|' + a.targetId) {
+            @for (a of currentTabRecentActivity(); track a.timestamp + '|' + a.subFeatureCode + '|' + a.targetId) {
               <app-table-row>
-                <app-table-cell><span class="text-xs text-gray-500 dark:text-gray-400">{{ formatTimestamp(a.timestamp) }}</span></app-table-cell>
-                <app-table-cell><span class="text-sm text-gray-700 dark:text-gray-300">{{ formatFeatureLabel(a.featureCode) }}</span></app-table-cell>
-                <app-table-cell><span class="text-sm text-gray-700 dark:text-gray-300">{{ formatSubFeature(a.subFeatureCode) }}</span></app-table-cell>
-                <app-table-cell><span class="text-xs text-gray-500 dark:text-gray-400 font-mono">{{ a.targetId ?? '—' }}</span></app-table-cell>
+                <app-table-cell><span class="text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">{{ formatTimestamp(a.timestamp) }}</span></app-table-cell>
+                <app-table-cell>
+                  @if (a.eventType === 'screen_enter') {
+                    <span class="text-sm text-gray-700 dark:text-gray-300" title="Page navigation — the user opened or returned to this screen.">{{ formatAction(a.subFeatureCode, a.eventType, a.featureCode) }}</span>
+                  } @else {
+                    <span class="text-sm text-gray-700 dark:text-gray-300">{{ formatAction(a.subFeatureCode, a.eventType, a.featureCode) }}</span>
+                  }
+                </app-table-cell>
+                <app-table-cell>
+                  @if (a.targetName) {
+                    <span class="text-sm text-gray-700 dark:text-gray-300">{{ a.targetName }}</span>
+                  } @else if (a.targetId && !isNumericId(a.targetId)) {
+                    <span class="text-sm text-gray-700 dark:text-gray-300">{{ a.targetId }}</span>
+                  } @else if (a.targetId) {
+                    <span class="text-xs text-gray-500 dark:text-gray-400 font-mono">{{ a.targetId }}</span>
+                  } @else {
+                    <span class="text-xs text-gray-400 dark:text-gray-500">—</span>
+                  }
+                </app-table-cell>
               </app-table-row>
             }
           </app-table-body>
