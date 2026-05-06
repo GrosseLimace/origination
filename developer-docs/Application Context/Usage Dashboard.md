@@ -105,6 +105,7 @@ All from `loadData()`:
 | `GET /api/usage-dashboard/underused-features` | features sorted ascending by session count |
 | `GET /api/usage-dashboard/query-library-usage` | most-clicked library queries with name resolved |
 | `GET /api/usage-dashboard/query-search-gaps` | top 20 search terms that didn't match a library entry |
+| `GET /api/usage-dashboard/users/{userId}/detail` | full per-user activity profile (sessions, per-feature counters, daily series, recent activity) — drives the per-user drill-down page |
 | `POST /api/usage-dashboard/click-event` | telemetry endpoint — accepts events from any authenticated user (not admin-only) |
 
 ### App-DB tables
@@ -119,6 +120,28 @@ All from `loadData()`:
 | `WeeklyLoginAggregate` | Weekly login counts (precomputed). |
 | `UserTradeUnitSnapshot` | Cached user → trade-unit mapping (also used to filter user lists by TU). |
 | `QueryLibrary`, `QuerySearchLog` | Library entries and search-gap log (consumed for the two query-library endpoints). |
+
+## Per-user drill-down
+
+Click any row on the Originator table → navigate to `/usage-dashboard/users/:userId?from=...&to=...&tradeUnitKey=...`. The detail page shows:
+
+- Identity card (name, status, last active).
+- Date range pills + Trade Unit Selector (inherited from the parent dashboard's URL but mutable independently here).
+- 4 KPI cards: Logins · Total App Time · Avg Session · Customers Contacted.
+- "Activity Over Time" daily-event chart (last 30 days of the selected window).
+- Six per-feature engagement cards: Producer Page · Build a List (with top library prompts the user clicked) · Actionable Insights · Bid Sheet · Planting Dashboard · Time per Screen.
+- "Recent Activity" table — top 50 click events for the user in the window with timestamp · feature · sub-feature · target id.
+
+**Component:** [`client/src/app/features/usage-dashboard/pages/user-usage-detail/user-usage-detail.component.ts`](../../client/src/app/features/usage-dashboard/pages/user-usage-detail/user-usage-detail.component.ts) (and `.html`).
+**Endpoint:** `GET /api/usage-dashboard/users/{userId}/detail` ([`UsageDashboardController.cs`](../../api/GrainOriginatorPortal.Api/Controllers/UsageDashboardController.cs) — `GetUserDetail`). Admin-only.
+**Data sources:** existing `UserActivities`, `UserClickEvents`, `UserSessions`, `UserTradeUnitSnapshots`. **No schema changes; no new tracking calls.**
+
+The endpoint loads all the user's `UserClickEvents` and `UserActivities` in the window once and pivots in C# for the various counters — keeps the query count low even though the response covers ~25 metrics.
+
+**Edge cases / gotchas:**
+- If a user has zero events in the window, the page still renders (everything is 0) — easier to see "user did nothing" than to surface an empty state.
+- `userId` from the URL is validated against `GetFilteredUserIdsAsync` (TU-filtered if `tradeUnitKey` provided) — out-of-scope IDs return 404.
+- Detail view's date range is independent of the parent dashboard. It's seeded from query params on entry, then user-mutable. Going back via the "← Usage Dashboard" link writes the latest detail-page range back to the parent's URL.
 
 ## Background aggregation
 

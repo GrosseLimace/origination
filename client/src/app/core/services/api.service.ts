@@ -34,6 +34,7 @@ import {
   WeeklyTrend,
   ActivityBreakdown,
   UnderusedFeature,
+  UserUsageDetail,
   QueryLibraryItem
 } from '@models';
 import { environment } from '@env/environment';
@@ -761,5 +762,12 @@ export class ApiService {
   getUsageUnderusedFeatures(from: string, to: string, tradeUnitKey?: string): Observable<UnderusedFeature[]> {
     return this.http.get<UnderusedFeature[]>(`${this.baseUrl}/usage-dashboard/underused-features`, { params: this.usageParams(from, to, tradeUnitKey) })
       .pipe(catchError(e => this.handleError(e)));
+  }
+
+  getUserUsageDetail(userId: string, from: string, to: string, tradeUnitKey?: string): Observable<UserUsageDetail> {
+    return this.http.get<UserUsageDetail>(
+      `${this.baseUrl}/usage-dashboard/users/${encodeURIComponent(userId)}/detail`,
+      { params: this.usageParams(from, to, tradeUnitKey) }
+    ).pipe(catchError(e => this.handleError(e)));
   }
 }

@@ -398,7 +398,7 @@
               </app-table-header>
               <app-table-body>
                 @for (user of filteredUsers(); track user.userId) {
-                  <app-table-row>
+                  <app-table-row [clickable]="true" (rowClick)="selectUser(user.userId)">
                     <app-table-cell>
                       <div class="flex items-center gap-3">
                         <div class="w-8 h-8 rounded-full bg-scoular-green-accessible flex items-center justify-center flex-shrink-0">

@@ -44,6 +44,13 @@ export const routes: Routes = [
         loadComponent: () => import('./features/usage-dashboard/pages/usage-dashboard/usage-dashboard.component').then(m => m.UsageDashboardComponent)
       }
     : { path: 'usage-dashboard', redirectTo: '' },
+  environment.usageDashboardEnabled
+    ? {
+        path: 'usage-dashboard/users/:userId',
+        canActivate: [authGuard, adminGuard],
+        loadComponent: () => import('./features/usage-dashboard/pages/user-usage-detail/user-usage-detail.component').then(m => m.UserUsageDetailComponent)
+      }
+    : { path: 'usage-dashboard/users/:userId', redirectTo: '' },
   {
     path: '**',
     redirectTo: ''
