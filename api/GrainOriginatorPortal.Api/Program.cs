@@ -18,6 +18,7 @@ using Microsoft.AspNetCore.RateLimiting;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Data;
+using GrainOriginatorPortal.Api.Json;
 using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Interfaces;
@@ -161,6 +162,12 @@ builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        // All persisted DateTimes are UTC (DateTime.UtcNow on write). EF Core reads them back as
+        // Kind=Unspecified, which makes the default writer emit ISO strings without a 'Z' suffix —
+        // browsers then parse those as local time and shift the displayed clock by the user's TZ
+        // offset. These converters normalize every DateTime to UTC on the wire.
+        options.JsonSerializerOptions.Converters.Add(new UtcDateTimeJsonConverter());
+        options.JsonSerializerOptions.Converters.Add(new NullableUtcDateTimeJsonConverter());
         // Ensure all properties are included, even null values
         options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never;
         // Reject unknown fields in request bodies — security-guide.md §4.1 serialization hardening.

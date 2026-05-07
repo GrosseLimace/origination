@@ -265,66 +265,14 @@ export class BuildListComponent {
       });
     }
 
-    // Contact frequency — index note count per customer
-    if (r.contactedOnlyOnce || r.contactedMoreThan5) {
-      const noteCountByCustomer = new Map<number, number>();
-      for (const n of this.notes()) {
-        noteCountByCustomer.set(n.customerId, (noteCountByCustomer.get(n.customerId) || 0) + 1);
-      }
-      if (r.contactedOnlyOnce) {
-        list = list.filter(c => (noteCountByCustomer.get(c.id) || 0) === 1);
-      }
-      if (r.contactedMoreThan5) {
-        list = list.filter(c => (noteCountByCustomer.get(c.id) || 0) > 5);
-      }
-    }
-
-    // Contact author — check who created the notes
-    if (r.contactedByMeOnly || r.contactedBySomeoneElse) {
-      const account = this.msalService.instance.getActiveAccount()
-        ?? this.msalService.instance.getAllAccounts()[0];
-      const myName = (account?.name ?? '').toLowerCase();
-      const myUsername = (account?.username ?? '').toLowerCase();
-      // Build per-customer: has note by me, has note by someone else
-      const noteAuthorship = new Map<number, { byMe: boolean; byOthers: boolean }>();
-      for (const n of this.notes()) {
-        const author = (n.createdBy || '').toLowerCase();
-        const isMine = author.includes(myName) || author.includes(myUsername);
-        const entry = noteAuthorship.get(n.customerId) || { byMe: false, byOthers: false };
-        if (isMine) entry.byMe = true; else entry.byOthers = true;
-        noteAuthorship.set(n.customerId, entry);
-      }
-      if (r.contactedByMeOnly) {
-        list = list.filter(c => {
-          const a = noteAuthorship.get(c.id);
-          return !!a && a.byMe && !a.byOthers;
-        });
-      }
-      if (r.contactedBySomeoneElse) {
-        list = list.filter(c => {
-          const a = noteAuthorship.get(c.id);
-          return !!a && a.byOthers;
-        });
-      }
-    }
-
-    // Notes content
-    if (r.hasPinnedNotes) {
-      const pinnedCustomerIds = new Set<number>(
-        this.notes().filter(n => n.isPinned).map(n => n.customerId)
-      );
-      list = list.filter(c => pinnedCustomerIds.has(c.id));
-    }
-    if (r.noteKeyword?.trim()) {
-      const kw = r.noteKeyword.trim().toLowerCase();
-      // Index which customerCodes have notes matching the keyword
-      const matchingCodes = new Set<string>();
-      for (const n of this.notes()) {
-        if ((n.content || '').toLowerCase().includes(kw) && n.customerCode) {
-          matchingCodes.add(n.customerCode);
-        }
-      }
-      // Build incoming links map (bidirectional — same as contact history)
+    // Note-aggregating filters share a per-customer "code network" (own + outgoing-linked + incoming-linked).
+    // Linked-producer notes count toward the customer's totals so contact frequency, author, pinned, and
+    // keyword filters all respect the same linked-as-one-entity model used elsewhere on the page.
+    const wantsAggregatedNotes = r.contactedOnlyOnce || r.contactedMoreThan5
+      || r.contactedByMeOnly || r.contactedBySomeoneElse
+      || r.hasPinnedNotes || !!r.noteKeyword?.trim();
+    let codesByCustomerId: Map<number, Set<string>> | null = null;
+    if (wantsAggregatedNotes) {
       const incomingLinks = new Map<string, Set<string>>();
       for (const c of this.customers()) {
         if (!c.scoularId) continue;
@@ -333,18 +281,108 @@ export class BuildListComponent {
           incomingLinks.get(linkedCode)!.add(c.scoularId);
         }
       }
-      // Match customers directly + via linked producers (bidirectional)
-      list = list.filter(c => {
-        const allCodes = new Set<string>();
-        if (c.scoularId) allCodes.add(c.scoularId);
-        // Outgoing links (I link to them)
-        for (const linkedCode of (c.linkedProducerIds || [])) allCodes.add(linkedCode);
-        // Incoming links (they link to me)
-        for (const inCode of (incomingLinks.get(c.scoularId || '') || [])) allCodes.add(inCode);
-        // Check if any code in the network has a matching note
-        for (const code of allCodes) {
-          if (matchingCodes.has(code)) return true;
+      codesByCustomerId = new Map<number, Set<string>>();
+      for (const c of this.customers()) {
+        const all = new Set<string>();
+        if (c.scoularId) all.add(c.scoularId);
+        for (const code of (c.linkedProducerIds || [])) all.add(code);
+        for (const code of (c.scoularId ? incomingLinks.get(c.scoularId) || [] : [])) all.add(code);
+        codesByCustomerId.set(c.id, all);
+      }
+    }
+
+    // Contact frequency — note count across the customer's network (own + linked).
+    if (r.contactedOnlyOnce || r.contactedMoreThan5) {
+      const countByCode = new Map<string, number>();
+      for (const n of this.notes()) {
+        if (!n.customerCode) continue;
+        countByCode.set(n.customerCode, (countByCode.get(n.customerCode) || 0) + 1);
+      }
+      const totalFor = (c: Customer): number => {
+        let total = 0;
+        const codes = codesByCustomerId!.get(c.id);
+        if (codes) for (const code of codes) total += countByCode.get(code) || 0;
+        return total;
+      };
+      if (r.contactedOnlyOnce) list = list.filter(c => totalFor(c) === 1);
+      if (r.contactedMoreThan5) list = list.filter(c => totalFor(c) > 5);
+    }
+
+    // Contact author — aggregated across the customer's network.
+    if (r.contactedByMeOnly || r.contactedBySomeoneElse) {
+      const account = this.msalService.instance.getActiveAccount()
+        ?? this.msalService.instance.getAllAccounts()[0];
+      const myName = (account?.name ?? '').trim().toLowerCase();
+      const myUsername = (account?.username ?? '').trim().toLowerCase();
+      // Empty identity claims → can't reliably attribute notes; treat as "no notes are mine".
+      // This avoids the substring bug where ''.includes('') === true would mark every note as mine.
+      const haveIdentity = !!myName || !!myUsername;
+      const isAuthorMe = (rawAuthor: string): boolean => {
+        if (!rawAuthor || !haveIdentity) return false;
+        if (myUsername && rawAuthor === myUsername) return true;
+        if (myName && rawAuthor === myName) return true;
+        // Token-bounded match prevents "John" matching "Johnson"; works for "John Doe (jdoe@…)" too.
+        const escape = (s: string) => s.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const tokenMatch = (haystack: string, needle: string): boolean => {
+          if (!needle) return false;
+          return new RegExp(`(?:^|[^\\w])${escape(needle)}(?:[^\\w]|$)`).test(haystack);
+        };
+        return tokenMatch(rawAuthor, myUsername) || tokenMatch(rawAuthor, myName);
+      };
+
+      const authorshipByCode = new Map<string, { byMe: boolean; byOthers: boolean }>();
+      for (const n of this.notes()) {
+        if (!n.customerCode) continue;
+        const author = (n.createdBy || '').trim().toLowerCase();
+        if (!author) continue;
+        const entry = authorshipByCode.get(n.customerCode) || { byMe: false, byOthers: false };
+        if (isAuthorMe(author)) entry.byMe = true; else entry.byOthers = true;
+        authorshipByCode.set(n.customerCode, entry);
+      }
+      const aggregateFor = (c: Customer): { byMe: boolean; byOthers: boolean } => {
+        let byMe = false, byOthers = false;
+        const codes = codesByCustomerId!.get(c.id);
+        if (codes) for (const code of codes) {
+          const e = authorshipByCode.get(code);
+          if (!e) continue;
+          if (e.byMe) byMe = true;
+          if (e.byOthers) byOthers = true;
         }
+        return { byMe, byOthers };
+      };
+      if (r.contactedByMeOnly) {
+        list = list.filter(c => { const a = aggregateFor(c); return a.byMe && !a.byOthers; });
+      }
+      if (r.contactedBySomeoneElse) {
+        list = list.filter(c => aggregateFor(c).byOthers);
+      }
+    }
+
+    // Notes content — pinned + keyword both check the customer's full code network.
+    if (r.hasPinnedNotes) {
+      const pinnedCodes = new Set<string>();
+      for (const n of this.notes()) {
+        if (n.isPinned && n.customerCode) pinnedCodes.add(n.customerCode);
+      }
+      list = list.filter(c => {
+        const codes = codesByCustomerId!.get(c.id);
+        if (!codes) return false;
+        for (const code of codes) if (pinnedCodes.has(code)) return true;
+        return false;
+      });
+    }
+    if (r.noteKeyword?.trim()) {
+      const kw = r.noteKeyword.trim().toLowerCase();
+      const matchingCodes = new Set<string>();
+      for (const n of this.notes()) {
+        if ((n.content || '').toLowerCase().includes(kw) && n.customerCode) {
+          matchingCodes.add(n.customerCode);
+        }
+      }
+      list = list.filter(c => {
+        const codes = codesByCustomerId!.get(c.id);
+        if (!codes) return false;
+        for (const code of codes) if (matchingCodes.has(code)) return true;
         return false;
       });
     }
@@ -581,7 +619,7 @@ export class BuildListComponent {
         if (!notes || notes.length === 0) return 0;
         let max = 0;
         for (const n of notes) {
-          const t = new Date(n.createdAt).getTime();
+          const t = BuildListComponent.parseNoteTime(n.createdAt);
           if (t > max) max = t;
         }
         return max;
@@ -719,17 +757,11 @@ export class BuildListComponent {
   readonly lastContactByCustomer = computed(() => {
     const map = new Map<number, { text: string; colorClass: string; daysAgo: number }>();
 
-    // Treat bare ISO strings as UTC — API stores DateTime.UtcNow without Z suffix.
-    const parseUtc = (ts: string | Date) => {
-      const raw = typeof ts === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
-      return new Date(raw).getTime();
-    };
-
     // Index notes by customerCode (source customer ID) — same as home page
     const notesByCode = new Map<string, { time: number }>();
     for (const n of this.notes()) {
       if (!n.customerCode) continue;
-      const time = parseUtc(n.createdAt);
+      const time = BuildListComponent.parseNoteTime(n.createdAt);
       const existing = notesByCode.get(n.customerCode);
       if (!existing || time > existing.time) {
         notesByCode.set(n.customerCode, { time });
@@ -774,6 +806,10 @@ export class BuildListComponent {
     for (const [customerId, { time }] of latestNotes) {
       const noteDate = new Date(time);
       noteDate.setHours(0, 0, 0, 0);
+      // Math.round (not floor): both endpoints are zeroed to local midnight, so the diff is an
+      // integer number of days — except across DST transitions where the day is 23 or 25 hours.
+      // round handles those edges; floor would mis-bucket a note from yesterday as "today" on
+      // spring-forward day.
       const daysAgo = Math.max(0, Math.round((today.getTime() - noteDate.getTime()) / 86400000));
       let result: { text: string; colorClass: string; daysAgo: number };
       if (daysAgo === 0) result = { text: 'Contacted today', colorClass: 'text-scoular-green', daysAgo };
@@ -788,6 +824,14 @@ export class BuildListComponent {
 
   // ── Note filters: derive whether a note-focused query/filter is active and surface the matching notes per customer for inline display in the result list. ───────────────
   private static readonly _NLQ_NOTE_VERB = /notes?\s+(?:added|made|entered|written|created|left)/;
+
+  /** Parses a note's createdAt as UTC. The API stores DateTime.UtcNow without a 'Z' suffix,
+   *  so a bare ISO string would be interpreted by the browser as local time — for a CST user
+   *  that drifts cutoff comparisons by 6 hours and would mis-bucket "today"/"yesterday". */
+  private static parseNoteTime(ts: string | Date): number {
+    const raw = typeof ts === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
+    return new Date(raw).getTime();
+  }
 
   /** True when the linked-as-one-entity behavior should apply: dedup, badge,
    *  and the linked-producer expand panel. Notes prompts trigger this (linked
@@ -831,12 +875,22 @@ export class BuildListComponent {
       else if (q.includes('this month') || q.includes('last month')) cutoffMs = Date.now() - 30 * 86400000;
     }
 
-    const keyword = r.noteKeyword?.trim().toLowerCase() || null;
+    // Keyword extraction: prefer the structured refinement; otherwise pull a quoted or "mentioning X"
+    // fragment out of the NLQ query so the inline display matches what the user actually asked for.
+    let keyword = r.noteKeyword?.trim().toLowerCase() || null;
+    if (!keyword) {
+      const quoted = q.match(/notes?\s+(?:about|mentioning|containing|saying|with)\s+["']([^"']+)["']/);
+      if (quoted) keyword = quoted[1].trim().toLowerCase();
+      else {
+        const bare = q.match(/notes?\s+(?:about|mentioning|containing|saying)\s+([\w-]+(?:\s+[\w-]+){0,2})/);
+        if (bare) keyword = bare[1].trim().toLowerCase();
+      }
+    }
     const requirePinned = !!r.hasPinnedNotes || /pinned\s+note/.test(q);
 
     return (n: Note) => {
       if (cutoffMs != null) {
-        const t = new Date(n.createdAt).getTime();
+        const t = BuildListComponent.parseNoteTime(n.createdAt);
         if (!t || t < cutoffMs) return false;
       }
       if (keyword && !(n.content || '').toLowerCase().includes(keyword)) return false;
@@ -861,7 +915,9 @@ export class BuildListComponent {
     for (const n of this.notes()) {
       if (!n.customerCode || !predicate(n)) continue;
       const owner = customerByCode.get(n.customerCode);
-      const viaName = owner ? `${owner.name} (${owner.scoularId})` : n.customerCode;
+      // Consistent shape: always include the code in trailing parens. Name prepended when known,
+      // omitted otherwise. Avoids the previous "Name (Code)" vs bare "Code" visual mismatch.
+      const viaName = owner ? `${owner.name} (${owner.scoularId})` : `(${n.customerCode})`;
       const arr = map.get(n.customerCode);
       const tagged = { ...n, viaName };
       if (arr) arr.push(tagged);
@@ -871,7 +927,8 @@ export class BuildListComponent {
     for (const arr of map.values()) {
       arr.sort((a, b) => {
         if (!!a.isPinned !== !!b.isPinned) return a.isPinned ? -1 : 1;
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        const dt = BuildListComponent.parseNoteTime(b.createdAt) - BuildListComponent.parseNoteTime(a.createdAt);
+        return dt !== 0 ? dt : (b.id ?? 0) - (a.id ?? 0);
       });
     }
     return map;
@@ -912,7 +969,8 @@ export class BuildListComponent {
       if (out.length === 0) continue;
       out.sort((a, b) => {
         if (!!a.isPinned !== !!b.isPinned) return a.isPinned ? -1 : 1;
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        const dt = BuildListComponent.parseNoteTime(b.createdAt) - BuildListComponent.parseNoteTime(a.createdAt);
+        return dt !== 0 ? dt : (b.id ?? 0) - (a.id ?? 0);
       });
       map.set(customer.id, out);
     }
@@ -2315,17 +2373,24 @@ export class BuildListComponent {
   }
 
   toggleLinkedExpand(customerId: number): void {
+    let opening = false;
     this.expandedLinkedCustomerIds.update(s => {
       const next = new Set(s);
       if (next.has(customerId)) next.delete(customerId);
-      else next.add(customerId);
+      else { next.add(customerId); opening = true; }
       return next;
     });
     // The parent's notes context flips between aggregated and own-only when this toggles,
-    // so reset its note pagination — counts from the previous context don't apply.
+    // so reset its note pagination. When closing, also drop any pagination state for the
+    // linked sub-rows that were visible — those entries are orphaned otherwise and a future
+    // re-expansion would reuse a stale count.
+    const linkedIds = !opening
+      ? (this.linkedProducerInfoByCustomer().get(customerId)?.producers || []).map(p => p.id)
+      : [];
     this.expandedNoteCount.update(m => {
       const next = new Map(m);
       next.delete(customerId);
+      for (const id of linkedIds) next.delete(id);
       return next;
     });
   }
