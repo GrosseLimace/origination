@@ -1,0 +1,236 @@
+# Shared Infrastructure
+
+> **Read this first.** Every screen-level doc in `Application Context/` references services, DbContexts, route guards, and auth setup defined here. Skim it once and use it as a reference when reading the screen docs.
+
+## TL;DR
+
+- Angular 21 SPA + ASP.NET Core (.NET 10) Web API.
+- **Two databases**: `OriginationDbContext` reads ODS views (read-only), `ApplicationDbContext` owns the application's tables (read/write).
+- **Auth**: Azure AD via MSAL (frontend) and Microsoft.Identity.Web (backend). Tokens are JWT bearer; cache is `sessionStorage` per security review.
+- **State**: Angular signals via `AppStateService` (single global service). No NgRx.
+- **Authorization model**: trade-unit entitlements are a *UX filter*, not an access boundary. See [SECURITY-MODEL.md](../SECURITY-MODEL.md).
+
+## Architecture at a glance
+
+```mermaid
+flowchart LR
+    Browser[Browser / Angular SPA]
+    API[ASP.NET Core API]
+    KV[(Azure Key Vault)]
+    AppDB[(Origination DB<br/>read/write)]
+    ODS[(ODS DB<br/>read-only views)]
+    AAD[Azure AD]
+
+    Browser -- "MSAL JWT" --> AAD
+    Browser -- "Authorization: Bearer ..." --> API
+    API -- "Managed Identity" --> KV
+    API -- "EF Core / SqlAuthn (ActiveDirectoryDefault)" --> AppDB
+    API -- "EF Core / SqlAuthn (ActiveDirectoryDefault)" --> ODS
+```
+
+## Frontend services
+
+### `ApiService`
+
+`client/src/app/core/services/api.service.ts`
+
+- ~68 public methods. Every API call in the app goes through here.
+- **Base URL** comes from `environment.apiBaseUrl` (`client/src/environments/environment.ts`).
+- **Request deduplication** for expensive ODS endpoints — see `_dedupe<T>(key, request)`. Used by `getCustomers`, `getContracts`, `getTickets`, `getNotes`, `getStoredGrain`, `getCommodities`, `getElevators`, `getBidSheetLocations`, `getAllProducerDetails`, `getSavedLists`, etc. If two callers ask for the same key in flight, they share one HTTP request.
+- **Error handling** is centralized: 403 messages are toasted to the user; all other errors are logged in dev mode and re-thrown.
+
+### `AppStateService`
+
+`client/src/app/core/services/app-state.service.ts`
+
+The app's global state container, built on Angular signals. No NgRx, no Redux — every screen reads and writes signals here directly.
+
+**Signals exposed (commonly read across screens):**
+
+| Signal | Type | Notes |
+| --- | --- | --- |
+| `customers` | `Customer[]` | Filtered to selected trade units |
+| `contracts` | `Contract[]` | Open contracts only (from `vw_CurrentContracts`) |
+| `tickets` | `Ticket[]` | Settled tickets (last N days, depends on screen) |
+| `todaysTickets` | `Ticket[]` | Last 30 days specifically — used by Insights |
+| `notes` | `Note[]` | All notes for selected TUs |
+| `plantingIntentions` | `PlantingIntention[]` | App-DB rows |
+| `storedGrain` | `StoredGrain[]` | Computed in service from `ctrm.vw_GNTA39D1` |
+| `savedLists` | `SavedList[]` | User's saved Build-a-List queries |
+| `commodities`, `commodityConversions`, `harvestWindows` | reference | Crop catalog and lb-per-bushel conversions |
+| `producerDetails` | `ProducerDetails[]` | App-DB enrichment (acres, bin capacity, etc.) |
+| `pricingLines` | `ContractPricingLine[]` | Pricing breakdowns from ODS |
+| `selectedTradeUnits`, `selectedGroupNames` | `string[]` | The TU selector's current state |
+| `selectedCustomer` | `Customer \| null` | Driven by Home page navigation |
+| `dataLoading`, `ticketsLoading` | `boolean` | Loading flags for global UI |
+| `dashboardCache`, `preloadedDashboardSummary` | dashboard-specific cache | See Planting Intentions Dashboard doc |
+| `mapGeocodeCache` | `Map<string, {lat, lng}>` | Used by Bid Sheet's Leaflet map |
+
+**localStorage persistence:** key `origination_user_prefs` stores `{ groups?, units? }` — the trade-unit selection. Restored on construction.
+
+**Setters** mirror the signals (`setCustomers`, `setContracts`, ...). There is also `clearBuildListState`, `clearSelection`, `clearAll`.
+
+### `DataPreloadService`
+
+`client/src/app/core/services/data-preload.service.ts` (search by name if path moves).
+
+Coordinates the bulk fetch of customer/contract/ticket/note data when trade units change. Screens like Insights call `forceReload()` on it to reset and re-fetch from scratch. Without this service, every screen would have to manage its own cache invalidation on TU change.
+
+### `NlqFilterService`
+
+`client/src/app/core/services/nlq-filter.service.ts`
+
+Natural-language query parser used by Build a List (and a few other places). Public methods include:
+
+- `parseAndFilter(query, context)` — returns `{ customers, matched: matchedPatterns }`
+- `applyRefinementFilters(customers, filters, contracts, notes)` — applies a `RefinementFilters` object
+- `resolveUserReferences(query, displayName, username)` — converts "by me", "I haven't contacted" into the user's name so saved lists work for everyone
+- Helpers: `queryInvolvesTickets`, `queryInvolvesStorage`, `queryInvolvesContact`, `queryInvolvesPlanting`
+
+### `UsageTrackingService`
+
+`client/src/app/core/services/usage-tracking.service.ts`
+
+Posts click-event telemetry to `/api/usage-dashboard/click-event`. Methods like `trackProfileOpened`, `trackCallClick`, `trackPlantingTabClick`, `trackDashboardTabClick` are sprinkled throughout components. The data lands in `dbo.UserClickEvent` and is rolled up nightly into `FeatureUsageDaily` for the Usage Dashboard.
+
+## Backend services and contexts
+
+### `OriginationDbContext` (read-only ODS)
+
+`api/GrainOriginatorPortal.Api/Data/OriginationDbContext.cs`
+
+| `DbSet` | Backing view | Schema |
+| --- | --- | --- |
+| `Customers` | `vw_CurrentCustomers` | `originations` |
+| `CustomerTradeUnits` | `vw_CustomerTradeUnits` | `originations` (no key — view only) |
+| `Contracts` | `vw_CurrentContracts` | `base` |
+| `Tickets` | `vw_CurrentTickets` | `base` |
+| `TicketQualities` | `vw_TicketQuality` | `base` |
+| `ContractPricingLines` | `vw_ContractPricing` | `base` |
+| `Elevators` | `vw_GNP026` | `ctrm` |
+| `CommodityConversions` | `vw_GNP024` | `ctrm` |
+
+**Storage data** (`StoredGrain`) is **not** a DbSet — it's queried as raw SQL against `ctrm.vw_GNTA39D1` from `SqlDataService.GetStoredGrainAsync` (see Customer Home Page doc).
+
+CHAR-padded columns (`CustomerCode`, `ContractNumber`) are auto-trimmed via `.HasConversion(...)` in the model builder.
+
+### `ApplicationDbContext` (read/write Origination DB)
+
+`api/GrainOriginatorPortal.Api/Data/ApplicationDbContext.cs`
+
+All app-owned tables, all in `dbo`:
+
+| Table | Purpose |
+| --- | --- |
+| `Notes` | Producer notes (with pin, soft-delete) |
+| `ProducerDetails` | Enrichment fields (acres, bin capacity, primary contact, linked-producer ids) |
+| `ProducerPlantingIntentions` | Per-producer planting intentions (note: table named "Producer..." but EF model is `PlantingIntention`) |
+| `TradeUnits`, `TradeUnitGroups`, `GroupTradeUnits` | Org structure |
+| `Commodities` | Crop catalog |
+| `DashboardPlantingEstimates`, `DashboardMarketShares`, `DashboardActualHarvests` | Planting Intentions Dashboard persistence |
+| `SavedLists` | User-saved Build-a-List queries |
+| `ESignEnrollment` | eSign integration data |
+| `CustomerSnapshot` | Cached customer→trade-unit mapping (used for cross-DB lookups since Azure SQL has no cross-DB joins) |
+| `UserPreferences` | Per-user UI preferences |
+| `BidSheetLocations`, `BidSheetLocationBids`, `BidSheetLocationOrders`, `BidSheetPreferences` | Bid Sheet feature |
+| `ElevatorCache` | Cached elevator data |
+| `HarvestWindows` | Crop-specific harvest windows |
+| `UserActivity`, `UserClickEvent`, `UserSession`, `UserActivityDaily`, `FeatureUsageDaily`, `WeeklyLoginAggregate`, `UserTradeUnitSnapshot` | Usage analytics |
+| `QueryLibrary`, `QuerySearchLog` | Build a List prompt library and search-gap log |
+
+### `IDataService` / `SqlDataService`
+
+`api/GrainOriginatorPortal.Api/Interfaces/IDataService.cs` (interface)<br>
+`api/GrainOriginatorPortal.Api/Services/SqlDataService.cs` (implementation)
+
+All controllers depend on `IDataService` (DI'd as `SqlDataService` today, with `ApimDataService` stub reserved for a future API Management migration). Methods are grouped by domain:
+
+- **Customer / Trade Unit / Farm**: `GetCustomersAsync`, `SearchCustomersAsync`, `GetCustomerByIdAsync`, `GetCustomerByScoularIdAsync`, `GetCustomersLinkedToAsync`, `UpdateCustomerAsync`, `GetTradeUnitsAsync`, `GetTradeUnitGroupsAsync`, `GetFarmsAsync`.
+- **Contract**: `GetContractsAsync`, `GetContractsByCustomerAsync`, `GetHistoricalContractsForPacingAsync`, `GetContractsByCropYearAsync`, `GetPricingLinesAsync`, `GetPricingLinesByCustomerAsync`.
+- **Ticket**: `GetTicketsAsync`, `GetTodaysTicketsAsync`, `GetTicketsByCustomerAsync`, `GetTicketsByFarmAsync`.
+- **Note**: `GetNotesAsync`, `GetNotesByCustomerAsync`, `GetNoteByIdAsync`, `AddNoteAsync`, `ToggleNotePinAsync`, `UpdateNoteAsync`, `DeleteNoteAsync`.
+- **Planting Intention**: `GetPlantingIntentionsAsync`, `GetPlantingIntentionsByCustomerAsync`, `AddPlantingIntentionAsync`, `UpdatePlantingIntentionAsync`, `DeletePlantingIntentionAsync`.
+- **Stored Grain**: `GetStoredGrainAsync`, `GetStoredGrainByCustomerAsync`.
+- **Producer Details**: `GetProducerDetailsAsync`, `GetAllProducerDetailsAsync`, `UpsertProducerDetailsAsync`, `DeleteProducerDetailsAsync`.
+- **Commodity**: `GetCommoditiesAsync`, `GetCommodityConversionsAsync`, `GetHarvestWindowsAsync`.
+- **Saved List**: `GetSavedListsAsync`, `SaveListAsync`, `UpdateListAsync`, `DeleteListAsync`.
+- **Dashboard**: `GetDashboardSummaryAsync`, `GetDashboardPlantingEstimatesAsync`, `UpsertDashboardPlantingEstimatesAsync`, `GetDashboardMarketSharesAsync`, `UpsertDashboardMarketSharesAsync`, `GetDashboardActualHarvestAsync`, `UpsertDashboardActualHarvestAsync`, `DeleteDashboardActualHarvestAsync`.
+- **Bid Sheet**: `GetElevatorsAsync`, `GetBidSheetLocationsAsync`, `GetAllBidSheetLocationsAsync`, `CreateBidSheetLocationAsync`, `UpdateBidSheetLocationAsync`, `DeleteBidSheetLocationAsync`, `BulkUpsertBidSheetBidsAsync`, `GetBidCropYearsAsync`, `GetBidCommoditiesAsync`, `GetBidMonthsAsync`, `GetBidSheetLocationOrderAsync`, `SetBidSheetLocationOrderAsync`, `GetBidSheetPreferenceAsync`, `SetBidSheetPreferenceAsync`.
+- **Query Library**: `GetQueryLibraryAsync`, `LogQuerySearchAsync`.
+
+**User identity inside the service:** `SqlDataService` extracts the caller's UPN from the `HttpContext.User` claims (priority: `preferred_username` > `upn` > `oid` > `Identity.Name` > `"system"`). Display names are resolved via `UserTradeUnitSnapshot` for user-facing text.
+
+### `UserEntitlementService`
+
+`api/GrainOriginatorPortal.Api/Services/UserEntitlementService.cs`
+
+| Method | Purpose |
+| --- | --- |
+| `GetAllowedTradeUnitCodesAsync()` | Returns the set of trade-unit codes the user is entitled to. Loads from `UserTradeUnitAccess` once per request and caches. **Fails open** on entitlement-DB outage (returns empty set, sets `EntitlementsAvailable = false`). |
+| `ValidateTradeUnitsOrThrowAsync(codes)` | Throws `ForbiddenException` if any requested code isn't entitled. Used by controllers that take a `tradeUnits` query param. |
+| `ValidateCustomerAccessAsync(customerId)` | Looks up the customer's TUs from `originations.vw_CustomerTradeUnits` and checks against the user's entitled set. |
+
+**Important:** Most customer-bound *read* and *write* endpoints **deliberately do not call `ValidateCustomerAccessAsync`**. See [SECURITY-MODEL.md](../SECURITY-MODEL.md) — trade units are a UX filter, not an access boundary.
+
+## Auth and route guards
+
+### MSAL (frontend)
+
+`client/src/main.ts`
+
+- Tenant: `1521f999-f722-4a4f-9747-166f93e9b0d1` (Scoular AAD).
+- Dev SPA client: `e0f25943-ae8b-4c2d-8060-c9ffbd448aff`.
+- Dev API scope: `api://00078a10-3f3f-4d17-9350-fe90401125ae/Origination.Application.Dev`.
+- **Cache mode**: `sessionStorage`. Tokens die when the tab closes — see security comments at the top of `main.ts` for the threat-model rationale.
+- Deep-link preservation: `auth.guard.ts` saves the target URL to `sessionStorage["deepLinkUrl"]` before redirecting to AAD; `main.ts` restores it after `loginRedirect` returns.
+
+### Route guards
+
+`client/src/app/guards/auth.guard.ts` — wraps `MsalGuard.canActivate()` and adds the deep-link save behavior.
+
+`client/src/app/guards/admin.guard.ts` — checks for `"Admin"` in the user's role claims (sourced from `/api/me`). Used only on `/usage-dashboard`.
+
+### Backend authentication
+
+`api/GrainOriginatorPortal.Api/Program.cs`
+
+- JWT bearer auth via `Microsoft.Identity.Web.AddMicrosoftIdentityWebApi()`.
+- Policy `AdminOnly` (configured in Program.cs) requires the `Admin` role claim. Applied to `UsageDashboardController`'s read endpoints.
+- **Trade-unit filter**: `[EnforceTradeUnitAccess]` (`api/GrainOriginatorPortal.Api/Filters/EnforceTradeUnitAccessAttribute.cs`) intersects the requested TUs with the user's entitled set. **Fails open on entitlement-DB outage for GET/HEAD**, again per the documented security model.
+
+## Database connections
+
+`api/GrainOriginatorPortal.Api/Program.cs`
+
+- **Key Vault URI** read from configuration; secrets pulled via `ManagedIdentityCredential` in App Service or `DefaultAzureCredential` (CLI / VS) locally.
+- **SQL auth** uses `SqlAuthenticationMethod.ActiveDirectoryDefault`; in dev a custom `AzureCliSqlAuthProvider` is registered to skip IMDS probing.
+- Connection strings come from app config (Key Vault references in deployed envs, `appsettings.Development.json` locally).
+
+Two contexts are registered:
+
+- `OriginationDbContext` → ODS connection string (read-only views).
+- `ApplicationDbContext` → Origination app-DB connection string (read/write).
+
+## Key conventions
+
+- **Cross-DB joins are not possible** in Azure SQL across these two contexts. Whenever an endpoint needs both ODS and app data, the service does the join in C# (e.g., looking up `customerId` in `CustomerSnapshot` after pulling raw rows from a CTRM view).
+- **String matching** between domains: `Contract.CtrmCustomerId` ↔ `Customer.SourceCustomerId`, `Ticket.CustomerCode` ↔ `Customer.SourceCustomerId`, `Ticket.CtrmContractNumber` ↔ `Contract.SourceContractId`. There are no FK relationships across ODS and app DB.
+- **Customer load strategy**: `GetCustomersAsync` only returns customers who have *both* contracts and tickets, ordered DESC by id, capped at 50 per trade unit (configurable). This is intentional — full ODS export is too noisy.
+- **Date quirks**: `Ticket.Date` (BL date) is stored as a **string** in ODS and parsed in C# (`Ticket.ParsedDate` computed property). `AppliedNetQuantity` on tickets is `bigint`, not `decimal`.
+
+## When something breaks
+
+| Symptom | First place to look |
+| --- | --- |
+| 403 from any endpoint | Check `UserEntitlementService` — likely the user has no entitled TUs, or the requested TU isn't in their set. |
+| Empty result from a customer-bound endpoint | Verify `appState.selectedTradeUnits()` is non-empty; many service methods early-return for empty TU lists. |
+| Dashboards stale after TU change | `appState.clearDashboardCache()` should fire on TU change — check `AppStateService` constructor and the TU selector. |
+| Login loop / "deep link lost" | `auth.guard.ts` and `main.ts` deep-link sessionStorage handshake — make sure both halves are still in place. |
+| "Cross-database query not supported" SQL error | You introduced a join across `OriginationDbContext` and `ApplicationDbContext`. Move the join to C# via the `CustomerSnapshot` table. |
+| Notes appear, then disappear | The StoredGrain merge race fix lives in `home.component.ts:335-352`. The same pattern is used for tickets and other per-customer fetches. See Customer Home Page doc → Troubleshooting. |
+
+## See also
+
+- [`SECURITY-MODEL.md`](../SECURITY-MODEL.md) — why most endpoints don't enforce per-customer access.
+- [`CLAUDE.md`](../CLAUDE.md) — Claude-specific notes on this repo.
+- [`NETWORK-DIAGRAM.md`](../NETWORK-DIAGRAM.md) — Azure infrastructure topology.
