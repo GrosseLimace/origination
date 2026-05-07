@@ -78,12 +78,14 @@ export class ContractsTableComponent {
     return lbs / lbsPerBu;
   }
 
-  /** Summary aggregate used by the summary bar — total bushels, contract count, and breakdown by commodity code. */
+  /** Summary aggregate used by the summary bar — total bushels, contract count, and breakdown by commodity code.
+   *  Iterates the customer's full open-contract set, not the search-filtered view, so the summary
+   *  reflects the customer as a whole rather than shrinking as the user types. */
   private _summarize(filter: (c: Contract) => boolean, metric: 'remaining' | 'unsettled' = 'remaining'): { total: number; count: number; byCommodity: { code: string; bushels: number }[] } {
     let total = 0;
     let count = 0;
     const byComm = new Map<string, number>();
-    for (const c of this.displayedContracts) {
+    for (const c of this.openContracts) {
       if (!filter(c)) continue;
       const bu = this._metricBuPerContract(c, metric);
       if (bu === null || bu <= 0) continue;
@@ -106,6 +108,11 @@ export class ContractsTableComponent {
 
   /** Totals restricted to contracts whose delivery end date is in the current calendar month. */
   readonly thisMonthSummary = computed(() => {
+    // Compare in the user's local time. The contract's deliveryEnd is a calendar date in the
+    // operations zone, not an instant — using local-month on both sides keeps the bucket
+    // consistent regardless of whether the API emits bare ISO or Z-suffixed UTC. (When the API
+    // serializes Z-suffixed UTC, midnight UTC dates can read as the prior day for users west of
+    // UTC; we anchor on the deliveryEnd's UTC calendar day to dodge that.)
     const now = new Date();
     const curMonth = now.getMonth();
     const curYear = now.getFullYear();
@@ -113,7 +120,7 @@ export class ContractsTableComponent {
       if (!c.deliveryEnd) return false;
       const end = new Date(c.deliveryEnd);
       if (isNaN(end.getTime())) return false;
-      return end.getMonth() === curMonth && end.getFullYear() === curYear;
+      return end.getUTCMonth() === curMonth && end.getUTCFullYear() === curYear;
     });
   });
 
@@ -169,11 +176,14 @@ export class ContractsTableComponent {
     this.showSearch.set(false);
   }
 
-  get displayedContracts(): Contract[] {
+  /** Search-filtered + sorted view of open contracts. Memoized as a computed so summary
+   *  signals and the template don't re-run the search/filter pipeline on every read. */
+  readonly displayedContracts = computed<Contract[]>(() => {
     const q = this.searchQuery().trim().toLowerCase();
-    if (!q) return this.sortedContracts;
+    const sorted = this.sortedContracts;
+    if (!q) return sorted;
     const terms = this._expandWithAliases(q);
-    return this.sortedContracts.filter(c => {
+    return sorted.filter(c => {
       const deliveryStr = this._formatDeliveryPeriod(c.deliveryStart, c.deliveryEnd);
       return terms.some(term =>
         c.contractNumber.toLowerCase().includes(term) ||
@@ -187,7 +197,7 @@ export class ContractsTableComponent {
         this._matchesDeliveryPeriod(c.deliveryStart, c.deliveryEnd, term)
       );
     });
-  }
+  });
 
   private static readonly _MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
   private static readonly _MONTHS_SHORT = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
@@ -299,7 +309,7 @@ export class ContractsTableComponent {
           comparison = (a.commodityDescription || '').localeCompare(b.commodityDescription || '');
           break;
         case 'quantity':
-          comparison = a.quantity - b.quantity;
+          comparison = (a.quantity ?? 0) - (b.quantity ?? 0);
           break;
         case 'specialType':
           comparison = (a.specialType || '').localeCompare(b.specialType || '');
@@ -319,7 +329,7 @@ export class ContractsTableComponent {
           break;
         }
         case 'deliveryStart':
-          comparison = new Date(a.deliveryStart).getTime() - new Date(b.deliveryStart).getTime();
+          comparison = new Date(a.deliveryStart || 0).getTime() - new Date(b.deliveryStart || 0).getTime();
           break;
         case 'status':
           comparison = this.getCalculatedStatus(a).localeCompare(this.getCalculatedStatus(b));
@@ -441,15 +451,20 @@ export class ContractsTableComponent {
         if (hasSequence) {
           const totalPricedQty = safeLines.reduce((sum, l) => sum + (l.priceQuantity ?? 0), 0);
           const contractQty = contract.quantity ?? 0;
-          if (totalPricedQty > 0 && totalPricedQty < contractQty) return { status: 'PARTIAL' };
-          if (totalPricedQty >= contractQty) return { status: 'PRICED' };
+          // 1-bushel tolerance — float sums of priceQuantity can miss the contractQty target
+          // by epsilon (e.g. 99999.9999 vs 100000) and flip the badge to PARTIAL when it's
+          // actually fully priced. One bushel is below merchandiser-meaningful rounding.
+          const remaining = contractQty - totalPricedQty;
+          if (totalPricedQty > 0 && remaining > 1) return { status: 'PARTIAL' };
+          if (remaining <= 1) return { status: 'PRICED' };
         }
       }
-      // Single-line unpriced contract with a basis on file: surface the basis number
+      // Single-line unpriced contract with a real basis on file: surface the basis number
       // alongside the UNPRICED state so the user sees the locked-in basis without
       // having to expand the row. Multiple lines still show plain UNPRICED — the
-      // line ambiguity is the reason for the badge in the first place.
-      if (safeLines.length === 1 && safeLines[0].basisPrice != null) {
+      // line ambiguity is the reason for the badge in the first place. Exclude 0 because
+      // CTRM stores no-basis-yet as 0; rendering "$0.00/Bu" would look like a real lock.
+      if (safeLines.length === 1 && safeLines[0].basisPrice != null && safeLines[0].basisPrice !== 0) {
         return { status: 'UNPRICED', basisPrice: safeLines[0].basisPrice };
       }
       return { status: 'UNPRICED' };
@@ -461,11 +476,17 @@ export class ContractsTableComponent {
 
   /** Quantity to show for a single pricing line. Flat-priced contracts (PTC='P')
    *  store PriceQuantity as 0/null because the line implicitly covers the whole
-   *  contract — fall back to contract.quantity in that case. */
+   *  contract — fall back to contract.quantity in that case, but only when the
+   *  contract has exactly one pricing line. Multi-line flat-priced contracts with
+   *  several lines reading 0 (CTRM data oddity) would otherwise each render the full
+   *  contract qty and overstate totals. */
   getDisplayPricingQty(contract: Contract, line: ContractPricingLine): number {
     const ptc = (contract.priceTypeCode ?? '').trim().toUpperCase();
     const lineQty = line.priceQuantity ?? 0;
-    if (ptc === 'P' && lineQty === 0) return contract.quantity ?? 0;
+    if (ptc === 'P' && lineQty === 0) {
+      const lines = contract.sourceContractId ? this.pricingLinesMap().get(contract.sourceContractId) : undefined;
+      if (lines && lines.length === 1) return contract.quantity ?? 0;
+    }
     return lineQty;
   }
 
@@ -567,10 +588,13 @@ export class ContractsTableComponent {
     const remainingInContractUnits = Math.max(0, (contract.quantity || 0) - deliveredInContractUnits);
     const paidInContractUnits = this._convertPoundsToContractUnits(paidLbs, contract.unit, lbsPerBushel);
     const unsettledInContractUnits = this._convertPoundsToContractUnits(unsettledLbs, contract.unit, lbsPerBushel);
-    // Treat sub-bushel remainders as fully delivered — those slivers can't realistically
-    // be delivered as a separate load, so the contract is effectively complete.
+    // Treat sub-bushel (or sub-0.1%-of-contract) remainders as fully delivered. The percentage
+    // floor scales the threshold for tonnage / CWT contracts where 1 bushel of pounds is a tiny
+    // fraction of contract size — without it, a 100-ton contract would stay "Active 99.97%"
+    // forever even after 99.9% of the load arrived.
     const remainingLbs = Math.max(0, contractLbs - deliveredLbs);
-    const isEffectivelyComplete = remainingLbs < lbsPerBushel;
+    const completionThresholdLbs = Math.max(lbsPerBushel, contractLbs * 0.001);
+    const isEffectivelyComplete = remainingLbs < completionThresholdLbs;
     const progressPercent = isEffectivelyComplete
       ? 100
       : (contractLbs > 0 ? Math.min(100, (deliveredLbs / contractLbs) * 100) : 0);
