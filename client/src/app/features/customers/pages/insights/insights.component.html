@@ -50,7 +50,7 @@
               <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
             </svg>
             <p class="text-gray-500 dark:text-gray-400 font-medium text-lg mb-2">No Trade Unit Selected</p>
-            <p class="text-gray-400 dark:text-gray-500 text-sm">Please select a trade unit from the Customers page to view insights</p>
+            <p class="text-gray-400 dark:text-gray-500 text-sm">Please select a trade unit from the Producers page to view insights</p>
           </div>
         </div>
 
@@ -90,7 +90,7 @@
             type="text"
             [ngModel]="globalSearchRaw()"
             (ngModelChange)="globalSearchRaw.set($event)"
-            placeholder="Filter all categories by customer..."
+            placeholder="Filter all categories by producer..."
             class="flex-1 py-0.5 text-sm bg-transparent focus:outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
           />
           @if (globalSearchRaw()) {
@@ -161,7 +161,7 @@
                   <div>
                     <p [class]="'text-base font-semibold ' + meta.titleClass">{{ meta.title }}</p>
                     <p [class]="'text-sm ' + meta.subtitleClass">
-                      {{ groups.length }} customer{{ groups.length !== 1 ? 's' : '' }}
+                      {{ groups.length }} producer{{ groups.length !== 1 ? 's' : '' }}
                     </p>
                   </div>
                 </div>
@@ -206,7 +206,7 @@
               <!-- Customer list -->
               @if (groups.length === 0) {
                 <div class="p-6 text-center text-sm text-gray-400 dark:text-gray-500">
-                  {{ categorySearchRaw()[category] ? 'No customers match your search.' : 'No items to report.' }}
+                  {{ categorySearchRaw()[category] ? 'No producers match your search.' : 'No items to report.' }}
                 </div>
               } @else {
                 <div class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -219,8 +219,8 @@
                       <div class="flex items-center justify-between gap-2 sm:gap-3">
                         <div class="min-w-0 flex-1 flex items-center gap-1.5 sm:gap-2 flex-wrap">
                           <span class="font-semibold text-xs sm:text-sm text-gray-900 dark:text-white leading-tight">{{ group.customer.name }}</span>
-                          @if (group.customer.sourceCustomerId) {
-                            <span class="text-xs text-gray-400 dark:text-gray-500 font-mono">{{ group.customer.sourceCustomerId }}</span>
+                          @if (group.customer.scoularId) {
+                            <span class="text-xs text-gray-400 dark:text-gray-500 font-mono">{{ group.customer.scoularId }}</span>
                           }
                           <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" [class]="meta.countClass">
                             {{ group.summary }}

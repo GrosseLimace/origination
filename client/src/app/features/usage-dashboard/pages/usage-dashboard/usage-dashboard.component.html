@@ -368,7 +368,7 @@
                   </app-table-head>
                   <app-table-head thClass="text-center" [sortable]="true" (click)="handleSort('contacted')">
                     <span class="flex items-center justify-center gap-1">
-                      Customers Contacted
+                      Producers Contacted
                       <span [class]="getSortIconClass('contacted')">
                         @if (sortColumn() === 'contacted' && sortDirection() === 'asc') {
                           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
@@ -398,7 +398,7 @@
               </app-table-header>
               <app-table-body>
                 @for (user of filteredUsers(); track user.userId) {
-                  <app-table-row>
+                  <app-table-row [clickable]="true" (rowClick)="selectUser(user.userId)">
                     <app-table-cell>
                       <div class="flex items-center gap-3">
                         <div class="w-8 h-8 rounded-full bg-scoular-green-accessible flex items-center justify-center flex-shrink-0">

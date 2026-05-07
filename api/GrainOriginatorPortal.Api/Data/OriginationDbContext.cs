@@ -68,7 +68,7 @@ public class OriginationDbContext : DbContext
             entity.Property(e => e.ExtendedCountry).HasColumnName("ExtendedCountry").HasMaxLength(255).IsRequired(false);
 
             // Map available ODS metadata fields
-            entity.Property(e => e.SourceCustomerId).HasColumnName("SourceCustomerId").HasMaxLength(400);
+            entity.Property(e => e.ScoularId).HasColumnName("ScoularId").HasMaxLength(400);
             entity.Property(e => e.IndustryCode1).HasColumnName("IndustryCode1").HasMaxLength(50).IsRequired(false);
             entity.Property(e => e.IsActive).HasColumnName("IsActive").IsRequired();
             entity.Property(e => e.EffectiveStartDate).HasColumnName("EffectiveStartDate");

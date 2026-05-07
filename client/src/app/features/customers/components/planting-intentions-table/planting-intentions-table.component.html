@@ -11,7 +11,7 @@
             <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
             </svg>
-            <p class="mt-2">No planting intentions recorded for this customer</p>
+            <p class="mt-2">No planting intentions recorded for this producer</p>
           </div>
           <div class="flex justify-center">
             <app-button variant="default" (onClick)="openAddDialog()">
@@ -242,15 +242,16 @@
             }
             <div [class.pointer-events-none]="tradeUnits().length === 0" [class.opacity-40]="tradeUnits().length === 0" class="space-y-4">
               <div class="space-y-2">
-                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Type <span class="text-gray-400 font-normal">(optional)</span></label>
                 <select
                   [(ngModel)]="addForm.type"
                   (ngModelChange)="onAddTypeChange()"
-                  class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                  class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                  [ngClass]="addForm.type ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500'"
                 >
-                  <option value="" disabled>Select type...</option>
-                  <option value="Irrigated">Irrigated</option>
-                  <option value="Dryland">Dryland</option>
+                  <option value="" class="text-gray-400 dark:text-gray-500">Select type...</option>
+                  <option value="Irrigated" class="text-gray-900 dark:text-white">Irrigated</option>
+                  <option value="Dryland"   class="text-gray-900 dark:text-white">Dryland</option>
                 </select>
               </div>
 
@@ -264,20 +265,50 @@
                     </svg>
                     Loading crops...
                   </div>
+                } @else if (addForm.crop) {
+                  <div class="flex items-center justify-between gap-2 w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700">
+                    <span class="text-sm text-gray-900 dark:text-white">{{ addSelectedCropDisplay }}</span>
+                    <button type="button" (click)="clearAddCrop()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors" title="Change crop">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                    </button>
+                  </div>
                 } @else {
-                  <select
-                    [(ngModel)]="addForm.crop"
-                    (ngModelChange)="onAddCropChange($event)"
-                    class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green"
-                  >
-                    <option value="" disabled>Select a crop...</option>
-                    @for (commodity of availableCrops; track commodity.id) {
-                      <option [value]="commodity.code">{{ commodity.name }} ({{ commodity.code }})</option>
+                  <div class="relative">
+                    <input
+                      type="text"
+                      [(ngModel)]="addCropSearchInput"
+                      placeholder="Search crops by name or code..."
+                      (input)="onAddCropSearch()"
+                      (keydown.enter)="selectFirstAddCropSuggestion(); $event.preventDefault()"
+                      (focus)="showAddCropSuggestions = true; onAddCropSearch()"
+                      (blur)="hideAddCropSuggestionsDelayed()"
+                      class="w-full h-10 pl-3 pr-9 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                    />
+                    @if (addCropSearchInput) {
+                      <button type="button" (mousedown)="$event.preventDefault()" (click)="addCropSearchInput = ''; filteredAddCrops = [];" title="Clear search"
+                        class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                      </button>
                     }
-                  </select>
-                  @if (availableCrops.length === 0) {
-                    <p class="text-xs text-scoular-yellow dark:text-scoular-yellow mt-1">No crops available for this customer.</p>
-                  }
+                    @if (showAddCropSuggestions && filteredAddCrops.length > 0) {
+                      <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                        @for (commodity of filteredAddCrops; track commodity.id) {
+                          <button
+                            type="button"
+                            class="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white transition-colors"
+                            (mousedown)="selectAddCrop(commodity)"
+                          >
+                            <span class="font-medium">{{ commodity.name }}</span>
+                            <span class="text-gray-400 dark:text-gray-500 ml-1.5">({{ commodity.code }})</span>
+                          </button>
+                        }
+                      </div>
+                    } @else if (showAddCropSuggestions && addCropSearchInput.trim() && filteredAddCrops.length === 0) {
+                      <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg px-3 py-2 text-sm text-gray-400 dark:text-gray-500">
+                        No matching crops found.
+                      </div>
+                    }
+                  </div>
                 }
               </div>
 
@@ -285,18 +316,19 @@
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
                 <select
                   [(ngModel)]="addForm.category"
-                  class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                  class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                  [ngClass]="addForm.category ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500'"
                 >
-                  <option value="" disabled>Select category...</option>
+                  <option value="" disabled class="text-gray-400 dark:text-gray-500">Select category...</option>
                   @for (opt of categoryOptionsForCrop; track opt) {
-                    <option [value]="opt">{{ opt }}</option>
+                    <option [value]="opt" class="text-gray-900 dark:text-white">{{ opt }}</option>
                   }
                 </select>
               </div>
 
               <div class="space-y-2">
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Acres</label>
-                <app-input type="text" inputmode="numeric" [maxlength]="10" [(ngModel)]="addForm.acres" placeholder="e.g., 1,200"></app-input>
+                <app-input type="text" inputmode="numeric" [maxlength]="10" [(ngModel)]="addForm.acres" placeholder="e.g., 1,200" class="placeholder:text-gray-400 dark:placeholder:text-gray-500"></app-input>
               </div>
 
               <div class="space-y-2">
@@ -332,15 +364,16 @@
         <app-dialog-content>
           <div class="space-y-4">
             <div class="space-y-2">
-              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
+              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Type <span class="text-gray-400 font-normal">(optional)</span></label>
               <select
                 [(ngModel)]="editForm.type"
                 (ngModelChange)="onEditTypeChange()"
-                class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                [ngClass]="editForm.type ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500'"
               >
-                <option value="" disabled>Select type...</option>
-                <option value="Irrigated">Irrigated</option>
-                <option value="Dryland">Dryland</option>
+                <option value="" class="text-gray-400 dark:text-gray-500">Select type...</option>
+                <option value="Irrigated" class="text-gray-900 dark:text-white">Irrigated</option>
+                <option value="Dryland"   class="text-gray-900 dark:text-white">Dryland</option>
               </select>
             </div>
 
@@ -354,20 +387,50 @@
                   </svg>
                   Loading crops...
                 </div>
+              } @else if (editForm.crop) {
+                <div class="flex items-center justify-between gap-2 w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700">
+                  <span class="text-sm text-gray-900 dark:text-white">{{ editSelectedCropDisplay }}</span>
+                  <button type="button" (click)="clearEditCrop()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors" title="Change crop">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                  </button>
+                </div>
               } @else {
-                <select
-                  [(ngModel)]="editForm.crop"
-                  (ngModelChange)="onEditCropChange($event)"
-                  class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green"
-                >
-                  <option value="" disabled>Select a crop...</option>
-                  @for (commodity of availableCrops; track commodity.id) {
-                    <option [value]="commodity.code">{{ commodity.name }} ({{ commodity.code }})</option>
+                <div class="relative">
+                  <input
+                    type="text"
+                    [(ngModel)]="editCropSearchInput"
+                    placeholder="Search crops by name or code..."
+                    (input)="onEditCropSearch()"
+                    (keydown.enter)="selectFirstEditCropSuggestion(); $event.preventDefault()"
+                    (focus)="showEditCropSuggestions = true; onEditCropSearch()"
+                    (blur)="hideEditCropSuggestionsDelayed()"
+                    class="w-full h-10 pl-3 pr-9 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                  />
+                  @if (editCropSearchInput) {
+                    <button type="button" (mousedown)="$event.preventDefault()" (click)="editCropSearchInput = ''; filteredEditCrops = [];" title="Clear search"
+                      class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                    </button>
                   }
-                </select>
-                @if (availableCrops.length === 0) {
-                  <p class="text-xs text-scoular-yellow dark:text-scoular-yellow mt-1">No crops available for this customer.</p>
-                }
+                  @if (showEditCropSuggestions && filteredEditCrops.length > 0) {
+                    <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                      @for (commodity of filteredEditCrops; track commodity.id) {
+                        <button
+                          type="button"
+                          class="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white transition-colors"
+                          (mousedown)="selectEditCrop(commodity)"
+                        >
+                          <span class="font-medium">{{ commodity.name }}</span>
+                          <span class="text-gray-400 dark:text-gray-500 ml-1.5">({{ commodity.code }})</span>
+                        </button>
+                      }
+                    </div>
+                  } @else if (showEditCropSuggestions && editCropSearchInput.trim() && filteredEditCrops.length === 0) {
+                    <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg px-3 py-2 text-sm text-gray-400 dark:text-gray-500">
+                      No matching crops found.
+                    </div>
+                  }
+                </div>
               }
             </div>
 
@@ -375,18 +438,19 @@
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
               <select
                 [(ngModel)]="editForm.category"
-                class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                [ngClass]="editForm.category ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500'"
               >
-                <option value="" disabled>Select category...</option>
+                <option value="" disabled class="text-gray-400 dark:text-gray-500">Select category...</option>
                 @for (opt of categoryOptionsForCrop; track opt) {
-                  <option [value]="opt">{{ opt }}</option>
+                  <option [value]="opt" class="text-gray-900 dark:text-white">{{ opt }}</option>
                 }
               </select>
             </div>
 
             <div class="space-y-2">
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Acres</label>
-              <app-input type="text" inputmode="numeric" [maxlength]="10" [(ngModel)]="editForm.acres" placeholder="e.g., 1,200"></app-input>
+              <app-input type="text" inputmode="numeric" [maxlength]="10" [(ngModel)]="editForm.acres" placeholder="e.g., 1,200" class="placeholder:text-gray-400 dark:placeholder:text-gray-500"></app-input>
             </div>
 
             <div class="space-y-2">

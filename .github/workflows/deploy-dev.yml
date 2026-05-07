@@ -44,6 +44,22 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_NONPROD }}
 
+      # Apply EF Core migrations BEFORE deploying new app code so the schema is ready
+      # when the new code starts handling traffic. Uses the OIDC identity from the Azure
+      # Login step above to connect via Active Directory Default auth (per appsettings.Development.json).
+      # The OIDC identity needs db_ddladmin + db_datareader + db_datawriter on Origination DB.
+      - name: Restore EF Core tools
+        run: dotnet tool restore
+
+      - name: Apply EF Core migrations (Dev)
+        run: dotnet ef database update --project api/GrainOriginatorPortal.Api --context ApplicationDbContext
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+          # ApplicationDbContextFactory reads this and uses DefaultAzureCredential for AAD auth.
+          # No password / secret — Server + Database only; the OIDC identity from azure/login
+          # supplies the access token at runtime.
+          ConnectionStrings__DefaultConnection: "Server=tcp:azrscosqld01.database.windows.net,1433;Database=Origination;Encrypt=true;"
+
       - name: Deploy to Dev
         uses: azure/webapps-deploy@v3
         with:

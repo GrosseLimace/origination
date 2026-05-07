@@ -8,7 +8,7 @@
         <div>
           <h2 class="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">Planting Intentions Dashboard</h2>
           <app-trade-unit-selector class="block mt-1.5" />
-          <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Aggregate planting data across all customers</p>
+          <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Aggregate planting data across all producers</p>
         </div>
       </div>
       <div class="flex items-center gap-2 flex-shrink-0">
@@ -152,7 +152,7 @@
           <span class="text-sm font-medium text-gray-500 dark:text-gray-400">Active Growers</span>
         </div>
         <div class="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white tabular-nums">{{ activeGrowers() }}</div>
-        <div class="mt-1.5 text-xs text-gray-400 dark:text-gray-500">customers with intentions</div>
+        <div class="mt-1.5 text-xs text-gray-400 dark:text-gray-500">producers with intentions</div>
       </div>
 
     </div>
@@ -297,61 +297,201 @@
           }
         }
 
-        <!-- Top Producers Tab -->
-        @else if (activeTab() === 'topProducers') {
-          <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div class="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
-              <h3 class="text-base font-semibold text-gray-900 dark:text-white">Top 10 Producers by Volume</h3>
-              <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Ranked by total planned acres for {{ selectedPlantingYear() }}</p>
+        <!-- Producers & Planting Intentions Tab -->
+        @else if (activeTab() === 'producers') {
+          <div class="space-y-4">
+
+            <!-- Search + With/Without toggle (single row) -->
+            <div class="flex flex-wrap items-center gap-3 px-1">
+              <div class="relative flex-1 min-w-[240px] max-w-md">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input
+                  type="text"
+                  [ngModel]="producerSearch()"
+                  (ngModelChange)="producerSearch.set($event)"
+                  placeholder="Search producers..."
+                  class="w-full pl-10 pr-9 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green"
+                />
+                @if (producerSearch().length > 0) {
+                  <button
+                    type="button"
+                    (click)="producerSearch.set('')"
+                    class="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                    title="Clear search"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+                    </svg>
+                  </button>
+                }
+              </div>
+              <div class="flex gap-1 bg-gray-100 dark:bg-gray-800/60 rounded-xl p-1 border border-gray-200 dark:border-gray-700">
+                <button
+                  (click)="producerView.set('with'); producerSortKey.set('acres'); producerSortDir.set('desc'); producerCropFilter.set('')"
+                  class="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
+                  [class]="producerView() === 'with'
+                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'"
+                >
+                  With Intentions ({{ producerWithCount() }})
+                </button>
+                <button
+                  (click)="producerView.set('without'); producerSortKey.set('acres'); producerSortDir.set('desc'); producerCropFilter.set('')"
+                  class="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
+                  [class]="producerView() === 'without'
+                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'"
+                >
+                  Without Intentions ({{ producerWithoutCount() }})
+                </button>
+              </div>
+
+              @if (producerCropChipOptions().length > 0) {
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Crop:</span>
+                  <button
+                    (click)="producerCropFilter.set('')"
+                    class="px-3 py-1 rounded-full text-xs font-medium transition-colors"
+                    [class]="producerCropFilter() === ''
+                      ? 'bg-scoular-green-accessible text-white'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
+                  >
+                    All
+                  </button>
+                  @for (crop of producerCropChipOptions(); track crop) {
+                    <button
+                      (click)="producerCropFilter.set(producerCropFilter() === crop ? '' : crop)"
+                      class="px-3 py-1 rounded-full text-xs font-medium transition-colors"
+                      [class]="producerCropFilter() === crop
+                        ? 'bg-scoular-green-accessible text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
+                    >
+                      {{ crop }}
+                    </button>
+                  }
+                </div>
+              }
             </div>
-            @if (topProducersRows().length === 0) {
-              <div class="flex items-center justify-center py-16 text-sm text-gray-400 dark:text-gray-500 italic">
-                No planting intentions for {{ selectedPlantingYear() }}
-              </div>
-            } @else {
-              <div class="overflow-x-auto">
-                <table class="w-full">
-                  <thead>
-                    <tr class="border-b border-gray-200 dark:border-gray-700">
-                      <th class="text-left py-2.5 px-5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-8">#</th>
-                      <th class="text-left py-2.5 px-5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Producer</th>
-                      <th class="text-right py-2.5 px-5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total Acres</th>
-                      <th class="text-right py-2.5 px-5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Production</th>
-                      <th class="text-left py-2.5 px-5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Crops</th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-gray-100 dark:divide-gray-700/60">
-                    @for (row of topProducersRows(); track row.customerId; let i = $index) {
-                      <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                        <td class="py-3 px-5 text-sm font-medium text-gray-400 dark:text-gray-500 tabular-nums">{{ i + 1 }}</td>
-                        <td class="py-3 px-5">
-                          <div class="text-sm font-semibold text-gray-900 dark:text-white">{{ row.customerName }}</div>
-                          @if (row.tradeUnit) {
-                            <div class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{{ row.tradeUnit }}</div>
-                          }
-                        </td>
-                        <td class="py-3 px-5 text-right">
-                          <span class="text-sm font-bold text-gray-900 dark:text-white tabular-nums">{{ row.acres | number }}</span>
-                          <div class="mt-1 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden" style="width: 80px; margin-left: auto;">
-                            <div class="h-full bg-scoular-green-accessible rounded-full" [style.width.%]="(row.acres / topProducersRows()[0].acres) * 100"></div>
-                          </div>
-                        </td>
-                        <td class="py-3 px-5 text-right text-sm text-gray-700 dark:text-gray-300 tabular-nums">
-                          @if (row.production != null) { {{ formatK(row.production) }} bu } @else { <span class="text-gray-400 dark:text-gray-500 italic text-xs">--</span> }
-                        </td>
-                        <td class="py-3 px-5">
-                          <div class="flex flex-wrap gap-1">
-                            @for (crop of row.crops; track $index) {
-                              <span class="scoular-badge scoular-badge-neutral">{{ crop }}</span>
-                            }
-                          </div>
-                        </td>
+
+            <!-- Results table -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+              @if (producersTabRows().length === 0) {
+                <div class="flex items-center justify-center py-16 px-5 text-sm text-gray-400 dark:text-gray-500 italic text-center">
+                  @if (producerView() === 'with') {
+                    No producers match your search for {{ selectedPlantingYear() }}.
+                  } @else {
+                    Every producer in this trade unit has planting intentions for {{ selectedPlantingYear() }}.
+                  }
+                </div>
+              } @else {
+                <div class="overflow-x-auto">
+                  <table class="w-full">
+                    <thead>
+                      <tr class="border-b border-gray-200 dark:border-gray-700">
+                        <th class="text-left py-2.5 pl-5 pr-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-full">
+                          Producer
+                        </th>
+                        @if (producerView() === 'with') {
+                          <th
+                            (click)="toggleProducerSort('acres')"
+                            class="text-center py-2.5 px-6 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 select-none whitespace-nowrap"
+                          >
+                            Intended Acres
+                            <span class="ml-1 text-gray-400">{{ producerSortKey() === 'acres' ? (producerSortDir() === 'asc' ? '↑' : '↓') : '↕' }}</span>
+                          </th>
+                          <th
+                            (click)="toggleProducerSort('production')"
+                            class="text-center py-2.5 px-6 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 select-none whitespace-nowrap"
+                          >
+                            Projected Production
+                            <span class="ml-1 text-gray-400">{{ producerSortKey() === 'production' ? (producerSortDir() === 'asc' ? '↑' : '↓') : '↕' }}</span>
+                          </th>
+                        }
+                        <th class="text-center py-2.5 px-6 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">
+                          Last Contacted
+                        </th>
+                        <th class="text-center py-2.5 px-6 pr-10 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">Crops</th>
                       </tr>
-                    }
-                  </tbody>
-                </table>
-              </div>
-            }
+                    </thead>
+                    <tbody class="divide-y divide-gray-100 dark:divide-gray-700/60">
+                      @for (row of producersTabRows(); track row.customerId) {
+                        @let contactInfo = getLastContactInfo(row.customerId);
+                        <tr
+                          (click)="goToCustomerProfile(row.customerId)"
+                          class="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors cursor-pointer"
+                        >
+                          <td class="py-3 pl-5 pr-3">
+                            <div class="flex items-start gap-3 min-w-0">
+                              <div class="w-10 h-10 rounded-full bg-scoular-green/10 dark:bg-scoular-green-accessible flex items-center justify-center flex-shrink-0">
+                                <span class="text-sm font-medium text-scoular-green-accessible dark:text-white">{{ getInitials(row.customerName) }}</span>
+                              </div>
+                              <div class="min-w-0">
+                                <div class="font-medium text-gray-900 dark:text-white">
+                                  {{ row.customerName }}
+                                  @if (row.scoularId) {
+                                    <span class="text-gray-400 dark:text-gray-500 font-normal">({{ row.scoularId }})</span>
+                                  }
+                                </div>
+                                @if (row.customer?.farm) {
+                                  <div class="text-sm text-gray-500 dark:text-gray-400">{{ row.customer?.farm }}</div>
+                                }
+                                <div class="flex items-center gap-2 mt-1 flex-wrap">
+                                  @if (getFormattedLocation(row.customer)) {
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400">
+                                      <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+                                      <circle cx="12" cy="10" r="3"/>
+                                    </svg>
+                                    <span class="text-xs text-gray-400">{{ getFormattedLocation(row.customer) }}</span>
+                                  }
+                                  @if (producerView() === 'with' && row.customer?.totalAcres) {
+                                    @if (getFormattedLocation(row.customer)) {
+                                      <span class="text-gray-300 dark:text-gray-600">•</span>
+                                    }
+                                    <span class="text-xs text-gray-500 dark:text-gray-400">{{ row.customer?.totalAcres | number }} farm acres</span>
+                                  }
+                                  @if (showProducerTradeUnitColumn() && producerView() === 'with' && row.tradeUnit) {
+                                    <span class="text-gray-300 dark:text-gray-600">•</span>
+                                    <span class="text-xs text-gray-400">{{ row.tradeUnit }}</span>
+                                  }
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          @if (producerView() === 'with') {
+                            <td class="py-3 px-6 text-center text-sm font-bold text-gray-900 dark:text-white tabular-nums whitespace-nowrap">
+                              {{ row.acres | number }}
+                            </td>
+                            <td class="py-3 px-6 text-center text-sm text-gray-700 dark:text-gray-300 tabular-nums whitespace-nowrap">
+                              @if (row.production != null) { {{ formatK(row.production) }} bu } @else { <span class="text-gray-400 dark:text-gray-500 italic text-xs">--</span> }
+                            </td>
+                          }
+                          <td class="py-3 px-6 text-center text-sm whitespace-nowrap">
+                            <span [class]="contactInfo.colorClass">{{ contactInfo.text }}</span>
+                          </td>
+                          <td class="py-3 px-6 pr-10">
+                            @if (row.crops.length > 0) {
+                              <div class="flex flex-nowrap gap-1 justify-center">
+                                @for (crop of row.crops; track crop) {
+                                  <app-badge
+                                    [variant]="row.highlightedCrops?.has(crop) ? 'primary' : 'outline'"
+                                    class="text-xs whitespace-nowrap">
+                                    {{ crop }}
+                                  </app-badge>
+                                }
+                              </div>
+                            } @else {
+                              <span class="text-gray-400 dark:text-gray-500 italic text-xs block text-center">—</span>
+                            }
+                          </td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+            </div>
           </div>
         }
 
@@ -546,9 +686,10 @@
 
             </div>
           </div>
+        }
 
-          <!-- Season Targets Modal -->
-          @if (showSeasonTargets()) {
+        <!-- Season Targets Modal -->
+        @if (showSeasonTargets()) {
             <div class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto py-6 px-4 bg-black/50 dark:bg-black/70">
               <div class="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-5xl my-auto">
 
@@ -569,22 +710,9 @@
 
                   <!-- Table 1: Average Yield Estimates -->
                   <div class="bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                    <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                      <div>
-                        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Average Yield Estimates</h3>
-                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Yield per crop code (bu/ac)</p>
-                      </div>
-                      <div class="flex gap-2">
-                        @if (!yieldEditMode()) {
-                          <button (click)="startYieldEdit()" class="scoular-btn scoular-btn-sm scoular-btn-ghost">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
-                            Edit
-                          </button>
-                        } @else {
-                          <button (click)="cancelYieldEdit()" class="scoular-btn scoular-btn-sm scoular-btn-ghost">Cancel</button>
-                          <button (click)="saveYieldEdit()" [disabled]="estimatesSaving()" class="scoular-btn scoular-btn-sm scoular-btn-primary">Save</button>
-                        }
-                      </div>
+                    <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                      <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Average Yield Estimates</h3>
+                      <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Yield per crop code (bu/ac)</p>
                     </div>
                     <div class="overflow-x-auto">
                       <table class="w-full">
@@ -599,16 +727,11 @@
                             <tr [class]="categoryColorMap().get(row.category) || ''">
                               <td class="py-2.5 px-4 text-sm font-medium text-gray-800 dark:text-gray-100">{{ row.cropName }}</td>
                               <td class="py-2.5 px-4 text-right">
-                                @if (yieldEditMode()) {
-                                  <input type="number" [ngModel]="tempYieldMap()[row.cropCode]" (ngModelChange)="setTempYield(row.cropCode, $event)" min="0"
-                                    class="w-24 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
-                                } @else {
-                                  @if (row.yieldEstimate != null) {
-                                    <span class="text-sm font-bold text-gray-900 dark:text-white">{{ row.yieldEstimate }}</span>
-                                  } @else {
-                                    <span class="text-gray-400 dark:text-gray-500 italic text-xs">--</span>
-                                  }
-                                }
+                                <input type="number"
+                                  [ngModel]="tempYieldMap()[row.cropCode] ?? row.yieldEstimate"
+                                  (ngModelChange)="setTempYield(row.cropCode, $event)"
+                                  min="0" placeholder="—"
+                                  class="w-24 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
                               </td>
                             </tr>
                           }
@@ -622,22 +745,9 @@
 
                   <!-- Table 3: Estimated Market Share -->
                   <div class="bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                    <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                      <div>
-                        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Estimated Market Share</h3>
-                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Expected share by category</p>
-                      </div>
-                      @if (!marketShareEditMode()) {
-                        <button (click)="startMarketShareEdit()" class="scoular-btn scoular-btn-sm scoular-btn-ghost">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
-                          Edit
-                        </button>
-                      } @else {
-                        <div class="flex gap-1">
-                          <button (click)="cancelMarketShareEdit()" class="scoular-btn scoular-btn-sm scoular-btn-ghost">Cancel</button>
-                          <button (click)="saveMarketShareEdit()" [disabled]="estimatesSaving()" class="scoular-btn scoular-btn-sm scoular-btn-primary">Save</button>
-                        </div>
-                      }
+                    <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                      <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Estimated Market Share</h3>
+                      <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Expected share by category</p>
                     </div>
                     <div class="overflow-x-auto">
                       <table class="w-full">
@@ -652,19 +762,14 @@
                             <tr [class]="categoryColorMap().get(row.category) || ''">
                               <td class="py-2.5 px-4 text-sm font-medium text-gray-800 dark:text-gray-100">{{ row.category }}</td>
                               <td class="py-2.5 px-4 text-right">
-                                @if (marketShareEditMode()) {
-                                  <div class="inline-flex items-center gap-1">
-                                    <input type="number" [ngModel]="tempMarketShareMap()[row.category]" (ngModelChange)="setTempMarketShare(row.category, $event)" min="0" max="100" step="1"
-                                      class="w-16 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
-                                    <span class="text-xs text-gray-400">%</span>
-                                  </div>
-                                } @else {
-                                  @if (row.marketSharePct != null) {
-                                    <span class="text-sm font-bold text-gray-900 dark:text-white">{{ row.marketSharePct }}%</span>
-                                  } @else {
-                                    <span class="text-gray-400 dark:text-gray-500 italic text-xs">0%</span>
-                                  }
-                                }
+                                <div class="inline-flex items-center gap-1 justify-end">
+                                  <input type="number"
+                                    [ngModel]="tempMarketShareMap()[row.category] ?? row.marketSharePct"
+                                    (ngModelChange)="setTempMarketShare(row.category, $event)"
+                                    min="0" max="100" step="1" placeholder="—"
+                                    class="w-16 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+                                  <span class="text-xs text-gray-400">%</span>
+                                </div>
                               </td>
                             </tr>
                           }
@@ -680,14 +785,20 @@
                 </div>
 
                 <!-- Modal footer -->
-                <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end rounded-b-2xl bg-gray-50 dark:bg-gray-800/50">
-                  <button (click)="showSeasonTargets.set(false)" class="scoular-btn scoular-btn-primary" [disabled]="yieldEditMode() || marketShareEditMode() || harvestEditMode()" [title]="(yieldEditMode() || marketShareEditMode() || harvestEditMode()) ? 'Save or cancel your changes before closing' : ''">Done</button>
+                <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2 rounded-b-2xl bg-gray-50 dark:bg-gray-800/50">
+                  @if (seasonTargetsDirty()) {
+                    <button (click)="cancelSeasonTargetsEdits()" [disabled]="estimatesSaving()" class="scoular-btn scoular-btn-ghost">Cancel</button>
+                    <button (click)="saveSeasonTargets()" [disabled]="estimatesSaving() || harvestEditMode()" class="scoular-btn scoular-btn-primary">
+                      {{ estimatesSaving() ? 'Saving…' : 'Save' }}
+                    </button>
+                  } @else {
+                    <button (click)="showSeasonTargets.set(false)" class="scoular-btn scoular-btn-primary" [disabled]="harvestEditMode()" [title]="harvestEditMode() ? 'Save or cancel your harvest changes before closing' : ''">Done</button>
+                  }
                 </div>
 
               </div>
             </div>
           }
-        }
 
       </div>
     </div>

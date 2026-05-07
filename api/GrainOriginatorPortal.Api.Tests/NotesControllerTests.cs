@@ -37,7 +37,7 @@ public class NotesControllerTests
     {
         var notes = new List<Note> { new Note { Id = 1, Description = "Test note" } };
         _mockDataService
-            .Setup(s => s.GetNotesAsync(It.IsAny<CancellationToken>()))
+            .Setup(s => s.GetNotesAsync(It.IsAny<IEnumerable<string>?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(notes);
 
         var result = await _controller.GetAll();
@@ -78,9 +78,6 @@ public class NotesControllerTests
         _mockDataService
             .Setup(s => s.GetNoteByIdAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(note);
-        _mockEntitlementService
-            .Setup(s => s.ValidateCustomerAccessAsync(99, It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
         _mockDataService
             .Setup(s => s.ToggleNotePinAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(note);
@@ -98,9 +95,6 @@ public class NotesControllerTests
         _mockDataService
             .Setup(s => s.GetNoteByIdAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(note);
-        _mockEntitlementService
-            .Setup(s => s.ValidateCustomerAccessAsync(99, It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
         _mockDataService
             .Setup(s => s.DeleteNoteAsync(1, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -117,9 +111,6 @@ public class NotesControllerTests
         _mockDataService
             .Setup(s => s.GetNoteByIdAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(note);
-        _mockEntitlementService
-            .Setup(s => s.ValidateCustomerAccessAsync(99, It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
         _mockDataService
             .Setup(s => s.DeleteNoteAsync(1, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("DB connection failed"));

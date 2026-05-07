@@ -111,9 +111,13 @@ export class TableRowComponent {
   public rowClick = output<void>();
 
   getRowClasses(): string {
-    let classes = 'border-b border-gray-200 dark:border-gray-800 transition-colors hover:bg-gray-200 dark:hover:bg-gray-800/50 even:bg-gray-100 dark:even:bg-gray-800/30';
+    let classes = 'border-b border-gray-200 dark:border-gray-800 transition-colors even:bg-gray-100 dark:even:bg-gray-800/30';
     if (this.clickable()) {
-      classes += ' cursor-pointer';
+      // More pronounced hover for clickable rows so the user can clearly see
+      // which row they're about to select.
+      classes += ' cursor-pointer hover:bg-scoular-green/10 dark:hover:bg-scoular-green/20';
+    } else {
+      classes += ' hover:bg-gray-200 dark:hover:bg-gray-800/50';
     }
     if (this.highlighted()) {
       classes += ' bg-scoular-red/5 dark:bg-red-950/20';

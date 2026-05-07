@@ -72,7 +72,7 @@ public class CustomersController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<Customer>> GetBySourceId(string sourceId, CancellationToken cancellationToken = default)
     {
-        var customer = await _dataService.GetCustomerBySourceIdAsync(sourceId, cancellationToken)
+        var customer = await _dataService.GetCustomerByScoularIdAsync(sourceId, cancellationToken)
             ?? throw new NotFoundException("Customer", sourceId);
         return Ok(customer);
     }
@@ -96,7 +96,7 @@ public class CustomersController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<Customer>> Update(long id, [FromBody] UpdateCustomerRequest request, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateCustomerAccessAsync(id, cancellationToken);
+        // Trade units are a UX filter, not an access boundary — any rep may act on any customer.
         var customer = await _dataService.GetCustomerByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("Customer", id);
 

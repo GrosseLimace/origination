@@ -358,20 +358,20 @@ export class NlqFilterService {
 
     if (filters.noActiveContracts) {
       list = list.filter(c => !contracts.some(ct =>
-        ct.ctrmCustomerId === c.sourceCustomerId &&
+        ct.ctrmCustomerId === c.scoularId &&
         (ct.status === 'Active' || ct.status === 'Pending' || ct.status === 'Overdue')
       ));
     }
     if (filters.hasUnsignedContracts) {
       list = list.filter(c => contracts.some(ct =>
-        ct.ctrmCustomerId === c.sourceCustomerId && ct.signed === false
+        ct.ctrmCustomerId === c.scoularId && ct.signed === false
       ));
     }
     if (filters.downHarvestPace) {
       const today = new Date();
       const samePointLastYear = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
       list = list.filter(c => {
-        const customerContracts = contracts.filter(ct => ct.ctrmCustomerId === c.sourceCustomerId);
+        const customerContracts = contracts.filter(ct => ct.ctrmCustomerId === c.scoularId);
         if (customerContracts.length === 0) return false;
         // Determine most recent delivery year
         let maxYear = 0;
@@ -845,10 +845,10 @@ export class NlqFilterService {
     }
     const incomingCodeLinks = new Map<string, Set<string>>();
     for (const c of context.customers) {
-      if (!c.sourceCustomerId) continue;
+      if (!c.scoularId) continue;
       for (const linkedCode of (c.linkedProducerIds || [])) {
         if (!incomingCodeLinks.has(linkedCode)) incomingCodeLinks.set(linkedCode, new Set());
-        incomingCodeLinks.get(linkedCode)!.add(c.sourceCustomerId);
+        incomingCodeLinks.get(linkedCode)!.add(c.scoularId);
       }
     }
 
@@ -856,9 +856,9 @@ export class NlqFilterService {
     for (const customer of context.customers) {
       const freshLinked = linkedById.get(customer.id) ?? customer.linkedProducerIds ?? [];
       const allCodes = new Set<string>();
-      if (customer.sourceCustomerId) allCodes.add(customer.sourceCustomerId);
+      if (customer.scoularId) allCodes.add(customer.scoularId);
       for (const linkedCode of freshLinked) allCodes.add(linkedCode);
-      for (const incomingCode of (incomingCodeLinks.get(customer.sourceCustomerId || '') || new Set<string>())) {
+      for (const incomingCode of (incomingCodeLinks.get(customer.scoularId || '') || new Set<string>())) {
         allCodes.add(incomingCode);
       }
       let latestEntry: { note: Note; time: number } | null = null;
@@ -943,8 +943,8 @@ export class NlqFilterService {
         lowerQuery.includes('contracted but not delivered') ||
         lowerQuery.includes('not yet delivered')) {
       result = result.filter(c => {
-        const hasContracts = (contractsByCustomer.get(c.sourceCustomerId!) || []).length > 0;
-        const hasTickets = (ticketsByCustomer.get(c.sourceCustomerId!) || []).length > 0;
+        const hasContracts = (contractsByCustomer.get(c.scoularId!) || []).length > 0;
+        const hasTickets = (ticketsByCustomer.get(c.scoularId!) || []).length > 0;
         return hasContracts && !hasTickets;
       });
     }
@@ -967,7 +967,7 @@ export class NlqFilterService {
         const plantingKeys = plantingByCustomer.get(c.id);
         if (!plantingKeys || plantingKeys.size === 0) return false;
         // Get this customer's contracts indexed by crop year
-        const customerContracts = contractsByCustomer.get(c.sourceCustomerId!) || [];
+        const customerContracts = contractsByCustomer.get(c.scoularId!) || [];
         // Return true if ANY planting crop+year has zero matching contracts in the same year
         for (const key of plantingKeys) {
           const [yearStr, crop] = key.split('|');
@@ -991,8 +991,8 @@ export class NlqFilterService {
     if ((lowerQuery.includes('deliver') && lowerQuery.includes('no contract') && !lowerQuery.includes('planting')) ||
         lowerQuery.includes('delivered without contract')) {
       result = result.filter(c => {
-        const hasTickets = (ticketsByCustomer.get(c.sourceCustomerId!) || []).length > 0;
-        const hasContracts = (contractsByCustomer.get(c.sourceCustomerId!) || []).length > 0;
+        const hasTickets = (ticketsByCustomer.get(c.scoularId!) || []).length > 0;
+        const hasContracts = (contractsByCustomer.get(c.scoularId!) || []).length > 0;
         return hasTickets && !hasContracts;
       });
     }
@@ -1029,7 +1029,7 @@ export class NlqFilterService {
     const lower = searchTerm.toLowerCase();
     return result.filter(c =>
       c.name.toLowerCase().includes(lower) ||
-      (c.sourceCustomerId || '').toLowerCase().includes(lower)
+      (c.scoularId || '').toLowerCase().includes(lower)
     );
   }
 
@@ -1069,7 +1069,7 @@ export class NlqFilterService {
     }
 
     return result.filter(c => {
-      const customerContracts = contractsByCustomer.get(c.sourceCustomerId!) || [];
+      const customerContracts = contractsByCustomer.get(c.scoularId!) || [];
       const customerCommodities = c.commodities || [];
       // Check each required crop appears in either contracts or customer commodities
       return crops.every(crop =>
@@ -1101,7 +1101,7 @@ export class NlqFilterService {
     }
 
     return result.filter(c => {
-      const customerTickets = ticketsByCustomer.get(c.sourceCustomerId!) || [];
+      const customerTickets = ticketsByCustomer.get(c.scoularId!) || [];
       return customerTickets.some(t => {
         if (!t.date) return false;
         const d = new Date(t.date);
@@ -1132,7 +1132,7 @@ export class NlqFilterService {
     }
 
     return result.filter(c => {
-      const customerContracts = contractsByCustomer.get(c.sourceCustomerId!) || [];
+      const customerContracts = contractsByCustomer.get(c.scoularId!) || [];
       return customerContracts.some(ct => statuses.includes(ct.status as string));
     });
   }
@@ -1303,16 +1303,16 @@ export class NlqFilterService {
           const cropLower = crop.toLowerCase();
           if (cropWithContracts) {
             // "corn contracts" → check contract commodityGroup directly (Corn, Soybeans, Wheat, Sorghum)
-            const groups = contractGroupsByCustomer.get(c.sourceCustomerId ?? '');
+            const groups = contractGroupsByCustomer.get(c.scoularId ?? '');
             if (groups && groups.has(cropLower)) return true;
             // Also try matching crop aliases against the group (e.g. "milo" → matches group "sorghum")
-            const codes = contractCodesByCustomer.get(c.sourceCustomerId ?? '');
+            const codes = contractCodesByCustomer.get(c.scoularId ?? '');
             return codes ? [...codes].some(code => this.matchesCommodity(code, cropLower)) : false;
           }
           // Non-contract queries: check contracts, tickets, and ProducerDetails broadly
-          const codes = contractCodesByCustomer.get(c.sourceCustomerId ?? '');
+          const codes = contractCodesByCustomer.get(c.scoularId ?? '');
           if (codes && [...codes].some(code => this.matchesCommodity(code, cropLower))) return true;
-          const ticketCodes = ticketCommoditiesByCustomer.get(c.sourceCustomerId ?? '');
+          const ticketCodes = ticketCommoditiesByCustomer.get(c.scoularId ?? '');
           if (ticketCodes && [...ticketCodes].some(code => this.matchesCommodity(code, cropLower))) return true;
           return c.commodities?.some(cm => this.matchesCommodity(cm, cropLower)) ?? false;
         });
@@ -1331,12 +1331,12 @@ export class NlqFilterService {
         for (const crop of (c.commodities ?? [])) { if (crop.trim()) crops.add(crop.trim().toUpperCase()); }
         // From contracts
         const custContracts = contracts.filter(ct =>
-          ct.ctrmCustomerId === c.sourceCustomerId && ct.status !== 'Cancelled');
+          ct.ctrmCustomerId === c.scoularId && ct.status !== 'Cancelled');
         for (const ct of custContracts) {
           if (ct.commodityCode) crops.add(ct.commodityCode.trim().toUpperCase());
         }
         // From tickets
-        const custTickets = tickets.filter(t => t.customerCode === c.sourceCustomerId);
+        const custTickets = tickets.filter(t => t.customerCode === c.scoularId);
         for (const t of custTickets) {
           if (t.productCode) crops.add(t.productCode.trim().toUpperCase());
         }
@@ -1476,17 +1476,17 @@ export class NlqFilterService {
       // Resolve via bidirectional linked producers (same as main index)
       const incomingCodeLinks = new Map<string, Set<string>>();
       for (const c of customers) {
-        if (!c.sourceCustomerId) continue;
+        if (!c.scoularId) continue;
         for (const linkedCode of (c.linkedProducerIds || [])) {
           if (!incomingCodeLinks.has(linkedCode)) incomingCodeLinks.set(linkedCode, new Set());
-          incomingCodeLinks.get(linkedCode)!.add(c.sourceCustomerId);
+          incomingCodeLinks.get(linkedCode)!.add(c.scoularId);
         }
       }
       for (const customer of customers) {
         const allCodes = new Set<string>();
-        if (customer.sourceCustomerId) allCodes.add(customer.sourceCustomerId);
+        if (customer.scoularId) allCodes.add(customer.scoularId);
         for (const linkedCode of (customer.linkedProducerIds || [])) allCodes.add(linkedCode);
-        for (const incomingCode of (incomingCodeLinks.get(customer.sourceCustomerId || '') || new Set<string>())) {
+        for (const incomingCode of (incomingCodeLinks.get(customer.scoularId || '') || new Set<string>())) {
           allCodes.add(incomingCode);
         }
         let latest = 0;
@@ -1672,7 +1672,7 @@ export class NlqFilterService {
       // linked producers that were filtered out by earlier filters can still be resolved.
       const sourceIdToNumericId = new Map<string, number>();
       for (const c of allCustomers) {
-        if (c.sourceCustomerId) sourceIdToNumericId.set(c.sourceCustomerId, c.id);
+        if (c.scoularId) sourceIdToNumericId.set(c.scoularId, c.id);
       }
 
       // Extract keywords from the search term (3+ chars to skip stop words like
@@ -1755,7 +1755,7 @@ export class NlqFilterService {
     // Pre-index notes by customer (including linked producers)
     const sourceIdToNumericId = new Map<string, number>();
     for (const c of allCustomers) {
-      if (c.sourceCustomerId) sourceIdToNumericId.set(c.sourceCustomerId, c.id);
+      if (c.scoularId) sourceIdToNumericId.set(c.scoularId, c.id);
     }
 
     const noteContentByCustomer = new Map<number, string>();
@@ -1974,9 +1974,9 @@ export class NlqFilterService {
     }
 
     const getOpenContracts = (c: Customer): Contract[] =>
-      c.sourceCustomerId ? openByCustomer.get(c.sourceCustomerId) ?? [] : [];
+      c.scoularId ? openByCustomer.get(c.scoularId) ?? [] : [];
     const getAllContracts = (c: Customer): Contract[] =>
-      c.sourceCustomerId ? allByCustomer.get(c.sourceCustomerId) ?? [] : [];
+      c.scoularId ? allByCustomer.get(c.scoularId) ?? [] : [];
 
     // --- No active contracts ---
     const isCrossEntityNoContract = lowerQuery.includes('planting') && (lowerQuery.includes('no contract') || lowerQuery.includes('no active contract'));
@@ -2293,7 +2293,7 @@ export class NlqFilterService {
     }
 
     const getCustomerTickets = (c: Customer): Ticket[] =>
-      c.sourceCustomerId ? ticketsByCustomer.get(c.sourceCustomerId) ?? [] : [];
+      c.scoularId ? ticketsByCustomer.get(c.scoularId) ?? [] : [];
 
     // --- Has deliveries ---
     if (/(?:has|have|with)\s+(?:deliveries|tickets|delivery)/.test(lowerQuery) ||
@@ -2563,8 +2563,8 @@ export class NlqFilterService {
         openBalTotals.set(c.ctrmCustomerId, (openBalTotals.get(c.ctrmCustomerId) || 0) + (c.openBalanceQuantity || 0));
       }
       result = [...result].sort((a, b) => {
-        const aVal = openBalTotals.get(a.sourceCustomerId!) || 0;
-        const bVal = openBalTotals.get(b.sourceCustomerId!) || 0;
+        const aVal = openBalTotals.get(a.scoularId!) || 0;
+        const bVal = openBalTotals.get(b.scoularId!) || 0;
         return isTop ? bVal - aVal : aVal - bVal;
       });
     } else if (lowerQuery.includes('by planting') || (lowerQuery.includes('planting') && lowerQuery.includes('top'))) {
@@ -2609,8 +2609,8 @@ export class NlqFilterService {
         contractTotals.set(c.ctrmCustomerId, (contractTotals.get(c.ctrmCustomerId) || 0) + (c.quantity || 0));
       }
       result = [...result].sort((a, b) => {
-        const aVal = contractTotals.get(a.sourceCustomerId!) || 0;
-        const bVal = contractTotals.get(b.sourceCustomerId!) || 0;
+        const aVal = contractTotals.get(a.scoularId!) || 0;
+        const bVal = contractTotals.get(b.scoularId!) || 0;
         return isTop ? bVal - aVal : aVal - bVal;
       });
     } else if (lowerQuery.includes('by deliver') || lowerQuery.includes('most delivered') ||
@@ -2622,8 +2622,8 @@ export class NlqFilterService {
         ticketTotals.set(t.customerCode, (ticketTotals.get(t.customerCode) || 0) + (t.appliedDockQuantity || 0));
       }
       result = [...result].sort((a, b) => {
-        const aVal = ticketTotals.get(a.sourceCustomerId!) || 0;
-        const bVal = ticketTotals.get(b.sourceCustomerId!) || 0;
+        const aVal = ticketTotals.get(a.scoularId!) || 0;
+        const bVal = ticketTotals.get(b.scoularId!) || 0;
         return isTop ? bVal - aVal : aVal - bVal;
       });
     } else {
@@ -2642,9 +2642,9 @@ export class NlqFilterService {
       result = [...result].sort((a, b) => {
         const acresDiff = (b.totalAcres || 0) - (a.totalAcres || 0);
         if (acresDiff !== 0) return isTop ? acresDiff : -acresDiff;
-        const contractDiff = (contractTotals.get(b.sourceCustomerId!) || 0) - (contractTotals.get(a.sourceCustomerId!) || 0);
+        const contractDiff = (contractTotals.get(b.scoularId!) || 0) - (contractTotals.get(a.scoularId!) || 0);
         if (contractDiff !== 0) return isTop ? contractDiff : -contractDiff;
-        const ticketDiff = (ticketTotals.get(b.sourceCustomerId!) || 0) - (ticketTotals.get(a.sourceCustomerId!) || 0);
+        const ticketDiff = (ticketTotals.get(b.scoularId!) || 0) - (ticketTotals.get(a.scoularId!) || 0);
         return isTop ? ticketDiff : -ticketDiff;
       });
     }

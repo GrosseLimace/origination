@@ -85,6 +85,7 @@ export class CustomerProfileComponent {
   public openContractId = input<number | null>(null);
   public openTab = input<string | null>(null);
   public openTicketCrop = input<string | null>(null);
+  public openPlantingYear = input<number | null>(null);
 
   @ViewChild(PlantingIntentionsTableComponent) private plantingTable?: PlantingIntentionsTableComponent;
   @ViewChild('tabsSection') private tabsSectionRef?: ElementRef<HTMLElement>;
@@ -131,11 +132,27 @@ export class CustomerProfileComponent {
     });
 
     effect(() => {
-      // Reset eSign recipients panel and year selection when switching customers
+      // When arriving from the dashboard with a planting year, honor it instead of the auto-newest pick.
+      const year = this.openPlantingYear();
+      if (year && year > 0) {
+        this._yearUserSelected = true;
+        this.selectedPlantingYear.set(year);
+      }
+    });
+
+    effect(() => {
+      // Reset eSign recipients panel and year selection when switching customers.
+      // If we arrived with an explicit openPlantingYear (e.g. from the dashboard), keep it.
       const _customer = this.customer();
       this.showESignRecipients.set(false);
-      this._yearUserSelected = false;
-      this.selectedPlantingYear.set(0);
+      const pendingYear = this.openPlantingYear();
+      if (pendingYear && pendingYear > 0) {
+        this._yearUserSelected = true;
+        this.selectedPlantingYear.set(pendingYear);
+      } else {
+        this._yearUserSelected = false;
+        this.selectedPlantingYear.set(0);
+      }
     });
 
     // Fetch historical closed contracts (base.Contract) once per customer.
@@ -163,12 +180,12 @@ export class CustomerProfileComponent {
       }
       this._availablePlantingYears = [...yearSet].sort((a, b) => b - a);
 
-      // Always pick newest when user hasn't manually chosen a year.
-      const selected = this._yearUserSelected ? this.selectedPlantingYear() : 0;
-      const best = (selected > 0 && yearSet.has(selected))
-        ? selected
-        : (this._availablePlantingYears[0] || 0);
-      if (best !== selected) {
+      // If the user explicitly chose a year (or arrived with one from the dashboard),
+      // honor it even if there's no data for that year — don't silently jump to newest.
+      if (this._yearUserSelected) return;
+
+      const best = this._availablePlantingYears[0] || 0;
+      if (best !== this.selectedPlantingYear()) {
         this.selectedPlantingYear.set(best);
       }
     });
@@ -182,7 +199,7 @@ export class CustomerProfileComponent {
 
       // Update tabs cache
       this._tabs = [
-        { id: 'contracts', label: 'Contracts', shortLabel: 'Cont', count: contracts.filter(c => !c.closedDate).length },
+        { id: 'contracts', label: 'Open Contracts', shortLabel: 'Cont', count: contracts.filter(c => !c.closedDate).length },
         { id: 'tickets', label: 'Unapplied Tickets', shortLabel: 'Tick', count: this._unappliedTicketCount },
         { id: 'planting', label: 'Planting', shortLabel: 'Plan', count: this.plantingIntentions().length },
         { id: 'storage', label: 'Storage', shortLabel: 'Stor', count: new Set(this.storedGrain().map(g => g.crop || 'Unknown')).size }

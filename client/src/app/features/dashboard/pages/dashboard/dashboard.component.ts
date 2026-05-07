@@ -11,11 +11,12 @@ import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, Commodity } from '@models';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
+import { BadgeComponent } from '@shared/components/badge/badge.component';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, TradeUnitSelectorComponent],
+  imports: [CommonModule, FormsModule, TradeUnitSelectorComponent, BadgeComponent],
   templateUrl: './dashboard.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -84,24 +85,78 @@ export class DashboardComponent {
   showSeasonTargets = signal(false);
 
   // Tab / filter state
-  activeTab = signal<'byCrop' | 'topProducers' | 'harvestContracts'>('byCrop');
+  activeTab = signal<'byCrop' | 'producers' | 'harvestContracts'>('byCrop');
 
-  selectDashboardTab(tabId: 'byCrop' | 'topProducers' | 'harvestContracts'): void {
+  selectDashboardTab(tabId: 'byCrop' | 'producers' | 'harvestContracts'): void {
     this.activeTab.set(tabId);
     const subFeatureMap: Record<string, string> = {
       byCrop: 'by-crop',
-      topProducers: 'top-producers',
+      producers: 'producers-and-intentions',
       harvestContracts: 'harvest-contracts'
     };
     this.usageTracking.trackDashboardTabClick(subFeatureMap[tabId]);
   }
+
+  goToCustomerProfile(customerId: number): void {
+    // Pass the customerId as targetId so the Usage Dashboard's customer-name
+    // resolver can render the producer's name in the Recent Activity table.
+    this.usageTracking.postClickEvent('interaction', 'dashboard', 'producer-row-click', customerId.toString());
+    this.router.navigate(['/'], {
+      queryParams: { customerId, tab: 'planting', year: this.selectedPlantingYear() }
+    });
+  }
+
+  toggleProducerSort(key: 'acres' | 'production'): void {
+    if (this.producerSortKey() === key) {
+      this.producerSortDir.set(this.producerSortDir() === 'asc' ? 'desc' : 'asc');
+    } else {
+      this.producerSortKey.set(key);
+      this.producerSortDir.set('desc');
+    }
+  }
+
+  clearProducerFilters(): void {
+    this.producerSearch.set('');
+    this.producerCropFilter.set('');
+  }
+
+  getLastContactInfo(customerId: number): { text: string; colorClass: string; daysAgo: number } {
+    return this._lastContactByCustomer().get(customerId)
+      ?? { text: 'Never contacted', colorClass: 'text-scoular-red', daysAgo: Infinity };
+  }
+
+  getInitials(name: string): string {
+    const parts = name.split(' ').filter(p => p.length > 0);
+    if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    if (parts.length === 1 && parts[0].length >= 2) return parts[0].substring(0, 2).toUpperCase();
+    return '??';
+  }
+
+  getFormattedLocation(customer: Customer | undefined): string {
+    if (!customer) return '';
+    if (customer.extendedCity && customer.extendedStateProvince) {
+      return `${customer.extendedCity}, ${customer.extendedStateProvince}`;
+    }
+    if (customer.location && customer.stateProvince) {
+      return `${customer.location}, ${customer.stateProvince}`;
+    }
+    return customer.extendedCity || customer.location || customer.stateProvince || '';
+  }
+
   selectedCropFilter = signal('');
 
   readonly tabs = [
     { id: 'byCrop' as const, label: 'By Crop' },
-    { id: 'topProducers' as const, label: 'Top Producers' },
+    { id: 'producers' as const, label: 'Producers & Planting Intentions' },
     { id: 'harvestContracts' as const, label: 'Harvest & Contracts' },
   ];
+
+  // Producers tab — local filter state
+  producerView = signal<'with' | 'without'>('with');
+  producerSearch = signal('');
+  producerCropFilter = signal<string>('');
+  producerSortKey = signal<'acres' | 'production'>('acres');
+  producerSortDir = signal<'asc' | 'desc'>('desc');
 
   private readonly CHART_COLORS = [
     { bar: 'bg-scoular-green', dot: 'bg-scoular-green', hex: '#00A36F' },
@@ -114,14 +169,16 @@ export class DashboardComponent {
     { bar: 'bg-indigo-500', dot: 'bg-indigo-500', hex: '#6366f1' },
   ];
 
-  // Edit mode flags
-  yieldEditMode = signal(false);
-  marketShareEditMode = signal(false);
   estimatesSaving = signal(false);
 
-  // Temporary edit maps
+  // Buffered user edits. Entries here = unsaved changes. Cleared on Save success or Cancel.
   tempYieldMap = signal<Record<string, number | null>>({});
   tempMarketShareMap = signal<Record<string, number | null>>({});
+
+  readonly seasonTargetsDirty = computed(() =>
+    Object.keys(this.tempYieldMap()).length > 0 ||
+    Object.keys(this.tempMarketShareMap()).length > 0
+  );
 
   // Pre-indexed commodity lookup — computed so it's stable within a CD cycle (prevents NG0100)
   private readonly _commodityByCode = computed(() => new Map(this.allCommodities().map(c => [c.code, c])));
@@ -283,16 +340,30 @@ export class DashboardComponent {
       if (!customerIdSet.has(p.customerId)) continue;
       const commodity = this._commodityByCode().get(p.crop);
       const category = p.category || commodity?.category || p.crop;
-      if (category) crops.add(category);
+      if (category) crops.add(this._toTitleCase(category));
     }
 
+    // Contracts come from ODS, where strings are stored ALL-CAPS ("WHEAT",
+    // "HARD RED WINTER WHEAT"). Title-case them on the way into the dropdown
+    // so they merge with the already-Title-Cased planting-intention categories
+    // instead of appearing as duplicate "WHEAT" / "Wheat" options.
     for (const c of this.contracts()) {
       const group = c.commodityGroup || c.commodityDescription;
-      if (group) crops.add(group);
+      if (group) crops.add(this._toTitleCase(group));
     }
 
     return [...crops].sort();
   });
+
+  /**
+   * Convert any-case input to Title Case: "WHEAT" → "Wheat",
+   * "hard red winter wheat" → "Hard Red Winter Wheat", "Co-Product" → "Co-Product".
+   * Word boundaries are preserved so hyphenated and multi-word strings stay readable.
+   */
+  private _toTitleCase(s: string): string {
+    if (!s) return s;
+    return s.toLowerCase().replace(/\b\w/g, ch => ch.toUpperCase());
+  }
 
   readonly cropBreakdown = computed(() => {
     const cropAcresMap = new Map<string, number>();
@@ -361,35 +432,344 @@ export class DashboardComponent {
     });
   });
 
-  readonly topProducersRows = computed(() => {
+  private readonly _customerById = computed(() => {
+    const map = new Map<number, Customer>();
+    for (const c of this.customers()) map.set(c.id, c);
+    return map;
+  });
+
+  readonly producersWithIntentionsRows = computed(() => {
     const yieldMap = this._yieldEstimateMap();
-    const map = new Map<number, { customerName: string; tradeUnit: string; acres: number; production: number; cropSet: Set<string> }>();
+    const customerMap = this._customerById();
+    const commodityByCode = this._commodityByCode();
+    const map = new Map<number, {
+      customerName: string;
+      tradeUnit: string;
+      acres: number;
+      production: number;
+      // Per-crop breakdown so we can recompute the displayed acres/production when a chip is active.
+      byKey: Map<string, { display: string; category: string; acres: number; production: number }>;
+    }>();
     for (const p of this.filteredIntentionsForYear()) {
-      const commodity = this._commodityByCode().get(p.crop);
+      const commodity = commodityByCode.get(p.crop);
       const category = p.category || commodity?.category || p.crop;
-      const cropKey = [p.type, category].filter(Boolean).join(' ');
-      const yieldEst = yieldMap.get(cropKey);
+      const categoryKey = [p.type, category].filter(Boolean).join(' ');
+      const displayKey = [p.type, p.crop].filter(Boolean).join(' ');
+      const yieldEst = yieldMap.get(categoryKey);
       const production = yieldEst != null ? p.acres * yieldEst : 0;
-      const existing = map.get(p.customerId);
-      if (existing) {
-        existing.acres += p.acres;
-        existing.production += production;
-        existing.cropSet.add(category);
+      let entry = map.get(p.customerId);
+      if (!entry) {
+        entry = {
+          customerName: p.customerName,
+          tradeUnit: p.tradeUnit,
+          acres: 0,
+          production: 0,
+          byKey: new Map(),
+        };
+        map.set(p.customerId, entry);
+      }
+      entry.acres += p.acres;
+      entry.production += production;
+      const existingDetail = entry.byKey.get(displayKey);
+      if (existingDetail) {
+        existingDetail.acres += p.acres;
+        existingDetail.production += production;
       } else {
-        map.set(p.customerId, { customerName: p.customerName, tradeUnit: p.tradeUnit, acres: p.acres, production, cropSet: new Set([category]) });
+        entry.byKey.set(displayKey, { display: displayKey, category: categoryKey, acres: p.acres, production });
       }
     }
-    return [...map.entries()]
-      .sort((a, b) => b[1].acres - a[1].acres)
-      .slice(0, 10)
-      .map(([customerId, v]) => ({
+    return [...map.entries()].map(([customerId, v]) => {
+      const customer = customerMap.get(customerId);
+      const cropEntries = [...v.byKey.values()].sort((a, b) => a.display.localeCompare(b.display));
+      return {
         customerId,
         customerName: v.customerName,
+        scoularId: customer?.scoularId ?? null,
+        customer,
         tradeUnit: v.tradeUnit,
         acres: v.acres,
         production: v.production > 0 ? Math.round(v.production) : null,
-        crops: [...v.cropSet].sort()
+        crops: cropEntries.map(e => e.display),
+        cropCategoryKeys: [...new Set(cropEntries.map(e => e.category))].sort(),
+        cropEntries,
+        highlightedCrops: null as Set<string> | null,
+      };
+    });
+  });
+
+  // Combined crops per customer — mirrors build-list's resolution logic.
+  // Sources (deduped, case-insensitive): producer details, contract commodity codes/descriptions.
+  private readonly _customerCropsById = computed(() => {
+    const result = new Map<number, string[]>();
+
+    // Producer details by customerId
+    const pdByCustomer = new Map<number, string[]>();
+    for (const pd of this.appStateService.producerDetails()) {
+      if (pd.commodities) {
+        const list = pd.commodities.split(',').map(s => s.trim()).filter(Boolean);
+        if (list.length > 0) pdByCustomer.set(pd.customerId, list);
+      }
+    }
+
+    // Contracts grouped by ctrmCustomerId (the FK on contracts that maps to customer.scoularId)
+    const contractCropsBySrcId = new Map<string, string[]>();
+    for (const c of this.contracts()) {
+      const key = c.ctrmCustomerId;
+      if (!key) continue;
+      const crop = (c.commodityCode || c.commodityDescription || c.commodityGroup || '').trim();
+      if (!crop) continue;
+      const arr = contractCropsBySrcId.get(key);
+      if (arr) arr.push(crop); else contractCropsBySrcId.set(key, [crop]);
+    }
+
+    for (const customer of this.customers()) {
+      const detailCrops = pdByCustomer.get(customer.id) ?? customer.commodities ?? [];
+      const contractCrops = customer.scoularId
+        ? (contractCropsBySrcId.get(customer.scoularId) ?? [])
+        : [];
+      const seen = new Set<string>();
+      const merged: string[] = [];
+      for (const crop of [...detailCrops, ...contractCrops]) {
+        const key = crop.trim().toUpperCase();
+        if (key && !seen.has(key)) { seen.add(key); merged.push(crop.trim()); }
+      }
+      if (merged.length > 0) result.set(customer.id, merged);
+    }
+    return result;
+  });
+
+  readonly producersWithoutIntentionsRows = computed(() => {
+    const year = this.selectedPlantingYear();
+    const cropFilter = this.selectedCropFilter();
+    const cropFilterLower = cropFilter.toLowerCase();
+    const cropsMap = this._customerCropsById();
+
+    // When a crop is selected at the top, "without intentions" narrows to:
+    //   producers who work with that crop (per their crops list) but have NO intention
+    //   for THAT crop this year. Otherwise: producers with NO intention at all this year.
+    const matchingIntentionCustomers = new Set<number>();
+    for (const p of this.plantingIntentions()) {
+      if (+p.plantingYear !== +year) continue;
+      if (cropFilter) {
+        const commodity = this._commodityByCode().get(p.crop);
+        const category = p.category || commodity?.category || p.crop;
+        if (category !== cropFilter) continue;
+      }
+      matchingIntentionCustomers.add(p.customerId);
+    }
+
+    const commodityByCode = this._commodityByCode();
+    return this.customers()
+      .filter(c => !matchingIntentionCustomers.has(c.id))
+      .filter(c => {
+        if (!cropFilter) return true;
+        const crops = cropsMap.get(c.id) ?? [];
+        return crops.some(crop => {
+          const raw = crop.trim();
+          if (raw.toLowerCase() === cropFilterLower) return true;
+          // Resolve code (e.g. "YC") to its category (e.g. "Corn") via commodities lookup
+          const commodity = commodityByCode.get(raw) || commodityByCode.get(raw.toUpperCase());
+          return (commodity?.category || '').toLowerCase() === cropFilterLower;
+        });
+      })
+      .map(c => ({
+        customerId: c.id,
+        customerName: c.name,
+        scoularId: c.scoularId ?? null,
+        customer: c,
+        crops: [...(cropsMap.get(c.id) ?? [])].sort(),
       }));
+  });
+
+  // Apply search + (optional) chip filter. Chip filter is view-specific, so the inactive
+  // view's count skips it — that's why the With count doesn't move when you toggle a chip
+  // while sitting on the Without view, and vice versa.
+  private _applyProducerFilters(
+    rows: any[],
+    view: 'with' | 'without',
+    opts: { applyChipFilter: boolean } = { applyChipFilter: true }
+  ): any[] {
+    const search = this.producerSearch().trim().toLowerCase();
+    const cropFilter = opts.applyChipFilter ? this.producerCropFilter().trim().toLowerCase() : '';
+    const topFilterSet = !!this.selectedCropFilter();
+
+    let result = rows;
+    if (search) {
+      result = result.filter(r =>
+        r.customerName.toLowerCase().includes(search) ||
+        (r.scoularId && r.scoularId.toLowerCase().includes(search))
+      );
+    }
+    if (cropFilter) {
+      result = result.filter(r => {
+        if (view === 'with' && !topFilterSet) {
+          const keys = (r as any).cropCategoryKeys as string[] | undefined;
+          return Array.isArray(keys) && keys.some(c => c.toLowerCase() === cropFilter);
+        }
+        return Array.isArray(r.crops) && r.crops.some((c: string) => c.toLowerCase() === cropFilter);
+      });
+    }
+    return result;
+  }
+
+  readonly producerWithCount = computed(() =>
+    this._applyProducerFilters(
+      this.producersWithIntentionsRows(),
+      'with',
+      { applyChipFilter: this.producerView() === 'with' }
+    ).length
+  );
+  readonly producerWithoutCount = computed(() =>
+    this._applyProducerFilters(
+      this.producersWithoutIntentionsRows(),
+      'without',
+      { applyChipFilter: this.producerView() === 'without' }
+    ).length
+  );
+
+  // Last-contacted info per customer — mirrors build-list's lastContactByCustomer.
+  // Walks notes (incl. linked producers, forward + reverse edges) to find the most recent.
+  private readonly _lastContactByCustomer = computed(() => {
+    const map = new Map<number, { text: string; colorClass: string; daysAgo: number }>();
+    const parseUtc = (ts: string | Date) => {
+      const raw = typeof ts === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
+      return new Date(raw).getTime();
+    };
+
+    const notesByCode = new Map<string, { time: number }>();
+    for (const n of this.appStateService.notes()) {
+      if (!n.customerCode) continue;
+      const time = parseUtc(n.createdAt);
+      const existing = notesByCode.get(n.customerCode);
+      if (!existing || time > existing.time) notesByCode.set(n.customerCode, { time });
+    }
+
+    const all = this.customers();
+    const linkedById = new Map<number, string[]>();
+    for (const c of all) {
+      if (c.linkedProducerIds?.length) linkedById.set(c.id, c.linkedProducerIds);
+    }
+    const incomingCodeLinks = new Map<string, Set<string>>();
+    for (const c of all) {
+      if (!c.scoularId) continue;
+      for (const linkedCode of (c.linkedProducerIds || [])) {
+        if (!incomingCodeLinks.has(linkedCode)) incomingCodeLinks.set(linkedCode, new Set());
+        incomingCodeLinks.get(linkedCode)!.add(c.scoularId);
+      }
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    for (const customer of all) {
+      const codes = new Set<string>();
+      if (customer.scoularId) codes.add(customer.scoularId);
+      for (const code of (linkedById.get(customer.id) ?? customer.linkedProducerIds ?? [])) codes.add(code);
+      for (const code of (incomingCodeLinks.get(customer.scoularId || '') || [])) codes.add(code);
+      let latestTime = 0;
+      for (const code of codes) {
+        const e = notesByCode.get(code);
+        if (e && e.time > latestTime) latestTime = e.time;
+      }
+      if (latestTime === 0) continue;
+      const noteDate = new Date(latestTime);
+      noteDate.setHours(0, 0, 0, 0);
+      const daysAgo = Math.max(0, Math.round((today.getTime() - noteDate.getTime()) / 86400000));
+      let info: { text: string; colorClass: string; daysAgo: number };
+      if (daysAgo === 0) info = { text: 'Contacted today', colorClass: 'text-scoular-green', daysAgo };
+      else if (daysAgo === 1) info = { text: 'Contacted yesterday', colorClass: 'text-scoular-green', daysAgo };
+      else if (daysAgo < 7) info = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-scoular-green', daysAgo };
+      else if (daysAgo < 30) info = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-yellow-500', daysAgo };
+      else info = { text: `Contacted ${daysAgo} days ago`, colorClass: 'text-scoular-red', daysAgo };
+      map.set(customer.id, info);
+    }
+    return map;
+  });
+
+  readonly producersTabRows = computed(() => {
+    const view = this.producerView();
+    const sortKey = this.producerSortKey();
+    const dir = this.producerSortDir() === 'asc' ? 1 : -1;
+
+    const source = view === 'with'
+      ? this.producersWithIntentionsRows()
+      : this.producersWithoutIntentionsRows();
+    let rows: any[] = this._applyProducerFilters(source, view);
+
+    // When a chip is active on the With view, narrow each row's acres/production to the matching
+    // crop(s) only, and mark which crop badges should be highlighted on the card.
+    const chip = this.producerCropFilter().trim().toLowerCase();
+    if (chip && view === 'with') {
+      const topFilterSet = !!this.selectedCropFilter();
+      rows = rows.map(r => {
+        const entries: { display: string; category: string; acres: number; production: number }[] = r.cropEntries ?? [];
+        const matches = entries.filter(e => {
+          const target = topFilterSet ? e.display : e.category;
+          return target.toLowerCase() === chip;
+        });
+        if (matches.length === 0) return r;
+        const acres = matches.reduce((s, e) => s + e.acres, 0);
+        const productionRaw = matches.reduce((s, e) => s + e.production, 0);
+        return {
+          ...r,
+          acres,
+          production: productionRaw > 0 ? Math.round(productionRaw) : null,
+          highlightedCrops: new Set(matches.map(e => e.display)),
+        };
+      });
+    }
+
+    rows = [...rows].sort((a, b) => {
+      if (sortKey === 'acres') {
+        const av = a.acres ?? a.customer?.totalAcres ?? 0;
+        const bv = b.acres ?? b.customer?.totalAcres ?? 0;
+        return (av - bv) * dir;
+      }
+      if (sortKey === 'production') return ((a.production ?? 0) - (b.production ?? 0)) * dir;
+      return a.customerName.localeCompare(b.customerName);
+    });
+    return rows;
+  });
+
+  readonly showProducerTradeUnitColumn = computed(() =>
+    this.appStateService.selectedTradeUnits().length > 1
+  );
+
+  // Crop chips — semantics differ between views:
+  //   With view:
+  //     - Top filter empty: chips are "type + category" (e.g. "Dryland Corn") — broader buckets
+  //     - Top filter set:   chips are "type + crop code" (e.g. "Dryland YC") — drill-down within that crop
+  //   Without view:
+  //     - Chips are crop codes (e.g. "YC", "SRWW") drawn from each customer's merged crops list
+  //     - When top filter is set, chips are limited to codes whose category matches the top filter
+  readonly producerCropChipOptions = computed(() => {
+    const set = new Set<string>();
+    if (this.producerView() === 'with') {
+      const rows = this.producersWithIntentionsRows();
+      if (this.selectedCropFilter()) {
+        for (const r of rows) for (const k of r.crops) set.add(k);
+      } else {
+        for (const r of rows) for (const k of r.cropCategoryKeys) set.add(k);
+      }
+      return [...set].sort();
+    }
+    // Without view
+    const cropFilter = this.selectedCropFilter();
+    const cropFilterLower = cropFilter.toLowerCase();
+    const commodityByCode = this._commodityByCode();
+    for (const r of this.producersWithoutIntentionsRows()) {
+      for (const c of r.crops) {
+        const raw = c.trim();
+        if (!raw) continue;
+        if (cropFilter) {
+          // Limit chips to codes that resolve to the selected category
+          const commodity = commodityByCode.get(raw) || commodityByCode.get(raw.toUpperCase());
+          const category = (commodity?.category || '').toLowerCase();
+          if (category !== cropFilterLower && raw.toLowerCase() !== cropFilterLower) continue;
+        }
+        set.add(raw);
+      }
+    }
+    return [...set].sort();
   });
 
   readonly contractsForYear = computed(() => {
@@ -993,92 +1373,73 @@ export class DashboardComponent {
   }
 
   // =========================================================================
-  // Yield edit
+  // Season Targets — batched Save / Cancel for both yield estimates and market share
   // =========================================================================
 
-  startYieldEdit(): void {
-    this.yieldEditMode.set(true);
-    const map: Record<string, number | null> = {};
-    for (const row of this.yieldRows()) {
-      map[row.cropCode] = row.yieldEstimate;
-    }
-    this.tempYieldMap.set(map);
-  }
-
-  saveYieldEdit(): void {
-    this.usageTracking.trackSeasonTargetsSaved();
+  saveSeasonTargets(): void {
+    if (!this.seasonTargetsDirty()) return;
     const key = this.tradeUnitKey();
     if (!key) return;
-    const estimates = this.yieldRows().map(row => ({
+
+    const yieldEdits = this.tempYieldMap();
+    const shareEdits = this.tempMarketShareMap();
+    const yieldEntries = Object.entries(yieldEdits);
+    const shareEntries = Object.entries(shareEdits);
+
+    const yieldPayload = yieldEntries.map(([crop, value]) => ({
       tradeUnitKey: key,
-      crop: row.cropCode,
+      crop,
       plantingYear: this.selectedPlantingYear(),
-      yieldEstimate: this.tempYieldMap()[row.cropCode] ?? null
+      yieldEstimate: value ?? null,
     }));
+    const sharePayload = shareEntries.map(([cropCategory, value]) => ({
+      tradeUnitKey: key,
+      cropCategory,
+      plantingYear: this.selectedPlantingYear(),
+      marketSharePct: value ?? null,
+    }));
+
+    const yield$ = yieldPayload.length > 0
+      ? this.apiService.upsertDashboardPlantingEstimates(yieldPayload)
+      : of(null);
+    const share$ = sharePayload.length > 0
+      ? this.apiService.upsertDashboardMarketShares(sharePayload)
+      : of(null);
+
     this.estimatesSaving.set(true);
-    this.apiService.upsertDashboardPlantingEstimates(estimates)
+    // Track one event per affected crop with what was set so the Usage Dashboard
+    // shows "CORN — yield 180 bu/ac, 15% share" instead of an opaque save event.
+    const allCrops = new Set<string>([...Object.keys(yieldEdits), ...Object.keys(shareEdits)]);
+    for (const crop of allCrops) {
+      const yieldVal = yieldEdits[crop];
+      const shareVal = shareEdits[crop];
+      const parts: string[] = [];
+      if (yieldVal !== undefined && yieldVal !== null) parts.push(`yield ${yieldVal} bu/ac`);
+      if (shareVal !== undefined && shareVal !== null) parts.push(`${shareVal}% share`);
+      if (parts.length === 0) continue;
+      this.usageTracking.postClickEvent('interaction', 'dashboard', 'set-season-targets', `${crop} — ${parts.join(', ')}`);
+    }
+    forkJoin([yield$, share$])
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
-          this.yieldEditMode.set(false);
           this.estimatesSaving.set(false);
-          this.toastService.success('Yield estimates saved');
-          this.loadDashboardEstimates();
+          this.tempYieldMap.set({});
+          this.tempMarketShareMap.set({});
+          this.toastService.success('Season targets saved');
+          if (yieldPayload.length > 0) this.loadDashboardEstimates();
+          if (sharePayload.length > 0) this.loadDashboardMarketShares();
+          this.showSeasonTargets.set(false);
         },
         error: () => {
           this.estimatesSaving.set(false);
-          this.toastService.error('Failed to save yield estimates');
-        }
+          this.toastService.error('Failed to save season targets');
+        },
       });
   }
 
-  cancelYieldEdit(): void {
-    this.yieldEditMode.set(false);
+  cancelSeasonTargetsEdits(): void {
     this.tempYieldMap.set({});
-  }
-
-  // =========================================================================
-  // Market share edit
-  // =========================================================================
-
-  startMarketShareEdit(): void {
-    this.marketShareEditMode.set(true);
-    const map: Record<string, number | null> = {};
-    for (const row of this.categoryRows()) {
-      map[row.category] = row.marketSharePct;
-    }
-    this.tempMarketShareMap.set(map);
-  }
-
-  saveMarketShareEdit(): void {
-    this.usageTracking.trackSeasonTargetsSaved();
-    const key = this.tradeUnitKey();
-    if (!key) return;
-    const shares = this.categoryRows().map(row => ({
-      tradeUnitKey: key,
-      cropCategory: row.category,
-      plantingYear: this.selectedPlantingYear(),
-      marketSharePct: this.tempMarketShareMap()[row.category] ?? null
-    }));
-    this.estimatesSaving.set(true);
-    this.apiService.upsertDashboardMarketShares(shares)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: () => {
-          this.marketShareEditMode.set(false);
-          this.estimatesSaving.set(false);
-          this.toastService.success('Market share saved');
-          this.loadDashboardMarketShares();
-        },
-        error: () => {
-          this.estimatesSaving.set(false);
-          this.toastService.error('Failed to save market share');
-        }
-      });
-  }
-
-  cancelMarketShareEdit(): void {
-    this.marketShareEditMode.set(false);
     this.tempMarketShareMap.set({});
   }
 
@@ -1215,12 +1576,12 @@ export class DashboardComponent {
   }
 
   goToSeasonTargets(): void {
-    this.activeTab.set('harvestContracts');
     this.showSeasonTargets.set(true);
   }
 
   onCropFilterChange(): void {
-    // signal read triggers change detection in zoneless mode automatically
+    // Reset the producer crop chip filter — its valid values change when the top filter changes
+    this.producerCropFilter.set('');
   }
 
   // =========================================================================

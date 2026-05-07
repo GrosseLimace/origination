@@ -3,7 +3,7 @@ import { ContractStatus } from './contract-status.model';
 export interface Contract {
   id: number;             // Maps to bigint in C# API
   customerId: number;     // FK to Customer - maps to bigint in C# API
-  ctrmCustomerId?: string; // Used to match with customer sourceCustomerId
+  ctrmCustomerId?: string; // Used to match with customer scoularId
   sourceContractId?: string; // Used to match with ticket ctrmContractNumber
   farmId: string;
   contractNumber: string;

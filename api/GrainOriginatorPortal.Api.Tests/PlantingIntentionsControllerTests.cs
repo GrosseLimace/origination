@@ -70,7 +70,7 @@ public class PlantingIntentionsControllerTests
         _mockDataService
             .Setup(s => s.UpdatePlantingIntentionAsync(
                 It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string?>(),
-                It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<int>(),
+                It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync((PlantingIntention?)null);
 
@@ -90,12 +90,9 @@ public class PlantingIntentionsControllerTests
         _mockDataService
             .Setup(s => s.GetPlantingIntentionByIdAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(existing);
-        _mockEntitlementService
-            .Setup(s => s.ValidateCustomerAccessAsync(42, It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
         _mockDataService
             .Setup(s => s.UpdatePlantingIntentionAsync(
-                1, "Soybeans", null, null, 100, 2026,
+                1, "Soybeans", null, null, null, 100, 2026,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(updated);
 
@@ -117,9 +114,6 @@ public class PlantingIntentionsControllerTests
         _mockDataService
             .Setup(s => s.GetPlantingIntentionByIdAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(existing);
-        _mockEntitlementService
-            .Setup(s => s.ValidateCustomerAccessAsync(42, It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
         _mockDataService
             .Setup(s => s.DeletePlantingIntentionAsync(1, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -136,9 +130,6 @@ public class PlantingIntentionsControllerTests
         _mockDataService
             .Setup(s => s.GetPlantingIntentionByIdAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(existing);
-        _mockEntitlementService
-            .Setup(s => s.ValidateCustomerAccessAsync(42, It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
         _mockDataService
             .Setup(s => s.DeletePlantingIntentionAsync(1, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("DB connection failed"));

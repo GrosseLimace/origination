@@ -7,7 +7,7 @@ namespace GrainOriginatorPortal.Api.Models;
 public class ESignEnrollment
 {
     public int Id { get; set; }
-    public string CustomerCode { get; set; } = string.Empty;      // Matches Customer.SourceCustomerId
+    public string CustomerCode { get; set; } = string.Empty;      // Matches Customer.ScoularId
     public string CustomerName { get; set; } = string.Empty;
     public bool ESignEnabled { get; set; }
     public string? ScoularViewRecipients { get; set; }             // Comma-separated "Name | email/phone"

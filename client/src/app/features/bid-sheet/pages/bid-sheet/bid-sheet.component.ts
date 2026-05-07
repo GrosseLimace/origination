@@ -1502,7 +1502,6 @@ export class BidSheetComponent {
   }
 
   saveEditBids(): void {
-    this.usageTracking.postClickEvent('interaction', 'bidsheet', 'bids-changed');
     const year = this.editBidsYear();
     const tu = this.activeTradeUnit();
     const commodityLookup = new Map(this.allCommodities().map(c => [c.code, c]));
@@ -1536,6 +1535,14 @@ export class BidSheetComponent {
       this._closeEditBids();
       this.toastService.info('No changes to save');
       return;
+    }
+
+    // Track one bids-changed event per affected location so the Usage Dashboard
+    // can attribute edits to specific locations (Most Edited Location card +
+    // Top Edited Bid Locations list).
+    const affectedLocations = new Set(toCreate.map(b => b.name).filter((n): n is string => !!n));
+    for (const locName of affectedLocations) {
+      this.usageTracking.postClickEvent('interaction', 'bidsheet', 'bids-changed', locName);
     }
 
     this.editBidsSaving.set(true);

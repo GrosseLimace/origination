@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { ApiService } from '@core/services/api.service';
@@ -36,6 +37,7 @@ export class UsageDashboardComponent {
   readonly appState = inject(AppStateService);
   private readonly toastService = inject(ToastService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly router = inject(Router);
 
   // Date range
   readonly dateFrom = signal(this.formatDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)));
@@ -196,7 +198,7 @@ export class UsageDashboardComponent {
   readonly selectedScreen = signal<string>('all');
   readonly featureScreens = [
     { id: 'all', label: 'All Features' },
-    { id: 'customers', label: 'Customer Page' },
+    { id: 'customers', label: 'Producer Page' },
     { id: 'dashboard', label: 'Planting Intention Dashboard' },
     { id: 'build-a-list', label: 'Build a List' },
     { id: 'insights', label: 'Actionable Insights' },
@@ -528,5 +530,18 @@ export class UsageDashboardComponent {
     const parts = name.trim().split(/\s+/);
     if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
     return name.substring(0, 2).toUpperCase();
+  }
+
+  /** Navigate to the per-user drill-down page, propagating the active date range
+   *  and trade-unit context as query params so the detail view opens with the
+   *  same window the admin was viewing. */
+  selectUser(userId: string): void {
+    this.router.navigate(['/usage-dashboard/users', userId], {
+      queryParams: {
+        from: this.dateFrom(),
+        to: this.dateTo(),
+        tradeUnitKey: this.tradeUnitKey() ?? null,
+      },
+    });
   }
 }

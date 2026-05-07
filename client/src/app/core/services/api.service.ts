@@ -34,6 +34,7 @@ import {
   WeeklyTrend,
   ActivityBreakdown,
   UnderusedFeature,
+  UserUsageDetail,
   QueryLibraryItem
 } from '@models';
 import { environment } from '@env/environment';
@@ -188,9 +189,9 @@ export class ApiService {
   }
 
   /** Fetches all contracts for a specific customer */
-  getContractsByCustomer(customerId: number, sourceCustomerId?: string): Observable<Contract[]> {
+  getContractsByCustomer(customerId: number, scoularId?: string): Observable<Contract[]> {
     let params = new HttpParams();
-    if (sourceCustomerId) params = params.set('sourceCustomerId', sourceCustomerId);
+    if (scoularId) params = params.set('scoularId', scoularId);
     return this.http.get<Contract[]>(`${this.baseUrl}/contracts/customer/${customerId}`, { params })
       .pipe(catchError(e => this.handleError(e)));
   }
@@ -203,9 +204,9 @@ export class ApiService {
     ).pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Fetches all pricing lines for a customer's contracts by sourceCustomerId */
-  getPricingLinesByCustomer(sourceCustomerId: string): Observable<ContractPricingLine[]> {
-    const params = new HttpParams().set('sourceCustomerId', sourceCustomerId);
+  /** Fetches all pricing lines for a customer's contracts by scoularId */
+  getPricingLinesByCustomer(scoularId: string): Observable<ContractPricingLine[]> {
+    const params = new HttpParams().set('scoularId', scoularId);
     return this.http.get<ContractPricingLine[]>(
       `${this.baseUrl}/contracts/pricing-lines/by-customer`, { params }
     ).pipe(catchError(e => this.handleError(e)));
@@ -238,9 +239,9 @@ export class ApiService {
   }
 
   /** Fetches all delivery tickets for a specific customer */
-  getTicketsByCustomer(customerId: number, sourceCustomerId?: string): Observable<Ticket[]> {
+  getTicketsByCustomer(customerId: number, scoularId?: string): Observable<Ticket[]> {
     let params = new HttpParams();
-    if (sourceCustomerId) params = params.set('sourceCustomerId', sourceCustomerId);
+    if (scoularId) params = params.set('scoularId', scoularId);
     return this.http.get<Ticket[]>(`${this.baseUrl}/tickets/customer/${customerId}`, { params })
       .pipe(catchError(e => this.handleError(e)));
   }
@@ -419,7 +420,7 @@ export class ApiService {
   }
 
   /** Creates or updates producer details for a customer */
-  saveProducerDetails(customerId: number, data: { sourceCustomerId?: string | null; customerName: string; totalAcres?: number | null; binCapacity?: number | null; primaryContact?: string | null; commodities?: string | null; linkedProducerIds?: string | null }): Observable<ProducerDetails> {
+  saveProducerDetails(customerId: number, data: { scoularId?: string | null; customerName: string; totalAcres?: number | null; binCapacity?: number | null; primaryContact?: string | null; commodities?: string | null; linkedProducerIds?: string | null }): Observable<ProducerDetails> {
     return this.http.put<ProducerDetails>(`${this.baseUrl}/producerdetails/customer/${customerId}`, data)
       .pipe(catchError(e => this.handleError(e)));
   }
@@ -761,5 +762,12 @@ export class ApiService {
   getUsageUnderusedFeatures(from: string, to: string, tradeUnitKey?: string): Observable<UnderusedFeature[]> {
     return this.http.get<UnderusedFeature[]>(`${this.baseUrl}/usage-dashboard/underused-features`, { params: this.usageParams(from, to, tradeUnitKey) })
       .pipe(catchError(e => this.handleError(e)));
+  }
+
+  getUserUsageDetail(userId: string, from: string, to: string, tradeUnitKey?: string): Observable<UserUsageDetail> {
+    return this.http.get<UserUsageDetail>(
+      `${this.baseUrl}/usage-dashboard/users/${encodeURIComponent(userId)}/detail`,
+      { params: this.usageParams(from, to, tradeUnitKey) }
+    ).pipe(catchError(e => this.handleError(e)));
   }
 }

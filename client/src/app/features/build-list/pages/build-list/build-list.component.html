@@ -22,7 +22,7 @@
         </app-button>-->
       </div>
 
-      <p class="text-gray-500 dark:text-gray-400 flex-shrink-0">Search predefined queries to create a custom customer list, then refine and save</p>
+      <p class="text-gray-500 dark:text-gray-400 flex-shrink-0">Search predefined queries to create a custom producer list, then refine and save</p>
 
       <!-- Scrollable content area -->
       <div class="flex-1 min-h-0 overflow-auto pr-4 pb-4 space-y-8">
@@ -91,7 +91,7 @@
                 </div>
                 <div>
                   <h3 class="text-base font-semibold text-gray-900 dark:text-white">Query Library</h3>
-                  <p class="text-sm text-gray-400 dark:text-gray-500">Select a query to build your customer list</p>
+                  <p class="text-sm text-gray-400 dark:text-gray-500">Select a query to build your producer list</p>
                 </div>
               </div>
               @if (queryLibrary().length > 0) {
@@ -165,7 +165,7 @@
                   (ngModelChange)="requestQueryText.set($event)"
                   rows="3"
                   maxlength="500"
-                  placeholder="e.g., Customers with priced contracts over 10,000 bushels"
+                  placeholder="e.g., Producers with priced contracts over 10,000 bushels"
                   class="w-full max-w-lg p-3 text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green/40 focus:border-scoular-green resize-none"
                 ></textarea>
                 <div class="flex items-center gap-2 mt-3">
@@ -260,7 +260,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400 flex-shrink-0 mt-0.5">
             <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
           </svg>
-          <p class="text-sm text-gray-500 dark:text-gray-400">No customers found for the selected trade units. Try selecting different trade units above.</p>
+          <p class="text-sm text-gray-500 dark:text-gray-400">No producers found for the selected trade units. Try selecting different trade units above.</p>
         </div>
       }
 
@@ -270,7 +270,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500 dark:text-blue-400 flex-shrink-0 mt-0.5">
             <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
           </svg>
-          <p class="text-sm text-blue-700 dark:text-blue-300">Your query was understood but no customers matched. Try broadening your criteria or check that the right trade units are selected.</p>
+          <p class="text-sm text-blue-700 dark:text-blue-300">Your query was understood but no producers matched. Try broadening your criteria or check that the right trade units are selected.</p>
         </div>
       }
 
@@ -292,7 +292,7 @@
                 <app-card-title>Results @if (activeSavedList()) { <span class="font-normal text-gray-400 dark:text-gray-500">for {{ activeSavedList()!.name }}</span> }</app-card-title>
                 <app-card-description class="mt-1.5">
                   @if (refinementCount > 0) {
-                    Showing {{ displayed.length }} of {{ filtered.length }} customer(s)
+                    Showing {{ displayed.length }} of {{ filtered.length }} producer(s)
                     @if (detectedState()) {
                       <span> in {{ getStateDisplayName(detectedState()!) }}</span>
                     }
@@ -509,7 +509,7 @@
                   <div class="flex flex-wrap gap-x-4 sm:gap-x-10 gap-y-4 sm:gap-y-5">
                     <!-- Customer Size -->
                     <div class="space-y-2.5">
-                      <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Customer Size</p>
+                      <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Producer Size</p>
                       @if (!hg.has('acresOver')) {
                         <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                           <span class="shrink-0">Acres over</span>
@@ -538,7 +538,7 @@
 
                     <!-- Customer Info -->
                     <div class="space-y-2.5">
-                      <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Customer Info</p>
+                      <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Producer Info</p>
                       @if (!hg.has('hasPrimaryContact')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
                           <input type="checkbox" [ngModel]="pendingRefinements().hasPrimaryContact" (ngModelChange)="pendingRefinements.update(r => ({...r, hasPrimaryContact: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
@@ -575,7 +575,7 @@
 
                     <!-- Customer Activity -->
                     <div class="space-y-2.5">
-                      <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Customer Activity</p>
+                      <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Producer Activity</p>
                       @if (!hg.has('hasActiveContracts')) {
                         <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
                           <input type="checkbox" [ngModel]="pendingRefinements().hasActiveContracts" (ngModelChange)="pendingRefinements.update(r => ({...r, hasActiveContracts: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
@@ -851,7 +851,7 @@
                     type="text"
                     [ngModel]="memberSearchTerm()"
                     (ngModelChange)="memberSearchTerm.set($event); searchMembers($event)"
-                    placeholder="Search to add or exclude customers..."
+                    placeholder="Search to add or exclude producers..."
                     class="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-scoular-green"
                   >
                   @if (memberSearchLoading()) {
@@ -873,7 +873,7 @@
                         <div class="flex items-center justify-between px-3 py-2 hover:bg-scoular-red/5 dark:hover:bg-scoular-red/10 cursor-pointer border-b border-gray-100 dark:border-gray-600" (click)="excludeCustomerFromList(customer.id)">
                           <div class="min-w-0">
                             <span class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ customer.name }}</span>
-                            <span class="text-xs text-gray-400 ml-1">({{ customer.sourceCustomerId }})</span>
+                            <span class="text-xs text-gray-400 ml-1">({{ customer.scoularId }})</span>
                           </div>
                           <span class="text-xs text-scoular-red font-medium flex-shrink-0 ml-2">Exclude</span>
                         </div>
@@ -882,13 +882,13 @@
                     <!-- Other Customers — click to add -->
                     @if (memberSearchResults().length > 0) {
                       <div class="px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-600">
-                        <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">Other Customers</span>
+                        <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">Other Producers</span>
                       </div>
                       @for (customer of memberSearchResults(); track customer.id) {
                         <div class="flex items-center justify-between px-3 py-2 hover:bg-scoular-green/5 dark:hover:bg-scoular-green/10 cursor-pointer border-b border-gray-100 dark:border-gray-600 last:border-b-0" (click)="addCustomerToList(customer)">
                           <div class="min-w-0">
                             <span class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ customer.name }}</span>
-                            <span class="text-xs text-gray-400 ml-1">({{ customer.sourceCustomerId }})</span>
+                            <span class="text-xs text-gray-400 ml-1">({{ customer.scoularId }})</span>
                           </div>
                           <span class="text-xs text-scoular-green-accessible font-medium flex-shrink-0 ml-2">+ Add</span>
                         </div>
@@ -908,7 +908,7 @@
                       <div class="flex items-center justify-between px-3 py-2 rounded bg-scoular-green/5 dark:bg-scoular-green/10">
                         <div class="min-w-0">
                           <span class="text-sm text-gray-900 dark:text-white truncate">{{ customer.name }}</span>
-                          <span class="text-xs text-gray-400 ml-1">({{ customer.sourceCustomerId }})</span>
+                          <span class="text-xs text-gray-400 ml-1">({{ customer.scoularId }})</span>
                         </div>
                         <button type="button" (click)="excludeCustomerFromList(customer.id)" class="flex items-center justify-center w-7 h-7 rounded-full text-gray-400 hover:text-white hover:bg-scoular-red transition-colors flex-shrink-0 ml-2" title="Remove">
                           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
@@ -926,7 +926,7 @@
                       <div class="flex items-center justify-between px-2 py-1.5 rounded bg-scoular-red/5 dark:bg-scoular-red/10">
                         <div class="min-w-0">
                           <span class="text-sm text-gray-500 dark:text-gray-400 line-through truncate">{{ customer.name }}</span>
-                          <span class="text-xs text-gray-400 ml-1">({{ customer.sourceCustomerId }})</span>
+                          <span class="text-xs text-gray-400 ml-1">({{ customer.scoularId }})</span>
                         </div>
                         <button type="button" (click)="restoreCustomer(customer.id)" class="text-xs text-scoular-green-accessible hover:underline flex-shrink-0 ml-2" title="Restore">Restore</button>
                       </div>
@@ -944,8 +944,8 @@
                   <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
                   <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
                 </svg>
-                <h3 class="text-gray-500 dark:text-gray-400 mb-2">No Customers Found</h3>
-                <p class="text-sm text-gray-400 dark:text-gray-500 mt-1">No customers matched your criteria. Try a different query or adjusting the filters.</p>
+                <h3 class="text-gray-500 dark:text-gray-400 mb-2">No Producers Found</h3>
+                <p class="text-sm text-gray-400 dark:text-gray-500 mt-1">No producers matched your criteria. Try a different query or adjusting the filters.</p>
                 <button
                   type="button"
                   (click)="clearQuery()"
@@ -959,8 +959,8 @@
                 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 text-gray-300 dark:text-gray-600">
                   <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
                 </svg>
-                <h3 class="text-gray-500 dark:text-gray-400 mb-2">No Customers After Refinement</h3>
-                <p class="text-sm text-gray-400 dark:text-gray-500 mt-1">No customers match the active refinement filters. Try relaxing some filters.</p>
+                <h3 class="text-gray-500 dark:text-gray-400 mb-2">No Producers After Refinement</h3>
+                <p class="text-sm text-gray-400 dark:text-gray-500 mt-1">No producers match the active refinement filters. Try relaxing some filters.</p>
                 <button type="button" (click)="clearRefinements()" class="mt-3 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 underline">Clear refinements</button>
               </div>
             } @else {
@@ -977,7 +977,7 @@
                         <span class="text-sm font-medium text-scoular-green-accessible dark:text-white">{{ getInitials(customer.name) }}</span>
                       </div>
                       <div>
-                        <div class="font-medium text-gray-900 dark:text-white">{{ customer.name }} <span class="text-gray-400 dark:text-gray-500 font-normal">({{ customer.sourceCustomerId }})</span></div>
+                        <div class="font-medium text-gray-900 dark:text-white">{{ customer.name }} <span class="text-gray-400 dark:text-gray-500 font-normal">({{ customer.scoularId }})</span></div>
                         <div class="text-sm text-gray-500 dark:text-gray-400">{{ customer.farm }}</div>
                         <div class="flex items-center gap-2 mt-1">
                           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400">
@@ -1030,7 +1030,7 @@
             </svg>
             Saved Lists
           </app-card-title>
-          <app-card-description>Your saved customer lists for quick access</app-card-description>
+          <app-card-description>Your saved producer lists for quick access</app-card-description>
         </app-card-header>
         <app-card-content>
           @if (loadingSavedLists()) {

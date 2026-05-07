@@ -59,10 +59,10 @@ public class ProducerDetailsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<ProducerDetails>> Upsert(long customerId, [FromBody] UpsertProducerDetailsRequest request, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
+        // Trade units are a UX filter, not an access boundary — any rep may save producer details for any customer.
         var details = await _dataService.UpsertProducerDetailsAsync(
             customerId,
-            request.SourceCustomerId,
+            request.ScoularId,
             request.CustomerName,
             request.TotalAcres,
             request.BinCapacity,
@@ -81,7 +81,7 @@ public class ProducerDetailsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult> Delete(long customerId, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateCustomerAccessAsync(customerId, cancellationToken);
+        // Trade units are a UX filter, not an access boundary — any rep may delete any producer's details.
         await _dataService.DeleteProducerDetailsAsync(customerId, cancellationToken);
         return NoContent();
     }

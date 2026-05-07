@@ -9,7 +9,7 @@ public class CustomerSnapshot
     public int Id { get; set; }
     public long CustomerId { get; set; }
     public string CustomerName { get; set; } = string.Empty;
-    public string? SourceCustomerId { get; set; }
+    public string? ScoularId { get; set; }
     public string? IndustryCode1 { get; set; }
     public bool IsActive { get; set; }
     public DateTime? EffectiveStartDate { get; set; }

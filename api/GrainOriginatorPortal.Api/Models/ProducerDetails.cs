@@ -9,7 +9,7 @@ public class ProducerDetails
 {
     public int Id { get; set; }
     public long CustomerId { get; set; }
-    public string? SourceCustomerId { get; set; }
+    public string? ScoularId { get; set; }
     public string CustomerName { get; set; } = string.Empty;
     public decimal? TotalAcres { get; set; }
     public decimal? BinCapacity { get; set; }

@@ -12,7 +12,7 @@ public class Customer
     public long Id { get; set; }
 
     // Core customer fields from ODS
-    public string? SourceCustomerId { get; set; }
+    public string? ScoularId { get; set; }
     public string? CustomerCode { get; set; }
     public string Name { get; set; } = string.Empty; // Maps to CustomerName
 

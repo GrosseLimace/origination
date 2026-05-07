@@ -25,11 +25,6 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./features/dashboard/pages/dashboard/dashboard.component').then(m => m.DashboardComponent)
   },
-  {
-    path: 'position-report',
-    canActivate: [authGuard],
-    loadComponent: () => import('./features/position-report/pages/position-report/position-report.component').then(m => m.PositionReportComponent)
-  },
   environment.bidSheetEnabled
     ? {
         path: 'bid-sheet',
@@ -49,6 +44,13 @@ export const routes: Routes = [
         loadComponent: () => import('./features/usage-dashboard/pages/usage-dashboard/usage-dashboard.component').then(m => m.UsageDashboardComponent)
       }
     : { path: 'usage-dashboard', redirectTo: '' },
+  environment.usageDashboardEnabled
+    ? {
+        path: 'usage-dashboard/users/:userId',
+        canActivate: [authGuard, adminGuard],
+        loadComponent: () => import('./features/usage-dashboard/pages/user-usage-detail/user-usage-detail.component').then(m => m.UserUsageDetailComponent)
+      }
+    : { path: 'usage-dashboard/users/:userId', redirectTo: '' },
   {
     path: '**',
     redirectTo: ''

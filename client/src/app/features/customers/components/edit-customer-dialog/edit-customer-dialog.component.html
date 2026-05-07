@@ -195,7 +195,7 @@
                       <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
                         <div>
                           <div class="font-medium text-gray-900 dark:text-white">{{ producer.name }}</div>
-                          <div class="text-xs text-gray-500 dark:text-gray-400">{{ producer.sourceCustomerId || producer.location }}</div>
+                          <div class="text-xs text-gray-500 dark:text-gray-400">{{ producer.scoularId || producer.location }}</div>
                         </div>
                         <button
                           type="button"
@@ -221,12 +221,12 @@
                     <div class="flex items-center justify-between p-3 bg-scoular-blue/5 dark:bg-scoular-blue/20 rounded-lg border border-scoular-blue/30 dark:border-scoular-blue-dark">
                       <div>
                         <div class="font-medium text-gray-900 dark:text-white">{{ producer.name }}</div>
-                        <div class="text-xs text-gray-500 dark:text-gray-400">{{ producer.sourceCustomerId || producer.location }}</div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400">{{ producer.scoularId || producer.location }}</div>
                       </div>
                       <button
                         type="button"
                         class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 text-scoular-red hover:text-scoular-red-accessible hover:bg-scoular-red/5 dark:hover:bg-scoular-red/20 h-8 w-8"
-                        (click)="removeIncomingLink(producer.sourceCustomerId || producer.id.toString())"
+                        (click)="removeIncomingLink(producer.scoularId || producer.id.toString())"
                         title="Unlink from {{ producer.name }}"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -249,7 +249,7 @@
                       type="text"
                       [ngModel]="newProducerSearch()"
                       (ngModelChange)="newProducerSearch.set($event)"
-                      placeholder="Search by name, ID, or customer code..."
+                      placeholder="Search by name, ID, or producer code..."
                       maxlength="100"
                       (input)="onProducerSearch()"
                       (focus)="showProducerSuggestions.set(true)"
@@ -275,8 +275,8 @@
                             (mousedown)="selectProducer(producer)"
                           >
                             <span class="font-medium">{{ producer.name }}</span>
-                            @if (producer.sourceCustomerId) {
-                              <span class="text-gray-400 dark:text-gray-500 ml-1.5">{{ producer.sourceCustomerId }}</span>
+                            @if (producer.scoularId) {
+                              <span class="text-gray-400 dark:text-gray-500 ml-1.5">{{ producer.scoularId }}</span>
                             }
                           </button>
                         }

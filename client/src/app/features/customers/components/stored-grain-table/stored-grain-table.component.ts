@@ -171,7 +171,6 @@ export class StoredGrainTableComponent {
       switch (this.currentSortColumn) {
         case 'ticket': cmp = a.receiptNumber.localeCompare(b.receiptNumber); break;
         case 'commodity': cmp = (a.crop || '').localeCompare(b.crop || ''); break;
-        case 'grossBu': cmp = (a.grossQuantity || 0) - (b.grossQuantity || 0); break;
         case 'netBu': cmp = (a.quantity || 0) - (b.quantity || 0); break;
         case 'charged': cmp = new Date(a.chargedFromDate || 0).getTime() - new Date(b.chargedFromDate || 0).getTime(); break;
         case 'storageDays': cmp = (a.storageDays || 0) - (b.storageDays || 0); break;

@@ -144,7 +144,7 @@ export class UnshippedBushelsComponent implements OnInit {
     // Build a map of ctrmCustomerId → Customer
     const customerMap = new Map<string, Customer>();
     customers.forEach(c => {
-      if (c.sourceCustomerId) customerMap.set(c.sourceCustomerId, c);
+      if (c.scoularId) customerMap.set(c.scoularId, c);
     });
 
     // Group by ctrmCustomerId
