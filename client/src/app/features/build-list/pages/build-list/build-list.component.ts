@@ -21,6 +21,8 @@ import { CustomerMapComponent } from '@features/customers/components/map/custome
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import { HighlightPipe } from '@shared/pipes/highlight.pipe';
 import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
+import { isContractUnconfirmed, isContractOverdueWithUnshippedBu, buildAppliedLbsMaps, buildConversionMap } from '@shared/utils/contract-status';
+import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
 
 @Component({
   selector: 'app-build-list',
@@ -179,6 +181,7 @@ export class BuildListComponent {
     return [...selectedCrops].some(crop => v.includes(crop) || crop.includes(v));
   }
 
+
   readonly displayedCustomers = computed(() => {
     let list = this.filteredCustomers();
     const r = this.appliedRefinements();
@@ -211,7 +214,9 @@ export class BuildListComponent {
       list = list.filter(c => !getContracts(c).some(ct => ct.status === 'Active' || ct.status === 'Pending' || ct.status === 'Overdue'));
     }
     if (r.hasUnsignedContracts) {
-      list = list.filter(c => getContracts(c).some(ct => ct.signed === false));
+      // "Has unconfirmed contracts" — matches Insights UnconfirmedContracts rule:
+      // customerConfirmStatus !== 'confirmed' AND status not Fulfilled/Cancelled.
+      list = list.filter(c => getContracts(c).some(ct => isContractUnconfirmed(ct)));
     }
     if (r.downHarvestPace) {
       list = list.filter(c => this._getCustomerPacingDirection(c) === 'down');
@@ -220,7 +225,14 @@ export class BuildListComponent {
       list = list.filter(c => getContracts(c).some(ct => ct.priceTypeCode === 'U' || ct.priceTypeCode === 'D'));
     }
     if (r.hasOverdueContracts) {
-      list = list.filter(c => getContracts(c).some(ct => ct.status === 'Overdue'));
+      // "Has overdue bu contracts" — matches Insights UnshippedBushels rule:
+      // open contract past deliveryEnd with remaining bushels > 0 per ticket-applied math.
+      const today = new Date();
+      const { byCtrmNumber, byContractId } = buildAppliedLbsMaps(this.tickets());
+      const conversionMap = buildConversionMap(this.appState.commodityConversions());
+      list = list.filter(c => getContracts(c).some(ct =>
+        isContractOverdueWithUnshippedBu(ct, today, byCtrmNumber, byContractId, conversionMap)
+      ));
     }
     if (r.noContractsAtAll) {
       list = list.filter(c => getContracts(c).length === 0);
@@ -490,15 +502,6 @@ export class BuildListComponent {
         ? this.tickets().filter(t => t.productCode && this._matchesCropFilter(t.productCode, selectedCrops))
         : this.tickets();
 
-      if (r.ticketQuantityOver != null && r.ticketQuantityOver > 0) {
-        const customerTotals = new Map<number, number>();
-        for (const t of scopedTickets) {
-          if (!t.customerCode) continue;
-          const custId = codeToId.get(t.customerCode);
-          if (custId != null) customerTotals.set(custId, (customerTotals.get(custId) || 0) + (t.netWeight || 0));
-        }
-        list = list.filter(c => (customerTotals.get(c.id) || 0) > r.ticketQuantityOver!);
-      }
       if (r.ticketsInLastDays != null && r.ticketsInLastDays > 0) {
         const cutoff = Date.now() - r.ticketsInLastDays * 86400000;
         const recentCustomers = new Set<string>();
@@ -508,32 +511,29 @@ export class BuildListComponent {
         }
         list = list.filter(c => recentCustomers.has(c.scoularId!));
       }
-      // Quality averages — scoped to selected crops
-      if (r.avgMoistureOver != null || r.avgMoistureUnder != null ||
-          r.avgTestWeightOver != null || r.avgTestWeightUnder != null ||
-          r.avgProteinOver != null || r.avgProteinUnder != null) {
-        const customerQuality = new Map<number, { moistureSum: number; moistureCount: number; twSum: number; twCount: number; proteinSum: number; proteinCount: number }>();
-        for (const t of scopedTickets) {
-          if (!t.customerCode) continue;
-          const custId = codeToId.get(t.customerCode);
-          if (custId == null) continue;
-          let entry = customerQuality.get(custId);
-          if (!entry) { entry = { moistureSum: 0, moistureCount: 0, twSum: 0, twCount: 0, proteinSum: 0, proteinCount: 0 }; customerQuality.set(custId, entry); }
-          if (t.moisture != null) { entry.moistureSum += t.moisture; entry.moistureCount++; }
-          if (t.testWeight != null) { entry.twSum += t.testWeight; entry.twCount++; }
-          if (t.proteinPercent != null) { entry.proteinSum += t.proteinPercent; entry.proteinCount++; }
-        }
-        list = list.filter(c => {
-          const q = customerQuality.get(c.id);
-          if (!q) return false;
-          if (r.avgMoistureOver != null && (q.moistureCount === 0 || q.moistureSum / q.moistureCount <= r.avgMoistureOver)) return false;
-          if (r.avgMoistureUnder != null && (q.moistureCount === 0 || q.moistureSum / q.moistureCount >= r.avgMoistureUnder)) return false;
-          if (r.avgTestWeightOver != null && (q.twCount === 0 || q.twSum / q.twCount <= r.avgTestWeightOver)) return false;
-          if (r.avgTestWeightUnder != null && (q.twCount === 0 || q.twSum / q.twCount >= r.avgTestWeightUnder)) return false;
-          if (r.avgProteinOver != null && (q.proteinCount === 0 || q.proteinSum / q.proteinCount <= r.avgProteinOver)) return false;
-          if (r.avgProteinUnder != null && (q.proteinCount === 0 || q.proteinSum / q.proteinCount >= r.avgProteinUnder)) return false;
-          return true;
-        });
+
+      // Net bu + quality avg filters operate in one of two view modes:
+      //  'grouped' (default) — match using UNAPPLIED ticket groups (productCode|elevatorCode),
+      //                        same grouping the customer Unapplied Tickets tab uses. Any group
+      //                        meeting the threshold qualifies the customer.
+      //  'single'           — match using individual tickets (applied + unapplied). Any single
+      //                        ticket meeting the threshold qualifies the customer.
+      // Quality avg filters compute group-level averages in 'grouped' mode; in 'single' mode they
+      // become per-ticket value checks (so "Avg moisture over 14" reads as "any ticket > 14").
+      const viewMode: 'grouped' | 'single' = this.isAppliedTicketsContext()
+        ? 'single'
+        : (r.ticketViewMode ?? 'single');
+      const hasNetBu = r.ticketQuantityOver != null && r.ticketQuantityOver > 0;
+      const hasQualityFilter = r.avgMoistureOver != null || r.avgMoistureUnder != null ||
+        r.avgTestWeightOver != null || r.avgTestWeightUnder != null ||
+        r.avgProteinOver != null || r.avgProteinUnder != null;
+
+      if (hasNetBu || hasQualityFilter) {
+        const conversionMap = buildConversionMap(this.appState.commodityConversions());
+        const matchingCustomerIds = matchTicketViewModeFilters(
+          scopedTickets, codeToId, conversionMap, viewMode, r
+        );
+        if (matchingCustomerIds) list = list.filter(c => matchingCustomerIds.has(c.id));
       }
     }
 
@@ -564,7 +564,75 @@ export class BuildListComponent {
     }
 
     if (selectedCrops.size > 0) {
-      list = list.filter(c => (c.commodities ?? []).some(crop => selectedCrops.has(crop.trim().toLowerCase())));
+      // Dimension-aware crop filter: when the prompt is about a specific dimension
+      // (storage / tickets / planting / contracts), require the producer to have a
+      // crop match in THAT dimension's data — not in their generic c.commodities list.
+      // Falls back to c.commodities only when no dimension is in play.
+      // Uses effectiveLibraryCategory so saved-list loads (which intentionally leave
+      // selectedLibraryQuery null to preserve the Active List context) still resolve
+      // the right category via queryText match — without this, the saved-list path
+      // silently fell back to c.commodities and produced fewer hits than the fresh
+      // prompt run with identical filters.
+      const category = this.effectiveLibraryCategory();
+      const isStorage = category === 'Storage' || r.hasGrainInStorage
+        || r.storageDaysOver != null || r.storageQuantityOver != null || r.storageReceivableOver != null;
+      const isTickets = category === 'Tickets' || r.hasDeliveriesThisYear
+        || r.ticketQuantityOver != null || r.ticketsInLastDays != null
+        || r.avgMoistureOver != null || r.avgMoistureUnder != null
+        || r.avgTestWeightOver != null || r.avgTestWeightUnder != null
+        || r.avgProteinOver != null || r.avgProteinUnder != null;
+      const isPlanting = category === 'Planting' || r.hasPlantingIntentions
+        || r.plantingYear != null || r.irrigatedOnly || r.drylandOnly
+        || (r.plantingAcresOver != null && r.plantingAcresOver > 0);
+      const isContracts = category === 'Contracts'
+        || r.hasActiveContracts || r.hasUnsignedContracts || r.hasUnpricedContracts
+        || r.hasOverdueContracts || r.contractsExpiringThisMonth || r.multipleCommoditiesContracted
+        || (r.contractQuantityOver != null && r.contractQuantityOver > 0);
+
+      if (isStorage) {
+        const storageByCustomer = new Map<number, StoredGrain[]>();
+        for (const s of this.storedGrain()) {
+          if (!storageByCustomer.has(s.customerId)) storageByCustomer.set(s.customerId, []);
+          storageByCustomer.get(s.customerId)!.push(s);
+        }
+        list = list.filter(c => (storageByCustomer.get(c.id) ?? []).some(s =>
+          !!s.crop && this._matchesCropFilter(s.crop, selectedCrops)
+        ));
+      } else if (isTickets) {
+        const codeToId = new Map<string, number>();
+        for (const c of this.customers()) {
+          if (c.scoularId) codeToId.set(c.scoularId, c.id);
+        }
+        const matchingIds = new Set<number>();
+        for (const t of this.tickets()) {
+          if (!t.customerCode || !t.productCode) continue;
+          if (this._matchesCropFilter(t.productCode, selectedCrops)) {
+            const cid = codeToId.get(t.customerCode);
+            if (cid != null) matchingIds.add(cid);
+          }
+        }
+        list = list.filter(c => matchingIds.has(c.id));
+      } else if (isPlanting) {
+        const plantingByCustomer = new Map<number, PlantingIntention[]>();
+        for (const p of this.plantingIntentions()) {
+          if (!plantingByCustomer.has(p.customerId)) plantingByCustomer.set(p.customerId, []);
+          plantingByCustomer.get(p.customerId)!.push(p);
+        }
+        list = list.filter(c => (plantingByCustomer.get(c.id) ?? []).some(p =>
+          !!p.crop && this._matchesCropFilter(p.crop, selectedCrops)
+        ));
+      } else if (isContracts) {
+        list = list.filter(c => {
+          const cContracts = contractMap.get(c.scoularId!) || [];
+          return cContracts.some(ct =>
+            this._matchesCropFilter(ct.commodityCode || '', selectedCrops) ||
+            this._matchesCropFilter(ct.commodityDescription || '', selectedCrops) ||
+            this._matchesCropFilter(ct.commodityGroup || '', selectedCrops)
+          );
+        });
+      } else {
+        list = list.filter(c => (c.commodities ?? []).some(crop => selectedCrops.has(crop.trim().toLowerCase())));
+      }
     }
     if (r.states && r.states.length > 0) {
       list = list.filter(c => {
@@ -609,24 +677,10 @@ export class BuildListComponent {
       if (toHide.size > 0) list = list.filter(c => !toHide.has(c.id));
     }
 
-    // When a note filter is active, surface freshest activity first. Note: the per-customer list
-    // floats pinned notes to the top, so we can't take notes[0] as a timestamp here — it could
-    // be an old pinned note. Use the latest matching createdAt across the whole array instead.
-    if (this.noteFilterActive()) {
-      const notesMap = this.matchingNotesByCustomer();
-      const maxTimeFor = (customerId: number): number => {
-        const notes = notesMap.get(customerId);
-        if (!notes || notes.length === 0) return 0;
-        let max = 0;
-        for (const n of notes) {
-          const t = BuildListComponent.parseNoteTime(n.createdAt);
-          if (t > max) max = t;
-        }
-        return max;
-      };
-      list = [...list].sort((a, b) => maxTimeFor(b.id) - maxTimeFor(a.id));
-    }
-    return list;
+    // Producers always render alphabetically by name — sorting by latest-note timestamp
+    // made the list jump around when inline notes started showing for Contact / Notes
+    // prompts, which made it hard to find a specific producer.
+    return [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   });
 
   readonly availableCrops = computed(() => {
@@ -701,7 +755,7 @@ export class BuildListComponent {
     storage_duration: 'Storage duration', planting: 'Planting', no_planting: 'No planting',
     planting_year: 'Crop year', planting_type: 'Planting type',
     active_contract: 'Active contracts', no_contract: 'No contracts',
-    unsigned_contract: 'Unsigned contracts', negative_pacing: 'Behind on pacing',
+    unsigned_contract: 'Unconfirmed contracts', negative_pacing: 'Behind on pacing',
     positive_pacing: 'Ahead on pacing', contract_unconfirmed: 'Unconfirmed contracts',
     contract_confirmed: 'Confirmed contracts', contract_priced: 'Pricing status',
     contract_quantity: 'Contract quantity', contract_value: 'Contract value',
@@ -740,7 +794,7 @@ export class BuildListComponent {
     return map;
   });
 
-  /** Open contracts only — used by refinement filters (no active, unsigned, etc.). */
+  /** Open contracts only — used by refinement filters (no active, unconfirmed, overdue bu, etc.). */
   private readonly _openContractsByCustomer = computed(() => {
     const map = new Map<string, Contract[]>();
     for (const c of this.contracts()) {
@@ -845,13 +899,25 @@ export class BuildListComponent {
     return /linked\s+(?:producer|record)/.test(q);
   });
 
-  /** True when the result list should render an inline note section per customer. */
+  /** True when the result list should render an inline note section per customer.
+   *  Every Contacts-category prompt surfaces inline notes — including absence prompts
+   *  ("never contacted", "haven't contacted in N days"). The user still wants context
+   *  on those producers: even if THEY haven't contacted the producer, a teammate or
+   *  prior merchandiser may have, and seeing the most-recent note tells them what was
+   *  last discussed. The predicate skips date cutoffs for absence prompts so old notes
+   *  aren't accidentally hidden. */
   readonly noteFilterActive = computed(() => {
     const r = this.appliedRefinements();
     if (r.notesInLastDays != null && r.notesInLastDays > 0) return true;
     if (r.noteKeyword?.trim()) return true;
     if (r.hasPinnedNotes) return true;
+    if (r.contactedByMeOnly || r.contactedBySomeoneElse) return true;
+    if (r.contactedOnlyOnce || r.contactedMoreThan5) return true;
+    if (r.neverContacted) return true;
+    if (r.notContactedDays != null && r.notContactedDays > 0) return true;
+
     const q = this.queryText().toLowerCase();
+    if (/\b(?:contacted|called|reached\s+out)\b/.test(q)) return true;
     return BuildListComponent._NLQ_NOTE_VERB.test(q)
         || /pinned\s+note/.test(q)
         || /(?:with|has|have)\s+notes?\b/.test(q)
@@ -862,17 +928,27 @@ export class BuildListComponent {
   readonly noteFilterPredicate = computed<(n: Note) => boolean>(() => {
     const r = this.appliedRefinements();
     const q = this.queryText().toLowerCase();
+    const hasContactVerb = /\b(?:contacted|called|reached\s+out)\b/.test(q);
+    // Absence prompts (never / haven't contacted): show ALL notes for the producer so the
+    // user can see prior context regardless of recency. The "N days" in "haven't contacted
+    // in 30 days" is a property of the producer match, not a date filter on notes shown.
+    const isAbsenceQuery = r.neverContacted
+      || (r.notContactedDays != null && r.notContactedDays > 0)
+      || /never\s+contacted|haven'?t\s+contacted|not\s+(?:been\s+)?contacted|haven'?t\s+called/.test(q);
 
     let cutoffMs: number | null = null;
-    if (r.notesInLastDays != null && r.notesInLastDays > 0) {
-      cutoffMs = Date.now() - r.notesInLastDays * 86400000;
-    } else if (BuildListComponent._NLQ_NOTE_VERB.test(q)) {
-      const numeric = q.match(/notes?\s+(?:added|made|entered|written|created|left)\s*(?:in|within)?\s*(?:the\s+)?(?:last|past)?\s*(\d+)\s*days?/);
-      if (numeric) cutoffMs = Date.now() - parseInt(numeric[1], 10) * 86400000;
-      else if (q.includes('today')) cutoffMs = Date.now() - 1 * 86400000;
-      else if (q.includes('yesterday')) cutoffMs = Date.now() - 2 * 86400000;
-      else if (q.includes('this week') || q.includes('last week')) cutoffMs = Date.now() - 7 * 86400000;
-      else if (q.includes('this month') || q.includes('last month')) cutoffMs = Date.now() - 30 * 86400000;
+    if (!isAbsenceQuery) {
+      if (r.notesInLastDays != null && r.notesInLastDays > 0) {
+        cutoffMs = Date.now() - r.notesInLastDays * 86400000;
+      } else if (BuildListComponent._NLQ_NOTE_VERB.test(q) || hasContactVerb) {
+        // Numeric "in last N days" parsing works for both note-verb and contact-verb queries.
+        const numeric = q.match(/(?:notes?\s+(?:added|made|entered|written|created|left)|contacted|called|reach(?:ed)?\s+out)\s*(?:in|within)?\s*(?:the\s+)?(?:last|past)?\s*(\d+)\s*days?/);
+        if (numeric) cutoffMs = Date.now() - parseInt(numeric[1], 10) * 86400000;
+        else if (q.includes('today')) cutoffMs = Date.now() - 1 * 86400000;
+        else if (q.includes('yesterday')) cutoffMs = Date.now() - 2 * 86400000;
+        else if (q.includes('this week') || q.includes('last week')) cutoffMs = Date.now() - 7 * 86400000;
+        else if (q.includes('this month') || q.includes('last month')) cutoffMs = Date.now() - 30 * 86400000;
+      }
     }
 
     // Keyword extraction: prefer the structured refinement; otherwise pull a quoted or "mentioning X"
@@ -888,6 +964,20 @@ export class BuildListComponent {
     }
     const requirePinned = !!r.hasPinnedNotes || /pinned\s+note/.test(q);
 
+    // Author candidates for "by me" / "by someone else" filters. Same matcher the
+    // service uses so saved-list "I contacted" filters work even when notes' CreatedBy
+    // arrives as the raw UPN (e.g. "CEgr@scoular.com") instead of a display name.
+    const account = this.msalService.instance.getActiveAccount() ?? this.msalService.instance.getAllAccounts()[0];
+    const authorCandidates = this.nlqFilterService.buildAuthorCandidates(
+      null,
+      account?.name ?? '',
+      account?.username ?? ''
+    );
+    // Implicit "by me" when query starts with "I contacted / called / reached out"
+    const queryImpliesByMe = /^[^a-z]*(?:producers?\s+)?i\s+(?:contacted|called|reached\s+out)\b/.test(q);
+    const requireByMe = r.contactedByMeOnly || queryImpliesByMe;
+    const requireByOthers = r.contactedBySomeoneElse;
+
     return (n: Note) => {
       if (cutoffMs != null) {
         const t = BuildListComponent.parseNoteTime(n.createdAt);
@@ -895,6 +985,8 @@ export class BuildListComponent {
       }
       if (keyword && !(n.content || '').toLowerCase().includes(keyword)) return false;
       if (requirePinned && !n.isPinned) return false;
+      if (requireByMe && !this.nlqFilterService.matchesAuthor(n.createdBy, authorCandidates)) return false;
+      if (requireByOthers && this.nlqFilterService.matchesAuthor(n.createdBy, authorCandidates)) return false;
       return true;
     };
   });
@@ -1125,21 +1217,63 @@ export class BuildListComponent {
 
   readonly libraryCategories = computed(() => {
     const cats = new Set(this.queryLibrary().map(q => q.category));
-    return [...cats].sort();
+    const sorted = [...cats].sort();
+    // Append a 'Saved Lists' pseudo-category at the end when the user has any saved lists
+    // scoped to the current TU. Selecting it filters the library to those saved lists.
+    if (this.visibleSavedLists().length > 0) sorted.push('Saved Lists');
+    return sorted;
   });
 
-  /** Which refine filter sections are visible based on the selected query's category. */
-  readonly showContractFilters = computed(() => {
-    const cat = this.selectedLibraryQuery()?.category;
-    return cat === 'Contracts';
+  /** Saved lists shown in the library — user-owned (API filters by createdBy already), scoped
+   *  to the current TU (via visibleSavedLists), and matched against the library search text.
+   *  Hidden when a non-'Saved Lists' category is selected. */
+  readonly librarySavedLists = computed(() => {
+    const cat = this.selectedCategory();
+    if (cat && cat !== 'Saved Lists') return [];
+    const search = this.librarySearchText().toLowerCase().trim();
+    let lists = this.visibleSavedLists();
+    if (search) {
+      lists = lists.filter(l =>
+        l.name.toLowerCase().includes(search) ||
+        l.query.toLowerCase().includes(search)
+      );
+    }
+    return lists;
   });
+
+  /** The library category driving refine-panel visibility. Prefers the explicitly selected
+   *  library prompt; falls back to the matching library item for the active saved list's
+   *  query so loading a saved list surfaces the right refine sections without making the
+   *  library prompt the "active query" (which would clobber the saved-list context). */
+  readonly effectiveLibraryCategory = computed<string | null>(() => {
+    const explicit = this.selectedLibraryQuery()?.category;
+    if (explicit) return explicit;
+    const active = this.activeSavedList();
+    if (!active) return null;
+    const qLower = active.query.trim().toLowerCase();
+    const matched = this.queryLibrary().find(q => q.queryText.trim().toLowerCase() === qLower);
+    return matched?.category ?? null;
+  });
+
+  /** True when we have an active saved list whose category we can't resolve yet because the
+   *  query library is still loading. Used to suppress the wrong "General" fallback sections
+   *  in the refine panel during the brief lag between state restore and library API response. */
+  readonly isResolvingSavedListCategory = computed<boolean>(() => {
+    return !!this.activeSavedList() && !this.queryLibraryLoaded() && !this.selectedLibraryQuery();
+  });
+
+  /** Which refine filter sections are visible based on the effective library category. */
+  readonly showContractFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Contracts');
   readonly showContactFilters = computed(() => {
-    const cat = this.selectedLibraryQuery()?.category;
+    if (this.isResolvingSavedListCategory()) return false;
+    const cat = this.effectiveLibraryCategory();
     return cat === 'Contacts' || cat === 'Notes';
   });
-  /** Filters that are redundant given the selected query — hide them from the UI. */
+  /** Filters that are redundant given the selected query — hide them from the UI.
+   *  Reads the explicit library prompt OR the active saved list's query so the same hide
+   *  rules apply whether the user just clicked a library prompt or re-opened a saved list. */
   readonly hiddenFilters = computed<Set<string>>(() => {
-    const q = (this.selectedLibraryQuery()?.queryText || '').toLowerCase();
+    const q = (this.selectedLibraryQuery()?.queryText || this.activeSavedList()?.query || '').toLowerCase();
     const hidden = new Set<string>();
     // Contract filters
     if (q.includes('active contract'))      { hidden.add('noActiveContracts'); hidden.add('hasActiveContracts'); }
@@ -1176,20 +1310,26 @@ export class BuildListComponent {
     return hidden;
   });
 
-  readonly showTicketFilters = computed(() => {
-    const cat = this.selectedLibraryQuery()?.category;
-    return cat === 'Tickets';
+  readonly showTicketFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Tickets');
+  /** True when the active prompt is specifically about APPLIED tickets (which aren't grouped
+   *  on the customer page, so the "View by AVG" toggle and Avg-prefix labels don't apply).
+   *  Used to hide the AVG checkbox and force single-ticket mode for those prompts. */
+  readonly isAppliedTicketsContext = computed(() => {
+    const explicit = this.selectedLibraryQuery()?.queryText;
+    const active = this.activeSavedList();
+    const q = (explicit || active?.query || this.queryText() || '').toLowerCase();
+    return q.includes('applied ticket') && !q.includes('unapplied');
   });
-  readonly showStorageFilters = computed(() => {
-    const cat = this.selectedLibraryQuery()?.category;
-    return cat === 'Storage';
+  /** Effective view mode after honoring the applied-tickets force-single rule. */
+  readonly effectiveTicketViewMode = computed<'grouped' | 'single'>(() => {
+    if (this.isAppliedTicketsContext()) return 'single';
+    return this.pendingRefinements().ticketViewMode ?? 'single';
   });
-  readonly showPlantingFilters = computed(() => {
-    const cat = this.selectedLibraryQuery()?.category;
-    return cat === 'Planting';
-  });
+  readonly showStorageFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Storage');
+  readonly showPlantingFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Planting');
   readonly showGeneralFilters = computed(() => {
-    const cat = this.selectedLibraryQuery()?.category;
+    if (this.isResolvingSavedListCategory()) return false;
+    const cat = this.effectiveLibraryCategory();
     return !cat || cat === 'General';
   });
 
@@ -1223,11 +1363,23 @@ export class BuildListComponent {
       });
     }
 
-    // Load query library
-    this.apiService.getQueryLibrary().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (items) => { this.queryLibrary.set(items); this.queryLibraryLoaded.set(true); },
-      error: () => { this.queryLibraryLoaded.set(true); this.toastService.error('Failed to load query library'); }
-    });
+    // Load query library — populate the shared appState cache so other pages (home,
+    // customer-list) can resolve a saved list's prompt category by queryText match
+    // without each page fetching independently.
+    const cachedLibrary = this.appState.queryLibrary();
+    if (cachedLibrary.length > 0) {
+      this.queryLibrary.set(cachedLibrary);
+      this.queryLibraryLoaded.set(true);
+    } else {
+      this.apiService.getQueryLibrary().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: (items) => {
+          this.queryLibrary.set(items);
+          this.appState.queryLibrary.set(items);
+          this.queryLibraryLoaded.set(true);
+        },
+        error: () => { this.queryLibraryLoaded.set(true); this.toastService.error('Failed to load query library'); }
+      });
+    }
 
     // Load all user-accessible trade units so the TU selector works without prior home page visit
     this.apiService.getUserTradeUnits().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -1275,7 +1427,8 @@ export class BuildListComponent {
           manuallyIncludedCustomerIds: this.manuallyIncludedCustomers().map(c => c.id),
           manuallyExcludedCustomerIds: [...this.manuallyExcludedCustomerIds()],
           showManageMembersPanel: this.showManageMembersPanel(),
-          selectedLibraryQuery: this.selectedLibraryQuery()
+          selectedLibraryQuery: this.selectedLibraryQuery(),
+          activeSavedList: this.activeSavedList()
         });
       }
     });
@@ -1480,6 +1633,7 @@ export class BuildListComponent {
     this.showMap.set(saved.showMap);
     this.detectedState.set(saved.detectedState);
     if (saved.selectedLibraryQuery) this.selectedLibraryQuery.set(saved.selectedLibraryQuery);
+    if (saved.activeSavedList) this.activeSavedList.set(saved.activeSavedList);
     if (saved.appliedRefinements) {
       this.appliedRefinements.set(saved.appliedRefinements);
       this.pendingRefinements.set(saved.appliedRefinements);
@@ -1714,6 +1868,11 @@ export class BuildListComponent {
   private _applyNlqFilter(): void {
     // Pass all contracts (open + prior-year closed) to NLQ — the filter service handles
     // status-specific filtering internally, and pacing queries need both years to compare.
+    // Threading MSAL identity into the context so author-scoped contact / note filters
+    // ("Producers I contacted this week") can recognize "by me" notes whose CreatedBy survives
+    // as the raw email when UserTradeUnitSnapshot has no row for this user.
+    const account = this.msalService.instance.getActiveAccount()
+      ?? this.msalService.instance.getAllAccounts()[0];
     const context: NlqFilterContext = {
       customers: this.customers(),
       contracts: this.contracts(),
@@ -1721,7 +1880,9 @@ export class BuildListComponent {
       notes: this.notes(),
       plantingIntentions: this.plantingIntentions(),
       storedGrain: this.storedGrain(),
-      commodities: this.appState.commodities()
+      commodities: this.appState.commodities(),
+      currentUserDisplayName: account?.name ?? '',
+      currentUserUsername: account?.username ?? ''
     };
     const resolvedQuery = this._resolveUserReferences(this.queryText());
     const result = this.nlqFilterService.parseAndFilter(resolvedQuery, context);
@@ -1772,10 +1933,22 @@ export class BuildListComponent {
   }
 
   loadSavedList(list: SavedList): void {
-    if (this.loading() || this.isProcessing()) return;
+    if (this.loading() || this.isProcessing()) {
+      // Don't drop the click silently — tell the user why nothing happened so they aren't
+      // wondering whether the click landed. The processing spinner is already on screen but
+      // can be easy to miss if focus is on the library panel.
+      this.toastService.info('Still loading — please wait a moment and try again');
+      return;
+    }
     this.usageTracking.postClickEvent('interaction', 'build-a-list', 'saved-list-loaded', list.id.toString());
     this.activeSavedList.set(list);
     this.queryText.set(list.query);
+    // Do NOT set selectedLibraryQuery here — that would make the "Active Query" indicator
+    // show the library prompt's name (not the saved list), and its "Change" button calls
+    // clearQuery() which wipes activeSavedList — breaking the save-as-update flow. Instead
+    // we render an "Active List" indicator for the saved list and the refine-panel section
+    // visibility derives from a separate computed (effectiveLibraryCategory) that looks up
+    // the matching library item by queryText.
     this.pendingRefinements.set(list.filters ? { ...list.filters } : {});
     this.appliedRefinements.set({ ...this.pendingRefinements() });
     this.notContactedDaysInput.set(
@@ -1789,13 +1962,11 @@ export class BuildListComponent {
     this.manuallyExcludedCustomerIds.set(new Set(list.excludedCustomerIds || []));
     this._pendingIncludedIds = list.includedCustomerIds ?? [];
     this.manuallyIncludedCustomers.set([]);
-    // Open the panel automatically so the user can see the active filters
-    if (this.hasAnyRefinement(this.appliedRefinements())) {
-      this.showRefinePanel.set(true);
-    }
-    if (this._pendingIncludedIds.length > 0 || this.manuallyExcludedCustomerIds().size > 0) {
-      this.showManageMembersPanel.set(true);
-    }
+    // Don't auto-open the Refine Filters or Manage Members panels — show the results first;
+    // the user can open either panel themselves if they want to edit. The active filter / member
+    // counts are still visible on the toggle buttons so they know data is loaded underneath.
+    this.showRefinePanel.set(false);
+    this.showManageMembersPanel.set(false);
     // Clear stale results before fetching so no intermediate render fires with the
     // enriched cache that home page customer visits leave in appState.contracts.
     this.filteredCustomers.set([]);
@@ -2207,11 +2378,21 @@ export class BuildListComponent {
     const tradeUnits = this.effectiveTradeUnits();
     const includedIds = this.manuallyIncludedCustomers().map(c => c.id);
     const excludedIds = [...this.manuallyExcludedCustomerIds()];
+    // Resolve the prompt's library category (Contracts / Tickets / etc.) and persist it as a
+    // private hint on the filters so home/customer-list can run the dimension-aware crops filter
+    // identically — they don't load the query library and can't recover the category from
+    // queryText otherwise. Build-list reads it back too, but its own UI uses effectiveLibraryCategory.
+    const category = this.effectiveLibraryCategory();
+    const baseFilters = this.activeRefinementCount() > 0 ? { ...this.appliedRefinements() } : null;
+    const filtersWithCategory = baseFilters
+      ? (category ? { ...baseFilters, _promptCategory: category } : baseFilters)
+      : (category ? { _promptCategory: category } : undefined);
+
     const payload = {
       name: this.newListName(),
       query: this.queryText(),
       tradeUnits: tradeUnits.length > 0 ? tradeUnits.join(',') : undefined,
-      filters: this.activeRefinementCount() > 0 ? { ...this.appliedRefinements() } : undefined,
+      filters: filtersWithCategory,
       includedCustomerIds: includedIds.length > 0 ? includedIds : undefined,
       excludedCustomerIds: excludedIds.length > 0 ? excludedIds : undefined,
     };
@@ -2309,7 +2490,17 @@ export class BuildListComponent {
       return 'storage';
     }
 
-    // Tickets — quantity, recency, or quality metrics
+    // Tickets — quantity, recency, or quality metrics.
+    // Customer profile has only ONE ticket tab and it's "Unapplied Tickets" — applied
+    // tickets are surfaced inside Contracts (expand a contract row to see its applied
+    // tickets). So an "applied tickets" prompt should land on the contracts tab, not
+    // the unapplied-tickets tab. Only route to the tickets tab when the prompt is
+    // explicitly about unapplied tickets (or is generic about tickets with no
+    // applied/unapplied qualifier).
+    const isAppliedTicketsQuery = q.includes('applied ticket') && !q.includes('unapplied');
+    if (isAppliedTicketsQuery) {
+      return 'contracts';
+    }
     if (q.includes('ticket') || q.includes('unapplied') ||
         (r.ticketQuantityOver != null && r.ticketQuantityOver > 0) ||
         (r.ticketsInLastDays != null && r.ticketsInLastDays > 0) ||

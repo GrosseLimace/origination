@@ -1,5 +1,7 @@
 import { Injectable } from '@angular/core';
-import { Customer, Contract, Ticket, Note, PlantingIntention, StoredGrain, RefinementFilters, Commodity } from '@models';
+import { Customer, Contract, Ticket, Note, PlantingIntention, StoredGrain, RefinementFilters, Commodity, CommodityConversion } from '@models';
+import { isContractUnconfirmed, isContractOverdueWithUnshippedBu, buildAppliedLbsMaps, buildConversionMap } from '@shared/utils/contract-status';
+import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
 
 export interface NlqFilterContext {
   customers: Customer[];
@@ -9,6 +11,14 @@ export interface NlqFilterContext {
   plantingIntentions: PlantingIntention[];
   storedGrain: StoredGrain[];
   commodities?: Commodity[];
+  /** Current user's MSAL display name (e.g. "Caden Egr"). Optional — used by author-scoped
+   *  contact / note filters to recognize "by me" notes regardless of whether the API resolved
+   *  CreatedBy from UPN to display name. */
+  currentUserDisplayName?: string;
+  /** Current user's MSAL username / UPN (e.g. "CEgr@scoular.com"). Optional — paired with
+   *  currentUserDisplayName so the FE matcher can recognize notes whose CreatedBy was left
+   *  as the raw email when ResolveDisplayNamesAsync couldn't find the user in the snapshot. */
+  currentUserUsername?: string;
 }
 
 export interface NlqFilterResult {
@@ -25,6 +35,40 @@ export class NlqFilterService {
    * display name so note author searches and contact queries work on saved lists
    * loaded outside Build A List (e.g., on the home page customer list).
    */
+  /**
+   * Builds the set of lowercase strings that should be treated as "the current user" when
+   * matching against a note's `createdBy`/`modifiedBy` field. The DB stores CreatedBy as the
+   * full UPN ("CEgr@scoular.com"); the API tries to resolve to display name ("Caden Egr") via
+   * UserTradeUnitSnapshot, but falls back to the unmodified UPN when the user isn't in that
+   * table. So the matcher needs to recognize both forms — plus the parsed first-name from the
+   * resolved NLQ query — to reliably catch "by me" notes regardless of which form survived.
+   *
+   * Input ordering note: `parsedAuthor` is whatever the NLQ regex captured from the resolved
+   * query (typically the user's first name after `resolveUserReferences`). Callers should pass
+   * it explicitly so we don't drop it when displayName/username are missing.
+   */
+  buildAuthorCandidates(parsedAuthor: string | null, displayName?: string, username?: string): string[] {
+    const candidates = new Set<string>();
+    const add = (s: string | null | undefined) => {
+      if (!s) return;
+      const trimmed = s.trim().toLowerCase();
+      if (trimmed) candidates.add(trimmed);
+    };
+    add(parsedAuthor);
+    add(displayName);
+    add(displayName?.split(' ')[0]);
+    add(username);
+    add(username?.split('@')[0]);
+    return [...candidates];
+  }
+
+  /** Returns true if any of the author candidates appears as a substring in the supplied field. */
+  matchesAuthor(fieldValue: string | null | undefined, candidates: string[]): boolean {
+    if (!fieldValue || candidates.length === 0) return false;
+    const lower = fieldValue.toLowerCase();
+    return candidates.some(c => lower.includes(c));
+  }
+
   resolveUserReferences(query: string, displayName?: string, username?: string): string {
     const firstName = (displayName ?? '').split(' ')[0] || '';
     const userPrefix = (username ?? '').split('@')[0] || '';
@@ -347,12 +391,23 @@ export class NlqFilterService {
     return ids;
   }
 
-  /** Applies structured refinement filters on top of an already-NLQ-filtered customer list. */
+  /** Applies structured refinement filters on top of an already-NLQ-filtered customer list.
+   *  When `dimensionContext` is provided AND a crop filter is active, the crop match is scoped
+   *  to the dimension implied by the active filter flags (storage / tickets / planting /
+   *  contracts) — so refining a storage-prompt by YSB returns producers with YSB IN STORAGE,
+   *  not producers whose generic customer.commodities happens to list YSB. Callers that don't
+   *  pass the context fall back to the legacy customer.commodities check. */
   applyRefinementFilters(
     customers: Customer[],
     filters: RefinementFilters,
     contracts: Contract[],
-    notes: Note[]
+    notes: Note[],
+    dimensionContext?: {
+      tickets?: Ticket[];
+      storedGrain?: StoredGrain[];
+      plantingIntentions?: PlantingIntention[];
+      commodityConversions?: CommodityConversion[];
+    }
   ): Customer[] {
     let list = customers;
 
@@ -363,8 +418,21 @@ export class NlqFilterService {
       ));
     }
     if (filters.hasUnsignedContracts) {
+      // "Has unconfirmed contracts" — matches Insights UnconfirmedContracts rule.
       list = list.filter(c => contracts.some(ct =>
-        ct.ctrmCustomerId === c.scoularId && ct.signed === false
+        ct.ctrmCustomerId === c.scoularId && isContractUnconfirmed(ct)
+      ));
+    }
+    if (filters.hasOverdueContracts && dimensionContext?.tickets && dimensionContext?.commodityConversions) {
+      // "Has overdue bu contracts" — matches Insights UnshippedBushels rule. Requires
+      // tickets + commodityConversions to do the applied-lbs / remaining-bushel math; if
+      // they weren't passed, the filter is skipped (saved lists without context get no-op
+      // rather than wrong results).
+      const today = new Date();
+      const { byCtrmNumber, byContractId } = buildAppliedLbsMaps(dimensionContext.tickets);
+      const conversionMap = buildConversionMap(dimensionContext.commodityConversions);
+      list = list.filter(c => contracts.some(ct =>
+        ct.ctrmCustomerId === c.scoularId && isContractOverdueWithUnshippedBu(ct, today, byCtrmNumber, byContractId, conversionMap)
       ));
     }
     if (filters.downHarvestPace) {
@@ -425,8 +493,128 @@ export class NlqFilterService {
         });
       }
     }
+
+    // Ticket-aggregate filters (quantity, recency, quality averages) — mirror the build-list
+    // behavior: each filter aggregates over the customer's tickets, scoped to selected crops
+    // when a crop refinement is also active. Skipped silently when the saved-list caller didn't
+    // pass tickets in dimensionContext (rather than producing wrong results).
+    const hasTicketAggregateFilter =
+      (filters.ticketQuantityOver != null && filters.ticketQuantityOver > 0) ||
+      (filters.ticketsInLastDays != null && filters.ticketsInLastDays > 0) ||
+      filters.avgMoistureOver != null || filters.avgMoistureUnder != null ||
+      filters.avgTestWeightOver != null || filters.avgTestWeightUnder != null ||
+      filters.avgProteinOver != null || filters.avgProteinUnder != null;
+    if (hasTicketAggregateFilter && dimensionContext?.tickets) {
+      const tickets = dimensionContext.tickets;
+      const codeToId = new Map<string, number>();
+      for (const c of customers) {
+        if (c.scoularId) codeToId.set(c.scoularId, c.id);
+      }
+      // Scope tickets to selected crops, matching build-list._matchesCropFilter (bi-directional includes).
+      let scopedTickets = tickets;
+      if (filters.crops && filters.crops.length > 0) {
+        const cropsLower = filters.crops.map(c => c.trim().toLowerCase());
+        scopedTickets = tickets.filter(t => {
+          if (!t.productCode) return false;
+          const v = t.productCode.trim().toLowerCase();
+          return cropsLower.some(crop => v.includes(crop) || crop.includes(v));
+        });
+      }
+
+      if (filters.ticketsInLastDays != null && filters.ticketsInLastDays > 0) {
+        const cutoff = Date.now() - filters.ticketsInLastDays * 86400000;
+        const recent = new Set<string>();
+        for (const t of scopedTickets) {
+          if (!t.customerCode || !t.date) continue;
+          if (new Date(t.date).getTime() >= cutoff) recent.add(t.customerCode);
+        }
+        list = list.filter(c => !!c.scoularId && recent.has(c.scoularId));
+      }
+
+      // Net bu + quality avg filters share view-mode semantics ('grouped' on unapplied
+      // groups vs 'single' on individual tickets). Delegated to the shared helper used
+      // by build-list so behavior agrees.
+      if (dimensionContext.commodityConversions) {
+        const conversionMap = buildConversionMap(dimensionContext.commodityConversions);
+        const viewMode: 'grouped' | 'single' = filters.ticketViewMode ?? 'single';
+        const matchingIds = matchTicketViewModeFilters(scopedTickets, codeToId, conversionMap, viewMode, filters);
+        if (matchingIds) list = list.filter(c => matchingIds.has(c.id));
+      }
+    }
+
     if (filters.crops && filters.crops.length > 0) {
-      list = list.filter(c => (c.commodities ?? []).some(crop => filters.crops!.includes(crop.trim())));
+      const cropsLower = new Set(filters.crops.map(c => c.trim().toLowerCase()));
+      const matchesCrop = (value: string | null | undefined): boolean => {
+        if (!value) return false;
+        const v = value.trim().toLowerCase();
+        return [...cropsLower].some(crop => v.includes(crop) || crop.includes(v));
+      };
+
+      // Prefer the prompt category hint stored at save time so the dimension-aware crops
+      // filter agrees with build-list. Falls back to flag-only inference for lists saved
+      // before _promptCategory was introduced (those need a one-time re-save to fix).
+      const cat = filters._promptCategory;
+      const isStorage = cat === 'Storage' || filters.hasGrainInStorage
+        || filters.storageDaysOver != null || filters.storageQuantityOver != null
+        || filters.storageReceivableOver != null;
+      const isTickets = cat === 'Tickets' || filters.hasDeliveriesThisYear
+        || filters.ticketQuantityOver != null || filters.ticketsInLastDays != null
+        || filters.avgMoistureOver != null || filters.avgMoistureUnder != null
+        || filters.avgTestWeightOver != null || filters.avgTestWeightUnder != null
+        || filters.avgProteinOver != null || filters.avgProteinUnder != null;
+      const isPlanting = cat === 'Planting' || filters.hasPlantingIntentions
+        || filters.plantingYear != null || filters.irrigatedOnly || filters.drylandOnly
+        || (filters.plantingAcresOver != null && filters.plantingAcresOver > 0);
+      const isContracts = cat === 'Contracts'
+        || filters.hasActiveContracts || filters.hasUnsignedContracts
+        || filters.hasUnpricedContracts || filters.hasOverdueContracts
+        || filters.contractsExpiringThisMonth || filters.multipleCommoditiesContracted
+        || (filters.contractQuantityOver != null && filters.contractQuantityOver > 0);
+
+      if (isStorage && dimensionContext?.storedGrain) {
+        const byCust = new Map<number, StoredGrain[]>();
+        for (const s of dimensionContext.storedGrain) {
+          if (!byCust.has(s.customerId)) byCust.set(s.customerId, []);
+          byCust.get(s.customerId)!.push(s);
+        }
+        list = list.filter(c => (byCust.get(c.id) ?? []).some(s => matchesCrop(s.crop)));
+      } else if (isTickets && dimensionContext?.tickets) {
+        const codeToId = new Map<string, number>();
+        for (const c of customers) {
+          if (c.scoularId) codeToId.set(c.scoularId, c.id);
+        }
+        const matching = new Set<number>();
+        for (const t of dimensionContext.tickets) {
+          if (!t.customerCode) continue;
+          if (matchesCrop(t.productCode)) {
+            const cid = codeToId.get(t.customerCode);
+            if (cid != null) matching.add(cid);
+          }
+        }
+        list = list.filter(c => matching.has(c.id));
+      } else if (isPlanting && dimensionContext?.plantingIntentions) {
+        const byCust = new Map<number, PlantingIntention[]>();
+        for (const p of dimensionContext.plantingIntentions) {
+          if (!byCust.has(p.customerId)) byCust.set(p.customerId, []);
+          byCust.get(p.customerId)!.push(p);
+        }
+        list = list.filter(c => (byCust.get(c.id) ?? []).some(p => matchesCrop(p.crop)));
+      } else if (isContracts) {
+        // Only OPEN contracts count toward dimension-aware crop matching — mirrors build-list
+        // which uses _openContractsByCustomer. Otherwise a customer with a closed historical
+        // YC contract would slip past a "producers with YC contracts" filter even though
+        // they have no current YC business.
+        list = list.filter(c => contracts.some(ct =>
+          !ct.closedDate &&
+          ct.ctrmCustomerId === c.scoularId && (
+            matchesCrop(ct.commodityCode) ||
+            matchesCrop(ct.commodityDescription) ||
+            matchesCrop(ct.commodityGroup)
+          )
+        ));
+      } else {
+        list = list.filter(c => (c.commodities ?? []).some(crop => filters.crops!.includes(crop.trim())));
+      }
     }
     if (filters.states && filters.states.length > 0) {
       list = list.filter(c => {
@@ -886,8 +1074,8 @@ export class NlqFilterService {
     result = this.applyStateFilter(result, detectedState);
     result = this.applyAcresFilter(lowerQuery, result);
     result = this.applyCustomerInfoFilters(lowerQuery, result, context.tickets, context.contracts);
-    result = this.applyContactFilters(lowerQuery, result, latestNoteByCustomer, customerIdsWithNotes, context.notes, context.customers);
-    result = this.applyNoteFilters(lowerQuery, result, context.notes, context.customers);
+    result = this.applyContactFilters(lowerQuery, result, latestNoteByCustomer, customerIdsWithNotes, context.notes, context.customers, context.currentUserDisplayName, context.currentUserUsername);
+    result = this.applyNoteFilters(lowerQuery, result, context.notes, context.customers, context.currentUserDisplayName, context.currentUserUsername);
     result = this.applyStorageFilters(lowerQuery, result, context.storedGrain);
     result = this.applyPlantingFilters(lowerQuery, result, context.plantingIntentions);
     result = this.applyContractFilters(lowerQuery, result, context.contracts);
@@ -1449,7 +1637,9 @@ export class NlqFilterService {
     latestNoteByCustomer: Map<number, { note: Note; time: number }>,
     customerIdsWithNotes: Set<number>,
     notes: Note[] = [],
-    customers: Customer[] = []
+    customers: Customer[] = [],
+    currentUserDisplayName?: string,
+    currentUserUsername?: string
   ): Customer[] {
     const isNotContactedQuery = lowerQuery.includes('have not contacted') ||
                                 lowerQuery.includes("haven't contacted") ||
@@ -1474,7 +1664,11 @@ export class NlqFilterService {
     let authorContactedIds: Set<number> | null = null;
     let authorLatestNoteByCustomer: Map<number, { time: number }> | null = null;
     if (authorName && notes.length > 0) {
-      const authorLower = authorName.toLowerCase();
+      // Build the candidate list robustly — the captured `authorName` is usually the first name
+      // after `resolveUserReferences`, but notes may have CreatedBy as the unresolved email,
+      // the resolved display name, or the short UPN depending on whether
+      // UserTradeUnitSnapshot had a row for this user. Match against all forms.
+      const authorCandidates = this.buildAuthorCandidates(authorName, currentUserDisplayName, currentUserUsername);
       const parseUtc = (ts: string | Date) => {
         const raw = typeof ts === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
         return new Date(raw).getTime();
@@ -1482,8 +1676,8 @@ export class NlqFilterService {
       // Index notes by code for author-filtered lookups (matching linked producer logic)
       const authorNoteTimeByCode = new Map<string, number>();
       for (const n of notes) {
-        const createdByMatch = n.createdBy?.toLowerCase().includes(authorLower);
-        const modifiedByMatch = n.modifiedBy?.toLowerCase().includes(authorLower);
+        const createdByMatch = this.matchesAuthor(n.createdBy, authorCandidates);
+        const modifiedByMatch = this.matchesAuthor(n.modifiedBy, authorCandidates);
         if (!createdByMatch && !modifiedByMatch) continue;
         if (!n.customerCode) continue;
         const time = parseUtc(n.createdAt);
@@ -1601,7 +1795,7 @@ export class NlqFilterService {
   // NOTE FILTERS (pinned, content search)
   // ============================================================
 
-  private applyNoteFilters(lowerQuery: string, result: Customer[], notes: Note[], allCustomers: Customer[] = result): Customer[] {
+  private applyNoteFilters(lowerQuery: string, result: Customer[], notes: Note[], allCustomers: Customer[] = result, currentUserDisplayName?: string, currentUserUsername?: string): Customer[] {
     // "Customers with notes" — broad boolean (has any note)
     if (/(?:with|has|have)\s+notes?\b/.test(lowerQuery) &&
         !this._isNoteSearchQuery(lowerQuery) &&
@@ -1652,12 +1846,14 @@ export class NlqFilterService {
     }
 
     if (noteAuthor) {
-      // Search by createdBy or modifiedBy — match against name/email substrings
-      const authorLower = noteAuthor.toLowerCase();
+      // Match against the full set of identity forms (resolved first name + display name +
+      // username + UPN prefix). Notes whose CreatedBy was left as the unresolved email when
+      // UserTradeUnitSnapshot had no row for this user still get caught.
+      const authorCandidates = this.buildAuthorCandidates(noteAuthor, currentUserDisplayName, currentUserUsername);
       const customersWithAuthorNotes = new Set<number>();
       for (const n of notes) {
-        const createdByMatch = n.createdBy?.toLowerCase().includes(authorLower);
-        const modifiedByMatch = n.modifiedBy?.toLowerCase().includes(authorLower);
+        const createdByMatch = this.matchesAuthor(n.createdBy, authorCandidates);
+        const modifiedByMatch = this.matchesAuthor(n.modifiedBy, authorCandidates);
         if (createdByMatch || modifiedByMatch) {
           customersWithAuthorNotes.add(n.customerId);
         }

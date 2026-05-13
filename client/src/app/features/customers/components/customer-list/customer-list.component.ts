@@ -390,6 +390,11 @@ export class CustomerListComponent {
     if (this.nlqFilterService.queryInvolvesPlanting(query) && this.appStateService.plantingIntentions().length === 0) {
       missing['plantingIntentions'] = this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[])));
     }
+    // Also fetch the query library when the saved list lacks the _promptCategory hint —
+    // we use it to resolve dimension by queryText match in applyRefinementFilters.
+    if (savedList.filters && !savedList.filters._promptCategory && this.appStateService.queryLibrary().length === 0) {
+      missing['queryLibrary'] = this.apiService.getQueryLibrary().pipe(catchError(() => of([] as import('@models').QueryLibraryItem[])));
+    }
 
     if (Object.keys(missing).length > 0) {
       this.savedListLoading.set(true);
@@ -400,6 +405,7 @@ export class CustomerListComponent {
           if (results.storedGrain) this.appStateService.setStoredGrain(results.storedGrain);
           if (results.tickets) this.appStateService.setTickets(results.tickets);
           if (results.plantingIntentions) this.appStateService.setPlantingIntentions(results.plantingIntentions);
+          if (results.queryLibrary) this.appStateService.queryLibrary.set(results.queryLibrary);
           this._executeNlq(savedList);
           this.savedListLoading.set(false);
           this.applyFilters();
@@ -437,8 +443,25 @@ export class CustomerListComponent {
       ?? this.msalService.instance.getAllAccounts()[0];
     const resolvedQuery = this.nlqFilterService.resolveUserReferences(savedList.query, account?.name ?? '', account?.username ?? '');
     const result = this.nlqFilterService.parseAndFilter(resolvedQuery, context);
-    const refined = savedList.filters
-      ? this.nlqFilterService.applyRefinementFilters(result.customers, savedList.filters, contracts, notes)
+    // Backfill _promptCategory if the saved list pre-dates the hint AND the query library
+    // has a match for its queryText (the service uses this to drive dimension-aware filters
+    // like the contracts-crop match).
+    let listFilters = savedList.filters;
+    if (listFilters && !listFilters._promptCategory) {
+      const lib = this.appStateService.queryLibrary();
+      if (lib.length > 0) {
+        const qLower = savedList.query.trim().toLowerCase();
+        const matched = lib.find(q => q.queryText.trim().toLowerCase() === qLower);
+        if (matched?.category) listFilters = { ...listFilters, _promptCategory: matched.category };
+      }
+    }
+    const refined = listFilters
+      ? this.nlqFilterService.applyRefinementFilters(result.customers, listFilters, contracts, notes, {
+          tickets: this.appStateService.tickets(),
+          storedGrain: this.appStateService.storedGrain(),
+          plantingIntentions: this.appStateService.plantingIntentions(),
+          commodityConversions: this.appStateService.commodityConversions()
+        })
       : result.customers;
     savedList.customerIds = this.nlqFilterService.applyCustomerOverrides(
       refined.map(c => c.id), savedList.includedCustomerIds, savedList.excludedCustomerIds

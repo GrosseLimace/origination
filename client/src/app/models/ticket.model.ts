@@ -31,7 +31,7 @@ export interface Ticket {
 
   // Quality measures
   moisture?: number;      // Percentage
-  testWeight?: number;    // Pounds per bushel
+  testWeight?: number;    // Percent (GradeFactorTestWeightPercent from ODS quality data)
   proteinPercent?: number;
   gradeCode?: string;
 
