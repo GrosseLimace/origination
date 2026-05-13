@@ -447,13 +447,19 @@ public class SqlDataService : IDataService
         if (string.IsNullOrWhiteSpace(scoularId)) return [];
         try
         {
-            // Match CSV entries safely — avoid false substring matches on similar ids by testing
-            // for ",<id>," after wrapping LinkedProducerIds in commas on both sides.
-            var needle = $"%,{scoularId},%";
-            var matchingCustomerIds = await _appContext.ProducerDetails
-                .AsNoTracking()
-                .Where(pd => pd.LinkedProducerIds != null && EF.Functions.Like("," + pd.LinkedProducerIds + ",", needle))
-                .Select(pd => pd.CustomerId)
+            // Resolve the target's ScoularId to a CustomerId, then find all FromCustomerIds
+            // in dbo.CustomerLink whose ToCustomerId matches. This replaces the prior
+            // CSV-substring search against ProducerDetails.LinkedProducerIds (column dropped
+            // in Phase 3b in favor of the dbo.CustomerLink join table).
+            var toCustomerId = await _appContext.Customers.AsNoTracking()
+                .Where(c => c.ScoularId == scoularId)
+                .Select(c => c.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (toCustomerId == 0) return [];
+
+            var matchingCustomerIds = await _appContext.CustomerLinks.AsNoTracking()
+                .Where(l => l.ToCustomerId == toCustomerId)
+                .Select(l => l.FromCustomerId)
                 .Distinct()
                 .ToListAsync(cancellationToken);
 
@@ -464,19 +470,43 @@ public class SqlDataService : IDataService
                 .Where(c => c.IsActive && matchingCustomerIds.Contains(c.Id))
                 .ToListAsync(cancellationToken);
 
-            // Enrich with LinkedProducerIds from ProducerDetails so the frontend can follow chains.
-            // Other ProducerDetails fields (bin capacity, primary contact, commodities) are applied
-            // by the frontend via its producerDetailsMap() cache.
-            var detailsMap = await _appContext.ProducerDetails
-                .AsNoTracking()
-                .Where(pd => matchingCustomerIds.Contains(pd.CustomerId))
-                .ToDictionaryAsync(pd => pd.CustomerId, cancellationToken);
+            // Enrich with LinkedProducerIds (composed from dbo.CustomerLink) so the
+            // frontend can follow chains. Other ProducerDetails fields (bin capacity,
+            // primary contact, commodities) are applied by the frontend via its
+            // producerDetailsMap() cache.
+            //
+            // Project to just (CustomerId, TotalAcres) so EF emits SELECT on those
+            // two columns only — the full ProducerDetails row has ~12 columns we'd
+            // otherwise pull across the wire and discard.
+            var acresByCustomerId = await _appContext.ProducerDetails.AsNoTracking()
+                .Where(pd => matchingCustomerIds.Contains(pd.CustomerId) && pd.TotalAcres != null)
+                .Select(pd => new { pd.CustomerId, Acres = pd.TotalAcres!.Value })
+                .ToDictionaryAsync(x => x.CustomerId, x => x.Acres, cancellationToken);
+
+            // Batch-fetch all outgoing CustomerLink rows for the customer set, then
+            // group in memory to assign LinkedProducerIds CSVs.
+            var allLinks = await _appContext.CustomerLinks.AsNoTracking()
+                .Where(l => matchingCustomerIds.Contains(l.FromCustomerId))
+                .Join(_appContext.Customers.AsNoTracking(),
+                      l => l.ToCustomerId,
+                      cust => cust.Id,
+                      (l, cust) => new { l.FromCustomerId, cust.ScoularId })
+                .Where(x => x.ScoularId != null)
+                .ToListAsync(cancellationToken);
+            var linksByFrom = allLinks
+                .GroupBy(x => x.FromCustomerId)
+                .ToDictionary(g => g.Key, g => g.Select(x => x.ScoularId!).ToList());
+
             foreach (var c in customers)
             {
-                if (!detailsMap.TryGetValue(c.Id, out var pd)) continue;
-                if (pd.TotalAcres.HasValue) c.TotalAcres = (int)pd.TotalAcres.Value;
-                if (!string.IsNullOrWhiteSpace(pd.LinkedProducerIds))
-                    c.LinkedProducerIds = pd.LinkedProducerIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+                if (acresByCustomerId.TryGetValue(c.Id, out var acres))
+                {
+                    c.TotalAcres = (int)acres;
+                }
+                if (linksByFrom.TryGetValue(c.Id, out var linked))
+                {
+                    c.LinkedProducerIds = linked;
+                }
             }
 
             await EnrichCustomersWithESignAsync(customers, cancellationToken);
@@ -1671,11 +1701,15 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var query = _appContext.PlantingIntentions.AsNoTracking();
+            IQueryable<PlantingIntention> query = _appContext.PlantingIntentions
+                .AsNoTracking()
+                .Include(p => p.Customer);
             var tuList = tradeUnits?.Where(t => !string.IsNullOrEmpty(t)).ToList();
             if (tuList is { Count: > 0 })
             {
-                // Find customer codes from TU contracts + snapshot, then load ALL their planting
+                // Find customer codes from TU contracts + customer/TU memberships, then load
+                // ALL their planting (cross-TU). Codes are resolved to CustomerIds and the
+                // planting filter is on the FK column (CustomerCode column is gone in Phase 3b).
                 var contractCustomerCodes = await _context.Contracts
                     .AsNoTracking()
                     .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId != null
@@ -1684,16 +1718,16 @@ public class SqlDataService : IDataService
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
-                var snapshotCustomerCodes = await _appContext.Customers
+                var customerIds = await _appContext.Customers
                     .AsNoTracking()
-                    .Where(c => c.IsActive && c.ScoularId != null
-                        && _appContext.CustomerTradeUnits.Any(ctu =>
-                            ctu.CustomerId == c.Id && ctu.IsActive && tuList.Contains(ctu.TradeUnit)))
-                    .Select(c => c.ScoularId!)
+                    .Where(c => c.IsActive &&
+                        ((c.ScoularId != null && contractCustomerCodes.Contains(c.ScoularId))
+                         || _appContext.CustomerTradeUnits.Any(ctu =>
+                                ctu.CustomerId == c.Id && ctu.IsActive && tuList.Contains(ctu.TradeUnit))))
+                    .Select(c => c.Id)
                     .ToListAsync(cancellationToken);
 
-                var customerCodes = contractCustomerCodes.Union(snapshotCustomerCodes).ToList();
-                query = query.Where(p => customerCodes.Contains(p.CustomerCode));
+                query = query.Where(p => customerIds.Contains(p.CustomerId));
             }
             if (plantingYear.HasValue)
             {
@@ -1701,13 +1735,17 @@ public class SqlDataService : IDataService
             }
             var results = await query
                 .OrderByDescending(p => p.PlantingYear)
-                .ThenBy(p => p.CustomerName)
+                .ThenBy(p => p.Customer!.Name)
                 .ToListAsync(cancellationToken);
             var nameMap = await ResolveDisplayNamesAsync(
                 results.Select(r => r.CreatedBy).Concat(results.Select(r => r.ModifiedBy ?? string.Empty)),
                 cancellationToken);
             foreach (var r in results)
             {
+                // CustomerName / CustomerCode now come from the Customer FK join
+                // (the columns were dropped from dbo.ProducerPlantingIntentions in Phase 3b).
+                r.CustomerName = r.Customer?.Name ?? string.Empty;
+                r.CustomerCode = r.Customer?.ScoularId ?? string.Empty;
                 r.CreatedBy = ApplyDisplayName(r.CreatedBy, nameMap);
                 r.ModifiedBy = string.IsNullOrEmpty(r.ModifiedBy) ? r.ModifiedBy : ApplyDisplayName(r.ModifiedBy, nameMap);
             }
@@ -1732,6 +1770,7 @@ public class SqlDataService : IDataService
         {
             var results = await _appContext.PlantingIntentions
                 .AsNoTracking()
+                .Include(p => p.Customer)
                 .Where(p => p.CustomerId == customerId)
                 .OrderByDescending(p => p.PlantingYear)
                 .ThenBy(p => p.Crop)
@@ -1741,6 +1780,8 @@ public class SqlDataService : IDataService
                 cancellationToken);
             foreach (var r in results)
             {
+                r.CustomerName = r.Customer?.Name ?? string.Empty;
+                r.CustomerCode = r.Customer?.ScoularId ?? string.Empty;
                 r.CreatedBy = ApplyDisplayName(r.CreatedBy, nameMap);
                 r.ModifiedBy = string.IsNullOrEmpty(r.ModifiedBy) ? r.ModifiedBy : ApplyDisplayName(r.ModifiedBy, nameMap);
             }
@@ -1760,12 +1801,25 @@ public class SqlDataService : IDataService
     }
 
     public async Task<PlantingIntention?> GetPlantingIntentionByIdAsync(int intentionId, CancellationToken cancellationToken = default)
-        => await _appContext.PlantingIntentions.AsNoTracking().FirstOrDefaultAsync(p => p.Id == intentionId, cancellationToken);
+    {
+        var intention = await _appContext.PlantingIntentions.AsNoTracking()
+            .Include(p => p.Customer)
+            .FirstOrDefaultAsync(p => p.Id == intentionId, cancellationToken);
+        if (intention != null)
+        {
+            intention.CustomerName = intention.Customer?.Name ?? string.Empty;
+            intention.CustomerCode = intention.Customer?.ScoularId ?? string.Empty;
+        }
+        return intention;
+    }
 
     public async Task<PlantingIntention> AddPlantingIntentionAsync(long customerId, string customerName, string customerCode, string tradeUnit, string crop, string? category, string? type, string? description, int acres, int plantingYear, CancellationToken cancellationToken = default)
     {
         try
         {
+            // CustomerName / CustomerCode are kept on the in-memory entity for the
+            // API response, but EF .Ignore()s them — they're not persisted to the
+            // dropped columns. They come back fresh via FK join on subsequent reads.
             var intention = new PlantingIntention
             {
                 CustomerId = customerId,
@@ -1802,7 +1856,9 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var intention = await _appContext.PlantingIntentions.FirstOrDefaultAsync(p => p.Id == intentionId, cancellationToken);
+            var intention = await _appContext.PlantingIntentions
+                .Include(p => p.Customer)
+                .FirstOrDefaultAsync(p => p.Id == intentionId, cancellationToken);
             if (intention == null)
             {
                 return null;
@@ -1820,6 +1876,8 @@ public class SqlDataService : IDataService
             await _appContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Updated planting intention {Id}", intentionId);
+            intention.CustomerName = intention.Customer?.Name ?? string.Empty;
+            intention.CustomerCode = intention.Customer?.ScoularId ?? string.Empty;
             var nameMap = await ResolveDisplayNamesAsync(
                 new[] { intention.CreatedBy, intention.ModifiedBy ?? string.Empty }, cancellationToken);
             intention.CreatedBy = ApplyDisplayName(intention.CreatedBy, nameMap);
@@ -1864,7 +1922,9 @@ public class SqlDataService : IDataService
         {
             _logger.LogInformation("Attempting to retrieve notes from database");
 
-            var query = _appContext.Notes.AsNoTracking().Where(n => !n.IsDeleted);
+            var query = _appContext.Notes.AsNoTracking()
+                .Include(n => n.Customer)
+                .Where(n => !n.IsDeleted);
             var tuList = tradeUnits?.Where(t => !string.IsNullOrEmpty(t)).ToList();
             if (tuList is { Count: > 0 })
             {
@@ -1878,6 +1938,10 @@ public class SqlDataService : IDataService
                 cancellationToken);
             foreach (var n in notes)
             {
+                // CustomerName / CustomerCode now come from the Customer FK join
+                // (the columns were dropped from dbo.Notes in Phase 3b).
+                n.CustomerName = n.Customer?.Name ?? string.Empty;
+                n.CustomerCode = n.Customer?.ScoularId;
                 n.CreatedBy = ApplyDisplayName(n.CreatedBy, nameMap);
                 n.ModifiedBy = string.IsNullOrEmpty(n.ModifiedBy) ? n.ModifiedBy : ApplyDisplayName(n.ModifiedBy, nameMap);
             }
@@ -1902,6 +1966,7 @@ public class SqlDataService : IDataService
         {
             var notes = await _appContext.Notes
                 .AsNoTracking()
+                .Include(n => n.Customer)
                 .Where(n => n.CustomerId == customerId && !n.IsDeleted)
                 .OrderByDescending(n => n.CreatedAt)
                 .ToListAsync(cancellationToken);
@@ -1910,6 +1975,8 @@ public class SqlDataService : IDataService
                 cancellationToken);
             foreach (var n in notes)
             {
+                n.CustomerName = n.Customer?.Name ?? string.Empty;
+                n.CustomerCode = n.Customer?.ScoularId;
                 n.CreatedBy = ApplyDisplayName(n.CreatedBy, nameMap);
                 n.ModifiedBy = string.IsNullOrEmpty(n.ModifiedBy) ? n.ModifiedBy : ApplyDisplayName(n.ModifiedBy, nameMap);
             }
@@ -1929,7 +1996,17 @@ public class SqlDataService : IDataService
     }
 
     public async Task<Note?> GetNoteByIdAsync(long noteId, CancellationToken cancellationToken = default)
-        => await _appContext.Notes.AsNoTracking().FirstOrDefaultAsync(n => n.Id == noteId && !n.IsDeleted, cancellationToken);
+    {
+        var note = await _appContext.Notes.AsNoTracking()
+            .Include(n => n.Customer)
+            .FirstOrDefaultAsync(n => n.Id == noteId && !n.IsDeleted, cancellationToken);
+        if (note != null)
+        {
+            note.CustomerName = note.Customer?.Name ?? string.Empty;
+            note.CustomerCode = note.Customer?.ScoularId;
+        }
+        return note;
+    }
 
     public async Task<Note> AddNoteAsync(long customerId, string content, string? tradeUnit = null, CancellationToken cancellationToken = default)
     {
@@ -1974,7 +2051,9 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var note = await _appContext.Notes.FirstOrDefaultAsync(n => n.Id == noteId && !n.IsDeleted, cancellationToken);
+            var note = await _appContext.Notes
+                .Include(n => n.Customer)
+                .FirstOrDefaultAsync(n => n.Id == noteId && !n.IsDeleted, cancellationToken);
             if (note == null)
             {
                 return null;
@@ -1984,6 +2063,8 @@ public class SqlDataService : IDataService
             await _appContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Toggled pin for note {NoteId} - IsPinned is now {IsPinned}", noteId, note.IsPinned);
+            note.CustomerName = note.Customer?.Name ?? string.Empty;
+            note.CustomerCode = note.Customer?.ScoularId;
             var nameMap = await ResolveDisplayNamesAsync(
                 new[] { note.CreatedBy, note.ModifiedBy ?? string.Empty }, cancellationToken);
             note.CreatedBy = ApplyDisplayName(note.CreatedBy, nameMap);
@@ -2002,7 +2083,9 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var note = await _appContext.Notes.FirstOrDefaultAsync(n => n.Id == noteId && !n.IsDeleted, cancellationToken);
+            var note = await _appContext.Notes
+                .Include(n => n.Customer)
+                .FirstOrDefaultAsync(n => n.Id == noteId && !n.IsDeleted, cancellationToken);
             if (note == null)
             {
                 return null;
@@ -2014,6 +2097,8 @@ public class SqlDataService : IDataService
             await _appContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Updated note {NoteId}", noteId);
+            note.CustomerName = note.Customer?.Name ?? string.Empty;
+            note.CustomerCode = note.Customer?.ScoularId;
             var nameMap = await ResolveDisplayNamesAsync(
                 new[] { note.CreatedBy, note.ModifiedBy ?? string.Empty }, cancellationToken);
             note.CreatedBy = ApplyDisplayName(note.CreatedBy, nameMap);
@@ -2064,8 +2149,19 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var pd = await _appContext.ProducerDetails.AsNoTracking().FirstOrDefaultAsync(p => p.CustomerId == customerId, cancellationToken);
+            var pd = await _appContext.ProducerDetails.AsNoTracking()
+                .Include(p => p.Customer)
+                .FirstOrDefaultAsync(p => p.CustomerId == customerId, cancellationToken);
             if (pd == null) return null;
+
+            // CustomerName / ScoularId now come from the Customer FK join
+            // (the columns were dropped from dbo.ProducerDetails in Phase 3b).
+            pd.CustomerName = pd.Customer?.Name ?? string.Empty;
+            pd.ScoularId = pd.Customer?.ScoularId;
+            // LinkedProducerIds (CSV of linked-producer ScoularIds) is composed from
+            // dbo.CustomerLink — the CSV column was dropped in Phase 3b.
+            pd.LinkedProducerIds = await GetLinkedProducerCsvAsync(customerId, cancellationToken);
+
             var nameMap = await ResolveDisplayNamesAsync(new[] { pd.CreatedBy, pd.ModifiedBy ?? string.Empty }, cancellationToken);
             pd.CreatedBy = ApplyDisplayName(pd.CreatedBy, nameMap);
             pd.ModifiedBy = string.IsNullOrEmpty(pd.ModifiedBy) ? pd.ModifiedBy : ApplyDisplayName(pd.ModifiedBy, nameMap);
@@ -2083,12 +2179,35 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var all = await _appContext.ProducerDetails.AsNoTracking().ToListAsync(cancellationToken);
+            var all = await _appContext.ProducerDetails.AsNoTracking()
+                .Include(p => p.Customer)
+                .ToListAsync(cancellationToken);
+
+            // Batch-fetch all CustomerLink rows for these producers in one round-trip,
+            // then group in memory and assign as comma-separated ScoularIds.
+            var customerIds = all.Select(p => p.CustomerId).Distinct().ToList();
+            var linkRows = await _appContext.CustomerLinks.AsNoTracking()
+                .Where(l => customerIds.Contains(l.FromCustomerId))
+                .Join(_appContext.Customers.AsNoTracking(),
+                      l => l.ToCustomerId,
+                      c => c.Id,
+                      (l, c) => new { l.FromCustomerId, c.ScoularId })
+                .Where(x => x.ScoularId != null)
+                .ToListAsync(cancellationToken);
+            var linksByFrom = linkRows
+                .GroupBy(x => x.FromCustomerId)
+                .ToDictionary(g => g.Key, g => g.Select(x => x.ScoularId!).ToList());
+
             var nameMap = await ResolveDisplayNamesAsync(
                 all.Select(p => p.CreatedBy).Concat(all.Select(p => p.ModifiedBy ?? string.Empty)),
                 cancellationToken);
             foreach (var p in all)
             {
+                p.CustomerName = p.Customer?.Name ?? string.Empty;
+                p.ScoularId = p.Customer?.ScoularId;
+                p.LinkedProducerIds = linksByFrom.TryGetValue(p.CustomerId, out var ids) && ids.Count > 0
+                    ? string.Join(",", ids)
+                    : null;
                 p.CreatedBy = ApplyDisplayName(p.CreatedBy, nameMap);
                 p.ModifiedBy = string.IsNullOrEmpty(p.ModifiedBy) ? p.ModifiedBy : ApplyDisplayName(p.ModifiedBy, nameMap);
             }
@@ -2101,35 +2220,50 @@ public class SqlDataService : IDataService
         }
     }
 
+    /// <summary>
+    /// Composes the comma-separated list of linked-producer ScoularIds for a given
+    /// from-customer by joining dbo.CustomerLink → dbo.Customer.ScoularId. Returns
+    /// null when there are no links, matching the prior nullable-CSV semantics.
+    /// </summary>
+    private async Task<string?> GetLinkedProducerCsvAsync(long fromCustomerId, CancellationToken cancellationToken)
+    {
+        var scoularIds = await _appContext.CustomerLinks.AsNoTracking()
+            .Where(l => l.FromCustomerId == fromCustomerId)
+            .Join(_appContext.Customers.AsNoTracking(),
+                  l => l.ToCustomerId,
+                  c => c.Id,
+                  (l, c) => c.ScoularId)
+            .Where(s => s != null)
+            .ToListAsync(cancellationToken);
+        return scoularIds.Count == 0 ? null : string.Join(",", scoularIds!);
+    }
+
     public async Task<ProducerDetails> UpsertProducerDetailsAsync(long customerId, string? scoularId, string customerName, decimal? totalAcres, decimal? binCapacity, string? primaryContact, string? commodities, string? linkedProducerIds = null, CancellationToken cancellationToken = default)
     {
         try
         {
             var existing = await _appContext.ProducerDetails.FirstOrDefaultAsync(pd => pd.CustomerId == customerId, cancellationToken);
 
+            ProducerDetails saved;
             if (existing != null)
             {
+                // ScoularId / CustomerName are kept on the in-memory entity for the
+                // API response, but EF .Ignore()s them — they're not persisted to
+                // dropped columns. The canonical values come from dbo.Customer.
                 existing.ScoularId = scoularId;
                 existing.CustomerName = customerName;
                 existing.TotalAcres = totalAcres;
                 existing.BinCapacity = binCapacity;
                 existing.PrimaryContact = primaryContact;
                 existing.Commodities = commodities;
-                existing.LinkedProducerIds = linkedProducerIds;
+                existing.LinkedProducerIds = linkedProducerIds;  // in-memory only; persisted via CustomerLink rebuild below
                 existing.ModifiedBy = GetCurrentUser();
                 existing.ModifiedAt = DateTime.UtcNow;
-
-                await _appContext.SaveChangesAsync(cancellationToken);
-                _logger.LogInformation("Updated ProducerDetails for customer {CustomerId}", customerId);
-                var nameMap1 = await ResolveDisplayNamesAsync(
-                    new[] { existing.CreatedBy, existing.ModifiedBy ?? string.Empty }, cancellationToken);
-                existing.CreatedBy = ApplyDisplayName(existing.CreatedBy, nameMap1);
-                existing.ModifiedBy = string.IsNullOrEmpty(existing.ModifiedBy) ? existing.ModifiedBy : ApplyDisplayName(existing.ModifiedBy, nameMap1);
-                return existing;
+                saved = existing;
             }
             else
             {
-                var details = new ProducerDetails
+                saved = new ProducerDetails
                 {
                     CustomerId = customerId,
                     ScoularId = scoularId,
@@ -2142,14 +2276,47 @@ public class SqlDataService : IDataService
                     CreatedBy = GetCurrentUser(),
                     CreatedAt = DateTime.UtcNow
                 };
-
-                _appContext.ProducerDetails.Add(details);
-                await _appContext.SaveChangesAsync(cancellationToken);
-                _logger.LogInformation("Created ProducerDetails for customer {CustomerId}", customerId);
-                var nameMap2 = await ResolveDisplayNamesAsync(new[] { details.CreatedBy }, cancellationToken);
-                details.CreatedBy = ApplyDisplayName(details.CreatedBy, nameMap2);
-                return details;
+                _appContext.ProducerDetails.Add(saved);
             }
+
+            // Rebuild dbo.CustomerLink for this from-customer in the same EF
+            // transaction as the ProducerDetails write. Drop all existing links
+            // and re-insert based on the supplied CSV of linked ScoularIds.
+            var oldLinks = await _appContext.CustomerLinks
+                .Where(l => l.FromCustomerId == customerId)
+                .ToListAsync(cancellationToken);
+            if (oldLinks.Count > 0)
+            {
+                _appContext.CustomerLinks.RemoveRange(oldLinks);
+            }
+            if (!string.IsNullOrWhiteSpace(linkedProducerIds))
+            {
+                var ids = linkedProducerIds
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                var toCustomerIds = await _appContext.Customers.AsNoTracking()
+                    .Where(c => c.ScoularId != null && ids.Contains(c.ScoularId))
+                    .Select(c => c.Id)
+                    .ToListAsync(cancellationToken);
+                foreach (var toId in toCustomerIds.Where(id => id != customerId).Distinct())
+                {
+                    _appContext.CustomerLinks.Add(new CustomerLink
+                    {
+                        FromCustomerId = customerId,
+                        ToCustomerId = toId
+                    });
+                }
+            }
+
+            await _appContext.SaveChangesAsync(cancellationToken);
+            _logger.LogInformation("Upserted ProducerDetails for customer {CustomerId}", customerId);
+
+            var nameMap = await ResolveDisplayNamesAsync(
+                new[] { saved.CreatedBy, saved.ModifiedBy ?? string.Empty }, cancellationToken);
+            saved.CreatedBy = ApplyDisplayName(saved.CreatedBy, nameMap);
+            saved.ModifiedBy = string.IsNullOrEmpty(saved.ModifiedBy) ? saved.ModifiedBy : ApplyDisplayName(saved.ModifiedBy, nameMap);
+            return saved;
         }
         catch (Exception ex)
         {

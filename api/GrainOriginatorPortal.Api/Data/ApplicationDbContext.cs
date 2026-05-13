@@ -73,8 +73,11 @@ public class ApplicationDbContext : DbContext
 
             entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
             entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
-            entity.Property(e => e.CustomerName).HasColumnName("CustomerName").HasMaxLength(200).IsRequired();
-            entity.Property(e => e.CustomerCode).HasColumnName("CustomerCode").HasMaxLength(50).IsRequired(false);
+            // CustomerName / CustomerCode dropped from the DB (Phase 3b) — they live
+            // on the DTO for API contract stability, populated from the Customer FK
+            // join on reads. .Ignore() keeps EF from trying to read/write the columns.
+            entity.Ignore(e => e.CustomerName);
+            entity.Ignore(e => e.CustomerCode);
             entity.Property(e => e.TradeUnit).HasColumnName("TradeUnit").HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.Description).HasColumnName("Description").HasColumnType("nvarchar(max)").IsRequired();
             entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(200).IsRequired();
@@ -107,8 +110,10 @@ public class ApplicationDbContext : DbContext
 
             entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
             entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
-            entity.Property(e => e.CustomerName).HasColumnName("CustomerName").HasMaxLength(255).IsRequired();
-            entity.Property(e => e.CustomerCode).HasColumnName("CustomerCode").HasMaxLength(50).IsRequired();
+            // CustomerName / CustomerCode dropped from the DB (Phase 3b) — populated
+            // from the Customer FK join on reads.
+            entity.Ignore(e => e.CustomerName);
+            entity.Ignore(e => e.CustomerCode);
             entity.Property(e => e.TradeUnit).HasColumnName("TradeUnit").HasMaxLength(100).IsRequired();
             entity.Property(e => e.PlantingYear).HasColumnName("PlantingYear").IsRequired();
             entity.Property(e => e.Crop).HasColumnName("Crop").HasMaxLength(100).IsRequired();
@@ -222,13 +227,16 @@ public class ApplicationDbContext : DbContext
 
             entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
             entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
-            entity.Property(e => e.ScoularId).HasColumnName("ScoularId").HasMaxLength(400).IsRequired(false);
-            entity.Property(e => e.CustomerName).HasColumnName("CustomerName").HasMaxLength(255).IsRequired();
+            // ScoularId / CustomerName / LinkedProducerIds dropped from the DB
+            // (Phase 3b). ScoularId + CustomerName come from the Customer FK join.
+            // LinkedProducerIds is composed server-side from dbo.CustomerLink on read.
+            entity.Ignore(e => e.ScoularId);
+            entity.Ignore(e => e.CustomerName);
+            entity.Ignore(e => e.LinkedProducerIds);
             entity.Property(e => e.TotalAcres).HasColumnName("TotalAcres").HasColumnType("decimal(18,2)").IsRequired(false);
             entity.Property(e => e.BinCapacity).HasColumnName("BinCapacity").HasColumnType("decimal(18,2)").IsRequired(false);
             entity.Property(e => e.PrimaryContact).HasColumnName("PrimaryContact").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.Commodities).HasColumnName("Commodities").HasMaxLength(1000).IsRequired(false);
-            entity.Property(e => e.LinkedProducerIds).HasColumnName("LinkedProducerIds").HasMaxLength(1000).IsRequired(false);
             entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
             entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);

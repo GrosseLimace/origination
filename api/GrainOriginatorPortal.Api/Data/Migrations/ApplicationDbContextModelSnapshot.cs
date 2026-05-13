@@ -922,20 +922,9 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                         .HasColumnType("nvarchar(200)")
                         .HasColumnName("CreatedBy");
 
-                    b.Property<string>("CustomerCode")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)")
-                        .HasColumnName("CustomerCode");
-
                     b.Property<long>("CustomerId")
                         .HasColumnType("bigint")
                         .HasColumnName("CustomerId");
-
-                    b.Property<string>("CustomerName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)")
-                        .HasColumnName("CustomerName");
 
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("datetime2")
@@ -1021,21 +1010,9 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("Crop");
 
-                    b.Property<string>("CustomerCode")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)")
-                        .HasColumnName("CustomerCode");
-
                     b.Property<long>("CustomerId")
                         .HasColumnType("bigint")
                         .HasColumnName("CustomerId");
-
-                    b.Property<string>("CustomerName")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)")
-                        .HasColumnName("CustomerName");
 
                     b.Property<string>("Description")
                         .HasMaxLength(255)
@@ -1111,17 +1088,6 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("CustomerId");
 
-                    b.Property<string>("CustomerName")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)")
-                        .HasColumnName("CustomerName");
-
-                    b.Property<string>("LinkedProducerIds")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)")
-                        .HasColumnName("LinkedProducerIds");
-
                     b.Property<DateTime?>("ModifiedAt")
                         .HasColumnType("datetime2")
                         .HasColumnName("ModifiedAt");
@@ -1135,11 +1101,6 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)")
                         .HasColumnName("PrimaryContact");
-
-                    b.Property<string>("ScoularId")
-                        .HasMaxLength(400)
-                        .HasColumnType("nvarchar(400)")
-                        .HasColumnName("ScoularId");
 
                     b.Property<decimal?>("TotalAcres")
                         .HasColumnType("decimal(18,2)")
