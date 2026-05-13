@@ -10,6 +10,7 @@ import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
+import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
 import { CardComponent, CardContentComponent } from '@shared/components/card/card.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
@@ -521,33 +522,24 @@ export class CustomerListComponent {
     // and customers() input is empty). Fall back to customers() for TU-filtered loads.
     const customersToCache = this.filteredCustomers().length > 0 ? this.filteredCustomers() : this.customers();
 
-    // Build incoming-links map from the FULL customer list + any linked producer customers
-    // fetched for selected customers (populated by home's _fetchMissingLinkedProducers). This
-    // makes last-contacted resolve notes from reverse-linked producers even in no-TU search mode
-    // where the main roster is empty.
+    // Walk the FULL connected component for each customer — same transitive closure used
+    // on build-list — so chained links (A→B→C) all surface the latest note across every
+    // member of the chain. Without this, A's badge would only see A's own notes plus B's
+    // (one hop), missing notes on C even though they're in the same producer network.
+    // Includes any linked-producer customers fetched on demand by home page so links across
+    // TUs still resolve when the main roster is filtered or empty.
     const allCustomers = [...this.customers(), ...this.linkedProducerCustomers()];
-    const linkedById = new Map<number, string[]>();
-    for (const c of allCustomers) {
-      if (c.linkedProducerIds?.length) linkedById.set(c.id, c.linkedProducerIds);
-    }
-    const incomingCodeLinks = new Map<string, Set<string>>();
-    for (const c of allCustomers) {
-      if (!c.scoularId) continue;
-      for (const linkedCode of (c.linkedProducerIds || [])) {
-        if (!incomingCodeLinks.has(linkedCode)) incomingCodeLinks.set(linkedCode, new Set());
-        incomingCodeLinks.get(linkedCode)!.add(c.scoularId);
-      }
-    }
+    const components = buildLinkedProducerComponents(allCustomers);
 
     for (const customer of customersToCache) {
-      // Collect all source codes to look up: this customer + outgoing links + incoming links.
-      // Use linkedProducerIds from the full customer list (not the potentially stale filtered copy).
-      const freshLinked = linkedById.get(customer.id) ?? customer.linkedProducerIds ?? [];
-      const allCodes = new Set<string>();
-      if (customer.scoularId) allCodes.add(customer.scoularId);
-      for (const linkedCode of freshLinked) allCodes.add(linkedCode);
-      for (const incomingCode of (incomingCodeLinks.get(customer.scoularId || '') || new Set<string>())) {
-        allCodes.add(incomingCode);
+      // Start from the connected component when we have a scoularId — otherwise fall back
+      // to direct outgoing links keyed by this customer's id (rare: customers without a
+      // scoularId can still carry linkedProducerIds).
+      let allCodes: Set<string>;
+      if (customer.scoularId) {
+        allCodes = components.get(customer.scoularId) ?? new Set([customer.scoularId]);
+      } else {
+        allCodes = new Set(customer.linkedProducerIds || []);
       }
       const customerNotes = [...allCodes].flatMap(code => notesByCode.get(code) || []);
 
