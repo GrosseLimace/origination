@@ -29,6 +29,10 @@ export interface BuildListState {
   manuallyExcludedCustomerIds?: number[];
   showManageMembersPanel?: boolean;
   selectedLibraryQuery?: QueryLibraryItem | null;
+  /** When a saved list is the active context, persist it so navigating away and back
+   *  restores the "Active List" indicator and keeps Save/Update wired to the same list
+   *  (rather than dropping back to a no-context state that creates a new list on save). */
+  activeSavedList?: SavedList | null;
 }
 
 @Injectable({
@@ -94,6 +98,11 @@ export class AppStateService {
   savedLists = signal<SavedList[]>([]);
   commodities = signal<Commodity[]>([]);
   commodityConversions = signal<CommodityConversion[]>([]);
+  /** Shared query library cache so home + customer-list can resolve a saved list's prompt
+   *  category (Contracts / Tickets / etc.) by queryText match without each page fetching
+   *  independently. Loaded lazily on first access — both build-list and customer-list
+   *  populate this signal when they receive the API response. */
+  queryLibrary = signal<QueryLibraryItem[]>([]);
   harvestWindows = signal<HarvestWindow[]>([]);
   producerDetails = signal<ProducerDetails[]>([]);
   pricingLines = signal<ContractPricingLine[]>([]);

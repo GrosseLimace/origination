@@ -19,7 +19,11 @@ import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDes
 import { InputComponent } from '@shared/components/input/input.component';
 import { CustomerMapComponent } from '@features/customers/components/map/customer-map.component';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
+import { HighlightPipe } from '@shared/pipes/highlight.pipe';
 import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
+import { isContractUnconfirmed, isContractOverdueWithUnshippedBu, buildAppliedLbsMaps, buildConversionMap } from '@shared/utils/contract-status';
+import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
+import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
 
 @Component({
   selector: 'app-build-list',
@@ -42,7 +46,8 @@ import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
     DialogFooterComponent,
     InputComponent,
     CustomerMapComponent,
-    TradeUnitSelectorComponent
+    TradeUnitSelectorComponent,
+    HighlightPipe
   ],
   templateUrl: './build-list.component.html',
   styles: [`input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }`],
@@ -149,6 +154,7 @@ export class BuildListComponent {
       r.contractQuantityOver != null && r.contractQuantityOver > 0,
       r.contractsExpiringThisMonth, r.multipleCommoditiesContracted,
       r.neverContacted, r.notContactedDays != null && r.notContactedDays > 0,
+      r.notesInLastDays != null && r.notesInLastDays > 0,
       r.contactedOnlyOnce, r.contactedMoreThan5,
       r.contactedByMeOnly, r.contactedBySomeoneElse,
       r.hasPinnedNotes, r.noteKeyword?.trim(),
@@ -175,6 +181,7 @@ export class BuildListComponent {
     const v = value.trim().toLowerCase();
     return [...selectedCrops].some(crop => v.includes(crop) || crop.includes(v));
   }
+
 
   readonly displayedCustomers = computed(() => {
     let list = this.filteredCustomers();
@@ -208,7 +215,9 @@ export class BuildListComponent {
       list = list.filter(c => !getContracts(c).some(ct => ct.status === 'Active' || ct.status === 'Pending' || ct.status === 'Overdue'));
     }
     if (r.hasUnsignedContracts) {
-      list = list.filter(c => getContracts(c).some(ct => ct.signed === false));
+      // "Has unconfirmed contracts" — matches Insights UnconfirmedContracts rule:
+      // customerConfirmStatus !== 'confirmed' AND status not Fulfilled/Cancelled.
+      list = list.filter(c => getContracts(c).some(ct => isContractUnconfirmed(ct)));
     }
     if (r.downHarvestPace) {
       list = list.filter(c => this._getCustomerPacingDirection(c) === 'down');
@@ -217,7 +226,14 @@ export class BuildListComponent {
       list = list.filter(c => getContracts(c).some(ct => ct.priceTypeCode === 'U' || ct.priceTypeCode === 'D'));
     }
     if (r.hasOverdueContracts) {
-      list = list.filter(c => getContracts(c).some(ct => ct.status === 'Overdue'));
+      // "Has overdue bu contracts" — matches Insights UnshippedBushels rule:
+      // open contract past deliveryEnd with remaining bushels > 0 per ticket-applied math.
+      const today = new Date();
+      const { byCtrmNumber, byContractId } = buildAppliedLbsMaps(this.tickets());
+      const conversionMap = buildConversionMap(this.appState.commodityConversions());
+      list = list.filter(c => getContracts(c).some(ct =>
+        isContractOverdueWithUnshippedBu(ct, today, byCtrmNumber, byContractId, conversionMap)
+      ));
     }
     if (r.noContractsAtAll) {
       list = list.filter(c => getContracts(c).length === 0);
@@ -254,87 +270,126 @@ export class BuildListComponent {
         return info.daysAgo >= r.notContactedDays!;
       });
     }
+    if (r.notesInLastDays != null && r.notesInLastDays > 0) {
+      list = list.filter(c => {
+        const info = contactMap.get(c.id);
+        if (!info) return false; // no notes → exclude (positive filter)
+        return info.daysAgo <= r.notesInLastDays!;
+      });
+    }
 
-    // Contact frequency — index note count per customer
-    if (r.contactedOnlyOnce || r.contactedMoreThan5) {
-      const noteCountByCustomer = new Map<number, number>();
-      for (const n of this.notes()) {
-        noteCountByCustomer.set(n.customerId, (noteCountByCustomer.get(n.customerId) || 0) + 1);
-      }
-      if (r.contactedOnlyOnce) {
-        list = list.filter(c => (noteCountByCustomer.get(c.id) || 0) === 1);
-      }
-      if (r.contactedMoreThan5) {
-        list = list.filter(c => (noteCountByCustomer.get(c.id) || 0) > 5);
+    // Note-aggregating filters share a per-customer "code network" (own + outgoing-linked + incoming-linked).
+    // Linked-producer notes count toward the customer's totals so contact frequency, author, pinned, and
+    // keyword filters all respect the same linked-as-one-entity model used elsewhere on the page.
+    const wantsAggregatedNotes = r.contactedOnlyOnce || r.contactedMoreThan5
+      || r.contactedByMeOnly || r.contactedBySomeoneElse
+      || r.hasPinnedNotes || !!r.noteKeyword?.trim();
+    let codesByCustomerId: Map<number, Set<string>> | null = null;
+    if (wantsAggregatedNotes) {
+      const components = this.linkedProducerComponents();
+      codesByCustomerId = new Map<number, Set<string>>();
+      for (const c of this.customers()) {
+        if (c.scoularId) {
+          const comp = components.get(c.scoularId);
+          codesByCustomerId.set(c.id, comp ? new Set(comp) : new Set([c.scoularId]));
+        } else {
+          codesByCustomerId.set(c.id, new Set());
+        }
       }
     }
 
-    // Contact author — check who created the notes
+    // Contact frequency — note count across the customer's network (own + linked).
+    if (r.contactedOnlyOnce || r.contactedMoreThan5) {
+      const countByCode = new Map<string, number>();
+      for (const n of this.notes()) {
+        if (!n.customerCode) continue;
+        countByCode.set(n.customerCode, (countByCode.get(n.customerCode) || 0) + 1);
+      }
+      const totalFor = (c: Customer): number => {
+        let total = 0;
+        const codes = codesByCustomerId!.get(c.id);
+        if (codes) for (const code of codes) total += countByCode.get(code) || 0;
+        return total;
+      };
+      if (r.contactedOnlyOnce) list = list.filter(c => totalFor(c) === 1);
+      if (r.contactedMoreThan5) list = list.filter(c => totalFor(c) > 5);
+    }
+
+    // Contact author — aggregated across the customer's network.
     if (r.contactedByMeOnly || r.contactedBySomeoneElse) {
       const account = this.msalService.instance.getActiveAccount()
         ?? this.msalService.instance.getAllAccounts()[0];
-      const myName = (account?.name ?? '').toLowerCase();
-      const myUsername = (account?.username ?? '').toLowerCase();
-      // Build per-customer: has note by me, has note by someone else
-      const noteAuthorship = new Map<number, { byMe: boolean; byOthers: boolean }>();
+      const myName = (account?.name ?? '').trim().toLowerCase();
+      const myUsername = (account?.username ?? '').trim().toLowerCase();
+      // Empty identity claims → can't reliably attribute notes; treat as "no notes are mine".
+      // This avoids the substring bug where ''.includes('') === true would mark every note as mine.
+      const haveIdentity = !!myName || !!myUsername;
+      const isAuthorMe = (rawAuthor: string): boolean => {
+        if (!rawAuthor || !haveIdentity) return false;
+        if (myUsername && rawAuthor === myUsername) return true;
+        if (myName && rawAuthor === myName) return true;
+        // Token-bounded match prevents "John" matching "Johnson"; works for "John Doe (jdoe@…)" too.
+        const escape = (s: string) => s.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const tokenMatch = (haystack: string, needle: string): boolean => {
+          if (!needle) return false;
+          return new RegExp(`(?:^|[^\\w])${escape(needle)}(?:[^\\w]|$)`).test(haystack);
+        };
+        return tokenMatch(rawAuthor, myUsername) || tokenMatch(rawAuthor, myName);
+      };
+
+      const authorshipByCode = new Map<string, { byMe: boolean; byOthers: boolean }>();
       for (const n of this.notes()) {
-        const author = (n.createdBy || '').toLowerCase();
-        const isMine = author.includes(myName) || author.includes(myUsername);
-        const entry = noteAuthorship.get(n.customerId) || { byMe: false, byOthers: false };
-        if (isMine) entry.byMe = true; else entry.byOthers = true;
-        noteAuthorship.set(n.customerId, entry);
+        if (!n.customerCode) continue;
+        const author = (n.createdBy || '').trim().toLowerCase();
+        if (!author) continue;
+        const entry = authorshipByCode.get(n.customerCode) || { byMe: false, byOthers: false };
+        if (isAuthorMe(author)) entry.byMe = true; else entry.byOthers = true;
+        authorshipByCode.set(n.customerCode, entry);
       }
+      const aggregateFor = (c: Customer): { byMe: boolean; byOthers: boolean } => {
+        let byMe = false, byOthers = false;
+        const codes = codesByCustomerId!.get(c.id);
+        if (codes) for (const code of codes) {
+          const e = authorshipByCode.get(code);
+          if (!e) continue;
+          if (e.byMe) byMe = true;
+          if (e.byOthers) byOthers = true;
+        }
+        return { byMe, byOthers };
+      };
       if (r.contactedByMeOnly) {
-        list = list.filter(c => {
-          const a = noteAuthorship.get(c.id);
-          return !!a && a.byMe && !a.byOthers;
-        });
+        list = list.filter(c => { const a = aggregateFor(c); return a.byMe && !a.byOthers; });
       }
       if (r.contactedBySomeoneElse) {
-        list = list.filter(c => {
-          const a = noteAuthorship.get(c.id);
-          return !!a && a.byOthers;
-        });
+        list = list.filter(c => aggregateFor(c).byOthers);
       }
     }
 
-    // Notes content
+    // Notes content — pinned + keyword both check the customer's full code network.
     if (r.hasPinnedNotes) {
-      const pinnedCustomerIds = new Set<number>(
-        this.notes().filter(n => n.isPinned).map(n => n.customerId)
-      );
-      list = list.filter(c => pinnedCustomerIds.has(c.id));
+      const pinnedCodes = new Set<string>();
+      for (const n of this.notes()) {
+        if (n.isPinned && n.customerCode) pinnedCodes.add(n.customerCode);
+      }
+      list = list.filter(c => {
+        const codes = codesByCustomerId!.get(c.id);
+        if (!codes) return false;
+        for (const code of codes) if (pinnedCodes.has(code)) return true;
+        return false;
+      });
     }
     if (r.noteKeyword?.trim()) {
       const kw = r.noteKeyword.trim().toLowerCase();
-      // Index which customerCodes have notes matching the keyword
       const matchingCodes = new Set<string>();
       for (const n of this.notes()) {
         if ((n.content || '').toLowerCase().includes(kw) && n.customerCode) {
           matchingCodes.add(n.customerCode);
         }
       }
-      // Build incoming links map (bidirectional — same as contact history)
-      const incomingLinks = new Map<string, Set<string>>();
-      for (const c of this.customers()) {
-        if (!c.scoularId) continue;
-        for (const linkedCode of (c.linkedProducerIds || [])) {
-          if (!incomingLinks.has(linkedCode)) incomingLinks.set(linkedCode, new Set());
-          incomingLinks.get(linkedCode)!.add(c.scoularId);
-        }
-      }
-      // Match customers directly + via linked producers (bidirectional)
       list = list.filter(c => {
-        const allCodes = new Set<string>();
-        if (c.scoularId) allCodes.add(c.scoularId);
-        // Outgoing links (I link to them)
-        for (const linkedCode of (c.linkedProducerIds || [])) allCodes.add(linkedCode);
-        // Incoming links (they link to me)
-        for (const inCode of (incomingLinks.get(c.scoularId || '') || [])) allCodes.add(inCode);
-        // Check if any code in the network has a matching note
-        for (const code of allCodes) {
-          if (matchingCodes.has(code)) return true;
-        }
+        const codes = codesByCustomerId!.get(c.id);
+        if (!codes) return false;
+        for (const code of codes) if (matchingCodes.has(code)) return true;
         return false;
       });
     }
@@ -442,15 +497,6 @@ export class BuildListComponent {
         ? this.tickets().filter(t => t.productCode && this._matchesCropFilter(t.productCode, selectedCrops))
         : this.tickets();
 
-      if (r.ticketQuantityOver != null && r.ticketQuantityOver > 0) {
-        const customerTotals = new Map<number, number>();
-        for (const t of scopedTickets) {
-          if (!t.customerCode) continue;
-          const custId = codeToId.get(t.customerCode);
-          if (custId != null) customerTotals.set(custId, (customerTotals.get(custId) || 0) + (t.netWeight || 0));
-        }
-        list = list.filter(c => (customerTotals.get(c.id) || 0) > r.ticketQuantityOver!);
-      }
       if (r.ticketsInLastDays != null && r.ticketsInLastDays > 0) {
         const cutoff = Date.now() - r.ticketsInLastDays * 86400000;
         const recentCustomers = new Set<string>();
@@ -460,32 +506,29 @@ export class BuildListComponent {
         }
         list = list.filter(c => recentCustomers.has(c.scoularId!));
       }
-      // Quality averages — scoped to selected crops
-      if (r.avgMoistureOver != null || r.avgMoistureUnder != null ||
-          r.avgTestWeightOver != null || r.avgTestWeightUnder != null ||
-          r.avgProteinOver != null || r.avgProteinUnder != null) {
-        const customerQuality = new Map<number, { moistureSum: number; moistureCount: number; twSum: number; twCount: number; proteinSum: number; proteinCount: number }>();
-        for (const t of scopedTickets) {
-          if (!t.customerCode) continue;
-          const custId = codeToId.get(t.customerCode);
-          if (custId == null) continue;
-          let entry = customerQuality.get(custId);
-          if (!entry) { entry = { moistureSum: 0, moistureCount: 0, twSum: 0, twCount: 0, proteinSum: 0, proteinCount: 0 }; customerQuality.set(custId, entry); }
-          if (t.moisture != null) { entry.moistureSum += t.moisture; entry.moistureCount++; }
-          if (t.testWeight != null) { entry.twSum += t.testWeight; entry.twCount++; }
-          if (t.proteinPercent != null) { entry.proteinSum += t.proteinPercent; entry.proteinCount++; }
-        }
-        list = list.filter(c => {
-          const q = customerQuality.get(c.id);
-          if (!q) return false;
-          if (r.avgMoistureOver != null && (q.moistureCount === 0 || q.moistureSum / q.moistureCount <= r.avgMoistureOver)) return false;
-          if (r.avgMoistureUnder != null && (q.moistureCount === 0 || q.moistureSum / q.moistureCount >= r.avgMoistureUnder)) return false;
-          if (r.avgTestWeightOver != null && (q.twCount === 0 || q.twSum / q.twCount <= r.avgTestWeightOver)) return false;
-          if (r.avgTestWeightUnder != null && (q.twCount === 0 || q.twSum / q.twCount >= r.avgTestWeightUnder)) return false;
-          if (r.avgProteinOver != null && (q.proteinCount === 0 || q.proteinSum / q.proteinCount <= r.avgProteinOver)) return false;
-          if (r.avgProteinUnder != null && (q.proteinCount === 0 || q.proteinSum / q.proteinCount >= r.avgProteinUnder)) return false;
-          return true;
-        });
+
+      // Net bu + quality avg filters operate in one of two view modes:
+      //  'grouped' (default) — match using UNAPPLIED ticket groups (productCode|elevatorCode),
+      //                        same grouping the customer Unapplied Tickets tab uses. Any group
+      //                        meeting the threshold qualifies the customer.
+      //  'single'           — match using individual tickets (applied + unapplied). Any single
+      //                        ticket meeting the threshold qualifies the customer.
+      // Quality avg filters compute group-level averages in 'grouped' mode; in 'single' mode they
+      // become per-ticket value checks (so "Avg moisture over 14" reads as "any ticket > 14").
+      const viewMode: 'grouped' | 'single' = this.isAppliedTicketsContext()
+        ? 'single'
+        : (r.ticketViewMode ?? 'single');
+      const hasNetBu = r.ticketQuantityOver != null && r.ticketQuantityOver > 0;
+      const hasQualityFilter = r.avgMoistureOver != null || r.avgMoistureUnder != null ||
+        r.avgTestWeightOver != null || r.avgTestWeightUnder != null ||
+        r.avgProteinOver != null || r.avgProteinUnder != null;
+
+      if (hasNetBu || hasQualityFilter) {
+        const conversionMap = buildConversionMap(this.appState.commodityConversions());
+        const matchingCustomerIds = matchTicketViewModeFilters(
+          scopedTickets, codeToId, conversionMap, viewMode, r
+        );
+        if (matchingCustomerIds) list = list.filter(c => matchingCustomerIds.has(c.id));
       }
     }
 
@@ -516,7 +559,75 @@ export class BuildListComponent {
     }
 
     if (selectedCrops.size > 0) {
-      list = list.filter(c => (c.commodities ?? []).some(crop => selectedCrops.has(crop.trim().toLowerCase())));
+      // Dimension-aware crop filter: when the prompt is about a specific dimension
+      // (storage / tickets / planting / contracts), require the producer to have a
+      // crop match in THAT dimension's data — not in their generic c.commodities list.
+      // Falls back to c.commodities only when no dimension is in play.
+      // Uses effectiveLibraryCategory so saved-list loads (which intentionally leave
+      // selectedLibraryQuery null to preserve the Active List context) still resolve
+      // the right category via queryText match — without this, the saved-list path
+      // silently fell back to c.commodities and produced fewer hits than the fresh
+      // prompt run with identical filters.
+      const category = this.effectiveLibraryCategory();
+      const isStorage = category === 'Storage' || r.hasGrainInStorage
+        || r.storageDaysOver != null || r.storageQuantityOver != null || r.storageReceivableOver != null;
+      const isTickets = category === 'Tickets' || r.hasDeliveriesThisYear
+        || r.ticketQuantityOver != null || r.ticketsInLastDays != null
+        || r.avgMoistureOver != null || r.avgMoistureUnder != null
+        || r.avgTestWeightOver != null || r.avgTestWeightUnder != null
+        || r.avgProteinOver != null || r.avgProteinUnder != null;
+      const isPlanting = category === 'Planting' || r.hasPlantingIntentions
+        || r.plantingYear != null || r.irrigatedOnly || r.drylandOnly
+        || (r.plantingAcresOver != null && r.plantingAcresOver > 0);
+      const isContracts = category === 'Contracts'
+        || r.hasActiveContracts || r.hasUnsignedContracts || r.hasUnpricedContracts
+        || r.hasOverdueContracts || r.contractsExpiringThisMonth || r.multipleCommoditiesContracted
+        || (r.contractQuantityOver != null && r.contractQuantityOver > 0);
+
+      if (isStorage) {
+        const storageByCustomer = new Map<number, StoredGrain[]>();
+        for (const s of this.storedGrain()) {
+          if (!storageByCustomer.has(s.customerId)) storageByCustomer.set(s.customerId, []);
+          storageByCustomer.get(s.customerId)!.push(s);
+        }
+        list = list.filter(c => (storageByCustomer.get(c.id) ?? []).some(s =>
+          !!s.crop && this._matchesCropFilter(s.crop, selectedCrops)
+        ));
+      } else if (isTickets) {
+        const codeToId = new Map<string, number>();
+        for (const c of this.customers()) {
+          if (c.scoularId) codeToId.set(c.scoularId, c.id);
+        }
+        const matchingIds = new Set<number>();
+        for (const t of this.tickets()) {
+          if (!t.customerCode || !t.productCode) continue;
+          if (this._matchesCropFilter(t.productCode, selectedCrops)) {
+            const cid = codeToId.get(t.customerCode);
+            if (cid != null) matchingIds.add(cid);
+          }
+        }
+        list = list.filter(c => matchingIds.has(c.id));
+      } else if (isPlanting) {
+        const plantingByCustomer = new Map<number, PlantingIntention[]>();
+        for (const p of this.plantingIntentions()) {
+          if (!plantingByCustomer.has(p.customerId)) plantingByCustomer.set(p.customerId, []);
+          plantingByCustomer.get(p.customerId)!.push(p);
+        }
+        list = list.filter(c => (plantingByCustomer.get(c.id) ?? []).some(p =>
+          !!p.crop && this._matchesCropFilter(p.crop, selectedCrops)
+        ));
+      } else if (isContracts) {
+        list = list.filter(c => {
+          const cContracts = contractMap.get(c.scoularId!) || [];
+          return cContracts.some(ct =>
+            this._matchesCropFilter(ct.commodityCode || '', selectedCrops) ||
+            this._matchesCropFilter(ct.commodityDescription || '', selectedCrops) ||
+            this._matchesCropFilter(ct.commodityGroup || '', selectedCrops)
+          );
+        });
+      } else {
+        list = list.filter(c => (c.commodities ?? []).some(crop => selectedCrops.has(crop.trim().toLowerCase())));
+      }
     }
     if (r.states && r.states.length > 0) {
       list = list.filter(c => {
@@ -535,7 +646,37 @@ export class BuildListComponent {
       const toAdd = includedCustomers.filter(c => !existingIds.has(c.id) && !excludedIds.has(c.id));
       if (toAdd.length > 0) list = [...list, ...toAdd];
     }
-    return list;
+
+    // Collapse linked-customer groups: when the linked-as-one-entity feature is active,
+    // keep ONE peer row per connected component (the lowest-id customer in `list` that
+    // belongs to it). All other component members get folded into that representative
+    // and surface inside its inline linked-producer panel. Uses the transitive component
+    // closure so a chain A→B→C produces a single row with both B and C linked, not two
+    // separate rows for "A linked to B" and "B linked to C".
+    if (this.linkedFeatureActive()) {
+      const components = this.linkedProducerComponents();
+      const repIdByComponent = new Map<Set<string>, number>(); // component identity → rep id
+      for (const c of list) {
+        if (!c.scoularId) continue;
+        const comp = components.get(c.scoularId);
+        if (!comp || comp.size <= 1) continue;
+        const existing = repIdByComponent.get(comp);
+        if (existing == null || c.id < existing) repIdByComponent.set(comp, c.id);
+      }
+      if (repIdByComponent.size > 0) {
+        list = list.filter(c => {
+          if (!c.scoularId) return true;
+          const comp = components.get(c.scoularId);
+          if (!comp || comp.size <= 1) return true; // standalone customer — keep
+          return repIdByComponent.get(comp) === c.id;
+        });
+      }
+    }
+
+    // Producers always render alphabetically by name — sorting by latest-note timestamp
+    // made the list jump around when inline notes started showing for Contact / Notes
+    // prompts, which made it hard to find a specific producer.
+    return [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   });
 
   readonly availableCrops = computed(() => {
@@ -578,6 +719,9 @@ export class BuildListComponent {
   appliedRefinements = signal<RefinementFilters>({});
   notContactedDaysInput = signal('');
   matchedPatterns = signal<string[]>([]);
+  expandedNoteCount = signal<Map<number, number>>(new Map());
+  readonly NOTE_PAGE_SIZE = 5;
+  expandedLinkedCustomerIds = signal<Set<number>>(new Set());
 
   // ── Manage Members ──────────────────────────────────────────────────────
   showManageMembersPanel = signal(false);
@@ -607,7 +751,7 @@ export class BuildListComponent {
     storage_duration: 'Storage duration', planting: 'Planting', no_planting: 'No planting',
     planting_year: 'Crop year', planting_type: 'Planting type',
     active_contract: 'Active contracts', no_contract: 'No contracts',
-    unsigned_contract: 'Unsigned contracts', negative_pacing: 'Behind on pacing',
+    unsigned_contract: 'Unconfirmed contracts', negative_pacing: 'Behind on pacing',
     positive_pacing: 'Ahead on pacing', contract_unconfirmed: 'Unconfirmed contracts',
     contract_confirmed: 'Confirmed contracts', contract_priced: 'Pricing status',
     contract_quantity: 'Contract quantity', contract_value: 'Contract value',
@@ -646,7 +790,7 @@ export class BuildListComponent {
     return map;
   });
 
-  /** Open contracts only — used by refinement filters (no active, unsigned, etc.). */
+  /** Open contracts only — used by refinement filters (no active, unconfirmed, overdue bu, etc.). */
   private readonly _openContractsByCustomer = computed(() => {
     const map = new Map<string, Contract[]>();
     for (const c of this.contracts()) {
@@ -663,50 +807,30 @@ export class BuildListComponent {
   readonly lastContactByCustomer = computed(() => {
     const map = new Map<number, { text: string; colorClass: string; daysAgo: number }>();
 
-    // Treat bare ISO strings as UTC — API stores DateTime.UtcNow without Z suffix.
-    const parseUtc = (ts: string | Date) => {
-      const raw = typeof ts === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
-      return new Date(raw).getTime();
-    };
-
     // Index notes by customerCode (source customer ID) — same as home page
     const notesByCode = new Map<string, { time: number }>();
     for (const n of this.notes()) {
       if (!n.customerCode) continue;
-      const time = parseUtc(n.createdAt);
+      const time = BuildListComponent.parseNoteTime(n.createdAt);
       const existing = notesByCode.get(n.customerCode);
       if (!existing || time > existing.time) {
         notesByCode.set(n.customerCode, { time });
       }
     }
 
-    // Build bidirectional linked-producer map (outgoing + incoming)
+    // Walk the full linked-producer connected component for each customer so the
+    // "last contacted" date reflects the entire chain (A→B→C). Same closure used
+    // everywhere else linked behavior matters, so the "last contacted" badge agrees
+    // with the inline note panel.
     const allCustomers = this.customers();
-    const linkedById = new Map<number, string[]>();
-    for (const c of allCustomers) {
-      if (c.linkedProducerIds?.length) linkedById.set(c.id, c.linkedProducerIds);
-    }
-    const incomingCodeLinks = new Map<string, Set<string>>();
-    for (const c of allCustomers) {
-      if (!c.scoularId) continue;
-      for (const linkedCode of (c.linkedProducerIds || [])) {
-        if (!incomingCodeLinks.has(linkedCode)) incomingCodeLinks.set(linkedCode, new Set());
-        incomingCodeLinks.get(linkedCode)!.add(c.scoularId);
-      }
-    }
+    const components = this.linkedProducerComponents();
 
-    // Resolve latest note time per customer including linked producers
     const latestNotes = new Map<number, { time: number }>();
     for (const customer of allCustomers) {
-      const freshLinked = linkedById.get(customer.id) ?? customer.linkedProducerIds ?? [];
-      const allCodes = new Set<string>();
-      if (customer.scoularId) allCodes.add(customer.scoularId);
-      for (const linkedCode of freshLinked) allCodes.add(linkedCode);
-      for (const incomingCode of (incomingCodeLinks.get(customer.scoularId || '') || new Set<string>())) {
-        allCodes.add(incomingCode);
-      }
+      if (!customer.scoularId) continue;
+      const codes = components.get(customer.scoularId) ?? new Set([customer.scoularId]);
       let latestTime = 0;
-      for (const code of allCodes) {
+      for (const code of codes) {
         const entry = notesByCode.get(code);
         if (entry && entry.time > latestTime) latestTime = entry.time;
       }
@@ -718,6 +842,10 @@ export class BuildListComponent {
     for (const [customerId, { time }] of latestNotes) {
       const noteDate = new Date(time);
       noteDate.setHours(0, 0, 0, 0);
+      // Math.round (not floor): both endpoints are zeroed to local midnight, so the diff is an
+      // integer number of days — except across DST transitions where the day is 23 or 25 hours.
+      // round handles those edges; floor would mis-bucket a note from yesterday as "today" on
+      // spring-forward day.
       const daysAgo = Math.max(0, Math.round((today.getTime() - noteDate.getTime()) / 86400000));
       let result: { text: string; colorClass: string; daysAgo: number };
       if (daysAgo === 0) result = { text: 'Contacted today', colorClass: 'text-scoular-green', daysAgo };
@@ -728,6 +856,256 @@ export class BuildListComponent {
       map.set(customerId, result);
     }
     return map;
+  });
+
+  // ── Note filters: derive whether a note-focused query/filter is active and surface the matching notes per customer for inline display in the result list. ───────────────
+  private static readonly _NLQ_NOTE_VERB = /notes?\s+(?:added|made|entered|written|created|left)/;
+
+  /** Parses a note's createdAt as UTC. The API stores DateTime.UtcNow without a 'Z' suffix,
+   *  so a bare ISO string would be interpreted by the browser as local time — for a CST user
+   *  that drifts cutoff comparisons by 6 hours and would mis-bucket "today"/"yesterday". */
+  private static parseNoteTime(ts: string | Date): number {
+    const raw = typeof ts === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
+    return new Date(raw).getTime();
+  }
+
+  /** True when the linked-as-one-entity behavior should apply: dedup, badge,
+   *  and the linked-producer expand panel. Notes prompts trigger this (linked
+   *  notes are aggregated under the entity), and the dedicated "Producers with
+   *  linked records" prompt also triggers it. Other prompts (contracts/tickets/
+   *  storage/planting) keep linked producers as their own peer rows since they
+   *  have separate data per producer. */
+  readonly linkedFeatureActive = computed(() => {
+    if (this.noteFilterActive()) return true;
+    const q = this.queryText().toLowerCase();
+    return /linked\s+(?:producer|record)/.test(q);
+  });
+
+  /** Connected components over the linked-producer graph — shared with customer-list and
+   *  every consumer in this component (linkedProducerInfoByCustomer, displayedCustomers
+   *  collapse, codesByCustomerId, matchingNotesByCustomer, lastContactByCustomer) so chained
+   *  links A→B→C are treated as one transitive group everywhere. See shared util for details. */
+  readonly linkedProducerComponents = computed<Map<string, Set<string>>>(() => {
+    return buildLinkedProducerComponents(this.customers());
+  });
+
+  /** True when the result list should render an inline note section per customer.
+   *  Every Contacts-category prompt surfaces inline notes — including absence prompts
+   *  ("never contacted", "haven't contacted in N days"). The user still wants context
+   *  on those producers: even if THEY haven't contacted the producer, a teammate or
+   *  prior merchandiser may have, and seeing the most-recent note tells them what was
+   *  last discussed. The predicate skips date cutoffs for absence prompts so old notes
+   *  aren't accidentally hidden. */
+  readonly noteFilterActive = computed(() => {
+    const r = this.appliedRefinements();
+    if (r.notesInLastDays != null && r.notesInLastDays > 0) return true;
+    if (r.noteKeyword?.trim()) return true;
+    if (r.hasPinnedNotes) return true;
+    if (r.contactedByMeOnly || r.contactedBySomeoneElse) return true;
+    if (r.contactedOnlyOnce || r.contactedMoreThan5) return true;
+    if (r.neverContacted) return true;
+    if (r.notContactedDays != null && r.notContactedDays > 0) return true;
+
+    const q = this.queryText().toLowerCase();
+    if (/\b(?:contacted|called|reached\s+out)\b/.test(q)) return true;
+    return BuildListComponent._NLQ_NOTE_VERB.test(q)
+        || /pinned\s+note/.test(q)
+        || /(?:with|has|have)\s+notes?\b/.test(q)
+        || /notes?\s+(?:about|mentioning|containing|saying)/.test(q);
+  });
+
+  /** Predicate that matches a note against whichever note criteria are active. */
+  readonly noteFilterPredicate = computed<(n: Note) => boolean>(() => {
+    const r = this.appliedRefinements();
+    const q = this.queryText().toLowerCase();
+    const hasContactVerb = /\b(?:contacted|called|reached\s+out)\b/.test(q);
+    // Absence prompts (never / haven't contacted): show ALL notes for the producer so the
+    // user can see prior context regardless of recency. The "N days" in "haven't contacted
+    // in 30 days" is a property of the producer match, not a date filter on notes shown.
+    const isAbsenceQuery = r.neverContacted
+      || (r.notContactedDays != null && r.notContactedDays > 0)
+      || /never\s+contacted|haven'?t\s+contacted|not\s+(?:been\s+)?contacted|haven'?t\s+called/.test(q);
+
+    let cutoffMs: number | null = null;
+    if (!isAbsenceQuery) {
+      if (r.notesInLastDays != null && r.notesInLastDays > 0) {
+        cutoffMs = Date.now() - r.notesInLastDays * 86400000;
+      } else if (BuildListComponent._NLQ_NOTE_VERB.test(q) || hasContactVerb) {
+        // Numeric "in last N days" parsing works for both note-verb and contact-verb queries.
+        const numeric = q.match(/(?:notes?\s+(?:added|made|entered|written|created|left)|contacted|called|reach(?:ed)?\s+out)\s*(?:in|within)?\s*(?:the\s+)?(?:last|past)?\s*(\d+)\s*days?/);
+        if (numeric) cutoffMs = Date.now() - parseInt(numeric[1], 10) * 86400000;
+        else if (q.includes('today')) cutoffMs = Date.now() - 1 * 86400000;
+        else if (q.includes('yesterday')) cutoffMs = Date.now() - 2 * 86400000;
+        else if (q.includes('this week') || q.includes('last week')) cutoffMs = Date.now() - 7 * 86400000;
+        else if (q.includes('this month') || q.includes('last month')) cutoffMs = Date.now() - 30 * 86400000;
+      }
+    }
+
+    // Keyword extraction: prefer the structured refinement; otherwise pull a quoted or "mentioning X"
+    // fragment out of the NLQ query so the inline display matches what the user actually asked for.
+    let keyword = r.noteKeyword?.trim().toLowerCase() || null;
+    if (!keyword) {
+      const quoted = q.match(/notes?\s+(?:about|mentioning|containing|saying|with)\s+["']([^"']+)["']/);
+      if (quoted) keyword = quoted[1].trim().toLowerCase();
+      else {
+        const bare = q.match(/notes?\s+(?:about|mentioning|containing|saying)\s+([\w-]+(?:\s+[\w-]+){0,2})/);
+        if (bare) keyword = bare[1].trim().toLowerCase();
+      }
+    }
+    const requirePinned = !!r.hasPinnedNotes || /pinned\s+note/.test(q);
+
+    // Author candidates for "by me" / "by someone else" filters. Same matcher the
+    // service uses so saved-list "I contacted" filters work even when notes' CreatedBy
+    // arrives as the raw UPN (e.g. "CEgr@scoular.com") instead of a display name.
+    const account = this.msalService.instance.getActiveAccount() ?? this.msalService.instance.getAllAccounts()[0];
+    const authorCandidates = this.nlqFilterService.buildAuthorCandidates(
+      null,
+      account?.name ?? '',
+      account?.username ?? ''
+    );
+    // Implicit "by me" when query starts with "I contacted / called / reached out"
+    const queryImpliesByMe = /^[^a-z]*(?:producers?\s+)?i\s+(?:contacted|called|reached\s+out)\b/.test(q);
+    const requireByMe = r.contactedByMeOnly || queryImpliesByMe;
+    const requireByOthers = r.contactedBySomeoneElse;
+
+    return (n: Note) => {
+      if (cutoffMs != null) {
+        const t = BuildListComponent.parseNoteTime(n.createdAt);
+        if (!t || t < cutoffMs) return false;
+      }
+      if (keyword && !(n.content || '').toLowerCase().includes(keyword)) return false;
+      if (requirePinned && !n.isPinned) return false;
+      if (requireByMe && !this.nlqFilterService.matchesAuthor(n.createdBy, authorCandidates)) return false;
+      if (requireByOthers && this.nlqFilterService.matchesAuthor(n.createdBy, authorCandidates)) return false;
+      return true;
+    };
+  });
+
+  /** Notes matching the active note filter, indexed by source customerCode.
+   *  Each note is tagged with `viaName = "{Name} ({Code})"` of the customer it was
+   *  placed on — applied uniformly to every note so the origin is always visible. */
+  private readonly _matchedNotesByCode = computed(() => {
+    const map = new Map<string, Array<Note & { viaName: string }>>();
+    if (!this.noteFilterActive()) return map;
+
+    const predicate = this.noteFilterPredicate();
+    const customerByCode = new Map<string, Customer>();
+    for (const c of this.customers()) {
+      if (c.scoularId) customerByCode.set(c.scoularId, c);
+    }
+
+    for (const n of this.notes()) {
+      if (!n.customerCode || !predicate(n)) continue;
+      const owner = customerByCode.get(n.customerCode);
+      // Consistent shape: always include the code in trailing parens. Name prepended when known,
+      // omitted otherwise. Avoids the previous "Name (Code)" vs bare "Code" visual mismatch.
+      const viaName = owner ? `${owner.name} (${owner.scoularId})` : `(${n.customerCode})`;
+      const arr = map.get(n.customerCode);
+      const tagged = { ...n, viaName };
+      if (arr) arr.push(tagged);
+      else map.set(n.customerCode, [tagged]);
+    }
+
+    for (const arr of map.values()) {
+      arr.sort((a, b) => {
+        if (!!a.isPinned !== !!b.isPinned) return a.isPinned ? -1 : 1;
+        const dt = BuildListComponent.parseNoteTime(b.createdAt) - BuildListComponent.parseNoteTime(a.createdAt);
+        return dt !== 0 ? dt : (b.id ?? 0) - (a.id ?? 0);
+      });
+    }
+    return map;
+  });
+
+  /** Per-customer aggregated matching notes (own + linked + incoming), pinned-first then newest-first.
+   *  Every note is tagged with viaName so its origin is always identifiable. */
+  readonly matchingNotesByCustomer = computed(() => {
+    const map = new Map<number, Array<Note & { viaName: string }>>();
+    if (!this.noteFilterActive()) return map;
+
+    const matchesByCode = this._matchedNotesByCode();
+    if (matchesByCode.size === 0) return map;
+    const customers = this.customers();
+    const components = this.linkedProducerComponents();
+
+    for (const customer of customers) {
+      const ownCode = customer.scoularId;
+      if (!ownCode) continue;
+      // Walk the full connected component so chained links (A→B→C) aggregate every member's
+      // notes onto the representative row.
+      const codes = components.get(ownCode) ?? new Set([ownCode]);
+
+      const out: Array<Note & { viaName: string }> = [];
+      const seen = new Set<number>();
+      for (const code of codes) {
+        const matches = matchesByCode.get(code);
+        if (!matches) continue;
+        for (const n of matches) {
+          if (seen.has(n.id)) continue;
+          seen.add(n.id);
+          out.push(n);
+        }
+      }
+      if (out.length === 0) continue;
+      out.sort((a, b) => {
+        if (!!a.isPinned !== !!b.isPinned) return a.isPinned ? -1 : 1;
+        const dt = BuildListComponent.parseNoteTime(b.createdAt) - BuildListComponent.parseNoteTime(a.createdAt);
+        return dt !== 0 ? dt : (b.id ?? 0) - (a.id ?? 0);
+      });
+      map.set(customer.id, out);
+    }
+    return map;
+  });
+
+  /** Matching notes for one customer — own notes only (not aggregated). Used in the linked-producer expand panel. */
+  getOwnMatchingNotes(customer: Customer): Array<Note & { viaName: string }> {
+    return customer.scoularId ? (this._matchedNotesByCode().get(customer.scoularId) ?? []) : [];
+  }
+
+  /** Distinct linked-producer info per customer (bidirectional, excluding self).
+   *  Only includes producers whose Customer record is loaded — codes without a match are dropped.
+   *  Manually-excluded customers are filtered out so the exclude action affects the linked panel too.
+   *  Returns an empty map unless the linked-as-one-entity feature is active (notes prompts or
+   *  the "Producers with linked records" prompt) — for other queries each producer is its own row.
+   *  `producers` is the actual Customer[] for inline detail rendering. */
+  readonly linkedProducerInfoByCustomer = computed(() => {
+    const map = new Map<number, { count: number; producers: Customer[] }>();
+    if (!this.linkedFeatureActive()) return map;
+    const customers = this.customers();
+    const excludedIds = this.manuallyExcludedCustomerIds();
+    const components = this.linkedProducerComponents();
+
+    const customerByCode = new Map<string, Customer>();
+    for (const c of customers) {
+      if (c.scoularId) customerByCode.set(c.scoularId, c);
+    }
+
+    for (const customer of customers) {
+      if (!customer.scoularId) continue;
+      const component = components.get(customer.scoularId);
+      if (!component || component.size <= 1) continue;
+      const producers: Customer[] = [];
+      for (const code of component) {
+        if (code === customer.scoularId) continue;
+        const linked = customerByCode.get(code);
+        if (linked && !excludedIds.has(linked.id)) producers.push(linked);
+      }
+      if (producers.length === 0) continue;
+      map.set(customer.id, { count: producers.length, producers });
+    }
+    return map;
+  });
+
+  /** Customer ids that are reachable in the result list — either as their own
+   *  peer row or as a linked producer inside a peer row's expanded panel. */
+  readonly logicallyInResultsIds = computed(() => {
+    const ids = new Set<number>();
+    const linkedMap = this.linkedProducerInfoByCustomer();
+    for (const c of this.displayedCustomers()) {
+      ids.add(c.id);
+      const info = linkedMap.get(c.id);
+      if (info) for (const linked of info.producers) ids.add(linked.id);
+    }
+    return ids;
   });
 
   /** Crops per customer — merged from ProducerDetails, contracts, intentions. */
@@ -818,21 +1196,63 @@ export class BuildListComponent {
 
   readonly libraryCategories = computed(() => {
     const cats = new Set(this.queryLibrary().map(q => q.category));
-    return [...cats].sort();
+    const sorted = [...cats].sort();
+    // Append a 'Saved Lists' pseudo-category at the end when the user has any saved lists
+    // scoped to the current TU. Selecting it filters the library to those saved lists.
+    if (this.visibleSavedLists().length > 0) sorted.push('Saved Lists');
+    return sorted;
   });
 
-  /** Which refine filter sections are visible based on the selected query's category. */
-  readonly showContractFilters = computed(() => {
-    const cat = this.selectedLibraryQuery()?.category;
-    return cat === 'Contracts';
+  /** Saved lists shown in the library — user-owned (API filters by createdBy already), scoped
+   *  to the current TU (via visibleSavedLists), and matched against the library search text.
+   *  Hidden when a non-'Saved Lists' category is selected. */
+  readonly librarySavedLists = computed(() => {
+    const cat = this.selectedCategory();
+    if (cat && cat !== 'Saved Lists') return [];
+    const search = this.librarySearchText().toLowerCase().trim();
+    let lists = this.visibleSavedLists();
+    if (search) {
+      lists = lists.filter(l =>
+        l.name.toLowerCase().includes(search) ||
+        l.query.toLowerCase().includes(search)
+      );
+    }
+    return lists;
   });
+
+  /** The library category driving refine-panel visibility. Prefers the explicitly selected
+   *  library prompt; falls back to the matching library item for the active saved list's
+   *  query so loading a saved list surfaces the right refine sections without making the
+   *  library prompt the "active query" (which would clobber the saved-list context). */
+  readonly effectiveLibraryCategory = computed<string | null>(() => {
+    const explicit = this.selectedLibraryQuery()?.category;
+    if (explicit) return explicit;
+    const active = this.activeSavedList();
+    if (!active) return null;
+    const qLower = active.query.trim().toLowerCase();
+    const matched = this.queryLibrary().find(q => q.queryText.trim().toLowerCase() === qLower);
+    return matched?.category ?? null;
+  });
+
+  /** True when we have an active saved list whose category we can't resolve yet because the
+   *  query library is still loading. Used to suppress the wrong "General" fallback sections
+   *  in the refine panel during the brief lag between state restore and library API response. */
+  readonly isResolvingSavedListCategory = computed<boolean>(() => {
+    return !!this.activeSavedList() && !this.queryLibraryLoaded() && !this.selectedLibraryQuery();
+  });
+
+  /** Which refine filter sections are visible based on the effective library category. */
+  readonly showContractFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Contracts');
   readonly showContactFilters = computed(() => {
-    const cat = this.selectedLibraryQuery()?.category;
+    if (this.isResolvingSavedListCategory()) return false;
+    const cat = this.effectiveLibraryCategory();
     return cat === 'Contacts' || cat === 'Notes';
   });
-  /** Filters that are redundant given the selected query — hide them from the UI. */
+  /** Filters that are redundant given the selected query — hide them from the UI.
+   *  Reads the explicit library prompt OR the active saved list's query so the same hide
+   *  rules apply whether the user just clicked a library prompt or re-opened a saved list. */
   readonly hiddenFilters = computed<Set<string>>(() => {
-    const q = (this.selectedLibraryQuery()?.queryText || '').toLowerCase();
+    const q = (this.selectedLibraryQuery()?.queryText || this.activeSavedList()?.query || '').toLowerCase();
     const hidden = new Set<string>();
     // Contract filters
     if (q.includes('active contract'))      { hidden.add('noActiveContracts'); hidden.add('hasActiveContracts'); }
@@ -845,6 +1265,7 @@ export class BuildListComponent {
     // Contact filters
     if (q.includes('never contacted'))      hidden.add('neverContacted');
     if (/not contacted.*\d+\s*days/.test(q)) hidden.add('notContactedDays');
+    if (/notes?\s+(?:added|made|entered|written|created|left).*(?:\d+\s*days?|today|yesterday|this\s+week)/.test(q)) hidden.add('notesInLastDays');
     if (q.includes('i contacted') || q.includes('i have contacted')) { hidden.add('contactedByMeOnly'); hidden.add('neverContacted'); }
     if (q.includes('i have never'))         { hidden.add('contactedByMeOnly'); hidden.add('neverContacted'); }
     if (q.includes('contacted this week'))  hidden.add('neverContacted');
@@ -868,20 +1289,26 @@ export class BuildListComponent {
     return hidden;
   });
 
-  readonly showTicketFilters = computed(() => {
-    const cat = this.selectedLibraryQuery()?.category;
-    return cat === 'Tickets';
+  readonly showTicketFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Tickets');
+  /** True when the active prompt is specifically about APPLIED tickets (which aren't grouped
+   *  on the customer page, so the "View by AVG" toggle and Avg-prefix labels don't apply).
+   *  Used to hide the AVG checkbox and force single-ticket mode for those prompts. */
+  readonly isAppliedTicketsContext = computed(() => {
+    const explicit = this.selectedLibraryQuery()?.queryText;
+    const active = this.activeSavedList();
+    const q = (explicit || active?.query || this.queryText() || '').toLowerCase();
+    return q.includes('applied ticket') && !q.includes('unapplied');
   });
-  readonly showStorageFilters = computed(() => {
-    const cat = this.selectedLibraryQuery()?.category;
-    return cat === 'Storage';
+  /** Effective view mode after honoring the applied-tickets force-single rule. */
+  readonly effectiveTicketViewMode = computed<'grouped' | 'single'>(() => {
+    if (this.isAppliedTicketsContext()) return 'single';
+    return this.pendingRefinements().ticketViewMode ?? 'single';
   });
-  readonly showPlantingFilters = computed(() => {
-    const cat = this.selectedLibraryQuery()?.category;
-    return cat === 'Planting';
-  });
+  readonly showStorageFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Storage');
+  readonly showPlantingFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Planting');
   readonly showGeneralFilters = computed(() => {
-    const cat = this.selectedLibraryQuery()?.category;
+    if (this.isResolvingSavedListCategory()) return false;
+    const cat = this.effectiveLibraryCategory();
     return !cat || cat === 'General';
   });
 
@@ -915,11 +1342,23 @@ export class BuildListComponent {
       });
     }
 
-    // Load query library
-    this.apiService.getQueryLibrary().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (items) => { this.queryLibrary.set(items); this.queryLibraryLoaded.set(true); },
-      error: () => { this.queryLibraryLoaded.set(true); this.toastService.error('Failed to load query library'); }
-    });
+    // Load query library — populate the shared appState cache so other pages (home,
+    // customer-list) can resolve a saved list's prompt category by queryText match
+    // without each page fetching independently.
+    const cachedLibrary = this.appState.queryLibrary();
+    if (cachedLibrary.length > 0) {
+      this.queryLibrary.set(cachedLibrary);
+      this.queryLibraryLoaded.set(true);
+    } else {
+      this.apiService.getQueryLibrary().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        next: (items) => {
+          this.queryLibrary.set(items);
+          this.appState.queryLibrary.set(items);
+          this.queryLibraryLoaded.set(true);
+        },
+        error: () => { this.queryLibraryLoaded.set(true); this.toastService.error('Failed to load query library'); }
+      });
+    }
 
     // Load all user-accessible trade units so the TU selector works without prior home page visit
     this.apiService.getUserTradeUnits().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -934,6 +1373,15 @@ export class BuildListComponent {
 
     // Try to restore from cache first, otherwise load fresh
     this._initLoad();
+
+    // Collapse all expanded note rows whenever the filter inputs change. The
+    // matching-note set has changed, so previously expanded customers may not
+    // even be in the list anymore.
+    effect(() => {
+      this.appliedRefinements();
+      this.queryText();
+      untracked(() => this.expandedNoteCount.set(new Map()));
+    });
 
     this.destroyRef.onDestroy(() => {
       // If trade units changed while this component was alive, discard state entirely
@@ -958,7 +1406,8 @@ export class BuildListComponent {
           manuallyIncludedCustomerIds: this.manuallyIncludedCustomers().map(c => c.id),
           manuallyExcludedCustomerIds: [...this.manuallyExcludedCustomerIds()],
           showManageMembersPanel: this.showManageMembersPanel(),
-          selectedLibraryQuery: this.selectedLibraryQuery()
+          selectedLibraryQuery: this.selectedLibraryQuery(),
+          activeSavedList: this.activeSavedList()
         });
       }
     });
@@ -1163,6 +1612,7 @@ export class BuildListComponent {
     this.showMap.set(saved.showMap);
     this.detectedState.set(saved.detectedState);
     if (saved.selectedLibraryQuery) this.selectedLibraryQuery.set(saved.selectedLibraryQuery);
+    if (saved.activeSavedList) this.activeSavedList.set(saved.activeSavedList);
     if (saved.appliedRefinements) {
       this.appliedRefinements.set(saved.appliedRefinements);
       this.pendingRefinements.set(saved.appliedRefinements);
@@ -1397,6 +1847,11 @@ export class BuildListComponent {
   private _applyNlqFilter(): void {
     // Pass all contracts (open + prior-year closed) to NLQ — the filter service handles
     // status-specific filtering internally, and pacing queries need both years to compare.
+    // Threading MSAL identity into the context so author-scoped contact / note filters
+    // ("Producers I contacted this week") can recognize "by me" notes whose CreatedBy survives
+    // as the raw email when UserTradeUnitSnapshot has no row for this user.
+    const account = this.msalService.instance.getActiveAccount()
+      ?? this.msalService.instance.getAllAccounts()[0];
     const context: NlqFilterContext = {
       customers: this.customers(),
       contracts: this.contracts(),
@@ -1404,7 +1859,9 @@ export class BuildListComponent {
       notes: this.notes(),
       plantingIntentions: this.plantingIntentions(),
       storedGrain: this.storedGrain(),
-      commodities: this.appState.commodities()
+      commodities: this.appState.commodities(),
+      currentUserDisplayName: account?.name ?? '',
+      currentUserUsername: account?.username ?? ''
     };
     const resolvedQuery = this._resolveUserReferences(this.queryText());
     const result = this.nlqFilterService.parseAndFilter(resolvedQuery, context);
@@ -1455,10 +1912,22 @@ export class BuildListComponent {
   }
 
   loadSavedList(list: SavedList): void {
-    if (this.loading() || this.isProcessing()) return;
+    if (this.loading() || this.isProcessing()) {
+      // Don't drop the click silently — tell the user why nothing happened so they aren't
+      // wondering whether the click landed. The processing spinner is already on screen but
+      // can be easy to miss if focus is on the library panel.
+      this.toastService.info('Still loading — please wait a moment and try again');
+      return;
+    }
     this.usageTracking.postClickEvent('interaction', 'build-a-list', 'saved-list-loaded', list.id.toString());
     this.activeSavedList.set(list);
     this.queryText.set(list.query);
+    // Do NOT set selectedLibraryQuery here — that would make the "Active Query" indicator
+    // show the library prompt's name (not the saved list), and its "Change" button calls
+    // clearQuery() which wipes activeSavedList — breaking the save-as-update flow. Instead
+    // we render an "Active List" indicator for the saved list and the refine-panel section
+    // visibility derives from a separate computed (effectiveLibraryCategory) that looks up
+    // the matching library item by queryText.
     this.pendingRefinements.set(list.filters ? { ...list.filters } : {});
     this.appliedRefinements.set({ ...this.pendingRefinements() });
     this.notContactedDaysInput.set(
@@ -1472,13 +1941,11 @@ export class BuildListComponent {
     this.manuallyExcludedCustomerIds.set(new Set(list.excludedCustomerIds || []));
     this._pendingIncludedIds = list.includedCustomerIds ?? [];
     this.manuallyIncludedCustomers.set([]);
-    // Open the panel automatically so the user can see the active filters
-    if (this.hasAnyRefinement(this.appliedRefinements())) {
-      this.showRefinePanel.set(true);
-    }
-    if (this._pendingIncludedIds.length > 0 || this.manuallyExcludedCustomerIds().size > 0) {
-      this.showManageMembersPanel.set(true);
-    }
+    // Don't auto-open the Refine Filters or Manage Members panels — show the results first;
+    // the user can open either panel themselves if they want to edit. The active filter / member
+    // counts are still visible on the toggle buttons so they know data is loaded underneath.
+    this.showRefinePanel.set(false);
+    this.showManageMembersPanel.set(false);
     // Clear stale results before fetching so no intermediate render fires with the
     // enriched cache that home page customer visits leave in appState.contracts.
     this.filteredCustomers.set([]);
@@ -1544,21 +2011,26 @@ export class BuildListComponent {
       return;
     }
 
-    // Immediately filter current results for exclude candidates (client-side, instant)
+    // Immediately filter current results for exclude candidates (client-side, instant).
+    // "In results" includes both visible peer rows and linked producers reachable
+    // through their expanded panels, so a linked producer doesn't get mislabeled as add-only.
     const lower = term.trim().toLowerCase();
     const excludedIds = this.manuallyExcludedCustomerIds();
+    const logicalIds = this.logicallyInResultsIds();
+    const allCustomers = this.customers();
+    const matchesTerm = (c: Customer) =>
+      c.name.toLowerCase().includes(lower) ||
+      (c.scoularId || '').toLowerCase().includes(lower) ||
+      (c.farm || '').toLowerCase().includes(lower);
+
     this.memberInResultsMatches.set(
-      this.displayedCustomers()
-        .filter(c =>
-          !excludedIds.has(c.id) &&
-          (c.name.toLowerCase().includes(lower) ||
-           (c.scoularId || '').toLowerCase().includes(lower) ||
-           (c.farm || '').toLowerCase().includes(lower))
-        )
+      allCustomers
+        .filter(c => logicalIds.has(c.id) && !excludedIds.has(c.id) && matchesTerm(c))
         .slice(0, 5)
     );
 
-    // Debounced API search for add candidates
+    // Debounced API search for add candidates — anything already logically in
+    // results (peer or linked sub-row) is filtered out.
     this.memberSearchLoading.set(true);
     this._memberSearchTimeout = setTimeout(() => {
       const tus = this.effectiveTradeUnits();
@@ -1567,9 +2039,9 @@ export class BuildListComponent {
         .subscribe({
           next: (results) => {
             const includedIds = new Set(this.manuallyIncludedCustomers().map(c => c.id));
-            const displayedIds = new Set(this.displayedCustomers().map(c => c.id));
+            const inList = this.logicallyInResultsIds();
             this.memberSearchResults.set(
-              results.filter(c => !includedIds.has(c.id) && !displayedIds.has(c.id)).slice(0, 5)
+              results.filter(c => !includedIds.has(c.id) && !inList.has(c.id)).slice(0, 5)
             );
             this.memberSearchLoading.set(false);
           },
@@ -1829,6 +2301,7 @@ export class BuildListComponent {
       filters.multipleCommoditiesContracted ||
       filters.neverContacted ||
       (filters.notContactedDays != null && filters.notContactedDays > 0) ||
+      (filters.notesInLastDays != null && filters.notesInLastDays > 0) ||
       filters.contactedOnlyOnce ||
       filters.contactedMoreThan5 ||
       filters.contactedByMeOnly ||
@@ -1884,11 +2357,21 @@ export class BuildListComponent {
     const tradeUnits = this.effectiveTradeUnits();
     const includedIds = this.manuallyIncludedCustomers().map(c => c.id);
     const excludedIds = [...this.manuallyExcludedCustomerIds()];
+    // Resolve the prompt's library category (Contracts / Tickets / etc.) and persist it as a
+    // private hint on the filters so home/customer-list can run the dimension-aware crops filter
+    // identically — they don't load the query library and can't recover the category from
+    // queryText otherwise. Build-list reads it back too, but its own UI uses effectiveLibraryCategory.
+    const category = this.effectiveLibraryCategory();
+    const baseFilters = this.activeRefinementCount() > 0 ? { ...this.appliedRefinements() } : null;
+    const filtersWithCategory = baseFilters
+      ? (category ? { ...baseFilters, _promptCategory: category } : baseFilters)
+      : (category ? { _promptCategory: category } : undefined);
+
     const payload = {
       name: this.newListName(),
       query: this.queryText(),
       tradeUnits: tradeUnits.length > 0 ? tradeUnits.join(',') : undefined,
-      filters: this.activeRefinementCount() > 0 ? { ...this.appliedRefinements() } : undefined,
+      filters: filtersWithCategory,
       includedCustomerIds: includedIds.length > 0 ? includedIds : undefined,
       excludedCustomerIds: excludedIds.length > 0 ? excludedIds : undefined,
     };
@@ -1960,7 +2443,130 @@ export class BuildListComponent {
 
   selectCustomer(customer: Customer): void {
     this.usageTracking.trackProfileOpened(customer.id.toString());
-    this.router.navigate(['/'], { queryParams: { customerId: customer.id } });
+    const tab = this._detectFocusTab();
+    const params: Record<string, string | number> = { customerId: customer.id };
+    if (tab) params['tab'] = tab;
+    this.router.navigate(['/'], { queryParams: params });
+  }
+
+  /** Map the active prompt/filter context to a customer-profile tab so that
+   *  clicking a producer lands on the section relevant to why they're in the
+   *  result list. Returns null when there's no clear focus (e.g., notes are
+   *  always visible in the sidebar, so no tab override is needed). */
+  private _detectFocusTab(): string | null {
+    const r = this.appliedRefinements();
+    const q = this.queryText().toLowerCase();
+
+    // Notes already visible in the sidebar — no tab override needed.
+    if (this.noteFilterActive()) return null;
+
+    // Storage
+    if (q.includes('storage') || q.includes('stored grain') ||
+        (r.storageDaysOver != null && r.storageDaysOver > 0) ||
+        (r.storageQuantityOver != null && r.storageQuantityOver > 0) ||
+        (r.storageReceivableOver != null && r.storageReceivableOver > 0) ||
+        r.hasGrainInStorage) {
+      return 'storage';
+    }
+
+    // Tickets — quantity, recency, or quality metrics.
+    // Customer profile has only ONE ticket tab and it's "Unapplied Tickets" — applied
+    // tickets are surfaced inside Contracts (expand a contract row to see its applied
+    // tickets). So an "applied tickets" prompt should land on the contracts tab, not
+    // the unapplied-tickets tab. Only route to the tickets tab when the prompt is
+    // explicitly about unapplied tickets (or is generic about tickets with no
+    // applied/unapplied qualifier).
+    const isAppliedTicketsQuery = q.includes('applied ticket') && !q.includes('unapplied');
+    if (isAppliedTicketsQuery) {
+      return 'contracts';
+    }
+    if (q.includes('ticket') || q.includes('unapplied') ||
+        (r.ticketQuantityOver != null && r.ticketQuantityOver > 0) ||
+        (r.ticketsInLastDays != null && r.ticketsInLastDays > 0) ||
+        r.avgMoistureOver != null || r.avgMoistureUnder != null ||
+        r.avgTestWeightOver != null || r.avgTestWeightUnder != null ||
+        r.avgProteinOver != null || r.avgProteinUnder != null) {
+      return 'tickets';
+    }
+
+    // Planting intentions
+    if (q.includes('planting') || q.includes('intention') ||
+        r.plantingYear != null || r.irrigatedOnly || r.drylandOnly ||
+        (r.plantingAcresOver != null && r.plantingAcresOver > 0) ||
+        r.hasPlantingIntentions) {
+      return 'planting';
+    }
+
+    // Contracts — explicit signals or contract-flavored query
+    if (q.includes('contract') || q.includes('unsigned') || q.includes('expir') ||
+        q.includes('unpriced') || q.includes('overdue') ||
+        r.noActiveContracts || r.hasUnsignedContracts || r.downHarvestPace ||
+        r.hasUnpricedContracts || r.hasOverdueContracts ||
+        (r.contractQuantityOver != null && r.contractQuantityOver > 0) ||
+        r.contractsExpiringThisMonth || r.multipleCommoditiesContracted ||
+        r.hasActiveContracts) {
+      return 'contracts';
+    }
+
+    return null;
+  }
+
+  /** How many earlier notes are currently revealed for this customer. */
+  getNoteExpandCount(customerId: number): number {
+    return this.expandedNoteCount().get(customerId) ?? 0;
+  }
+
+  /** Reveal the next page of earlier notes. Caller passes `totalEarlier` (count of notes
+   *  beyond the always-visible most-recent one) so the cap reflects the current display
+   *  context (aggregated for the parent vs own-only for split linked sub-rows). */
+  expandMoreNotes(customerId: number, totalEarlier: number): void {
+    this.expandedNoteCount.update(m => {
+      const next = new Map(m);
+      const current = next.get(customerId) ?? 0;
+      next.set(customerId, Math.min(totalEarlier, current + this.NOTE_PAGE_SIZE));
+      return next;
+    });
+  }
+
+  /** Collapse all earlier notes for this customer back to default (only the most-recent shown). */
+  collapseNotes(customerId: number): void {
+    this.expandedNoteCount.update(m => {
+      const next = new Map(m);
+      next.delete(customerId);
+      return next;
+    });
+  }
+
+  /** Active keyword used for inline highlight in matching notes. */
+  getActiveNoteKeyword(): string {
+    return this.appliedRefinements().noteKeyword?.trim() ?? '';
+  }
+
+  toggleLinkedExpand(customerId: number): void {
+    let opening = false;
+    this.expandedLinkedCustomerIds.update(s => {
+      const next = new Set(s);
+      if (next.has(customerId)) next.delete(customerId);
+      else { next.add(customerId); opening = true; }
+      return next;
+    });
+    // The parent's notes context flips between aggregated and own-only when this toggles,
+    // so reset its note pagination. When closing, also drop any pagination state for the
+    // linked sub-rows that were visible — those entries are orphaned otherwise and a future
+    // re-expansion would reuse a stale count.
+    const linkedIds = !opening
+      ? (this.linkedProducerInfoByCustomer().get(customerId)?.producers || []).map(p => p.id)
+      : [];
+    this.expandedNoteCount.update(m => {
+      const next = new Map(m);
+      next.delete(customerId);
+      for (const id of linkedIds) next.delete(id);
+      return next;
+    });
+  }
+
+  isLinkedExpanded(customerId: number): boolean {
+    return this.expandedLinkedCustomerIds().has(customerId);
   }
 
   getInitials(name: string): string {

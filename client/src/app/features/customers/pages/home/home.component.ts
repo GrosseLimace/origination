@@ -353,7 +353,21 @@ export class HomeComponent {
         const list = data ?? [];
         this.savedLists.set(list);
         this.appState.setSavedLists(list);
-        this._enrichSavedLists();
+        // Always ensure the query library is in appState so customer-list (which renders the
+        // saved list dropdown on this page) can resolve a saved list's prompt category by
+        // queryText match. Cached after first fetch — both home and build-list reuse it.
+        if (this.appState.queryLibrary().length === 0) {
+          this.apiService.getQueryLibrary().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: (items) => {
+              this.appState.queryLibrary.set(items);
+              // Re-evaluate saved lists with the now-available category fallback.
+              this._enrichSavedLists(true);
+            },
+            error: () => this._enrichSavedLists()
+          });
+        } else {
+          this._enrichSavedLists();
+        }
       },
       error: () => {}
     });
@@ -478,6 +492,8 @@ export class HomeComponent {
       if (!needsEnrich) return;
     }
 
+    const account = this.msalService.instance.getActiveAccount()
+      ?? this.msalService.instance.getAllAccounts()[0];
     const context: NlqFilterContext = {
       customers: this.customers(),
       contracts: this.contracts(),
@@ -485,10 +501,13 @@ export class HomeComponent {
       notes: this.notes(),
       plantingIntentions: this.plantingIntentions(),
       storedGrain: this.storedGrain(),
-      commodities: this.appState.commodities()
+      commodities: this.appState.commodities(),
+      // Thread identity through so saved-list "by me" filters work even when notes' CreatedBy
+      // wasn't resolved to a display name on the API side.
+      currentUserDisplayName: account?.name ?? '',
+      currentUserUsername: account?.username ?? ''
     };
-    const account = this.msalService.instance.getActiveAccount()
-      ?? this.msalService.instance.getAllAccounts()[0];
+    const queryLibrary = this.appState.queryLibrary();
     this.savedLists.set(this.savedLists().map(list => {
       if (!forceRefresh && list.customerIds?.length) return list; // Already resolved
       // Resolve "I"/"me"/"my" to the user's name so author-based queries work
@@ -496,8 +515,22 @@ export class HomeComponent {
       const result = this.nlqFilterService.parseAndFilter(resolvedQuery, context);
       // If no patterns matched, the NLQ returned all customers — don't cache that as valid
       if (result.matchedPatterns.length === 0) return list;
-      const refined = list.filters
-        ? this.nlqFilterService.applyRefinementFilters(result.customers, list.filters, this.contracts(), this.notes())
+      // Backfill _promptCategory if the saved list pre-dates the hint AND the query library
+      // has a match for its queryText. Lets the dimension-aware crops filter in the service
+      // still find the right category for older saved lists without requiring a re-save.
+      let listFilters = list.filters;
+      if (listFilters && !listFilters._promptCategory && queryLibrary.length > 0) {
+        const qLower = list.query.trim().toLowerCase();
+        const matched = queryLibrary.find(q => q.queryText.trim().toLowerCase() === qLower);
+        if (matched?.category) listFilters = { ...listFilters, _promptCategory: matched.category };
+      }
+      const refined = listFilters
+        ? this.nlqFilterService.applyRefinementFilters(result.customers, listFilters, this.contracts(), this.notes(), {
+            tickets: this.tickets(),
+            storedGrain: this.storedGrain(),
+            plantingIntentions: this.plantingIntentions(),
+            commodityConversions: this.appState.commodityConversions()
+          })
         : result.customers;
       const ids = this.nlqFilterService.applyCustomerOverrides(
         refined.map(c => c.id), list.includedCustomerIds, list.excludedCustomerIds
@@ -811,7 +844,17 @@ export class HomeComponent {
     if (!currentCustomer) return;
 
     const allContracts = this.contracts().filter(c => c.ctrmCustomerId === currentCustomer.scoularId);
-    const allTickets = this.tickets().filter(t => t.customerCode === currentCustomer.scoularId);
+    // Include tickets whose CustomerCode matches the customer (covers unapplied + same-customer
+    // applied) AND tickets whose CtrmContractNumber is on one of this customer's contracts
+    // (covers cross-entity / split-load tickets where the ticket's CustomerCode differs from
+    // the contract's CtrmCustomerId — the backend now returns these; this filter must let them through).
+    const customerContractIds = new Set(
+      allContracts.map(c => c.sourceContractId).filter((s): s is string => !!s)
+    );
+    const allTickets = this.tickets().filter(t =>
+      t.customerCode === currentCustomer.scoularId
+      || (!!t.ctrmContractNumber && customerContractIds.has(t.ctrmContractNumber))
+    );
     this.allCustomerContracts.set([...allContracts]);
     this.allCustomerTickets.set([...allTickets]);
     this.customerContracts.set([...allContracts]);
