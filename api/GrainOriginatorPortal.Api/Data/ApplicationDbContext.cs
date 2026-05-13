@@ -26,6 +26,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<ESignEnrollment> ESignEnrollments => Set<ESignEnrollment>();
     public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<CustomerTradeUnit> CustomerTradeUnits => Set<CustomerTradeUnit>();
+    public DbSet<CustomerLink> CustomerLinks => Set<CustomerLink>();
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
     public DbSet<BidSheetLocation> BidSheetLocations => Set<BidSheetLocation>();
     public DbSet<BidSheetLocationBid> BidSheetLocationBids => Set<BidSheetLocationBid>();
@@ -87,6 +88,15 @@ public class ApplicationDbContext : DbContext
 
             entity.Ignore(e => e.Content);
 
+            // FK to dbo.Customer — NoAction so cascading deletes from Customer don't
+            // wipe user-authored notes. The populate endpoint disables this constraint
+            // temporarily while it rebuilds the Customer table.
+            entity.HasOne(e => e.Customer)
+                  .WithMany()
+                  .HasForeignKey(e => e.CustomerId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_Notes_Customer_CustomerId");
+
             entity.HasIndex(e => e.CustomerId).HasDatabaseName("IX_Notes_CustomerId");
         });
 
@@ -110,6 +120,14 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
             entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
             entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
+
+            // FK to dbo.Customer — NoAction so cascading deletes from Customer don't
+            // wipe user-authored planting intentions.
+            entity.HasOne(e => e.Customer)
+                  .WithMany()
+                  .HasForeignKey(e => e.CustomerId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_ProducerPlantingIntentions_Customer_CustomerId");
 
             entity.HasIndex(e => e.CustomerId).HasDatabaseName("IX_ProducerPlantingIntentions_CustomerId");
             entity.HasIndex(e => new { e.TradeUnit, e.PlantingYear }).HasDatabaseName("IX_ProducerPlantingIntentions_TradeUnit");
@@ -216,7 +234,43 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
 
+            // FK to dbo.Customer — NoAction so cascading deletes from Customer don't
+            // wipe rep-authored producer details. UNIQUE index on CustomerId enforces
+            // the 1:1 relationship.
+            entity.HasOne(e => e.Customer)
+                  .WithMany()
+                  .HasForeignKey(e => e.CustomerId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_ProducerDetails_Customer_CustomerId");
+
             entity.HasIndex(e => e.CustomerId).IsUnique().HasDatabaseName("IX_ProducerDetails_CustomerId");
+        });
+
+        modelBuilder.Entity<CustomerLink>(entity =>
+        {
+            entity.ToTable("CustomerLink", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.FromCustomerId).HasColumnName("FromCustomerId").IsRequired();
+            entity.Property(e => e.ToCustomerId).HasColumnName("ToCustomerId").IsRequired();
+
+            entity.HasOne(e => e.FromCustomer)
+                  .WithMany()
+                  .HasForeignKey(e => e.FromCustomerId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_CustomerLink_Customer_From");
+            entity.HasOne(e => e.ToCustomer)
+                  .WithMany()
+                  .HasForeignKey(e => e.ToCustomerId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_CustomerLink_Customer_To");
+
+            // One row per directed pair.
+            entity.HasIndex(e => new { e.FromCustomerId, e.ToCustomerId })
+                  .IsUnique()
+                  .HasDatabaseName("UQ_CustomerLink_From_To");
+            // Reverse-lookup index — "who links TO this customer?"
+            entity.HasIndex(e => e.ToCustomerId).HasDatabaseName("IX_CustomerLink_ToCustomerId");
         });
 
         // -------------------------------------------------------------------------

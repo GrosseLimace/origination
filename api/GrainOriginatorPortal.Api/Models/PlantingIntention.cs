@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GrainOriginatorPortal.Api.Models;
 
 /// <summary>
@@ -21,4 +23,11 @@ public class PlantingIntention
     public string CreatedBy { get; set; } = string.Empty;
     public DateTime? ModifiedAt { get; set; }
     public string? ModifiedBy { get; set; }
+
+    // Navigation property — FK to dbo.Customer. Populated via Include() so the
+    // service layer can copy CustomerName / CustomerCode onto the DTO without
+    // those columns being stored on the ProducerPlantingIntentions table.
+    // [JsonIgnore] keeps the nested Customer out of API responses.
+    [JsonIgnore]
+    public Customer? Customer { get; set; }
 }

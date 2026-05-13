@@ -205,6 +205,20 @@ public class DiagnosticsController : ControllerBase
             .ToListAsync(cancellationToken);
 
         // Clear existing rows in FK order — CustomerTradeUnit FKs Customer, so child first.
+        // Notes / ProducerDetails / ProducerPlantingIntentions also FK to Customer, so we
+        // disable those constraints during the DELETE+INSERT to avoid wiping the user-
+        // authored rows. After the rebuild completes, every original Customer row is
+        // re-created, so the FKs are valid again. Re-enable WITH CHECK to catch any drift.
+        const string disableFks = @"
+            ALTER TABLE [dbo].[Notes] NOCHECK CONSTRAINT FK_Notes_Customer_CustomerId;
+            ALTER TABLE [dbo].[ProducerDetails] NOCHECK CONSTRAINT FK_ProducerDetails_Customer_CustomerId;
+            ALTER TABLE [dbo].[ProducerPlantingIntentions] NOCHECK CONSTRAINT FK_ProducerPlantingIntentions_Customer_CustomerId;";
+        const string enableFks = @"
+            ALTER TABLE [dbo].[Notes] WITH CHECK CHECK CONSTRAINT FK_Notes_Customer_CustomerId;
+            ALTER TABLE [dbo].[ProducerDetails] WITH CHECK CHECK CONSTRAINT FK_ProducerDetails_Customer_CustomerId;
+            ALTER TABLE [dbo].[ProducerPlantingIntentions] WITH CHECK CHECK CONSTRAINT FK_ProducerPlantingIntentions_Customer_CustomerId;";
+
+        await _appContext.Database.ExecuteSqlRawAsync(disableFks, cancellationToken);
         await _appContext.Database.ExecuteSqlRawAsync("DELETE FROM dbo.CustomerTradeUnit", cancellationToken);
         await _appContext.Database.ExecuteSqlRawAsync("DELETE FROM dbo.Customer", cancellationToken);
 
@@ -263,6 +277,12 @@ public class DiagnosticsController : ControllerBase
         await _appContext.CustomerTradeUnits.AddRangeAsync(ctuRows, cancellationToken);
 
         await _appContext.SaveChangesAsync(cancellationToken);
+
+        // Re-enable the FK constraints we disabled above. WITH CHECK validates that
+        // every existing Notes / ProducerDetails / ProducerPlantingIntentions row
+        // still has a matching Customer — flags real orphans introduced by ODS
+        // customer removals so they can be cleaned up.
+        await _appContext.Database.ExecuteSqlRawAsync(enableFks, cancellationToken);
 
         sw.Stop();
         return Ok(new
