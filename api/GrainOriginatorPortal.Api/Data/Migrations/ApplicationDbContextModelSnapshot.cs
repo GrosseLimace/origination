@@ -315,6 +315,133 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                     b.ToTable("Commodities", "dbo");
                 });
 
+            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.Customer", b =>
+                {
+                    b.Property<long>("Id")
+                        .HasColumnType("bigint")
+                        .HasColumnName("CustomerId");
+
+                    b.Property<string>("AddressLine1")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("MerchandisingAddressLine1");
+
+                    b.Property<DateTime?>("EffectiveEndDate")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("EffectiveEndDate");
+
+                    b.Property<DateTime?>("EffectiveStartDate")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("EffectiveStartDate");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("MerchandisingEmail");
+
+                    b.Property<string>("ExtendedAddressLine1")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("ExtendedAddressLine1");
+
+                    b.Property<string>("ExtendedAddressLine2")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("ExtendedAddressLine2");
+
+                    b.Property<string>("ExtendedAddressLine3")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("ExtendedAddressLine3");
+
+                    b.Property<string>("ExtendedAddressLine4")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("ExtendedAddressLine4");
+
+                    b.Property<string>("ExtendedCity")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("ExtendedCity");
+
+                    b.Property<string>("ExtendedCountry")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("ExtendedCountry");
+
+                    b.Property<string>("ExtendedPostalCode")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("ExtendedPostalCode");
+
+                    b.Property<string>("ExtendedPrimaryPhone")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("ExtendedPrimaryPhone");
+
+                    b.Property<string>("ExtendedStateProvince")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("ExtendedStateProvince");
+
+                    b.Property<string>("IndustryCode1")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("IndustryCode1");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("IsActive");
+
+                    b.Property<string>("Location")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("MerchandisingCity");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("CustomerName");
+
+                    b.Property<string>("Phone")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("MerchandisingPhone");
+
+                    b.Property<string>("PostalCode")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("MerchandisingPostalCode");
+
+                    b.Property<string>("ScoularId")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)")
+                        .HasColumnName("ScoularId");
+
+                    b.Property<string>("StateProvince")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("MerchandisingStateProvince");
+
+                    b.Property<string>("SupplementalEmail")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("SupplementalEmail");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .HasDatabaseName("IX_Customer_CustomerName");
+
+                    b.HasIndex("ScoularId")
+                        .HasDatabaseName("IX_Customer_ScoularId");
+
+                    b.ToTable("Customer", "dbo");
+                });
+
             modelBuilder.Entity("GrainOriginatorPortal.Api.Models.CustomerSnapshot", b =>
                 {
                     b.Property<int>("Id")
@@ -424,6 +551,43 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                         .HasDatabaseName("IX_CustomerSnapshot_IsActive_TradeUnit_CustomerName");
 
                     b.ToTable("CustomerSnapshot", "dbo");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.CustomerTradeUnit", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<long>("CustomerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("CustomerId");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("IsActive");
+
+                    b.Property<string>("TradeUnit")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("TradeUnit");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId", "TradeUnit")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_CustomerTradeUnit_CustomerId_TradeUnit");
+
+                    b.HasIndex("TradeUnit", "IsActive")
+                        .HasDatabaseName("IX_CustomerTradeUnit_TradeUnit_IsActive");
+
+                    b.ToTable("CustomerTradeUnit", "dbo");
                 });
 
             modelBuilder.Entity("GrainOriginatorPortal.Api.Models.DashboardActualHarvest", b =>
@@ -1581,6 +1745,17 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Location");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.CustomerTradeUnit", b =>
+                {
+                    b.HasOne("GrainOriginatorPortal.Api.Models.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Customer");
                 });
 
             modelBuilder.Entity("GrainOriginatorPortal.Api.Models.BidSheetLocation", b =>

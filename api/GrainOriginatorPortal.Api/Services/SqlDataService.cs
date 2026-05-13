@@ -139,58 +139,30 @@ public class SqlDataService : IDataService
             var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
             var filterMsg = hasTradeUnitFilter ? $" (filtered by {tradeUnits!.Count} trade units: {string.Join(", ", tradeUnits)})" : "";
 
-            // --- PERF: SQL-side dedup via ROW_NUMBER so only one row per customer crosses the wire.
-            // Previously pulled ALL snapshot rows (one per customer-trade-unit pair) into memory
-            // and deduplicated with GroupBy in C#, transferring ~Nx the needed rows.
-            // Old code:
-            //   var query = _appContext.CustomerSnapshots.AsNoTracking().Where(s => s.IsActive);
-            //   if (hasTradeUnitFilter)
-            //       query = query.Where(s => s.TradeUnit != null && tradeUnits!.Contains(s.TradeUnit));
-            //   var snapshots = await query.OrderBy(s => s.CustomerName).ToListAsync(cancellationToken);
-            //   var customers = snapshots
-            //       .GroupBy(s => s.CustomerId)
-            //       .Select(g => MapSnapshotToCustomer(g.First()))
-            //       .OrderBy(c => c.Name)   // <-- redundant sort (SQL already sorted)
-            //       .ToList();
-            //   await EnrichCustomersWithESignAsync(customers, cancellationToken);
-
-            // Build WHERE clause and parameters for raw SQL dedup query
-            var whereClauses = new List<string> { "IsActive = 1" };
-            var parameters = new List<SqlParameter>();
+            // Reads dbo.Customer (one row per CustomerId) joined to dbo.CustomerTradeUnit
+            // when a TU scope is supplied. No ROW_NUMBER dedup needed — the new schema is
+            // one-row-per-customer by construction.
+            IQueryable<Customer> query = _appContext.Customers
+                .AsNoTracking()
+                .Where(c => c.IsActive);
 
             if (hasTradeUnitFilter)
             {
-                var csv = SanitizeCsv(tradeUnits!);
-                whereClauses.Add("TradeUnit IN (SELECT value FROM STRING_SPLIT(@tradeUnits, ','))");
-                parameters.Add(new SqlParameter("@tradeUnits", csv));
+                query = query.Where(c => _appContext.CustomerTradeUnits.Any(ctu =>
+                    ctu.CustomerId == c.Id
+                    && ctu.IsActive
+                    && tradeUnits!.Contains(ctu.TradeUnit)));
             }
 
-            var where = string.Join(" AND ", whereClauses);
-            var sql = $@"
-                SELECT * FROM (
-                    SELECT *, ROW_NUMBER() OVER (PARTITION BY CustomerId ORDER BY CustomerName) AS rn
-                    FROM dbo.CustomerSnapshot
-                    WHERE {where}
-                ) t WHERE rn = 1
-                ORDER BY CustomerName";
-
-            // NOTE: Cannot parallelize customer + eSign queries via Task.WhenAll because
-            // both use the same _appContext DbContext, and EF Core forbids concurrent operations
-            // on a single DbContext instance. The SQL dedup + indexes are the main perf wins here.
-            var snapshots = await _appContext.CustomerSnapshots
-                .FromSqlRaw(sql, parameters.ToArray())
-                .AsNoTracking()
-                .ToListAsync(cancellationToken);
-
-            var customers = snapshots.Select(MapSnapshotToCustomer).ToList();
+            var customers = await query.OrderBy(c => c.Name).ToListAsync(cancellationToken);
 
             await EnrichCustomersWithESignAsync(customers, cancellationToken);
-            _logger.LogInformation("Returning {Count} customers from CustomerSnapshot{Filter}", customers.Count, filterMsg);
+            _logger.LogInformation("Returning {Count} customers from Customer{Filter}", customers.Count, filterMsg);
             return customers;
         }
         catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
         {
-            _logger.LogWarning(ex, "CustomerSnapshot table/column not found (SQL {Number}) — returning empty customer list [{TraceId}]",
+            _logger.LogWarning(ex, "Customer table/column not found (SQL {Number}) — returning empty customer list [{TraceId}]",
                 ex.Number, GetTraceId());
             return [];
         }
@@ -222,17 +194,23 @@ public class SqlDataService : IDataService
             if (searchWords.Count == 0)
                 return [];
 
-            // --- PERF: Raw SQL with ROW_NUMBER dedup (same approach as GetCustomersAsync).
-            // Old code used EF LINQ Contains which generates LIKE '%word%' per column per word,
-            // then pulled up to 1000 duplicate TU rows and deduped in C#.
-            // New approach: single raw SQL query with dedup built in, returns max 200 unique customers.
-            var whereClauses = new List<string> { "IsActive = 1" };
+            // Reads dbo.Customer (one row per CustomerId — no ROW_NUMBER dedup needed) with
+            // a parameterized LIKE-per-word AND-across-words match. TU scope is applied via
+            // EXISTS against dbo.CustomerTradeUnit. PrimaryContact match is still a correlated
+            // subquery against dbo.ProducerDetails — that's an app-DB join that EF LINQ would
+            // generate inefficiently, so we keep raw SQL.
+            var whereClauses = new List<string> { "c.IsActive = 1" };
             var parameters = new List<SqlParameter>();
 
             if (hasTradeUnitFilter)
             {
                 var csv = SanitizeCsv(tradeUnits!);
-                whereClauses.Add("TradeUnit IN (SELECT value FROM STRING_SPLIT(@tradeUnits, ','))");
+                whereClauses.Add(@"EXISTS (
+                    SELECT 1 FROM dbo.CustomerTradeUnit ctu
+                    WHERE ctu.CustomerId = c.CustomerId
+                      AND ctu.IsActive = 1
+                      AND ctu.TradeUnit IN (SELECT value FROM STRING_SPLIT(@tradeUnits, ','))
+                )");
                 parameters.Add(new SqlParameter("@tradeUnits", csv));
             }
 
@@ -245,30 +223,25 @@ public class SqlDataService : IDataService
                 parameters.Add(new SqlParameter(paramName, word));
 
                 whereClauses.Add($@"(
-                    CustomerName LIKE '%' + {paramName} + '%'
-                    OR ScoularId LIKE '%' + {paramName} + '%'
-                    OR MerchandisingPhone LIKE '%' + {paramName} + '%'
-                    OR ExtendedPrimaryPhone LIKE '%' + {paramName} + '%'
-                    OR MerchandisingCity LIKE '%' + {paramName} + '%'
-                    OR MerchandisingStateProvince = {paramName}
-                    OR CustomerId IN (SELECT CustomerId FROM dbo.ProducerDetails WHERE PrimaryContact LIKE '%' + {paramName} + '%')
+                    c.CustomerName LIKE '%' + {paramName} + '%'
+                    OR c.ScoularId LIKE '%' + {paramName} + '%'
+                    OR c.MerchandisingPhone LIKE '%' + {paramName} + '%'
+                    OR c.ExtendedPrimaryPhone LIKE '%' + {paramName} + '%'
+                    OR c.MerchandisingCity LIKE '%' + {paramName} + '%'
+                    OR c.MerchandisingStateProvince = {paramName}
+                    OR c.CustomerId IN (SELECT CustomerId FROM dbo.ProducerDetails WHERE PrimaryContact LIKE '%' + {paramName} + '%')
                 )");
             }
 
             var where = string.Join(" AND ", whereClauses);
             var sql = $@"
-                SELECT * FROM (
-                    SELECT *, ROW_NUMBER() OVER (PARTITION BY CustomerId ORDER BY CustomerName) AS rn
-                    FROM dbo.CustomerSnapshot
-                    WHERE {where}
-                ) t WHERE rn = 1";
+                SELECT c.* FROM dbo.Customer c
+                WHERE {where}";
 
-            var snapshots = await _appContext.CustomerSnapshots
+            var customers = await _appContext.Customers
                 .FromSqlRaw(sql, parameters.ToArray())
                 .AsNoTracking()
                 .ToListAsync(cancellationToken);
-
-            var customers = snapshots.Select(MapSnapshotToCustomer).ToList();
 
             // Score by relevance so best matches appear first
             var scoredCustomers = customers.Select(c => new
@@ -282,12 +255,12 @@ public class SqlDataService : IDataService
             .ToList();
 
             await EnrichCustomersWithESignAsync(scoredCustomers, cancellationToken);
-            _logger.LogInformation("Search for '{SearchTerm}' returned {Count} customers from CustomerSnapshot", searchTerm, scoredCustomers.Count);
+            _logger.LogInformation("Search for '{SearchTerm}' returned {Count} customers from Customer", searchTerm, scoredCustomers.Count);
             return scoredCustomers;
         }
         catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
         {
-            _logger.LogWarning(ex, "CustomerSnapshot table/column not found (SQL {Number}) — returning empty search results [{TraceId}]",
+            _logger.LogWarning(ex, "Customer table/column not found (SQL {Number}) — returning empty search results [{TraceId}]",
                 ex.Number, GetTraceId());
             return [];
         }
@@ -304,37 +277,6 @@ public class SqlDataService : IDataService
             throw;
         }
     }
-
-    /// <summary>
-    /// Maps a CustomerSnapshot row to the Customer model used by the API.
-    /// CustomerSnapshot stores one row per customer-trade unit pair; callers must deduplicate.
-    /// </summary>
-    private static Customer MapSnapshotToCustomer(CustomerSnapshot snap) => new()
-    {
-        Id = snap.CustomerId,
-        Name = snap.CustomerName,
-        ScoularId = snap.ScoularId?.Trim(),
-        IndustryCode1 = snap.IndustryCode1,
-        IsActive = snap.IsActive,
-        EffectiveStartDate = snap.EffectiveStartDate,
-        EffectiveEndDate = snap.EffectiveEndDate,
-        Phone = snap.MerchandisingPhone,
-        Email = snap.MerchandisingEmail,
-        ExtendedPrimaryPhone = snap.ExtendedPrimaryPhone,
-        SupplementalEmail = snap.SupplementalEmail,
-        Location = snap.MerchandisingCity,
-        StateProvince = snap.MerchandisingStateProvince,
-        AddressLine1 = snap.MerchandisingAddressLine1,
-        PostalCode = snap.MerchandisingPostalCode,
-        ExtendedAddressLine1 = snap.ExtendedAddressLine1,
-        ExtendedAddressLine2 = snap.ExtendedAddressLine2,
-        ExtendedAddressLine3 = snap.ExtendedAddressLine3,
-        ExtendedAddressLine4 = snap.ExtendedAddressLine4,
-        ExtendedCity = snap.ExtendedCity,
-        ExtendedPostalCode = snap.ExtendedPostalCode,
-        ExtendedStateProvince = snap.ExtendedStateProvince,
-        ExtendedCountry = snap.ExtendedCountry,
-    };
 
     /// <summary>
     /// Looks up eSign enrollment records for the given customers and populates
@@ -468,10 +410,8 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var snap = await _appContext.CustomerSnapshots.AsNoTracking()
-                .Where(s => s.CustomerId == id)
-                .FirstOrDefaultAsync(cancellationToken);
-            return snap == null ? null : MapSnapshotToCustomer(snap);
+            return await _appContext.Customers.AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -485,10 +425,8 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var snap = await _appContext.CustomerSnapshots.AsNoTracking()
-                .Where(s => s.ScoularId == scoularId)
-                .FirstOrDefaultAsync(cancellationToken);
-            return snap == null ? null : MapSnapshotToCustomer(snap);
+            return await _appContext.Customers.AsNoTracking()
+                .FirstOrDefaultAsync(c => c.ScoularId == scoularId, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -521,15 +459,10 @@ public class SqlDataService : IDataService
 
             if (matchingCustomerIds.Count == 0) return [];
 
-            var snapshots = await _appContext.CustomerSnapshots
+            var customers = await _appContext.Customers
                 .AsNoTracking()
-                .Where(s => s.IsActive && matchingCustomerIds.Contains(s.CustomerId))
+                .Where(c => c.IsActive && matchingCustomerIds.Contains(c.Id))
                 .ToListAsync(cancellationToken);
-
-            var customers = snapshots
-                .GroupBy(s => s.CustomerId)
-                .Select(g => MapSnapshotToCustomer(g.First()))
-                .ToList();
 
             // Enrich with LinkedProducerIds from ProducerDetails so the frontend can follow chains.
             // Other ProducerDetails fields (bin capacity, primary contact, commodities) are applied
@@ -561,8 +494,8 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var exists = await _appContext.CustomerSnapshots.AsNoTracking()
-                .AnyAsync(s => s.CustomerId == customerId, cancellationToken);
+            var exists = await _appContext.Customers.AsNoTracking()
+                .AnyAsync(c => c.Id == customerId, cancellationToken);
             if (!exists)
             {
                 _logger.LogWarning("Customer {CustomerId} not found for update", customerId);
@@ -804,14 +737,13 @@ public class SqlDataService : IDataService
 
             if (!hasTradeUnitFilter)
             {
-                // Unfiltered: every active producer in CustomerSnapshot. Trade unit selection is a
+                // Unfiltered: every active producer in dbo.Customer. Trade unit selection is a
                 // narrowing convenience, not an entitlement boundary — when nothing is selected
                 // the user can search across the full producer base.
-                var customerCtrmIds = await _appContext.CustomerSnapshots
+                var customerCtrmIds = await _appContext.Customers
                     .AsNoTracking()
-                    .Where(s => s.IsActive && s.ScoularId != null)
-                    .Select(s => s.ScoularId!)
-                    .Distinct()
+                    .Where(c => c.IsActive && c.ScoularId != null)
+                    .Select(c => c.ScoularId!)
                     .ToListAsync(cancellationToken);
 
                 if (customerCtrmIds.Count == 0)
@@ -835,14 +767,17 @@ public class SqlDataService : IDataService
             }
             else
             {
-                // Step 1: get producer customer IDs from CustomerSnapshot (app DB, fast indexed lookup).
-                // CustomerSnapshot already contains only producer customers — no additional type filter needed.
-                var ctrmIds = await _appContext.CustomerSnapshots
+                // Step 1: get producer customer IDs from dbo.Customer (app DB, fast indexed lookup),
+                // scoped to the selected trade units via dbo.CustomerTradeUnit. The new schema is
+                // one-row-per-customer so no further dedup is needed.
+                var ctrmIds = await _appContext.Customers
                     .AsNoTracking()
                     .Where(c => c.ScoularId != null && c.IsActive
-                        && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
+                        && _appContext.CustomerTradeUnits.Any(ctu =>
+                            ctu.CustomerId == c.Id
+                            && ctu.IsActive
+                            && tradeUnits!.Contains(ctu.TradeUnit)))
                     .Select(c => c.ScoularId!)
-                    .Distinct()
                     .ToListAsync(cancellationToken);
 
                 if (ctrmIds.Count == 0)
@@ -939,9 +874,9 @@ public class SqlDataService : IDataService
             // Resolve ScoularId if not supplied by the caller (avoids a DB round-trip when the client already has it).
             if (string.IsNullOrEmpty(scoularId))
             {
-                scoularId = await _appContext.CustomerSnapshots.AsNoTracking()
-                    .Where(s => s.CustomerId == customerId)
-                    .Select(s => s.ScoularId)
+                scoularId = await _appContext.Customers.AsNoTracking()
+                    .Where(c => c.Id == customerId)
+                    .Select(c => c.ScoularId)
                     .FirstOrDefaultAsync(cancellationToken);
                 if (string.IsNullOrEmpty(scoularId))
                 {
@@ -1000,9 +935,9 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var scoularId = await _appContext.CustomerSnapshots.AsNoTracking()
-                .Where(s => s.CustomerId == customerId)
-                .Select(s => s.ScoularId)
+            var scoularId = await _appContext.Customers.AsNoTracking()
+                .Where(c => c.Id == customerId)
+                .Select(c => c.ScoularId)
                 .FirstOrDefaultAsync(cancellationToken);
             if (string.IsNullOrEmpty(scoularId))
             {
@@ -1065,19 +1000,20 @@ public class SqlDataService : IDataService
     {
         try
         {
-            // Resolve producer CtrmCustomerIds from CustomerSnapshot. Trade unit selection is a
-            // narrowing convenience, not an entitlement boundary — when nothing is selected we
-            // return contracts for every active producer.
-            var ctrmIdsQuery = _appContext.CustomerSnapshots
+            // Resolve producer CtrmCustomerIds from dbo.Customer, optionally scoped to TUs
+            // via dbo.CustomerTradeUnit. Trade unit selection is a narrowing convenience,
+            // not an entitlement boundary — when nothing is selected we return contracts
+            // for every active producer.
+            var ctrmIdsQuery = _appContext.Customers
                 .AsNoTracking()
-                .Where(s => s.IsActive && s.ScoularId != null);
+                .Where(c => c.IsActive && c.ScoularId != null);
             if (tradeUnits != null && tradeUnits.Count > 0)
             {
-                ctrmIdsQuery = ctrmIdsQuery.Where(s => s.TradeUnit != null && tradeUnits.Contains(s.TradeUnit));
+                ctrmIdsQuery = ctrmIdsQuery.Where(c => _appContext.CustomerTradeUnits.Any(ctu =>
+                    ctu.CustomerId == c.Id && ctu.IsActive && tradeUnits.Contains(ctu.TradeUnit)));
             }
             var ctrmIds = await ctrmIdsQuery
-                .Select(s => s.ScoularId!)
-                .Distinct()
+                .Select(c => c.ScoularId!)
                 .ToListAsync(cancellationToken);
 
             if (ctrmIds.Count == 0) return [];
@@ -1283,13 +1219,12 @@ public class SqlDataService : IDataService
 
             if (!hasTradeUnitFilter)
             {
-                // Unfiltered: every active producer in CustomerSnapshot. Trade unit selection is
+                // Unfiltered: every active producer in dbo.Customer. Trade unit selection is
                 // a narrowing convenience, not an entitlement boundary.
-                var customerCodes = await _appContext.CustomerSnapshots
+                var customerCodes = await _appContext.Customers
                     .AsNoTracking()
-                    .Where(s => s.IsActive && s.ScoularId != null)
-                    .Select(s => s.ScoularId!)
-                    .Distinct()
+                    .Where(c => c.IsActive && c.ScoularId != null)
+                    .Select(c => c.ScoularId!)
                     .ToListAsync(cancellationToken);
 
                 if (customerCodes.Count == 0)
@@ -1300,7 +1235,7 @@ public class SqlDataService : IDataService
                 {
                     // Same contract-scoped pattern as the filtered branch — applied tickets
                     // follow their contract, not the ticket's CustomerCode. Without this, a
-                    // ticket whose CustomerCode is missing from CustomerSnapshot (inactive /
+                    // ticket whose CustomerCode is missing from dbo.Customer (inactive /
                     // deleted / cross-system entity) would be dropped even when its contract
                     // is otherwise visible.
                     var openContractNumbers = await _context.Contracts
@@ -1319,13 +1254,13 @@ public class SqlDataService : IDataService
             }
             else
             {
-                // Customer scope = producers in the selected TUs (per CustomerSnapshot).
-                var customerCodes = await _appContext.CustomerSnapshots
+                // Customer scope = producers in the selected TUs (via dbo.CustomerTradeUnit).
+                var customerCodes = await _appContext.Customers
                     .AsNoTracking()
-                    .Where(s => s.IsActive && s.ScoularId != null
-                        && s.TradeUnit != null && tradeUnits!.Contains(s.TradeUnit))
-                    .Select(s => s.ScoularId!)
-                    .Distinct()
+                    .Where(c => c.IsActive && c.ScoularId != null
+                        && _appContext.CustomerTradeUnits.Any(ctu =>
+                            ctu.CustomerId == c.Id && ctu.IsActive && tradeUnits!.Contains(ctu.TradeUnit)))
+                    .Select(c => c.ScoularId!)
                     .ToListAsync(cancellationToken);
 
                 // Open Purchase contracts whose customer is in the TU scope. We then load tickets
@@ -1521,12 +1456,11 @@ public class SqlDataService : IDataService
 
             if (!hasTradeUnitFilter)
             {
-                // Unfiltered: every active producer in CustomerSnapshot.
-                var customerCodes = await _appContext.CustomerSnapshots
+                // Unfiltered: every active producer in dbo.Customer.
+                var customerCodes = await _appContext.Customers
                     .AsNoTracking()
-                    .Where(s => s.IsActive && s.ScoularId != null)
-                    .Select(s => s.ScoularId!)
-                    .Distinct()
+                    .Where(c => c.IsActive && c.ScoularId != null)
+                    .Select(c => c.ScoularId!)
                     .ToListAsync(cancellationToken);
 
                 if (customerCodes.Count == 0)
@@ -1569,12 +1503,12 @@ public class SqlDataService : IDataService
                     .Cast<string>()
                     .ToList();
 
-                var snapshotCustomerCodes = await _appContext.CustomerSnapshots
+                var snapshotCustomerCodes = await _appContext.Customers
                     .AsNoTracking()
-                    .Where(s => s.IsActive && s.ScoularId != null
-                        && s.TradeUnit != null && tradeUnits!.Contains(s.TradeUnit))
-                    .Select(s => s.ScoularId!)
-                    .Distinct()
+                    .Where(c => c.IsActive && c.ScoularId != null
+                        && _appContext.CustomerTradeUnits.Any(ctu =>
+                            ctu.CustomerId == c.Id && ctu.IsActive && tradeUnits!.Contains(ctu.TradeUnit)))
+                    .Select(c => c.ScoularId!)
                     .ToListAsync(cancellationToken);
 
                 var customerCodes = contractCustomerCodes.Union(snapshotCustomerCodes).ToList();
@@ -1638,9 +1572,9 @@ public class SqlDataService : IDataService
             // Resolve ScoularId if not supplied by the caller (avoids a DB round-trip when the client already has it).
             if (string.IsNullOrEmpty(scoularId))
             {
-                scoularId = await _appContext.CustomerSnapshots.AsNoTracking()
-                    .Where(s => s.CustomerId == customerId)
-                    .Select(s => s.ScoularId)
+                scoularId = await _appContext.Customers.AsNoTracking()
+                    .Where(c => c.Id == customerId)
+                    .Select(c => c.ScoularId)
                     .FirstOrDefaultAsync(cancellationToken);
                 if (string.IsNullOrEmpty(scoularId))
                 {
@@ -1750,12 +1684,12 @@ public class SqlDataService : IDataService
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
-                var snapshotCustomerCodes = await _appContext.CustomerSnapshots
+                var snapshotCustomerCodes = await _appContext.Customers
                     .AsNoTracking()
-                    .Where(s => s.IsActive && s.ScoularId != null
-                        && s.TradeUnit != null && tuList.Contains(s.TradeUnit))
-                    .Select(s => s.ScoularId!)
-                    .Distinct()
+                    .Where(c => c.IsActive && c.ScoularId != null
+                        && _appContext.CustomerTradeUnits.Any(ctu =>
+                            ctu.CustomerId == c.Id && ctu.IsActive && tuList.Contains(ctu.TradeUnit)))
+                    .Select(c => c.ScoularId!)
                     .ToListAsync(cancellationToken);
 
                 var customerCodes = contractCustomerCodes.Union(snapshotCustomerCodes).ToList();
@@ -2001,10 +1935,10 @@ public class SqlDataService : IDataService
     {
         try
         {
-            // Resolve denormalized name/code from CustomerSnapshot (the UI's source of truth).
-            var snap = await _appContext.CustomerSnapshots.AsNoTracking()
-                .Where(s => s.CustomerId == customerId)
-                .Select(s => new { s.CustomerName, s.ScoularId })
+            // Resolve denormalized name/code from dbo.Customer (the UI's source of truth).
+            var snap = await _appContext.Customers.AsNoTracking()
+                .Where(c => c.Id == customerId)
+                .Select(c => new { CustomerName = c.Name, c.ScoularId })
                 .FirstOrDefaultAsync(cancellationToken);
 
             var note = new Note
@@ -2306,7 +2240,7 @@ public class SqlDataService : IDataService
         WHERE sg.rn = 1
         """;
 
-    /// <summary>Looks up CustomerId for each storage record from the CustomerSnapshot table (Origination DB).</summary>
+    /// <summary>Looks up CustomerId for each storage record from the dbo.Customer table (Origination DB).</summary>
     private async Task EnrichStorageWithCustomerIdsAsync(List<StoredGrain> records, CancellationToken cancellationToken)
     {
         if (records.Count == 0) return;
@@ -2314,11 +2248,10 @@ public class SqlDataService : IDataService
         var customerCodes = records.Select(r => r.CustomerCode).Where(c => !string.IsNullOrEmpty(c)).Distinct().ToList();
         if (customerCodes.Count == 0) return;
 
-        var snapshots = await _appContext.CustomerSnapshots
+        var snapshots = await _appContext.Customers
             .AsNoTracking()
-            .Where(s => s.ScoularId != null && customerCodes.Contains(s.ScoularId))
-            .Select(s => new { s.ScoularId, s.CustomerId })
-            .Distinct()
+            .Where(c => c.ScoularId != null && customerCodes.Contains(c.ScoularId))
+            .Select(c => new { c.ScoularId, CustomerId = c.Id })
             .ToListAsync(cancellationToken);
 
         var lookup = snapshots
@@ -2343,12 +2276,12 @@ public class SqlDataService : IDataService
             if (tuList is { Count: > 0 })
             {
                 // Find customer codes in these TUs, then load ALL their storage (cross-TU)
-                var customerCodes = await _appContext.CustomerSnapshots
+                var customerCodes = await _appContext.Customers
                     .AsNoTracking()
-                    .Where(s => s.IsActive && s.ScoularId != null
-                        && s.TradeUnit != null && tuList.Contains(s.TradeUnit))
-                    .Select(s => s.ScoularId!)
-                    .Distinct()
+                    .Where(c => c.IsActive && c.ScoularId != null
+                        && _appContext.CustomerTradeUnits.Any(ctu =>
+                            ctu.CustomerId == c.Id && ctu.IsActive && tuList.Contains(ctu.TradeUnit)))
+                    .Select(c => c.ScoularId!)
                     .ToListAsync(cancellationToken);
 
                 if (customerCodes.Count == 0) return [];
@@ -2380,11 +2313,11 @@ public class SqlDataService : IDataService
     {
         try
         {
-            // Look up the customer's source ID from CustomerSnapshot, then filter by it in ODS.
-            var scoularId = await _appContext.CustomerSnapshots
+            // Look up the customer's source ID from dbo.Customer, then filter by it in ODS.
+            var scoularId = await _appContext.Customers
                 .AsNoTracking()
-                .Where(s => s.CustomerId == customerId && s.ScoularId != null)
-                .Select(s => s.ScoularId!)
+                .Where(c => c.Id == customerId && c.ScoularId != null)
+                .Select(c => c.ScoularId!)
                 .FirstOrDefaultAsync(cancellationToken);
 
             if (string.IsNullOrEmpty(scoularId)) return [];

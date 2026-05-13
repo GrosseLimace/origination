@@ -32,9 +32,9 @@ public class StoredGrainController : ControllerBase
         if (_entitlementService.EntitlementsAvailable)
         {
             var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);
-            var allowedCustomerIds = await _appContext.CustomerSnapshots
-                .Where(cs => cs.TradeUnit != null && allowed.Contains(cs.TradeUnit))
-                .Select(cs => cs.CustomerId)
+            var allowedCustomerIds = await _appContext.CustomerTradeUnits
+                .Where(ctu => allowed.Contains(ctu.TradeUnit) && ctu.IsActive)
+                .Select(ctu => ctu.CustomerId)
                 .ToHashSetAsync(cancellationToken);
             grain = grain.Where(g => allowedCustomerIds.Contains(g.CustomerId)).ToList();
         }

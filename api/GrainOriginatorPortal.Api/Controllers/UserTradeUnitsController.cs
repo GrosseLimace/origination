@@ -63,7 +63,7 @@ public class UserTradeUnitsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Entitlements DB unavailable for user {UserId} — falling back to all trade units from CustomerSnapshot", userId);
+            _logger.LogWarning(ex, "Entitlements DB unavailable for user {UserId} — falling back to all trade units from dbo.CustomerTradeUnit", userId);
 
             return Ok(await GetFallbackTradeUnitsAsync());
         }
@@ -72,10 +72,10 @@ public class UserTradeUnitsController : ControllerBase
     {
         try
         {
-            var units = await _appDb.CustomerSnapshots
+            var units = await _appDb.CustomerTradeUnits
                 .AsNoTracking()
-                .Where(s => s.IsActive && s.TradeUnit != null)
-                .Select(s => s.TradeUnit!)
+                .Where(ctu => ctu.IsActive)
+                .Select(ctu => ctu.TradeUnit)
                 .Distinct()
                 .OrderBy(u => u)
                 .ToListAsync();
@@ -86,7 +86,7 @@ public class UserTradeUnitsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "CustomerSnapshot fallback also failed — returning empty trade unit list");
+            _logger.LogWarning(ex, "CustomerTradeUnit fallback also failed — returning empty trade unit list");
             return [];
         }
     }

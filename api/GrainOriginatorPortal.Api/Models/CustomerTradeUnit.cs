@@ -1,61 +1,27 @@
 namespace GrainOriginatorPortal.Api.Models;
 
 /// <summary>
-/// Maps to originations.vw_CustomerTradeUnits — each row is a customer paired with
-/// one trade unit they're active in (via contracts or tickets). Used to replace the
-/// 3-query customer lookup pattern with a single filtered view query.
+/// App-DB join table — one row per (customer, trade unit) pair. Materializes the
+/// many-to-many membership from ODS originations.vw_CustomerTradeUnits so the app DB
+/// can scope customer queries by trade unit without cross-database joins.
+///
+/// TradeUnit is the CTRM organization code (e.g. "2057") and is a soft reference to
+/// the shared CTRM vocabulary — no FK to a local catalog (the app DB doesn't own one;
+/// see Entitlements DB vw_UserTradeUnitAccess for the authoritative TU/group catalog).
+///
+/// Not to be confused with <see cref="CustomerTradeUnitView"/>, the read-only projection
+/// of the ODS source view that drives the sync into this table.
 /// </summary>
 public class CustomerTradeUnit
 {
+    // Surrogate identity — int is sufficient (max ~2.1B rows; this table is at most
+    // single-digit millions even at full scale). CustomerId stays long/bigint because
+    // it mirrors the ODS-sourced Customer.Id.
+    public int Id { get; set; }
     public long CustomerId { get; set; }
-    public string? CustomerName { get; set; }
-    public string? ScoularId { get; set; }
-    public string? MerchandisingPhone { get; set; }
-    public string? MerchandisingEmail { get; set; }
-    public string? ExtendedPrimaryPhone { get; set; }
-    public string? SupplementalEmail { get; set; }
-    public string? MerchandisingCity { get; set; }
-    public string? MerchandisingStateProvince { get; set; }
-    public string? MerchandisingAddressLine1 { get; set; }
-    public string? MerchandisingPostalCode { get; set; }
-    public string? ExtendedAddressLine1 { get; set; }
-    public string? ExtendedAddressLine2 { get; set; }
-    public string? ExtendedAddressLine3 { get; set; }
-    public string? ExtendedAddressLine4 { get; set; }
-    public string? ExtendedCity { get; set; }
-    public string? ExtendedStateProvince { get; set; }
-    public string? ExtendedPostalCode { get; set; }
-    public string? ExtendedCountry { get; set; }
-    public string? IndustryCode1 { get; set; }
+    public string TradeUnit { get; set; } = string.Empty;
     public bool IsActive { get; set; }
-    public DateTime? EffectiveStartDate { get; set; }
-    public DateTime? EffectiveEndDate { get; set; }
-    public string? TradeUnit { get; set; }
 
-    public Customer ToCustomer() => new Customer
-    {
-        Id = CustomerId,
-        Name = CustomerName ?? string.Empty,
-        ScoularId = ScoularId,
-        Phone = MerchandisingPhone,
-        Email = MerchandisingEmail,
-        ExtendedPrimaryPhone = ExtendedPrimaryPhone,
-        SupplementalEmail = SupplementalEmail,
-        Location = MerchandisingCity,
-        StateProvince = MerchandisingStateProvince,
-        AddressLine1 = MerchandisingAddressLine1,
-        PostalCode = MerchandisingPostalCode,
-        ExtendedAddressLine1 = ExtendedAddressLine1,
-        ExtendedAddressLine2 = ExtendedAddressLine2,
-        ExtendedAddressLine3 = ExtendedAddressLine3,
-        ExtendedAddressLine4 = ExtendedAddressLine4,
-        ExtendedCity = ExtendedCity,
-        ExtendedStateProvince = ExtendedStateProvince,
-        ExtendedPostalCode = ExtendedPostalCode,
-        ExtendedCountry = ExtendedCountry,
-        IndustryCode1 = IndustryCode1,
-        IsActive = IsActive,
-        EffectiveStartDate = EffectiveStartDate,
-        EffectiveEndDate = EffectiveEndDate,
-    };
+    // Navigation property — not always loaded; explicit Include() required.
+    public Customer? Customer { get; set; }
 }

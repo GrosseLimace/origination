@@ -739,9 +739,9 @@ public class UsageDashboardController : ControllerBase
         TopProducerDto? topProducer = null;
         if (topProducerGroup != null)
         {
-            var snap = await _appDb.CustomerSnapshots
-                .Where(s => s.CustomerId == topProducerGroup.CustomerId)
-                .Select(s => new { s.CustomerName, s.ScoularId })
+            var snap = await _appDb.Customers
+                .Where(c => c.Id == topProducerGroup.CustomerId)
+                .Select(c => new { CustomerName = c.Name, c.ScoularId })
                 .FirstOrDefaultAsync(ct);
             if (snap != null)
             {
@@ -924,10 +924,9 @@ public class UsageDashboardController : ControllerBase
             .ToList();
 
         var customerNames = customerTargetIds.Count > 0
-            ? await _appDb.CustomerSnapshots
-                .Where(s => customerTargetIds.Contains(s.CustomerId))
-                .GroupBy(s => s.CustomerId)
-                .Select(g => new { CustomerId = g.Key, Name = g.First().CustomerName, Code = g.First().ScoularId })
+            ? await _appDb.Customers
+                .Where(c => customerTargetIds.Contains(c.Id))
+                .Select(c => new { CustomerId = c.Id, Name = c.Name, Code = c.ScoularId })
                 .ToDictionaryAsync(g => g.CustomerId.ToString(), g => string.IsNullOrEmpty(g.Code) ? g.Name : $"{g.Name} ({g.Code})", ct)
             : new Dictionary<string, string>();
 

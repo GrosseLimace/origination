@@ -184,8 +184,12 @@ public class DiagnosticsController : ControllerBase
     }
 
     /// <summary>
-    /// Populates dbo.CustomerSnapshot in the Origination DB from originations.vw_CustomerTradeUnits in ODS.
-    /// One row per customer-trade unit pair. One-time / on-demand operation — dev only.
+    /// Populates dbo.CustomerSnapshot AND dbo.Customer + dbo.CustomerTradeUnit in the Origination DB
+    /// from originations.vw_CustomerTradeUnits in ODS. One-time / on-demand operation — dev only.
+    ///
+    /// Both target schemas are refreshed during the Phase 2 transition (database-design-issues.md):
+    /// reads have switched to Customer + CustomerTradeUnit, but CustomerSnapshot is still maintained
+    /// here so it stays in sync until Phase 2b drops it.
     /// </summary>
     [HttpPost("customer-snapshot/populate")]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -200,16 +204,20 @@ public class DiagnosticsController : ControllerBase
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
-        // Clear existing snapshot rows
+        // Clear existing rows in FK order — CustomerTradeUnit FKs Customer, so child first.
+        await _appContext.Database.ExecuteSqlRawAsync("DELETE FROM dbo.CustomerTradeUnit", cancellationToken);
+        await _appContext.Database.ExecuteSqlRawAsync("DELETE FROM dbo.Customer", cancellationToken);
         await _appContext.Database.ExecuteSqlRawAsync("DELETE FROM dbo.CustomerSnapshot", cancellationToken);
 
-        // Map and bulk-insert into snapshot table
+        // -------------------------------------------------------------------------
+        // CustomerSnapshot — one row per (customer, trade unit) pair (legacy shape).
+        // -------------------------------------------------------------------------
         var refreshedAt = DateTime.UtcNow;
-        var rows = customerTradeUnits.Select(c => new CustomerSnapshot
+        var snapshotRows = customerTradeUnits.Select(c => new CustomerSnapshot
         {
             CustomerId           = c.CustomerId,
             CustomerName         = c.CustomerName ?? string.Empty,
-            ScoularId     = c.ScoularId,
+            ScoularId            = c.ScoularId,
             IndustryCode1        = c.IndustryCode1,
             IsActive             = c.IsActive,
             EffectiveStartDate   = c.EffectiveStartDate,
@@ -233,12 +241,72 @@ public class DiagnosticsController : ControllerBase
             TradeUnit            = c.TradeUnit,
             SnapshotRefreshedAt  = refreshedAt
         }).ToList();
+        await _appContext.CustomerSnapshots.AddRangeAsync(snapshotRows, cancellationToken);
 
-        await _appContext.CustomerSnapshots.AddRangeAsync(rows, cancellationToken);
+        // -------------------------------------------------------------------------
+        // Customer — one row per distinct CustomerId. Attributes are identical across
+        // the multiple ODS view rows for the same customer (they all come from the
+        // same source customer record), so picking the first row by group is safe.
+        // -------------------------------------------------------------------------
+        var customerRows = customerTradeUnits
+            .GroupBy(c => c.CustomerId)
+            .Select(g =>
+            {
+                var first = g.First();
+                return new Customer
+                {
+                    Id                   = first.CustomerId,
+                    Name                 = first.CustomerName ?? string.Empty,
+                    ScoularId            = first.ScoularId,
+                    IndustryCode1        = first.IndustryCode1,
+                    IsActive             = first.IsActive,
+                    EffectiveStartDate   = first.EffectiveStartDate,
+                    EffectiveEndDate     = first.EffectiveEndDate,
+                    Phone                = first.MerchandisingPhone,
+                    Email                = first.MerchandisingEmail,
+                    ExtendedPrimaryPhone = first.ExtendedPrimaryPhone,
+                    SupplementalEmail    = first.SupplementalEmail,
+                    Location             = first.MerchandisingCity,
+                    StateProvince        = first.MerchandisingStateProvince,
+                    AddressLine1         = first.MerchandisingAddressLine1,
+                    PostalCode           = first.MerchandisingPostalCode,
+                    ExtendedAddressLine1 = first.ExtendedAddressLine1,
+                    ExtendedAddressLine2 = first.ExtendedAddressLine2,
+                    ExtendedAddressLine3 = first.ExtendedAddressLine3,
+                    ExtendedAddressLine4 = first.ExtendedAddressLine4,
+                    ExtendedCity         = first.ExtendedCity,
+                    ExtendedPostalCode   = first.ExtendedPostalCode,
+                    ExtendedStateProvince = first.ExtendedStateProvince,
+                    ExtendedCountry      = first.ExtendedCountry
+                };
+            })
+            .ToList();
+        await _appContext.Customers.AddRangeAsync(customerRows, cancellationToken);
+
+        // -------------------------------------------------------------------------
+        // CustomerTradeUnit — one row per (CustomerId, TradeUnit) pair from the ODS view.
+        // -------------------------------------------------------------------------
+        var ctuRows = customerTradeUnits
+            .Where(c => !string.IsNullOrEmpty(c.TradeUnit))
+            .Select(c => new CustomerTradeUnit
+            {
+                CustomerId = c.CustomerId,
+                TradeUnit  = c.TradeUnit!,
+                IsActive   = c.IsActive
+            })
+            .ToList();
+        await _appContext.CustomerTradeUnits.AddRangeAsync(ctuRows, cancellationToken);
+
         await _appContext.SaveChangesAsync(cancellationToken);
 
         sw.Stop();
-        return Ok(new { RowsInserted = rows.Count, ElapsedMs = sw.ElapsedMilliseconds });
+        return Ok(new
+        {
+            SnapshotRowsInserted          = snapshotRows.Count,
+            CustomerRowsInserted          = customerRows.Count,
+            CustomerTradeUnitRowsInserted = ctuRows.Count,
+            ElapsedMs                     = sw.ElapsedMilliseconds
+        });
     }
 
     // -------------------------------------------------------------------------
