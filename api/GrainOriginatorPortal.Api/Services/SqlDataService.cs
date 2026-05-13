@@ -583,72 +583,6 @@ public class SqlDataService : IDataService
     }
 
     // =========================================================================
-    // Trade Unit Operations
-    // =========================================================================
-
-    public async Task<List<string>> GetTradeUnitsAsync(CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var cachedTradeUnits = await _appContext.TradeUnits
-                .Where(tu => tu.IsActive)
-                .Select(tu => tu.Code)
-                .OrderBy(c => c)
-                .ToListAsync(cancellationToken);
-
-            if (cachedTradeUnits.Count > 0)
-            {
-                _logger.LogInformation("Returning {Count} trade units from dbo.TradeUnits", cachedTradeUnits.Count);
-                return cachedTradeUnits;
-            }
-
-            // Table is empty - one-time population from ODS
-            _logger.LogInformation("dbo.TradeUnits is empty - performing one-time population from ODS");
-            var tradeUnitsFromOds = await GetTradeUnitsFromViewsAsync(cancellationToken);
-
-            foreach (var code in tradeUnitsFromOds)
-            {
-                _appContext.TradeUnits.Add(new TradeUnit { Code = code, IsActive = true });
-            }
-            await _appContext.SaveChangesAsync(cancellationToken);
-            return tradeUnitsFromOds;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving trade units [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
-                GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
-            throw;
-        }
-    }
-
-    private async Task<List<string>> GetTradeUnitsFromViewsAsync(CancellationToken cancellationToken = default)
-    {
-        // Get unique trade units from contracts
-        var contractTradeUnits = await _context.Contracts
-            .AsNoTracking()
-            .Where(c => c.IsActive && c.ContractPrefixType == "P" && !string.IsNullOrEmpty(c.TradeUnit))
-            .Select(c => c.TradeUnit!)
-            .Distinct()
-            .ToListAsync(cancellationToken);
-
-        // Get unique organization codes from tickets
-        var ticketOrgCodes = await _context.Tickets
-            .AsNoTracking()
-            .Where(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && !string.IsNullOrEmpty(t.OrganizationCode))
-            .Select(t => t.OrganizationCode!)
-            .Distinct()
-            .ToListAsync(cancellationToken);
-
-        // Combine and return unique sorted list
-        var allTradeUnits = contractTradeUnits
-            .Union(ticketOrgCodes)
-            .OrderBy(tu => tu)
-            .ToList();
-
-        return allTradeUnits;
-    }
-
-    // =========================================================================
     // Commodity Operations
     // =========================================================================
 
@@ -822,28 +756,6 @@ public class SqlDataService : IDataService
             _logger.LogError(ex, "Error syncing commodities [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
                 GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             // Don't throw — sync failure shouldn't prevent app startup
-        }
-    }
-
-    public async Task<List<TradeUnitGroup>> GetTradeUnitGroupsAsync(CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var groups = await _appContext.TradeUnitGroups
-                .AsNoTracking()
-                .Where(g => g.IsActive)
-                .Include(g => g.TradeUnits.Where(tu => tu.IsActive))
-                .OrderBy(g => g.GroupName)
-                .ToListAsync(cancellationToken);
-
-            _logger.LogInformation("Returning {Count} trade unit groups", groups.Count);
-            return groups;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving trade unit groups [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
-                GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
-            throw;
         }
     }
 

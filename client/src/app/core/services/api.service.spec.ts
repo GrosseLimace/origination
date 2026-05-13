@@ -53,13 +53,6 @@ describe('ApiService', () => {
     req.flush({});
   });
 
-  it('getTradeUnits() calls GET /customers/trade-units', () => {
-    service.getTradeUnits().subscribe();
-    const req = httpMock.expectOne(`${BASE}/customers/trade-units`);
-    expect(req.request.method).toBe('GET');
-    req.flush([]);
-  });
-
   // ── Contracts ──────────────────────────────────────────────────────────────
 
   it('getContracts() calls GET /contracts', () => {

@@ -43,18 +43,6 @@ public interface IDataService
     Task UpdateCustomerAsync(long customerId, string location, string phone, string email, List<string> farmIds, List<string> linkedProducerIds, CancellationToken cancellationToken = default);
 
     // =========================================================================
-    // Trade Unit Operations
-    // =========================================================================
-
-    /// <summary>Gets all distinct trade unit codes.</summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    Task<List<string>> GetTradeUnitsAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>Gets all trade unit groups with their associated trade units.</summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    Task<List<TradeUnitGroup>> GetTradeUnitGroupsAsync(CancellationToken cancellationToken = default);
-
-    // =========================================================================
     // Farm Operations
     // =========================================================================
 

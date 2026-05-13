@@ -45,15 +45,6 @@ public class CustomersController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Gets all unique trade unit codes.</summary>
-    [HttpGet("trade-units")]
-    [ProducesResponseType(typeof(List<string>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<string>>> GetTradeUnits(CancellationToken cancellationToken = default)
-    {
-        return Ok(await _dataService.GetTradeUnitsAsync(cancellationToken));
-    }
-
-    // -------------------------------------------------------------------------
     /// <summary>Gets a single customer by ID.</summary>
     [HttpGet("{id:long}")]
     [ProducesResponseType(typeof(Customer), StatusCodes.Status200OK)]

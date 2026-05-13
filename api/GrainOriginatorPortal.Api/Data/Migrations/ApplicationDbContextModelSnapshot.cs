@@ -781,46 +781,6 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                     b.ToTable("FeatureUsageDaily", "dbo");
                 });
 
-            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.GroupTradeUnit", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasColumnName("Id");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("GroupId")
-                        .HasColumnType("int")
-                        .HasColumnName("GroupId");
-
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(true)
-                        .HasColumnName("IsActive");
-
-                    b.Property<string>("Location")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)")
-                        .HasColumnName("Location");
-
-                    b.Property<string>("TradeUnitCode")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
-                        .HasColumnName("TradeUnitCode");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("GroupId");
-
-                    b.HasIndex("TradeUnitCode")
-                        .HasDatabaseName("IX_GroupTradeUnits_TradeUnitCode");
-
-                    b.ToTable("GroupTradeUnits", "dbo");
-                });
-
             modelBuilder.Entity("GrainOriginatorPortal.Api.Models.HarvestWindow", b =>
                 {
                     b.Property<int>("Id")
@@ -1268,62 +1228,6 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                     b.ToTable("SavedLists", "dbo");
                 });
 
-            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.TradeUnit", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasColumnName("Id");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
-                        .HasColumnName("Code");
-
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(true)
-                        .HasColumnName("IsActive");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Code")
-                        .IsUnique()
-                        .HasDatabaseName("IX_TradeUnits_Code");
-
-                    b.ToTable("TradeUnits", "dbo");
-                });
-
-            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.TradeUnitGroup", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasColumnName("Id");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("GroupName")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
-                        .HasColumnName("GroupName");
-
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(true)
-                        .HasColumnName("IsActive");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("TradeUnitGroups", "dbo");
-                });
-
             modelBuilder.Entity("GrainOriginatorPortal.Api.Models.UserActivity", b =>
                 {
                     b.Property<long>("Id")
@@ -1679,23 +1583,9 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                     b.Navigation("Location");
                 });
 
-            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.GroupTradeUnit", b =>
-                {
-                    b.HasOne("GrainOriginatorPortal.Api.Models.TradeUnitGroup", null)
-                        .WithMany("TradeUnits")
-                        .HasForeignKey("GroupId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("GrainOriginatorPortal.Api.Models.BidSheetLocation", b =>
                 {
                     b.Navigation("Bids");
-                });
-
-            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.TradeUnitGroup", b =>
-                {
-                    b.Navigation("TradeUnits");
                 });
 #pragma warning restore 612, 618
         }

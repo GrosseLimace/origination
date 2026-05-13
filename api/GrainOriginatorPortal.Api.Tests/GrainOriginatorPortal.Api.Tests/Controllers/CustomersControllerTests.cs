@@ -107,20 +107,4 @@ public class CustomersControllerTests
         _dataServiceMock.Verify(s => s.SearchCustomersAsync("Smith", null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    // -------------------------------------------------------------------------
-    [Fact]
-    public async Task GetTradeUnits_ReturnsOkWithList()
-    {
-        // Arrange
-        var units = new List<string> { "TU1", "TU2", "TU3" };
-        _dataServiceMock.Setup(s => s.GetTradeUnitsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(units);
-
-        // Act
-        var result = await _sut.GetTradeUnits();
-
-        // Assert
-        var ok = Assert.IsType<OkObjectResult>(result.Result);
-        var returned = Assert.IsAssignableFrom<List<string>>(ok.Value);
-        Assert.Equal(3, returned.Count);
-    }
 }
