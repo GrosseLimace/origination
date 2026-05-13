@@ -46,6 +46,16 @@ public class SqlDataService : IDataService
         string.Join(",", values.Select(v => System.Text.RegularExpressions.Regex.Replace(v, @"[^a-zA-Z0-9\-_]", "")));
 
     /// <summary>
+    /// Same guarantees as <see cref="SanitizeCsv"/>, but also preserves spaces. CTRM contract
+    /// numbers (e.g. "PW 452117") legitimately contain a space mid-identifier; the standard
+    /// sanitizer would strip it and the resulting STRING_SPLIT key would never match the column
+    /// value. Spaces aren't a SQL-injection risk because the joined CSV is sent as a single
+    /// parameterized nvarchar; SQL Server treats it as a literal string for STRING_SPLIT.
+    /// </summary>
+    internal static string SanitizeIdentifierCsv(IEnumerable<string> values) =>
+        string.Join(",", values.Select(v => System.Text.RegularExpressions.Regex.Replace(v, @"[^a-zA-Z0-9\-_ ]", "")));
+
+    /// <summary>
     /// Returns a stable, unique identifier for the current user.
     /// Priority: preferred_username (UPN) > UPN claim > oid (AAD object id) > Identity.Name > "System".
     /// The display-name claim ("name") is intentionally NOT used — display names can collide across
@@ -1295,6 +1305,60 @@ public class SqlDataService : IDataService
     // NOTE: ~2 million tickets exist, so queries are carefully limited
     // =========================================================================
 
+    /// <summary>
+    /// Loads U/P tickets in two scopes via a single SQL query:
+    ///   - Applied path: ticket's CtrmContractNumber matches one of <paramref name="openContractNumbers"/> (any customer).
+    ///     Critical for CTRM data where a ticket's CustomerCode can differ from the contract's CtrmCustomerId
+    ///     (split tickets, partial applications, related-entity drift) — filtering by CustomerCode dropped these.
+    ///   - Unapplied path: ticket's CtrmContractNumber starts with U or L (the limbo prefixes) AND CustomerCode
+    ///     is in <paramref name="customerCodes"/>. Spot Loads / Unapplied tab still rely on customer scope.
+    /// Uses STRING_SPLIT for both lists to dodge the 2100-parameter IN-clause limit.
+    /// </summary>
+    private async Task<List<Ticket>> LoadTicketsByContractAndCustomerScopeAsync(
+        List<string> openContractNumbers,
+        List<string> customerCodes,
+        CancellationToken cancellationToken,
+        string? cutoffDateInclusive = null)
+    {
+        if (openContractNumbers.Count == 0 && customerCodes.Count == 0) return new List<Ticket>();
+
+        // STRING_SPLIT can't take an empty CSV in this app's existing pattern; pass a sentinel
+        // that won't match anything when one list is empty so the OR branch becomes a no-op.
+        // Contract numbers can legitimately contain spaces (e.g. "PW 452117"), so use the
+        // identifier-safe sanitizer for that list; customer codes use the stricter one.
+        var contractsCsv = openContractNumbers.Count > 0 ? SanitizeIdentifierCsv(openContractNumbers) : "__none__";
+        var codesCsv = customerCodes.Count > 0 ? SanitizeCsv(customerCodes) : "__none__";
+
+        // The TicketBlDate column on vw_CurrentTickets is stored as a string; an inclusive
+        // ISO yyyy-MM-dd cutoff lets the SpotLoads / today's-tickets path narrow the result
+        // set at the SQL layer. Null cutoff = no date filter (used by the broad contracts page paths).
+        // (C# property Ticket.Date maps to DB column TicketBlDate; raw SQL has to use the column name.)
+        var cutoff = cutoffDateInclusive ?? string.Empty;
+
+        // Two indexed lookups UNION'd, then DISTINCT — far faster than a single WHERE with OR/EXISTS
+        // on a 2M-row table. Each branch is an INNER JOIN to STRING_SPLIT on an indexed column
+        // (ContractNumber for applied, CustomerCode for unapplied), so the optimizer picks index
+        // seeks instead of scans. The cutoff is parameterized once and applied symmetrically.
+        return await _context.Tickets
+            .FromSqlInterpolated($@"
+                SELECT t.* FROM base.vw_CurrentTickets t
+                INNER JOIN STRING_SPLIT({contractsCsv}, ',') x ON t.ContractNumber = x.value
+                WHERE t.IsActive = 1 AND t.TicketType IN ('U','P')
+                  AND ({cutoff} = '' OR (t.TicketBlDate IS NOT NULL AND t.TicketBlDate >= {cutoff}))
+
+                UNION
+
+                SELECT t.* FROM base.vw_CurrentTickets t
+                INNER JOIN STRING_SPLIT({codesCsv}, ',') c ON t.CustomerCode = c.value
+                WHERE t.IsActive = 1 AND t.TicketType IN ('U','P')
+                  AND t.ContractNumber IS NOT NULL
+                  AND (LEFT(t.ContractNumber, 1) = 'U' OR LEFT(t.ContractNumber, 1) = 'L')
+                  AND ({cutoff} = '' OR (t.TicketBlDate IS NOT NULL AND t.TicketBlDate >= {cutoff}))")
+            .AsNoTracking()
+            .OrderByDescending(t => t.Date)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<List<Ticket>> GetTicketsAsync(List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
         try
@@ -1322,26 +1386,28 @@ public class SqlDataService : IDataService
                 }
                 else
                 {
-                    var codesCsv = SanitizeCsv(customerCodes);
-                    tickets = await _context.Tickets
-                        .FromSqlInterpolated($@"
-                            SELECT t.* FROM base.vw_CurrentTickets t
-                            INNER JOIN STRING_SPLIT({codesCsv}, ',') ids
-                                ON t.CustomerCode = ids.value
-                            WHERE t.IsActive = 1 AND t.TicketType IN ('U','P')")
+                    // Same contract-scoped pattern as the filtered branch — applied tickets
+                    // follow their contract, not the ticket's CustomerCode. Without this, a
+                    // ticket whose CustomerCode is missing from CustomerSnapshot (inactive /
+                    // deleted / cross-system entity) would be dropped even when its contract
+                    // is otherwise visible.
+                    var openContractNumbers = await _context.Contracts
                         .AsNoTracking()
-                        .OrderByDescending(t => t.Date)
+                        .Where(c => c.IsActive && c.ContractPrefixType == "P"
+                            && c.ClosedDate == null
+                            && c.CtrmCustomerId != null && customerCodes.Contains(c.CtrmCustomerId)
+                            && c.SourceContractId != null)
+                        .Select(c => c.SourceContractId!)
+                        .Distinct()
                         .ToListAsync(cancellationToken);
+
+                    tickets = await LoadTicketsByContractAndCustomerScopeAsync(
+                        openContractNumbers, customerCodes, cancellationToken);
                 }
             }
             else
             {
                 // Customer scope = producers in the selected TUs (per CustomerSnapshot).
-                // For those customers, load every ticket they have — regardless of which TU
-                // the ticket's contract is tagged to. This keeps the customer-level scope
-                // tight to the user's selection while ensuring all tickets for in-scope
-                // customers are returned (so Insights and Contract Detail agree on delivery
-                // state for any contract those customers own).
                 var customerCodes = await _appContext.CustomerSnapshots
                     .AsNoTracking()
                     .Where(s => s.IsActive && s.ScoularId != null
@@ -1350,12 +1416,11 @@ public class SqlDataService : IDataService
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
-                // Step 2: SourceContractIds of OPEN Purchase contracts for the visible
-                // customers — the exact set of contracts the app actually renders.
-                // Tickets applied to contracts outside this set (closed, non-P, out-of-scope)
-                // have nowhere to land in the UI, so we drop them to avoid wasted data.
-                // Case-insensitive hash set so case drift between Ticket.ContractNumber
-                // and Contract.SourceContractId doesn't silently miss matches.
+                // Open Purchase contracts whose customer is in the TU scope. We then load tickets
+                // by their CtrmContractNumber matching this set — applied tickets follow the
+                // contract, not the ticket's CustomerCode. CTRM data has split / cross-entity
+                // tickets where ticket.CustomerCode != contract.CtrmCustomerId; filtering by
+                // CustomerCode silently dropped those, so the contract under-reported deliveries.
                 var openContractNumbers = await _context.Contracts
                     .AsNoTracking()
                     .Where(c => c.IsActive && c.ContractPrefixType == "P"
@@ -1365,21 +1430,9 @@ public class SqlDataService : IDataService
                     .Select(c => c.SourceContractId!)
                     .Distinct()
                     .ToListAsync(cancellationToken);
-                var openContractSet = new HashSet<string>(openContractNumbers, StringComparer.OrdinalIgnoreCase);
 
-                // Step 3: Load all active U/P tickets for these customers, then keep:
-                //   - every unapplied ticket (needed for the Unapplied Tickets tab and Spot Loads)
-                //   - applied tickets only if their CtrmContractNumber matches an open P contract
-                var rawTickets = await _context.Tickets
-                    .AsNoTracking()
-                    .Where(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode))
-                    .OrderByDescending(t => t.Date)
-                    .ToListAsync(cancellationToken);
-
-                tickets = rawTickets
-                    .Where(t => !t.IsApplied
-                        || (t.CtrmContractNumber != null && openContractSet.Contains(t.CtrmContractNumber)))
-                    .ToList();
+                tickets = await LoadTicketsByContractAndCustomerScopeAsync(
+                    openContractNumbers, customerCodes, cancellationToken);
             }
 
             _logger.LogInformation("Loading tickets (filtered: {IsFiltered}, tradeUnitCount: {TradeUnitCount})",
@@ -1556,8 +1609,7 @@ public class SqlDataService : IDataService
 
             if (!hasTradeUnitFilter)
             {
-                // Unfiltered: every active producer in CustomerSnapshot. Trade unit selection is
-                // a narrowing convenience, not an entitlement boundary.
+                // Unfiltered: every active producer in CustomerSnapshot.
                 var customerCodes = await _appContext.CustomerSnapshots
                     .AsNoTracking()
                     .Where(s => s.IsActive && s.ScoularId != null)
@@ -1571,17 +1623,21 @@ public class SqlDataService : IDataService
                 }
                 else
                 {
-                    var codesCsv = SanitizeCsv(customerCodes);
-                    tickets = await _context.Tickets
-                        .FromSqlInterpolated($@"
-                            SELECT t.* FROM base.vw_CurrentTickets t
-                            INNER JOIN STRING_SPLIT({codesCsv}, ',') ids
-                                ON t.CustomerCode = ids.value
-                            WHERE t.IsActive = 1 AND t.TicketType IN ('U','P')
-                              AND t.[Date] IS NOT NULL AND t.[Date] >= {cutoffStr}")
+                    // Same contract-scoped pattern as GetTicketsAsync — applied tickets follow
+                    // their contract, not the ticket's CustomerCode. Without this, Spot Loads
+                    // would silently miss split / cross-entity loads.
+                    var openContractNumbers = await _context.Contracts
                         .AsNoTracking()
-                        .OrderByDescending(t => t.Date)
+                        .Where(c => c.IsActive && c.ContractPrefixType == "P"
+                            && c.ClosedDate == null
+                            && c.CtrmCustomerId != null && customerCodes.Contains(c.CtrmCustomerId)
+                            && c.SourceContractId != null)
+                        .Select(c => c.SourceContractId!)
+                        .Distinct()
                         .ToListAsync(cancellationToken);
+
+                    tickets = await LoadTicketsByContractAndCustomerScopeAsync(
+                        openContractNumbers, customerCodes, cancellationToken, cutoffStr);
                 }
             }
             else
@@ -1595,10 +1651,11 @@ public class SqlDataService : IDataService
                     .ToListAsync(cancellationToken);
 
                 var contractCustomerCodes = tuContracts.Select(c => c.CtrmCustomerId!).ToHashSet();
-                var tuContractNumbers = tuContracts
+                var openContractNumbers = tuContracts
                     .Select(c => c.SourceContractId)
                     .Where(n => n != null)
-                    .ToHashSet();
+                    .Cast<string>()
+                    .ToList();
 
                 var snapshotCustomerCodes = await _appContext.CustomerSnapshots
                     .AsNoTracking()
@@ -1610,15 +1667,8 @@ public class SqlDataService : IDataService
 
                 var customerCodes = contractCustomerCodes.Union(snapshotCustomerCodes).ToList();
 
-                var rawTickets = await _context.Tickets
-                    .AsNoTracking()
-                    .Where(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerCode != null && customerCodes.Contains(t.CustomerCode) && t.Date != null && string.Compare(t.Date, cutoffStr) >= 0)
-                    .OrderByDescending(t => t.Date)
-                    .ToListAsync(cancellationToken);
-
-                tickets = rawTickets
-                    .Where(t => !t.IsApplied || tuContractNumbers.Contains(t.CtrmContractNumber!))
-                    .ToList();
+                tickets = await LoadTicketsByContractAndCustomerScopeAsync(
+                    openContractNumbers, customerCodes, cancellationToken, cutoffStr);
             }
 
             _logger.LogInformation("Loaded {TicketCount} recent tickets for spot loads (filtered: {IsFiltered}, cutoff: {CutoffStr})",
@@ -1687,12 +1737,23 @@ public class SqlDataService : IDataService
                 }
             }
 
-            // Match tickets using CustomerCode = scoularId (string matching, like contracts)
-            var tickets = await _context.Tickets
+            // Build the customer's open Purchase contract set so applied tickets are scoped
+            // by contract regardless of which CustomerCode the ticket carries (CTRM splits
+            // tickets across related entities, so ticket.CustomerCode can differ from
+            // contract.CtrmCustomerId even when the ticket is correctly applied to this
+            // customer's contract).
+            var openContractNumbers = await _context.Contracts
                 .AsNoTracking()
-                .Where(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && t.CustomerCode == scoularId)
-                .OrderByDescending(t => t.Date)
+                .Where(c => c.IsActive && c.ContractPrefixType == "P"
+                    && c.ClosedDate == null
+                    && c.CtrmCustomerId == scoularId
+                    && c.SourceContractId != null)
+                .Select(c => c.SourceContractId!)
+                .Distinct()
                 .ToListAsync(cancellationToken);
+
+            var tickets = await LoadTicketsByContractAndCustomerScopeAsync(
+                openContractNumbers, new List<string> { scoularId! }, cancellationToken);
 
             // Load quality data for these tickets
             var ticketIds = tickets.Select(t => t.Id).ToList();

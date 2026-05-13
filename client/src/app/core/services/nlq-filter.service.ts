@@ -1344,8 +1344,18 @@ export class NlqFilterService {
         for (const ct of custContracts) {
           if (ct.commodityCode) crops.add(ct.commodityCode.trim().toUpperCase());
         }
-        // From tickets
-        const custTickets = tickets.filter(t => t.customerCode === c.scoularId);
+        // From tickets — include both direct-customer tickets AND tickets applied to one of
+        // this customer's contracts (CTRM splits tickets across related entities, so a
+        // ticket's CustomerCode can differ from the contract's CtrmCustomerId even when the
+        // grain logically belongs to this customer's contract). Same fix as the contracts
+        // table — keeps commodity-based "crops match" filters honest.
+        const custContractIds = new Set(
+          custContracts.map(ct => ct.sourceContractId).filter((s): s is string => !!s)
+        );
+        const custTickets = tickets.filter(t =>
+          t.customerCode === c.scoularId
+          || (!!t.ctrmContractNumber && custContractIds.has(t.ctrmContractNumber))
+        );
         for (const t of custTickets) {
           if (t.productCode) crops.add(t.productCode.trim().toUpperCase());
         }

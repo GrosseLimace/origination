@@ -811,7 +811,17 @@ export class HomeComponent {
     if (!currentCustomer) return;
 
     const allContracts = this.contracts().filter(c => c.ctrmCustomerId === currentCustomer.scoularId);
-    const allTickets = this.tickets().filter(t => t.customerCode === currentCustomer.scoularId);
+    // Include tickets whose CustomerCode matches the customer (covers unapplied + same-customer
+    // applied) AND tickets whose CtrmContractNumber is on one of this customer's contracts
+    // (covers cross-entity / split-load tickets where the ticket's CustomerCode differs from
+    // the contract's CtrmCustomerId — the backend now returns these; this filter must let them through).
+    const customerContractIds = new Set(
+      allContracts.map(c => c.sourceContractId).filter((s): s is string => !!s)
+    );
+    const allTickets = this.tickets().filter(t =>
+      t.customerCode === currentCustomer.scoularId
+      || (!!t.ctrmContractNumber && customerContractIds.has(t.ctrmContractNumber))
+    );
     this.allCustomerContracts.set([...allContracts]);
     this.allCustomerTickets.set([...allTickets]);
     this.customerContracts.set([...allContracts]);
