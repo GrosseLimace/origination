@@ -63,8 +63,7 @@ public class NotesController : ControllerBase
 
         // Derive TradeUnit from the authoritative dbo.CustomerTradeUnit rather than trusting the client-supplied value.
         // This prevents a caller from assigning a foreign trade unit to manipulate note visibility.
-        // If a customer has multiple TUs, we pick the first one (matches prior behavior — the old
-        // CustomerSnapshot query was also non-deterministic across multiple rows per customer).
+        // If a customer has multiple TUs, FirstOrDefaultAsync picks one non-deterministically.
         var tradeUnit = await _appContext.CustomerTradeUnits
             .Where(ctu => ctu.CustomerId == request.CustomerId && ctu.IsActive)
             .Select(ctu => ctu.TradeUnit)

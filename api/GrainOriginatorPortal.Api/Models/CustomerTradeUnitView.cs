@@ -3,8 +3,8 @@ namespace GrainOriginatorPortal.Api.Models;
 /// <summary>
 /// Read-only projection of originations.vw_CustomerTradeUnits in ODS — each row is a
 /// customer paired with one trade unit they're active in (via contracts or tickets).
-/// Used by the customer-data sync (DiagnosticsController.PopulateCustomerSnapshot) and
-/// by UserEntitlementService.ValidateCustomerAccessAsync.
+/// Used by the customer-data sync (DiagnosticsController populate endpoint) and by
+/// UserEntitlementService.ValidateCustomerAccessAsync.
 ///
 /// Not to be confused with the app-DB entity <see cref="CustomerTradeUnit"/> which is
 /// the materialized join table for the per-customer per-TU memberships.

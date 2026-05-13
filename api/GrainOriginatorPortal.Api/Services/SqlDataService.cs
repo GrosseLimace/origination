@@ -2195,7 +2195,7 @@ public class SqlDataService : IDataService
     // Tiebreaker priority inside the run: S > D > F.
     // Callers append "AND ..." (not "WHERE ...") since the base query already has WHERE rn = 1.
     // Storage query reads only from ODS (ctrm.vw_GNTA39D1). CustomerId is resolved in C#
-    // from dbo.CustomerSnapshot (Origination DB) — Azure SQL doesn't support cross-DB joins.
+    // from dbo.Customer (Origination DB) — Azure SQL doesn't support cross-DB joins.
     private const string StoredGrainSql = """
         WITH LatestReceipts AS (
             SELECT

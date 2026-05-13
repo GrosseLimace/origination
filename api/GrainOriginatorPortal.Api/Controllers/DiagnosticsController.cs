@@ -184,12 +184,12 @@ public class DiagnosticsController : ControllerBase
     }
 
     /// <summary>
-    /// Populates dbo.CustomerSnapshot AND dbo.Customer + dbo.CustomerTradeUnit in the Origination DB
-    /// from originations.vw_CustomerTradeUnits in ODS. One-time / on-demand operation — dev only.
+    /// Populates dbo.Customer and dbo.CustomerTradeUnit in the Origination DB from
+    /// originations.vw_CustomerTradeUnits in ODS. One-time / on-demand operation — dev only.
     ///
-    /// Both target schemas are refreshed during the Phase 2 transition (database-design-issues.md):
-    /// reads have switched to Customer + CustomerTradeUnit, but CustomerSnapshot is still maintained
-    /// here so it stays in sync until Phase 2b drops it.
+    /// This endpoint is a placeholder for the proper scheduled sync service (Phase 6 of
+    /// database-design-issues.md). The route keeps its legacy "customer-snapshot/populate"
+    /// path to avoid breaking any out-of-band tooling that calls it.
     /// </summary>
     [HttpPost("customer-snapshot/populate")]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -207,41 +207,6 @@ public class DiagnosticsController : ControllerBase
         // Clear existing rows in FK order — CustomerTradeUnit FKs Customer, so child first.
         await _appContext.Database.ExecuteSqlRawAsync("DELETE FROM dbo.CustomerTradeUnit", cancellationToken);
         await _appContext.Database.ExecuteSqlRawAsync("DELETE FROM dbo.Customer", cancellationToken);
-        await _appContext.Database.ExecuteSqlRawAsync("DELETE FROM dbo.CustomerSnapshot", cancellationToken);
-
-        // -------------------------------------------------------------------------
-        // CustomerSnapshot — one row per (customer, trade unit) pair (legacy shape).
-        // -------------------------------------------------------------------------
-        var refreshedAt = DateTime.UtcNow;
-        var snapshotRows = customerTradeUnits.Select(c => new CustomerSnapshot
-        {
-            CustomerId           = c.CustomerId,
-            CustomerName         = c.CustomerName ?? string.Empty,
-            ScoularId            = c.ScoularId,
-            IndustryCode1        = c.IndustryCode1,
-            IsActive             = c.IsActive,
-            EffectiveStartDate   = c.EffectiveStartDate,
-            EffectiveEndDate     = c.EffectiveEndDate,
-            MerchandisingPhone   = c.MerchandisingPhone,
-            MerchandisingEmail   = c.MerchandisingEmail,
-            ExtendedPrimaryPhone = c.ExtendedPrimaryPhone,
-            SupplementalEmail    = c.SupplementalEmail,
-            MerchandisingCity    = c.MerchandisingCity,
-            MerchandisingStateProvince  = c.MerchandisingStateProvince,
-            MerchandisingAddressLine1   = c.MerchandisingAddressLine1,
-            MerchandisingPostalCode     = c.MerchandisingPostalCode,
-            ExtendedAddressLine1 = c.ExtendedAddressLine1,
-            ExtendedAddressLine2 = c.ExtendedAddressLine2,
-            ExtendedAddressLine3 = c.ExtendedAddressLine3,
-            ExtendedAddressLine4 = c.ExtendedAddressLine4,
-            ExtendedCity         = c.ExtendedCity,
-            ExtendedPostalCode   = c.ExtendedPostalCode,
-            ExtendedStateProvince = c.ExtendedStateProvince,
-            ExtendedCountry      = c.ExtendedCountry,
-            TradeUnit            = c.TradeUnit,
-            SnapshotRefreshedAt  = refreshedAt
-        }).ToList();
-        await _appContext.CustomerSnapshots.AddRangeAsync(snapshotRows, cancellationToken);
 
         // -------------------------------------------------------------------------
         // Customer — one row per distinct CustomerId. Attributes are identical across
@@ -302,7 +267,6 @@ public class DiagnosticsController : ControllerBase
         sw.Stop();
         return Ok(new
         {
-            SnapshotRowsInserted          = snapshotRows.Count,
             CustomerRowsInserted          = customerRows.Count,
             CustomerTradeUnitRowsInserted = ctuRows.Count,
             ElapsedMs                     = sw.ElapsedMilliseconds

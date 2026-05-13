@@ -17,7 +17,7 @@ public class OriginationDbContext : DbContext
     // DbSet properties for each entity
     // Contract and Ticket exist in ODS (base schema). CustomerTradeUnitView is the
     // read-only projection of originations.vw_CustomerTradeUnits and drives the
-    // CustomerSnapshot population + per-request customer access checks.
+    // dbo.Customer / dbo.CustomerTradeUnit sync + per-request customer access checks.
     public DbSet<CustomerTradeUnitView> CustomerTradeUnits => Set<CustomerTradeUnitView>();
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<Ticket> Tickets => Set<Ticket>();

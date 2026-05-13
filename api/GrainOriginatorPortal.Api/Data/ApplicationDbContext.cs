@@ -24,7 +24,6 @@ public class ApplicationDbContext : DbContext
     public DbSet<DashboardActualHarvest> DashboardActualHarvests => Set<DashboardActualHarvest>();
     public DbSet<SavedList> SavedLists => Set<SavedList>();
     public DbSet<ESignEnrollment> ESignEnrollments => Set<ESignEnrollment>();
-    public DbSet<CustomerSnapshot> CustomerSnapshots => Set<CustomerSnapshot>();
     public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<CustomerTradeUnit> CustomerTradeUnits => Set<CustomerTradeUnit>();
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
@@ -220,34 +219,10 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => e.CustomerId).IsUnique().HasDatabaseName("IX_ProducerDetails_CustomerId");
         });
 
-        modelBuilder.Entity<CustomerSnapshot>(entity =>
-        {
-            entity.ToTable("CustomerSnapshot", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd();
-            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
-            entity.Property(e => e.CustomerName).HasColumnName("CustomerName").HasMaxLength(500).IsRequired();
-            entity.Property(e => e.ScoularId).HasColumnName("ScoularId").HasMaxLength(400).IsRequired(false);
-            entity.Property(e => e.IndustryCode1).HasColumnName("IndustryCode1").HasMaxLength(50).IsRequired(false);
-            entity.Property(e => e.TradeUnit).HasColumnName("TradeUnit").HasMaxLength(100).IsRequired(false);
-            entity.Property(e => e.SnapshotRefreshedAt).HasColumnName("SnapshotRefreshedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
-
-            // Covering index for the main query: WHERE IsActive = 1 AND TradeUnit IN (...) ORDER BY CustomerName
-            entity.HasIndex(e => new { e.IsActive, e.TradeUnit, e.CustomerName })
-                  .HasDatabaseName("IX_CustomerSnapshot_IsActive_TradeUnit_CustomerName");
-            // Dedup and single-customer lookups
-            entity.HasIndex(e => e.CustomerId)
-                  .HasDatabaseName("IX_CustomerSnapshot_CustomerId");
-            // eSign enrichment and contract/ticket customer code lookups
-            entity.HasIndex(e => e.ScoularId)
-                  .HasDatabaseName("IX_CustomerSnapshot_ScoularId");
-        });
-
         // -------------------------------------------------------------------------
-        // Customer + CustomerTradeUnit — normalized replacement for CustomerSnapshot.
+        // Customer + CustomerTradeUnit — normalized customer schema.
         // Customer holds one row per ODS CustomerId (attribute columns); CustomerTradeUnit
-        // holds one row per (CustomerId, TradeUnit) membership. Backfilled from
-        // CustomerSnapshot in migration 20260513_CreateCustomerAndCustomerTradeUnit.
+        // holds one row per (CustomerId, TradeUnit) membership.
         // -------------------------------------------------------------------------
         modelBuilder.Entity<Customer>(entity =>
         {
@@ -267,7 +242,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.EffectiveStartDate).HasColumnName("EffectiveStartDate").IsRequired(false);
             entity.Property(e => e.EffectiveEndDate).HasColumnName("EffectiveEndDate").IsRequired(false);
 
-            // Contact columns — same naming as ODS source for consistency with CustomerSnapshot.
+            // Contact columns — column names mirror the ODS source view for consistency.
             entity.Property(e => e.Phone).HasColumnName("MerchandisingPhone").HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.Email).HasColumnName("MerchandisingEmail").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.ExtendedPrimaryPhone).HasColumnName("ExtendedPrimaryPhone").HasMaxLength(100).IsRequired(false);

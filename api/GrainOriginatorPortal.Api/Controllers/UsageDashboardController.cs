@@ -722,7 +722,7 @@ public class UsageDashboardController : ControllerBase
         // ── Most-interacted producer (per-customer interaction count) ──
         // Tally events whose TargetId is a customer id (profile-opened, tickets,
         // storage, producer-details, call/email clicks). Resolve the top one
-        // through CustomerSnapshot for display.
+        // through dbo.Customer for display.
         var customerInteractionSubFeatures = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "profile-opened", "customer-details", "producer-details", "tickets", "storage"
@@ -898,7 +898,7 @@ public class UsageDashboardController : ControllerBase
         // Enrich TargetIds that map to known entities so the UI shows a name instead
         // of an opaque numeric id. Two resolution paths:
         //   1. Customer ids — features that store customerId in TargetId. Resolved
-        //      via dbo.CustomerSnapshot (cached customer→trade-unit mapping with name).
+        //      via dbo.Customer for the display name.
         //   2. QueryLibrary ids — featureCode='build-a-list' / sub='library-query-selected'.
         //      Resolved via dbo.QueryLibrary.
         var customerSubFeatures = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
