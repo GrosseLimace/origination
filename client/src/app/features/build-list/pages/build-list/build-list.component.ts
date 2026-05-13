@@ -23,6 +23,7 @@ import { HighlightPipe } from '@shared/pipes/highlight.pipe';
 import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
 import { isContractUnconfirmed, isContractOverdueWithUnshippedBu, buildAppliedLbsMaps, buildConversionMap } from '@shared/utils/contract-status';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
+import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
 
 @Component({
   selector: 'app-build-list',
@@ -285,21 +286,15 @@ export class BuildListComponent {
       || r.hasPinnedNotes || !!r.noteKeyword?.trim();
     let codesByCustomerId: Map<number, Set<string>> | null = null;
     if (wantsAggregatedNotes) {
-      const incomingLinks = new Map<string, Set<string>>();
-      for (const c of this.customers()) {
-        if (!c.scoularId) continue;
-        for (const linkedCode of (c.linkedProducerIds || [])) {
-          if (!incomingLinks.has(linkedCode)) incomingLinks.set(linkedCode, new Set());
-          incomingLinks.get(linkedCode)!.add(c.scoularId);
-        }
-      }
+      const components = this.linkedProducerComponents();
       codesByCustomerId = new Map<number, Set<string>>();
       for (const c of this.customers()) {
-        const all = new Set<string>();
-        if (c.scoularId) all.add(c.scoularId);
-        for (const code of (c.linkedProducerIds || [])) all.add(code);
-        for (const code of (c.scoularId ? incomingLinks.get(c.scoularId) || [] : [])) all.add(code);
-        codesByCustomerId.set(c.id, all);
+        if (c.scoularId) {
+          const comp = components.get(c.scoularId);
+          codesByCustomerId.set(c.id, comp ? new Set(comp) : new Set([c.scoularId]));
+        } else {
+          codesByCustomerId.set(c.id, new Set());
+        }
       }
     }
 
@@ -652,29 +647,30 @@ export class BuildListComponent {
       if (toAdd.length > 0) list = [...list, ...toAdd];
     }
 
-    // Collapse linked-customer groups: if X.linkedProducerIds includes Y, hide Y.
-    // For mutual links (A↔B), tie-break on lower id so output is stable.
-    // Only dedup when the linked-as-one-entity feature is active — for non-note prompts
-    // (contracts/tickets/storage/planting) each producer is its own peer row since their
-    // data is independent.
+    // Collapse linked-customer groups: when the linked-as-one-entity feature is active,
+    // keep ONE peer row per connected component (the lowest-id customer in `list` that
+    // belongs to it). All other component members get folded into that representative
+    // and surface inside its inline linked-producer panel. Uses the transitive component
+    // closure so a chain A→B→C produces a single row with both B and C linked, not two
+    // separate rows for "A linked to B" and "B linked to C".
     if (this.linkedFeatureActive()) {
-      const codeToCustomer = new Map<string, Customer>();
-      for (const c of list) if (c.scoularId) codeToCustomer.set(c.scoularId, c);
-      const toHide = new Set<number>();
+      const components = this.linkedProducerComponents();
+      const repIdByComponent = new Map<Set<string>, number>(); // component identity → rep id
       for (const c of list) {
-        for (const linkedCode of (c.linkedProducerIds || [])) {
-          const linked = codeToCustomer.get(linkedCode);
-          if (!linked || linked.id === c.id) continue;
-          const isMutual = (linked.linkedProducerIds || []).includes(c.scoularId || '');
-          if (isMutual) {
-            if (c.id <= linked.id) toHide.add(linked.id);
-            else toHide.add(c.id);
-          } else {
-            toHide.add(linked.id);
-          }
-        }
+        if (!c.scoularId) continue;
+        const comp = components.get(c.scoularId);
+        if (!comp || comp.size <= 1) continue;
+        const existing = repIdByComponent.get(comp);
+        if (existing == null || c.id < existing) repIdByComponent.set(comp, c.id);
       }
-      if (toHide.size > 0) list = list.filter(c => !toHide.has(c.id));
+      if (repIdByComponent.size > 0) {
+        list = list.filter(c => {
+          if (!c.scoularId) return true;
+          const comp = components.get(c.scoularId);
+          if (!comp || comp.size <= 1) return true; // standalone customer — keep
+          return repIdByComponent.get(comp) === c.id;
+        });
+      }
     }
 
     // Producers always render alphabetically by name — sorting by latest-note timestamp
@@ -822,33 +818,19 @@ export class BuildListComponent {
       }
     }
 
-    // Build bidirectional linked-producer map (outgoing + incoming)
+    // Walk the full linked-producer connected component for each customer so the
+    // "last contacted" date reflects the entire chain (A→B→C). Same closure used
+    // everywhere else linked behavior matters, so the "last contacted" badge agrees
+    // with the inline note panel.
     const allCustomers = this.customers();
-    const linkedById = new Map<number, string[]>();
-    for (const c of allCustomers) {
-      if (c.linkedProducerIds?.length) linkedById.set(c.id, c.linkedProducerIds);
-    }
-    const incomingCodeLinks = new Map<string, Set<string>>();
-    for (const c of allCustomers) {
-      if (!c.scoularId) continue;
-      for (const linkedCode of (c.linkedProducerIds || [])) {
-        if (!incomingCodeLinks.has(linkedCode)) incomingCodeLinks.set(linkedCode, new Set());
-        incomingCodeLinks.get(linkedCode)!.add(c.scoularId);
-      }
-    }
+    const components = this.linkedProducerComponents();
 
-    // Resolve latest note time per customer including linked producers
     const latestNotes = new Map<number, { time: number }>();
     for (const customer of allCustomers) {
-      const freshLinked = linkedById.get(customer.id) ?? customer.linkedProducerIds ?? [];
-      const allCodes = new Set<string>();
-      if (customer.scoularId) allCodes.add(customer.scoularId);
-      for (const linkedCode of freshLinked) allCodes.add(linkedCode);
-      for (const incomingCode of (incomingCodeLinks.get(customer.scoularId || '') || new Set<string>())) {
-        allCodes.add(incomingCode);
-      }
+      if (!customer.scoularId) continue;
+      const codes = components.get(customer.scoularId) ?? new Set([customer.scoularId]);
       let latestTime = 0;
-      for (const code of allCodes) {
+      for (const code of codes) {
         const entry = notesByCode.get(code);
         if (entry && entry.time > latestTime) latestTime = entry.time;
       }
@@ -897,6 +879,14 @@ export class BuildListComponent {
     if (this.noteFilterActive()) return true;
     const q = this.queryText().toLowerCase();
     return /linked\s+(?:producer|record)/.test(q);
+  });
+
+  /** Connected components over the linked-producer graph — shared with customer-list and
+   *  every consumer in this component (linkedProducerInfoByCustomer, displayedCustomers
+   *  collapse, codesByCustomerId, matchingNotesByCustomer, lastContactByCustomer) so chained
+   *  links A→B→C are treated as one transitive group everywhere. See shared util for details. */
+  readonly linkedProducerComponents = computed<Map<string, Set<string>>>(() => {
+    return buildLinkedProducerComponents(this.customers());
   });
 
   /** True when the result list should render an inline note section per customer.
@@ -1035,28 +1025,25 @@ export class BuildListComponent {
     const matchesByCode = this._matchedNotesByCode();
     if (matchesByCode.size === 0) return map;
     const customers = this.customers();
-
-    const incomingByCode = new Map<string, Set<string>>();
-    for (const c of customers) {
-      if (!c.scoularId) continue;
-      for (const linkedCode of (c.linkedProducerIds || [])) {
-        if (!incomingByCode.has(linkedCode)) incomingByCode.set(linkedCode, new Set());
-        incomingByCode.get(linkedCode)!.add(c.scoularId);
-      }
-    }
+    const components = this.linkedProducerComponents();
 
     for (const customer of customers) {
       const ownCode = customer.scoularId;
-      const codes = new Set<string>();
-      if (ownCode) codes.add(ownCode);
-      for (const linkedCode of (customer.linkedProducerIds || [])) codes.add(linkedCode);
-      for (const inc of (ownCode ? incomingByCode.get(ownCode) || [] : [])) codes.add(inc);
+      if (!ownCode) continue;
+      // Walk the full connected component so chained links (A→B→C) aggregate every member's
+      // notes onto the representative row.
+      const codes = components.get(ownCode) ?? new Set([ownCode]);
 
       const out: Array<Note & { viaName: string }> = [];
+      const seen = new Set<number>();
       for (const code of codes) {
         const matches = matchesByCode.get(code);
         if (!matches) continue;
-        for (const n of matches) out.push(n);
+        for (const n of matches) {
+          if (seen.has(n.id)) continue;
+          seen.add(n.id);
+          out.push(n);
+        }
       }
       if (out.length === 0) continue;
       out.sort((a, b) => {
@@ -1085,28 +1072,20 @@ export class BuildListComponent {
     if (!this.linkedFeatureActive()) return map;
     const customers = this.customers();
     const excludedIds = this.manuallyExcludedCustomerIds();
+    const components = this.linkedProducerComponents();
 
-    const incomingByCode = new Map<string, Set<string>>();
-    for (const c of customers) {
-      if (!c.scoularId) continue;
-      for (const linkedCode of (c.linkedProducerIds || [])) {
-        if (!incomingByCode.has(linkedCode)) incomingByCode.set(linkedCode, new Set());
-        incomingByCode.get(linkedCode)!.add(c.scoularId);
-      }
-    }
     const customerByCode = new Map<string, Customer>();
     for (const c of customers) {
       if (c.scoularId) customerByCode.set(c.scoularId, c);
     }
 
     for (const customer of customers) {
-      const codes = new Set<string>();
-      for (const linkedCode of (customer.linkedProducerIds || [])) codes.add(linkedCode);
-      for (const inc of (customer.scoularId ? incomingByCode.get(customer.scoularId) || [] : [])) codes.add(inc);
-      if (customer.scoularId) codes.delete(customer.scoularId);
-      if (codes.size === 0) continue;
+      if (!customer.scoularId) continue;
+      const component = components.get(customer.scoularId);
+      if (!component || component.size <= 1) continue;
       const producers: Customer[] = [];
-      for (const code of codes) {
+      for (const code of component) {
+        if (code === customer.scoularId) continue;
         const linked = customerByCode.get(code);
         if (linked && !excludedIds.has(linked.id)) producers.push(linked);
       }
