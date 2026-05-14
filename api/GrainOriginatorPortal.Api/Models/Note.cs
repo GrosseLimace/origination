@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GrainOriginatorPortal.Api.Models;
 
 /// <summary>
@@ -27,4 +29,12 @@ public class Note
 
     // Computed alias for frontend compatibility
     public string Content => Description;
+
+    // Navigation property — FK to dbo.Customer. Populated via Include() so the
+    // service layer can copy CustomerName / CustomerCode onto the DTO without
+    // those columns being stored on the Notes table.
+    // [JsonIgnore] keeps the nested Customer out of API responses; the flat
+    // CustomerName / CustomerCode properties on Note carry the customer info.
+    [JsonIgnore]
+    public Customer? Customer { get; set; }
 }

@@ -148,4 +148,21 @@ For future sessions: if something looks off or you're unsure how something shoul
 
 ---
 
-*Last updated: 2026-03-11*
+## Local TU Catalog Removed (Phase 1 of Database Cleanup)
+
+When the Trade Groups dropdown was switched to `getUserTradeUnits()` (Entitlements DB) above, the original `dbo.TradeUnits`, `dbo.TradeUnitGroups`, and `dbo.GroupTradeUnits` tables in the app DB were left in place even though the frontend no longer used them. A subsequent investigation (see [database-design-issues.md](database-design-issues.md)) found only one straggler call — `getTradeUnits()` invoked by the Link Producers dialog purely to round-trip TU codes back as a query scope, which was unnecessary because the backend treats an empty scope as "all customers."
+
+**The local TU catalog has now been removed entirely** to enforce the architectural principle that **the Entitlements DB is the sole source of truth for the TU and group catalog**. The app DB no longer maintains any local TU lookup tables.
+
+### Removed
+- Frontend: `getTradeUnits()`, `getTradeUnitGroups()`, the corresponding spec, the `getTradeUnits()` precursor in `_loadAllProducersForSearch`.
+- Backend: `TradeUnitGroupsController`, `GET /api/customers/trade-units`, `IDataService.GetTradeUnitsAsync` / `GetTradeUnitGroupsAsync` and all implementations, models `TradeUnit.cs` / `TradeUnitGroup.cs` / `GroupTradeUnit`, `DbSet<>` and `OnModelCreating` configs on `ApplicationDbContext`.
+- DB: migration `20260513051734_RemoveTradeUnitCatalog` drops `dbo.GroupTradeUnits`, `dbo.TradeUnits`, `dbo.TradeUnitGroups` (FK-aware order, idempotent with `DROP TABLE IF EXISTS`).
+- Tests: `ControllerAuthorizationTests` no longer references `TradeUnitGroupsController`; `CustomersControllerTests.GetTradeUnits_ReturnsOkWithList` deleted.
+
+### Principle going forward
+Anything that needs the list of valid TU codes or group definitions queries the Entitlements DB via `getUserTradeUnits()` / `vw_UserTradeUnitAccess`. **Do not re-add a `dbo.TradeUnits` lookup, a `TradeUnitGroups` table, or any FK from app-DB tables to a local TU catalog.** TU codes are stored in app-DB columns (e.g. `CustomerSnapshot.TradeUnit`, `Note.TradeUnit`) as plain strings — soft references to the shared CTRM vocabulary owned by upstream systems.
+
+---
+
+*Last updated: 2026-05-13*

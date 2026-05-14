@@ -61,11 +61,12 @@ public class NotesController : ControllerBase
     {
         // Trade units are a UX filter, not an access boundary — any rep may add a note for any customer.
 
-        // Derive TradeUnit from the authoritative CustomerSnapshot rather than trusting the client-supplied value.
+        // Derive TradeUnit from the authoritative dbo.CustomerTradeUnit rather than trusting the client-supplied value.
         // This prevents a caller from assigning a foreign trade unit to manipulate note visibility.
-        var tradeUnit = await _appContext.CustomerSnapshots
-            .Where(cs => cs.CustomerId == request.CustomerId)
-            .Select(cs => cs.TradeUnit)
+        // If a customer has multiple TUs, FirstOrDefaultAsync picks one non-deterministically.
+        var tradeUnit = await _appContext.CustomerTradeUnits
+            .Where(ctu => ctu.CustomerId == request.CustomerId && ctu.IsActive)
+            .Select(ctu => ctu.TradeUnit)
             .FirstOrDefaultAsync(cancellationToken);
 
         try

@@ -13,6 +13,7 @@ using Microsoft.Data.SqlClient;
 using GrainOriginatorPortal.Api.Data;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models;
+using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -30,6 +31,7 @@ public class DiagnosticsController : ControllerBase
     private readonly ILogger<DiagnosticsController> _logger;
     private readonly IWebHostEnvironment _env;
     private readonly IHttpClientFactory _httpFactory;
+    private readonly CustomerSyncService _customerSync;
     private static int _isGeocoding;
 
     public DiagnosticsController(
@@ -38,7 +40,8 @@ public class DiagnosticsController : ControllerBase
         EntitlementsDbContext entContext,
         ILogger<DiagnosticsController> logger,
         IWebHostEnvironment env,
-        IHttpClientFactory httpFactory)
+        IHttpClientFactory httpFactory,
+        CustomerSyncService customerSync)
     {
         _context = context;
         _appContext = appContext;
@@ -46,6 +49,7 @@ public class DiagnosticsController : ControllerBase
         _logger = logger;
         _env = env;
         _httpFactory = httpFactory;
+        _customerSync = customerSync;
     }
 
     // -------------------------------------------------------------------------
@@ -184,61 +188,24 @@ public class DiagnosticsController : ControllerBase
     }
 
     /// <summary>
-    /// Populates dbo.CustomerSnapshot in the Origination DB from originations.vw_CustomerTradeUnits in ODS.
-    /// One row per customer-trade unit pair. One-time / on-demand operation — dev only.
+    /// Manual on-demand trigger for the customer sync. Available in all
+    /// environments to admins (gated by the controller-level
+    /// <c>[Authorize(Policy = "AdminOnly")]</c>) — useful when prod needs an
+    /// out-of-cycle refresh ahead of the next scheduled
+    /// <see cref="CustomerSyncBackgroundService"/> run.
+    ///
+    /// Invokes the same upsert / soft-delete logic the scheduled service uses
+    /// (see Services/CustomerSyncService). Replaces the legacy
+    /// POST /api/diagnostics/customer-snapshot/populate endpoint that did a
+    /// destructive DELETE+INSERT — the new sync preserves FK references from
+    /// Notes / ProducerDetails / ProducerPlantingIntentions by soft-deleting.
     /// </summary>
-    [HttpPost("customer-snapshot/populate")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<IActionResult> PopulateCustomerSnapshot(CancellationToken cancellationToken = default)
+    [HttpPost("customer-sync/run")]
+    [ProducesResponseType(typeof(CustomerSyncResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RunCustomerSync(CancellationToken cancellationToken = default)
     {
-        if (DenyIfNotDevelopment() is { } deny) return deny;
-
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-
-        // Read all customer-trade unit rows from ODS view
-        var customerTradeUnits = await _context.CustomerTradeUnits
-            .AsNoTracking()
-            .ToListAsync(cancellationToken);
-
-        // Clear existing snapshot rows
-        await _appContext.Database.ExecuteSqlRawAsync("DELETE FROM dbo.CustomerSnapshot", cancellationToken);
-
-        // Map and bulk-insert into snapshot table
-        var refreshedAt = DateTime.UtcNow;
-        var rows = customerTradeUnits.Select(c => new CustomerSnapshot
-        {
-            CustomerId           = c.CustomerId,
-            CustomerName         = c.CustomerName ?? string.Empty,
-            ScoularId     = c.ScoularId,
-            IndustryCode1        = c.IndustryCode1,
-            IsActive             = c.IsActive,
-            EffectiveStartDate   = c.EffectiveStartDate,
-            EffectiveEndDate     = c.EffectiveEndDate,
-            MerchandisingPhone   = c.MerchandisingPhone,
-            MerchandisingEmail   = c.MerchandisingEmail,
-            ExtendedPrimaryPhone = c.ExtendedPrimaryPhone,
-            SupplementalEmail    = c.SupplementalEmail,
-            MerchandisingCity    = c.MerchandisingCity,
-            MerchandisingStateProvince  = c.MerchandisingStateProvince,
-            MerchandisingAddressLine1   = c.MerchandisingAddressLine1,
-            MerchandisingPostalCode     = c.MerchandisingPostalCode,
-            ExtendedAddressLine1 = c.ExtendedAddressLine1,
-            ExtendedAddressLine2 = c.ExtendedAddressLine2,
-            ExtendedAddressLine3 = c.ExtendedAddressLine3,
-            ExtendedAddressLine4 = c.ExtendedAddressLine4,
-            ExtendedCity         = c.ExtendedCity,
-            ExtendedPostalCode   = c.ExtendedPostalCode,
-            ExtendedStateProvince = c.ExtendedStateProvince,
-            ExtendedCountry      = c.ExtendedCountry,
-            TradeUnit            = c.TradeUnit,
-            SnapshotRefreshedAt  = refreshedAt
-        }).ToList();
-
-        await _appContext.CustomerSnapshots.AddRangeAsync(rows, cancellationToken);
-        await _appContext.SaveChangesAsync(cancellationToken);
-
-        sw.Stop();
-        return Ok(new { RowsInserted = rows.Count, ElapsedMs = sw.ElapsedMilliseconds });
+        var result = await _customerSync.SyncAsync(cancellationToken);
+        return Ok(result);
     }
 
     // -------------------------------------------------------------------------

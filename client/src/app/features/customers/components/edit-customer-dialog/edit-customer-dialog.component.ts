@@ -1,7 +1,6 @@
 import { Component, input, output, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { switchMap } from 'rxjs/operators';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '@shared/components/dialog/dialog.component';
 import { Customer, Contract, Ticket, Commodity } from '@models';
 import { ApiService } from '@core/services/api.service';
@@ -250,9 +249,11 @@ export class EditCustomerDialogComponent {
 
   private _loadAllProducersForSearch(): void {
     this.isLoadingProducers.set(true);
-    this.apiService.getTradeUnits().pipe(
-      switchMap(tradeUnits => this.apiService.getCustomers(tradeUnits))
-    ).subscribe({
+    // Pass no trade-units filter — backend GetCustomersAsync returns every customer
+    // when the parameter is null/empty (see SqlDataService.cs). Previously this called
+    // getTradeUnits() first just to round-trip the codes back as a scope, which was
+    // dead weight once the local TU catalog was retired.
+    this.apiService.getCustomers().subscribe({
       next: (customers) => {
         this._allProducersForSearch = customers;
         this.isLoadingProducers.set(false);

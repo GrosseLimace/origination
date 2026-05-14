@@ -8,10 +8,10 @@ public record CreatePlantingIntentionRequest
     public required long CustomerId { get; init; }
 
     // Customer metadata is optional on the wire — the controller derives the
-    // authoritative value from CustomerSnapshot when the customer exists there,
-    // so the client can send blank/unknown values for these (e.g. when the user
-    // has no trade unit selected in the header filter) and the server will fill
-    // them in. Trade units are a UX filter only, not an access boundary.
+    // authoritative value from dbo.Customer + dbo.CustomerTradeUnit when the
+    // customer exists there, so the client can send blank/unknown values for these
+    // (e.g. when the user has no trade unit selected in the header filter) and the
+    // server will fill them in. Trade units are a UX filter only, not an access boundary.
     [StringLength(255)]
     public string? CustomerName { get; init; }
 

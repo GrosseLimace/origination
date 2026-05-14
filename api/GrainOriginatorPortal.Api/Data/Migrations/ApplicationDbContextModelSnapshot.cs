@@ -315,7 +315,192 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                     b.ToTable("Commodities", "dbo");
                 });
 
-            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.CustomerSnapshot", b =>
+            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.Customer", b =>
+                {
+                    b.Property<long>("Id")
+                        .HasColumnType("bigint")
+                        .HasColumnName("CustomerId");
+
+                    b.Property<string>("AddressLine1")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("MerchandisingAddressLine1");
+
+                    b.Property<DateTime?>("EffectiveEndDate")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("EffectiveEndDate");
+
+                    b.Property<DateTime?>("EffectiveStartDate")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("EffectiveStartDate");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("MerchandisingEmail");
+
+                    b.Property<string>("ExtendedAddressLine1")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("ExtendedAddressLine1");
+
+                    b.Property<string>("ExtendedAddressLine2")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("ExtendedAddressLine2");
+
+                    b.Property<string>("ExtendedAddressLine3")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("ExtendedAddressLine3");
+
+                    b.Property<string>("ExtendedAddressLine4")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("ExtendedAddressLine4");
+
+                    b.Property<string>("ExtendedCity")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("ExtendedCity");
+
+                    b.Property<string>("ExtendedCountry")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("ExtendedCountry");
+
+                    b.Property<string>("ExtendedPostalCode")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("ExtendedPostalCode");
+
+                    b.Property<string>("ExtendedPrimaryPhone")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("ExtendedPrimaryPhone");
+
+                    b.Property<string>("ExtendedStateProvince")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("ExtendedStateProvince");
+
+                    b.Property<string>("IndustryCode1")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("IndustryCode1");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("IsActive");
+
+                    b.Property<string>("Location")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("MerchandisingCity");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("CustomerName");
+
+                    b.Property<string>("Phone")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("MerchandisingPhone");
+
+                    b.Property<string>("PostalCode")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("MerchandisingPostalCode");
+
+                    b.Property<string>("ScoularId")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)")
+                        .HasColumnName("ScoularId");
+
+                    b.Property<string>("StateProvince")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("MerchandisingStateProvince");
+
+                    b.Property<string>("SupplementalEmail")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("SupplementalEmail");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .HasDatabaseName("IX_Customer_CustomerName");
+
+                    b.HasIndex("ScoularId")
+                        .HasDatabaseName("IX_Customer_ScoularId");
+
+                    b.ToTable("Customer", "dbo");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.CustomerCommodity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CommodityId")
+                        .HasColumnType("int")
+                        .HasColumnName("CommodityId");
+
+                    b.Property<long>("CustomerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("CustomerId");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CommodityId")
+                        .HasDatabaseName("IX_CustomerCommodity_CommodityId");
+
+                    b.HasIndex("CustomerId", "CommodityId")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_CustomerCommodity_Customer_Commodity");
+
+                    b.ToTable("CustomerCommodity", "dbo");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.CustomerLink", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<long>("FromCustomerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("FromCustomerId");
+
+                    b.Property<long>("ToCustomerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ToCustomerId");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ToCustomerId")
+                        .HasDatabaseName("IX_CustomerLink_ToCustomerId");
+
+                    b.HasIndex("FromCustomerId", "ToCustomerId")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_CustomerLink_From_To");
+
+                    b.ToTable("CustomerLink", "dbo");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.CustomerTradeUnit", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -328,102 +513,28 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("CustomerId");
 
-                    b.Property<string>("CustomerName")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)")
-                        .HasColumnName("CustomerName");
-
-                    b.Property<DateTime?>("EffectiveEndDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("EffectiveStartDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("ExtendedAddressLine1")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("ExtendedAddressLine2")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("ExtendedAddressLine3")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("ExtendedAddressLine4")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("ExtendedCity")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("ExtendedCountry")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("ExtendedPostalCode")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("ExtendedPrimaryPhone")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("ExtendedStateProvince")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("IndustryCode1")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)")
-                        .HasColumnName("IndustryCode1");
-
                     b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("MerchandisingAddressLine1")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("MerchandisingCity")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("MerchandisingEmail")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("MerchandisingPhone")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("MerchandisingPostalCode")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("MerchandisingStateProvince")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("ScoularId")
-                        .HasMaxLength(400)
-                        .HasColumnType("nvarchar(400)")
-                        .HasColumnName("ScoularId");
-
-                    b.Property<DateTime>("SnapshotRefreshedAt")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasColumnName("SnapshotRefreshedAt")
-                        .HasDefaultValueSql("GETUTCDATE()");
-
-                    b.Property<string>("SupplementalEmail")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("IsActive");
 
                     b.Property<string>("TradeUnit")
+                        .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("TradeUnit");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CustomerId")
-                        .HasDatabaseName("IX_CustomerSnapshot_CustomerId");
+                    b.HasIndex("CustomerId", "TradeUnit")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_CustomerTradeUnit_CustomerId_TradeUnit");
 
-                    b.HasIndex("ScoularId")
-                        .HasDatabaseName("IX_CustomerSnapshot_ScoularId");
+                    b.HasIndex("TradeUnit", "IsActive")
+                        .HasDatabaseName("IX_CustomerTradeUnit_TradeUnit_IsActive");
 
-                    b.HasIndex("IsActive", "TradeUnit", "CustomerName")
-                        .HasDatabaseName("IX_CustomerSnapshot_IsActive_TradeUnit_CustomerName");
-
-                    b.ToTable("CustomerSnapshot", "dbo");
+                    b.ToTable("CustomerTradeUnit", "dbo");
                 });
 
             modelBuilder.Entity("GrainOriginatorPortal.Api.Models.DashboardActualHarvest", b =>
@@ -781,46 +892,6 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                     b.ToTable("FeatureUsageDaily", "dbo");
                 });
 
-            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.GroupTradeUnit", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasColumnName("Id");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("GroupId")
-                        .HasColumnType("int")
-                        .HasColumnName("GroupId");
-
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(true)
-                        .HasColumnName("IsActive");
-
-                    b.Property<string>("Location")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)")
-                        .HasColumnName("Location");
-
-                    b.Property<string>("TradeUnitCode")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
-                        .HasColumnName("TradeUnitCode");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("GroupId");
-
-                    b.HasIndex("TradeUnitCode")
-                        .HasDatabaseName("IX_GroupTradeUnits_TradeUnitCode");
-
-                    b.ToTable("GroupTradeUnits", "dbo");
-                });
-
             modelBuilder.Entity("GrainOriginatorPortal.Api.Models.HarvestWindow", b =>
                 {
                     b.Property<int>("Id")
@@ -880,20 +951,9 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                         .HasColumnType("nvarchar(200)")
                         .HasColumnName("CreatedBy");
 
-                    b.Property<string>("CustomerCode")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)")
-                        .HasColumnName("CustomerCode");
-
                     b.Property<long>("CustomerId")
                         .HasColumnType("bigint")
                         .HasColumnName("CustomerId");
-
-                    b.Property<string>("CustomerName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)")
-                        .HasColumnName("CustomerName");
 
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("datetime2")
@@ -979,21 +1039,9 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("Crop");
 
-                    b.Property<string>("CustomerCode")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)")
-                        .HasColumnName("CustomerCode");
-
                     b.Property<long>("CustomerId")
                         .HasColumnType("bigint")
                         .HasColumnName("CustomerId");
-
-                    b.Property<string>("CustomerName")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)")
-                        .HasColumnName("CustomerName");
 
                     b.Property<string>("Description")
                         .HasMaxLength(255)
@@ -1048,11 +1096,6 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                         .HasColumnType("decimal(18,2)")
                         .HasColumnName("BinCapacity");
 
-                    b.Property<string>("Commodities")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)")
-                        .HasColumnName("Commodities");
-
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
@@ -1069,17 +1112,6 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("CustomerId");
 
-                    b.Property<string>("CustomerName")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)")
-                        .HasColumnName("CustomerName");
-
-                    b.Property<string>("LinkedProducerIds")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)")
-                        .HasColumnName("LinkedProducerIds");
-
                     b.Property<DateTime?>("ModifiedAt")
                         .HasColumnType("datetime2")
                         .HasColumnName("ModifiedAt");
@@ -1093,11 +1125,6 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)")
                         .HasColumnName("PrimaryContact");
-
-                    b.Property<string>("ScoularId")
-                        .HasMaxLength(400)
-                        .HasColumnType("nvarchar(400)")
-                        .HasColumnName("ScoularId");
 
                     b.Property<decimal?>("TotalAcres")
                         .HasColumnType("decimal(18,2)")
@@ -1266,62 +1293,6 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("SavedLists", "dbo");
-                });
-
-            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.TradeUnit", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasColumnName("Id");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
-                        .HasColumnName("Code");
-
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(true)
-                        .HasColumnName("IsActive");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Code")
-                        .IsUnique()
-                        .HasDatabaseName("IX_TradeUnits_Code");
-
-                    b.ToTable("TradeUnits", "dbo");
-                });
-
-            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.TradeUnitGroup", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasColumnName("Id");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("GroupName")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
-                        .HasColumnName("GroupName");
-
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(true)
-                        .HasColumnName("IsActive");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("TradeUnitGroups", "dbo");
                 });
 
             modelBuilder.Entity("GrainOriginatorPortal.Api.Models.UserActivity", b =>
@@ -1679,23 +1650,98 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                     b.Navigation("Location");
                 });
 
-            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.GroupTradeUnit", b =>
+            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.CustomerCommodity", b =>
                 {
-                    b.HasOne("GrainOriginatorPortal.Api.Models.TradeUnitGroup", null)
-                        .WithMany("TradeUnits")
-                        .HasForeignKey("GroupId")
+                    b.HasOne("GrainOriginatorPortal.Api.Models.Commodity", "Commodity")
+                        .WithMany()
+                        .HasForeignKey("CommodityId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_CustomerCommodity_Commodity");
+
+                    b.HasOne("GrainOriginatorPortal.Api.Models.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_CustomerCommodity_Customer");
+
+                    b.Navigation("Commodity");
+
+                    b.Navigation("Customer");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.CustomerLink", b =>
+                {
+                    b.HasOne("GrainOriginatorPortal.Api.Models.Customer", "FromCustomer")
+                        .WithMany()
+                        .HasForeignKey("FromCustomerId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_CustomerLink_Customer_From");
+
+                    b.HasOne("GrainOriginatorPortal.Api.Models.Customer", "ToCustomer")
+                        .WithMany()
+                        .HasForeignKey("ToCustomerId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_CustomerLink_Customer_To");
+
+                    b.Navigation("FromCustomer");
+
+                    b.Navigation("ToCustomer");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.CustomerTradeUnit", b =>
+                {
+                    b.HasOne("GrainOriginatorPortal.Api.Models.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Customer");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.Note", b =>
+                {
+                    b.HasOne("GrainOriginatorPortal.Api.Models.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_Notes_Customer_CustomerId");
+
+                    b.Navigation("Customer");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.PlantingIntention", b =>
+                {
+                    b.HasOne("GrainOriginatorPortal.Api.Models.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_ProducerPlantingIntentions_Customer_CustomerId");
+
+                    b.Navigation("Customer");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.ProducerDetails", b =>
+                {
+                    b.HasOne("GrainOriginatorPortal.Api.Models.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_ProducerDetails_Customer_CustomerId");
+
+                    b.Navigation("Customer");
                 });
 
             modelBuilder.Entity("GrainOriginatorPortal.Api.Models.BidSheetLocation", b =>
                 {
                     b.Navigation("Bids");
-                });
-
-            modelBuilder.Entity("GrainOriginatorPortal.Api.Models.TradeUnitGroup", b =>
-                {
-                    b.Navigation("TradeUnits");
                 });
 #pragma warning restore 612, 618
         }

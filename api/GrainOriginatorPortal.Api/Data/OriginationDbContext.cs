@@ -15,9 +15,10 @@ public class OriginationDbContext : DbContext
     }
 
     // DbSet properties for each entity
-    // Customer, Contract, and Ticket exist in ODS (base schema)
-    public DbSet<Customer> Customers => Set<Customer>();
-    public DbSet<CustomerTradeUnit> CustomerTradeUnits => Set<CustomerTradeUnit>();
+    // Contract and Ticket exist in ODS (base schema). CustomerTradeUnitView is the
+    // read-only projection of originations.vw_CustomerTradeUnits and drives the
+    // dbo.Customer / dbo.CustomerTradeUnit sync + per-request customer access checks.
+    public DbSet<CustomerTradeUnitView> CustomerTradeUnits => Set<CustomerTradeUnitView>();
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<Ticket> Tickets => Set<Ticket>();
     public DbSet<TicketQuality> TicketQualities => Set<TicketQuality>();
@@ -37,63 +38,17 @@ public class OriginationDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        // Configure Customer entity - Maps to originations.vw_CurrentCustomers (pre-filtered: PR, IsActive, no DUP/DO NOT USE/symbol names)
-        modelBuilder.Entity<Customer>(entity =>
-        {
-            entity.ToTable("vw_CurrentCustomers", schema: "originations");
-            entity.HasKey(e => e.Id);
-
-            // Map to vw_CurrentCustomers column names (PascalCase in base schema views)
-            entity.Property(e => e.Id).HasColumnName("CustomerId").IsRequired();
-            entity.Property(e => e.Name).HasColumnName("CustomerName").HasMaxLength(500);
-
-            // Contact information from view - map to merchandising contact columns (nullable)
-            entity.Property(e => e.Phone).HasColumnName("MerchandisingPhone").HasMaxLength(100).IsRequired(false);
-            entity.Property(e => e.Email).HasColumnName("MerchandisingEmail").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.ExtendedPrimaryPhone).HasColumnName("ExtendedPrimaryPhone").HasMaxLength(100).IsRequired(false);
-            entity.Property(e => e.SupplementalEmail).HasColumnName("SupplementalEmail").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.Location).HasColumnName("MerchandisingCity").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.StateProvince).HasColumnName("MerchandisingStateProvince").HasMaxLength(50).IsRequired(false);
-            entity.Property(e => e.AddressLine1).HasColumnName("MerchandisingAddressLine1").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.PostalCode).HasColumnName("MerchandisingPostalCode").HasMaxLength(20).IsRequired(false);
-
-            // Extended address fields — more accurate location data for geocoding
-            entity.Property(e => e.ExtendedAddressLine1).HasColumnName("ExtendedAddressLine1").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.ExtendedAddressLine2).HasColumnName("ExtendedAddressLine2").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.ExtendedAddressLine3).HasColumnName("ExtendedAddressLine3").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.ExtendedAddressLine4).HasColumnName("ExtendedAddressLine4").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.ExtendedCity).HasColumnName("ExtendedCity").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.ExtendedPostalCode).HasColumnName("ExtendedPostalCode").HasMaxLength(20).IsRequired(false);
-            entity.Property(e => e.ExtendedStateProvince).HasColumnName("ExtendedStateProvince").HasMaxLength(50).IsRequired(false);
-            entity.Property(e => e.ExtendedCountry).HasColumnName("ExtendedCountry").HasMaxLength(255).IsRequired(false);
-
-            // Map available ODS metadata fields
-            entity.Property(e => e.ScoularId).HasColumnName("ScoularId").HasMaxLength(400);
-            entity.Property(e => e.IndustryCode1).HasColumnName("IndustryCode1").HasMaxLength(50).IsRequired(false);
-            entity.Property(e => e.IsActive).HasColumnName("IsActive").IsRequired();
-            entity.Property(e => e.EffectiveStartDate).HasColumnName("EffectiveStartDate");
-            entity.Property(e => e.EffectiveEndDate).HasColumnName("EffectiveEndDate");
-
-            // Not mapped to ODS (application-specific fields)
-            entity.Ignore(e => e.CustomerCode);
-            entity.Ignore(e => e.Farm);
-            entity.Ignore(e => e.TotalAcres);
-            entity.Ignore(e => e.ESignEnabled);
-            entity.Ignore(e => e.ScoularViewRecipients);
-            entity.Ignore(e => e.Guild);
-            entity.Ignore(e => e.Coordinates);
-            entity.Ignore(e => e.FarmIds);
-            entity.Ignore(e => e.LinkedProducerIds);
-
-            // Indexes for common queries
-            entity.HasIndex(e => e.Name);
-        });
-
-        // Configure CustomerTradeUnit — maps to originations.vw_CustomerTradeUnits (no key — view only)
-        modelBuilder.Entity<CustomerTradeUnit>(entity =>
+        // Configure CustomerTradeUnitView — maps to originations.vw_CustomerTradeUnits (no key — view only).
+        // The Customer entity is owned by ApplicationDbContext (dbo.Customer) — no mapping here.
+        modelBuilder.Entity<CustomerTradeUnitView>(entity =>
         {
             entity.ToView("vw_CustomerTradeUnits", schema: "originations");
             entity.HasNoKey();
+            // The ODS view still exposes the column as SourceCustomerId. The app-DB
+            // CustomerSnapshot was renamed to ScoularId in migration 20260430164629,
+            // but the ODS view is owned by another team and not renamed. Map here
+            // so EF queries the right column name in ODS.
+            entity.Property(e => e.ScoularId).HasColumnName("SourceCustomerId");
         });
 
         // Configure Farm entity - DISABLED: Table doesn't exist in ODS
@@ -176,11 +131,10 @@ public class OriginationDbContext : DbContext
             entity.Ignore(e => e.Status);
             entity.Ignore(e => e.Signed);
 
-            // Foreign key relationship to Customer
-            entity.HasOne<Customer>()
-                .WithMany()
-                .HasForeignKey(e => e.CustomerId)
-                .OnDelete(DeleteBehavior.NoAction); // Use NoAction to avoid cascade issues
+            // No HasOne<Customer> FK declaration here — Customer is owned by
+            // ApplicationDbContext (dbo.Customer), not this context. Adding an
+            // implicit Customer mapping here would break the OriginationDbContext
+            // model. The CustomerId column is just an indexed bigint at the ODS view level.
 
             // Index on ContractNumber and CustomerId for common queries
             entity.HasIndex(e => e.ContractNumber);
@@ -247,12 +201,10 @@ public class OriginationDbContext : DbContext
             entity.Ignore(e => e.TareWeight);
             entity.Ignore(e => e.NetWeight);
 
-            // Foreign key relationships
-            entity.HasOne<Customer>()
-                .WithMany()
-                .HasForeignKey(e => e.CustomerId)
-                .OnDelete(DeleteBehavior.NoAction); // Use NoAction to avoid cascade issues
+            // No HasOne<Customer> FK declaration — Customer is owned by ApplicationDbContext.
+            // The CustomerId column is just an indexed bigint at the ODS view level here.
 
+            // Foreign key relationship to Contract (within this ODS context)
             entity.HasOne<Contract>()
                 .WithMany()
                 .HasForeignKey(e => e.ContractId)
