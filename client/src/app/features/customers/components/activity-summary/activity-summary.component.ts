@@ -388,8 +388,18 @@ export class ActivitySummaryComponent {
   private _generateEngagementSummary(): string {
     if (!this.notes() || this.notes().length === 0) return '';
 
-    // Only consider notes that belong to this customer — not linked farms.
-    const ownNotes = this.customer() ? this.notes().filter(n => n && n.customerId === this.customer().id) : this.notes();
+    // Aggregate notes across the linked-producer group so every linked customer's
+    // Activity Summary shows the same "last contact" line — whichever pinned-or-newest
+    // note wins across the group surfaces on each member's summary. Falls back to this
+    // customer's own notes when no linked group is loaded yet.
+    const currentCustomer = this.customer();
+    const linked = this.linkedCustomers() || [];
+    const groupIds = new Set<number>();
+    if (currentCustomer) groupIds.add(currentCustomer.id);
+    for (const c of linked) groupIds.add(c.id);
+    const ownNotes = groupIds.size > 0
+      ? this.notes().filter(n => n && groupIds.has(n.customerId))
+      : this.notes();
 
     // Filter valid notes with dates
     const validNotes = ownNotes.filter(n => n && n.createdAt);
@@ -422,12 +432,23 @@ export class ActivitySummaryComponent {
       const preview = pinnedNote ? content : (content.length > 150 ? content.substring(0, 150) + '…' : content);
       const previewStr = preview ? ` — "${preview}"` : '';
 
+      // When the winning note belongs to a linked producer (not the current customer),
+      // call out which producer so the merchandiser knows the context. Prefer the
+      // primary contact name (who the merchandiser actually talks to) over the legal
+      // producer/business name — same rule the customer intro uses.
+      let sourceStr = '';
+      if (currentCustomer && lastNote.customerId !== currentCustomer.id) {
+        const sourceCustomer = linked.find(c => c.id === lastNote.customerId);
+        const sourceName = sourceCustomer?.primaryContact?.trim() || sourceCustomer?.name?.trim();
+        if (sourceName) sourceStr = ` on ${sourceName}`;
+      }
+
       if (daysSince === 0) {
-        return `Last contact was today by ${createdBy}${previewStr}.`;
+        return `Last contact was today by ${createdBy}${sourceStr}${previewStr}.`;
       } else if (daysSince === 1) {
-        return `Last contact was yesterday by ${createdBy}${previewStr}.`;
+        return `Last contact was yesterday by ${createdBy}${sourceStr}${previewStr}.`;
       } else {
-        return `Last contact was ${daysSince} days ago by ${createdBy}${previewStr}.`;
+        return `Last contact was ${daysSince} days ago by ${createdBy}${sourceStr}${previewStr}.`;
       }
     } catch {
       return '';
