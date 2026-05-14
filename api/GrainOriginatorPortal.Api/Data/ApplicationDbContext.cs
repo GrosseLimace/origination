@@ -18,16 +18,16 @@ public class ApplicationDbContext : DbContext
     public DbSet<Note> Notes => Set<Note>();
     public DbSet<ProducerDetails> ProducerDetails => Set<ProducerDetails>();
     public DbSet<PlantingIntention> PlantingIntentions => Set<PlantingIntention>();
-    public DbSet<TradeUnit> TradeUnits => Set<TradeUnit>();
-    public DbSet<TradeUnitGroup> TradeUnitGroups => Set<TradeUnitGroup>();
-    public DbSet<GroupTradeUnit> GroupTradeUnits => Set<GroupTradeUnit>();
     public DbSet<Commodity> Commodities => Set<Commodity>();
     public DbSet<DashboardPlantingEstimate> DashboardPlantingEstimates => Set<DashboardPlantingEstimate>();
     public DbSet<DashboardMarketShare> DashboardMarketShares => Set<DashboardMarketShare>();
     public DbSet<DashboardActualHarvest> DashboardActualHarvests => Set<DashboardActualHarvest>();
     public DbSet<SavedList> SavedLists => Set<SavedList>();
     public DbSet<ESignEnrollment> ESignEnrollments => Set<ESignEnrollment>();
-    public DbSet<CustomerSnapshot> CustomerSnapshots => Set<CustomerSnapshot>();
+    public DbSet<Customer> Customers => Set<Customer>();
+    public DbSet<CustomerTradeUnit> CustomerTradeUnits => Set<CustomerTradeUnit>();
+    public DbSet<CustomerLink> CustomerLinks => Set<CustomerLink>();
+    public DbSet<CustomerCommodity> CustomerCommodities => Set<CustomerCommodity>();
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
     public DbSet<BidSheetLocation> BidSheetLocations => Set<BidSheetLocation>();
     public DbSet<BidSheetLocationBid> BidSheetLocationBids => Set<BidSheetLocationBid>();
@@ -48,40 +48,6 @@ public class ApplicationDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-
-        modelBuilder.Entity<TradeUnit>(entity =>
-        {
-            entity.ToTable("TradeUnits", schema: "dbo");
-            entity.HasKey(e => e.Id);
-
-            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.Code).HasColumnName("Code").HasMaxLength(100).IsRequired();
-            entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
-
-            entity.HasIndex(e => e.Code).IsUnique().HasDatabaseName("IX_TradeUnits_Code");
-        });
-
-        modelBuilder.Entity<TradeUnitGroup>(entity =>
-        {
-            entity.ToTable("TradeUnitGroups", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.GroupName).HasColumnName("GroupName").HasMaxLength(100).IsRequired();
-            entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
-            entity.HasMany(e => e.TradeUnits).WithOne().HasForeignKey(tu => tu.GroupId);
-        });
-
-        modelBuilder.Entity<GroupTradeUnit>(entity =>
-        {
-            entity.ToTable("GroupTradeUnits", schema: "dbo");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
-            entity.Property(e => e.GroupId).HasColumnName("GroupId").IsRequired();
-            entity.Property(e => e.TradeUnitCode).HasColumnName("TradeUnitCode").HasMaxLength(100).IsRequired();
-            entity.Property(e => e.Location).HasColumnName("Location").HasMaxLength(200).IsRequired(false);
-            entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
-            entity.HasIndex(e => e.TradeUnitCode).HasDatabaseName("IX_GroupTradeUnits_TradeUnitCode");
-        });
 
         modelBuilder.Entity<Commodity>(entity =>
         {
@@ -108,8 +74,11 @@ public class ApplicationDbContext : DbContext
 
             entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
             entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
-            entity.Property(e => e.CustomerName).HasColumnName("CustomerName").HasMaxLength(200).IsRequired();
-            entity.Property(e => e.CustomerCode).HasColumnName("CustomerCode").HasMaxLength(50).IsRequired(false);
+            // CustomerName / CustomerCode dropped from the DB (Phase 3b) — they live
+            // on the DTO for API contract stability, populated from the Customer FK
+            // join on reads. .Ignore() keeps EF from trying to read/write the columns.
+            entity.Ignore(e => e.CustomerName);
+            entity.Ignore(e => e.CustomerCode);
             entity.Property(e => e.TradeUnit).HasColumnName("TradeUnit").HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.Description).HasColumnName("Description").HasColumnType("nvarchar(max)").IsRequired();
             entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(200).IsRequired();
@@ -123,6 +92,15 @@ public class ApplicationDbContext : DbContext
 
             entity.Ignore(e => e.Content);
 
+            // FK to dbo.Customer — NoAction so cascading deletes from Customer don't
+            // wipe user-authored notes. The populate endpoint disables this constraint
+            // temporarily while it rebuilds the Customer table.
+            entity.HasOne(e => e.Customer)
+                  .WithMany()
+                  .HasForeignKey(e => e.CustomerId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_Notes_Customer_CustomerId");
+
             entity.HasIndex(e => e.CustomerId).HasDatabaseName("IX_Notes_CustomerId");
         });
 
@@ -133,8 +111,10 @@ public class ApplicationDbContext : DbContext
 
             entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
             entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
-            entity.Property(e => e.CustomerName).HasColumnName("CustomerName").HasMaxLength(255).IsRequired();
-            entity.Property(e => e.CustomerCode).HasColumnName("CustomerCode").HasMaxLength(50).IsRequired();
+            // CustomerName / CustomerCode dropped from the DB (Phase 3b) — populated
+            // from the Customer FK join on reads.
+            entity.Ignore(e => e.CustomerName);
+            entity.Ignore(e => e.CustomerCode);
             entity.Property(e => e.TradeUnit).HasColumnName("TradeUnit").HasMaxLength(100).IsRequired();
             entity.Property(e => e.PlantingYear).HasColumnName("PlantingYear").IsRequired();
             entity.Property(e => e.Crop).HasColumnName("Crop").HasMaxLength(100).IsRequired();
@@ -146,6 +126,14 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
             entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
             entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
+
+            // FK to dbo.Customer — NoAction so cascading deletes from Customer don't
+            // wipe user-authored planting intentions.
+            entity.HasOne(e => e.Customer)
+                  .WithMany()
+                  .HasForeignKey(e => e.CustomerId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_ProducerPlantingIntentions_Customer_CustomerId");
 
             entity.HasIndex(e => e.CustomerId).HasDatabaseName("IX_ProducerPlantingIntentions_CustomerId");
             entity.HasIndex(e => new { e.TradeUnit, e.PlantingYear }).HasDatabaseName("IX_ProducerPlantingIntentions_TradeUnit");
@@ -240,42 +228,171 @@ public class ApplicationDbContext : DbContext
 
             entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
             entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
-            entity.Property(e => e.ScoularId).HasColumnName("ScoularId").HasMaxLength(400).IsRequired(false);
-            entity.Property(e => e.CustomerName).HasColumnName("CustomerName").HasMaxLength(255).IsRequired();
+            // ScoularId / CustomerName / LinkedProducerIds dropped from the DB
+            // (Phase 3b). ScoularId + CustomerName come from the Customer FK join.
+            // LinkedProducerIds is composed server-side from dbo.CustomerLink on read.
+            entity.Ignore(e => e.ScoularId);
+            entity.Ignore(e => e.CustomerName);
+            entity.Ignore(e => e.LinkedProducerIds);
             entity.Property(e => e.TotalAcres).HasColumnName("TotalAcres").HasColumnType("decimal(18,2)").IsRequired(false);
             entity.Property(e => e.BinCapacity).HasColumnName("BinCapacity").HasColumnType("decimal(18,2)").IsRequired(false);
             entity.Property(e => e.PrimaryContact).HasColumnName("PrimaryContact").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.Commodities).HasColumnName("Commodities").HasMaxLength(1000).IsRequired(false);
-            entity.Property(e => e.LinkedProducerIds).HasColumnName("LinkedProducerIds").HasMaxLength(1000).IsRequired(false);
+            // Commodities is composed server-side from dbo.CustomerCommodity on read
+            // (Phase 4b). The column was dropped from dbo.ProducerDetails; the property
+            // stays on the DTO for API contract stability.
+            entity.Ignore(e => e.Commodities);
             entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
             entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
 
+            // FK to dbo.Customer — NoAction so cascading deletes from Customer don't
+            // wipe rep-authored producer details. UNIQUE index on CustomerId enforces
+            // the 1:1 relationship.
+            entity.HasOne(e => e.Customer)
+                  .WithMany()
+                  .HasForeignKey(e => e.CustomerId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_ProducerDetails_Customer_CustomerId");
+
             entity.HasIndex(e => e.CustomerId).IsUnique().HasDatabaseName("IX_ProducerDetails_CustomerId");
         });
 
-        modelBuilder.Entity<CustomerSnapshot>(entity =>
+        modelBuilder.Entity<CustomerLink>(entity =>
         {
-            entity.ToTable("CustomerSnapshot", schema: "dbo");
+            entity.ToTable("CustomerLink", schema: "dbo");
             entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd();
-            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
-            entity.Property(e => e.CustomerName).HasColumnName("CustomerName").HasMaxLength(500).IsRequired();
-            entity.Property(e => e.ScoularId).HasColumnName("ScoularId").HasMaxLength(400).IsRequired(false);
-            entity.Property(e => e.IndustryCode1).HasColumnName("IndustryCode1").HasMaxLength(50).IsRequired(false);
-            entity.Property(e => e.TradeUnit).HasColumnName("TradeUnit").HasMaxLength(100).IsRequired(false);
-            entity.Property(e => e.SnapshotRefreshedAt).HasColumnName("SnapshotRefreshedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.FromCustomerId).HasColumnName("FromCustomerId").IsRequired();
+            entity.Property(e => e.ToCustomerId).HasColumnName("ToCustomerId").IsRequired();
 
-            // Covering index for the main query: WHERE IsActive = 1 AND TradeUnit IN (...) ORDER BY CustomerName
-            entity.HasIndex(e => new { e.IsActive, e.TradeUnit, e.CustomerName })
-                  .HasDatabaseName("IX_CustomerSnapshot_IsActive_TradeUnit_CustomerName");
-            // Dedup and single-customer lookups
-            entity.HasIndex(e => e.CustomerId)
-                  .HasDatabaseName("IX_CustomerSnapshot_CustomerId");
-            // eSign enrichment and contract/ticket customer code lookups
-            entity.HasIndex(e => e.ScoularId)
-                  .HasDatabaseName("IX_CustomerSnapshot_ScoularId");
+            entity.HasOne(e => e.FromCustomer)
+                  .WithMany()
+                  .HasForeignKey(e => e.FromCustomerId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_CustomerLink_Customer_From");
+            entity.HasOne(e => e.ToCustomer)
+                  .WithMany()
+                  .HasForeignKey(e => e.ToCustomerId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_CustomerLink_Customer_To");
+
+            // One row per directed pair.
+            entity.HasIndex(e => new { e.FromCustomerId, e.ToCustomerId })
+                  .IsUnique()
+                  .HasDatabaseName("UQ_CustomerLink_From_To");
+            // Reverse-lookup index — "who links TO this customer?"
+            entity.HasIndex(e => e.ToCustomerId).HasDatabaseName("IX_CustomerLink_ToCustomerId");
+        });
+
+        modelBuilder.Entity<CustomerCommodity>(entity =>
+        {
+            entity.ToTable("CustomerCommodity", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
+            entity.Property(e => e.CommodityId).HasColumnName("CommodityId").IsRequired();
+
+            entity.HasOne(e => e.Customer)
+                  .WithMany()
+                  .HasForeignKey(e => e.CustomerId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_CustomerCommodity_Customer");
+            entity.HasOne(e => e.Commodity)
+                  .WithMany()
+                  .HasForeignKey(e => e.CommodityId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_CustomerCommodity_Commodity");
+
+            // One row per (customer, commodity) — duplicates make no sense.
+            entity.HasIndex(e => new { e.CustomerId, e.CommodityId })
+                  .IsUnique()
+                  .HasDatabaseName("UQ_CustomerCommodity_Customer_Commodity");
+            // Reverse-lookup index — "which customers grow commodity X?"
+            entity.HasIndex(e => e.CommodityId).HasDatabaseName("IX_CustomerCommodity_CommodityId");
+        });
+
+        // -------------------------------------------------------------------------
+        // Customer + CustomerTradeUnit — normalized customer schema.
+        // Customer holds one row per ODS CustomerId (attribute columns); CustomerTradeUnit
+        // holds one row per (CustomerId, TradeUnit) membership.
+        // -------------------------------------------------------------------------
+        modelBuilder.Entity<Customer>(entity =>
+        {
+            entity.ToTable("Customer", schema: "dbo");
+            entity.HasKey(e => e.Id);
+
+            // Id is the ODS CustomerId — not auto-generated; provided by sync.
+            entity.Property(e => e.Id).HasColumnName("CustomerId").ValueGeneratedNever().IsRequired();
+            entity.Property(e => e.Name).HasColumnName("CustomerName").HasMaxLength(500).IsRequired();
+            // Trim on read — ODS source columns are CHAR-padded; without trimming, comparisons
+            // against Note.CustomerCode / Contract.SourceContractId (which both use Trim conversion)
+            // silently fail. Matches the pattern used in OriginationDbContext for similar columns.
+            entity.Property(e => e.ScoularId).HasColumnName("ScoularId").HasMaxLength(400).IsRequired(false)
+                  .HasConversion(v => v, v => v != null ? v.Trim() : v);
+            entity.Property(e => e.IndustryCode1).HasColumnName("IndustryCode1").HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
+            entity.Property(e => e.EffectiveStartDate).HasColumnName("EffectiveStartDate").IsRequired(false);
+            entity.Property(e => e.EffectiveEndDate).HasColumnName("EffectiveEndDate").IsRequired(false);
+
+            // Contact columns — column names mirror the ODS source view for consistency.
+            entity.Property(e => e.Phone).HasColumnName("MerchandisingPhone").HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.Email).HasColumnName("MerchandisingEmail").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.ExtendedPrimaryPhone).HasColumnName("ExtendedPrimaryPhone").HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.SupplementalEmail).HasColumnName("SupplementalEmail").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.Location).HasColumnName("MerchandisingCity").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.StateProvince).HasColumnName("MerchandisingStateProvince").HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.AddressLine1).HasColumnName("MerchandisingAddressLine1").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.PostalCode).HasColumnName("MerchandisingPostalCode").HasMaxLength(20).IsRequired(false);
+
+            // Extended address fields — more accurate location data for geocoding.
+            entity.Property(e => e.ExtendedAddressLine1).HasColumnName("ExtendedAddressLine1").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.ExtendedAddressLine2).HasColumnName("ExtendedAddressLine2").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.ExtendedAddressLine3).HasColumnName("ExtendedAddressLine3").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.ExtendedAddressLine4).HasColumnName("ExtendedAddressLine4").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.ExtendedCity).HasColumnName("ExtendedCity").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.ExtendedPostalCode).HasColumnName("ExtendedPostalCode").HasMaxLength(20).IsRequired(false);
+            entity.Property(e => e.ExtendedStateProvince).HasColumnName("ExtendedStateProvince").HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.ExtendedCountry).HasColumnName("ExtendedCountry").HasMaxLength(255).IsRequired(false);
+
+            // DTO-only fields — populated by service layer enrichment, not stored on the table.
+            entity.Ignore(e => e.CustomerCode);
+            entity.Ignore(e => e.Farm);
+            entity.Ignore(e => e.TotalAcres);
+            entity.Ignore(e => e.ESignEnabled);
+            entity.Ignore(e => e.ScoularViewRecipients);
+            entity.Ignore(e => e.Guild);
+            entity.Ignore(e => e.Coordinates);
+            entity.Ignore(e => e.FarmIds);
+            entity.Ignore(e => e.LinkedProducerIds);
+
+            entity.HasIndex(e => e.Name).HasDatabaseName("IX_Customer_CustomerName");
+            entity.HasIndex(e => e.ScoularId).HasDatabaseName("IX_Customer_ScoularId");
+        });
+
+        modelBuilder.Entity<CustomerTradeUnit>(entity =>
+        {
+            entity.ToTable("CustomerTradeUnit", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
+            entity.Property(e => e.TradeUnit).HasColumnName("TradeUnit").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
+
+            // FK to Customer.Id (the ODS CustomerId surrogate).
+            entity.HasOne(e => e.Customer)
+                  .WithMany()
+                  .HasForeignKey(e => e.CustomerId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            // One row per (customer, trade-unit) pair.
+            entity.HasIndex(e => new { e.CustomerId, e.TradeUnit })
+                  .IsUnique()
+                  .HasDatabaseName("UQ_CustomerTradeUnit_CustomerId_TradeUnit");
+
+            // Covering scope index — main TU-filtered query: WHERE TradeUnit IN (...) AND IsActive = 1.
+            entity.HasIndex(e => new { e.TradeUnit, e.IsActive })
+                  .HasDatabaseName("IX_CustomerTradeUnit_TradeUnit_IsActive");
         });
 
         modelBuilder.Entity<UserPreference>(entity =>

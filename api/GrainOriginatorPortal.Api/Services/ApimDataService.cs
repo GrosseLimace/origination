@@ -55,16 +55,6 @@ public class ApimDataService : IDataService
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for UpdateCustomer");
 
     // =========================================================================
-    // Trade Unit Operations
-    // =========================================================================
-
-    public Task<List<string>> GetTradeUnitsAsync(CancellationToken cancellationToken = default)
-        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetTradeUnits");
-
-    public Task<List<TradeUnitGroup>> GetTradeUnitGroupsAsync(CancellationToken cancellationToken = default)
-        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetTradeUnitGroups");
-
-    // =========================================================================
     // Farm Operations
     // =========================================================================
 

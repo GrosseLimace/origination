@@ -31,9 +31,9 @@ public class ProducerDetailsController : ControllerBase
         if (_entitlementService.EntitlementsAvailable)
         {
             var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);
-            var allowedCustomerIds = await _appContext.CustomerSnapshots
-                .Where(cs => cs.TradeUnit != null && allowed.Contains(cs.TradeUnit))
-                .Select(cs => cs.CustomerId)
+            var allowedCustomerIds = await _appContext.CustomerTradeUnits
+                .Where(ctu => allowed.Contains(ctu.TradeUnit) && ctu.IsActive)
+                .Select(ctu => ctu.CustomerId)
                 .ToHashSetAsync(cancellationToken);
             details = details.Where(d => allowedCustomerIds.Contains(d.CustomerId)).ToList();
         }

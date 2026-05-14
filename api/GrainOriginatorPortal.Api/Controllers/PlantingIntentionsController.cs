@@ -61,15 +61,20 @@ public class PlantingIntentionsController : ControllerBase
     {
         // Trade units are a UX filter, not an access boundary — any rep may create a planting intention for any customer.
 
-        // Derive customer metadata from the authoritative CustomerSnapshot rather than trusting
+        // Derive customer metadata from the authoritative dbo.Customer rather than trusting
         // client-supplied values. This prevents callers from spoofing trade units or customer identity
-        // to make records appear in unauthorized views.
-        var snapshot = await _appContext.CustomerSnapshots
-            .FirstOrDefaultAsync(cs => cs.CustomerId == request.CustomerId, cancellationToken);
+        // to make records appear in unauthorized views. TradeUnit comes from dbo.CustomerTradeUnit
+        // (picks the first active TU for this customer if multiple — matches prior behavior).
+        var customer = await _appContext.Customers
+            .FirstOrDefaultAsync(c => c.Id == request.CustomerId, cancellationToken);
+        var customerTU = await _appContext.CustomerTradeUnits
+            .Where(ctu => ctu.CustomerId == request.CustomerId && ctu.IsActive)
+            .Select(ctu => ctu.TradeUnit)
+            .FirstOrDefaultAsync(cancellationToken);
 
-        var customerName = snapshot?.CustomerName ?? request.CustomerName ?? string.Empty;
-        var customerCode = snapshot?.ScoularId ?? request.CustomerCode ?? string.Empty;
-        var tradeUnit = snapshot?.TradeUnit ?? request.TradeUnit;
+        var customerName = customer?.Name ?? request.CustomerName ?? string.Empty;
+        var customerCode = customer?.ScoularId ?? request.CustomerCode ?? string.Empty;
+        var tradeUnit = customerTU ?? request.TradeUnit;
 
         if (string.IsNullOrWhiteSpace(tradeUnit))
             return BadRequest("Trade unit could not be determined for this customer. Please select a trade unit and try again.");

@@ -154,9 +154,10 @@ All routes require Azure AD bearer token authentication. Base path: `/api/v1`
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/commodities` | All active commodities |
-| GET | `/tradeunitgroups` | Trade unit groups with trade units |
 | GET | `/storedgrain/customer/{customerId}` | Stored grain (stub, no ODS table yet) |
 | GET | `/farms/customer/{customerId}` | Farms (stub, no ODS table yet) |
+
+> Trade unit and trade-unit-group catalog lookups are sourced from the Entitlements database (see `/usertradeunits`). The app DB no longer maintains a local TU catalog.
 
 ### Utilities
 | Method | Endpoint | Description |
@@ -170,7 +171,7 @@ All routes require Azure AD bearer token authentication. Base path: `/api/v1`
 | DbContext | Database | Access |
 |-----------|----------|--------|
 | `OriginationDbContext` | ODS (read-only views) | Read only — `vw_CurrentCustomers`, `vw_CurrentContracts`, `vw_CurrentTickets`, `vw_TicketQuality`, `vw_ContractPricing` |
-| `ApplicationDbContext` | Origination (application tables) | Read/write — Notes, PlantingIntentions, ProducerDetails, SavedLists, TradeUnits, Commodities, Dashboard* tables |
+| `ApplicationDbContext` | Origination (application tables) | Read/write — Notes, PlantingIntentions, ProducerDetails, SavedLists, Commodities, Dashboard* tables |
 
 ## Authentication
 

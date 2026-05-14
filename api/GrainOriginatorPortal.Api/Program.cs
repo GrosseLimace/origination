@@ -103,6 +103,13 @@ builder.Services.AddSingleton(System.Threading.Channels.Channel.CreateBounded<Gr
 builder.Services.AddHostedService<UsageTrackingBackgroundService>();
 builder.Services.AddHostedService<UsageAggregationBackgroundService>();
 
+// Customer sync — periodic upsert from ODS vw_CustomerTradeUnits into the
+// app DB's normalized Customer + CustomerTradeUnit tables. The logic class
+// is also injected directly by DiagnosticsController so the dev-only manual
+// trigger endpoint shares the same code path.
+builder.Services.AddSingleton<CustomerSyncService>();
+builder.Services.AddHostedService<CustomerSyncBackgroundService>();
+
 // Hook JWT bearer events to log token validation failures per security-guide.md §8.1.
 // OnAuthenticationFailed fires when the token is present but invalid (bad signature,
 // expired, wrong audience, etc.). This is more specific than SecurityAuditMiddleware's

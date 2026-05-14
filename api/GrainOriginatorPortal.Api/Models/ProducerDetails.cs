@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GrainOriginatorPortal.Api.Models;
 
 /// <summary>
@@ -20,4 +22,11 @@ public class ProducerDetails
     public DateTime CreatedAt { get; set; }
     public string? ModifiedBy { get; set; }
     public DateTime? ModifiedAt { get; set; }
+
+    // Navigation property — FK to dbo.Customer. Populated via Include() so the
+    // service layer can copy CustomerName / ScoularId onto the DTO without those
+    // columns being stored on the ProducerDetails table.
+    // [JsonIgnore] keeps the nested Customer out of API responses.
+    [JsonIgnore]
+    public Customer? Customer { get; set; }
 }
