@@ -1096,11 +1096,6 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                         .HasColumnType("decimal(18,2)")
                         .HasColumnName("BinCapacity");
 
-                    b.Property<string>("Commodities")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)")
-                        .HasColumnName("Commodities");
-
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")

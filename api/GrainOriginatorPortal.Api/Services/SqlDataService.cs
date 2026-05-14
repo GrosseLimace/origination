@@ -2161,6 +2161,9 @@ public class SqlDataService : IDataService
             // LinkedProducerIds (CSV of linked-producer ScoularIds) is composed from
             // dbo.CustomerLink — the CSV column was dropped in Phase 3b.
             pd.LinkedProducerIds = await GetLinkedProducerCsvAsync(customerId, cancellationToken);
+            // Commodities (CSV of commodity codes) is composed from dbo.CustomerCommodity
+            // — the CSV column was dropped in Phase 4b.
+            pd.Commodities = await GetCommodityCodesCsvAsync(customerId, cancellationToken);
 
             var nameMap = await ResolveDisplayNamesAsync(new[] { pd.CreatedBy, pd.ModifiedBy ?? string.Empty }, cancellationToken);
             pd.CreatedBy = ApplyDisplayName(pd.CreatedBy, nameMap);
@@ -2198,6 +2201,19 @@ public class SqlDataService : IDataService
                 .GroupBy(x => x.FromCustomerId)
                 .ToDictionary(g => g.Key, g => g.Select(x => x.ScoularId!).ToList());
 
+            // Same batching pattern for CustomerCommodity → commodity codes.
+            var commodityRows = await _appContext.CustomerCommodities.AsNoTracking()
+                .Where(cc => customerIds.Contains(cc.CustomerId))
+                .Join(_appContext.Commodities.AsNoTracking(),
+                      cc => cc.CommodityId,
+                      c => c.Id,
+                      (cc, c) => new { cc.CustomerId, c.Code })
+                .Where(x => !string.IsNullOrEmpty(x.Code))
+                .ToListAsync(cancellationToken);
+            var commoditiesByCustomer = commodityRows
+                .GroupBy(x => x.CustomerId)
+                .ToDictionary(g => g.Key, g => g.Select(x => x.Code).ToList());
+
             var nameMap = await ResolveDisplayNamesAsync(
                 all.Select(p => p.CreatedBy).Concat(all.Select(p => p.ModifiedBy ?? string.Empty)),
                 cancellationToken);
@@ -2207,6 +2223,9 @@ public class SqlDataService : IDataService
                 p.ScoularId = p.Customer?.ScoularId;
                 p.LinkedProducerIds = linksByFrom.TryGetValue(p.CustomerId, out var ids) && ids.Count > 0
                     ? string.Join(",", ids)
+                    : null;
+                p.Commodities = commoditiesByCustomer.TryGetValue(p.CustomerId, out var codes) && codes.Count > 0
+                    ? string.Join(",", codes)
                     : null;
                 p.CreatedBy = ApplyDisplayName(p.CreatedBy, nameMap);
                 p.ModifiedBy = string.IsNullOrEmpty(p.ModifiedBy) ? p.ModifiedBy : ApplyDisplayName(p.ModifiedBy, nameMap);
@@ -2236,6 +2255,25 @@ public class SqlDataService : IDataService
             .Where(s => s != null)
             .ToListAsync(cancellationToken);
         return scoularIds.Count == 0 ? null : string.Join(",", scoularIds!);
+    }
+
+    /// <summary>
+    /// Composes the comma-separated list of commodity codes a customer grows
+    /// by joining dbo.CustomerCommodity → dbo.Commodities.Code. Returns null
+    /// when there are no rows, matching the prior nullable-CSV semantics on
+    /// ProducerDetails.Commodities.
+    /// </summary>
+    private async Task<string?> GetCommodityCodesCsvAsync(long customerId, CancellationToken cancellationToken)
+    {
+        var codes = await _appContext.CustomerCommodities.AsNoTracking()
+            .Where(cc => cc.CustomerId == customerId)
+            .Join(_appContext.Commodities.AsNoTracking(),
+                  cc => cc.CommodityId,
+                  c => c.Id,
+                  (cc, c) => c.Code)
+            .Where(code => !string.IsNullOrEmpty(code))
+            .ToListAsync(cancellationToken);
+        return codes.Count == 0 ? null : string.Join(",", codes);
     }
 
     public async Task<ProducerDetails> UpsertProducerDetailsAsync(long customerId, string? scoularId, string customerName, decimal? totalAcres, decimal? binCapacity, string? primaryContact, string? commodities, string? linkedProducerIds = null, CancellationToken cancellationToken = default)
@@ -2305,6 +2343,38 @@ public class SqlDataService : IDataService
                     {
                         FromCustomerId = customerId,
                         ToCustomerId = toId
+                    });
+                }
+            }
+
+            // Same rebuild pattern for dbo.CustomerCommodity. Parse the CSV of
+            // commodity codes, resolve each to a CommodityId via dbo.Commodities,
+            // and replace the customer's commodity set in the same transaction.
+            // Codes not in the lookup are silently skipped — the UI's commodity
+            // picker only surfaces valid codes.
+            var oldCommodities = await _appContext.CustomerCommodities
+                .Where(cc => cc.CustomerId == customerId)
+                .ToListAsync(cancellationToken);
+            if (oldCommodities.Count > 0)
+            {
+                _appContext.CustomerCommodities.RemoveRange(oldCommodities);
+            }
+            if (!string.IsNullOrWhiteSpace(commodities))
+            {
+                var codes = commodities
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                var commodityIds = await _appContext.Commodities.AsNoTracking()
+                    .Where(c => codes.Contains(c.Code))
+                    .Select(c => c.Id)
+                    .ToListAsync(cancellationToken);
+                foreach (var commodityId in commodityIds.Distinct())
+                {
+                    _appContext.CustomerCommodities.Add(new CustomerCommodity
+                    {
+                        CustomerId = customerId,
+                        CommodityId = commodityId
                     });
                 }
             }
