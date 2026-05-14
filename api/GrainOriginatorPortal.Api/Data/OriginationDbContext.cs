@@ -44,6 +44,11 @@ public class OriginationDbContext : DbContext
         {
             entity.ToView("vw_CustomerTradeUnits", schema: "originations");
             entity.HasNoKey();
+            // The ODS view still exposes the column as SourceCustomerId. The app-DB
+            // CustomerSnapshot was renamed to ScoularId in migration 20260430164629,
+            // but the ODS view is owned by another team and not renamed. Map here
+            // so EF queries the right column name in ODS.
+            entity.Property(e => e.ScoularId).HasColumnName("SourceCustomerId");
         });
 
         // Configure Farm entity - DISABLED: Table doesn't exist in ODS

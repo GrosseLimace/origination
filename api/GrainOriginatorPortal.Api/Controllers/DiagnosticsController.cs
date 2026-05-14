@@ -13,6 +13,7 @@ using Microsoft.Data.SqlClient;
 using GrainOriginatorPortal.Api.Data;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models;
+using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -30,6 +31,7 @@ public class DiagnosticsController : ControllerBase
     private readonly ILogger<DiagnosticsController> _logger;
     private readonly IWebHostEnvironment _env;
     private readonly IHttpClientFactory _httpFactory;
+    private readonly CustomerSyncService _customerSync;
     private static int _isGeocoding;
 
     public DiagnosticsController(
@@ -38,7 +40,8 @@ public class DiagnosticsController : ControllerBase
         EntitlementsDbContext entContext,
         ILogger<DiagnosticsController> logger,
         IWebHostEnvironment env,
-        IHttpClientFactory httpFactory)
+        IHttpClientFactory httpFactory,
+        CustomerSyncService customerSync)
     {
         _context = context;
         _appContext = appContext;
@@ -46,6 +49,7 @@ public class DiagnosticsController : ControllerBase
         _logger = logger;
         _env = env;
         _httpFactory = httpFactory;
+        _customerSync = customerSync;
     }
 
     // -------------------------------------------------------------------------
@@ -184,113 +188,24 @@ public class DiagnosticsController : ControllerBase
     }
 
     /// <summary>
-    /// Populates dbo.Customer and dbo.CustomerTradeUnit in the Origination DB from
-    /// originations.vw_CustomerTradeUnits in ODS. One-time / on-demand operation — dev only.
+    /// Manual on-demand trigger for the customer sync. Available in all
+    /// environments to admins (gated by the controller-level
+    /// <c>[Authorize(Policy = "AdminOnly")]</c>) — useful when prod needs an
+    /// out-of-cycle refresh ahead of the next scheduled
+    /// <see cref="CustomerSyncBackgroundService"/> run.
     ///
-    /// This endpoint is a placeholder for the proper scheduled sync service (Phase 6 of
-    /// database-design-issues.md). The route keeps its legacy "customer-snapshot/populate"
-    /// path to avoid breaking any out-of-band tooling that calls it.
+    /// Invokes the same upsert / soft-delete logic the scheduled service uses
+    /// (see Services/CustomerSyncService). Replaces the legacy
+    /// POST /api/diagnostics/customer-snapshot/populate endpoint that did a
+    /// destructive DELETE+INSERT — the new sync preserves FK references from
+    /// Notes / ProducerDetails / ProducerPlantingIntentions by soft-deleting.
     /// </summary>
-    [HttpPost("customer-snapshot/populate")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<IActionResult> PopulateCustomerSnapshot(CancellationToken cancellationToken = default)
+    [HttpPost("customer-sync/run")]
+    [ProducesResponseType(typeof(CustomerSyncResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RunCustomerSync(CancellationToken cancellationToken = default)
     {
-        if (DenyIfNotDevelopment() is { } deny) return deny;
-
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-
-        // Read all customer-trade unit rows from ODS view
-        var customerTradeUnits = await _context.CustomerTradeUnits
-            .AsNoTracking()
-            .ToListAsync(cancellationToken);
-
-        // Clear existing rows in FK order — CustomerTradeUnit FKs Customer, so child first.
-        // Notes / ProducerDetails / ProducerPlantingIntentions also FK to Customer, so we
-        // disable those constraints during the DELETE+INSERT to avoid wiping the user-
-        // authored rows. After the rebuild completes, every original Customer row is
-        // re-created, so the FKs are valid again. Re-enable WITH CHECK to catch any drift.
-        const string disableFks = @"
-            ALTER TABLE [dbo].[Notes] NOCHECK CONSTRAINT FK_Notes_Customer_CustomerId;
-            ALTER TABLE [dbo].[ProducerDetails] NOCHECK CONSTRAINT FK_ProducerDetails_Customer_CustomerId;
-            ALTER TABLE [dbo].[ProducerPlantingIntentions] NOCHECK CONSTRAINT FK_ProducerPlantingIntentions_Customer_CustomerId;";
-        const string enableFks = @"
-            ALTER TABLE [dbo].[Notes] WITH CHECK CHECK CONSTRAINT FK_Notes_Customer_CustomerId;
-            ALTER TABLE [dbo].[ProducerDetails] WITH CHECK CHECK CONSTRAINT FK_ProducerDetails_Customer_CustomerId;
-            ALTER TABLE [dbo].[ProducerPlantingIntentions] WITH CHECK CHECK CONSTRAINT FK_ProducerPlantingIntentions_Customer_CustomerId;";
-
-        await _appContext.Database.ExecuteSqlRawAsync(disableFks, cancellationToken);
-        await _appContext.Database.ExecuteSqlRawAsync("DELETE FROM dbo.CustomerTradeUnit", cancellationToken);
-        await _appContext.Database.ExecuteSqlRawAsync("DELETE FROM dbo.Customer", cancellationToken);
-
-        // -------------------------------------------------------------------------
-        // Customer — one row per distinct CustomerId. Attributes are identical across
-        // the multiple ODS view rows for the same customer (they all come from the
-        // same source customer record), so picking the first row by group is safe.
-        // -------------------------------------------------------------------------
-        var customerRows = customerTradeUnits
-            .GroupBy(c => c.CustomerId)
-            .Select(g =>
-            {
-                var first = g.First();
-                return new Customer
-                {
-                    Id                   = first.CustomerId,
-                    Name                 = first.CustomerName ?? string.Empty,
-                    ScoularId            = first.ScoularId,
-                    IndustryCode1        = first.IndustryCode1,
-                    IsActive             = first.IsActive,
-                    EffectiveStartDate   = first.EffectiveStartDate,
-                    EffectiveEndDate     = first.EffectiveEndDate,
-                    Phone                = first.MerchandisingPhone,
-                    Email                = first.MerchandisingEmail,
-                    ExtendedPrimaryPhone = first.ExtendedPrimaryPhone,
-                    SupplementalEmail    = first.SupplementalEmail,
-                    Location             = first.MerchandisingCity,
-                    StateProvince        = first.MerchandisingStateProvince,
-                    AddressLine1         = first.MerchandisingAddressLine1,
-                    PostalCode           = first.MerchandisingPostalCode,
-                    ExtendedAddressLine1 = first.ExtendedAddressLine1,
-                    ExtendedAddressLine2 = first.ExtendedAddressLine2,
-                    ExtendedAddressLine3 = first.ExtendedAddressLine3,
-                    ExtendedAddressLine4 = first.ExtendedAddressLine4,
-                    ExtendedCity         = first.ExtendedCity,
-                    ExtendedPostalCode   = first.ExtendedPostalCode,
-                    ExtendedStateProvince = first.ExtendedStateProvince,
-                    ExtendedCountry      = first.ExtendedCountry
-                };
-            })
-            .ToList();
-        await _appContext.Customers.AddRangeAsync(customerRows, cancellationToken);
-
-        // -------------------------------------------------------------------------
-        // CustomerTradeUnit — one row per (CustomerId, TradeUnit) pair from the ODS view.
-        // -------------------------------------------------------------------------
-        var ctuRows = customerTradeUnits
-            .Where(c => !string.IsNullOrEmpty(c.TradeUnit))
-            .Select(c => new CustomerTradeUnit
-            {
-                CustomerId = c.CustomerId,
-                TradeUnit  = c.TradeUnit!,
-                IsActive   = c.IsActive
-            })
-            .ToList();
-        await _appContext.CustomerTradeUnits.AddRangeAsync(ctuRows, cancellationToken);
-
-        await _appContext.SaveChangesAsync(cancellationToken);
-
-        // Re-enable the FK constraints we disabled above. WITH CHECK validates that
-        // every existing Notes / ProducerDetails / ProducerPlantingIntentions row
-        // still has a matching Customer — flags real orphans introduced by ODS
-        // customer removals so they can be cleaned up.
-        await _appContext.Database.ExecuteSqlRawAsync(enableFks, cancellationToken);
-
-        sw.Stop();
-        return Ok(new
-        {
-            CustomerRowsInserted          = customerRows.Count,
-            CustomerTradeUnitRowsInserted = ctuRows.Count,
-            ElapsedMs                     = sw.ElapsedMilliseconds
-        });
+        var result = await _customerSync.SyncAsync(cancellationToken);
+        return Ok(result);
     }
 
     // -------------------------------------------------------------------------
