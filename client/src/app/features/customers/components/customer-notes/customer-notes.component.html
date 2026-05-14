@@ -51,7 +51,7 @@
             No notes from this producer.
           </div>
         } @else {
-        <div class="space-y-6">
+        <div class="space-y-6 overflow-y-auto pr-1" style="max-height: calc(100vh - 16rem)">
           @for (note of displayedNotes; track note.id) {
             <div class="border rounded-lg p-4 relative" [ngClass]="getNoteClass(note)">
               <!-- Top right actions -->
