@@ -673,9 +673,31 @@ export class BuildListComponent {
       }
     }
 
-    // Producers always render alphabetically by name — sorting by latest-note timestamp
-    // made the list jump around when inline notes started showing for Contact / Notes
-    // prompts, which made it hard to find a specific producer.
+    // Order: when inline notes are showing (Notes / Contacts prompts), sort by the most
+    // recent matching note across the producer's connected component — newest contact at
+    // the top — so the merchandiser sees the freshest activity first. Alphabetical falls
+    // through as the tiebreaker when timestamps match (or when both producers have no
+    // notes, common for absence prompts like "never contacted"). For all other prompts,
+    // sort alphabetically by name so finding a specific producer doesn't depend on data
+    // recency.
+    if (this.noteFilterActive()) {
+      const notesMap = this.matchingNotesByCustomer();
+      const maxTimeFor = (customerId: number): number => {
+        const notes = notesMap.get(customerId);
+        if (!notes || notes.length === 0) return 0;
+        let max = 0;
+        for (const n of notes) {
+          const t = BuildListComponent.parseNoteTime(n.createdAt);
+          if (t > max) max = t;
+        }
+        return max;
+      };
+      return [...list].sort((a, b) => {
+        const dt = maxTimeFor(b.id) - maxTimeFor(a.id);
+        if (dt !== 0) return dt;
+        return (a.name || '').localeCompare(b.name || '');
+      });
+    }
     return [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   });
 
@@ -1197,9 +1219,10 @@ export class BuildListComponent {
   readonly libraryCategories = computed(() => {
     const cats = new Set(this.queryLibrary().map(q => q.category));
     const sorted = [...cats].sort();
-    // Append a 'Saved Lists' pseudo-category at the end when the user has any saved lists
-    // scoped to the current TU. Selecting it filters the library to those saved lists.
-    if (this.visibleSavedLists().length > 0) sorted.push('Saved Lists');
+    // Prepend a 'Saved Lists' pseudo-category so it sits right after "All" (which is rendered
+    // separately, before this loop). Selecting it filters the library to the user's saved
+    // lists. Only added when there's at least one saved list scoped to the current TU.
+    if (this.visibleSavedLists().length > 0) sorted.unshift('Saved Lists');
     return sorted;
   });
 
