@@ -25,8 +25,11 @@ export interface Contract {
   status: ContractStatus;
   signed: boolean;
   priceTypeCode?: string; // ODS PriceTypeCode (e.g. "P" = priced, "U" = unpriced)
+  specialType?: string;   // ODS SpecialType (specialty attribute code; null for standard contracts)
   customerConfirmStatus?: string; // ODS CustomerConfirmStatus (e.g. "Confirmed", "Pending", null)
   closedDate?: Date; // Null = open contract; set = closed/fulfilled
   marketZone?: string; // Market zone from ODS
   basisLocation?: string; // Basis price location from ODS
+  hedgeMarketMonth?: string; // ODS HedgeMarketMonth (futures month code, e.g. "K26")
+  hedgeMarketMonthDescription?: string; // ODS HedgeMarketMonthDescription (e.g. "May 2026")
 }

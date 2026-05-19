@@ -845,6 +845,7 @@ public class SqlDataService : IDataService
                 contract.Signed = true; // Default to signed since ODS doesn't have this field
             }
 
+            await EnrichWithHedgeMarketMonthAsync(contracts, cancellationToken);
             return contracts;
         }
         catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
@@ -863,6 +864,49 @@ public class SqlDataService : IDataService
             _logger.LogError(ex, "Error retrieving contracts [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
                 GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
+        }
+    }
+
+    private sealed class ContractHedgeRow
+    {
+        public long ContractId { get; set; }
+        public string? HedgeMarketMonth { get; set; }
+        public string? HedgeMarketMonthDescription { get; set; }
+    }
+
+    /// <summary>
+    /// Pulls HedgeMarketMonth / HedgeMarketMonthDescription from base.Contract for the
+    /// given contracts and assigns them onto the instances. These columns aren't exposed
+    /// via vw_CurrentContracts, so the main fetch can't include them — this side-query
+    /// fills the gap. Silently swallows DB errors so a missing column on the underlying
+    /// table never breaks the contracts endpoint.
+    /// </summary>
+    private async Task EnrichWithHedgeMarketMonthAsync(List<Contract> contracts, CancellationToken cancellationToken)
+    {
+        if (contracts.Count == 0) return;
+        try
+        {
+            var ids = contracts.Select(c => c.Id.ToString()).ToList();
+            var idsCsv = SanitizeIdentifierCsv(ids);
+            var rows = await _context.Database
+                .SqlQueryRaw<ContractHedgeRow>(
+                    $@"SELECT c.ContractId, c.HedgeMarketMonth, c.HedgeMarketMonthDescription
+                       FROM base.Contract c
+                       INNER JOIN STRING_SPLIT('{idsCsv}', ',') ids ON c.ContractId = TRY_CAST(ids.value AS bigint)")
+                .ToListAsync(cancellationToken);
+            var byId = rows.ToDictionary(r => r.ContractId);
+            foreach (var c in contracts)
+            {
+                if (byId.TryGetValue(c.Id, out var row))
+                {
+                    c.HedgeMarketMonth = row.HedgeMarketMonth;
+                    c.HedgeMarketMonthDescription = row.HedgeMarketMonthDescription;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to enrich contracts with HedgeMarketMonth — continuing without it [{TraceId}]", GetTraceId());
         }
     }
 
@@ -932,6 +976,7 @@ public class SqlDataService : IDataService
                 contract.Signed = true; // Default to signed since ODS doesn't have this field
             }
 
+            await EnrichWithHedgeMarketMonthAsync(contracts, cancellationToken);
             _logger.LogInformation("Found {ContractCount} contracts for customer {CustomerId} (ScoularId: {ScoularId})",
                 contracts.Count, customerId, scoularId);
             return contracts;

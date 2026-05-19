@@ -53,12 +53,20 @@ public class Contract
     // Pricing type code from ODS (e.g. "P" = priced, "U" = unpriced)
     public string? PriceTypeCode { get; set; }
 
+    // Specialty attribute code from ODS (short code, e.g. "ORG", "NGMO", null for standard)
+    public string? SpecialType { get; set; }
+
     // Customer confirmation status from ODS (e.g. "Confirmed", "Pending", null)
     public string? CustomerConfirmStatus { get; set; }
 
     // Market zone and basis price location from ODS
     public string? MarketZone { get; set; }
     public string? BasisLocation { get; set; }
+
+    // Hedge market month from ODS (e.g. "K26" = May 2026 futures contract).
+    // HedgeMarketMonthDescription is the human-readable form (e.g. "May 2026").
+    public string? HedgeMarketMonth { get; set; }
+    public string? HedgeMarketMonthDescription { get; set; }
 
     // ODS metadata fields
     public bool IsActive { get; set; }

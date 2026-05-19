@@ -7,7 +7,7 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket, ContractPricingLine } from '@models';
 import { expandSearchWithAliases } from '@shared/utils/commodity-aliases';
 
-type SortColumn = 'contractNumber' | 'date' | 'crop' | 'quantity' | 'price' | 'deliveryStart' | 'status';
+type SortColumn = 'contractNumber' | 'date' | 'crop' | 'quantity' | 'specialType' | 'price' | 'deliveryStart' | 'status';
 type SortDirection = 'none' | 'asc' | 'desc';
 
 @Component({
@@ -56,10 +56,39 @@ export class ContractsTableComponent {
   });
   currentSortColumn = signal<SortColumn | null>(null);
   currentSortDirection = signal<SortDirection>('none');
+  /** Direction the commodity groups are sorted in. Independent of the row-level
+   *  sort — the Crop column header drives this, the rest drive row sort. Groups
+   *  are always rendered (no "ungrouped" state); this just flips alphabetical. */
+  groupSortDirection = signal<'asc' | 'desc'>('asc');
   showSearch = signal(false);
   searchQuery = signal('');
 
-  private _deliveryStatsCache = new Map<number, { deliveredBushels: number; remainingBushels: number; progressPercent: number; computable: boolean }>();
+  /** Per-contract bushels normalized to bushels via GNP024 for the named metric.
+   *  Contracts whose commodity is not in GNP024 (or whose stats aren't computable)
+   *  are excluded so totals are never misleading. */
+  private _metricBuPerContract(contract: Contract, metric: 'remaining' | 'unsettled'): number | null {
+    const stats = this.getDeliveryStats(contract);
+    if (!stats.computable) return null;
+    const lbsPerBu = this._getLbsPerBushel(contract.commodityCode || '');
+    if (lbsPerBu == null || lbsPerBu <= 0) return null;
+    // Stats values are in the contract's native unit. Convert native → pounds → bushels
+    // so mixed-unit customers still sum cleanly.
+    const native = metric === 'remaining' ? stats.remainingBushels : stats.unsettledBushels;
+    const lbs = this._convertContractQuantityToPounds(native, contract.unit, lbsPerBu);
+    return lbs / lbsPerBu;
+  }
+
+  /** Full month name for labels like "April Undelivered". */
+  readonly currentMonthLabel = computed<string>(() =>
+    new Date().toLocaleString('en-US', { month: 'long' })
+  );
+
+  /** Compact bushel formatter for the inline commodity pills — e.g. 30,127 → "30K", 1,234 → "1.2K". */
+  formatCompactBu(n: number): string {
+    return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
+  }
+
+  private _deliveryStatsCache = new Map<number, { deliveredBushels: number; remainingBushels: number; paidBushels: number; unsettledBushels: number; progressPercent: number; computable: boolean }>();
   private _statusCache = new Map<number, string>();
 
   constructor() {
@@ -101,11 +130,37 @@ export class ContractsTableComponent {
     this.showSearch.set(false);
   }
 
-  get displayedContracts(): Contract[] {
+  /** Search-filtered + sorted view of open contracts. Memoized as a computed so summary
+   *  signals and the template don't re-run the search/filter pipeline on every read. */
+  /** Open contracts grouped by commodity. Outer order is alphabetical by
+   *  commodity (asc or desc per groupSortDirection); within each group the
+   *  contracts preserve the order from displayedContracts() — so whatever
+   *  row-level sort the user picked is respected per-group. Empty groups
+   *  (filtered out by search) never appear because we build from the
+   *  already-filtered list. */
+  readonly groupedContracts = computed<Array<{ commodity: string; contracts: Contract[] }>>(() => {
+    const list = this.displayedContracts();
+    const map = new Map<string, Contract[]>();
+    for (const c of list) {
+      // Group by commodityCode so same-code rows always share a bucket — e.g.
+      // multiple YC variants stay together even if commodityDescription differs.
+      // Fall back to description/group/'Other' only when code is missing.
+      const key = (c.commodityCode || c.commodityDescription || c.commodityGroup || 'Other').trim();
+      const arr = map.get(key);
+      if (arr) arr.push(c); else map.set(key, [c]);
+    }
+    const dir = this.groupSortDirection();
+    const groups = [...map.entries()].map(([commodity, contracts]) => ({ commodity, contracts }));
+    groups.sort((a, b) => dir === 'asc' ? a.commodity.localeCompare(b.commodity) : b.commodity.localeCompare(a.commodity));
+    return groups;
+  });
+
+  readonly displayedContracts = computed<Contract[]>(() => {
     const q = this.searchQuery().trim().toLowerCase();
-    if (!q) return this.sortedContracts;
+    const sorted = this.sortedContracts;
+    if (!q) return sorted;
     const terms = this._expandWithAliases(q);
-    return this.sortedContracts.filter(c => {
+    return sorted.filter(c => {
       const deliveryStr = this._formatDeliveryPeriod(c.deliveryStart, c.deliveryEnd);
       return terms.some(term =>
         c.contractNumber.toLowerCase().includes(term) ||
@@ -119,7 +174,7 @@ export class ContractsTableComponent {
         this._matchesDeliveryPeriod(c.deliveryStart, c.deliveryEnd, term)
       );
     });
-  }
+  });
 
   private static readonly _MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
   private static readonly _MONTHS_SHORT = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
@@ -207,8 +262,16 @@ export class ContractsTableComponent {
   }
 
   get sortedContracts(): Contract[] {
+    // When no row sort is active, fall back to the default within-group order:
+    // delivery period newest → oldest. Grouping happens after this in
+    // groupedContracts, which preserves whatever order this getter produced
+    // within each commodity bucket.
     if (!this.currentSortColumn() || this.currentSortDirection() === 'none') {
-      return this.openContracts;
+      return [...this.openContracts].sort((a, b) => {
+        const aTime = a.deliveryStart ? new Date(a.deliveryStart).getTime() : 0;
+        const bTime = b.deliveryStart ? new Date(b.deliveryStart).getTime() : 0;
+        return bTime - aTime;
+      });
     }
 
     const sorted = [...this.openContracts].sort((a, b) => {
@@ -231,7 +294,10 @@ export class ContractsTableComponent {
           comparison = (a.commodityDescription || '').localeCompare(b.commodityDescription || '');
           break;
         case 'quantity':
-          comparison = a.quantity - b.quantity;
+          comparison = (a.quantity ?? 0) - (b.quantity ?? 0);
+          break;
+        case 'specialType':
+          comparison = (a.specialType || '').localeCompare(b.specialType || '');
           break;
         case 'price': {
           // Rank: Deferred(0) → Unpriced(1) → Partial(2) → Priced/badge(3) → Cash price(4+)
@@ -248,7 +314,7 @@ export class ContractsTableComponent {
           break;
         }
         case 'deliveryStart':
-          comparison = new Date(a.deliveryStart).getTime() - new Date(b.deliveryStart).getTime();
+          comparison = new Date(a.deliveryStart || 0).getTime() - new Date(b.deliveryStart || 0).getTime();
           break;
         case 'status':
           comparison = this.getCalculatedStatus(a).localeCompare(this.getCalculatedStatus(b));
@@ -261,6 +327,12 @@ export class ContractsTableComponent {
   }
 
   handleSort(column: SortColumn): void {
+    // The Crop column doesn't sort rows — it flips the commodity-group order.
+    // Two-state toggle: alpha asc ↔ alpha desc. The row sort is untouched.
+    if (column === 'crop') {
+      this.groupSortDirection.update(d => d === 'asc' ? 'desc' : 'asc');
+      return;
+    }
     if (this.currentSortColumn() === column) {
       if (this.currentSortDirection() === 'none') {
         this.currentSortDirection.set('asc');
@@ -340,7 +412,7 @@ export class ContractsTableComponent {
     return key ? (this.pricingLinesMap().get(key) ?? []) : [];
   }
 
-  getPricingInfo(contract: Contract): { status: 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'FLAT' | 'DEFERRED' | 'LOADING' | 'ERROR'; cashPrice?: number } {
+  getPricingInfo(contract: Contract): { status: 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'FLAT' | 'DEFERRED' | 'LOADING' | 'ERROR'; cashPrice?: number; basisPrice?: number } {
     const ptc = (contract.priceTypeCode ?? '').trim().toUpperCase();
     const key = contract.sourceContractId;
     const lines = key ? this.pricingLinesMap().get(key) : undefined;
@@ -370,15 +442,79 @@ export class ContractsTableComponent {
         if (hasSequence) {
           const totalPricedQty = safeLines.reduce((sum, l) => sum + (l.priceQuantity ?? 0), 0);
           const contractQty = contract.quantity ?? 0;
-          if (totalPricedQty > 0 && totalPricedQty < contractQty) return { status: 'PARTIAL' };
-          if (totalPricedQty >= contractQty) return { status: 'PRICED' };
+          // 1-bushel tolerance — float sums of priceQuantity can miss the contractQty target
+          // by epsilon (e.g. 99999.9999 vs 100000) and flip the badge to PARTIAL when it's
+          // actually fully priced. One bushel is below merchandiser-meaningful rounding.
+          const remaining = contractQty - totalPricedQty;
+          if (totalPricedQty > 0 && remaining > 1) return { status: 'PARTIAL' };
+          if (remaining <= 1) return { status: 'PRICED' };
         }
+      }
+      // Single-line unpriced contract with a real basis on file: surface the basis number
+      // alongside the UNPRICED state so the user sees the locked-in basis without
+      // having to expand the row. Multiple lines still show plain UNPRICED — the
+      // line ambiguity is the reason for the badge in the first place. Exclude 0 because
+      // CTRM stores no-basis-yet as 0; rendering "$0.00/Bu" would look like a real lock.
+      if (safeLines.length === 1 && safeLines[0].basisPrice != null && safeLines[0].basisPrice !== 0) {
+        return { status: 'UNPRICED', basisPrice: safeLines[0].basisPrice };
       }
       return { status: 'UNPRICED' };
     }
 
     // No PriceTypeCode (NULL) — rare, default to unpriced
     return { status: 'UNPRICED' };
+  }
+
+  /** Quantity to show for a single pricing line. Two cases get computed values
+   *  rather than the raw priceQuantity, so the per-line numbers always sum to
+   *  contract.quantity:
+   *
+   *  1) Single zero-qty line → substitute contract.quantity. CTRM emits one
+   *     pricing line with PriceQuantity = 0/null when that line implicitly
+   *     covers the whole contract (Flat-priced 'P', Deferred 'D', or
+   *     wholly-unpriced 'U').
+   *
+   *  2) Multi-line with a sequence-0 placeholder → substitute the unpriced
+   *     remainder (contract.quantity − Σ qty of priced lines). Without this,
+   *     a partial-price contract like 25,000 BU with sequence 1 = 375 BU and
+   *     sequence 2 = 5,000 BU would render the placeholder as "0 BU" and the
+   *     rows wouldn't sum to the contract total. Now the placeholder reads
+   *     "19,625 BU" and the three lines visibly add up to 25,000.
+   *
+   *  Other lines fall through to the raw priceQuantity. */
+  getDisplayPricingQty(contract: Contract, line: ContractPricingLine): number {
+    const lineQty = line.priceQuantity ?? 0;
+    if (lineQty !== 0) return lineQty;
+    const lines = contract.sourceContractId ? this.pricingLinesMap().get(contract.sourceContractId) : undefined;
+    if (!lines) return 0;
+    if (lines.length === 1) return contract.quantity ?? 0;
+    if ((line.priceSequence ?? 0) === 0) {
+      const pricedTotal = lines
+        .filter(l => (l.priceSequence ?? 0) > 0)
+        .reduce((sum, l) => sum + (l.priceQuantity ?? 0), 0);
+      return Math.max(0, (contract.quantity ?? 0) - pricedTotal);
+    }
+    return 0;
+  }
+
+  /** Bushels on the contract that still need a price. Only meaningful for
+   *  PriceTypeCode='U' (unpriced/partial) — other types return null so the UI
+   *  can hide the tile. Uses getDisplayPricingQty for the sum so that when a single
+   *  zero-qty placeholder line is substituted with contract.quantity, the Unpriced
+   *  tile drops to 0 in lockstep with the display (otherwise the line would read
+   *  "5,000 BU priced" while the tile still showed "5,000 BU unpriced"). */
+  getUnpricedQty(contract: Contract): number | null {
+    const ptc = (contract.priceTypeCode ?? '').trim().toUpperCase();
+    if (ptc !== 'U') return null;
+    const key = contract.sourceContractId;
+    const lines = key ? this.pricingLinesMap().get(key) : undefined;
+    if (lines === undefined && !this.pricingLinesLoaded()) return null;
+    const safeLines = lines ?? [];
+    const totalPriced = safeLines
+      .filter(l => (l.priceSequence ?? 0) > 0)
+      .reduce((sum, l) => sum + this.getDisplayPricingQty(contract, l), 0);
+    const unpriced = (contract.quantity ?? 0) - totalPriced;
+    return Math.max(0, unpriced);
   }
 
   // --- PREVIOUS logic (kept for reference) ---
@@ -425,7 +561,7 @@ export class ContractsTableComponent {
     return 'Open';
   }
 
-  getDeliveryStats(contract: Contract): { deliveredBushels: number; remainingBushels: number; progressPercent: number; computable: boolean } {
+  getDeliveryStats(contract: Contract): { deliveredBushels: number; remainingBushels: number; paidBushels: number; unsettledBushels: number; progressPercent: number; computable: boolean } {
     const cached = this._deliveryStatsCache.get(contract.id);
     if (cached) return cached;
     const result = this._computeDeliveryStats(contract);
@@ -433,7 +569,7 @@ export class ContractsTableComponent {
     return result;
   }
 
-  private _computeDeliveryStats(contract: Contract): { deliveredBushels: number; remainingBushels: number; progressPercent: number; computable: boolean } {
+  private _computeDeliveryStats(contract: Contract): { deliveredBushels: number; remainingBushels: number; paidBushels: number; unsettledBushels: number; progressPercent: number; computable: boolean } {
     const appliedTickets = this.getAppliedTickets(contract);
     // Strict match on commodityCode against GNP024.Commodity_Code only. If the code
     // isn't in the view, bail out with computable=false so the UI shows dashes and
@@ -441,11 +577,18 @@ export class ContractsTableComponent {
     const lbsPerBushel = this._getLbsPerBushel(contract.commodityCode || '');
 
     if (lbsPerBushel == null) {
-      return { deliveredBushels: 0, remainingBushels: 0, progressPercent: 0, computable: false };
+      return { deliveredBushels: 0, remainingBushels: 0, paidBushels: 0, unsettledBushels: 0, progressPercent: 0, computable: false };
     }
 
     // Calculate delivered pounds from tickets (appliedDockQuantity/AppliedNetQuantity is in pounds)
     const deliveredLbs = appliedTickets.reduce((sum, t) => sum + (t.appliedDockQuantity || 0), 0);
+
+    // Split delivered pounds by ticket settlement status. finalSettledDate populated = paid;
+    // null = delivered but unsettled (i.e. payable today).
+    const paidLbs = appliedTickets
+      .filter(t => !!t.finalSettledDate)
+      .reduce((sum, t) => sum + (t.appliedDockQuantity || 0), 0);
+    const unsettledLbs = Math.max(0, deliveredLbs - paidLbs);
 
     // Convert contract quantity to pounds based on unit type
     const contractLbs = this._convertContractQuantityToPounds(contract.quantity || 0, contract.unit, lbsPerBushel);
@@ -453,10 +596,15 @@ export class ContractsTableComponent {
     // Calculate delivered and remaining in the contract's original unit
     const deliveredInContractUnits = this._convertPoundsToContractUnits(deliveredLbs, contract.unit, lbsPerBushel);
     const remainingInContractUnits = Math.max(0, (contract.quantity || 0) - deliveredInContractUnits);
-    // Treat sub-bushel remainders as fully delivered — those slivers can't realistically
-    // be delivered as a separate load, so the contract is effectively complete.
+    const paidInContractUnits = this._convertPoundsToContractUnits(paidLbs, contract.unit, lbsPerBushel);
+    const unsettledInContractUnits = this._convertPoundsToContractUnits(unsettledLbs, contract.unit, lbsPerBushel);
+    // Treat sub-bushel (or sub-0.1%-of-contract) remainders as fully delivered. The percentage
+    // floor scales the threshold for tonnage / CWT contracts where 1 bushel of pounds is a tiny
+    // fraction of contract size — without it, a 100-ton contract would stay "Active 99.97%"
+    // forever even after 99.9% of the load arrived.
     const remainingLbs = Math.max(0, contractLbs - deliveredLbs);
-    const isEffectivelyComplete = remainingLbs < lbsPerBushel;
+    const completionThresholdLbs = Math.max(lbsPerBushel, contractLbs * 0.001);
+    const isEffectivelyComplete = remainingLbs < completionThresholdLbs;
     const progressPercent = isEffectivelyComplete
       ? 100
       : (contractLbs > 0 ? Math.min(100, (deliveredLbs / contractLbs) * 100) : 0);
@@ -468,6 +616,8 @@ export class ContractsTableComponent {
     return {
       deliveredBushels: round(deliveredInContractUnits),
       remainingBushels: round(remainingInContractUnits),
+      paidBushels: round(paidInContractUnits),
+      unsettledBushels: round(unsettledInContractUnits),
       progressPercent,
       computable: true
     };

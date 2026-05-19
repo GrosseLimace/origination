@@ -110,6 +110,7 @@ public class OriginationDbContext : DbContext
 
             // Pricing
             entity.Property(e => e.PriceTypeCode).HasColumnName("PriceTypeCode").HasMaxLength(10).IsRequired(false);
+            entity.Property(e => e.SpecialType).HasColumnName("SpecialType").HasMaxLength(50).IsRequired(false);
 
             // Customer confirmation status
             entity.Property(e => e.CustomerConfirmStatus).HasColumnName("CustomerConfirmStatus").HasMaxLength(100).IsRequired(false);
@@ -117,6 +118,13 @@ public class OriginationDbContext : DbContext
             // Market zone and basis price location
             entity.Property(e => e.MarketZone).HasColumnName("MarketZone").HasMaxLength(200).IsRequired(false);
             entity.Property(e => e.BasisLocation).HasColumnName("BasisLocation").HasMaxLength(200).IsRequired(false);
+
+            // Hedge market month — NOT in vw_CurrentContracts. Lives on base.Contract
+            // only and is enriched via a side-query in SqlDataService after the main
+            // fetch (EnrichWithHedgeMarketMonthAsync). Ignored here so EF doesn't try
+            // to project these columns from the view, which would throw SQL 207.
+            entity.Ignore(e => e.HedgeMarketMonth);
+            entity.Ignore(e => e.HedgeMarketMonthDescription);
 
             // Metadata
             entity.Property(e => e.IsActive).HasColumnName("IsActive").IsRequired();
