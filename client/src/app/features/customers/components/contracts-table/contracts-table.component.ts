@@ -474,16 +474,16 @@ export class ContractsTableComponent {
     return { status: 'UNPRICED' };
   }
 
-  /** Quantity to show for a single pricing line. Flat-priced contracts (PTC='P')
-   *  store PriceQuantity as 0/null because the line implicitly covers the whole
-   *  contract — fall back to contract.quantity in that case, but only when the
-   *  contract has exactly one pricing line. Multi-line flat-priced contracts with
-   *  several lines reading 0 (CTRM data oddity) would otherwise each render the full
-   *  contract qty and overstate totals. */
+  /** Quantity to show for a single pricing line. CTRM stores a single pricing line
+   *  with PriceQuantity = 0 / null when the line implicitly covers the whole contract —
+   *  this happens for Flat-priced ('P'), Deferred ('D'), and Unpriced/Partial ('U')
+   *  contracts alike. In all of those cases the line's allocated scope is the entire
+   *  contract, so we substitute contract.quantity for display. Defensive length-1
+   *  guard stays: multi-line contracts with several zero-qty lines (CTRM data oddity)
+   *  would otherwise each render the full contract qty and overstate per-line totals. */
   getDisplayPricingQty(contract: Contract, line: ContractPricingLine): number {
-    const ptc = (contract.priceTypeCode ?? '').trim().toUpperCase();
     const lineQty = line.priceQuantity ?? 0;
-    if (ptc === 'P' && lineQty === 0) {
+    if (lineQty === 0) {
       const lines = contract.sourceContractId ? this.pricingLinesMap().get(contract.sourceContractId) : undefined;
       if (lines && lines.length === 1) return contract.quantity ?? 0;
     }
@@ -492,7 +492,10 @@ export class ContractsTableComponent {
 
   /** Bushels on the contract that still need a price. Only meaningful for
    *  PriceTypeCode='U' (unpriced/partial) — other types return null so the UI
-   *  can hide the tile. */
+   *  can hide the tile. Uses getDisplayPricingQty for the sum so that when a single
+   *  zero-qty placeholder line is substituted with contract.quantity, the Unpriced
+   *  tile drops to 0 in lockstep with the display (otherwise the line would read
+   *  "5,000 BU priced" while the tile still showed "5,000 BU unpriced"). */
   getUnpricedQty(contract: Contract): number | null {
     const ptc = (contract.priceTypeCode ?? '').trim().toUpperCase();
     if (ptc !== 'U') return null;
@@ -502,7 +505,7 @@ export class ContractsTableComponent {
     const safeLines = lines ?? [];
     const totalPriced = safeLines
       .filter(l => (l.priceSequence ?? 0) > 0)
-      .reduce((sum, l) => sum + (l.priceQuantity ?? 0), 0);
+      .reduce((sum, l) => sum + this.getDisplayPricingQty(contract, l), 0);
     const unpriced = (contract.quantity ?? 0) - totalPriced;
     return Math.max(0, unpriced);
   }
