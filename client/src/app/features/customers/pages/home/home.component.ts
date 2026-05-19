@@ -1,8 +1,8 @@
 import { Component, inject, signal, computed, DestroyRef, effect, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
-import { forkJoin, of } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { forkJoin, of, Subject } from 'rxjs';
+import { catchError, takeUntil } from 'rxjs/operators';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
@@ -43,6 +43,27 @@ export class HomeComponent {
   private _isLoading = false;
   private _customerRequestId = 0;
   private _piRequestId = 0;
+  /** Emits whenever the user picks a new customer. Every async call kicked off by
+   *  handleSelectCustomer is piped through takeUntil(this) so the prior selection's
+   *  in-flight HTTP requests are cancelled the moment a new producer is clicked —
+   *  stops stale linked-producer / notes / planting calls from clogging the browser's
+   *  connection pool while the newly-selected customer waits for free sockets. */
+  private readonly _cancelSelection$ = new Subject<void>();
+  /** Customers whose linked-producer BFS has already completed in this session.
+   *  Re-clicking a producer that's in this set skips the entire BFS — the cache
+   *  is already correct, so there's nothing new to fetch. */
+  private readonly _linkedFetchDone = new Set<number>();
+  /** Customers whose contracts / tickets / pricing-lines / stored-grain have
+   *  already been fetched in this session. Re-clicking skips the four HTTP
+   *  calls in _loadCustomerContractsAndTickets — the merged data is still in
+   *  the signals from the first visit. Cleared when the user adds/removes a
+   *  contract, ticket, or storage record (none of those mutate from this page
+   *  today, so the cache is effectively read-only for the session). */
+  private readonly _customerLoadDone = new Set<number>();
+  /** Per-customer planting-intentions cache. Hydrated from the first visit's
+   *  fetch; kept in sync by the add/edit/delete handlers. Subsequent visits to
+   *  the same producer skip the network entirely. */
+  private readonly _customerPlantingCache = new Map<number, PlantingIntention[]>();
 
   // Public signals — template binds directly to these
   readonly customers = signal<Customer[]>([]);
@@ -579,6 +600,10 @@ export class HomeComponent {
   }
 
   handleSelectCustomer(customer: Customer, fromDeepLink = false): void {
+    // Cancel everything still in flight from the prior customer selection so the
+    // browser's connection pool isn't blocked by stale linked-producer / notes /
+    // planting calls when the user clicks through producers quickly.
+    this._cancelSelection$.next();
     // Reset navigation context when user manually selects (but NOT when coming from a deep link)
     if (!fromDeepLink) {
       this.pendingContractId.set(null);
@@ -598,7 +623,7 @@ export class HomeComponent {
         linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
       };
     } else {
-      this.apiService.getProducerDetails(customer.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      this.apiService.getProducerDetails(customer.id).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (details) => {
           const map = new Map(this.producerDetailsMap());
           map.set(details.customerId, details);
@@ -634,24 +659,34 @@ export class HomeComponent {
     // Fetch planting intentions exactly once per customer selection.
     // _loadCustomerData is called multiple times (contracts, tickets, storedGrain callbacks),
     // so the fetch lives here instead to avoid triple API calls.
-    this.allCustomerPlantingIntentions.set([]);
-    this.customerPlantingIntentions.set([]);
-    const piRequestId = ++this._piRequestId;
-    this.apiService.getPlantingIntentionsByCustomer(customer.id)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (intentions) => {
-          if (piRequestId !== this._piRequestId) return;
-          this.allCustomerPlantingIntentions.set(intentions);
-          this.customerPlantingIntentions.set(intentions);
-        },
-        error: () => {}
-      });
+    // Cached on _customerPlantingCache after the first visit; subsequent clicks
+    // hydrate from cache instead of re-fetching. add/edit/deletePlantingIntention
+    // updates the cache alongside the live signals so it stays in sync.
+    const cachedPi = this._customerPlantingCache.get(customer.id);
+    if (cachedPi) {
+      this.allCustomerPlantingIntentions.set(cachedPi);
+      this.customerPlantingIntentions.set(cachedPi);
+    } else {
+      this.allCustomerPlantingIntentions.set([]);
+      this.customerPlantingIntentions.set([]);
+      const piRequestId = ++this._piRequestId;
+      this.apiService.getPlantingIntentionsByCustomer(customer.id)
+        .pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: (intentions) => {
+            if (piRequestId !== this._piRequestId) return;
+            this.allCustomerPlantingIntentions.set(intentions);
+            this.customerPlantingIntentions.set(intentions);
+            this._customerPlantingCache.set(customer.id, intentions);
+          },
+          error: () => {}
+        });
+    }
 
     // When no trade units are active, _loadAllData never ran so notes may be stale or missing.
     // Always refresh notes in this case so the selected customer's notes appear.
     if (this.selectedTradeUnits().length === 0) {
-      this.apiService.getNotes().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      this.apiService.getNotes().pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (data) => {
           this.notes.set(data);
           this.appState.setNotes(data);
@@ -689,6 +724,11 @@ export class HomeComponent {
   private _fetchMissingLinkedProducers(customer: Customer, visited: Set<number> = new Set()): void {
     const MAX_GROUP_SIZE = 25;
     if (visited.has(customer.id) || visited.size >= MAX_GROUP_SIZE) return;
+    // Already fetched this producer's linked group earlier in the session — the
+    // cache is correct, so skip the network round-trip entirely. This is what
+    // makes re-clicking a producer (or hopping back and forth in a saved list)
+    // instant after the first visit.
+    if (this._linkedFetchDone.has(customer.id)) return;
     visited.add(customer.id);
 
     const linkedIds = customer.linkedProducerIds || [];
@@ -714,7 +754,9 @@ export class HomeComponent {
     forkJoin({
       outgoing: outgoingRequests.length > 0 ? forkJoin(outgoingRequests) : of([] as (Customer | null)[]),
       incoming: incoming$
-    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(({ outgoing, incoming }) => {
+    }).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe(({ outgoing, incoming }) => {
+      // BFS finished for this customer — mark done so re-selecting skips the network.
+      this._linkedFetchDone.add(customer.id);
       // Merge new fetches into the cache. Use .update() so concurrent BFS branches
       // from different customers don't clobber each other's additions.
       this._crossTradeUnitCustomers.update(current => {
@@ -745,7 +787,7 @@ export class HomeComponent {
         .filter(c => c.id !== customer.id)
         .map(c => this.apiService.getNotesByCustomer(c.id).pipe(catchError(() => of([] as Note[]))));
       if (noteFetches.length > 0) {
-        forkJoin(noteFetches).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(noteLists => {
+        forkJoin(noteFetches).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe(noteLists => {
           const incomingNotes = noteLists.flat();
           if (incomingNotes.length === 0) return;
           this.notes.update(arr => {
@@ -809,14 +851,32 @@ export class HomeComponent {
   }
 
   private _loadCustomerContractsAndTickets(customerId: number, scoularId?: string): void {
+    // Already fetched this customer's data in this session — the merged signals
+    // still hold everything we got the first time. Just clear the loading flags
+    // and re-run the local merge so the UI updates with the cached data.
+    if (this._customerLoadDone.has(customerId)) {
+      this.isLoadingContracts.set(false);
+      this.isLoadingTickets.set(false);
+      this.isLoadingStoredGrain.set(false);
+      this._loadCustomerData(customerId);
+      return;
+    }
+
+    let contractsDone = false;
+    let ticketsDone = false;
+    let grainDone = false;
+    const markIfAllDone = () => {
+      if (contractsDone && ticketsDone && grainDone) this._customerLoadDone.add(customerId);
+    };
+
     if (scoularId) {
-      this.apiService.getPricingLinesByCustomer(scoularId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      this.apiService.getPricingLinesByCustomer(scoularId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (lines) => { this.customerPricingLines.set(lines); this.appState.setPricingLines(lines); },
         error: () => this.customerPricingLines.set([])
       });
     }
 
-    this.apiService.getContractsByCustomer(customerId, scoularId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.apiService.getContractsByCustomer(customerId, scoularId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (contracts) => {
         const existing = this.contracts();
         const merged = [...existing];
@@ -829,11 +889,13 @@ export class HomeComponent {
         // arrived first and run auto-save before allCustomerContracts was populated.
         const customer = this.customers().find(c => c.id === customerId) || this.selectedCustomer();
         if (customer) this._autoSaveCommodities(customer, this.allCustomerTickets());
+        contractsDone = true;
+        markIfAllDone();
       },
       error: () => { this.isLoadingContracts.set(false); }
     });
 
-    this.apiService.getTicketsByCustomer(customerId, scoularId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.apiService.getTicketsByCustomer(customerId, scoularId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (tickets) => {
         const existing = this.tickets();
         const merged = [...existing];
@@ -851,11 +913,13 @@ export class HomeComponent {
 
         const customer = this.customers().find(c => c.id === customerId) || this.selectedCustomer();
         if (customer) this._autoSaveCommodities(customer, tickets);
+        ticketsDone = true;
+        markIfAllDone();
       },
       error: () => { this.isLoadingTickets.set(false); }
     });
 
-    this.apiService.getStoredGrainByCustomer(customerId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.apiService.getStoredGrainByCustomer(customerId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (grain) => {
         const existing = this.storedGrain();
         const merged = [...existing.filter(s => s.customerId !== customerId), ...grain];
@@ -863,6 +927,8 @@ export class HomeComponent {
         this.appState.setStoredGrain(merged);
         this.isLoadingStoredGrain.set(false);
         this._loadCustomerData(customerId);
+        grainDone = true;
+        markIfAllDone();
       },
       error: () => { this.isLoadingStoredGrain.set(false); }
     });
@@ -981,6 +1047,12 @@ export class HomeComponent {
       map.set(data.customerId, { ...existingPd, totalAcres: data.acres || undefined, binCapacity: data.binCapacity || undefined, primaryContact: data.primaryContact || undefined, commodities: savedCommodities ?? undefined, linkedProducerIds: savedLinkedIds ?? undefined });
       this.producerDetailsMap.set(map);
     }
+
+    // Linked-producer membership just changed — invalidate the BFS cache so the
+    // next visit to the affected customers re-walks the graph. We don't know the
+    // full transitive set without re-walking, so the safest cheap fix is to clear
+    // everything; the cache will rebuild lazily as the user clicks through.
+    this._linkedFetchDone.clear();
 
     this.apiService.saveProducerDetails(data.customerId, savePayload).subscribe({
       next: (pd) => {
@@ -1242,6 +1314,8 @@ export class HomeComponent {
         this.appState.setPlantingIntentions(this.plantingIntentions());
         this.customerPlantingIntentions.update(arr => [...arr, intention]);
         this.allCustomerPlantingIntentions.update(arr => [...arr, intention]);
+        const cached = this._customerPlantingCache.get(sel.id);
+        if (cached) this._customerPlantingCache.set(sel.id, [...cached, intention]);
         this.toastService.success('Planting intention added');
         this._ensureCommodityOnProducerDetails(sel, data.crop);
       },
@@ -1260,6 +1334,10 @@ export class HomeComponent {
         this.appState.setPlantingIntentions(this.plantingIntentions());
         this.customerPlantingIntentions.update(update);
         this.allCustomerPlantingIntentions.update(update);
+        if (sel) {
+          const cached = this._customerPlantingCache.get(sel.id);
+          if (cached) this._customerPlantingCache.set(sel.id, update(cached));
+        }
         this.toastService.success('Planting intention updated');
         if (sel) this._ensureCommodityOnProducerDetails(sel, data.crop);
       },
@@ -1312,6 +1390,11 @@ export class HomeComponent {
         this.appState.setPlantingIntentions(this.plantingIntentions());
         this.customerPlantingIntentions.update(remove);
         this.allCustomerPlantingIntentions.update(remove);
+        const sel = this.selectedCustomer();
+        if (sel) {
+          const cached = this._customerPlantingCache.get(sel.id);
+          if (cached) this._customerPlantingCache.set(sel.id, remove(cached));
+        }
         this.toastService.success('Planting intention deleted');
       },
       error: () => this.toastService.error('Failed to delete planting intention')

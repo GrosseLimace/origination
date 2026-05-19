@@ -56,12 +56,12 @@ export class ContractsTableComponent {
   });
   currentSortColumn = signal<SortColumn | null>(null);
   currentSortDirection = signal<SortDirection>('none');
+  /** Direction the commodity groups are sorted in. Independent of the row-level
+   *  sort — the Crop column header drives this, the rest drive row sort. Groups
+   *  are always rendered (no "ungrouped" state); this just flips alphabetical. */
+  groupSortDirection = signal<'asc' | 'desc'>('asc');
   showSearch = signal(false);
   searchQuery = signal('');
-
-  // Summary bar (above the contracts table). Collapsible; defaults closed so the
-  // table starts in its compact state — users click to reveal totals.
-  summaryExpanded = signal<boolean>(false);
 
   /** Per-contract bushels normalized to bushels via GNP024 for the named metric.
    *  Contracts whose commodity is not in GNP024 (or whose stats aren't computable)
@@ -77,52 +77,6 @@ export class ContractsTableComponent {
     const lbs = this._convertContractQuantityToPounds(native, contract.unit, lbsPerBu);
     return lbs / lbsPerBu;
   }
-
-  /** Summary aggregate used by the summary bar — total bushels, contract count, and breakdown by commodity code.
-   *  Iterates the customer's full open-contract set, not the search-filtered view, so the summary
-   *  reflects the customer as a whole rather than shrinking as the user types. */
-  private _summarize(filter: (c: Contract) => boolean, metric: 'remaining' | 'unsettled' = 'remaining'): { total: number; count: number; byCommodity: { code: string; bushels: number }[] } {
-    let total = 0;
-    let count = 0;
-    const byComm = new Map<string, number>();
-    for (const c of this.openContracts) {
-      if (!filter(c)) continue;
-      const bu = this._metricBuPerContract(c, metric);
-      if (bu === null || bu <= 0) continue;
-      total += bu;
-      count++;
-      const code = ((c.commodityCode || '').trim().toUpperCase()) || 'N/A';
-      byComm.set(code, (byComm.get(code) ?? 0) + bu);
-    }
-    const byCommodity = [...byComm.entries()]
-      .map(([code, bushels]) => ({ code, bushels }))
-      .sort((a, b) => b.bushels - a.bushels);
-    return { total, count, byCommodity };
-  }
-
-  /** Totals across every currently-visible contract. */
-  readonly totalSummary = computed(() => this._summarize(() => true));
-
-  /** Total bushels delivered but not yet settled — i.e. payable today. */
-  readonly unsettledSummary = computed(() => this._summarize(() => true, 'unsettled'));
-
-  /** Totals restricted to contracts whose delivery end date is in the current calendar month. */
-  readonly thisMonthSummary = computed(() => {
-    // Compare in the user's local time. The contract's deliveryEnd is a calendar date in the
-    // operations zone, not an instant — using local-month on both sides keeps the bucket
-    // consistent regardless of whether the API emits bare ISO or Z-suffixed UTC. (When the API
-    // serializes Z-suffixed UTC, midnight UTC dates can read as the prior day for users west of
-    // UTC; we anchor on the deliveryEnd's UTC calendar day to dodge that.)
-    const now = new Date();
-    const curMonth = now.getMonth();
-    const curYear = now.getFullYear();
-    return this._summarize(c => {
-      if (!c.deliveryEnd) return false;
-      const end = new Date(c.deliveryEnd);
-      if (isNaN(end.getTime())) return false;
-      return end.getUTCMonth() === curMonth && end.getUTCFullYear() === curYear;
-    });
-  });
 
   /** Full month name for labels like "April Undelivered". */
   readonly currentMonthLabel = computed<string>(() =>
@@ -178,6 +132,29 @@ export class ContractsTableComponent {
 
   /** Search-filtered + sorted view of open contracts. Memoized as a computed so summary
    *  signals and the template don't re-run the search/filter pipeline on every read. */
+  /** Open contracts grouped by commodity. Outer order is alphabetical by
+   *  commodity (asc or desc per groupSortDirection); within each group the
+   *  contracts preserve the order from displayedContracts() — so whatever
+   *  row-level sort the user picked is respected per-group. Empty groups
+   *  (filtered out by search) never appear because we build from the
+   *  already-filtered list. */
+  readonly groupedContracts = computed<Array<{ commodity: string; contracts: Contract[] }>>(() => {
+    const list = this.displayedContracts();
+    const map = new Map<string, Contract[]>();
+    for (const c of list) {
+      // Group by commodityCode so same-code rows always share a bucket — e.g.
+      // multiple YC variants stay together even if commodityDescription differs.
+      // Fall back to description/group/'Other' only when code is missing.
+      const key = (c.commodityCode || c.commodityDescription || c.commodityGroup || 'Other').trim();
+      const arr = map.get(key);
+      if (arr) arr.push(c); else map.set(key, [c]);
+    }
+    const dir = this.groupSortDirection();
+    const groups = [...map.entries()].map(([commodity, contracts]) => ({ commodity, contracts }));
+    groups.sort((a, b) => dir === 'asc' ? a.commodity.localeCompare(b.commodity) : b.commodity.localeCompare(a.commodity));
+    return groups;
+  });
+
   readonly displayedContracts = computed<Contract[]>(() => {
     const q = this.searchQuery().trim().toLowerCase();
     const sorted = this.sortedContracts;
@@ -285,8 +262,16 @@ export class ContractsTableComponent {
   }
 
   get sortedContracts(): Contract[] {
+    // When no row sort is active, fall back to the default within-group order:
+    // delivery period newest → oldest. Grouping happens after this in
+    // groupedContracts, which preserves whatever order this getter produced
+    // within each commodity bucket.
     if (!this.currentSortColumn() || this.currentSortDirection() === 'none') {
-      return this.openContracts;
+      return [...this.openContracts].sort((a, b) => {
+        const aTime = a.deliveryStart ? new Date(a.deliveryStart).getTime() : 0;
+        const bTime = b.deliveryStart ? new Date(b.deliveryStart).getTime() : 0;
+        return bTime - aTime;
+      });
     }
 
     const sorted = [...this.openContracts].sort((a, b) => {
@@ -342,6 +327,12 @@ export class ContractsTableComponent {
   }
 
   handleSort(column: SortColumn): void {
+    // The Crop column doesn't sort rows — it flips the commodity-group order.
+    // Two-state toggle: alpha asc ↔ alpha desc. The row sort is untouched.
+    if (column === 'crop') {
+      this.groupSortDirection.update(d => d === 'asc' ? 'desc' : 'asc');
+      return;
+    }
     if (this.currentSortColumn() === column) {
       if (this.currentSortDirection() === 'none') {
         this.currentSortDirection.set('asc');
@@ -474,20 +465,36 @@ export class ContractsTableComponent {
     return { status: 'UNPRICED' };
   }
 
-  /** Quantity to show for a single pricing line. CTRM stores a single pricing line
-   *  with PriceQuantity = 0 / null when the line implicitly covers the whole contract —
-   *  this happens for Flat-priced ('P'), Deferred ('D'), and Unpriced/Partial ('U')
-   *  contracts alike. In all of those cases the line's allocated scope is the entire
-   *  contract, so we substitute contract.quantity for display. Defensive length-1
-   *  guard stays: multi-line contracts with several zero-qty lines (CTRM data oddity)
-   *  would otherwise each render the full contract qty and overstate per-line totals. */
+  /** Quantity to show for a single pricing line. Two cases get computed values
+   *  rather than the raw priceQuantity, so the per-line numbers always sum to
+   *  contract.quantity:
+   *
+   *  1) Single zero-qty line → substitute contract.quantity. CTRM emits one
+   *     pricing line with PriceQuantity = 0/null when that line implicitly
+   *     covers the whole contract (Flat-priced 'P', Deferred 'D', or
+   *     wholly-unpriced 'U').
+   *
+   *  2) Multi-line with a sequence-0 placeholder → substitute the unpriced
+   *     remainder (contract.quantity − Σ qty of priced lines). Without this,
+   *     a partial-price contract like 25,000 BU with sequence 1 = 375 BU and
+   *     sequence 2 = 5,000 BU would render the placeholder as "0 BU" and the
+   *     rows wouldn't sum to the contract total. Now the placeholder reads
+   *     "19,625 BU" and the three lines visibly add up to 25,000.
+   *
+   *  Other lines fall through to the raw priceQuantity. */
   getDisplayPricingQty(contract: Contract, line: ContractPricingLine): number {
     const lineQty = line.priceQuantity ?? 0;
-    if (lineQty === 0) {
-      const lines = contract.sourceContractId ? this.pricingLinesMap().get(contract.sourceContractId) : undefined;
-      if (lines && lines.length === 1) return contract.quantity ?? 0;
+    if (lineQty !== 0) return lineQty;
+    const lines = contract.sourceContractId ? this.pricingLinesMap().get(contract.sourceContractId) : undefined;
+    if (!lines) return 0;
+    if (lines.length === 1) return contract.quantity ?? 0;
+    if ((line.priceSequence ?? 0) === 0) {
+      const pricedTotal = lines
+        .filter(l => (l.priceSequence ?? 0) > 0)
+        .reduce((sum, l) => sum + (l.priceQuantity ?? 0), 0);
+      return Math.max(0, (contract.quantity ?? 0) - pricedTotal);
     }
-    return lineQty;
+    return 0;
   }
 
   /** Bushels on the contract that still need a price. Only meaningful for

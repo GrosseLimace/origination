@@ -521,7 +521,6 @@ export class CustomerProfileComponent {
   /** Opens a print dialog with formatted customer information */
   printCustomerInfo(): void {
     const activeContracts = this.contracts().filter(c => c.status === 'Active' || c.status === 'Pending');
-    const contractValue = activeContracts.reduce((sum, c) => sum + (c.quantity * c.price), 0);
 
     const printContent = `
       <!DOCTYPE html>
@@ -618,10 +617,6 @@ export class CustomerProfileComponent {
           <div class="summary-box">
             <div class="summary-value">${this.bushelsAvailable.toLocaleString()}</div>
             <div class="summary-label">Available Bushels</div>
-          </div>
-          <div class="summary-box">
-            <div class="summary-value">$${contractValue.toLocaleString()}</div>
-            <div class="summary-label">Contract Value</div>
           </div>
         </div>
 

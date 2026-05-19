@@ -244,8 +244,7 @@ export class CustomerPrintReportComponent {
     }
     if (this.showTotalContracted()) {
       const contracted = this.totalContracted();
-      const totalValue = this.openContracts().reduce((sum, c) => sum + (c.totalValue ?? 0), 0);
-      items.push({ label: 'Total Contracted', value: contracted > 0 ? this.formatBu(contracted) : '0 bu', sub: totalValue > 0 ? this.formatCurrency(totalValue) : '' });
+      items.push({ label: 'Total Contracted', value: contracted > 0 ? this.formatBu(contracted) : '0 bu', sub: '' });
     }
     if (this.showBinCapacity()) {
       const binCapacity = this.customer().binCapacity ?? 0;
@@ -634,15 +633,14 @@ export class CustomerPrintReportComponent {
     // multiple contracts for the same commodity are easier to read in print).
     if (this.showContracts() && this.openContracts().length > 0) {
       const contractColgroup = `<colgroup>
+        <col style="width: 20%;" />
+        <col style="width: 20%;" />
         <col style="width: 16%;" />
-        <col style="width: 16%;" />
-        <col style="width: 12%;" />
-        <col style="width: 16%;" />
-        <col style="width: 22%;" />
-        <col style="width: 18%;" />
+        <col style="width: 24%;" />
+        <col style="width: 20%;" />
       </colgroup>`;
       const contractThead = `<thead><tr class="table-header">
-        <th>Contract #</th><th>Quantity</th><th>Price</th><th>Value</th><th>Delivery Window</th><th>Status</th>
+        <th>Contract #</th><th>Quantity</th><th>Price</th><th>Delivery Window</th><th>Status</th>
       </tr></thead>`;
 
       html += `<div class="section">
@@ -657,7 +655,7 @@ export class CustomerPrintReportComponent {
                 const unit = this._esc(ct.unit || 'bu');
                 const lines = this.getPricingLinesForContract(ct);
                 const pricingHtml = this.showPricingLines() && lines.length > 0
-                  ? `<tr style="background:#f9fafb;"><td colspan="6" style="padding:8px 10px 10px 10px;">
+                  ? `<tr style="background:#f9fafb;"><td colspan="5" style="padding:8px 10px 10px 10px;">
                       <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Pricing Lines (${lines.length})</div>
                       <table style="width:100%;border-collapse:collapse;font-size:10px;background:#ffffff;border:1px solid #e5e7eb;border-radius:4px;">
                         <thead><tr style="background:#f3f4f6;">
@@ -692,7 +690,6 @@ export class CustomerPrintReportComponent {
                         <td style="font-weight:500;">${this._esc(ct.contractNumber)}</td>
                         <td>${(ct.quantity ?? 0).toLocaleString()} ${unit}</td>
                         <td>${this._esc(this.getContractPrice(ct))}</td>
-                        <td style="font-weight:600;">${ct.totalValue != null ? this.formatCurrency(ct.totalValue) : '—'}</td>
                         <td style="font-size:10px;">${this._esc(this.formatDeliveryPeriod(ct.deliveryStart, ct.deliveryEnd))}</td>
                         <td><span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:10px;font-weight:600;background:${styles.bg};color:${styles.color};">${this._esc(status)}</span></td>
                       </tr>
