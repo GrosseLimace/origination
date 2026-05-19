@@ -730,10 +730,39 @@ export class HomeComponent {
         return next;
       });
 
-      // Recurse into each newly-discovered customer so their own links (both
-      // directions) get fetched too — completes the transitive closure.
       const discovered = [...outgoing, ...incoming]
         .filter((c): c is Customer => !!c && !visited.has(c.id));
+
+      // Fetch notes for every newly-discovered cross-TU customer. The bulk
+      // /api/notes endpoint scopes by the user's selected TUs, so notes for a
+      // linked producer in an unselected TU never come back through that path.
+      // The per-customer endpoint has no TU filter — pull the linked producer's
+      // notes individually and merge them into the local notes() signal so the
+      // selected customer's activity summary, last-contacted, and inline notes
+      // all see the linked-group's full history. We skip notes already present
+      // (by id) to keep the merge idempotent across concurrent BFS recursions.
+      const noteFetches = discovered
+        .filter(c => c.id !== customer.id)
+        .map(c => this.apiService.getNotesByCustomer(c.id).pipe(catchError(() => of([] as Note[]))));
+      if (noteFetches.length > 0) {
+        forkJoin(noteFetches).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(noteLists => {
+          const incomingNotes = noteLists.flat();
+          if (incomingNotes.length === 0) return;
+          this.notes.update(arr => {
+            const seen = new Set(arr.map(n => n.id));
+            const additions = incomingNotes.filter(n => !seen.has(n.id));
+            return additions.length > 0 ? [...arr, ...additions] : arr;
+          });
+          this.appState.setNotes(this.notes());
+          // Refresh the selected customer's note panel if it's the customer
+          // whose chain we just expanded — picks up the freshly-fetched links.
+          const sel = this.selectedCustomer();
+          if (sel?.id === customer.id) this._loadCustomerData(sel.id);
+        });
+      }
+
+      // Recurse into each newly-discovered customer so their own links (both
+      // directions) get fetched too — completes the transitive closure.
       for (const next of discovered) {
         this._fetchMissingLinkedProducers(next, visited);
       }
@@ -1289,18 +1318,39 @@ export class HomeComponent {
     });
   }
 
+  /** True while a createNote request is in flight. Bound to <app-customer-notes
+   *  [isSavingNote]> so the textarea + button show a "Saving..." state and ignore
+   *  repeat clicks during the round trip. */
+  readonly isSavingNote = signal(false);
+  /** Increments after each successful createNote. <app-customer-notes> watches
+   *  this counter and clears its textarea only when it increments — so if the save
+   *  fails, the user's typed content survives and they can retry. */
+  readonly noteSaveSucceededCounter = signal(0);
+
   addNote(content: string): void {
     const sel = this.selectedCustomer();
     if (!sel) return;
+    // Guard against overlapping submits at the parent layer too — covers any caller
+    // that didn't honor the child's own isSavingNote disable.
+    if (this.isSavingNote()) return;
     const tradeUnit = this.selectedTradeUnits().length === 1 ? this.selectedTradeUnits()[0] : undefined;
+    this.isSavingNote.set(true);
     this.apiService.createNote(sel.id, content, tradeUnit).subscribe({
       next: (note) => {
         this.notes.update(arr => [...arr, note]);
         this.appState.setNotes(this.notes());
         this.customerNotes.update(arr => this._sortNotes([...arr, note]));
         this.toastService.success('Note added');
+        // Increment FIRST so the child clears its textarea, then drop the flag.
+        this.noteSaveSucceededCounter.update(n => n + 1);
+        this.isSavingNote.set(false);
       },
-      error: () => this.toastService.error('Failed to add note')
+      error: () => {
+        this.toastService.error('Failed to add note');
+        // Leave the success counter alone — the child keeps the text so the user
+        // can retry. Just clear the in-flight flag so the button re-enables.
+        this.isSavingNote.set(false);
+      }
     });
   }
 
