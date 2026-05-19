@@ -111,12 +111,11 @@ export class TicketsTableComponent {
   }
 
   /** Set of ticket IDs that are spot loads — unapplied tickets in the last 30 days.
-   *  A ticket is "unapplied" when its CtrmContractNumber prefix is U (Unload) or L
-   *  (Loadout) — i.e. no contract is assigned. Matches Actionable Insights → Spot
-   *  Loads exactly, so the "Spot" badge on the customer ticket list lines up with
-   *  what that producer shows up for on /insights. No contract-date coverage check —
-   *  an unapplied ticket is a spot load regardless of what contracts exist in the
-   *  same window, because the ticket itself is what tells us it wasn't priced. */
+   *  Unapplied = ContractNumber prefix is U (Unload), L (Loadout), or C (Customer Storage).
+   *  Matches Actionable Insights → Spot Loads exactly, so the "Spot" badge on the customer
+   *  ticket list lines up with what that producer shows up for on /insights. No contract-date
+   *  coverage check — an unapplied ticket is a spot load regardless of what contracts exist
+   *  in the same window, because the ticket itself is what tells us it wasn't priced. */
   get spotTicketIds(): Set<number> {
     const ids = new Set<number>();
     // Cutoff snaps to start-of-UTC-day 30 days ago so a ticket dated exactly 30 days
@@ -146,8 +145,10 @@ export class TicketsTableComponent {
   }
 
   get unappliedTickets(): Ticket[] {
-    // A ticket is "unapplied" only when its contract prefix is U (Unload) or L (Loadout).
-    // C-prefix (Customer Storage), P, S, B, and no-contract tickets are considered applied.
+    // A ticket is "unapplied" when its contract prefix is U (Unload), L (Loadout), or
+    // C (Customer Storage). C-prefix tickets also surface in the Storage view — they're
+    // shown in both places so a merchandiser can see uncommitted storage grain alongside
+    // unbooked unload/loadout tickets. P, S, B, and no-contract tickets are applied.
     return this.tickets()
       .filter(t => !t.isApplied)
       .sort((a, b) => {
