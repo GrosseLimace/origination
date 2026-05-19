@@ -17,6 +17,16 @@ export class CustomerNotesComponent {
   public customer = input.required<Customer>();
   public customerCodeMap = input<Map<number, string>>(new Map());
   public linkedCustomers = input<Customer[]>([]);
+  /** True while the parent has an in-flight createNote request. Used to disable the
+   *  Add Note button + switch its label to "Saving..." so the user sees feedback that
+   *  their click landed. Fixes the "had to click 2-3 times" bug — without this signal,
+   *  the textarea cleared instantly, the user thought nothing happened, and they
+   *  retyped + reclicked (creating 2-3 duplicate notes on the customer). */
+  public isSavingNote = input<boolean>(false);
+  /** Counter the parent increments each time a save SUCCEEDS. The component watches
+   *  for increments and only then clears the textarea — so if the save fails, the
+   *  user's typed content is preserved and they can retry without retyping. */
+  public noteSaveSucceededCounter = input<number>(0);
   public addNote = output<string>();
   public togglePin = output<Note>();
   public editNote = output<{ noteId: number; content: string }>();
@@ -46,6 +56,20 @@ export class CustomerNotesComponent {
     effect(() => {
       const _customer = this.customer();
       this.filterValue.set('');
+    });
+
+    // Clear the textarea only after the parent reports a successful save (counter goes
+    // up). We start the tracker at the initial counter value so the component doesn't
+    // wipe out user input on mount if the counter is already non-zero (e.g., a prior
+    // save in this session). On failure, the parent leaves the counter alone — the
+    // textarea content survives and the user can retry without retyping.
+    let lastSeenSuccessCount = this.noteSaveSucceededCounter();
+    effect(() => {
+      const current = this.noteSaveSucceededCounter();
+      if (current > lastSeenSuccessCount) {
+        this.newNote.set('');
+      }
+      lastSeenSuccessCount = current;
     });
 
     this.destroyRef.onDestroy(() => {
@@ -138,6 +162,9 @@ export class CustomerNotesComponent {
   }
 
   submitNote() {
+    // Ignore clicks while a save is already in flight — without this, a slow first
+    // request could overlap with a second click and create duplicate notes.
+    if (this.isSavingNote()) return;
     const text = this.newNote().trim();
     if (!text) return;
     if (text.length > 5000) {
@@ -145,7 +172,9 @@ export class CustomerNotesComponent {
       return;
     }
     this.addNote.emit(text);
-    this.newNote.set('');
+    // Don't clear the textarea here — wait for the parent to report success
+    // (noteSaveSucceededCounter increments). If the save fails, the user's text
+    // stays intact so they can retry without retyping.
   }
 
   toggleMenu(noteId: number, event: Event) {

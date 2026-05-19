@@ -1928,7 +1928,22 @@ public class SqlDataService : IDataService
             var tuList = tradeUnits?.Where(t => !string.IsNullOrEmpty(t)).ToList();
             if (tuList is { Count: > 0 })
             {
-                query = query.Where(n => n.TradeUnit == null || tuList.Contains(n.TradeUnit));
+                // Filter by the CUSTOMER's current trade unit, not the note's own
+                // TradeUnit tag. The tag is set at note-creation time via
+                // FirstOrDefaultAsync on CustomerTradeUnit — non-deterministic when
+                // a customer is in multiple TUs — so notes on the same producer can
+                // end up scattered across TU tags. The result was that a single-TU
+                // selection could miss notes for a multi-TU producer that the user
+                // was actively viewing. Anchoring the filter on the customer's
+                // current TU set returns every note for any customer in scope,
+                // regardless of which TU happened to win the FirstOrDefaultAsync
+                // race at write time. (The TradeUnit column is now informational
+                // only; writes still set it for audit purposes.)
+                query = query.Where(n =>
+                    _appContext.CustomerTradeUnits.Any(ctu =>
+                        ctu.CustomerId == n.CustomerId
+                        && ctu.IsActive
+                        && tuList.Contains(ctu.TradeUnit)));
             }
             var notes = await query
                 .OrderByDescending(n => n.CreatedAt)
