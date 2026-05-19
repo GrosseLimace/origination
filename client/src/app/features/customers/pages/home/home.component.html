@@ -108,6 +108,8 @@
                 [customer]="customer"
                 [customerCodeMap]="customerCodeMap()"
                 [linkedCustomers]="getLinkedGroup(customer)"
+                [isSavingNote]="isSavingNote()"
+                [noteSaveSucceededCounter]="noteSaveSucceededCounter()"
                 (addNote)="addNote($event)"
                 (togglePin)="toggleNotePin($event)"
                 (editNote)="editNote($event)"
