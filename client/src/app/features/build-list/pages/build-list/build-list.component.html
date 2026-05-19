@@ -189,25 +189,6 @@
             }
 
             @if (!showRequestForm()) {
-              @for (group of groupedLibrary(); track group.category) {
-                <div>
-                  <p class="text-[0.65rem] font-bold uppercase tracking-widest text-gray-400/80 dark:text-gray-500/80 mb-2">{{ group.category }}</p>
-                  <div class="space-y-1">
-                    @for (item of group.queries; track item.id) {
-                      <button type="button"
-                        (click)="coreDataLoaded() && selectLibraryQuery(item)"
-                        [disabled]="!hasTradeUnits() || !coreDataLoaded()"
-                        class="group w-full text-left px-3 py-2.5 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:bg-scoular-green/5 dark:hover:bg-scoular-green/10 hover:border-scoular-green/20 border border-transparent"
-                      >
-                        <span class="text-sm font-medium text-gray-800 dark:text-gray-200 group-hover:text-scoular-green-accessible dark:group-hover:text-scoular-green transition-colors">{{ item.name }}</span>
-                        @if (item.description) {
-                          <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5 line-clamp-1">{{ item.description }}</p>
-                        }
-                      </button>
-                    }
-                  </div>
-                </div>
-              }
               @if (librarySavedLists().length > 0) {
                 <div>
                   <p class="text-[0.65rem] font-bold uppercase tracking-widest text-gray-400/80 dark:text-gray-500/80 mb-2">Saved Lists</p>
@@ -242,6 +223,25 @@
                           </svg>
                         </button>
                       </div>
+                    }
+                  </div>
+                </div>
+              }
+              @for (group of groupedLibrary(); track group.category) {
+                <div>
+                  <p class="text-[0.65rem] font-bold uppercase tracking-widest text-gray-400/80 dark:text-gray-500/80 mb-2">{{ group.category }}</p>
+                  <div class="space-y-1">
+                    @for (item of group.queries; track item.id) {
+                      <button type="button"
+                        (click)="coreDataLoaded() && selectLibraryQuery(item)"
+                        [disabled]="!hasTradeUnits() || !coreDataLoaded()"
+                        class="group w-full text-left px-3 py-2.5 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:bg-scoular-green/5 dark:hover:bg-scoular-green/10 hover:border-scoular-green/20 border border-transparent"
+                      >
+                        <span class="text-sm font-medium text-gray-800 dark:text-gray-200 group-hover:text-scoular-green-accessible dark:group-hover:text-scoular-green transition-colors">{{ item.name }}</span>
+                        @if (item.description) {
+                          <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5 line-clamp-1">{{ item.description }}</p>
+                        }
+                      </button>
                     }
                   </div>
                 </div>
