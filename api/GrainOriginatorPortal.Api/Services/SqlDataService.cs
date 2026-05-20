@@ -870,6 +870,7 @@ public class SqlDataService : IDataService
     private sealed class ContractHedgeRow
     {
         public long ContractId { get; set; }
+        public string? HedgeMarketCode { get; set; }
         public string? HedgeMarketMonth { get; set; }
         public string? HedgeMarketMonthDescription { get; set; }
     }
@@ -890,7 +891,7 @@ public class SqlDataService : IDataService
             var idsCsv = SanitizeIdentifierCsv(ids);
             var rows = await _context.Database
                 .SqlQueryRaw<ContractHedgeRow>(
-                    $@"SELECT c.ContractId, c.HedgeMarketMonth, c.HedgeMarketMonthDescription
+                    $@"SELECT c.ContractId, c.HedgeMarketCode, c.HedgeMarketMonth, c.HedgeMarketMonthDescription
                        FROM base.Contract c
                        INNER JOIN STRING_SPLIT('{idsCsv}', ',') ids ON c.ContractId = TRY_CAST(ids.value AS bigint)")
                 .ToListAsync(cancellationToken);
@@ -899,6 +900,7 @@ public class SqlDataService : IDataService
             {
                 if (byId.TryGetValue(c.Id, out var row))
                 {
+                    c.HedgeMarketCode = row.HedgeMarketCode;
                     c.HedgeMarketMonth = row.HedgeMarketMonth;
                     c.HedgeMarketMonthDescription = row.HedgeMarketMonthDescription;
                 }

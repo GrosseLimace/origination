@@ -152,40 +152,20 @@ export class ActivitySummaryComponent {
     // Contract totalValue from CTRM doesn't reflect discounts/adjustments — intentionally
     // omitted to avoid showing the producer a misleading "contracts worth $X" number.
 
-    // Sum Remaining / Paid / Unsettled bushels via ticket math (matches contracts-table's
-    // Customer Contract Summary bar). Skip contracts whose tickets show effectively complete
-    // (<1 bu remainder) so the narrative agrees with the page's 100%-Filled status.
+    // Sum Remaining bushels via ticket math (matches contracts-table's Customer Contract
+    // Summary bar). Skip contracts whose tickets show effectively complete (<1 bu remainder)
+    // so the narrative agrees with the page's 100%-Filled status.
     let totalRemaining = 0;
-    let totalPaid = 0;
-    let totalUnsettled = 0;
     for (const c of openContracts) {
       const stats = this._computeDeliveryStats(c);
       if (!stats.computable || stats.isEffectivelyComplete) continue;
       totalRemaining += stats.remainingBushels;
-      totalPaid += stats.paidBushels;
-      totalUnsettled += stats.unsettledBushels;
     }
 
     parts.push(`On the contract side, they currently have ${openContracts.length} contract${openContracts.length !== 1 ? 's' : ''} totaling ${this._formatQuantity(totalVolume, 'bushels')}.`);
 
-    // Remaining / Paid / Unsettled sentence — fragments are conditional so we don't
-    // emit "0 bushels" filler. Skip the whole sentence when all three are zero.
-    const fragments: string[] = [];
     if (totalRemaining > 0) {
-      fragments.push(`${this._formatQuantity(Math.round(totalRemaining), 'bushels')} remain unshipped`);
-    }
-    if (totalPaid > 0) {
-      fragments.push(`${this._formatQuantity(Math.round(totalPaid), 'bushels')} paid out`);
-    }
-    if (totalUnsettled > 0) {
-      fragments.push(`${this._formatQuantity(Math.round(totalUnsettled), 'bushels')} unsettled (payable now)`);
-    }
-    if (fragments.length === 1) {
-      parts.push(`${fragments[0].charAt(0).toUpperCase() + fragments[0].slice(1)}.`);
-    } else if (fragments.length > 1) {
-      const last = fragments[fragments.length - 1];
-      const rest = fragments.slice(0, -1).join(', ');
-      parts.push(`${rest.charAt(0).toUpperCase() + rest.slice(1)}, with ${last}.`);
+      parts.push(`${this._formatQuantity(Math.round(totalRemaining), 'bushels')} remain unshipped.`);
     }
 
     // Worth-noting only carries items that aren't already covered by Action Items
@@ -343,7 +323,7 @@ export class ActivitySummaryComponent {
   /** Surfaces unapplied tickets only — same `!t.isApplied` filter the Unapplied Tickets
    *  tab uses, with appliedDockQuantity (post-dock-deduction) summed via per-ticket GNP024
    *  conversion to bushels. Applied tickets are already represented through the contract
-   *  Paid / Unsettled numbers, so no need to double-count them here. */
+   *  Delivered / Remaining numbers, so no need to double-count them here. */
   private _generateDeliverySummary(): string {
     const unapplied = (this.tickets() || []).filter(t => t && !t.isApplied);
     if (unapplied.length === 0) return '';
@@ -592,8 +572,8 @@ export class ActivitySummaryComponent {
   }
 
   // Delivery stats — mirrors contracts-table._computeDeliveryStats so the activity-summary
-  // narrative reports the same Remaining / Paid / Unsettled numbers the contracts page shows
-  // (and Insights' Unshipped Bushels Past Delivery Date uses for its skip rule).
+  // narrative reports the same Remaining number the contracts page shows (and Insights'
+  // Unshipped Bushels Past Delivery Date uses for its skip rule).
 
   /** Tickets applied to a specific contract — string match preferred, FK fallback. */
   private _getAppliedTickets(contract: Contract): Ticket[] {
@@ -642,21 +622,15 @@ export class ActivitySummaryComponent {
   private _computeDeliveryStats(contract: Contract): {
     deliveredBushels: number;
     remainingBushels: number;
-    paidBushels: number;
-    unsettledBushels: number;
     isEffectivelyComplete: boolean;
     computable: boolean;
   } {
     const lbsPerBushel = this._lbsPerBushel(contract.commodityCode || '');
     if (lbsPerBushel == null) {
-      return { deliveredBushels: 0, remainingBushels: 0, paidBushels: 0, unsettledBushels: 0, isEffectivelyComplete: false, computable: false };
+      return { deliveredBushels: 0, remainingBushels: 0, isEffectivelyComplete: false, computable: false };
     }
     const applied = this._getAppliedTickets(contract);
     const deliveredLbs = applied.reduce((s, t) => s + (t.appliedDockQuantity || 0), 0);
-    const paidLbs = applied
-      .filter(t => !!t.finalSettledDate)
-      .reduce((s, t) => s + (t.appliedDockQuantity || 0), 0);
-    const unsettledLbs = Math.max(0, deliveredLbs - paidLbs);
     const contractLbs = this._convertContractQuantityToPounds(contract.quantity || 0, contract.unit, lbsPerBushel);
     const remainingLbs = Math.max(0, contractLbs - deliveredLbs);
     const isEffectivelyComplete = remainingLbs < lbsPerBushel;
@@ -664,8 +638,6 @@ export class ActivitySummaryComponent {
     return {
       deliveredBushels: round(this._convertPoundsToContractUnits(deliveredLbs, contract.unit, lbsPerBushel)),
       remainingBushels: round(this._convertPoundsToContractUnits(remainingLbs, contract.unit, lbsPerBushel)),
-      paidBushels: round(this._convertPoundsToContractUnits(paidLbs, contract.unit, lbsPerBushel)),
-      unsettledBushels: round(this._convertPoundsToContractUnits(unsettledLbs, contract.unit, lbsPerBushel)),
       isEffectivelyComplete,
       computable: true,
     };
