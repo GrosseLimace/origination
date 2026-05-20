@@ -63,8 +63,10 @@ public class Contract
     public string? MarketZone { get; set; }
     public string? BasisLocation { get; set; }
 
-    // Hedge market month from ODS (e.g. "K26" = May 2026 futures contract).
-    // HedgeMarketMonthDescription is the human-readable form (e.g. "May 2026").
+    // Hedge market fields from base.Contract — UI prefers HedgeMarketCode, then falls
+    // back to HedgeMarketMonth (e.g. "K26"), then HedgeMarketMonthDescription
+    // (e.g. "May 2026") when the primary is empty.
+    public string? HedgeMarketCode { get; set; }
     public string? HedgeMarketMonth { get; set; }
     public string? HedgeMarketMonthDescription { get; set; }
 

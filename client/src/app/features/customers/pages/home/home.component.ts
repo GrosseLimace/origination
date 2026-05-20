@@ -64,6 +64,12 @@ export class HomeComponent {
    *  fetch; kept in sync by the add/edit/delete handlers. Subsequent visits to
    *  the same producer skip the network entirely. */
   private readonly _customerPlantingCache = new Map<number, PlantingIntention[]>();
+  /** Per-customer pricing-lines cache keyed by scoularId. Pricing lines are
+   *  hydrated OUTSIDE the _customerLoadDone short-circuit so that every click
+   *  swaps to the right producer's lines (the contracts/tickets/grain short-
+   *  circuit returned early before pricing lines were restored, leaving the
+   *  panel showing the prior producer's data on re-click). */
+  private readonly _customerPricingCache = new Map<string, ContractPricingLine[]>();
 
   // Public signals — template binds directly to these
   readonly customers = signal<Customer[]>([]);
@@ -577,6 +583,14 @@ export class HomeComponent {
     this.appState.setCustomers([]);
     this.notes.set([]);
     this.appState.setNotes([]);
+    // Drop the per-customer caches — TU change can include / exclude different
+    // customers, and re-clicking a producer that overlaps the new TU must re-fetch
+    // contracts/tickets/pricing/grain to reflect the new scope. Without this, the
+    // _customerLoadDone short-circuit would serve stale data from the prior TU.
+    this._customerLoadDone.clear();
+    this._customerPricingCache.clear();
+    this._customerPlantingCache.clear();
+    this._linkedFetchDone.clear();
     // Reset loading flag so an explicit user selection is never blocked by a
     // background load that may still be in-flight.
     this._isLoading = false;
@@ -850,7 +864,45 @@ export class HomeComponent {
     });
   }
 
+  /** Hydrate customerPricingLines for the selected producer. Always called on
+   *  every click — independent of _customerLoadDone — so re-clicking a producer
+   *  swaps to their pricing lines instead of leaving the prior producer's lines
+   *  on screen. Cache hit = instant, no network. Cache miss = single fetch then
+   *  populate. */
+  private _loadCustomerPricingLines(scoularId?: string): void {
+    if (!scoularId) {
+      this.customerPricingLines.set([]);
+      return;
+    }
+    const cached = this._customerPricingCache.get(scoularId);
+    if (cached) {
+      this.customerPricingLines.set(cached);
+      this.appState.setPricingLines(cached);
+      return;
+    }
+    // Cache miss — clear any prior producer's lines so the table doesn't show
+    // stale data during the fetch, then issue the API call.
+    this.customerPricingLines.set([]);
+    this.apiService.getPricingLinesByCustomer(scoularId)
+      .pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (lines) => {
+          this.customerPricingLines.set(lines);
+          this.appState.setPricingLines(lines);
+          this._customerPricingCache.set(scoularId, lines);
+        },
+        error: () => this.customerPricingLines.set([])
+      });
+  }
+
   private _loadCustomerContractsAndTickets(customerId: number, scoularId?: string): void {
+    // Pricing lines are handled OUTSIDE the _customerLoadDone short-circuit so
+    // every click hydrates customerPricingLines for the right producer (the
+    // short-circuit only covers contracts/tickets/grain). Without this,
+    // re-clicking a previously-loaded producer left the panel showing the prior
+    // producer's lines.
+    this._loadCustomerPricingLines(scoularId);
+
     // Already fetched this customer's data in this session — the merged signals
     // still hold everything we got the first time. Just clear the loading flags
     // and re-run the local merge so the UI updates with the cached data.
@@ -868,13 +920,6 @@ export class HomeComponent {
     const markIfAllDone = () => {
       if (contractsDone && ticketsDone && grainDone) this._customerLoadDone.add(customerId);
     };
-
-    if (scoularId) {
-      this.apiService.getPricingLinesByCustomer(scoularId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
-        next: (lines) => { this.customerPricingLines.set(lines); this.appState.setPricingLines(lines); },
-        error: () => this.customerPricingLines.set([])
-      });
-    }
 
     this.apiService.getContractsByCustomer(customerId, scoularId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (contracts) => {

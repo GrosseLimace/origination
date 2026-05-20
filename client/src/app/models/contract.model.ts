@@ -30,6 +30,7 @@ export interface Contract {
   closedDate?: Date; // Null = open contract; set = closed/fulfilled
   marketZone?: string; // Market zone from ODS
   basisLocation?: string; // Basis price location from ODS
-  hedgeMarketMonth?: string; // ODS HedgeMarketMonth (futures month code, e.g. "K26")
-  hedgeMarketMonthDescription?: string; // ODS HedgeMarketMonthDescription (e.g. "May 2026")
+  hedgeMarketCode?: string; // ODS HedgeMarketCode — preferred display value
+  hedgeMarketMonth?: string; // ODS HedgeMarketMonth (futures month code, e.g. "K26") — fallback
+  hedgeMarketMonthDescription?: string; // ODS HedgeMarketMonthDescription (e.g. "May 2026") — final fallback
 }
