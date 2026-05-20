@@ -296,6 +296,58 @@ CREATE TABLE Customer (
 5. **Explicit column lists** - avoid `SELECT *`
 6. **Table aliases** - use meaningful short names
 
+```rule
+id: sql-no-select-star
+source: sql-guide.md§Query-Formatting
+severity: error
+description: Queries must enumerate columns; SELECT * is not allowed (except inside EXISTS subqueries)
+applies-to: [changed-files]
+files: ['*.sql', '*.cs']
+tool: grep-forbidden
+args:
+  pattern: 'SELECT[[:space:]]+\*[[:space:]]+FROM'
+  ignore-case: true
+  except: 'EXISTS[[:space:]]*\([[:space:]]*SELECT'
+message: |
+  Enumerate the columns instead of using SELECT *. The only allowed use of
+  SELECT * is inside an EXISTS(...) subquery where columns are immaterial.
+  See dev-standards/style-guides/sql-guide.md §Query-Formatting.
+```
+
+```rule
+id: sql-no-string-interpolated-query
+source: sql-guide.md / security-guide.md
+severity: error
+description: SQL must not be built via C# string interpolation. The pattern requires a SQL keyword followed by a SQL-context anchor (FROM / INTO / SET) so it doesn't fire on exception-message strings that merely contain words like "Delete".
+applies-to: [changed-files]
+files: ['*.cs']
+tool: grep-forbidden
+args:
+  pattern: '\$"[^"]*((SELECT\b[^"]+FROM\b)|(INSERT\b[^"]+INTO\b)|(UPDATE\b[^"]+SET\b)|(DELETE\b[^"]+FROM\b)|(MERGE\b[^"]+INTO\b)|(EXEC(UTE)?\b[[:space:]]+[a-zA-Z_]))[^"]*\{[^"]*\}'
+  ignore-case: true
+message: |
+  Use parameterized queries (sp_executesql parameters, EF Core LINQ,
+  Dapper named parameters, FromSqlInterpolated). String interpolation
+  into SQL is an injection vector.
+```
+
+```rule
+id: sql-no-fromsqlraw-interpolation
+source: sql-guide.md / security-guide.md
+severity: error
+description: FromSqlRaw must not receive an interpolated string; use FromSqlInterpolated instead
+applies-to: [changed-files]
+files: ['*.cs']
+tool: grep-forbidden
+args:
+  pattern: 'FromSqlRaw[[:space:]]*\([[:space:]]*\$"'
+  ignore-case: true
+message: |
+  Switch FromSqlRaw($"...") to FromSqlInterpolated($"..."). FromSqlRaw
+  with interpolation evaluates the C# expression before the SQL is
+  parameterized — same injection risk as concatenation.
+```
+
 ### SELECT Statements
 
 ```sql

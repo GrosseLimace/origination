@@ -38,6 +38,62 @@
 1. **No secrets in code** (including sample keys).
    - Use Azure Key Vault + Managed Identity (preferred) for secret retrieval and credentialless access patterns.
 
+```rule
+id: no-hardcoded-password-literals
+source: security-guide.md§2
+severity: error
+description: No hardcoded password literals in source
+applies-to: [changed-files]
+files: ['*.cs', '*.ps1', '*.psm1', '*.bicep', '*.bicepparam', '*.json', '*.yaml', '*.yml', '*.xml', '*.xslt', '*.config', '*.sql', '*.tf', '*.py', '*.js', '*.ts', '*.env', '*.txt']
+tool: grep-forbidden
+args:
+  pattern: 'password[[:space:]]*[:=][[:space:]]*"[^"$<{]{4,}"'
+  ignore-case: true
+  except: '(\$\(|\$\{|@Microsoft\.KeyVault|<<|placeholder|YOUR_|EXAMPLE|REDACTED|x{4,}|\*{4,}|\bnull\b|""|"""|TODO|TBD|sample|dummy|fake)'
+message: Use Azure Key Vault + Managed Identity (security-guide.md §2). No hardcoded password literals.
+```
+
+```rule
+id: no-hardcoded-api-keys
+source: security-guide.md§2
+severity: error
+description: No hardcoded API keys / secret keys / access tokens / client secrets in source
+applies-to: [changed-files]
+files: ['*.cs', '*.ps1', '*.psm1', '*.bicep', '*.bicepparam', '*.json', '*.yaml', '*.yml', '*.xml', '*.xslt', '*.config', '*.sql', '*.tf', '*.py', '*.js', '*.ts', '*.env', '*.txt']
+tool: grep-forbidden
+args:
+  pattern: '(api[_-]?key|secret[_-]?key|access[_-]?token|client[_-]?secret|bearer[_-]?token)[[:space:]]*[:=][[:space:]]*"[A-Za-z0-9+/_=.\-]{16,}"'
+  ignore-case: true
+  except: '(\$\(|\$\{|@Microsoft\.KeyVault|<<|placeholder|YOUR_|EXAMPLE|REDACTED|x{4,}|\*{4,}|TODO|TBD|sample|dummy|fake)'
+message: Move the value to Key Vault and reference via @Microsoft.KeyVault(...) (security-guide.md §2 / §5).
+```
+
+```rule
+id: no-aws-access-key
+source: security-guide.md§2
+severity: error
+description: AWS access keys in source (AKIA + 16 chars)
+applies-to: [changed-files]
+files: ['*']
+tool: grep-forbidden
+args:
+  pattern: 'AKIA[0-9A-Z]{16}'
+message: Move credentials to a secure store; rotate any committed keys immediately.
+```
+
+```rule
+id: no-private-key-material
+source: security-guide.md§2
+severity: error
+description: Private key PEM blocks in source
+applies-to: [changed-files]
+files: ['*']
+tool: grep-forbidden
+args:
+  pattern: 'BEGIN[[:space:]]+(RSA[[:space:]]+|DSA[[:space:]]+|EC[[:space:]]+|OPENSSH[[:space:]]+)?PRIVATE[[:space:]]+KEY'
+message: Private key material must never be committed; rotate immediately if it has been.
+```
+
 2. **Dependency hygiene is required**
    - Automated dependency scanning and upgrade workflow for .NET (NuGet) and Angular (npm).
 
@@ -129,6 +185,26 @@
 - Token storage:
   - Prefer HttpOnly secure cookies for browser apps where feasible.
   - If using tokens in memory/local storage, document the threat model and mitigations.
+
+```rule
+id: angular-no-bypass-security-trust
+source: security-guide.md§4.2
+severity: error
+description: Angular code must not call DomSanitizer.bypassSecurityTrust* — these calls disable XSS protection
+applies-to: [changed-files]
+files: ['*.ts', '*.html']
+tool: grep-forbidden
+args:
+  pattern: 'bypassSecurityTrust[A-Z]\w*[[:space:]]*\('
+message: |
+  Do not call `bypassSecurityTrust*` (Html / Script / Url / ResourceUrl / Style). These
+  APIs disable Angular's XSS sanitization for the value passed through them. If you need
+  to render trusted SVG icons or markup, use an inline-template component (e.g. the
+  `IconComponent` pattern in @it/angular-components v0.2+) — do not wrap raw strings.
+  If you genuinely need untrusted HTML rendering, use a DOMPurify-backed pipe with an
+  explicit allow-list. See style-guides/security-guide.md §4.2 and IT/gc-track-report
+  ADR-005.
+```
 
 ### 4.3 API-to-DB (Azure SQL)
 
