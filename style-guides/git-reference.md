@@ -277,6 +277,24 @@ gh repo clone YourOrg/YourRepo                       # Clone a repo
 | `refactor/` | Code restructuring | `refactor/database-layer` |
 | `test/` | Test additions/fixes | `test/integration-suite` |
 | `chore/` | Maintenance tasks | `chore/dependency-update` |
+| `story/` | User-story work (Azure DevOps) | `story/12345-add-export` |
+| `task/` | Task-level work (Azure DevOps) | `task/12345-fix-typo` |
+| `fix/` | Short-form bug fix | `fix/null-check` |
+
+```rule
+id: branch-name-prefix
+source: git-reference.md§Branch-Prefixes
+severity: error
+description: PR source branch must start with an approved prefix
+applies-to: [pr-branch-name]
+tool: regex
+args:
+  pattern: '^(feature|bugfix|hotfix|story|task|chore|docs|refactor|test|integration|fix)/.+$'
+message: |
+  Branch name does not start with an approved prefix. Use one of:
+  feature/, bugfix/, hotfix/, integration/, docs/, refactor/, test/,
+  chore/, story/, task/, fix/.
+```
 
 ### Including Issue Numbers
 
@@ -343,6 +361,24 @@ We follow the **Conventional Commits** specification for consistent, meaningful 
 5. **Separate subject from body with a blank line**
 6. **Wrap the body at 72 characters**
 7. **Explain *what* and *why*, not *how***
+
+```rule
+id: commit-message-format
+source: git-reference.md§Commit-Message-Standards
+severity: error
+description: "Every commit subject must follow Conventional Commits, a #workitem reference, an ADF Studio auto-commit pattern, or a merge subject"
+applies-to: [pr-commit-messages]
+tool: regex
+args:
+  pattern: '^(#[0-9]+[[:space:]]*-?[[:space:]]+.+|(feat|fix|docs|style|refactor|test|chore|perf|build|ci)(\([^)]+\))?:[[:space:]]+.+|(Adding|Updating|Deleting|Renaming|Restore)[[:space:]]+[a-zA-Z]+:[[:space:]]+.+|Merged?[[:space:]]+PR[[:space:]]+[0-9]+.*|Revert[[:space:]].+|Merge[[:space:]]+(branch|pull[[:space:]]+request).+)$'
+message: |
+  Commit subject does not match an accepted form. Allowed:
+    - `#<workitem> - <description>`
+    - `<type>(<scope>?): <description>`  (feat|fix|docs|style|refactor|test|chore|perf|build|ci)
+    - `<Verb>ing <type>: <name>`         (ADF Studio auto-commit)
+    - `Adding|Deleting <type>: <name>`
+    - `Merged? PR <n>: ...`              (squash merge)
+```
 
 ### Examples
 
