@@ -6,6 +6,7 @@ import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket, ContractPricingLine } from '@models';
 import { expandSearchWithAliases } from '@shared/utils/commodity-aliases';
+import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
 
 type SortColumn = 'contractNumber' | 'date' | 'crop' | 'quantity' | 'specialType' | 'price' | 'deliveryStart' | 'status';
 type SortDirection = 'none' | 'asc' | 'desc';
@@ -36,6 +37,12 @@ export class ContractsTableComponent {
   public pricingLines = input<ContractPricingLine[]>([]);
   public customer = input.required<Customer>();
   public openContractId = input<number | null>(null);
+  /** True while the bulk /api/tickets fetch is in flight. Applied Tickets section
+   *  shows "Loading…" instead of "(0)" when this is the case. */
+  public isLoadingTickets = input(false);
+  /** True while /api/contracts/pricing-lines/customer/{id} is in flight. Pricing Lines
+   *  section shows "Loading…" instead of disappearing when this is the case. */
+  public isLoadingPricingLines = input(false);
 
   expandedRows = new Set<number>();
   expandedTicketSections = new Set<number>();
@@ -514,102 +521,18 @@ export class ContractsTableComponent {
   getDeliveryStats(contract: Contract): { deliveredBushels: number; remainingBushels: number; progressPercent: number; computable: boolean } {
     const cached = this._deliveryStatsCache.get(contract.id);
     if (cached) return cached;
-    const result = this._computeDeliveryStats(contract);
+    // Delegates to the single shared util so every page in the app (contracts-table,
+    // activity-summary, print report, insights, past-due filter) shows the same numbers
+    // with the same sub-0.1%-of-contract completion rule.
+    const s = getContractDeliveryStats(contract);
+    const result = {
+      deliveredBushels: s.delivered,
+      remainingBushels: s.remaining,
+      progressPercent: s.progressPercent,
+      computable: s.computable,
+    };
     this._deliveryStatsCache.set(contract.id, result);
     return result;
-  }
-
-  private _computeDeliveryStats(contract: Contract): { deliveredBushels: number; remainingBushels: number; progressPercent: number; computable: boolean } {
-    const appliedTickets = this.getAppliedTickets(contract);
-    // Strict match on commodityCode against GNP024.Commodity_Code only. If the code
-    // isn't in the view, bail out with computable=false so the UI shows dashes and
-    // the status logic can skip its "remaining <= 0 means filled" shortcut.
-    const lbsPerBushel = this._getLbsPerBushel(contract.commodityCode || '');
-
-    if (lbsPerBushel == null) {
-      return { deliveredBushels: 0, remainingBushels: 0, progressPercent: 0, computable: false };
-    }
-
-    // Calculate delivered pounds from tickets (appliedDockQuantity/AppliedNetQuantity is in pounds)
-    const deliveredLbs = appliedTickets.reduce((sum, t) => sum + (t.appliedDockQuantity || 0), 0);
-
-    // Convert contract quantity to pounds based on unit type
-    const contractLbs = this._convertContractQuantityToPounds(contract.quantity || 0, contract.unit, lbsPerBushel);
-
-    // Calculate delivered and remaining in the contract's original unit
-    const deliveredInContractUnits = this._convertPoundsToContractUnits(deliveredLbs, contract.unit, lbsPerBushel);
-    const remainingInContractUnits = Math.max(0, (contract.quantity || 0) - deliveredInContractUnits);
-    // Treat sub-bushel (or sub-0.1%-of-contract) remainders as fully delivered. The percentage
-    // floor scales the threshold for tonnage / CWT contracts where 1 bushel of pounds is a tiny
-    // fraction of contract size — without it, a 100-ton contract would stay "Active 99.97%"
-    // forever even after 99.9% of the load arrived.
-    const remainingLbs = Math.max(0, contractLbs - deliveredLbs);
-    const completionThresholdLbs = Math.max(lbsPerBushel, contractLbs * 0.001);
-    const isEffectivelyComplete = remainingLbs < completionThresholdLbs;
-    const progressPercent = isEffectivelyComplete
-      ? 100
-      : (contractLbs > 0 ? Math.min(100, (deliveredLbs / contractLbs) * 100) : 0);
-
-    // Always keep 2 decimal places of precision so the template can render to 2dp
-    // regardless of unit. The number pipe handles display formatting.
-    const round = (n: number) => Math.round(n * 100) / 100;
-
-    return {
-      deliveredBushels: round(deliveredInContractUnits),
-      remainingBushels: round(remainingInContractUnits),
-      progressPercent,
-      computable: true
-    };
-  }
-
-  private _convertContractQuantityToPounds(quantity: number, unit: string, lbsPerBushel: number): number {
-    const unitLower = (unit || '').toLowerCase().trim();
-
-    // Convert to pounds based on unit type
-    // Check for short tons (ST, ton, tons)
-    if (unitLower === 'st' || unitLower.includes('ton')) {
-      // Short tons to pounds (1 short ton = 2000 lbs)
-      return quantity * 2000;
-    } else if (unitLower.includes('bushel') || unitLower === 'bu') {
-      // Bushels to pounds (commodity-specific)
-      return quantity * lbsPerBushel;
-    } else if (unitLower.includes('pound') || unitLower.includes('lb')) {
-      // Already in pounds
-      return quantity;
-    } else if (unitLower === 'cwt' || unitLower.includes('hundredweight')) {
-      // Hundredweight to pounds (1 cwt = 100 lbs)
-      return quantity * 100;
-    }
-
-    // Default: assume bushels for grain contracts
-    return quantity * lbsPerBushel;
-  }
-
-  private _convertPoundsToContractUnits(pounds: number, unit: string, lbsPerBushel: number): number {
-    const unitLower = (unit || '').toLowerCase().trim();
-
-    // Convert from pounds back to contract units
-    // Check for short tons (ST, ton, tons)
-    if (unitLower === 'st' || unitLower.includes('ton')) {
-      // Pounds to short tons
-      return pounds / 2000;
-    } else if (unitLower.includes('bushel') || unitLower === 'bu') {
-      // Pounds to bushels (commodity-specific)
-      return pounds / lbsPerBushel;
-    } else if (unitLower.includes('pound') || unitLower.includes('lb')) {
-      // Already in pounds
-      return pounds;
-    } else if (unitLower === 'cwt' || unitLower.includes('hundredweight')) {
-      // Pounds to hundredweight
-      return pounds / 100;
-    }
-
-    // Default: assume bushels for grain contracts
-    return pounds / lbsPerBushel;
-  }
-
-  private _getLbsPerBushel(code: string): number | null {
-    return this._lookupLbsPerBushel(code);
   }
 
   /**
@@ -690,11 +613,9 @@ export class ContractsTableComponent {
     const startDate = new Date(contract.deliveryStart);
     const endDate = new Date(contract.deliveryEnd);
 
-    // If delivery is complete, show Filled (overrides everything else).
-    // Gated on `computable` so contracts with missing GNP024 conversions — where all
-    // three stats default to 0 — can't accidentally be marked Filled. In that case
-    // we fall through to pure date-based status (Active / To Arrive / Past Due).
-    if (stats.computable && (stats.progressPercent >= 100 || stats.remainingBushels <= 0)) {
+    // If delivery is complete per the shared util (sub-0.1%-of-contract residue rolled
+    // into Filled), show Filled and stop here.
+    if (stats.progressPercent >= 100 || stats.remainingBushels <= 0) {
       return 'Filled';
     }
 

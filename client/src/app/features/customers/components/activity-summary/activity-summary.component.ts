@@ -2,6 +2,7 @@ import { Component, input, effect, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, HarvestWindow } from '@models';
 import { AppStateService } from '@core/services/app-state.service';
+import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
 
 @Component({
   selector: 'app-activity-summary',
@@ -41,7 +42,7 @@ export class ActivitySummaryComponent {
       const _storedGrain = this.storedGrain();
       const _linked = this.linkedCustomers();
       const _historical = this.historicalContracts();
-      // commodityConversions feeds _computeDeliveryStats; tracking it ensures the summary
+      // commodityConversions feeds the spot-load / unapplied ticket bushel sums; tracking it ensures the summary
       // recalculates once GNP024 lookups become available after an initial empty load.
       const _conv = this.appState.commodityConversions();
       // Harvest windows drive _generateHarvestPaceSummary's year-over-year comparison.
@@ -152,14 +153,13 @@ export class ActivitySummaryComponent {
     // Contract totalValue from CTRM doesn't reflect discounts/adjustments — intentionally
     // omitted to avoid showing the producer a misleading "contracts worth $X" number.
 
-    // Sum Remaining bushels via ticket math (matches contracts-table's Customer Contract
-    // Summary bar). Skip contracts whose tickets show effectively complete (<1 bu remainder)
-    // so the narrative agrees with the page's 100%-Filled status.
+    // Sum Remaining via the shared delivery util — same numbers + same sub-0.1%
+    // completion rule the contracts table shows.
     let totalRemaining = 0;
     for (const c of openContracts) {
-      const stats = this._computeDeliveryStats(c);
-      if (!stats.computable || stats.isEffectivelyComplete) continue;
-      totalRemaining += stats.remainingBushels;
+      const stats = getContractDeliveryStats(c);
+      if (stats.isEffectivelyComplete) continue;
+      totalRemaining += stats.remaining;
     }
 
     parts.push(`On the contract side, they currently have ${openContracts.length} contract${openContracts.length !== 1 ? 's' : ''} totaling ${this._formatQuantity(totalVolume, 'bushels')}.`);
@@ -440,9 +440,8 @@ export class ActivitySummaryComponent {
     const now = new Date();
     const alerts: string[] = [];
 
-    // Overdue contracts — past delivery end date AND ticket math says still unshipped.
-    // Mirrors Insights' Unshipped Bushels Past Delivery Date logic so the count agrees
-    // with what shows there (and with the red-highlight rule on the contracts page).
+    // Overdue contracts — past delivery end date AND shared delivery stats say still
+    // unshipped. Same rule contracts-table + Insights use.
     const overdueContracts: Contract[] = [];
     let overdueRemainingBu = 0;
     for (const c of openOnly) {
@@ -450,17 +449,10 @@ export class ActivitySummaryComponent {
       const endDate = new Date(c.deliveryEnd);
       if (isNaN(endDate.getTime()) || endDate >= now) continue;
       if (!(c.status === 'Active' || c.status === 'Pending' || c.status === 'Overdue')) continue;
-      const stats = this._computeDeliveryStats(c);
-      // If ticket math says effectively complete, skip — contracts page calls it Filled.
-      if (stats.computable && stats.isEffectivelyComplete) continue;
+      const stats = getContractDeliveryStats(c);
+      if (stats.isEffectivelyComplete) continue;
       overdueContracts.push(c);
-      if (stats.computable) {
-        overdueRemainingBu += stats.remainingBushels;
-      } else if (c.openBalanceQuantity) {
-        // Fallback: commodity not in GNP024, can't compute via tickets — surface CTRM's
-        // openBalanceQuantity rather than dropping the alert quantity entirely.
-        overdueRemainingBu += c.openBalanceQuantity;
-      }
+      overdueRemainingBu += stats.remaining;
     }
 
     if (overdueContracts.length > 0) {
@@ -571,24 +563,8 @@ export class ActivitySummaryComponent {
     return Math.max(0, this._calendarDaysBetween(new Date(latestMs), new Date()));
   }
 
-  // Delivery stats — mirrors contracts-table._computeDeliveryStats so the activity-summary
-  // narrative reports the same Remaining number the contracts page shows (and Insights'
-  // Unshipped Bushels Past Delivery Date uses for its skip rule).
-
-  /** Tickets applied to a specific contract — string match preferred, FK fallback. */
-  private _getAppliedTickets(contract: Contract): Ticket[] {
-    return this.tickets().filter(t => {
-      if (!t.isApplied) return false;
-      if (t.ctrmContractNumber && contract.sourceContractId) {
-        return t.ctrmContractNumber.trim() === contract.sourceContractId.trim();
-      }
-      if (t.contractId && contract.id) {
-        return t.contractId === contract.id;
-      }
-      return false;
-    });
-  }
-
+  /** lbs-per-bushel from ODS GNP024, used by the unapplied/spot-load ticket sums.
+   *  Delivery stats no longer need it (they use openBalanceQuantity via the shared util). */
   private _lbsPerBushel(productCode: string | undefined | null): number | null {
     const code = (productCode || '').trim().toUpperCase();
     if (!code) return null;
@@ -599,48 +575,6 @@ export class ActivitySummaryComponent {
     }
     const lbs = this._conversionMap.get(code);
     return lbs && lbs > 0 ? lbs : null;
-  }
-
-  private _convertContractQuantityToPounds(quantity: number, unit: string, lbsPerBushel: number): number {
-    const u = (unit || '').toLowerCase().trim();
-    if (u === 'st' || u.includes('ton')) return quantity * 2000;
-    if (u.includes('bushel') || u === 'bu') return quantity * lbsPerBushel;
-    if (u.includes('pound') || u.includes('lb')) return quantity;
-    if (u === 'cwt' || u.includes('hundredweight')) return quantity * 100;
-    return quantity * lbsPerBushel;
-  }
-
-  private _convertPoundsToContractUnits(pounds: number, unit: string, lbsPerBushel: number): number {
-    const u = (unit || '').toLowerCase().trim();
-    if (u === 'st' || u.includes('ton')) return pounds / 2000;
-    if (u.includes('bushel') || u === 'bu') return pounds / lbsPerBushel;
-    if (u.includes('pound') || u.includes('lb')) return pounds;
-    if (u === 'cwt' || u.includes('hundredweight')) return pounds / 100;
-    return pounds / lbsPerBushel;
-  }
-
-  private _computeDeliveryStats(contract: Contract): {
-    deliveredBushels: number;
-    remainingBushels: number;
-    isEffectivelyComplete: boolean;
-    computable: boolean;
-  } {
-    const lbsPerBushel = this._lbsPerBushel(contract.commodityCode || '');
-    if (lbsPerBushel == null) {
-      return { deliveredBushels: 0, remainingBushels: 0, isEffectivelyComplete: false, computable: false };
-    }
-    const applied = this._getAppliedTickets(contract);
-    const deliveredLbs = applied.reduce((s, t) => s + (t.appliedDockQuantity || 0), 0);
-    const contractLbs = this._convertContractQuantityToPounds(contract.quantity || 0, contract.unit, lbsPerBushel);
-    const remainingLbs = Math.max(0, contractLbs - deliveredLbs);
-    const isEffectivelyComplete = remainingLbs < lbsPerBushel;
-    const round = (n: number) => Math.round(n * 100) / 100;
-    return {
-      deliveredBushels: round(this._convertPoundsToContractUnits(deliveredLbs, contract.unit, lbsPerBushel)),
-      remainingBushels: round(this._convertPoundsToContractUnits(remainingLbs, contract.unit, lbsPerBushel)),
-      isEffectivelyComplete,
-      computable: true,
-    };
   }
 
   // Helper utility methods

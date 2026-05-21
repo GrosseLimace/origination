@@ -106,6 +106,7 @@ export class HomeComponent {
   readonly isLoadingYieldData = signal(false);
   readonly isLoadingContracts = signal(false);
   readonly isLoadingTickets = signal(false);
+  readonly isLoadingPricingLines = signal(false);
   readonly isLoadingStoredGrain = signal(false);
   readonly isLoadingPlanting = signal(true);
 
@@ -591,6 +592,13 @@ export class HomeComponent {
     this._customerPricingCache.clear();
     this._customerPlantingCache.clear();
     this._linkedFetchDone.clear();
+    // Cancel any in-flight per-customer requests (pricing lines, contracts, tickets,
+    // grain, planting, notes, linked-producers) tied to the prior customer so they
+    // don't write into signals after the new TU has loaded. Also clears the loading
+    // flags they own so the UI doesn't get stuck showing "Loading…" for data that's
+    // no longer arriving.
+    this._cancelSelection$.next();
+    this.isLoadingPricingLines.set(false);
     // Reset loading flag so an explicit user selection is never blocked by a
     // background load that may still be in-flight.
     this._isLoading = false;
@@ -872,17 +880,20 @@ export class HomeComponent {
   private _loadCustomerPricingLines(scoularId?: string): void {
     if (!scoularId) {
       this.customerPricingLines.set([]);
+      this.isLoadingPricingLines.set(false);
       return;
     }
     const cached = this._customerPricingCache.get(scoularId);
     if (cached) {
       this.customerPricingLines.set(cached);
       this.appState.setPricingLines(cached);
+      this.isLoadingPricingLines.set(false);
       return;
     }
     // Cache miss — clear any prior producer's lines so the table doesn't show
-    // stale data during the fetch, then issue the API call.
+    // stale data during the fetch, raise the loading flag, then issue the API call.
     this.customerPricingLines.set([]);
+    this.isLoadingPricingLines.set(true);
     this.apiService.getPricingLinesByCustomer(scoularId)
       .pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef))
       .subscribe({
@@ -890,8 +901,12 @@ export class HomeComponent {
           this.customerPricingLines.set(lines);
           this.appState.setPricingLines(lines);
           this._customerPricingCache.set(scoularId, lines);
+          this.isLoadingPricingLines.set(false);
         },
-        error: () => this.customerPricingLines.set([])
+        error: () => {
+          this.customerPricingLines.set([]);
+          this.isLoadingPricingLines.set(false);
+        }
       });
   }
 

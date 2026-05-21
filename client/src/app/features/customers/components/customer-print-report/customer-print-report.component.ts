@@ -7,6 +7,7 @@ import { AppStateService } from '@core/services/app-state.service';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '@shared/components/dialog/dialog.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { Customer, Contract, ContractPricingLine, PlantingIntention, StoredGrain, Note, Commodity, DashboardPlantingEstimate, Ticket } from '@models';
+import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
 
 type PricingStatus = 'UNPRICED' | 'PARTIAL' | 'PRICED' | 'FLAT' | 'DEFERRED' | 'LOADING';
 
@@ -355,55 +356,13 @@ export class CustomerPrintReportComponent {
     return lbs && lbs > 0 ? lbs : null;
   }
 
-  private _getAppliedTickets(contract: Contract): Ticket[] {
-    return this.tickets().filter(t => {
-      if (!t.isApplied) return false;
-      if (t.ctrmContractNumber && contract.sourceContractId) {
-        return t.ctrmContractNumber.trim() === contract.sourceContractId.trim();
-      }
-      if (t.contractId && contract.id) {
-        return t.contractId === contract.id;
-      }
-      return false;
-    });
-  }
-
-  private _convertContractQtyToLbs(quantity: number, unit: string | undefined, lbsPerBushel: number): number {
-    const u = (unit || '').toLowerCase().trim();
-    if (u === 'st' || u.includes('ton')) return quantity * 2000;
-    if (u.includes('bushel') || u === 'bu') return quantity * lbsPerBushel;
-    if (u.includes('pound') || u.includes('lb')) return quantity;
-    if (u === 'cwt' || u.includes('hundredweight')) return quantity * 100;
-    return quantity * lbsPerBushel;
-  }
-
-  private _convertLbsToContractUnits(pounds: number, unit: string | undefined, lbsPerBushel: number): number {
-    const u = (unit || '').toLowerCase().trim();
-    if (u === 'st' || u.includes('ton')) return pounds / 2000;
-    if (u.includes('bushel') || u === 'bu') return pounds / lbsPerBushel;
-    if (u.includes('pound') || u.includes('lb')) return pounds;
-    if (u === 'cwt' || u.includes('hundredweight')) return pounds / 100;
-    return pounds / lbsPerBushel;
-  }
-
   getDeliveryStats(contract: Contract): { delivered: number; remaining: number; progressPercent: number } {
-    const lbsPerBushel = this._lookupLbsPerBushel(contract.commodityDescription || contract.commodityCode || '');
-    // Match the Contracts tab: when conversions are unavailable, return zeros
-    // rather than falling back to openBalanceQuantity (keeps the two views aligned).
-    if (lbsPerBushel == null) {
-      return { delivered: 0, remaining: 0, progressPercent: 0 };
-    }
-    const applied = this._getAppliedTickets(contract);
-    const deliveredLbs = applied.reduce((sum, t) => sum + (t.appliedDockQuantity || 0), 0);
-    const contractLbs = this._convertContractQtyToLbs(contract.quantity || 0, contract.unit, lbsPerBushel);
-    const deliveredInUnits = this._convertLbsToContractUnits(deliveredLbs, contract.unit, lbsPerBushel);
-    const remainingInUnits = Math.max(0, (contract.quantity || 0) - deliveredInUnits);
-    const progressPercent = contractLbs > 0 ? Math.min(100, (deliveredLbs / contractLbs) * 100) : 0;
-    const u = (contract.unit || '').toLowerCase().trim();
-    const isTons = u === 'st' || u.includes('ton');
-    const delivered = isTons ? Math.round(deliveredInUnits * 100) / 100 : Math.round(deliveredInUnits);
-    const remaining = isTons ? Math.round(remainingInUnits * 100) / 100 : Math.round(remainingInUnits);
-    return { delivered, remaining, progressPercent };
+    // Delegates to the shared util — same numbers contracts-table / activity-summary /
+    // insights show. Driven off CTRM's openBalanceQuantity (no ticket sum, no
+    // lbs↔bushel conversion). Tonnage / cwt / pound contracts work natively because
+    // openBalanceQuantity is already in the contract's unit.
+    const s = getContractDeliveryStats(contract);
+    return { delivered: s.delivered, remaining: s.remaining, progressPercent: s.progressPercent };
   }
 
   getDeliveredBu(ct: Contract): number {

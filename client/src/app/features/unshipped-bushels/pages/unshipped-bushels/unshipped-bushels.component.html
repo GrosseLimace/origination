@@ -223,7 +223,7 @@
                     </div>
                     <!-- Open balance -->
                     <div class="col-span-1 flex items-center justify-end gap-1">
-                      <span class="text-sm font-semibold text-amber-600 dark:text-amber-400">{{ formatBushels(contract.openBalanceQuantity ?? 0) }}</span>
+                      <span class="text-sm font-semibold text-amber-600 dark:text-amber-400">{{ formatBushels(contractOpenBalance(contract)) }}</span>
                       <!-- External link icon -->
                       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
                         class="text-gray-300 dark:text-gray-600 group-hover/row:text-green-500 transition-colors flex-shrink-0">

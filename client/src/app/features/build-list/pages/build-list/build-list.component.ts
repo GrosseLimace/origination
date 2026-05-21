@@ -21,7 +21,7 @@ import { CustomerMapComponent } from '@features/customers/components/map/custome
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import { HighlightPipe } from '@shared/pipes/highlight.pipe';
 import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
-import { isContractUnconfirmed, isContractOverdueWithUnshippedBu, buildAppliedLbsMaps, buildConversionMap } from '@shared/utils/contract-status';
+import { isContractUnconfirmed, isContractOverdueWithUnshippedBu, buildConversionMap } from '@shared/utils/contract-status';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
 import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
 
@@ -95,6 +95,25 @@ export class BuildListComponent {
           this.waitingForTickets.set(false);
           this._applyNlqFilter();
           this.isProcessing.set(false);
+        }
+      });
+    }
+  });
+
+  // Pick up tickets that arrived via home's bulk fetch AFTER our own getTickets timed
+  // out with []. Without this, a Build a List ticket query that ran during the empty
+  // window would be stuck on "0 producers" even though the real tickets are now in
+  // appState. If appState has more tickets than our local copy, hydrate and re-run
+  // any already-completed ticket-dependent query so the result picks up the new data.
+  private _appStateTicketsEffect = effect(() => {
+    const appTickets = this.appState.tickets();
+    if (appTickets.length > this.tickets().length) {
+      untracked(() => {
+        this.tickets.set(appTickets);
+        this._ticketsReady.set(true);
+        const q = this.queryText().trim();
+        if (q && this.hasGenerated() && this.nlqFilterService.queryInvolvesTickets(q)) {
+          this._applyNlqFilter();
         }
       });
     }
@@ -226,14 +245,10 @@ export class BuildListComponent {
       list = list.filter(c => getContracts(c).some(ct => ct.priceTypeCode === 'U' || ct.priceTypeCode === 'D'));
     }
     if (r.hasOverdueContracts) {
-      // "Has overdue bu contracts" — matches Insights UnshippedBushels rule:
-      // open contract past deliveryEnd with remaining bushels > 0 per ticket-applied math.
+      // "Has overdue bu contracts" — matches Insights UnshippedBushels rule. Reads
+      // contract.openBalanceQuantity via the shared delivery util; no ticket dependency.
       const today = new Date();
-      const { byCtrmNumber, byContractId } = buildAppliedLbsMaps(this.tickets());
-      const conversionMap = buildConversionMap(this.appState.commodityConversions());
-      list = list.filter(c => getContracts(c).some(ct =>
-        isContractOverdueWithUnshippedBu(ct, today, byCtrmNumber, byContractId, conversionMap)
-      ));
+      list = list.filter(c => getContracts(c).some(ct => isContractOverdueWithUnshippedBu(ct, today)));
     }
     if (r.noContractsAtAll) {
       list = list.filter(c => getContracts(c).length === 0);
@@ -1574,15 +1589,27 @@ export class BuildListComponent {
       }
     });
 
-    // Tickets load in background — processQuery waits for them only if the query needs tickets
+    // Tickets load in background — processQuery waits for them only if the query needs tickets.
+    // On timeout / error the inner `catchError` swallows to [], but we DO NOT clobber the
+    // global appState.tickets signal with the empty array. Home's separate bulk fetch may
+    // still be in flight; overwriting with [] would silently zero out every ticket-dependent
+    // view in the app (home customer list, Insights, Activity Summary, contracts-table).
+    // Only write through to appState when the response actually carried tickets.
     this.apiService.getTickets(tuParam).pipe(
       timeout(60000),
       catchError(() => of([] as Ticket[])),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe(tickets => {
       if (requestId !== this._loadRequestId) return;
-      this.tickets.set(tickets);
-      this.appState.setTickets(tickets);
+      if (tickets.length > 0) {
+        this.tickets.set(tickets);
+        this.appState.setTickets(tickets);
+      } else if (this.appState.tickets().length > 0) {
+        // Timeout fired locally but the global signal already has data (e.g. home's
+        // bulk landed first). Hydrate local from appState so the build-list filter sees
+        // the real tickets instead of [].
+        this.tickets.set(this.appState.tickets());
+      }
       this._ticketsReady.set(true);
     });
   }
