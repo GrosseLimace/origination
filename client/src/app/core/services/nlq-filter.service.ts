@@ -1131,14 +1131,30 @@ export class NlqFilterService {
       if (arr) arr.push(t); else ticketsByCustomer.set(t.customerCode, [t]);
     }
 
-    // "contracts but no deliveries", "contracted but not delivered", "not yet delivered"
+    // "contracts but no deliveries", "contracted but not delivered", "not yet delivered".
+    // Two parallel checks — a producer qualifies only when BOTH are clean:
+    //   (a) no applied tickets matching customerCode (the ticket-level proof)
+    //   (b) no contract showing delivery progress per CTRM's openBalanceQuantity aggregate
+    //       (a contract with quantity 50,000 and openBalanceQuantity 30,000 has had 20,000
+    //       delivered — even if those tickets aren't yet loaded in the UI's bulk fetch).
+    // Without (b) the filter falsely flagged producers with Filled contracts whenever the
+    // bulk tickets call was slow or empty, because `hasTickets` defaulted to false.
     if ((lowerQuery.includes('contract') && lowerQuery.includes('no deliver')) ||
         lowerQuery.includes('contracted but not delivered') ||
         lowerQuery.includes('not yet delivered')) {
       result = result.filter(c => {
-        const hasContracts = (contractsByCustomer.get(c.scoularId!) || []).length > 0;
+        const customerContracts = contractsByCustomer.get(c.scoularId!) || [];
+        if (customerContracts.length === 0) return false;
         const hasTickets = (ticketsByCustomer.get(c.scoularId!) || []).length > 0;
-        return hasContracts && !hasTickets;
+        if (hasTickets) return false;
+        // Any contract where CTRM says delivery has started (openBalanceQuantity < quantity)
+        // disqualifies the producer from "no deliveries".
+        const hasDeliveryProgress = customerContracts.some(ct => {
+          const qty = ct.quantity ?? 0;
+          const open = ct.openBalanceQuantity ?? qty;  // null open → treat as fully undelivered
+          return open < qty;
+        });
+        return !hasDeliveryProgress;
       });
     }
 
@@ -2216,11 +2232,23 @@ export class NlqFilterService {
     }
 
     // --- Has contracts (open = no closedDate, same as home page) ---
-    if ((lowerQuery.includes('with active contract') || lowerQuery.includes('active contract') ||
-         lowerQuery.includes('with contract') || lowerQuery.includes('have contract') ||
-         lowerQuery.includes('has contract')) &&
+    const isActiveContractQuery = lowerQuery.includes('active contract');
+    const isGenericContractQuery =
+      lowerQuery.includes('with contract') ||
+      lowerQuery.includes('have contract') ||
+      lowerQuery.includes('has contract');
+    if ((isActiveContractQuery || isGenericContractQuery) &&
         !lowerQuery.includes('no active') && !lowerQuery.includes('no contract') && !lowerQuery.includes('without contract')) {
-      result = result.filter(c => getOpenContracts(c).length > 0);
+      if (isActiveContractQuery) {
+        // "active contract" must literally mean status = Active — anything else
+        // (Pending, Overdue, Fulfilled, Cancelled) doesn't qualify even though the
+        // contract may still be open.
+        result = result.filter(c => getOpenContracts(c).some(ct => ct.status === 'Active'));
+      } else {
+        // "with contract / have contract / has contract" — any open contract regardless
+        // of status.
+        result = result.filter(c => getOpenContracts(c).length > 0);
+      }
     }
 
     // --- Unsigned contracts (within active) ---
