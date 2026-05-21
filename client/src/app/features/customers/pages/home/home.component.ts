@@ -106,7 +106,19 @@ export class HomeComponent {
   readonly isLoadingYieldData = signal(false);
   readonly isLoadingContracts = signal(false);
   readonly isLoadingTickets = signal(false);
+  /** True while the per-customer tickets fetch is in flight AFTER bulk has already
+   *  populated the in-memory ticket set. Used by the Applied Tickets section to show
+   *  a subtle "more may still be loading" hint instead of the full Loading… state,
+   *  since whatever's currently displayed is real (from bulk) and just might grow if
+   *  the per-customer call surfaces cross-TU / cross-customer tickets. */
+  readonly isBackfillingTickets = signal(false);
   readonly isLoadingPricingLines = signal(false);
+  /** Set true once the bulk /api/tickets fetch returns (any result, including empty)
+   *  for the current TU. Used by _loadCustomerContractsAndTickets to skip the Loading
+   *  state on Applied Tickets when bulk has already populated the in-memory cache —
+   *  the per-customer call still runs to backfill cross-TU/cross-customer cases,
+   *  but it does so silently in the background instead of blocking the UI. */
+  private _bulkTicketsArrived = false;
   readonly isLoadingStoredGrain = signal(false);
   readonly isLoadingPlanting = signal(true);
 
@@ -334,8 +346,17 @@ export class HomeComponent {
           if (!have.has(t.id)) merged.push(t);
         }
         this.appState.setTickets(merged);
+        // Bulk has landed — any Applied Tickets sections that are gated on
+        // isLoadingTickets can stop spinning; the per-customer fetch (if still in flight)
+        // will silently backfill cross-TU/cross-customer tickets into the same signal.
+        this._bulkTicketsArrived = true;
+        this.isLoadingTickets.set(false);
       },
-      error: () => {}
+      error: () => {
+        // Treat error the same as a return — don't keep the UI stuck on Loading.
+        this._bulkTicketsArrived = true;
+        this.isLoadingTickets.set(false);
+      }
     });
 
     this.apiService.getPlantingIntentions(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -599,6 +620,10 @@ export class HomeComponent {
     // no longer arriving.
     this._cancelSelection$.next();
     this.isLoadingPricingLines.set(false);
+    this.isBackfillingTickets.set(false);
+    // New TU = new bulk fetch in flight — until it lands, customer clicks should
+    // gate Applied Tickets on the bulk's loading state.
+    this._bulkTicketsArrived = false;
     // Reset loading flag so an explicit user selection is never blocked by a
     // background load that may still be in-flight.
     this._isLoading = false;
@@ -672,7 +697,10 @@ export class HomeComponent {
     this.selectedCustomer.set(customer);
     this.appState.selectCustomer(customer);
     this.isLoadingContracts.set(true);
-    this.isLoadingTickets.set(true);
+    // Only show Loading on Applied Tickets if the bulk fetch hasn't returned yet.
+    // Once bulk is in memory, the per-customer fetch runs silently in the background
+    // — its job is to backfill cross-TU/cross-customer tickets the bulk missed.
+    this.isLoadingTickets.set(!this._bulkTicketsArrived);
     this.isLoadingStoredGrain.set(true);
     this._loadCustomerContractsAndTickets(customer.id, customer.scoularId);
     this._loadCustomerData(customer.id);
@@ -924,6 +952,7 @@ export class HomeComponent {
     if (this._customerLoadDone.has(customerId)) {
       this.isLoadingContracts.set(false);
       this.isLoadingTickets.set(false);
+      this.isBackfillingTickets.set(false);
       this.isLoadingStoredGrain.set(false);
       this._loadCustomerData(customerId);
       return;
@@ -955,6 +984,11 @@ export class HomeComponent {
       error: () => { this.isLoadingContracts.set(false); }
     });
 
+    // Per-customer ticket fetch — catches cross-TU / cross-customer tickets the bulk
+    // missed. When bulk has already returned, this runs as a silent background backfill
+    // (isBackfillingTickets toggles a subtle "more may be loading" hint in the UI);
+    // otherwise it doubles as the main load (isLoadingTickets owns the full Loading state).
+    this.isBackfillingTickets.set(true);
     this.apiService.getTicketsByCustomer(customerId, scoularId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (tickets) => {
         const existing = this.tickets();
@@ -969,6 +1003,7 @@ export class HomeComponent {
         }
         this.appState.setTickets(appMerged);
         this.isLoadingTickets.set(false);
+        this.isBackfillingTickets.set(false);
         this._loadCustomerData(customerId);
 
         const customer = this.customers().find(c => c.id === customerId) || this.selectedCustomer();
@@ -976,7 +1011,10 @@ export class HomeComponent {
         ticketsDone = true;
         markIfAllDone();
       },
-      error: () => { this.isLoadingTickets.set(false); }
+      error: () => {
+        this.isLoadingTickets.set(false);
+        this.isBackfillingTickets.set(false);
+      }
     });
 
     this.apiService.getStoredGrainByCustomer(customerId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({

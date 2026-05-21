@@ -61,17 +61,19 @@ public class Ticket
     // Classification — maps to GNP014.BCPFXT via ODS TicketType column
     public string? TicketType { get; set; } // P=Purchase, S=Sale, U=Unload, L=Loadout, B=Booking
 
-    // A ticket is "unapplied" only when its contract prefix (first char of CtrmContractNumber)
-    // is U (Unload) or L (Loadout) — these represent tickets in limbo that haven't been applied
-    // to a real purchase/sale/storage contract yet. Everything else (P=Purchase, S=Sale,
-    // C=Customer Storage, B=Booking, or no contract) counts as applied. C-prefix tickets are
-    // customer storage and belong on storage reports, not unapplied reports.
+    // A ticket is "unapplied" when its contract prefix (first char of CtrmContractNumber)
+    // is U (Unload), L (Loadout), or C (Customer Storage). U/L mean no contract is assigned
+    // yet. C means the bushels were applied to a customer-storage receipt — those grains
+    // are still on-farm-side inventory and the merchandiser hasn't priced/booked them to
+    // a real Purchase contract, so we surface them in the Unapplied list (alongside their
+    // parallel appearance on the Storage view).
+    // P (Purchase), S (Sale), B (Booking), and no-contract tickets count as applied.
     // CtrmContractNumber is built from ODS BCPFXC (prefix) + BCNTNO (number).
     // [JsonInclude] required because System.Text.Json skips getter-only properties by default.
     [System.Text.Json.Serialization.JsonInclude]
     public bool IsApplied =>
         !(CtrmContractNumber is { Length: > 0 } &&
-          (CtrmContractNumber[0] == 'U' || CtrmContractNumber[0] == 'L'));
+          (CtrmContractNumber[0] == 'U' || CtrmContractNumber[0] == 'L' || CtrmContractNumber[0] == 'C'));
 
     // Status
     public string? TicketStatusDescription { get; set; } // e.g. "Unload", "Final Settled", "P/A"

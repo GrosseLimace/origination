@@ -1264,20 +1264,43 @@ public class SqlDataService : IDataService
         // on a 2M-row table. Each branch is an INNER JOIN to STRING_SPLIT on an indexed column
         // (ContractNumber for applied, CustomerCode for unapplied), so the optimizer picks index
         // seeks instead of scans. The cutoff is parameterized once and applied symmetrically.
+        //
+        // Column list is explicit (not SELECT *) — names every column the EF Ticket entity maps,
+        // matching OriginationDbContext.OnModelCreating for Ticket. Saves the view's row-width
+        // bloat from columns we don't read. Adding a new mapped column to Ticket REQUIRES adding
+        // it here too — EF materialization will fail if a mapped column is missing from the result.
+        //
+        // Excludes BSTATS='CSL' (Consolidated) tickets — those have already been merged INTO
+        // another ticket and showing them double-counts the bushels. PRG (Purged) doesn't reach
+        // this view at all, so no filter needed. NULL-status rows kept defensively.
         return await _context.Tickets
             .FromSqlInterpolated($@"
-                SELECT t.* FROM base.vw_CurrentTickets t
+                SELECT t.TicketId, t.ContractId, t.CustomerId, t.CustomerCode, t.ProductCode,
+                       t.TicketPrefix, t.TicketNumber, t.TicketSuffix, t.ShipmentTicketNumber, t.ContractNumber,
+                       t.OrganizationCode, t.ElevatorCode, t.UnloadOrganizationCode,
+                       t.TicketBlDate, t.FinalSettledDate,
+                       t.UnloadQuantity, t.LoadoutQuantity, t.AppliedNetQuantity,
+                       t.TicketType, t.TicketStatusDescription, t.IsActive, t.GradeCode
+                FROM base.vw_CurrentTickets t
                 INNER JOIN STRING_SPLIT({contractsCsv}, ',') x ON t.ContractNumber = x.value
                 WHERE t.IsActive = 1 AND t.TicketType IN ('U','P')
+                  AND (t.TicketStatusDescription IS NULL OR t.TicketStatusDescription <> 'Consolidated')
                   AND ({cutoff} = '' OR (t.TicketBlDate IS NOT NULL AND t.TicketBlDate >= {cutoff}))
 
                 UNION
 
-                SELECT t.* FROM base.vw_CurrentTickets t
+                SELECT t.TicketId, t.ContractId, t.CustomerId, t.CustomerCode, t.ProductCode,
+                       t.TicketPrefix, t.TicketNumber, t.TicketSuffix, t.ShipmentTicketNumber, t.ContractNumber,
+                       t.OrganizationCode, t.ElevatorCode, t.UnloadOrganizationCode,
+                       t.TicketBlDate, t.FinalSettledDate,
+                       t.UnloadQuantity, t.LoadoutQuantity, t.AppliedNetQuantity,
+                       t.TicketType, t.TicketStatusDescription, t.IsActive, t.GradeCode
+                FROM base.vw_CurrentTickets t
                 INNER JOIN STRING_SPLIT({codesCsv}, ',') c ON t.CustomerCode = c.value
                 WHERE t.IsActive = 1 AND t.TicketType IN ('U','P')
+                  AND (t.TicketStatusDescription IS NULL OR t.TicketStatusDescription <> 'Consolidated')
                   AND t.ContractNumber IS NOT NULL
-                  AND (LEFT(t.ContractNumber, 1) = 'U' OR LEFT(t.ContractNumber, 1) = 'L')
+                  AND LEFT(t.ContractNumber, 1) IN ('U','L','C')
                   AND ({cutoff} = '' OR (t.TicketBlDate IS NOT NULL AND t.TicketBlDate >= {cutoff}))")
             .AsNoTracking()
             .OrderByDescending(t => t.Date)
