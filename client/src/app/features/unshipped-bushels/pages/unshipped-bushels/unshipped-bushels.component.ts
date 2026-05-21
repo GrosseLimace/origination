@@ -9,6 +9,7 @@ import { ToastService } from '@core/services/toast.service';
 import { Contract, Customer } from '@models';
 import { CardComponent } from '@shared/components/card/card.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
+import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
 
 export interface CustomerContractGroup {
   customer: Customer | null;
@@ -138,8 +139,11 @@ export class UnshippedBushelsComponent implements OnInit {
   }
 
   private _processContracts(contracts: Contract[], customers: Customer[]): void {
-    // Filter to contracts with open balance
-    const unshipped = contracts.filter(c => (c.openBalanceQuantity ?? 0) > 0);
+    // Filter to contracts still unshipped per the shared delivery util (sub-0.1%-of-contract
+    // residue counts as filled, so a contract at 99.97% delivered doesn't appear here even
+    // though openBalanceQuantity is technically > 0). Same rule contracts-table / activity-
+    // summary / Insights apply.
+    const unshipped = contracts.filter(c => !getContractDeliveryStats(c).isEffectivelyComplete);
 
     // Build a map of ctrmCustomerId → Customer
     const customerMap = new Map<string, Customer>();
@@ -164,7 +168,7 @@ export class UnshippedBushelsComponent implements OnInit {
       }
       const group = groupMap.get(key)!;
       group.contracts.push(contract);
-      group.totalOpenBushels += contract.openBalanceQuantity ?? 0;
+      group.totalOpenBushels += getContractDeliveryStats(contract).remaining;
     });
 
     // Sort by totalOpenBushels descending
@@ -205,6 +209,13 @@ export class UnshippedBushelsComponent implements OnInit {
 
   formatBushels(value: number): string {
     return value.toLocaleString('en-US');
+  }
+
+  /** Per-row open-balance display: routes through the shared delivery util so a contract
+   *  with sub-0.1% residue shows 0 here (matches the filter that already drops it from
+   *  the list). Returns the rounded remaining in the contract's native unit. */
+  contractOpenBalance(contract: Contract): number {
+    return getContractDeliveryStats(contract).remaining;
   }
 
   formatDate(date: Date | string | undefined): string {

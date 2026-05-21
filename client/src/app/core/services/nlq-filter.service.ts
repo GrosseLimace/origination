@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Customer, Contract, Ticket, Note, PlantingIntention, StoredGrain, RefinementFilters, Commodity, CommodityConversion } from '@models';
-import { isContractUnconfirmed, isContractOverdueWithUnshippedBu, buildAppliedLbsMaps, buildConversionMap } from '@shared/utils/contract-status';
+import { isContractUnconfirmed, isContractOverdueWithUnshippedBu, buildConversionMap } from '@shared/utils/contract-status';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
 
 export interface NlqFilterContext {
@@ -423,16 +423,12 @@ export class NlqFilterService {
         ct.ctrmCustomerId === c.scoularId && isContractUnconfirmed(ct)
       ));
     }
-    if (filters.hasOverdueContracts && dimensionContext?.tickets && dimensionContext?.commodityConversions) {
-      // "Has overdue bu contracts" — matches Insights UnshippedBushels rule. Requires
-      // tickets + commodityConversions to do the applied-lbs / remaining-bushel math; if
-      // they weren't passed, the filter is skipped (saved lists without context get no-op
-      // rather than wrong results).
+    if (filters.hasOverdueContracts) {
+      // "Has overdue bu contracts" — matches Insights UnshippedBushels rule. Reads
+      // contract.openBalanceQuantity via the shared delivery util; no ticket dependency.
       const today = new Date();
-      const { byCtrmNumber, byContractId } = buildAppliedLbsMaps(dimensionContext.tickets);
-      const conversionMap = buildConversionMap(dimensionContext.commodityConversions);
       list = list.filter(c => contracts.some(ct =>
-        ct.ctrmCustomerId === c.scoularId && isContractOverdueWithUnshippedBu(ct, today, byCtrmNumber, byContractId, conversionMap)
+        ct.ctrmCustomerId === c.scoularId && isContractOverdueWithUnshippedBu(ct, today)
       ));
     }
     if (filters.downHarvestPace) {

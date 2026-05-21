@@ -155,6 +155,34 @@ export class CustomerListComponent {
       this._rebuildLastContactCache();
     });
 
+    // Re-run the active saved list's NLQ when tickets / stored grain / planting
+    // intentions arrive AFTER the first run. Without this, a saved list whose query
+    // needs tickets (e.g. "Producers with unapplied tickets") runs once when those
+    // signals are empty, returns 0 from the live NLQ, and stays stuck on the saved
+    // includedCustomerIds (typically 4 from the last save). When the bulk fetch
+    // finishes the count should update — this effect makes that happen.
+    effect(() => {
+      const tickets = this.appStateService.tickets();
+      const storedGrain = this.appStateService.storedGrain();
+      const planting = this.appStateService.plantingIntentions();
+      untracked(() => {
+        const listId = this.selectedListId();
+        if (!listId || listId === 'all') return;
+        const savedList = this.savedLists().find(l => String(l.id) === listId);
+        if (!savedList || !savedList.query) return;
+        const q = savedList.query;
+        // Only re-run if the data that just arrived is what this query depends on.
+        const needsTickets  = this.nlqFilterService.queryInvolvesTickets(q)  && tickets.length  > 0;
+        const needsStorage  = this.nlqFilterService.queryInvolvesStorage(q)  && storedGrain.length > 0;
+        const needsPlanting = this.nlqFilterService.queryInvolvesPlanting(q) && planting.length    > 0;
+        if (!(needsTickets || needsStorage || needsPlanting)) return;
+        // Re-execute the live filter against the now-complete data and persist the
+        // refreshed customerIds back to appState.
+        this._executeNlq(savedList);
+        this.applyFilters();
+      });
+    });
+
     // React to savedLists changes — validate selectedListId and reapply filters.
     // untracked prevents applyFilters() from adding its own signal reads as
     // effect dependencies, which would cause this effect to re-run on every keystroke.

@@ -308,24 +308,17 @@
                       <!-- Delivery Progress at top -->
                       <div class="mb-8 w-full">
                         <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Delivery Progress</p>
-                        @if (getDeliveryStats(contract).computable) {
-                          <!-- Custom progress bar: green for delivered, gray for remaining -->
-                          <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden w-full">
-                            <div
-                              class="h-full bg-green-500 rounded-full transition-all"
-                              [style.width.%]="getDeliveryStats(contract).progressPercent"
-                            ></div>
-                          </div>
-                          <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-2">
-                            <span>{{ getDeliveryStats(contract).deliveredBushels | number:'1.0-0' }} {{ contract.unit }} delivered</span>
-                            <span>{{ getDeliveryStats(contract).remainingBushels | number:'1.0-0' }} {{ contract.unit }} remaining</span>
-                          </div>
-                        } @else {
-                          <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden w-full"></div>
-                          <div class="text-xs text-gray-500 dark:text-gray-400 mt-2 italic">
-                            Commodity <span class="font-mono">{{ contract.commodityCode || '—' }}</span> is not in the lbs-per-bushel conversion view (GNP024) — delivery numbers can't be computed.
-                          </div>
-                        }
+                        <!-- Custom progress bar: green for delivered, gray for remaining -->
+                        <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden w-full">
+                          <div
+                            class="h-full bg-green-500 rounded-full transition-all"
+                            [style.width.%]="getDeliveryStats(contract).progressPercent"
+                          ></div>
+                        </div>
+                        <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-2">
+                          <span>{{ getDeliveryStats(contract).deliveredBushels | number:'1.0-0' }} {{ contract.unit }} delivered</span>
+                          <span>{{ getDeliveryStats(contract).remainingBushels | number:'1.0-0' }} {{ contract.unit }} remaining</span>
+                        </div>
                       </div>
 
                       <!-- Three column layout: Contract identity → Pricing → Fulfillment -->
@@ -413,39 +406,21 @@
                         <div class="space-y-5">
                           <div class="flex flex-col">
                             <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Delivered</span>
-                            <span class="font-medium text-gray-900 dark:text-gray-100">
-                              @if (getDeliveryStats(contract).computable) {
-                                {{ getDeliveryStats(contract).deliveredBushels | number:'1.2-2' }} {{ contract.unit }}
-                              } @else {
-                                —
-                              }
-                            </span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ getDeliveryStats(contract).deliveredBushels | number:'1.2-2' }} {{ contract.unit }}</span>
                           </div>
                           <div class="flex flex-col">
                             <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Remaining Quantity</span>
-                            <span class="font-medium text-gray-900 dark:text-gray-100">
-                              @if (getDeliveryStats(contract).computable) {
-                                {{ getDeliveryStats(contract).remainingBushels | number:'1.2-2' }} {{ contract.unit }}
-                              } @else {
-                                —
-                              }
-                            </span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ getDeliveryStats(contract).remainingBushels | number:'1.2-2' }} {{ contract.unit }}</span>
                           </div>
                           <div class="flex flex-col">
                             <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Delivery Progress</span>
-                            <span class="font-medium text-gray-900 dark:text-gray-100">
-                              @if (getDeliveryStats(contract).computable) {
-                                {{ getDeliveryStats(contract).progressPercent | number:'1.0-0' }}%
-                              } @else {
-                                —
-                              }
-                            </span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ getDeliveryStats(contract).progressPercent | number:'1.0-0' }}%</span>
                           </div>
                         </div>
                       </div>
 
                       <!-- Pricing Lines Section -->
-                      @if (getPricingLinesForContract(contract).length > 0) {
+                      @if (isLoadingPricingLines() || getPricingLinesForContract(contract).length > 0) {
                         <div class="mt-8 border-t border-gray-200 dark:border-gray-700">
                           <button
                             class="w-full flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors py-3 px-2 -mx-2 rounded-md cursor-pointer"
@@ -462,10 +437,18 @@
                                 </svg>
                               }
                             </span>
-                            Pricing Lines ({{ getPricingLinesForContract(contract).length }})
+                            Pricing Lines
+                            @if (isLoadingPricingLines()) {
+                              <span class="text-gray-400 dark:text-gray-500 italic text-sm">(Loading…)</span>
+                            } @else {
+                              ({{ getPricingLinesForContract(contract).length }})
+                            }
                           </button>
 
                           @if (expandedPricingSections.has(contract.id)) {
+                            @if (isLoadingPricingLines() && getPricingLinesForContract(contract).length === 0) {
+                              <p class="text-gray-400 dark:text-gray-500 text-sm italic px-2 pb-2">Loading pricing lines…</p>
+                            } @else {
                             <div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
                               <table class="w-full text-sm">
                                 <thead class="bg-gray-50 dark:bg-gray-800/60">
@@ -502,6 +485,7 @@
                                 </tbody>
                               </table>
                             </div>
+                            }
                           }
                         </div>
                       }
@@ -523,7 +507,12 @@
                               </svg>
                             }
                           </span>
-                          Applied Tickets ({{ getAppliedTickets(contract).length }})
+                          Applied Tickets
+                          @if (isLoadingTickets()) {
+                            <span class="text-gray-400 dark:text-gray-500 italic text-sm">(Loading…)</span>
+                          } @else {
+                            ({{ getAppliedTickets(contract).length }})
+                          }
                         </button>
 
                         @if (expandedTicketSections.has(contract.id)) {
@@ -570,6 +559,8 @@
                                 </div>
                               </div>
                             }
+                          } @else if (isLoadingTickets()) {
+                            <p class="text-gray-400 dark:text-gray-500 text-sm italic">Loading applied tickets…</p>
                           } @else {
                             <p class="text-gray-500 dark:text-gray-400 text-sm">No tickets applied to this contract yet.</p>
                           }

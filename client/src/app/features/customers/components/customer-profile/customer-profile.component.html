@@ -275,7 +275,7 @@
         <div class="pb-8">
           @switch (activeTab()) {
             @case ('contracts') {
-              <app-contracts-table [contracts]="contracts()" [tickets]="tickets()" [pricingLines]="pricingLines()" [customer]="customer()" [openContractId]="openContractId()" [isLoading]="isLoadingContracts()"></app-contracts-table>
+              <app-contracts-table [contracts]="contracts()" [tickets]="tickets()" [pricingLines]="pricingLines()" [customer]="customer()" [openContractId]="openContractId()" [isLoading]="isLoadingContracts()" [isLoadingTickets]="isLoadingTickets()" [isLoadingPricingLines]="isLoadingPricingLines()"></app-contracts-table>
             }
             @case ('tickets') {
               <app-tickets-table [tickets]="tickets()" [contracts]="contracts()" [customer]="customer()" [isLoading]="isLoadingTickets()" [openCrop]="openTicketCrop()"></app-tickets-table>
