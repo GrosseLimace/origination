@@ -1277,7 +1277,7 @@ public class SqlDataService : IDataService
                 INNER JOIN STRING_SPLIT({codesCsv}, ',') c ON t.CustomerCode = c.value
                 WHERE t.IsActive = 1 AND t.TicketType IN ('U','P')
                   AND t.ContractNumber IS NOT NULL
-                  AND (LEFT(t.ContractNumber, 1) = 'U' OR LEFT(t.ContractNumber, 1) = 'L')
+                  AND (LEFT(t.ContractNumber, 1) = 'U' OR LEFT(t.ContractNumber, 1) = 'L' OR LEFT(t.ContractNumber, 1) = 'C')
                   AND ({cutoff} = '' OR (t.TicketBlDate IS NOT NULL AND t.TicketBlDate >= {cutoff}))")
             .AsNoTracking()
             .OrderByDescending(t => t.Date)
