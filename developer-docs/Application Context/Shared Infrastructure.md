@@ -101,14 +101,15 @@ Posts click-event telemetry to `/api/usage-dashboard/click-event`. Methods like 
 
 | `DbSet` | Backing view | Schema |
 | --- | --- | --- |
-| `Customers` | `vw_CurrentCustomers` | `originations` |
-| `CustomerTradeUnits` | `vw_CustomerTradeUnits` | `originations` (no key — view only) |
+| `CustomerTradeUnits` (`CustomerTradeUnitView`) | `vw_CustomerTradeUnits` | `originations` (no key — view only; drives the dbo.Customer / dbo.CustomerTradeUnit sync) |
 | `Contracts` | `vw_CurrentContracts` | `base` |
 | `Tickets` | `vw_CurrentTickets` | `base` |
 | `TicketQualities` | `vw_TicketQuality` | `base` |
 | `ContractPricingLines` | `vw_ContractPricing` | `base` |
 | `Elevators` | `vw_GNP026` | `ctrm` |
 | `CommodityConversions` | `vw_GNP024` | `ctrm` |
+
+**Customer data is no longer in `OriginationDbContext`.** The previous `Customers` DbSet on `vw_CurrentCustomers` was removed when `dbo.CustomerSnapshot` was dropped (migration `20260513185441`). Customers and their TU mappings are now app-owned (`dbo.Customer` + `dbo.CustomerTradeUnit` on `ApplicationDbContext`), populated by `CustomerSyncBackgroundService`. The remaining ODS-side `vw_CustomerTradeUnits` view is still consulted for per-request access checks in `UserEntitlementService.ValidateCustomerAccessAsync`.
 
 **Storage data** (`StoredGrain`) is **not** a DbSet — it's queried as raw SQL against `ctrm.vw_GNTA39D1` from `SqlDataService.GetStoredGrainAsync` (see Customer Home Page doc).
 
@@ -122,15 +123,17 @@ All app-owned tables, all in `dbo`:
 
 | Table | Purpose |
 | --- | --- |
-| `Notes` | Producer notes (with pin, soft-delete) |
-| `ProducerDetails` | Enrichment fields (acres, bin capacity, primary contact, linked-producer ids) |
+| `Customer` | App-owned customer master (one row per customer, synced from ODS `vw_CurrentCustomers` by `CustomerSyncBackgroundService`). Replaces the old read-from-ODS pattern + `CustomerSnapshot` cache. |
+| `CustomerTradeUnit` | Customer ↔ trade-unit junction (multi-TU producers get multiple rows). Synced alongside `Customer`. |
+| `CustomerLink` | Linked-producer edges (formerly `ProducerDetails.LinkedProducerIds` CSV; now a proper relationship table). |
+| `CustomerCommodity` | Per-customer commodity list (formerly `ProducerDetails.Commodities` CSV). |
+| `Notes` | Producer notes (with pin, soft-delete). Joined to `Customer` via FK; `CustomerName`/`CustomerCode` resolved on read. |
+| `ProducerDetails` | Enrichment fields (acres, bin capacity, primary contact, etc. — but linked producers / commodities are now separate tables). |
 | `ProducerPlantingIntentions` | Per-producer planting intentions (note: table named "Producer..." but EF model is `PlantingIntention`) |
-| `TradeUnits`, `TradeUnitGroups`, `GroupTradeUnits` | Org structure |
 | `Commodities` | Crop catalog |
 | `DashboardPlantingEstimates`, `DashboardMarketShares`, `DashboardActualHarvests` | Planting Intentions Dashboard persistence |
 | `SavedLists` | User-saved Build-a-List queries |
 | `ESignEnrollment` | eSign integration data |
-| `CustomerSnapshot` | Cached customer→trade-unit mapping (used for cross-DB lookups since Azure SQL has no cross-DB joins) |
 | `UserPreferences` | Per-user UI preferences |
 | `BidSheetLocations`, `BidSheetLocationBids`, `BidSheetLocationOrders`, `BidSheetPreferences` | Bid Sheet feature |
 | `ElevatorCache` | Cached elevator data |

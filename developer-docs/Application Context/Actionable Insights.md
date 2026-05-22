@@ -39,7 +39,7 @@ A **"Refresh" button** with a "Updated {time}" label triggers `DataPreloadServic
 | --- | --- |
 | **UnconfirmedContracts** | Contract where `customerConfirmStatus !== 'Confirmed'` AND `status NOT IN ('Fulfilled', 'Cancelled')`. |
 | **SpotLoads** | Ticket where `isApplied === false` AND no active contract for the **same commodity** covers the ticket's delivery date within its window. Commodity match is essential — corn contracts don't cover wheat tickets. Sourced from `todaysTickets` (last 30 days). |
-| **UnshippedBushels** | Contract where `deliveryEnd < today` AND `status IN ('Active', 'Overdue')` AND remaining quantity > sub-bushel residue. Remaining is preferred from applied-ticket math; falls back to CTRM `openBalanceQuantity`. |
+| **UnshippedBushels** | Contract where `deliveryEnd < today` AND `status IN ('Active', 'Pending', 'Overdue')` AND remaining quantity > sub-0.1%-of-contract residue. Remaining comes from `getContractDeliveryStats(contract)` (shared util at `client/src/app/shared/utils/contract-delivery.ts`), which reads `contract.openBalanceQuantity` from `vw_CurrentContracts` — no ticket-math fallback. |
 
 ## Data flow
 
@@ -106,7 +106,7 @@ Shares the same data sources (customers + contracts) but presents a **broader in
 
 | Aspect | Insights inline category | Standalone screen |
 | --- | --- | --- |
-| Filter | Past delivery date AND open AND remaining > residue | All contracts with `openBalanceQuantity > 0`, regardless of delivery date |
+| Filter | Past delivery date AND open AND remaining > residue | All contracts where `getContractDeliveryStats(c).isEffectivelyComplete === false`, regardless of delivery date |
 | Layout | Producer-grouped within a card | Per-contract table view, sortable, with name/commodity/contract# search |
 | Use case | "What's overdue right now?" | "What's the total open inventory across all my producers?" |
 
@@ -140,7 +140,7 @@ Shares the same data sources (customers + contracts) but presents a **broader in
 | --- | --- | --- |
 | All three categories empty | `selectedTradeUnits()` is empty, or `customers/contracts/tickets` haven't loaded yet | TU selector + `dataLoading()` flag; click Refresh |
 | Spot Loads shows tickets that have a matching contract | The commodity match logic is wrong, or a contract is out of date in ODS | Re-check the per-ticket loop in `allInsights`; verify `contracts()` is current |
-| Unshipped Bushels count includes contracts that look closed | The remaining-quantity math falls back to CTRM's `openBalanceQuantity` when applied-ticket math is unavailable. ODS view may be stale. | Refresh; if still off, verify `vw_CurrentContracts` is current |
+| Unshipped Bushels count includes contracts that look closed | Remaining now comes from `contract.openBalanceQuantity` (no ticket-math fallback). If the CTRM aggregate is stale, the count will be too. | Refresh; if still off, verify `vw_CurrentContracts` is current |
 | Click-through opens wrong tab | `selectInsight` query-param wiring | `selectInsight()` body and the home page's `pendingTab` handler |
 | "Updated …" stuck on a stale time | `forceReload` failed silently | Network tab during Refresh |
 | Standalone Unshipped Bushels and inline category disagree | Inline applies past-due filter, standalone doesn't | Confirm the rule difference matches expectation |

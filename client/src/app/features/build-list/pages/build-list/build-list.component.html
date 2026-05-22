@@ -189,6 +189,15 @@
             }
 
             @if (!showRequestForm()) {
+              @if (librarySavedLists().length === 0 && selectedCategory() === 'Saved Lists') {
+                <div class="text-center py-8 px-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-3 text-gray-300 dark:text-gray-600">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+                  </svg>
+                  <p class="text-sm font-medium text-gray-500 dark:text-gray-400">No saved lists yet</p>
+                  <p class="text-xs text-gray-400/80 dark:text-gray-500/80 mt-1">Run a query, then use <span class="font-medium text-gray-500 dark:text-gray-400">Save List</span> to keep it here for next time.</p>
+                </div>
+              }
               @if (librarySavedLists().length > 0) {
                 <div>
                   <p class="text-[0.65rem] font-bold uppercase tracking-widest text-gray-400/80 dark:text-gray-500/80 mb-2">Saved Lists</p>
