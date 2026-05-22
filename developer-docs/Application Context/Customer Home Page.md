@@ -39,8 +39,8 @@ flowchart LR
     UI -- "selectedTradeUnits change" --> Get[apiService.getCustomers / getContracts / getTickets / getNotes / getStoredGrain / getPlantingIntentions / getSavedLists / getAllProducerDetails / getCommodities]
     Get --> CTL[Various controllers]
     CTL --> SVC[SqlDataService]
-    SVC --> ODS[(ODS views<br/>vw_CurrentCustomers, vw_CurrentContracts, vw_CurrentTickets,<br/>vw_ContractPricing, vw_GNTA39D1)]
-    SVC --> APP[(App DB tables<br/>Notes, ProducerDetails, ProducerPlantingIntentions,<br/>SavedLists, Commodities, CustomerSnapshot)]
+    SVC --> ODS[(ODS views<br/>vw_CurrentContracts, vw_CurrentTickets,<br/>vw_ContractPricing, vw_GNTA39D1)]
+    SVC --> APP[(App DB tables<br/>Customer, CustomerTradeUnit, Notes, ProducerDetails,<br/>ProducerPlantingIntentions, SavedLists, Commodities)]
 
     UI -- "customer click" --> ByCustomer[apiService.getContractsByCustomer / getTicketsByCustomer / getStoredGrainByCustomer / getPlantingIntentionsByCustomer / getProducerDetails / getPricingLinesByCustomer / getCustomerById / getCustomersLinkedTo]
     ByCustomer --> CTL
@@ -61,8 +61,10 @@ When the trade-unit selector changes, the home component fires a parallel batch 
 | Customer map (in profile) | `client/src/app/features/customers/components/map/customer-map.component.ts` |
 | Controllers | `CustomersController`, `ContractsController`, `TicketsController`, `NotesController`, `PlantingIntentionsController`, `StoredGrainController`, `ProducerDetailsController`, `SavedListsController`, `CommoditiesController` |
 | Service methods | See `IDataService` — Customer / Contract / Ticket / Note / PlantingIntention / StoredGrain / ProducerDetails groups |
-| ODS views read | `originations.vw_CurrentCustomers`, `base.vw_CurrentContracts`, `base.vw_CurrentTickets`, `base.vw_ContractPricing`, `ctrm.vw_GNTA39D1` |
-| App tables read/written | `dbo.Notes`, `dbo.ProducerDetails`, `dbo.ProducerPlantingIntentions`, `dbo.SavedLists`, `dbo.Commodities`, `dbo.CustomerSnapshot` |
+| ODS views read | `base.vw_CurrentContracts`, `base.vw_CurrentTickets`, `base.vw_ContractPricing`, `ctrm.vw_GNTA39D1` |
+| App tables read/written | `dbo.Customer`, `dbo.CustomerTradeUnit`, `dbo.Notes`, `dbo.ProducerDetails`, `dbo.ProducerPlantingIntentions`, `dbo.SavedLists`, `dbo.Commodities` |
+
+Customers used to be read directly from `originations.vw_CurrentCustomers` via a `CustomerSnapshot` cache table. As of migration `20260513185441_DropCustomerSnapshot`, the snapshot was replaced by app-owned `dbo.Customer` + `dbo.CustomerTradeUnit` tables, populated by `CustomerSyncBackgroundService` (daily 07:00 UTC + on startup). `GetCustomersAsync` now reads those tables directly — one row per customer, no in-memory dedup. See [`Shared Infrastructure.md`](./Shared%20Infrastructure.md#backend-services-and-contexts).
 
 ### API service methods called
 
@@ -77,7 +79,7 @@ Bulk on init / TU change:
 - `getSavedLists()`
 - `getAllProducerDetails()`
 - `getCommodities()`
-- `getDashboardPlantingEstimates(tu, year)` (for "Last contacted" hints; multiple years via `forkJoin`)
+- `getDashboardPlantingEstimates(tu, year)` — per-TU yield estimates used by the Planting tab to show projected production; one call per year (`forkJoin`) covering planting intentions + contract crop years.
 
 Per-customer on selection:
 
@@ -147,6 +149,26 @@ const merged = [...existing.filter(s => s.customerId !== customerId), ...grain];
 ```
 
 If you're touching this code, preserve the merge semantics. The same shape is used for tickets at `home.component.ts:778-784`. Background: PR #239 (`fix_StorageLoadAndEntitlementsErrors`).
+
+## Contracts table — delivery math and loading states
+
+The Contracts tab inside `CustomerProfileComponent` is the most logic-heavy panel on this screen. Two things to know:
+
+**Delivery math comes from one shared util.** `getContractDeliveryStats(contract)` in [`client/src/app/shared/utils/contract-delivery.ts`](../../client/src/app/shared/utils/contract-delivery.ts) is the single source of truth for `delivered`, `remaining`, `progressPercent`, and `isEffectivelyComplete`. It reads `contract.openBalanceQuantity` (the CTRM aggregate from `vw_CurrentContracts`) — **not** a sum of applied tickets. A sub-0.1%-of-contract residue is treated as complete, so a 99.97%-delivered contract reports as filled. The same util is used by the Contracts table, Actionable Insights' Unshipped Bushels, the standalone `/unshipped-bushels` view, the customer-print report, and the Activity Summary — they no longer drift apart.
+
+**Applied Tickets has a three-state header.** On first customer click, the bulk `getTickets` fetch may still be in flight (the underlying `vw_CurrentTickets` query is the longest pole on home-page cold start). Per-customer ticket fetches (`getTicketsByCustomer`) run in the background to backfill — they merge by ticket id, never overwrite. The Applied Tickets section header reflects:
+
+| State | Header | Body |
+| --- | --- | --- |
+| Bulk load still pending | "Loading…" | Skeleton rows; "no tickets" message suppressed |
+| Bulk done, per-customer backfill running | "Loading…" if applied-ticket pounds don't yet cover `contract.delivered` | Same suppression |
+| Done | Tickets list or "No tickets applied to this contract yet" | Real data |
+
+The backfill-coverage heuristic (`appliedTicketsCoverDelivered` in `contracts-table.component.ts`) compares the sum of currently-loaded applied-ticket pounds against `contract.delivered`. If they line up, the table shows what it has rather than waiting on a backfill that won't add anything visible.
+
+Ticket-to-contract matching is **by `ContractNumber` only** (not `ContractNumber + CustomerCode`). Customer-code-coupled matching missed applied tickets where the ticket carried a different customer code than the contract. This affects the Contracts table here, Actionable Insights' Spot Loads, and Build a List's NLQ ticket filters.
+
+**Unapplied tickets include C-prefix.** The "Unapplied" tab classifies a ticket as unapplied when `ContractNumber` starts with `U`, `L`, or `C` — `C` is Customer Storage. Previously only `U` and `L` were treated as unapplied, so customer-storage tickets were silently excluded.
 
 ## User actions
 

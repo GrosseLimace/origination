@@ -1235,9 +1235,9 @@ export class BuildListComponent {
     const cats = new Set(this.queryLibrary().map(q => q.category));
     const sorted = [...cats].sort();
     // Prepend a 'Saved Lists' pseudo-category so it sits right after "All" (which is rendered
-    // separately, before this loop). Selecting it filters the library to the user's saved
-    // lists. Only added when there's at least one saved list scoped to the current TU.
-    if (this.visibleSavedLists().length > 0) sorted.unshift('Saved Lists');
+    // separately, before this loop). Always shown — when the user has no lists yet, selecting
+    // the tab renders an empty-state hint instead of hiding the entry point entirely.
+    sorted.unshift('Saved Lists');
     return sorted;
   });
 

@@ -106,6 +106,11 @@ Defined in [`client/src/app/models/refine-filters.model.ts`](../../client/src/ap
 - **Planting** — `plantingYear`, `irrigatedOnly`, `drylandOnly`, `plantingAcresOver`.
 - **Dynamic (NLQ-derived)** — `crops` (commodity codes), `states` (state names).
 
+### Filter behavior notes (worth knowing before changing)
+
+- **`hasActiveContracts`** is strict: a contract must have `status === 'Active'` (case-sensitive) to count. `Pending`, `Overdue`, `Fulfilled`, `Cancelled` are all excluded. NLQ prompts like "producers with active contracts" parse to this filter, so the result set matches what users see when they sort the Contracts tab by status = Active.
+- **"Contracted but no deliveries"** (NLQ-derived) checks delivery progress via `contract.openBalanceQuantity` from `vw_CurrentContracts` — not by walking applied tickets. A customer matches when at least one open contract has `openBalanceQuantity === quantity` (nothing shipped yet). This is the same data source the shared delivery util uses (`client/src/app/shared/utils/contract-delivery.ts`), so the filter is consistent with the Contracts table, Actionable Insights, and the Unshipped Bushels view.
+
 ## Library / Prompts
 
 - Stored in `dbo.QueryLibrary` (columns: `Id`, `Category`, `Name`, `Description`, `QueryText`, `SortOrder`, `IsActive`, `CreatedAt`).
