@@ -125,6 +125,21 @@ export class NlqFilterService {
       || q.includes('projected') || q.includes('irrigated') || q.includes('dryland');
   }
 
+  /** Returns true if the query involves contract-related patterns that require contracts data.
+   *  Used by the saved-list customer-list path to wait for contracts before running NLQ —
+   *  without it, a "with active contracts" query that ran before contracts loaded would
+   *  return 0 producers (the openByCustomer map is empty) while a commodity-specific query
+   *  silently falls back to the legacy customer.commodities CSV and still returns producers,
+   *  making the failure look intermittent and inconsistent. */
+  queryInvolvesContracts(query: string): boolean {
+    const q = query.toLowerCase();
+    return q.includes('contract') || q.includes('priced') || q.includes('pricing')
+      || q.includes('unpriced') || q.includes('signed') || q.includes('unsigned')
+      || q.includes('confirmed') || q.includes('unconfirmed') || q.includes('pacing')
+      || q.includes('expiring') || q.includes('overdue') || q.includes('fulfilled')
+      || q.includes('cancelled') || q.includes('canceled');
+  }
+
   // ============================================================
   // Shared constants & utilities
   // ============================================================
