@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject, of, forkJoin, takeUntil } from 'rxjs';
 import { catchError, debounceTime, switchMap } from 'rxjs/operators';
-import { StoredGrain, Ticket, PlantingIntention } from '@models';
+import { StoredGrain, Ticket, PlantingIntention, Contract } from '@models';
 import { Customer, SavedList, Note, ProducerDetails } from '@models';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
@@ -419,6 +419,14 @@ export class CustomerListComponent {
     if (this.nlqFilterService.queryInvolvesPlanting(query) && this.appStateService.plantingIntentions().length === 0) {
       missing['plantingIntentions'] = this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[])));
     }
+    // Contracts: if the query needs them and the global signal is empty, fetch before
+    // running NLQ. Without this, the saved list runs against an empty contracts array
+    // and "with active contracts" returns 0 even though the producers have contracts —
+    // while commodity-specific prompts silently fall back to customer.commodities and
+    // still return producers, making the failure look intermittent.
+    if (this.nlqFilterService.queryInvolvesContracts(query) && this.appStateService.contracts().length === 0) {
+      missing['contracts'] = this.apiService.getContracts(tuParam).pipe(catchError(() => of([] as Contract[])));
+    }
     // Also fetch the query library when the saved list lacks the _promptCategory hint —
     // we use it to resolve dimension by queryText match in applyRefinementFilters.
     if (savedList.filters && !savedList.filters._promptCategory && this.appStateService.queryLibrary().length === 0) {
@@ -434,6 +442,7 @@ export class CustomerListComponent {
           if (results.storedGrain) this.appStateService.setStoredGrain(results.storedGrain);
           if (results.tickets) this.appStateService.setTickets(results.tickets);
           if (results.plantingIntentions) this.appStateService.setPlantingIntentions(results.plantingIntentions);
+          if (results.contracts) this.appStateService.setContracts(results.contracts);
           if (results.queryLibrary) this.appStateService.queryLibrary.set(results.queryLibrary);
           this._executeNlq(savedList);
           this.savedListLoading.set(false);
