@@ -112,6 +112,13 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
+  /** Fetches the full entitlements directory (people / trade units / TU groups) used by the
+   *  Daily Digest Recap Group picker. One call returns all three lists. */
+  getEntitlementsCatalog(): Observable<import('@features/daily-digest/models/entitlements-catalog.model').EntitlementsCatalog> {
+    return this.http.get<import('@features/daily-digest/models/entitlements-catalog.model').EntitlementsCatalog>(`${this.baseUrl}/entitlements/catalog`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
   /** Fetches a single customer by ID */
   getCustomerById(id: number): Observable<Customer> {
     return this.http.get<Customer>(`${this.baseUrl}/customers/${id}`)
