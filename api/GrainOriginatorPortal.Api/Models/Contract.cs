@@ -45,6 +45,7 @@ public class Contract
     // Crop year and open balance
     public int? CropYear { get; set; } // Grain crop year (e.g. 2025, 2026)
     public decimal? OpenBalanceQuantity { get; set; } // Remaining unshipped bushels
+    public decimal? SettledQuantity { get; set; } // Bushels that have been settled (paid). Unsettled = (Quantity − OpenBalance) − SettledQuantity.
 
     // Status
     public ContractStatus Status { get; set; } = ContractStatus.Pending;

@@ -413,6 +413,17 @@
                             <span class="font-medium text-gray-900 dark:text-gray-100">{{ getDeliveryStats(contract).remainingBushels | number:'1.2-2' }} {{ contract.unit }}</span>
                           </div>
                           <div class="flex flex-col">
+                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Unsettled Quantity</span>
+                            <span class="font-medium text-gray-900 dark:text-gray-100">
+                              @let unsettled = getUnsettledQty(contract);
+                              @if (unsettled != null) {
+                                {{ unsettled | number:'1.2-2' }} {{ contract.unit }}
+                              } @else {
+                                <span class="text-gray-400 dark:text-gray-500 italic text-sm">Loading…</span>
+                              }
+                            </span>
+                          </div>
+                          <div class="flex flex-col">
                             <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Delivery Progress</span>
                             <span class="font-medium text-gray-900 dark:text-gray-100">{{ getDeliveryStats(contract).progressPercent | number:'1.0-0' }}%</span>
                           </div>
@@ -466,7 +477,7 @@
                                   @for (line of getPricingLinesForContract(contract); track line.priceSequence) {
                                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/40">
                                       <td class="px-3 py-2 text-center text-gray-500 dark:text-gray-400">{{ line.priceSequence }}</td>
-                                      <td class="px-3 py-2 text-center text-gray-900 dark:text-gray-100">{{ (line.priceQuantity ?? 0) | number:'1.2-2' }} {{ contract.unit }}</td>
+                                      <td class="px-3 py-2 text-center text-gray-900 dark:text-gray-100">{{ getDisplayPricingQty(contract, line) | number:'1.2-2' }} {{ contract.unit }}</td>
                                       <td class="px-3 py-2 text-center text-gray-900 dark:text-gray-100">{{ line.basisPrice != null ? (line.basisPrice | currency:'USD':'symbol':'1.2-6') : '—' }}</td>
                                       <td class="px-3 py-2 text-center text-gray-900 dark:text-gray-100">{{ line.hedgePrice != null ? (line.hedgePrice | currency:'USD':'symbol':'1.2-6') : '—' }}</td>
                                       <td class="px-3 py-2 text-center font-medium text-gray-900 dark:text-gray-100">{{ line.flatPrice != null ? (line.flatPrice | currency:'USD':'symbol':'1.2-6') : '—' }}</td>

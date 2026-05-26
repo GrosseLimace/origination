@@ -20,6 +20,7 @@ export interface Contract {
   contractDate?: Date;    // Date the contract was booked
   cropYear?: number;      // Grain crop year (e.g. 2025, 2026)
   openBalanceQuantity?: number; // Remaining unshipped bushels
+  settledQuantity?: number;     // Bushels settled (paid). Unsettled = (quantity − openBalanceQuantity) − settledQuantity.
   deliveryStart: Date;
   deliveryEnd: Date;
   status: ContractStatus;

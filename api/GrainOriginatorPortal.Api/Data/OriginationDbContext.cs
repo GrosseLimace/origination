@@ -107,6 +107,7 @@ public class OriginationDbContext : DbContext
             // Crop year and open balance
             entity.Property(e => e.CropYear).HasColumnName("CropYear").IsRequired(false);
             entity.Property(e => e.OpenBalanceQuantity).HasColumnName("OpenBalanceQuantity").HasColumnType("decimal(18,6)").IsRequired(false);
+            entity.Property(e => e.SettledQuantity).HasColumnName("SettledQuantity").HasColumnType("decimal(18,6)").IsRequired(false);
 
             // Pricing
             entity.Property(e => e.PriceTypeCode).HasColumnName("PriceTypeCode").HasMaxLength(10).IsRequired(false);

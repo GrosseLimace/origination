@@ -327,8 +327,10 @@
         </div>
       }
 
-      <!-- Results Section (only shown after generating and when query has text) -->
-      @if (hasGenerated() && queryText().trim()) {
+      <!-- Results Section (only shown after generating and when query has text).
+           Suppressed while ticket data is still loading so a stale 0-result card doesn't
+           flash before the _appStateTicketsEffect re-runs the filter with real data. -->
+      @if (hasGenerated() && queryText().trim() && !waitingForTickets() && !isProcessing()) {
         @let displayed = displayedCustomers();
         @let filtered = filteredCustomers();
         @let refinementCount = activeRefinementCount();
