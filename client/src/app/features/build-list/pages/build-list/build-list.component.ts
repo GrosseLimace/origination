@@ -1918,8 +1918,16 @@ export class BuildListComponent {
     this.detectedState.set(result.detectedState);
     this.matchedPatterns.set(result.matchedPatterns);
     this.hasGenerated.set(true);
-    // Don't show "no match" if tickets are still loading and the query needs them
-    const ticketsPending = this.nlqFilterService.queryInvolvesTickets(this.queryText()) && !this._ticketsReady();
+    // Don't show "no match" if tickets are still loading and the query needs them.
+    // Belt-and-braces: _ticketsReady can flip true even when the local fetch returned []
+    // and home's appState hadn't backfilled yet (see _appStateTicketsEffect). In that case
+    // we'd race against empty data and the user would see "no producers" on the first
+    // run, then see results on the second after the effect re-hydrates. Treat an empty
+    // local tickets array as still-loading too — the effect will re-run NLQ automatically
+    // once appState catches data. Suppresses the misleading 0-result flash.
+    const queryNeedsTickets = this.nlqFilterService.queryInvolvesTickets(this.queryText());
+    const ticketsPending = queryNeedsTickets && (!this._ticketsReady() || this.tickets().length === 0);
+    this.waitingForTickets.set(ticketsPending);
     this.queryReturnedNoMatches.set(result.customers.length === 0 && !ticketsPending);
     this.filteredCustomers.set(result.customers);
 

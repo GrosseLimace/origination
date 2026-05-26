@@ -462,9 +462,44 @@ export class ContractsTableComponent {
     return { status: 'UNPRICED' };
   }
 
+  /** Quantity to show for a single pricing line. Two cases get computed values
+   *  rather than the raw priceQuantity, so the per-line numbers always sum to
+   *  contract.quantity:
+   *
+   *  1) Single zero-qty line → substitute contract.quantity. CTRM emits one
+   *     pricing line with PriceQuantity = 0/null when that line implicitly
+   *     covers the whole contract (Flat-priced 'P', Deferred 'D', or
+   *     wholly-unpriced 'U').
+   *
+   *  2) Multi-line with a sequence-0 placeholder → substitute the unpriced
+   *     remainder (contract.quantity − Σ qty of priced lines). Without this,
+   *     a partial-price contract like 25,000 BU with sequence 1 = 375 BU and
+   *     sequence 2 = 5,000 BU would render the placeholder as "0 BU" and the
+   *     rows wouldn't sum to the contract total. Now the placeholder reads
+   *     "19,625 BU" and the three lines visibly add up to 25,000.
+   *
+   *  Other lines fall through to the raw priceQuantity. */
+  getDisplayPricingQty(contract: Contract, line: ContractPricingLine): number {
+    const lineQty = line.priceQuantity ?? 0;
+    if (lineQty !== 0) return lineQty;
+    const lines = contract.sourceContractId ? this.pricingLinesMap().get(contract.sourceContractId) : undefined;
+    if (!lines) return 0;
+    if (lines.length === 1) return contract.quantity ?? 0;
+    if ((line.priceSequence ?? 0) === 0) {
+      const pricedTotal = lines
+        .filter(l => (l.priceSequence ?? 0) > 0)
+        .reduce((sum, l) => sum + (l.priceQuantity ?? 0), 0);
+      return Math.max(0, (contract.quantity ?? 0) - pricedTotal);
+    }
+    return 0;
+  }
+
   /** Bushels on the contract that still need a price. Only meaningful for
    *  PriceTypeCode='U' (unpriced/partial) — other types return null so the UI
-   *  can hide the tile. */
+   *  can hide the tile. Uses getDisplayPricingQty for the sum so that when a single
+   *  zero-qty placeholder line is substituted with contract.quantity, the Unpriced
+   *  tile drops to 0 in lockstep with the display (otherwise the line would read
+   *  "5,000 BU priced" while the tile still showed "5,000 BU unpriced"). */
   getUnpricedQty(contract: Contract): number | null {
     const ptc = (contract.priceTypeCode ?? '').trim().toUpperCase();
     if (ptc !== 'U') return null;
@@ -474,7 +509,7 @@ export class ContractsTableComponent {
     const safeLines = lines ?? [];
     const totalPriced = safeLines
       .filter(l => (l.priceSequence ?? 0) > 0)
-      .reduce((sum, l) => sum + (l.priceQuantity ?? 0), 0);
+      .reduce((sum, l) => sum + this.getDisplayPricingQty(contract, l), 0);
     const unpriced = (contract.quantity ?? 0) - totalPriced;
     return Math.max(0, unpriced);
   }
@@ -512,6 +547,20 @@ export class ContractsTableComponent {
   //   if (pricedQty < totalQty) return { status: 'PARTIAL' };
   //   return { status: 'PRICED' };
   // }
+
+  /** Bushels that have been delivered/applied to this contract but not yet settled (paid).
+   *  Math: (quantity − openBalanceQuantity) gives total delivered; subtracting settledQuantity
+   *  leaves what's been delivered but not paid out yet. Pulled straight from base.Contract
+   *  columns — no per-ticket math. Returns null if the contract is missing either field so
+   *  the UI can show a loading/dash state instead of a misleading 0. */
+  getUnsettledQty(contract: Contract): number | null {
+    const qty = contract.quantity ?? 0;
+    const open = contract.openBalanceQuantity;
+    const settled = contract.settledQuantity;
+    if (open == null || settled == null) return null;
+    const delivered = qty - open;
+    return Math.max(0, delivered - settled);
+  }
 
   getDeliveryWindowStatus(contract: Contract): string {
     const now = new Date();
