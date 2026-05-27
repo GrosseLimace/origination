@@ -56,6 +56,26 @@ public class SqlDataService : IDataService
         string.Join(",", values.Select(v => System.Text.RegularExpressions.Regex.Replace(v, @"[^a-zA-Z0-9\-_ ]", "")));
 
     /// <summary>
+    /// CTRM represents an OPEN contract's ClosedDate three ways: NULL, blank (also reads as
+    /// NULL on a date column), or the 0001-01-01 min-date sentinel (DateTime.MinValue here).
+    /// A contract is open when its ClosedDate is null or this sentinel; any other (real) date
+    /// means closed. Used as the C# open/closed test and mirrored in SQL.
+    /// </summary>
+    private static readonly DateTime OpenClosedDateSentinel = new(1, 1, 1);
+
+    /// <summary>
+    /// Normalizes the 0001-01-01 "open" sentinel to null so the frontend's `!closedDate`
+    /// check and all downstream C# `== null` tests treat these contracts as open. Call
+    /// after materializing contracts from the ODS.
+    /// </summary>
+    private static void NormalizeOpenClosedDates(IEnumerable<Contract> contracts)
+    {
+        foreach (var c in contracts)
+            if (c.ClosedDate.HasValue && c.ClosedDate.Value <= OpenClosedDateSentinel)
+                c.ClosedDate = null;
+    }
+
+    /// <summary>
     /// Returns a stable, unique identifier for the current user.
     /// Priority: preferred_username (UPN) > UPN claim > oid (AAD object id) > Identity.Name > "System".
     /// The display-name claim ("name") is intentionally NOT used — display names can collide across
@@ -789,7 +809,7 @@ public class SqlDataService : IDataService
                             INNER JOIN STRING_SPLIT({ctrmIdsCsv}, ',') ids
                                 ON c.CtrmCustomerId = ids.value
                             WHERE c.IsActive = 1 AND c.ContractPrefixType = 'P'
-                              AND (c.ClosedDate IS NULL OR c.CropYear >= {DateTime.Today.Year - 1})")
+                              AND (c.ClosedDate IS NULL OR c.ClosedDate <= {OpenClosedDateSentinel} OR c.CropYear >= {DateTime.Today.Year - 1})")
                         .AsNoTracking()
                         .OrderByDescending(c => c.Id)
                         .ToListAsync(cancellationToken);
@@ -827,7 +847,7 @@ public class SqlDataService : IDataService
                             INNER JOIN STRING_SPLIT({ctrmIdsCsv}, ',') ids
                                 ON c.CtrmCustomerId = ids.value
                             WHERE c.IsActive = 1 AND c.ContractPrefixType = 'P'
-                              AND (c.ClosedDate IS NULL OR c.CropYear >= {DateTime.Today.Year - 1})")
+                              AND (c.ClosedDate IS NULL OR c.ClosedDate <= {OpenClosedDateSentinel} OR c.CropYear >= {DateTime.Today.Year - 1})")
                         .AsNoTracking()
                         .OrderByDescending(c => c.Id)
                         .ToListAsync(cancellationToken);
@@ -836,6 +856,10 @@ public class SqlDataService : IDataService
 
             _logger.LogInformation("Loaded {ContractCount} contracts for customers who have contracts or tickets (filtered: {IsFiltered}, tradeUnitCount: {TradeUnitCount})",
                 contracts.Count, hasTradeUnitFilter, hasTradeUnitFilter ? tradeUnits!.Count : 0);
+
+            // Open contracts may carry the 0001-01-01 sentinel instead of NULL — normalize to
+            // null so the frontend and downstream code treat them as open.
+            NormalizeOpenClosedDates(contracts);
 
             // Calculate status and set defaults for fields not in ODS view
             var today = DateTime.Today;
@@ -966,9 +990,12 @@ public class SqlDataService : IDataService
             var contracts = await _context.Contracts
                 .AsNoTracking()
                 .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId == scoularId
-                    && (c.ClosedDate == null || c.CropYear >= pacingCutoffYear))
+                    && (c.ClosedDate == null || c.ClosedDate <= OpenClosedDateSentinel || c.CropYear >= pacingCutoffYear))
                 .OrderByDescending(c => c.Id)
                 .ToListAsync(cancellationToken);
+
+            // Open contracts may carry the 0001-01-01 sentinel — normalize to null.
+            NormalizeOpenClosedDates(contracts);
 
             // Calculate status and set defaults for fields not in ODS view
             var today = DateTime.Today;
@@ -1030,7 +1057,7 @@ public class SqlDataService : IDataService
                       AND c.IsDeleted = 0
                       AND c.ContractPrefixType = 'P'
                       AND c.CtrmCustomerId = {scoularId}
-                      AND c.ClosedDate IS NOT NULL
+                      AND c.ClosedDate IS NOT NULL AND c.ClosedDate > {OpenClosedDateSentinel}
                       AND c.CropYear >= {pacingCutoffYear}")
                 .AsNoTracking()
                 .OrderByDescending(c => c.Id)
@@ -1108,6 +1135,9 @@ public class SqlDataService : IDataService
                 .AsNoTracking()
                 .OrderByDescending(c => c.Id)
                 .ToListAsync(cancellationToken);
+
+            // Normalize the 0001-01-01 open-sentinel to null so open/closed reads correctly.
+            NormalizeOpenClosedDates(contracts);
 
             var today = DateTime.Today;
             foreach (var contract in contracts)
@@ -1341,7 +1371,7 @@ public class SqlDataService : IDataService
                     var openContractNumbers = await _context.Contracts
                         .AsNoTracking()
                         .Where(c => c.IsActive && c.ContractPrefixType == "P"
-                            && c.ClosedDate == null
+                            && (c.ClosedDate == null || c.ClosedDate <= OpenClosedDateSentinel)
                             && c.CtrmCustomerId != null && customerCodes.Contains(c.CtrmCustomerId)
                             && c.SourceContractId != null)
                         .Select(c => c.SourceContractId!)
@@ -1371,7 +1401,7 @@ public class SqlDataService : IDataService
                 var openContractNumbers = await _context.Contracts
                     .AsNoTracking()
                     .Where(c => c.IsActive && c.ContractPrefixType == "P"
-                        && c.ClosedDate == null
+                        && (c.ClosedDate == null || c.ClosedDate <= OpenClosedDateSentinel)
                         && c.CtrmCustomerId != null && customerCodes.Contains(c.CtrmCustomerId)
                         && c.SourceContractId != null)
                     .Select(c => c.SourceContractId!)
@@ -1575,7 +1605,7 @@ public class SqlDataService : IDataService
                     var openContractNumbers = await _context.Contracts
                         .AsNoTracking()
                         .Where(c => c.IsActive && c.ContractPrefixType == "P"
-                            && c.ClosedDate == null
+                            && (c.ClosedDate == null || c.ClosedDate <= OpenClosedDateSentinel)
                             && c.CtrmCustomerId != null && customerCodes.Contains(c.CtrmCustomerId)
                             && c.SourceContractId != null)
                         .Select(c => c.SourceContractId!)
@@ -1691,7 +1721,7 @@ public class SqlDataService : IDataService
             var openContractNumbers = await _context.Contracts
                 .AsNoTracking()
                 .Where(c => c.IsActive && c.ContractPrefixType == "P"
-                    && c.ClosedDate == null
+                    && (c.ClosedDate == null || c.ClosedDate <= OpenClosedDateSentinel)
                     && c.CtrmCustomerId == scoularId
                     && c.SourceContractId != null)
                 .Select(c => c.SourceContractId!)
