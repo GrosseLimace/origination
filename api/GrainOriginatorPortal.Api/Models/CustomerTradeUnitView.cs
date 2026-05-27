@@ -9,7 +9,7 @@ namespace GrainOriginatorPortal.Api.Models;
 /// Not to be confused with the app-DB entity <see cref="CustomerTradeUnit"/> which is
 /// the materialized join table for the per-customer per-TU memberships.
 /// </summary>
-public class CustomerTradeUnitView
+public class CustomerTradeUnitView : ICustomerOdsAttributes
 {
     public long CustomerId { get; set; }
     public string? CustomerName { get; set; }

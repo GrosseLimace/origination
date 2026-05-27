@@ -332,6 +332,7 @@ public class ApplicationDbContext : DbContext
                   .HasConversion(v => v, v => v != null ? v.Trim() : v);
             entity.Property(e => e.IndustryCode1).HasColumnName("IndustryCode1").HasMaxLength(50).IsRequired(false);
             entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
+            entity.Property(e => e.IsManual).HasColumnName("IsManual").HasDefaultValue(false).IsRequired();
             entity.Property(e => e.EffectiveStartDate).HasColumnName("EffectiveStartDate").IsRequired(false);
             entity.Property(e => e.EffectiveEndDate).HasColumnName("EffectiveEndDate").IsRequired(false);
 
@@ -378,6 +379,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
             entity.Property(e => e.TradeUnit).HasColumnName("TradeUnit").HasMaxLength(100).IsRequired();
             entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
+            entity.Property(e => e.IsManual).HasColumnName("IsManual").HasDefaultValue(false).IsRequired();
 
             // FK to Customer.Id (the ODS CustomerId surrogate).
             entity.HasOne(e => e.Customer)

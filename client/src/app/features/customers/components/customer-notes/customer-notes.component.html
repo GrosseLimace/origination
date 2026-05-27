@@ -2,23 +2,27 @@
     <div class="space-y-6">
       <!-- Add Note Form -->
       <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800">
-        <textarea
-          [ngModel]="newNote()"
-          (ngModelChange)="newNote.set($event)"
-          [disabled]="isSavingNote()"
-          placeholder="Add a note about this producer..."
-          rows="3"
-          class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent resize-y min-h-[4.5rem] disabled:opacity-60 disabled:cursor-not-allowed"
-        ></textarea>
-        <div class="flex justify-end mt-2">
-          <app-button
-            variant="default"
-            [disabled]="!newNote().trim() || isSavingNote()"
-            (onClick)="submitNote()"
-          >
-            {{ isSavingNote() ? 'Saving...' : 'Add Note' }}
-          </app-button>
-        </div>
+        @if (addDisabledReason()) {
+          <p class="text-sm text-gray-500 dark:text-gray-400 italic text-center py-2">{{ addDisabledReason() }}</p>
+        } @else {
+          <textarea
+            [ngModel]="newNote()"
+            (ngModelChange)="newNote.set($event)"
+            [disabled]="isSavingNote()"
+            placeholder="Add a note about this producer..."
+            rows="3"
+            class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent resize-y min-h-[4.5rem] disabled:opacity-60 disabled:cursor-not-allowed"
+          ></textarea>
+          <div class="flex justify-end mt-2">
+            <app-button
+              variant="default"
+              [disabled]="!newNote().trim() || isSavingNote()"
+              (onClick)="submitNote()"
+            >
+              {{ isSavingNote() ? 'Saving...' : 'Add Note' }}
+            </app-button>
+          </div>
+        }
       </div>
 
       <!-- Notes List -->

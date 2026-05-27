@@ -1,4 +1,4 @@
-import { Component, input, output, effect, inject, signal } from '@angular/core';
+import { Component, input, output, effect, inject, signal, computed, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '@shared/components/dialog/dialog.component';
@@ -41,7 +41,60 @@ export class EditCustomerDialogComponent {
     linkedProducerIds: string[];
     removedIncomingIds: string[];
     eSignEnabled: boolean;
+    tradeUnitCodes: string[];        // Desired ACTIVE manual TU set — reconciled on "Save Changes".
+    reconcileTradeUnits: boolean;    // Only reconcile when it's safe + meaningful (see canReconcileTradeUnits).
   }>();
+
+  // ── Trade-unit assignment / management ──────────────────────────────────
+  allTradeUnits = signal<{ code: string; description?: string }[]>([]);
+  selectedTuCodes = signal<string[]>([]);      // editable (manual) TU codes
+  tuSearch = signal('');
+  isLoadingTradeUnits = signal(false);
+
+  // The producer's current active memberships, loaded on open. Sync-sourced ones are shown
+  // locked; manual ones prefill selectedTuCodes (editable). tuListLoaded gates reconciliation
+  // so a failed load can never wipe manual assignments by reconciling to an empty set.
+  currentTradeUnits = signal<{ tradeUnit: string; isManual: boolean }[]>([]);
+  tuListLoaded = signal(false);
+  private _originalManualTuCodes: string[] = [];
+
+  /** Sync-sourced (locked) memberships — added by the nightly job from a contract/ticket. */
+  readonly lockedTradeUnits = computed(() =>
+    this.currentTradeUnits().filter(t => !t.isManual).map(t => t.tradeUnit));
+
+  /** True when the editable manual TU set differs from what was loaded. */
+  readonly manualTusChanged = computed(() => {
+    const cur = [...this.selectedTuCodes()].sort();
+    const orig = [...this._originalManualTuCodes].sort();
+    return cur.length !== orig.length || cur.some((c, i) => c !== orig[i]);
+  });
+
+  /** Only reconcile trade units on save when the current list actually loaded (so we never
+   *  deactivate everything from a failed load) AND there's something to do — onboarding a new
+   *  candidate, or the manual set changed. */
+  readonly canReconcileTradeUnits = computed(() =>
+    this.tuListLoaded() && (this.isOnboardCandidate() || this.manualTusChanged()));
+
+  /** True when the open customer isn't in our tables yet (an ODS search candidate).
+   *  They must be assigned at least one trade unit (which inserts them) before any
+   *  notes / producer-details can be saved. */
+  readonly isOnboardCandidate = computed(() => !!this.customer()?.isOnboardCandidate);
+
+  /** For a candidate with no trade unit selected yet, every other field (acres, bin
+   *  capacity, commodities, primary contact, linked producers, eSign) is locked — there's
+   *  nothing to attach them to until a TU assignment inserts the customer. Unlocks the
+   *  moment a trade unit is picked. Existing customers are never locked. */
+  readonly detailsLocked = computed(() => this.isOnboardCandidate() && this.selectedTuCodes().length === 0);
+
+  /** TUs not already selected or locked, matched by CODE only. Capped for a tidy dropdown. */
+  readonly filteredTradeUnits = computed(() => {
+    const taken = new Set([...this.selectedTuCodes(), ...this.lockedTradeUnits()]);
+    const q = this.tuSearch().trim().toLowerCase();
+    return this.allTradeUnits()
+      .filter(tu => !taken.has(tu.code))
+      .filter(tu => !q || tu.code.toLowerCase().includes(q))
+      .slice(0, 50);
+  });
 
   editAcres: string = '';
   editBinCapacity: string = '';
@@ -136,6 +189,40 @@ export class EditCustomerDialogComponent {
           this._loadAllProducersForSearch();
         }
 
+        // Trade-unit section — reset, lazy-load the full TU catalog (for the add-search),
+        // and load this producer's current memberships so we can show locked (sync) chips
+        // and prefill the editable (manual) ones.
+        this.selectedTuCodes.set([]);
+        this.tuSearch.set('');
+        this.currentTradeUnits.set([]);
+        this.tuListLoaded.set(false);
+        this._originalManualTuCodes = [];
+        if (this.allTradeUnits().length === 0 && !this.isLoadingTradeUnits()) {
+          this.isLoadingTradeUnits.set(true);
+          this.apiService.getAllTradeUnits().subscribe({
+            next: (tus) => { this.allTradeUnits.set(tus); this.isLoadingTradeUnits.set(false); },
+            error: () => { this.isLoadingTradeUnits.set(false); }
+          });
+        }
+        // A not-yet-onboarded candidate isn't in dbo.Customer, so it has no memberships — skip
+        // the fetch and treat the list as loaded+empty.
+        if (customer.isOnboardCandidate) {
+          this.tuListLoaded.set(true);
+        } else {
+          this.apiService.getCustomerTradeUnits(customer.id).subscribe({
+            next: (tus) => {
+              this.currentTradeUnits.set(tus);
+              const manualCodes = tus.filter(t => t.isManual).map(t => t.tradeUnit);
+              this.selectedTuCodes.set(manualCodes);
+              this._originalManualTuCodes = [...manualCodes];
+              this.tuListLoaded.set(true);
+            },
+            // Leave tuListLoaded false on error — canReconcileTradeUnits then stays false so a
+            // failed load can't wipe the producer's manual assignments on save.
+            error: () => { this.tuListLoaded.set(false); }
+          });
+        }
+
         this._initialized = true;
       }
 
@@ -144,10 +231,51 @@ export class EditCustomerDialogComponent {
         this._initialized = false;
       }
     });
+
+    // For a candidate, removing all trade units re-locks the other fields — clear anything
+    // that was typed, since it can't be saved without an assignment anchoring the customer.
+    effect(() => {
+      const locked = this.detailsLocked();
+      if (locked && this._initialized) {
+        untracked(() => this._clearDetailFields());
+      }
+    });
   }
+
+  private _clearDetailFields(): void {
+    this.editAcres = '';
+    this.editBinCapacity = '';
+    this.editCommodities.set([]);
+    this.editPrimaryContact.set('');
+    this.editLinkedProducerIds.set([]);
+    this.removedIncomingIds.set([]);
+    this.editESignEnabled.set(false);
+    this.newCommodity.set('');
+    this.showSuggestions.set(false);
+    this.newProducerSearch.set('');
+    this.showProducerSuggestions.set(false);
+  }
+
+  // ── Trade-unit assignment actions ───────────────────────────────────────
+  addTradeUnit(code: string): void {
+    if (!code || this.selectedTuCodes().includes(code)) return;
+    this.selectedTuCodes.update(list => [...list, code]);
+    this.tuSearch.set('');
+  }
+
+  removeTradeUnit(code: string): void {
+    this.selectedTuCodes.update(list => list.filter(c => c !== code));
+  }
+
+  /** Save is blocked for a not-yet-onboarded candidate until at least one trade unit is
+   *  picked — that assignment is what inserts them into our tables. */
+  readonly canSave = computed(() => !this.isOnboardCandidate() || this.selectedTuCodes().length > 0);
 
   hasChanges(): boolean {
     if (!this.customer()) return false;
+    // Adding or removing a manual trade unit is itself a change (covers onboarding a fresh
+    // candidate, and removing a manual TU from an existing producer with no other edits).
+    if (this.manualTusChanged()) return true;
 
     const linkedProducerIdsChanged = this.editLinkedProducerIds().length !== this._originalLinkedProducerIds.length
       || this.editLinkedProducerIds().some(id => !this._originalLinkedProducerIds.includes(id));
@@ -367,7 +495,9 @@ export class EditCustomerDialogComponent {
         primaryContact: this.editPrimaryContact().slice(0, 200),
         linkedProducerIds: this.editLinkedProducerIds(),
         removedIncomingIds: this.removedIncomingIds(),
-        eSignEnabled: this.editESignEnabled()
+        eSignEnabled: this.editESignEnabled(),
+        tradeUnitCodes: this.selectedTuCodes(),
+        reconcileTradeUnits: this.canReconcileTradeUnits()
       });
       this._initialized = false;
       this.close.emit();

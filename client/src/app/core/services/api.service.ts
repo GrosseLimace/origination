@@ -112,6 +112,33 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
+  /** Searches the ODS customer master for producers not yet in our tables (onboarding fallback). */
+  searchOdsCustomers(searchTerm: string): Observable<Customer[]> {
+    const params = new HttpParams().set('searchTerm', searchTerm);
+    return this.http.get<Customer[]>(`${this.baseUrl}/customers/search-ods`, { params })
+      .pipe(catchError(() => of([] as Customer[])));
+  }
+
+  /** Assigns trade units to a producer, onboarding them into our tables if not present. */
+  assignTradeUnits(customerId: number, tradeUnitCodes: string[]): Observable<Customer> {
+    return this.http.put<Customer>(`${this.baseUrl}/customers/${customerId}/trade-units`, { tradeUnitCodes })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** A producer's active trade-unit memberships (code + isManual) for the edit dialog. */
+  getCustomerTradeUnits(customerId: number): Observable<{ tradeUnit: string; isManual: boolean }[]> {
+    return this.http.get<{ tradeUnit: string; isManual: boolean }[]>(`${this.baseUrl}/customers/${customerId}/trade-units`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** All trade units in the system (code + description) for the onboarding assign dropdown. */
+  getAllTradeUnits(): Observable<{ code: string; description?: string }[]> {
+    return this._dedupe('all-trade-units',
+      this.http.get<{ code: string; description?: string }[]>(`${this.baseUrl}/trade-units`)
+        .pipe(catchError(() => of([] as { code: string; description?: string }[])))
+    );
+  }
+
   /** Fetches a single customer by ID */
   getCustomerById(id: number): Observable<Customer> {
     return this.http.get<Customer>(`${this.baseUrl}/customers/${id}`)

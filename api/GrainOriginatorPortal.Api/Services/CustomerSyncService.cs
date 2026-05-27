@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using GrainOriginatorPortal.Api.Data;
 using GrainOriginatorPortal.Api.Models;
@@ -77,6 +78,12 @@ public class CustomerSyncService
             if (appCustomersById.TryGetValue(customerId, out var existing))
             {
                 ApplyAttributes(existing, odsRow);
+                // Graduation: a customer present in the ODS view is backed by a real
+                // contract/ticket, so they're no longer a user-added prospect. Clear the manual
+                // flag so IsManual cleanly means "added by a user, no activity yet". From here
+                // they follow the normal synced lifecycle (the main soft-delete deactivates them
+                // if they later drop out of the view).
+                if (existing.IsManual) existing.IsManual = false;
                 if (!existing.IsActive)
                 {
                     existing.IsActive = true;
@@ -97,9 +104,13 @@ public class CustomerSyncService
         }
 
         // ── Customer soft-deletes (rows in app but no longer in ODS) ──
+        // Skip IsManual rows: those were onboarded by a user (producers with no
+        // contract/ticket, so they never appear in the ODS view) and must survive
+        // nightly runs. Everything the sync itself created is IsManual=false and
+        // behaves exactly as before.
         foreach (var existing in appCustomers)
         {
-            if (!odsCustomersByCustomerId.ContainsKey(existing.Id) && existing.IsActive)
+            if (!odsCustomersByCustomerId.ContainsKey(existing.Id) && existing.IsActive && !existing.IsManual)
             {
                 existing.IsActive = false;
                 result.CustomersDeactivated++;
@@ -122,11 +133,23 @@ public class CustomerSyncService
         {
             if (appTradeUnitsByKey.TryGetValue((customerId, tradeUnit), out var existing))
             {
+                var changed = false;
                 if (existing.IsActive != odsRow.IsActive)
                 {
                     existing.IsActive = odsRow.IsActive;
-                    result.TradeUnitsUpdated++;
+                    changed = true;
                 }
+                // A TU present in the ODS view is backed by a real contract/ticket, so it's a
+                // synced membership now — not a manual one. Clear the manual flag so it follows
+                // the normal sync lifecycle going forward (e.g. auto-deactivates if that activity
+                // later ages off). Purely-manual assignments never reach here (they're not in the
+                // view), so they keep IsManual=true and stay protected.
+                if (existing.IsManual)
+                {
+                    existing.IsManual = false;
+                    changed = true;
+                }
+                if (changed) result.TradeUnitsUpdated++;
             }
             else
             {
@@ -141,10 +164,12 @@ public class CustomerSyncService
         }
 
         // ── CustomerTradeUnit soft-deletes ──
+        // Skip IsManual rows — user-assigned trade units aren't in the ODS view, so
+        // without this guard the nightly run would deactivate every manual assignment.
         foreach (var existing in appTradeUnits)
         {
             var key = (existing.CustomerId, existing.TradeUnit);
-            if (!odsTradeUnitsByKey.ContainsKey(key) && existing.IsActive)
+            if (!odsTradeUnitsByKey.ContainsKey(key) && existing.IsActive && !existing.IsManual)
             {
                 existing.IsActive = false;
                 result.TradeUnitsDeactivated++;
@@ -153,6 +178,72 @@ public class CustomerSyncService
         _logger.LogInformation(
             "CustomerSync CustomerTradeUnit diff: {Inserted} ins, {Updated} upd, {Deactivated} deactivated ({Ms} ms)",
             result.TradeUnitsInserted, result.TradeUnitsUpdated, result.TradeUnitsDeactivated,
+            phase.ElapsedMilliseconds);
+
+        // ── Manual-producer refresh pass ──
+        // Manually-onboarded producers (IsManual) that have no contract/ticket never appear
+        // in vw_CustomerTradeUnits, so the loops above can't refresh them. They DO live in the
+        // full customer master base.vw_CurrentCustomers (the same view onboarding reads), so
+        // refresh their attributes from there and soft-delete any that have dropped out of the
+        // master entirely. Producers already handled above (present in the TU view this run —
+        // e.g. a manual producer who has since "graduated" by getting activity) are excluded
+        // here, so each customer is touched by exactly one pass per run.
+        phase.Restart();
+        var manualOutsideView = appCustomers
+            .Where(c => c.IsManual && !odsCustomersByCustomerId.ContainsKey(c.Id))
+            .ToList();
+
+        if (manualOutsideView.Count > 0)
+        {
+            // base.vw_CurrentCustomers is a heavy view (~20s even for a single id), so give it
+            // a generous timeout — matches the 120s used for other heavy ODS reads and keeps a
+            // slow night from cancelling this query at the 30s default. Nightly job, off the
+            // request path, so the longer ceiling is harmless.
+            odsDb.Database.SetCommandTimeout(120);
+            var idCsv = string.Join(",", manualOutsideView.Select(c => c.Id));
+            var masterRows = await odsDb.Database
+                .SqlQueryRaw<CurrentCustomerRow>(@"
+                    SELECT
+                        c.CustomerId, c.ScoularId, c.CustomerName, c.IndustryCode1,
+                        c.MerchandisingCity, c.MerchandisingStateProvince, c.MerchandisingAddressLine1, c.MerchandisingPostalCode,
+                        c.MerchandisingPhone, c.MerchandisingEmail, c.ExtendedPrimaryPhone, c.SupplementalEmail,
+                        c.ExtendedAddressLine1, c.ExtendedAddressLine2, c.ExtendedAddressLine3, c.ExtendedAddressLine4,
+                        c.ExtendedCity, c.ExtendedPostalCode, c.ExtendedStateProvince, c.ExtendedCountry,
+                        c.EffectiveStartDate, c.EffectiveEndDate
+                    FROM base.vw_CurrentCustomers c
+                    WHERE c.CustomerId IN (SELECT TRY_CAST(value AS bigint) FROM STRING_SPLIT(@ids, ','))",
+                    new SqlParameter("@ids", idCsv))
+                .ToListAsync(cancellationToken);
+            var masterById = masterRows.ToDictionary(r => r.CustomerId);
+
+            foreach (var existing in manualOutsideView)
+            {
+                if (masterById.TryGetValue(existing.Id, out var row))
+                {
+                    ApplyAttributes(existing, row);
+                    if (!existing.IsActive)
+                    {
+                        existing.IsActive = true;
+                        result.ManualCustomersReactivated++;
+                    }
+                    else
+                    {
+                        result.ManualCustomersRefreshed++;
+                    }
+                }
+                else if (existing.IsActive)
+                {
+                    // Gone from the current-customer master → genuinely removed in CTRM.
+                    // Soft-delete preserves FKs from Notes / ProducerDetails / etc.
+                    existing.IsActive = false;
+                    result.ManualCustomersDeactivated++;
+                }
+            }
+        }
+        _logger.LogInformation(
+            "CustomerSync manual-producer refresh: {Checked} checked, {Refreshed} refreshed, {Reactivated} reactivated, {Deactivated} deactivated ({Ms} ms)",
+            manualOutsideView.Count, result.ManualCustomersRefreshed,
+            result.ManualCustomersReactivated, result.ManualCustomersDeactivated,
             phase.ElapsedMilliseconds);
 
         // ── Persist ──
@@ -175,21 +266,26 @@ public class CustomerSyncService
             "Customers: {CustomersInserted} inserted, {CustomersUpdated} updated, " +
             "{CustomersReactivated} reactivated, {CustomersDeactivated} deactivated. " +
             "TradeUnits: {TradeUnitsInserted} inserted, {TradeUnitsUpdated} updated, " +
-            "{TradeUnitsDeactivated} deactivated.",
+            "{TradeUnitsDeactivated} deactivated. " +
+            "Manual producers: {ManualRefreshed} refreshed, {ManualReactivated} reactivated, " +
+            "{ManualDeactivated} deactivated.",
             result.ElapsedMs,
             result.CustomersInserted, result.CustomersUpdated,
             result.CustomersReactivated, result.CustomersDeactivated,
             result.TradeUnitsInserted, result.TradeUnitsUpdated,
-            result.TradeUnitsDeactivated);
+            result.TradeUnitsDeactivated,
+            result.ManualCustomersRefreshed, result.ManualCustomersReactivated,
+            result.ManualCustomersDeactivated);
 
         return result;
     }
 
     /// <summary>
     /// Copies ODS-sourced attribute values onto an existing tracked Customer.
-    /// Customer.Id is not touched (it's the PK / FK target).
+    /// Customer.Id is not touched (it's the PK / FK target). Accepts either ODS source
+    /// (the trade-unit view or the current-customers view) via the shared interface.
     /// </summary>
-    private static void ApplyAttributes(Customer target, CustomerTradeUnitView source)
+    private static void ApplyAttributes(Customer target, ICustomerOdsAttributes source)
     {
         target.Name                  = source.CustomerName ?? string.Empty;
         target.ScoularId             = source.ScoularId;
@@ -213,6 +309,35 @@ public class CustomerSyncService
         target.ExtendedStateProvince = source.ExtendedStateProvince;
         target.ExtendedCountry       = source.ExtendedCountry;
     }
+
+    /// <summary>Row shape for the base.vw_CurrentCustomers read in the manual-producer refresh
+    /// pass. Property names match the selected columns so EF's SqlQueryRaw can bind them, and
+    /// it implements <see cref="ICustomerOdsAttributes"/> so it shares <see cref="ApplyAttributes"/>.</summary>
+    private sealed class CurrentCustomerRow : ICustomerOdsAttributes
+    {
+        public long CustomerId { get; set; }
+        public string? ScoularId { get; set; }
+        public string? CustomerName { get; set; }
+        public string? IndustryCode1 { get; set; }
+        public string? MerchandisingCity { get; set; }
+        public string? MerchandisingStateProvince { get; set; }
+        public string? MerchandisingAddressLine1 { get; set; }
+        public string? MerchandisingPostalCode { get; set; }
+        public string? MerchandisingPhone { get; set; }
+        public string? MerchandisingEmail { get; set; }
+        public string? ExtendedPrimaryPhone { get; set; }
+        public string? SupplementalEmail { get; set; }
+        public string? ExtendedAddressLine1 { get; set; }
+        public string? ExtendedAddressLine2 { get; set; }
+        public string? ExtendedAddressLine3 { get; set; }
+        public string? ExtendedAddressLine4 { get; set; }
+        public string? ExtendedCity { get; set; }
+        public string? ExtendedPostalCode { get; set; }
+        public string? ExtendedStateProvince { get; set; }
+        public string? ExtendedCountry { get; set; }
+        public DateTime? EffectiveStartDate { get; set; }
+        public DateTime? EffectiveEndDate { get; set; }
+    }
 }
 
 /// <summary>Counts and timing for a single sync run.</summary>
@@ -225,6 +350,9 @@ public class CustomerSyncResult
     public int TradeUnitsInserted    { get; set; }
     public int TradeUnitsUpdated     { get; set; }
     public int TradeUnitsDeactivated { get; set; }
+    public int ManualCustomersRefreshed    { get; set; }
+    public int ManualCustomersReactivated  { get; set; }
+    public int ManualCustomersDeactivated  { get; set; }
     public long ElapsedMs        { get; set; }
     public DateTime CompletedAtUtc { get; set; }
 }

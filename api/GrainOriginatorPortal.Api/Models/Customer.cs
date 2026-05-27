@@ -54,4 +54,9 @@ public class Customer
     public bool IsActive { get; set; }
     public DateTime? EffectiveStartDate { get; set; }
     public DateTime? EffectiveEndDate { get; set; }
+
+    // True when a user onboarded this customer manually (assigned trade units from the app)
+    // rather than the customer arriving via the nightly CustomerSyncService. The sync's
+    // soft-delete pass skips IsManual rows so manual onboarding survives nightly runs.
+    public bool IsManual { get; set; }
 }

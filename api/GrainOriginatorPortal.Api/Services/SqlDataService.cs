@@ -148,6 +148,18 @@ public class SqlDataService : IDataService
     private static string ApplyDisplayName(string? upn, IReadOnlyDictionary<string, string> map) =>
         !string.IsNullOrEmpty(upn) && map.TryGetValue(upn, out var dn) ? dn : (upn ?? string.Empty);
 
+    /// <summary>Sort key for customer names: strips leading non-alphanumeric characters
+    /// (e.g. a "(NICKNAME)" or "*" prefix carried on raw CTRM names such as
+    /// "(YOUNG) WESLEY TOTTEN") so those names sort in their natural alphabetical position
+    /// instead of ahead of every plain-letter name.</summary>
+    private static string NameSortKey(string? name)
+    {
+        if (string.IsNullOrEmpty(name)) return string.Empty;
+        var i = 0;
+        while (i < name.Length && !char.IsLetterOrDigit(name[i])) i++;
+        return i == 0 ? name : name[i..];
+    }
+
     // =========================================================================
     // Customer Operations
     // =========================================================================
@@ -174,7 +186,14 @@ public class SqlDataService : IDataService
                     && tradeUnits!.Contains(ctu.TradeUnit)));
             }
 
-            var customers = await query.OrderBy(c => c.Name).ToListAsync(cancellationToken);
+            // Sort in memory (the set is already materialized + enriched) using a key that
+            // ignores any leading non-alphanumeric prefix, so an onboarded "(YOUNG) WESLEY
+            // TOTTEN" slots in under W/Y rather than jumping to the top ahead of plain names.
+            var customers = await query.ToListAsync(cancellationToken);
+            customers = customers
+                .OrderBy(c => NameSortKey(c.Name), StringComparer.OrdinalIgnoreCase)
+                .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
             await EnrichCustomersWithESignAsync(customers, cancellationToken);
             _logger.LogInformation("Returning {Count} customers from Customer{Filter}", customers.Count, filterMsg);
@@ -296,6 +315,154 @@ public class SqlDataService : IDataService
                 searchTerm, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
+    }
+
+    /// <summary>
+    /// Searches the ODS customer master (base.vw_CurrentCustomers) for producers not yet
+    /// onboarded into the app. Used by the home-page search fallback so a user can find a
+    /// producer who exists in CTRM but has no contract/ticket (and therefore never synced
+    /// into dbo.Customer). Filters to active, non-duplicate producers (IndustryCode1='PR')
+    /// matching name / ScoularId / SourceCustomerId, and EXCLUDES anyone already in
+    /// dbo.Customer so the results never contain a producer we already have (no dupes).
+    /// </summary>
+    public async Task<List<Customer>> SearchOdsCustomersAsync(string searchTerm, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var searchWords = searchTerm.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                                        .Select(w => w.Trim())
+                                        .Where(w => w.Length > 0)
+                                        .ToList();
+            if (searchWords.Count == 0) return [];
+
+            // Mirror the quality filters baked into originations.vw_CustomerTradeUnits so the
+            // onboarding search never surfaces junk master-data records (placeholder /
+            // duplicate / do-not-use rows) the sync would also reject.
+            var whereClauses = new List<string>
+            {
+                "c.IndustryCode1 = 'PR'",
+                "c.IsActive = 1",
+                "c.IsDuplicate = 0",
+                "c.CustomerName NOT LIKE '%DUP%'",
+                "c.CustomerName NOT LIKE '%DO NOT USE%'",
+                "LEFT(c.CustomerName, 1) NOT IN ('*', '$')"
+            };
+            var parameters = new List<SqlParameter>();
+            for (int i = 0; i < searchWords.Count; i++)
+            {
+                var p = $"@w{i}";
+                parameters.Add(new SqlParameter(p, searchWords[i]));
+                whereClauses.Add($@"(
+                    c.CustomerName LIKE '%' + {p} + '%'
+                    OR c.ScoularId LIKE '%' + {p} + '%'
+                    OR c.SourceCustomerId LIKE '%' + {p} + '%'
+                )");
+            }
+            var where = string.Join(" AND ", whereClauses);
+
+            // TOP 50 keeps the result set bounded — this is a type-ahead, not an export.
+            var sql = $@"
+                SELECT TOP 50
+                    c.CustomerId, c.ScoularId, c.CustomerName, c.IndustryCode1,
+                    c.MerchandisingCity, c.MerchandisingStateProvince, c.MerchandisingAddressLine1, c.MerchandisingPostalCode,
+                    c.MerchandisingPhone, c.MerchandisingEmail, c.ExtendedPrimaryPhone, c.SupplementalEmail,
+                    c.ExtendedAddressLine1, c.ExtendedAddressLine2, c.ExtendedAddressLine3, c.ExtendedAddressLine4,
+                    c.ExtendedCity, c.ExtendedPostalCode, c.ExtendedStateProvince, c.ExtendedCountry,
+                    c.EffectiveStartDate, c.EffectiveEndDate
+                FROM base.vw_CurrentCustomers c
+                WHERE {where}
+                ORDER BY c.CustomerName";
+
+            var rows = await _context.Database
+                .SqlQueryRaw<OdsCustomerRow>(sql, parameters.ToArray())
+                .ToListAsync(cancellationToken);
+
+            if (rows.Count == 0) return [];
+
+            // Drop any that already live in dbo.Customer — those aren't "new" and would dupe.
+            var candidateIds = rows.Select(r => r.CustomerId).ToList();
+            var existingIds = (await _appContext.Customers.AsNoTracking()
+                    .Where(c => candidateIds.Contains(c.Id))
+                    .Select(c => c.Id)
+                    .ToListAsync(cancellationToken))
+                .ToHashSet();
+
+            var result = rows
+                .Where(r => !existingIds.Contains(r.CustomerId))
+                .Select(MapOdsRowToCustomer)
+                .ToList();
+
+            _logger.LogInformation("ODS customer search for '{SearchTerm}' returned {Count} onboardable producers", searchTerm, result.Count);
+            return result;
+        }
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
+        {
+            _logger.LogWarning(ex, "DB error in ODS customer search — returning empty [{TraceId}]", GetTraceId());
+            return [];
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in ODS customer search for term: {SearchTerm} [{TraceId}]", searchTerm, GetTraceId());
+            throw;
+        }
+    }
+
+    /// <summary>Maps a base.vw_CurrentCustomers row onto the Customer DTO. IsManual stays
+    /// false here — the row is only a search candidate until it's actually onboarded.</summary>
+    private static Customer MapOdsRowToCustomer(OdsCustomerRow r) => new()
+    {
+        Id = r.CustomerId,
+        ScoularId = r.ScoularId?.Trim(),
+        Name = r.CustomerName ?? string.Empty,
+        IndustryCode1 = r.IndustryCode1,
+        Location = r.MerchandisingCity,
+        StateProvince = r.MerchandisingStateProvince,
+        AddressLine1 = r.MerchandisingAddressLine1,
+        PostalCode = r.MerchandisingPostalCode,
+        Phone = r.MerchandisingPhone,
+        Email = r.MerchandisingEmail,
+        ExtendedPrimaryPhone = r.ExtendedPrimaryPhone,
+        SupplementalEmail = r.SupplementalEmail,
+        ExtendedAddressLine1 = r.ExtendedAddressLine1,
+        ExtendedAddressLine2 = r.ExtendedAddressLine2,
+        ExtendedAddressLine3 = r.ExtendedAddressLine3,
+        ExtendedAddressLine4 = r.ExtendedAddressLine4,
+        ExtendedCity = r.ExtendedCity,
+        ExtendedPostalCode = r.ExtendedPostalCode,
+        ExtendedStateProvince = r.ExtendedStateProvince,
+        ExtendedCountry = r.ExtendedCountry,
+        EffectiveStartDate = r.EffectiveStartDate,
+        EffectiveEndDate = r.EffectiveEndDate,
+        IsActive = true,
+        IsManual = false,
+    };
+
+    /// <summary>Row shape for base.vw_CurrentCustomers reads (search + onboard). Property
+    /// names match the selected column names so EF's SqlQueryRaw can bind them.</summary>
+    private sealed class OdsCustomerRow
+    {
+        public long CustomerId { get; set; }
+        public string? ScoularId { get; set; }
+        public string? CustomerName { get; set; }
+        public string? IndustryCode1 { get; set; }
+        public string? MerchandisingCity { get; set; }
+        public string? MerchandisingStateProvince { get; set; }
+        public string? MerchandisingAddressLine1 { get; set; }
+        public string? MerchandisingPostalCode { get; set; }
+        public string? MerchandisingPhone { get; set; }
+        public string? MerchandisingEmail { get; set; }
+        public string? ExtendedPrimaryPhone { get; set; }
+        public string? SupplementalEmail { get; set; }
+        public string? ExtendedAddressLine1 { get; set; }
+        public string? ExtendedAddressLine2 { get; set; }
+        public string? ExtendedAddressLine3 { get; set; }
+        public string? ExtendedAddressLine4 { get; set; }
+        public string? ExtendedCity { get; set; }
+        public string? ExtendedPostalCode { get; set; }
+        public string? ExtendedStateProvince { get; set; }
+        public string? ExtendedCountry { get; set; }
+        public DateTime? EffectiveStartDate { get; set; }
+        public DateTime? EffectiveEndDate { get; set; }
     }
 
     /// <summary>
@@ -563,6 +730,140 @@ public class SqlDataService : IDataService
                 customerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
+    }
+
+    /// <summary>
+    /// Reconciles a producer's MANUAL trade-unit assignments to exactly <paramref name="tradeUnitCodes"/>.
+    /// If the customer isn't in dbo.Customer yet, pulls their attributes from base.vw_CurrentCustomers
+    /// and inserts them (IsManual=true). Codes in the set are activated/inserted as manual; manual
+    /// assignments not in the set are soft-deactivated (preserved for re-adding). Sync-sourced rows
+    /// (IsManual=false) are never touched. An empty set is valid for an existing producer (clears all
+    /// manual assignments) but rejected for a brand-new onboarding (nothing to create them with).
+    /// Returns a status so the controller can 404 a bad id.
+    /// </summary>
+    public async Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, CancellationToken cancellationToken = default)
+    {
+        // Normalize: trim, drop blanks, de-dupe (case-insensitive).
+        var codes = tradeUnitCodes
+            .Select(c => c?.Trim() ?? string.Empty)
+            .Where(c => c.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // Ensure the customer exists in dbo.Customer — insert from ODS if this is a
+        // brand-new onboarding (producer with no contract/ticket).
+        var customerExists = await _appContext.Customers
+            .AnyAsync(c => c.Id == customerId, cancellationToken);
+
+        // An empty set can't onboard a brand-new producer (nothing anchors the insert), but
+        // for an existing producer it's a valid request to clear all manual assignments.
+        if (!customerExists && codes.Count == 0) return AssignTradeUnitsResult.NoCodes;
+
+        if (!customerExists)
+        {
+            var odsRow = await GetOdsCustomerRowAsync(customerId, cancellationToken);
+            if (odsRow is null)
+            {
+                _logger.LogWarning("AssignTradeUnits: customer {CustomerId} not found in base.vw_CurrentCustomers", customerId);
+                return AssignTradeUnitsResult.CustomerNotFound;
+            }
+            var inserted = MapOdsRowToCustomer(odsRow);
+            inserted.IsManual = true;
+            inserted.IsActive = true;
+            _appContext.Customers.Add(inserted);
+        }
+        else
+        {
+            // Reactivate a previously-deactivated customer being re-onboarded.
+            var existing = await _appContext.Customers.FirstAsync(c => c.Id == customerId, cancellationToken);
+            if (!existing.IsActive)
+            {
+                existing.IsActive = true;
+                existing.IsManual = true;
+            }
+        }
+
+        // Existing TU pairs for this customer — used to reconcile against the desired set.
+        var existingTus = await _appContext.CustomerTradeUnits
+            .Where(t => t.CustomerId == customerId)
+            .ToListAsync(cancellationToken);
+        var existingByCode = existingTus.ToDictionary(t => t.TradeUnit, StringComparer.OrdinalIgnoreCase);
+        var desired = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
+
+        // Activate / insert every desired code as a manual assignment. Re-adding a code that
+        // exists (e.g. a previously-removed manual row, IsActive=false) reactivates it in place
+        // rather than inserting a duplicate.
+        foreach (var code in codes)
+        {
+            if (existingByCode.TryGetValue(code, out var existingTu))
+            {
+                // Only (re)flag manual when we're actually activating a non-active row. Never
+                // re-stickify a row that's already an ACTIVE sync membership — it may have
+                // graduated to synced (IsManual=false) while this dialog was open, and we don't
+                // want a stale save to flip it back to manual. Active manual rows are left as-is.
+                if (!existingTu.IsActive)
+                {
+                    existingTu.IsActive = true;
+                    existingTu.IsManual = true;
+                }
+            }
+            else
+            {
+                _appContext.CustomerTradeUnits.Add(new CustomerTradeUnit
+                {
+                    CustomerId = customerId,
+                    TradeUnit  = code,
+                    IsActive   = true,
+                    IsManual   = true,
+                });
+            }
+        }
+
+        // Soft-deactivate manual assignments the user removed (active manual TUs not in the
+        // desired set). The row is preserved so it can be re-added/reactivated later. Sync
+        // assignments (IsManual=false) are never touched — they're locked in the UI.
+        var deactivated = 0;
+        foreach (var existing in existingTus)
+        {
+            if (existing.IsManual && existing.IsActive && !desired.Contains(existing.TradeUnit))
+            {
+                existing.IsActive = false;
+                deactivated++;
+            }
+        }
+
+        await _appContext.SaveChangesAsync(cancellationToken);
+        _logger.LogInformation("AssignTradeUnits: customer {CustomerId} reconciled to {Count} manual TU(s) [{Codes}], {Deactivated} deactivated",
+            customerId, codes.Count, string.Join(", ", codes), deactivated);
+        return AssignTradeUnitsResult.Ok;
+    }
+
+    public async Task<List<CustomerTradeUnitInfo>> GetCustomerTradeUnitsAsync(long customerId, CancellationToken cancellationToken = default)
+    {
+        return await _appContext.CustomerTradeUnits
+            .AsNoTracking()
+            .Where(t => t.CustomerId == customerId && t.IsActive)
+            .OrderBy(t => t.TradeUnit)
+            .Select(t => new CustomerTradeUnitInfo { TradeUnit = t.TradeUnit, IsManual = t.IsManual })
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>Reads a single producer row from base.vw_CurrentCustomers by CustomerId.</summary>
+    private async Task<OdsCustomerRow?> GetOdsCustomerRowAsync(long customerId, CancellationToken cancellationToken)
+    {
+        var rows = await _context.Database
+            .SqlQueryRaw<OdsCustomerRow>(@"
+                SELECT TOP 1
+                    c.CustomerId, c.ScoularId, c.CustomerName, c.IndustryCode1,
+                    c.MerchandisingCity, c.MerchandisingStateProvince, c.MerchandisingAddressLine1, c.MerchandisingPostalCode,
+                    c.MerchandisingPhone, c.MerchandisingEmail, c.ExtendedPrimaryPhone, c.SupplementalEmail,
+                    c.ExtendedAddressLine1, c.ExtendedAddressLine2, c.ExtendedAddressLine3, c.ExtendedAddressLine4,
+                    c.ExtendedCity, c.ExtendedPostalCode, c.ExtendedStateProvince, c.ExtendedCountry,
+                    c.EffectiveStartDate, c.EffectiveEndDate
+                FROM base.vw_CurrentCustomers c
+                WHERE c.CustomerId = @customerId", new SqlParameter("@customerId", customerId))
+            .ToListAsync(cancellationToken);
+        return rows.FirstOrDefault();
     }
 
     // =========================================================================

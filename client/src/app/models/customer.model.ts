@@ -34,4 +34,12 @@ export interface Customer {
   binCapacity?: number;       // Bushels - bin storage capacity
   commodities?: string[];     // e.g. ['Corn', 'Soybeans', 'Wheat']
   primaryContact?: string;    // User-entered primary contact name
+
+  // Onboarding: true when a user manually added this producer (assigned trade units)
+  // rather than the nightly sync. Used to distinguish ODS search candidates and to
+  // (later) lock sync-sourced trade-unit assignments in the edit dialog.
+  isManual?: boolean;
+  // True only on ODS search-fallback candidates — they exist in CTRM but aren't in our
+  // tables yet. Set client-side, not from the API.
+  isOnboardCandidate?: boolean;
 }

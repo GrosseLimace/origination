@@ -78,6 +78,7 @@ public class NotesControllerTests
     {
         // Arrange
         var note = new Note { Id = 5, CustomerId = 1, IsPinned = true };
+        _dataServiceMock.Setup(s => s.GetNoteByIdAsync(5, It.IsAny<CancellationToken>())).ReturnsAsync(note);
         _dataServiceMock.Setup(s => s.ToggleNotePinAsync(5, It.IsAny<CancellationToken>())).ReturnsAsync(note);
 
         // Act
@@ -105,6 +106,7 @@ public class NotesControllerTests
     {
         // Arrange
         var note = new Note { Id = 3, CustomerId = 1, Description = "Updated content" };
+        _dataServiceMock.Setup(s => s.GetNoteByIdAsync(3, It.IsAny<CancellationToken>())).ReturnsAsync(note);
         _dataServiceMock.Setup(s => s.UpdateNoteAsync(3, "Updated content", It.IsAny<CancellationToken>())).ReturnsAsync(note);
         var request = new UpdateNoteRequest { Content = "Updated content" };
 
@@ -133,6 +135,7 @@ public class NotesControllerTests
     public async Task Delete_CallsDeleteNote_ReturnsNoContent()
     {
         // Arrange
+        _dataServiceMock.Setup(s => s.GetNoteByIdAsync(7, It.IsAny<CancellationToken>())).ReturnsAsync(new Note { Id = 7, CustomerId = 1, Description = "To delete" });
         _dataServiceMock.Setup(s => s.DeleteNoteAsync(7, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         // Act
