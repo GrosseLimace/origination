@@ -112,6 +112,7 @@
                 [linkedCustomers]="getLinkedGroup(customer)"
                 [isSavingNote]="isSavingNote()"
                 [noteSaveSucceededCounter]="noteSaveSucceededCounter()"
+                [addDisabledReason]="customer.isOnboardCandidate ? 'Assign a trade unit and save this producer (Edit → Trade Units) before adding notes.' : null"
                 (addNote)="addNote($event)"
                 (togglePin)="toggleNotePin($event)"
                 (editNote)="editNote($event)"

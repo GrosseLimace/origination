@@ -44,6 +44,21 @@ public class CustomersController : ControllerBase
         return Ok(await _dataService.SearchCustomersAsync(searchTerm, tradeUnits, cancellationToken));
     }
 
+    /// <summary>
+    /// Searches the ODS customer master for producers not yet onboarded into the app
+    /// (no contract/ticket, so they never synced into dbo.Customer). Used as a home-page
+    /// search fallback so a user can find and onboard them by assigning trade units.
+    /// No trade-unit scoping — these producers have no TU yet, which is the whole point.
+    /// </summary>
+    [HttpGet("search-ods")]
+    [ProducesResponseType(typeof(List<Customer>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<Customer>>> SearchOds([FromQuery] string searchTerm, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+            return Ok(new List<Customer>());
+        return Ok(await _dataService.SearchOdsCustomersAsync(searchTerm, cancellationToken));
+    }
+
     // -------------------------------------------------------------------------
     /// <summary>Gets a single customer by ID.</summary>
     [HttpGet("{id:long}")]
@@ -103,5 +118,32 @@ public class CustomersController : ControllerBase
 
         var updated = await _dataService.GetCustomerByIdAsync(id, cancellationToken);
         return Ok(updated);
+    }
+
+    // -------------------------------------------------------------------------
+    /// <summary>
+    /// Assigns trade units to a producer. Onboards them from the ODS into dbo.Customer
+    /// if they aren't there yet (manual add, protected from the nightly sync). Used to
+    /// surface producers who exist in CTRM but have no contract/ticket.
+    /// </summary>
+    [HttpPut("{id:long}/trade-units")]
+    [ProducesResponseType(typeof(Customer), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<Customer>> AssignTradeUnits(long id, [FromBody] AssignTradeUnitsRequest request, CancellationToken cancellationToken = default)
+    {
+        var codes = request.TradeUnitCodes ?? new List<string>();
+        var result = await _dataService.AssignTradeUnitsAsync(id, codes, cancellationToken);
+
+        switch (result)
+        {
+            case AssignTradeUnitsResult.NoCodes:
+                return BadRequest(new { message = "At least one trade unit code is required." });
+            case AssignTradeUnitsResult.CustomerNotFound:
+                throw new NotFoundException("Customer", id);
+            default:
+                var customer = await _dataService.GetCustomerByIdAsync(id, cancellationToken);
+                return Ok(customer);
+        }
     }
 }

@@ -1106,7 +1106,32 @@ export class HomeComponent {
     });
   }
 
-  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean }): void {
+  /** Save handler for the edit dialog. Trade-unit assignment (if any) runs FIRST — for an
+   *  onboarding candidate that PUT inserts them into dbo.Customer, which the ProducerDetails
+   *  save then depends on (FK). Existing customers with no TU change skip straight to the
+   *  details save, unchanged. */
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[] }): void {
+    const codes = data.tradeUnitCodes ?? [];
+    if (codes.length > 0) {
+      this.apiService.assignTradeUnits(data.customerId, codes).subscribe({
+        next: () => {
+          this.toastService.success('Producer added and trade units assigned. Select that trade unit or group to see them.');
+          // They're now in dbo.Customer — clear the candidate flag on the selected
+          // record so we stay on this producer and notes / details unlock immediately.
+          const sel = this.selectedCustomer();
+          if (sel?.id === data.customerId && sel.isOnboardCandidate) {
+            this.selectedCustomer.set({ ...sel, isManual: true, isOnboardCandidate: false });
+          }
+          this._saveProducerDetailsAndLinks(data);
+        },
+        error: () => this.toastService.error('Failed to assign trade units')
+      });
+    } else {
+      this._saveProducerDetailsAndLinks(data);
+    }
+  }
+
+  private _saveProducerDetailsAndLinks(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean }): void {
     const customers = this.customers();
     const sel = this.selectedCustomer();
     const customer = customers.find(c => c.id === data.customerId)
@@ -1511,6 +1536,12 @@ export class HomeComponent {
   addNote(content: string): void {
     const sel = this.selectedCustomer();
     if (!sel) return;
+    // Not-yet-onboarded producer: there's no dbo.Customer row for a note to attach to
+    // (it FKs to Customer). Make them assign a trade unit + Save Changes first.
+    if (sel.isOnboardCandidate) {
+      this.toastService.error('Assign a trade unit and save this producer before adding notes.');
+      return;
+    }
     // Guard against overlapping submits at the parent layer too — covers any caller
     // that didn't honor the child's own isSavingNote disable.
     if (this.isSavingNote()) return;

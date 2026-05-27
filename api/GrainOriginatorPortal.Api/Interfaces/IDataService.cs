@@ -1,5 +1,13 @@
 namespace GrainOriginatorPortal.Api.Interfaces;
 
+/// <summary>Outcome of an AssignTradeUnitsAsync call, so the controller can map to the right HTTP status.</summary>
+public enum AssignTradeUnitsResult
+{
+    Ok,
+    NoCodes,
+    CustomerNotFound,
+}
+
 /// <summary>
 /// Interface defining data access operations for the Grain Originator Portal.
 /// </summary>
@@ -19,6 +27,17 @@ public interface IDataService
     /// <param name="tradeUnits">Optional list of trade unit codes to filter by.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<List<Customer>> SearchCustomersAsync(string searchTerm, List<string>? tradeUnits = null, CancellationToken cancellationToken = default);
+
+    /// <summary>Searches the ODS customer master (base.vw_CurrentCustomers) for producers
+    /// not yet onboarded into dbo.Customer. Used by the home-page search fallback to find
+    /// producers who exist in CTRM but have no contract/ticket. Excludes anyone already
+    /// in dbo.Customer.</summary>
+    Task<List<Customer>> SearchOdsCustomersAsync(string searchTerm, CancellationToken cancellationToken = default);
+
+    /// <summary>Assigns trade units to a producer, onboarding them from the ODS into
+    /// dbo.Customer if they aren't there yet. Manual rows (IsManual=true) survive the
+    /// nightly sync. Idempotent — re-assigning an existing TU doesn't duplicate.</summary>
+    Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, CancellationToken cancellationToken = default);
 
     /// <summary>Gets a single customer by their unique identifier.</summary>
     /// <param name="id">The customer's unique identifier.</param>

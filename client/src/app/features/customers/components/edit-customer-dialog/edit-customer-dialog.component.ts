@@ -1,4 +1,4 @@
-import { Component, input, output, effect, inject, signal } from '@angular/core';
+import { Component, input, output, effect, inject, signal, computed, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '@shared/components/dialog/dialog.component';
@@ -41,7 +41,35 @@ export class EditCustomerDialogComponent {
     linkedProducerIds: string[];
     removedIncomingIds: string[];
     eSignEnabled: boolean;
+    tradeUnitCodes: string[];   // Manually-assigned TUs — saved with the rest on "Save Changes".
   }>();
+
+  // ── Trade-unit assignment (onboarding) ──────────────────────────────────
+  allTradeUnits = signal<{ code: string; description?: string }[]>([]);
+  selectedTuCodes = signal<string[]>([]);
+  tuSearch = signal('');
+  isLoadingTradeUnits = signal(false);
+
+  /** True when the open customer isn't in our tables yet (an ODS search candidate).
+   *  They must be assigned at least one trade unit (which inserts them) before any
+   *  notes / producer-details can be saved. */
+  readonly isOnboardCandidate = computed(() => !!this.customer()?.isOnboardCandidate);
+
+  /** For a candidate with no trade unit selected yet, every other field (acres, bin
+   *  capacity, commodities, primary contact, linked producers, eSign) is locked — there's
+   *  nothing to attach them to until a TU assignment inserts the customer. Unlocks the
+   *  moment a trade unit is picked. Existing customers are never locked. */
+  readonly detailsLocked = computed(() => this.isOnboardCandidate() && this.selectedTuCodes().length === 0);
+
+  /** TUs not yet selected, matched by CODE only (not description). Capped for a tidy dropdown. */
+  readonly filteredTradeUnits = computed(() => {
+    const chosen = new Set(this.selectedTuCodes());
+    const q = this.tuSearch().trim().toLowerCase();
+    return this.allTradeUnits()
+      .filter(tu => !chosen.has(tu.code))
+      .filter(tu => !q || tu.code.toLowerCase().includes(q))
+      .slice(0, 50);
+  });
 
   editAcres: string = '';
   editBinCapacity: string = '';
@@ -136,6 +164,18 @@ export class EditCustomerDialogComponent {
           this._loadAllProducersForSearch();
         }
 
+        // Trade-unit assignment section — reset selection and lazy-load the full TU
+        // catalog the first time a dialog is opened.
+        this.selectedTuCodes.set([]);
+        this.tuSearch.set('');
+        if (this.allTradeUnits().length === 0 && !this.isLoadingTradeUnits()) {
+          this.isLoadingTradeUnits.set(true);
+          this.apiService.getAllTradeUnits().subscribe({
+            next: (tus) => { this.allTradeUnits.set(tus); this.isLoadingTradeUnits.set(false); },
+            error: () => { this.isLoadingTradeUnits.set(false); }
+          });
+        }
+
         this._initialized = true;
       }
 
@@ -144,10 +184,51 @@ export class EditCustomerDialogComponent {
         this._initialized = false;
       }
     });
+
+    // For a candidate, removing all trade units re-locks the other fields — clear anything
+    // that was typed, since it can't be saved without an assignment anchoring the customer.
+    effect(() => {
+      const locked = this.detailsLocked();
+      if (locked && this._initialized) {
+        untracked(() => this._clearDetailFields());
+      }
+    });
   }
+
+  private _clearDetailFields(): void {
+    this.editAcres = '';
+    this.editBinCapacity = '';
+    this.editCommodities.set([]);
+    this.editPrimaryContact.set('');
+    this.editLinkedProducerIds.set([]);
+    this.removedIncomingIds.set([]);
+    this.editESignEnabled.set(false);
+    this.newCommodity.set('');
+    this.showSuggestions.set(false);
+    this.newProducerSearch.set('');
+    this.showProducerSuggestions.set(false);
+  }
+
+  // ── Trade-unit assignment actions ───────────────────────────────────────
+  addTradeUnit(code: string): void {
+    if (!code || this.selectedTuCodes().includes(code)) return;
+    this.selectedTuCodes.update(list => [...list, code]);
+    this.tuSearch.set('');
+  }
+
+  removeTradeUnit(code: string): void {
+    this.selectedTuCodes.update(list => list.filter(c => c !== code));
+  }
+
+  /** Save is blocked for a not-yet-onboarded candidate until at least one trade unit is
+   *  picked — that assignment is what inserts them into our tables. */
+  readonly canSave = computed(() => !this.isOnboardCandidate() || this.selectedTuCodes().length > 0);
 
   hasChanges(): boolean {
     if (!this.customer()) return false;
+    // Picking trade units is itself a change (covers onboarding a fresh candidate who has
+    // no other edits).
+    if (this.selectedTuCodes().length > 0) return true;
 
     const linkedProducerIdsChanged = this.editLinkedProducerIds().length !== this._originalLinkedProducerIds.length
       || this.editLinkedProducerIds().some(id => !this._originalLinkedProducerIds.includes(id));
@@ -367,7 +448,8 @@ export class EditCustomerDialogComponent {
         primaryContact: this.editPrimaryContact().slice(0, 200),
         linkedProducerIds: this.editLinkedProducerIds(),
         removedIncomingIds: this.removedIncomingIds(),
-        eSignEnabled: this.editESignEnabled()
+        eSignEnabled: this.editESignEnabled(),
+        tradeUnitCodes: this.selectedTuCodes()
       });
       this._initialized = false;
       this.close.emit();

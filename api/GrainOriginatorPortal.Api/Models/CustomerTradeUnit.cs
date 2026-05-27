@@ -22,6 +22,11 @@ public class CustomerTradeUnit
     public string TradeUnit { get; set; } = string.Empty;
     public bool IsActive { get; set; }
 
+    // True when a user assigned this trade unit manually via the app rather than the
+    // nightly sync deriving it from a contract/ticket. The sync's soft-delete pass skips
+    // IsManual rows so manual assignments aren't deactivated when absent from the ODS view.
+    public bool IsManual { get; set; }
+
     // Navigation property — not always loaded; explicit Include() required.
     public Customer? Customer { get; set; }
 }

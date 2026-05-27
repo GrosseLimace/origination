@@ -97,9 +97,13 @@ public class CustomerSyncService
         }
 
         // ── Customer soft-deletes (rows in app but no longer in ODS) ──
+        // Skip IsManual rows: those were onboarded by a user (producers with no
+        // contract/ticket, so they never appear in the ODS view) and must survive
+        // nightly runs. Everything the sync itself created is IsManual=false and
+        // behaves exactly as before.
         foreach (var existing in appCustomers)
         {
-            if (!odsCustomersByCustomerId.ContainsKey(existing.Id) && existing.IsActive)
+            if (!odsCustomersByCustomerId.ContainsKey(existing.Id) && existing.IsActive && !existing.IsManual)
             {
                 existing.IsActive = false;
                 result.CustomersDeactivated++;
@@ -141,10 +145,12 @@ public class CustomerSyncService
         }
 
         // ── CustomerTradeUnit soft-deletes ──
+        // Skip IsManual rows — user-assigned trade units aren't in the ODS view, so
+        // without this guard the nightly run would deactivate every manual assignment.
         foreach (var existing in appTradeUnits)
         {
             var key = (existing.CustomerId, existing.TradeUnit);
-            if (!odsTradeUnitsByKey.ContainsKey(key) && existing.IsActive)
+            if (!odsTradeUnitsByKey.ContainsKey(key) && existing.IsActive && !existing.IsManual)
             {
                 existing.IsActive = false;
                 result.TradeUnitsDeactivated++;

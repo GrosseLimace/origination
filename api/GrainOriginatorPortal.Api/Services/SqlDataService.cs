@@ -279,6 +279,154 @@ public class SqlDataService : IDataService
     }
 
     /// <summary>
+    /// Searches the ODS customer master (base.vw_CurrentCustomers) for producers not yet
+    /// onboarded into the app. Used by the home-page search fallback so a user can find a
+    /// producer who exists in CTRM but has no contract/ticket (and therefore never synced
+    /// into dbo.Customer). Filters to active, non-duplicate producers (IndustryCode1='PR')
+    /// matching name / ScoularId / SourceCustomerId, and EXCLUDES anyone already in
+    /// dbo.Customer so the results never contain a producer we already have (no dupes).
+    /// </summary>
+    public async Task<List<Customer>> SearchOdsCustomersAsync(string searchTerm, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var searchWords = searchTerm.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                                        .Select(w => w.Trim())
+                                        .Where(w => w.Length > 0)
+                                        .ToList();
+            if (searchWords.Count == 0) return [];
+
+            // Mirror the quality filters baked into originations.vw_CustomerTradeUnits so the
+            // onboarding search never surfaces junk master-data records (placeholder /
+            // duplicate / do-not-use rows) the sync would also reject.
+            var whereClauses = new List<string>
+            {
+                "c.IndustryCode1 = 'PR'",
+                "c.IsActive = 1",
+                "c.IsDuplicate = 0",
+                "c.CustomerName NOT LIKE '%DUP%'",
+                "c.CustomerName NOT LIKE '%DO NOT USE%'",
+                "LEFT(c.CustomerName, 1) NOT IN ('*', '$')"
+            };
+            var parameters = new List<SqlParameter>();
+            for (int i = 0; i < searchWords.Count; i++)
+            {
+                var p = $"@w{i}";
+                parameters.Add(new SqlParameter(p, searchWords[i]));
+                whereClauses.Add($@"(
+                    c.CustomerName LIKE '%' + {p} + '%'
+                    OR c.ScoularId LIKE '%' + {p} + '%'
+                    OR c.SourceCustomerId LIKE '%' + {p} + '%'
+                )");
+            }
+            var where = string.Join(" AND ", whereClauses);
+
+            // TOP 50 keeps the result set bounded — this is a type-ahead, not an export.
+            var sql = $@"
+                SELECT TOP 50
+                    c.CustomerId, c.ScoularId, c.CustomerName, c.IndustryCode1,
+                    c.MerchandisingCity, c.MerchandisingStateProvince, c.MerchandisingAddressLine1, c.MerchandisingPostalCode,
+                    c.MerchandisingPhone, c.MerchandisingEmail, c.ExtendedPrimaryPhone, c.SupplementalEmail,
+                    c.ExtendedAddressLine1, c.ExtendedAddressLine2, c.ExtendedAddressLine3, c.ExtendedAddressLine4,
+                    c.ExtendedCity, c.ExtendedPostalCode, c.ExtendedStateProvince, c.ExtendedCountry,
+                    c.EffectiveStartDate, c.EffectiveEndDate
+                FROM base.vw_CurrentCustomers c
+                WHERE {where}
+                ORDER BY c.CustomerName";
+
+            var rows = await _context.Database
+                .SqlQueryRaw<OdsCustomerRow>(sql, parameters.ToArray())
+                .ToListAsync(cancellationToken);
+
+            if (rows.Count == 0) return [];
+
+            // Drop any that already live in dbo.Customer — those aren't "new" and would dupe.
+            var candidateIds = rows.Select(r => r.CustomerId).ToList();
+            var existingIds = (await _appContext.Customers.AsNoTracking()
+                    .Where(c => candidateIds.Contains(c.Id))
+                    .Select(c => c.Id)
+                    .ToListAsync(cancellationToken))
+                .ToHashSet();
+
+            var result = rows
+                .Where(r => !existingIds.Contains(r.CustomerId))
+                .Select(MapOdsRowToCustomer)
+                .ToList();
+
+            _logger.LogInformation("ODS customer search for '{SearchTerm}' returned {Count} onboardable producers", searchTerm, result.Count);
+            return result;
+        }
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
+        {
+            _logger.LogWarning(ex, "DB error in ODS customer search — returning empty [{TraceId}]", GetTraceId());
+            return [];
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in ODS customer search for term: {SearchTerm} [{TraceId}]", searchTerm, GetTraceId());
+            throw;
+        }
+    }
+
+    /// <summary>Maps a base.vw_CurrentCustomers row onto the Customer DTO. IsManual stays
+    /// false here — the row is only a search candidate until it's actually onboarded.</summary>
+    private static Customer MapOdsRowToCustomer(OdsCustomerRow r) => new()
+    {
+        Id = r.CustomerId,
+        ScoularId = r.ScoularId?.Trim(),
+        Name = r.CustomerName ?? string.Empty,
+        IndustryCode1 = r.IndustryCode1,
+        Location = r.MerchandisingCity,
+        StateProvince = r.MerchandisingStateProvince,
+        AddressLine1 = r.MerchandisingAddressLine1,
+        PostalCode = r.MerchandisingPostalCode,
+        Phone = r.MerchandisingPhone,
+        Email = r.MerchandisingEmail,
+        ExtendedPrimaryPhone = r.ExtendedPrimaryPhone,
+        SupplementalEmail = r.SupplementalEmail,
+        ExtendedAddressLine1 = r.ExtendedAddressLine1,
+        ExtendedAddressLine2 = r.ExtendedAddressLine2,
+        ExtendedAddressLine3 = r.ExtendedAddressLine3,
+        ExtendedAddressLine4 = r.ExtendedAddressLine4,
+        ExtendedCity = r.ExtendedCity,
+        ExtendedPostalCode = r.ExtendedPostalCode,
+        ExtendedStateProvince = r.ExtendedStateProvince,
+        ExtendedCountry = r.ExtendedCountry,
+        EffectiveStartDate = r.EffectiveStartDate,
+        EffectiveEndDate = r.EffectiveEndDate,
+        IsActive = true,
+        IsManual = false,
+    };
+
+    /// <summary>Row shape for base.vw_CurrentCustomers reads (search + onboard). Property
+    /// names match the selected column names so EF's SqlQueryRaw can bind them.</summary>
+    private sealed class OdsCustomerRow
+    {
+        public long CustomerId { get; set; }
+        public string? ScoularId { get; set; }
+        public string? CustomerName { get; set; }
+        public string? IndustryCode1 { get; set; }
+        public string? MerchandisingCity { get; set; }
+        public string? MerchandisingStateProvince { get; set; }
+        public string? MerchandisingAddressLine1 { get; set; }
+        public string? MerchandisingPostalCode { get; set; }
+        public string? MerchandisingPhone { get; set; }
+        public string? MerchandisingEmail { get; set; }
+        public string? ExtendedPrimaryPhone { get; set; }
+        public string? SupplementalEmail { get; set; }
+        public string? ExtendedAddressLine1 { get; set; }
+        public string? ExtendedAddressLine2 { get; set; }
+        public string? ExtendedAddressLine3 { get; set; }
+        public string? ExtendedAddressLine4 { get; set; }
+        public string? ExtendedCity { get; set; }
+        public string? ExtendedPostalCode { get; set; }
+        public string? ExtendedStateProvince { get; set; }
+        public string? ExtendedCountry { get; set; }
+        public DateTime? EffectiveStartDate { get; set; }
+        public DateTime? EffectiveEndDate { get; set; }
+    }
+
+    /// <summary>
     /// Looks up eSign enrollment records for the given customers and populates
     /// ESignEnabled and ScoularViewRecipients from dbo.eSignEnrollment.
     /// Async version — queries the DB. Used by callers that don't pre-fetch eSign data.
@@ -543,6 +691,99 @@ public class SqlDataService : IDataService
                 customerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
+    }
+
+    /// <summary>
+    /// Onboards / assigns trade units to a producer manually. If the customer isn't in
+    /// dbo.Customer yet, pulls their attributes from base.vw_CurrentCustomers and inserts
+    /// them (IsManual=true). Then adds a CustomerTradeUnit row per code (IsManual=true),
+    /// skipping pairs that already exist so re-saving never duplicates. Sync-sourced rows
+    /// are never touched here. Returns a status so the controller can 404 a bad id.
+    /// </summary>
+    public async Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, CancellationToken cancellationToken = default)
+    {
+        // Normalize: trim, drop blanks, de-dupe (case-insensitive).
+        var codes = tradeUnitCodes
+            .Select(c => c?.Trim() ?? string.Empty)
+            .Where(c => c.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (codes.Count == 0) return AssignTradeUnitsResult.NoCodes;
+
+        // Ensure the customer exists in dbo.Customer — insert from ODS if this is a
+        // brand-new onboarding (producer with no contract/ticket).
+        var customerExists = await _appContext.Customers
+            .AnyAsync(c => c.Id == customerId, cancellationToken);
+
+        if (!customerExists)
+        {
+            var odsRow = await GetOdsCustomerRowAsync(customerId, cancellationToken);
+            if (odsRow is null)
+            {
+                _logger.LogWarning("AssignTradeUnits: customer {CustomerId} not found in base.vw_CurrentCustomers", customerId);
+                return AssignTradeUnitsResult.CustomerNotFound;
+            }
+            var inserted = MapOdsRowToCustomer(odsRow);
+            inserted.IsManual = true;
+            inserted.IsActive = true;
+            _appContext.Customers.Add(inserted);
+        }
+        else
+        {
+            // Reactivate a previously-deactivated customer being re-onboarded.
+            var existing = await _appContext.Customers.FirstAsync(c => c.Id == customerId, cancellationToken);
+            if (!existing.IsActive)
+            {
+                existing.IsActive = true;
+                existing.IsManual = true;
+            }
+        }
+
+        // Existing TU pairs for this customer — used to skip duplicates and reactivate.
+        var existingTus = await _appContext.CustomerTradeUnits
+            .Where(t => t.CustomerId == customerId)
+            .ToListAsync(cancellationToken);
+        var existingByCode = existingTus.ToDictionary(t => t.TradeUnit, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var code in codes)
+        {
+            if (existingByCode.TryGetValue(code, out var existingTu))
+            {
+                // Already assigned — just make sure it's active (no dupe row).
+                if (!existingTu.IsActive) existingTu.IsActive = true;
+                continue;
+            }
+            _appContext.CustomerTradeUnits.Add(new CustomerTradeUnit
+            {
+                CustomerId = customerId,
+                TradeUnit  = code,
+                IsActive   = true,
+                IsManual   = true,
+            });
+        }
+
+        await _appContext.SaveChangesAsync(cancellationToken);
+        _logger.LogInformation("AssignTradeUnits: customer {CustomerId} assigned {Count} trade unit(s) [{Codes}]",
+            customerId, codes.Count, string.Join(", ", codes));
+        return AssignTradeUnitsResult.Ok;
+    }
+
+    /// <summary>Reads a single producer row from base.vw_CurrentCustomers by CustomerId.</summary>
+    private async Task<OdsCustomerRow?> GetOdsCustomerRowAsync(long customerId, CancellationToken cancellationToken)
+    {
+        var rows = await _context.Database
+            .SqlQueryRaw<OdsCustomerRow>(@"
+                SELECT TOP 1
+                    c.CustomerId, c.ScoularId, c.CustomerName, c.IndustryCode1,
+                    c.MerchandisingCity, c.MerchandisingStateProvince, c.MerchandisingAddressLine1, c.MerchandisingPostalCode,
+                    c.MerchandisingPhone, c.MerchandisingEmail, c.ExtendedPrimaryPhone, c.SupplementalEmail,
+                    c.ExtendedAddressLine1, c.ExtendedAddressLine2, c.ExtendedAddressLine3, c.ExtendedAddressLine4,
+                    c.ExtendedCity, c.ExtendedPostalCode, c.ExtendedStateProvince, c.ExtendedCountry,
+                    c.EffectiveStartDate, c.EffectiveEndDate
+                FROM base.vw_CurrentCustomers c
+                WHERE c.CustomerId = @customerId", new SqlParameter("@customerId", customerId))
+            .ToListAsync(cancellationToken);
+        return rows.FirstOrDefault();
     }
 
     // =========================================================================

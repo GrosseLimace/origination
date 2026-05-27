@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject, of, forkJoin, takeUntil } from 'rxjs';
-import { catchError, debounceTime, switchMap } from 'rxjs/operators';
+import { catchError, debounceTime, switchMap, map } from 'rxjs/operators';
 import { StoredGrain, Ticket, PlantingIntention, Contract } from '@models';
 import { Customer, SavedList, Note, ProducerDetails } from '@models';
 import { MsalService } from '@azure/msal-angular';
@@ -104,7 +104,24 @@ export class CustomerListComponent {
         } else if (selectedGroups.length > 0) {
           tradeUnits = this._computeAvailableTradeUnits(this.appStateService.userGroups(), selectedGroups);
         }
+        // Only fall back to the ODS master once the term is specific enough — a 1–2 char
+        // term is a broad LIKE scan over the whole customer master (slow) and never a
+        // useful onboarding lookup. Keeps short-term typing fast (our-table search only).
+        const noScope = explicitUnits.length === 0 && selectedGroups.length === 0;
+        const odsEligible = noScope && searchTerm.trim().length >= 3;
         return this.apiService.searchCustomers(searchTerm, tradeUnits).pipe(
+          // Onboarding fallback: when nothing matches in our tables AND no TU/group is
+          // selected, look the term up in the ODS customer master so the user can find
+          // and onboard a producer who exists in CTRM but has no contract/ticket yet.
+          switchMap(results => {
+            if (results.length === 0 && odsEligible) {
+              return this.apiService.searchOdsCustomers(searchTerm).pipe(
+                map(ods => ods.map(c => ({ ...c, isOnboardCandidate: true }))),
+                catchError(() => of([] as Customer[]))
+              );
+            }
+            return of(results);
+          }),
           catchError(() => of([...this.customers()]))
         );
       }),
