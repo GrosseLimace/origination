@@ -128,6 +128,18 @@ public class SqlDataService : IDataService
     private static string ApplyDisplayName(string? upn, IReadOnlyDictionary<string, string> map) =>
         !string.IsNullOrEmpty(upn) && map.TryGetValue(upn, out var dn) ? dn : (upn ?? string.Empty);
 
+    /// <summary>Sort key for customer names: strips leading non-alphanumeric characters
+    /// (e.g. a "(NICKNAME)" or "*" prefix carried on raw CTRM names such as
+    /// "(YOUNG) WESLEY TOTTEN") so those names sort in their natural alphabetical position
+    /// instead of ahead of every plain-letter name.</summary>
+    private static string NameSortKey(string? name)
+    {
+        if (string.IsNullOrEmpty(name)) return string.Empty;
+        var i = 0;
+        while (i < name.Length && !char.IsLetterOrDigit(name[i])) i++;
+        return i == 0 ? name : name[i..];
+    }
+
     // =========================================================================
     // Customer Operations
     // =========================================================================
@@ -154,7 +166,14 @@ public class SqlDataService : IDataService
                     && tradeUnits!.Contains(ctu.TradeUnit)));
             }
 
-            var customers = await query.OrderBy(c => c.Name).ToListAsync(cancellationToken);
+            // Sort in memory (the set is already materialized + enriched) using a key that
+            // ignores any leading non-alphanumeric prefix, so an onboarded "(YOUNG) WESLEY
+            // TOTTEN" slots in under W/Y rather than jumping to the top ahead of plain names.
+            var customers = await query.ToListAsync(cancellationToken);
+            customers = customers
+                .OrderBy(c => NameSortKey(c.Name), StringComparer.OrdinalIgnoreCase)
+                .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
             await EnrichCustomersWithESignAsync(customers, cancellationToken);
             _logger.LogInformation("Returning {Count} customers from Customer{Filter}", customers.Count, filterMsg);
@@ -694,11 +713,13 @@ public class SqlDataService : IDataService
     }
 
     /// <summary>
-    /// Onboards / assigns trade units to a producer manually. If the customer isn't in
-    /// dbo.Customer yet, pulls their attributes from base.vw_CurrentCustomers and inserts
-    /// them (IsManual=true). Then adds a CustomerTradeUnit row per code (IsManual=true),
-    /// skipping pairs that already exist so re-saving never duplicates. Sync-sourced rows
-    /// are never touched here. Returns a status so the controller can 404 a bad id.
+    /// Reconciles a producer's MANUAL trade-unit assignments to exactly <paramref name="tradeUnitCodes"/>.
+    /// If the customer isn't in dbo.Customer yet, pulls their attributes from base.vw_CurrentCustomers
+    /// and inserts them (IsManual=true). Codes in the set are activated/inserted as manual; manual
+    /// assignments not in the set are soft-deactivated (preserved for re-adding). Sync-sourced rows
+    /// (IsManual=false) are never touched. An empty set is valid for an existing producer (clears all
+    /// manual assignments) but rejected for a brand-new onboarding (nothing to create them with).
+    /// Returns a status so the controller can 404 a bad id.
     /// </summary>
     public async Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, CancellationToken cancellationToken = default)
     {
@@ -708,12 +729,15 @@ public class SqlDataService : IDataService
             .Where(c => c.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
-        if (codes.Count == 0) return AssignTradeUnitsResult.NoCodes;
 
         // Ensure the customer exists in dbo.Customer — insert from ODS if this is a
         // brand-new onboarding (producer with no contract/ticket).
         var customerExists = await _appContext.Customers
             .AnyAsync(c => c.Id == customerId, cancellationToken);
+
+        // An empty set can't onboard a brand-new producer (nothing anchors the insert), but
+        // for an existing producer it's a valid request to clear all manual assignments.
+        if (!customerExists && codes.Count == 0) return AssignTradeUnitsResult.NoCodes;
 
         if (!customerExists)
         {
@@ -739,33 +763,69 @@ public class SqlDataService : IDataService
             }
         }
 
-        // Existing TU pairs for this customer — used to skip duplicates and reactivate.
+        // Existing TU pairs for this customer — used to reconcile against the desired set.
         var existingTus = await _appContext.CustomerTradeUnits
             .Where(t => t.CustomerId == customerId)
             .ToListAsync(cancellationToken);
         var existingByCode = existingTus.ToDictionary(t => t.TradeUnit, StringComparer.OrdinalIgnoreCase);
+        var desired = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
 
+        // Activate / insert every desired code as a manual assignment. Re-adding a code that
+        // exists (e.g. a previously-removed manual row, IsActive=false) reactivates it in place
+        // rather than inserting a duplicate.
         foreach (var code in codes)
         {
             if (existingByCode.TryGetValue(code, out var existingTu))
             {
-                // Already assigned — just make sure it's active (no dupe row).
-                if (!existingTu.IsActive) existingTu.IsActive = true;
-                continue;
+                // Only (re)flag manual when we're actually activating a non-active row. Never
+                // re-stickify a row that's already an ACTIVE sync membership — it may have
+                // graduated to synced (IsManual=false) while this dialog was open, and we don't
+                // want a stale save to flip it back to manual. Active manual rows are left as-is.
+                if (!existingTu.IsActive)
+                {
+                    existingTu.IsActive = true;
+                    existingTu.IsManual = true;
+                }
             }
-            _appContext.CustomerTradeUnits.Add(new CustomerTradeUnit
+            else
             {
-                CustomerId = customerId,
-                TradeUnit  = code,
-                IsActive   = true,
-                IsManual   = true,
-            });
+                _appContext.CustomerTradeUnits.Add(new CustomerTradeUnit
+                {
+                    CustomerId = customerId,
+                    TradeUnit  = code,
+                    IsActive   = true,
+                    IsManual   = true,
+                });
+            }
+        }
+
+        // Soft-deactivate manual assignments the user removed (active manual TUs not in the
+        // desired set). The row is preserved so it can be re-added/reactivated later. Sync
+        // assignments (IsManual=false) are never touched — they're locked in the UI.
+        var deactivated = 0;
+        foreach (var existing in existingTus)
+        {
+            if (existing.IsManual && existing.IsActive && !desired.Contains(existing.TradeUnit))
+            {
+                existing.IsActive = false;
+                deactivated++;
+            }
         }
 
         await _appContext.SaveChangesAsync(cancellationToken);
-        _logger.LogInformation("AssignTradeUnits: customer {CustomerId} assigned {Count} trade unit(s) [{Codes}]",
-            customerId, codes.Count, string.Join(", ", codes));
+        _logger.LogInformation("AssignTradeUnits: customer {CustomerId} reconciled to {Count} manual TU(s) [{Codes}], {Deactivated} deactivated",
+            customerId, codes.Count, string.Join(", ", codes), deactivated);
         return AssignTradeUnitsResult.Ok;
+    }
+
+    public async Task<List<CustomerTradeUnitInfo>> GetCustomerTradeUnitsAsync(long customerId, CancellationToken cancellationToken = default)
+    {
+        return await _appContext.CustomerTradeUnits
+            .AsNoTracking()
+            .Where(t => t.CustomerId == customerId && t.IsActive)
+            .OrderBy(t => t.TradeUnit)
+            .Select(t => new CustomerTradeUnitInfo { TradeUnit = t.TradeUnit, IsManual = t.IsManual })
+            .ToListAsync(cancellationToken);
     }
 
     /// <summary>Reads a single producer row from base.vw_CurrentCustomers by CustomerId.</summary>

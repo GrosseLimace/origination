@@ -125,6 +125,12 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
+  /** A producer's active trade-unit memberships (code + isManual) for the edit dialog. */
+  getCustomerTradeUnits(customerId: number): Observable<{ tradeUnit: string; isManual: boolean }[]> {
+    return this.http.get<{ tradeUnit: string; isManual: boolean }[]>(`${this.baseUrl}/customers/${customerId}/trade-units`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
   /** All trade units in the system (code + description) for the onboarding assign dropdown. */
   getAllTradeUnits(): Observable<{ code: string; description?: string }[]> {
     return this._dedupe('all-trade-units',

@@ -121,10 +121,21 @@ public class CustomersController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
+    /// <summary>Gets a producer's active trade-unit memberships (code + IsManual flag) so the
+    /// edit dialog can show which trade units they're on and which are editable vs locked.</summary>
+    [HttpGet("{id:long}/trade-units")]
+    [ProducesResponseType(typeof(List<CustomerTradeUnitInfo>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<CustomerTradeUnitInfo>>> GetTradeUnits(long id, CancellationToken cancellationToken = default)
+    {
+        return Ok(await _dataService.GetCustomerTradeUnitsAsync(id, cancellationToken));
+    }
+
+    // -------------------------------------------------------------------------
     /// <summary>
-    /// Assigns trade units to a producer. Onboards them from the ODS into dbo.Customer
-    /// if they aren't there yet (manual add, protected from the nightly sync). Used to
-    /// surface producers who exist in CTRM but have no contract/ticket.
+    /// Reconciles a producer's manual trade-unit assignments to the posted set. Onboards them
+    /// from the ODS into dbo.Customer if they aren't there yet (manual add, protected from the
+    /// nightly sync). Manual TUs not in the set are soft-deactivated; sync-sourced TUs are never
+    /// touched. Used to surface producers who exist in CTRM but have no contract/ticket.
     /// </summary>
     [HttpPut("{id:long}/trade-units")]
     [ProducesResponseType(typeof(Customer), StatusCodes.Status200OK)]

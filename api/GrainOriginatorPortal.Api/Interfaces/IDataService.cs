@@ -34,10 +34,16 @@ public interface IDataService
     /// in dbo.Customer.</summary>
     Task<List<Customer>> SearchOdsCustomersAsync(string searchTerm, CancellationToken cancellationToken = default);
 
-    /// <summary>Assigns trade units to a producer, onboarding them from the ODS into
-    /// dbo.Customer if they aren't there yet. Manual rows (IsManual=true) survive the
-    /// nightly sync. Idempotent — re-assigning an existing TU doesn't duplicate.</summary>
+    /// <summary>Reconciles a producer's MANUAL trade-unit assignments to exactly the given set.
+    /// Onboards them from the ODS into dbo.Customer if they aren't there yet. Codes in the set are
+    /// activated (or inserted) as manual; manual assignments NOT in the set are soft-deactivated
+    /// (IsActive=false, row preserved so they can be re-added). Sync-sourced (IsManual=false)
+    /// assignments are never touched. Idempotent — re-assigning an existing TU doesn't duplicate.</summary>
     Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets a producer's ACTIVE trade-unit memberships (code + IsManual flag) so the edit
+    /// dialog can show which trade units they appear on and which are editable vs locked.</summary>
+    Task<List<CustomerTradeUnitInfo>> GetCustomerTradeUnitsAsync(long customerId, CancellationToken cancellationToken = default);
 
     /// <summary>Gets a single customer by their unique identifier.</summary>
     /// <param name="id">The customer's unique identifier.</param>

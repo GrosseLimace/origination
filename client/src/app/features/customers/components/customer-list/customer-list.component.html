@@ -40,7 +40,10 @@
             />
             @if (searchLoading()) {
               <div class="absolute right-3 top-1/2 -translate-y-1/2">
-                <div class="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 dark:border-gray-600 border-t-scoular-green"></div>
+                <svg class="animate-spin h-4 w-4 text-scoular-green" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.961 3 8.12l3-2.829z"></path>
+                </svg>
               </div>
             } @else if (searchInputValue) {
               <button

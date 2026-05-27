@@ -1110,21 +1110,23 @@ export class HomeComponent {
    *  onboarding candidate that PUT inserts them into dbo.Customer, which the ProducerDetails
    *  save then depends on (FK). Existing customers with no TU change skip straight to the
    *  details save, unchanged. */
-  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[] }): void {
-    const codes = data.tradeUnitCodes ?? [];
-    if (codes.length > 0) {
-      this.apiService.assignTradeUnits(data.customerId, codes).subscribe({
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean }): void {
+    // Only call the trade-unit reconcile when the dialog flagged it safe + meaningful
+    // (onboarding a candidate, or the manual TU set actually changed). A pure details edit
+    // skips it entirely, and a failed TU-load never reconciles (so manual TUs can't be wiped).
+    if (data.reconcileTradeUnits) {
+      this.apiService.assignTradeUnits(data.customerId, data.tradeUnitCodes ?? []).subscribe({
         next: () => {
-          this.toastService.success('Producer added and trade units assigned. Select that trade unit or group to see them.');
-          // They're now in dbo.Customer — clear the candidate flag on the selected
-          // record so we stay on this producer and notes / details unlock immediately.
+          // A brand-new onboarding: they're now in dbo.Customer — clear the candidate flag on
+          // the selected record so we stay on this producer and notes / details unlock.
           const sel = this.selectedCustomer();
           if (sel?.id === data.customerId && sel.isOnboardCandidate) {
+            this.toastService.success('Producer added and trade units assigned. Select that trade unit or group to see them.');
             this.selectedCustomer.set({ ...sel, isManual: true, isOnboardCandidate: false });
           }
           this._saveProducerDetailsAndLinks(data);
         },
-        error: () => this.toastService.error('Failed to assign trade units')
+        error: () => this.toastService.error('Failed to update trade units')
       });
     } else {
       this._saveProducerDetailsAndLinks(data);
