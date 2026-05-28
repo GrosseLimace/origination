@@ -1079,6 +1079,13 @@ public class SqlDataService : IDataService
     {
         try
         {
+            // vw_CurrentContracts joined to thousands of producer IDs via STRING_SPLIT can run
+            // well over the default 30s on larger environments (QA, prod). A timeout here causes
+            // the inner exception handler to return [] which makes "All producers with contracts"
+            // and other contract-aware queries silently come back empty. Same 300s ceiling we use
+            // on the tickets bulk; the call still runs once per TU change, not per click.
+            _context.Database.SetCommandTimeout(300);
+
             var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
 
             // Two-path strategy. Both paths now use STRING_SPLIT downstream so we never hit
@@ -1578,6 +1585,14 @@ public class SqlDataService : IDataService
     {
         if (openContractNumbers.Count == 0 && customerCodes.Count == 0) return new List<Ticket>();
 
+        // vw_CurrentTickets is a heavy view (~2M rows). The view's plan against ContractNumber
+        // can't seek (no usable index for our access pattern), so the bulk TU-wide scan can run
+        // 2-3+ minutes. A 120s cap was getting clipped (~125s) and returning [] which made the
+        // UI render "(0)" applied tickets forever. 300s is the practical ceiling — the bulk runs
+        // off the request path (background after TU select) and per-customer scopes still return
+        // in <2s when CustomerCode seeks cleanly. A local synced ticket table is the durable fix.
+        _context.Database.SetCommandTimeout(300);
+
         // STRING_SPLIT can't take an empty CSV in this app's existing pattern; pass a sentinel
         // that won't match anything when one list is empty so the OR branch becomes a no-op.
         // Contract numbers can legitimately contain spaces (e.g. "PW 452117"), so use the
@@ -1591,15 +1606,21 @@ public class SqlDataService : IDataService
         // (C# property Ticket.Date maps to DB column TicketBlDate; raw SQL has to use the column name.)
         var cutoff = cutoffDateInclusive ?? string.Empty;
 
-        // Two indexed lookups UNION'd, then DISTINCT — far faster than a single WHERE with OR/EXISTS
-        // on a 2M-row table. Each branch is an INNER JOIN to STRING_SPLIT on an indexed column
-        // (ContractNumber for applied, CustomerCode for unapplied), so the optimizer picks index
-        // seeks instead of scans. The cutoff is parameterized once and applied symmetrically.
+        // Two indexed lookups UNION ALL'd (the two branches are mutually exclusive — applied
+        // tickets carry a P-prefix contract number, unapplied carry U/L/C — so SQL Server's
+        // UNION dedup step is wasted work on a multi-million-row view). Each branch is an
+        // INNER JOIN to STRING_SPLIT on an indexed column (ContractNumber / CustomerCode), so
+        // the optimizer picks index seeks instead of scans. The cutoff is parameterized once
+        // and applied symmetrically.
         //
         // Column list is explicit (not SELECT *) — names every column the EF Ticket entity maps,
         // matching OriginationDbContext.OnModelCreating for Ticket. Saves the view's row-width
         // bloat from columns we don't read. Adding a new mapped column to Ticket REQUIRES adding
         // it here too — EF materialization will fail if a mapped column is missing from the result.
+        //
+        // The unapplied prefix predicate uses three sargable LIKE 'X%' tests (not LEFT(col,1) IN ...)
+        // so the optimizer can index-seek the prefix range on ContractNumber. The LEFT() form was
+        // non-sargable and forced a scan of every row reached by the CustomerCode seek.
         //
         // Excludes BSTATS='CSL' (Consolidated) tickets — those have already been merged INTO
         // another ticket and showing them double-counts the bushels. PRG (Purged) doesn't reach
@@ -1618,7 +1639,7 @@ public class SqlDataService : IDataService
                   AND (t.TicketStatusDescription IS NULL OR t.TicketStatusDescription <> 'Consolidated')
                   AND ({cutoff} = '' OR (t.TicketBlDate IS NOT NULL AND t.TicketBlDate >= {cutoff}))
 
-                UNION
+                UNION ALL
 
                 SELECT t.TicketId, t.ContractId, t.CustomerId, t.CustomerCode, t.ProductCode,
                        t.TicketPrefix, t.TicketNumber, t.TicketSuffix, t.ShipmentTicketNumber, t.ContractNumber,
@@ -1631,7 +1652,7 @@ public class SqlDataService : IDataService
                 WHERE t.IsActive = 1 AND t.TicketType IN ('U','P')
                   AND (t.TicketStatusDescription IS NULL OR t.TicketStatusDescription <> 'Consolidated')
                   AND t.ContractNumber IS NOT NULL
-                  AND LEFT(t.ContractNumber, 1) IN ('U','L','C')
+                  AND (t.ContractNumber LIKE 'U%' OR t.ContractNumber LIKE 'L%' OR t.ContractNumber LIKE 'C%')
                   AND ({cutoff} = '' OR (t.TicketBlDate IS NOT NULL AND t.TicketBlDate >= {cutoff}))")
             .AsNoTracking()
             .OrderByDescending(t => t.Date)
@@ -2014,11 +2035,14 @@ public class SqlDataService : IDataService
                 }
             }
 
-            // Build the customer's open Purchase contract set so applied tickets are scoped
-            // by contract regardless of which CustomerCode the ticket carries (CTRM splits
-            // tickets across related entities, so ticket.CustomerCode can differ from
-            // contract.CtrmCustomerId even when the ticket is correctly applied to this
-            // customer's contract).
+            // Build the customer's open Purchase contract number set. We match tickets to
+            // contracts via the string SourceContractId ↔ ContractNumber pairing because the
+            // bigint Ticket.ContractId FK isn't reliably populated in vw_CurrentTickets (split
+            // tickets / older records can have null). The string contract number is the
+            // authoritative join key in the ODS shape. CtrmCustomerId is the customer-level
+            // filter on contracts; tickets may carry a different CustomerCode than the
+            // contract's CtrmCustomerId (CTRM splits across related entities), which is why
+            // the unapplied branch below still scopes by CustomerCode.
             var openContractNumbers = await _context.Contracts
                 .AsNoTracking()
                 .Where(c => c.IsActive && c.ContractPrefixType == "P"
@@ -2029,8 +2053,40 @@ public class SqlDataService : IDataService
                 .Distinct()
                 .ToListAsync(cancellationToken);
 
-            var tickets = await LoadTicketsByContractAndCustomerScopeAsync(
-                openContractNumbers, new List<string> { scoularId! }, cancellationToken);
+            _context.Database.SetCommandTimeout(120);
+
+            // 3-year cutoff bounds the scan against the 2M-row ticket view. Open contracts almost
+            // always have delivery windows under a year, so 3 years is generous for applied tickets;
+            // unapplied tickets older than 3 years aren't actionable. TicketBlDate is stored as a
+            // string in the ODS, so the cutoff is an ISO yyyy-MM-dd literal which compares
+            // lexicographically (safe for that format).
+            var cutoff = DateTime.UtcNow.AddYears(-3).ToString("yyyy-MM-dd");
+
+            // Single LINQ query with applied ∪ unapplied as an OR. Applied side matches
+            // Ticket.ContractNumber against the customer's open Purchase contract numbers —
+            // for a per-customer scope the IN list is small (a handful of contracts) so EF
+            // emits an explicit IN clause the optimizer seeks on. The unapplied side is
+            // anchored on the single CustomerCode plus a sargable StartsWith on
+            // ContractNumber (translated to LIKE 'X%'). The two branches are mutually
+            // exclusive (P-prefix vs U/L/C-prefix), so the OR doesn't double-count.
+            var tickets = await _context.Tickets
+                .AsNoTracking()
+                .Where(t => t.IsActive
+                    && (t.TicketType == "U" || t.TicketType == "P")
+                    && (t.TicketStatusDescription == null || t.TicketStatusDescription != "Consolidated")
+                    && t.Date != null
+                    && string.Compare(t.Date, cutoff) >= 0
+                    && t.CtrmContractNumber != null
+                    && (
+                        openContractNumbers.Contains(t.CtrmContractNumber)
+                        ||
+                        (t.CustomerCode == scoularId
+                         && (t.CtrmContractNumber.StartsWith("U")
+                             || t.CtrmContractNumber.StartsWith("L")
+                             || t.CtrmContractNumber.StartsWith("C")))
+                    ))
+                .OrderByDescending(t => t.Date)
+                .ToListAsync(cancellationToken);
 
             // Load quality data for these tickets
             var ticketIds = tickets.Select(t => t.Id).ToList();
@@ -2076,6 +2132,136 @@ public class SqlDataService : IDataService
                 customerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
+    }
+
+    /// <summary>
+    /// Fast per-producer unapplied-tickets fetch. Single CustomerCode predicate plus the U/L/C
+    /// contract-prefix filter — the optimizer's most-selective shape against vw_CurrentTickets.
+    /// Used by the home page on producer select; applied tickets are loaded lazily per-contract
+    /// (see <see cref="GetAppliedTicketsByContractAsync"/>) when the user expands a contract row.
+    /// </summary>
+    public async Task<List<Ticket>> GetUnappliedTicketsByCustomerAsync(long customerId, string? scoularId = null, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(scoularId))
+            {
+                scoularId = await _appContext.Customers.AsNoTracking()
+                    .Where(c => c.Id == customerId)
+                    .Select(c => c.ScoularId)
+                    .FirstOrDefaultAsync(cancellationToken);
+                if (string.IsNullOrEmpty(scoularId))
+                {
+                    _logger.LogWarning("Customer {CustomerId} not found or has no ScoularId", customerId);
+                    return [];
+                }
+            }
+
+            _context.Database.SetCommandTimeout(120);
+
+            // 3-year cutoff — old unapplied tickets aren't actionable.
+            var cutoff = DateTime.UtcNow.AddYears(-3).ToString("yyyy-MM-dd");
+
+            var tickets = await _context.Tickets
+                .AsNoTracking()
+                .Where(t => t.IsActive
+                    && (t.TicketType == "U" || t.TicketType == "P")
+                    && (t.TicketStatusDescription == null || t.TicketStatusDescription != "Consolidated")
+                    && t.CustomerCode == scoularId
+                    && t.CtrmContractNumber != null
+                    && (t.CtrmContractNumber.StartsWith("U")
+                        || t.CtrmContractNumber.StartsWith("L")
+                        || t.CtrmContractNumber.StartsWith("C"))
+                    && t.Date != null
+                    && string.Compare(t.Date, cutoff) >= 0)
+                .OrderByDescending(t => t.Date)
+                .ToListAsync(cancellationToken);
+
+            await PopulateQualityAndElevatorAsync(tickets, cancellationToken);
+
+            _logger.LogInformation("Found {TicketCount} unapplied tickets for customer {CustomerId} (ScoularId: {ScoularId})",
+                tickets.Count, customerId, scoularId);
+            return tickets;
+        }
+        catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
+        {
+            _logger.LogWarning(ex, "Tickets view missing column/object — returning empty list [{TraceId}]", GetTraceId());
+            return [];
+        }
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
+        {
+            _logger.LogWarning(ex, "DB error retrieving unapplied tickets for customer {CustomerId} — returning empty list [{TraceId}]",
+                customerId, GetTraceId());
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Lazy per-contract applied-tickets fetch. Single-literal predicate on ContractNumber gives
+    /// the optimizer its best shot at an index seek. Used by the contracts table when a row is
+    /// expanded.
+    /// </summary>
+    public async Task<List<Ticket>> GetAppliedTicketsByContractAsync(string sourceContractId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sourceContractId)) return [];
+        var trimmed = sourceContractId.Trim();
+
+        try
+        {
+            _context.Database.SetCommandTimeout(120);
+
+            var tickets = await _context.Tickets
+                .AsNoTracking()
+                .Where(t => t.IsActive
+                    && (t.TicketType == "U" || t.TicketType == "P")
+                    && (t.TicketStatusDescription == null || t.TicketStatusDescription != "Consolidated")
+                    && t.CtrmContractNumber == trimmed)
+                .OrderByDescending(t => t.Date)
+                .ToListAsync(cancellationToken);
+
+            await PopulateQualityAndElevatorAsync(tickets, cancellationToken);
+
+            _logger.LogInformation("Found {TicketCount} applied tickets for contract {ContractNumber}",
+                tickets.Count, trimmed);
+            return tickets;
+        }
+        catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
+        {
+            _logger.LogWarning(ex, "Tickets view missing column/object — returning empty list [{TraceId}]", GetTraceId());
+            return [];
+        }
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
+        {
+            _logger.LogWarning(ex, "DB error retrieving applied tickets for contract {ContractNumber} — returning empty list [{TraceId}]",
+                trimmed, GetTraceId());
+            return [];
+        }
+    }
+
+    /// <summary>Hydrates quality (moisture/protein/test weight) and elevator city/state onto a
+    /// loaded ticket set. Shared by the per-producer unapplied and per-contract applied fetches
+    /// so post-load enrichment stays consistent.</summary>
+    private async Task PopulateQualityAndElevatorAsync(List<Ticket> tickets, CancellationToken cancellationToken)
+    {
+        if (tickets.Count == 0) return;
+
+        var ticketIds = tickets.Select(t => t.Id).ToList();
+        var qualityList = await _context.TicketQualities
+            .AsNoTracking()
+            .Where(q => ticketIds.Contains(q.TicketId))
+            .ToListAsync(cancellationToken);
+        var qualityData = qualityList.ToDictionary(q => q.TicketId);
+        foreach (var ticket in tickets)
+        {
+            if (qualityData.TryGetValue(ticket.Id, out var quality))
+            {
+                ticket.Moisture = quality.GradeFactorMoisturePercent;
+                ticket.TestWeight = quality.GradeFactorTestWeightPercent;
+                ticket.ProteinPercent = quality.GradeFactorProteinPercent;
+            }
+        }
+
+        await PopulateElevatorLocations(tickets, cancellationToken);
     }
 
     public async Task<List<Ticket>> GetTicketsByFarmAsync(string farmId, CancellationToken cancellationToken = default)

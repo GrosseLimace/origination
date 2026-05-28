@@ -156,6 +156,17 @@ public interface IDataService
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<List<Ticket>> GetTicketsByCustomerAsync(long customerId, string? scoularId = null, CancellationToken cancellationToken = default);
 
+    /// <summary>Gets a customer's UNAPPLIED tickets only — fast per-producer fetch using a single
+    /// CustomerCode predicate plus the U/L/C contract-prefix filter. The home page loads this on
+    /// producer select; applied tickets are loaded lazily per-contract on contract expansion via
+    /// <see cref="GetAppliedTicketsByContractAsync"/>.</summary>
+    Task<List<Ticket>> GetUnappliedTicketsByCustomerAsync(long customerId, string? scoularId = null, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets the APPLIED tickets for a single contract, looked up by SourceContractId
+    /// (the human-readable contract number). Single-literal predicate gives the optimizer the
+    /// best chance at an index seek. Used by the contracts table when a row is expanded.</summary>
+    Task<List<Ticket>> GetAppliedTicketsByContractAsync(string sourceContractId, CancellationToken cancellationToken = default);
+
     /// <summary>Gets all tickets associated with a specific farm.</summary>
     /// <param name="farmId">The farm's string identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>

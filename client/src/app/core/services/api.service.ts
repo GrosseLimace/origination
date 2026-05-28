@@ -261,6 +261,22 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
+  /** Per-producer unapplied tickets — the fast, narrowly-scoped fetch the home page fires on
+   *  producer select. Applied tickets are loaded lazily per-contract via {@link getAppliedTicketsByContract}. */
+  getUnappliedTicketsByCustomer(customerId: number, scoularId?: string): Observable<Ticket[]> {
+    let params = new HttpParams();
+    if (scoularId) params = params.set('scoularId', scoularId);
+    return this.http.get<Ticket[]>(`${this.baseUrl}/tickets/customer/${customerId}/unapplied`, { params })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Lazy per-contract applied-tickets fetch — fires when the contracts table expands a row.
+   *  Contract numbers may contain spaces (e.g. "PC  13042") so the id must be URL-encoded. */
+  getAppliedTicketsByContract(sourceContractId: string): Observable<Ticket[]> {
+    return this.http.get<Ticket[]>(`${this.baseUrl}/tickets/contract/${encodeURIComponent(sourceContractId)}/applied`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
   // ==========================================================================
   // Planting Intention Operations
   // ==========================================================================

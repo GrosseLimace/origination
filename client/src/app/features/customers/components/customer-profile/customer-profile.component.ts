@@ -65,6 +65,7 @@ export class CustomerProfileComponent {
   public isLoadingEstimates = input(false);
   public isLoadingContracts = input(false);
   public isLoadingTickets = input(false);
+  public isLoadingUnappliedTickets = input(false);
   public isBackfillingTickets = input(false);
   public isLoadingPricingLines = input(false);
   public isLoadingPlanting = input(false);
