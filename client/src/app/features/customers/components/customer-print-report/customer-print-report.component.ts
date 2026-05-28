@@ -163,6 +163,18 @@ export class CustomerPrintReportComponent {
     return key ? (this.pricingLinesMap().get(key) ?? []) : [];
   }
 
+  /** Mirrors contracts-table.getPriceSequenceLabel — Priced/Unpriced labels on sequence-0
+   *  rows except for two carve-outs that fall back to the raw sequence number: 'Unpriced + basis'
+   *  and 'Deferred'. The label for those scenarios hasn't been decided yet. */
+  getPriceSequenceLabel(contract: Contract, line: ContractPricingLine): string | number {
+    const seq = line.priceSequence ?? 0;
+    if (seq > 0) return seq;
+    const ptc = (contract.priceTypeCode ?? '').trim().toUpperCase();
+    if (ptc === 'D') return seq;
+    if (ptc === 'U' && line.basisPrice != null && line.basisPrice !== 0) return seq;
+    return ptc === 'P' ? 'Priced' : 'Unpriced';
+  }
+
   /** Pricing lines that belong to the contracts shown in this report (openContracts).
    *  Used for the sidebar toggle count so it matches what actually prints. */
   readonly visiblePricingLines = computed(() =>
@@ -628,7 +640,7 @@ export class CustomerPrintReportComponent {
                         </tr></thead>
                         <tbody>
                           ${lines.map(line => `<tr>
-                            <td style="text-align:center;padding:4px 6px;color:#6b7280;">${line.priceSequence ?? ''}</td>
+                            <td style="text-align:center;padding:4px 6px;color:#6b7280;">${this.getPriceSequenceLabel(ct, line)}</td>
                             <td style="text-align:center;padding:4px 6px;">${(line.priceQuantity ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })} ${unit}</td>
                             <td style="text-align:center;padding:4px 6px;">${line.basisPrice != null ? this.formatCurrency(line.basisPrice) : '—'}</td>
                             <td style="text-align:center;padding:4px 6px;">${line.hedgePrice != null ? this.formatCurrency(line.hedgePrice) : '—'}</td>
