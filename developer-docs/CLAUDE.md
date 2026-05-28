@@ -821,7 +821,7 @@ on:
 
 **Subscription selection:** Use `AZURE_SUBSCRIPTION_ID_NONPROD` for dev/qa, `AZURE_SUBSCRIPTION_ID_PROD` for prod.
 
-**SQL migrations:** The workflow identity has db_datareader, db_datawriter, db_ddladmin on Origination.
+**SQL migrations:** The workflow identity has db_datareader, db_datawriter, db_ddladmin, and database-wide EXECUTE on Origination (the EXECUTE grant lets migrations call user-defined stored procedures, including CREATE PROC + EXEC patterns).
 Use `Authentication=Active Directory Default` in the connection string, not connection strings with passwords.
 **Important:** On self-hosted runners, `Active Directory Default` uses `DefaultAzureCredential` which tries the runner VMSS managed identity *before* Azure CLI. Your EF Core project must include a design-time `IDesignTimeDbContextFactory` with `ExcludeManagedIdentityCredential = true` to ensure the correct workflow service principal is used. See `developer-docs/GITHUB-ACTIONS-CICD.md` for the full pattern.
 
@@ -867,4 +867,4 @@ Do NOT expose the App Service to the internet. External access goes through APIM
 
 ---
 
-*Document version: 1.11 | 2026-04-21*
+*Document version: 1.12 | 2026-04-30*

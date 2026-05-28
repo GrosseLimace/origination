@@ -109,7 +109,7 @@ SQL database access is controlled through Entra ID groups that map to SQL Server
 
 Most SQL groups are granted through Access Packages (Developer Access for Dev/QA, Production Support for Prod). The `db_owner` role is **not** included in access packages and is managed directly by the infrastructure team.
 
-The CI/CD workflow identity (GitHub Actions) is added to `db_datareader`, `db_datawriter`, and `db_ddladmin` to support EF Core migrations and data seeding.
+The CI/CD workflow identity (GitHub Actions) is added to `db_datareader`, `db_datawriter`, and `db_ddladmin`, and is also granted database-wide `EXECUTE`. Together these support EF Core migrations (including migrations that `EXEC` user-defined stored procedures), data seeding, and integration tests.
 
 ### Dev
 
@@ -203,4 +203,4 @@ When no `appRole` is specified, the naming convention applies automatically.
 
 ---
 
-*Document version: 1.1 | 2026-02-17*
+*Document version: 1.2 | 2026-04-30*
