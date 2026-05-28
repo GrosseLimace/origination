@@ -207,7 +207,6 @@ export class InsightsComponent {
       if (arr) { arr.push(c); } else { contractsByCustomer.set(c.ctrmCustomerId, [c]); }
     }
 
-    const allTickets = this.tickets();
     // Pre-index recent tickets (last 30 days) by customer for O(1) spot-load lookup
     const recentTicketsByCustomer = new Map<string, Ticket[]>();
     for (const t of todaysTickets) {

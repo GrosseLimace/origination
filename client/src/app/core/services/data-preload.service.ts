@@ -1,6 +1,6 @@
 import { Injectable, inject, DestroyRef } from '@angular/core';
 import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Subject, merge, of, ReplaySubject } from 'rxjs';
+import { Subject, merge, of } from 'rxjs';
 import { catchError, distinctUntilChanged, filter, switchMap, take, tap } from 'rxjs/operators';
 import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
@@ -15,37 +15,6 @@ export class DataPreloadService {
   private readonly appState = inject(AppStateService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly _forceReload$ = new Subject<string[]>();
-
-  /** In-flight ticket pre-load — non-null while loading, survives component navigation. */
-  private _ticketPreload$: ReplaySubject<void> | null = null;
-
-  /**
-   * Ensures tickets are loaded into AppState. If already loaded, resolves immediately.
-   * If a load is already in flight (e.g. started before navigating away), subscribes to
-   * the existing one instead of starting a duplicate request.
-   */
-  ensureTicketsLoaded(tradeUnits: string[]): ReplaySubject<void> {
-    if (this.appState.tickets().length > 0) {
-      const done = new ReplaySubject<void>(1);
-      done.next();
-      done.complete();
-      return done;
-    }
-    if (this._ticketPreload$) return this._ticketPreload$;
-
-    this._ticketPreload$ = new ReplaySubject<void>(1);
-    const tuParam = tradeUnits.length > 0 ? tradeUnits : undefined;
-    this.apiService.getTickets(tuParam).pipe(
-      catchError(() => of([] as import('@models').Ticket[])),
-      takeUntilDestroyed(this.destroyRef)
-    ).subscribe(tickets => {
-      this.appState.setTickets(tickets);
-      this._ticketPreload$!.next();
-      this._ticketPreload$!.complete();
-      this._ticketPreload$ = null;
-    });
-    return this._ticketPreload$;
-  }
 
   /** Re-run the full data load with the current trade units, cancelling any in-progress load. */
   forceReload(): void {
@@ -84,28 +53,20 @@ export class DataPreloadService {
       switchMap(tradeUnits => {
         if (tradeUnits.length === 0) {
           this.appState.setDataLoading(false);
-          this.appState.setTicketsLoading(false);
           return of(null);
         }
 
         this.appState.setDataLoading(true);
-        this.appState.setTicketsLoading(true);
         this.appState.clearDashboardCache();
         this.appState.clearPreloadedDashboardSummary();
-
-        // Pre-wire _ticketPreload$ to this load cycle so ensureTicketsLoaded()
-        // callers share this load's result instead of spawning a duplicate HTTP call.
-        // A duplicate concurrent getTickets() against the same slow ODS view causes
-        // DB contention and race conditions (one call may return empty and overwrite
-        // good data from the other).
-        if (!this._ticketPreload$) {
-          this._ticketPreload$ = new ReplaySubject<void>(1);
-        }
 
         // Core group — dataLoading clears when all three are ready so that
         // Unconfirmed Contracts, Spot Loads, and Unshipped Bushels all appear
         // simultaneously. todaysTickets$ is a fast query (today's date filter)
         // and resolves in roughly the same time as customers + contracts.
+        // The full ticket set IS also pre-loaded (tickets$ below) but in the
+        // background — it can take minutes against the slow ODS view and must
+        // not block the dataLoading signal.
         let coreArrived = { customers: false, contracts: false, todaysTickets: false };
 
         const customers$ = this.apiService.getCustomers(tradeUnits).pipe(
@@ -132,17 +93,16 @@ export class DataPreloadService {
             if (coreArrived.customers && coreArrived.contracts) this.appState.setDataLoading(false);
           })
         );
+        // Bulk tickets load — fires in the background after the page is already interactive.
+        // The full ticket set against vw_CurrentTickets is slow (minutes for some TUs) because
+        // the view doesn't seek on ContractNumber; per-customer queries against it have an even
+        // worse plan, so a single background scan that fills appState is the practical answer
+        // until a local synced ticket table replaces this. The home page reads from appState
+        // for applied-tickets-per-contract once this lands.
         const tickets$ = this.apiService.getTickets(tradeUnits).pipe(
           catchError(() => of([] as Ticket[])),
           tap(data => {
             this.appState.setTickets(data);
-            this.appState.setTicketsLoading(false);
-            // Resolve any ensureTicketsLoaded() waiters — they share this load.
-            if (this._ticketPreload$) {
-              this._ticketPreload$.next();
-              this._ticketPreload$.complete();
-              this._ticketPreload$ = null;
-            }
           })
         );
         const notes$ = this.apiService.getNotes().pipe(

@@ -278,7 +278,7 @@
               <app-contracts-table [contracts]="contracts()" [tickets]="tickets()" [pricingLines]="pricingLines()" [customer]="customer()" [openContractId]="openContractId()" [isLoading]="isLoadingContracts()" [isLoadingTickets]="isLoadingTickets()" [isBackfillingTickets]="isBackfillingTickets()" [isLoadingPricingLines]="isLoadingPricingLines()"></app-contracts-table>
             }
             @case ('tickets') {
-              <app-tickets-table [tickets]="tickets()" [contracts]="contracts()" [customer]="customer()" [isLoading]="isLoadingTickets()" [openCrop]="openTicketCrop()"></app-tickets-table>
+              <app-tickets-table [tickets]="tickets()" [contracts]="contracts()" [customer]="customer()" [isLoading]="isLoadingUnappliedTickets()" [openCrop]="openTicketCrop()"></app-tickets-table>
             }
             @case ('planting') {
               <!-- Contract Percentage Summary for this planting year -->
