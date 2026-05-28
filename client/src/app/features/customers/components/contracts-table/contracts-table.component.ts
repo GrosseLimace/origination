@@ -479,22 +479,6 @@ export class ContractsTableComponent {
    *     "19,625 BU" and the three lines visibly add up to 25,000.
    *
    *  Other lines fall through to the raw priceQuantity. */
-  /** What to render in the Price Sequence column for a single line.
-   *  Numbered lines (1, 2, …) always render their number. Sequence-0 rows mirror the same
-   *  priced/unpriced rule that drives the contract-level pricing badge in {@link getPricingInfo}:
-   *  PriceTypeCode='P' → "Priced", 'U' without basis → "Unpriced". Two carve-outs render the
-   *  raw sequence number (typically 0) instead of a label until the merchandiser decides on
-   *  the right wording: (a) 'U' with a basisPrice on the line ("Unpriced — Basis $X/BU"), and
-   *  (b) 'D' (Deferred) — calling deferred bushels "Unpriced" felt misleading. */
-  getPriceSequenceLabel(contract: Contract, line: ContractPricingLine): string | number {
-    const seq = line.priceSequence ?? 0;
-    if (seq > 0) return seq;
-    const ptc = (contract.priceTypeCode ?? '').trim().toUpperCase();
-    if (ptc === 'D') return seq;
-    if (ptc === 'U' && line.basisPrice != null && line.basisPrice !== 0) return seq;
-    return ptc === 'P' ? 'Priced' : 'Unpriced';
-  }
-
   getDisplayPricingQty(contract: Contract, line: ContractPricingLine): number {
     const lineQty = line.priceQuantity ?? 0;
     if (lineQty !== 0) return lineQty;
