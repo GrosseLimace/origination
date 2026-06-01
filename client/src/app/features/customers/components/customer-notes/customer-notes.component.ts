@@ -27,6 +27,9 @@ export class CustomerNotesComponent {
    *  for increments and only then clears the textarea — so if the save fails, the
    *  user's typed content is preserved and they can retry without retyping. */
   public noteSaveSucceededCounter = input<number>(0);
+  /** When set, the add-note form is disabled and this message is shown instead of the
+   *  input — used for a not-yet-onboarded producer who must be assigned a trade unit first. */
+  public addDisabledReason = input<string | null>(null);
   public addNote = output<string>();
   public togglePin = output<Note>();
   public editNote = output<{ noteId: number; content: string }>();

@@ -46,6 +46,27 @@ public class TicketsController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
+    /// <summary>Fast per-producer unapplied-tickets fetch. Single CustomerCode predicate, used by the
+    /// home page on producer select. Applied tickets load lazily per-contract on row expansion.</summary>
+    [HttpGet("customer/{customerId:long}/unapplied")]
+    [ProducesResponseType(typeof(List<Ticket>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<Ticket>>> GetUnappliedByCustomer(long customerId, [FromQuery] string? scoularId = null, CancellationToken cancellationToken = default)
+    {
+        return Ok(await _dataService.GetUnappliedTicketsByCustomerAsync(customerId, scoularId, cancellationToken));
+    }
+
+    // -------------------------------------------------------------------------
+    /// <summary>Lazy per-contract applied-tickets fetch. Single-literal predicate on ContractNumber.
+    /// Used by the contracts table when a row is expanded. The sourceContractId can contain spaces
+    /// (e.g. "PC  13042"), so callers must URL-encode it.</summary>
+    [HttpGet("contract/{sourceContractId}/applied")]
+    [ProducesResponseType(typeof(List<Ticket>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<Ticket>>> GetAppliedByContract(string sourceContractId, CancellationToken cancellationToken = default)
+    {
+        return Ok(await _dataService.GetAppliedTicketsByContractAsync(sourceContractId, cancellationToken));
+    }
+
+    // -------------------------------------------------------------------------
     /// <summary>Gets all delivery tickets for a specific farm. Open to any authenticated originator —
     /// trade-unit entitlements are a UX default, not an access-control boundary.</summary>
     [HttpGet("farm/{farmId}")]

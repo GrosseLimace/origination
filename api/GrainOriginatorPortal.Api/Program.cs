@@ -412,12 +412,11 @@ if (app.Environment.IsDevelopment())
             );
             app.Logger.LogInformation("DB connections warmed up successfully.");
 
-            // Sync commodities from ODS at startup so GET /api/commodities is fast
-            var dataService = scope.ServiceProvider.GetRequiredService<IDataService>();
-            if (dataService is SqlDataService sqlDataService)
-            {
-                await sqlDataService.SyncCommoditiesAsync();
-            }
+            // SyncCommoditiesAsync deliberately NOT called here. dbo.Commodities is hand-curated
+            // (Code/Name/Category plus Tier1/Tier2/Tier3/BaseUOM which the ODS sync doesn't know
+            // about), so we don't want the startup to scan the 2M-row vw_CurrentTickets view on
+            // every dev restart just to confirm there's nothing new to add. The method is still
+            // callable on demand via the diagnostics endpoint if a one-time backfill is needed.
         }
         catch (Exception ex)
         {

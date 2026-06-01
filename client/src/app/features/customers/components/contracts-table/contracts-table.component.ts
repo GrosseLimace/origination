@@ -40,10 +40,10 @@ export class ContractsTableComponent {
   /** True while the bulk /api/tickets fetch is in flight. Applied Tickets section
    *  shows "Loading…" instead of "(0)" when this is the case. */
   public isLoadingTickets = input(false);
-  /** True while the per-customer ticket fetch is running AFTER bulk has populated the
-   *  in-memory ticket set. Applied Tickets section shows a subtle "more may still be
-   *  loading" hint so the user knows the displayed count might grow from cross-TU
-   *  / cross-customer backfill, without blocking the UI with a full Loading state. */
+  /** True while the per-customer unapplied-tickets fetch is running AFTER the bulk has
+   *  populated the in-memory ticket set. Applied Tickets section shows a subtle "more may
+   *  still be loading" hint so the user knows the displayed count might grow from cross-TU
+   *  backfill, without blocking the UI with a full Loading state. */
   public isBackfillingTickets = input(false);
   /** True while /api/contracts/pricing-lines/customer/{id} is in flight. Pricing Lines
    *  section shows "Loading…" instead of disappearing when this is the case. */

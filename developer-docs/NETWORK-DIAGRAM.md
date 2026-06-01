@@ -117,8 +117,8 @@ GitHub Actions deploys your app via the SCM/Kudu endpoint (`*.scm.azurewebsites.
 
 | Environment | Inbound Subnet | Outbound Subnet | Custom Domain |
 |-------------|----------------|-----------------|---------------|
-| Dev | `10.103.25.80/28` | `10.103.25.96/28` | `origination-dev.scoular.com` |
-| QA | `10.103.25.112/28` | `10.103.25.128/28` | `origination-qa.scoular.com` |
+| Dev | `10.103.25.80/28` | `10.103.30.0/25 (shared ASP)` | `origination-dev.scoular.com` |
+| QA | `10.103.25.112/28` | `10.103.31.0/25 (shared ASP)` | `origination-qa.scoular.com` |
 | Prod | `10.102.25.48/28` | `10.102.25.64/28` | `origination.scoular.com` |
 
 ---
@@ -150,4 +150,4 @@ The Infrastructure team will configure the necessary firewall and network rules 
 
 ---
 
-*Document version: 1.2 | 2026-04-14*
+*Document version: 1.3 | 2026-05-28*

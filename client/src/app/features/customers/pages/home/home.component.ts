@@ -106,18 +106,23 @@ export class HomeComponent {
   readonly isLoadingYieldData = signal(false);
   readonly isLoadingContracts = signal(false);
   readonly isLoadingTickets = signal(false);
-  /** True while the per-customer tickets fetch is in flight AFTER bulk has already
-   *  populated the in-memory ticket set. Used by the Applied Tickets section to show
-   *  a subtle "more may still be loading" hint instead of the full Loading… state,
-   *  since whatever's currently displayed is real (from bulk) and just might grow if
-   *  the per-customer call surfaces cross-TU / cross-customer tickets. */
+  /** True only while the FAST per-customer unapplied-tickets fetch is in flight. Drives the
+   *  spinner on the Unapplied Tickets tab specifically — separate from isLoadingTickets,
+   *  which is the slow bulk's flag and stays true for 1–2 min while the contracts-table
+   *  Applied Tickets section waits for the bulk to land. Without splitting these, the
+   *  Unapplied tab would show a spinner overlaying its already-loaded data the whole time
+   *  the bulk was still grinding. */
+  readonly isLoadingUnappliedTickets = signal(false);
+  /** True while the per-customer unapplied-tickets fetch is in flight AFTER the bulk has
+   *  already populated appState. Used by the Applied Tickets section to show a subtle
+   *  "more may still be loading" hint instead of a full Loading… state, since whatever's
+   *  currently displayed is real (from the bulk) and might grow once the per-customer
+   *  call surfaces cross-TU / cross-customer tickets. */
   readonly isBackfillingTickets = signal(false);
   readonly isLoadingPricingLines = signal(false);
-  /** Set true once the bulk /api/tickets fetch returns (any result, including empty)
-   *  for the current TU. Used by _loadCustomerContractsAndTickets to skip the Loading
-   *  state on Applied Tickets when bulk has already populated the in-memory cache —
-   *  the per-customer call still runs to backfill cross-TU/cross-customer cases,
-   *  but it does so silently in the background instead of blocking the UI. */
+  /** Set true once the bulk /api/tickets fetch returns (any result, including empty) for
+   *  the current TU. Until it lands, contracts-table treats the Applied Tickets section as
+   *  "still loading" so it doesn't show a misleading "(0)" while the bulk is in flight. */
   private _bulkTicketsArrived = false;
   readonly isLoadingStoredGrain = signal(false);
   readonly isLoadingPlanting = signal(true);
@@ -183,6 +188,29 @@ export class HomeComponent {
     effect(() => {
       const stateNotes = this.appState.notes();
       untracked(() => this.notes.set(stateNotes));
+    });
+
+    // Mirror appState.tickets() into the home component's local tickets signal.
+    // The bulk getTickets fires in both data-preload AND _loadAllData, but only the
+    // _loadAllData path writes to this.tickets() directly. When data-preload wins the
+    // race (or _loadAllData skips because customers were already cached), this effect
+    // picks up the bulk's data, marks the bulk as arrived, and re-filters the selected
+    // customer's per-customer ticket subset so applied tickets surface in the contracts
+    // table. Without it, customerTickets stays frozen at whatever the per-customer
+    // unapplied fetch returned and Applied Tickets renders "(0)".
+    effect(() => {
+      const stateTickets = this.appState.tickets();
+      if (stateTickets.length === 0) return;
+      untracked(() => {
+        const localIds = new Set(this.tickets().map(t => t.id));
+        const fresh = stateTickets.filter(t => !localIds.has(t.id));
+        if (fresh.length === 0) return;
+        this.tickets.set([...this.tickets(), ...fresh]);
+        this._bulkTicketsArrived = true;
+        this.isLoadingTickets.set(false);
+        const sel = this.selectedCustomer();
+        if (sel) this._loadCustomerData(sel.id);
+      });
     });
 
     // React to global trade unit changes made via TradeUnitSelectorComponent
@@ -331,6 +359,11 @@ export class HomeComponent {
       error: () => {}
     });
 
+    // Bulk tickets fetch — slow against the ODS view (minutes for some TUs) but runs in
+    // the background so the home page is interactive immediately. The per-customer
+    // unapplied fetch (kicked off on producer click) gives the user usable applied-tickets-
+    // adjacent data fast; this bulk lands later and populates the applied-tickets-per-contract
+    // view in contracts-table. data-preload also fires this; whichever returns first wins.
     this.apiService.getTickets(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         const list = data ?? [];
@@ -338,22 +371,27 @@ export class HomeComponent {
         const fkExtras = this.tickets().filter(t => !batchIds.has(t.id));
         this.tickets.set([...list, ...fkExtras]);
         // Merge into appState rather than overwrite — appState may have cross-TU tickets
-        // (linked producers) that aren't in our local copy. Overwriting drops them and
-        // breaks downstream pages (Insights) that depend on the global ticket set.
+        // (linked producers) that aren't in our local copy. Overwriting would drop them
+        // and break downstream pages (Insights) that depend on the global ticket set.
         const merged = [...this.tickets()];
         const have = new Set(merged.map(t => t.id));
         for (const t of this.appState.tickets()) {
           if (!have.has(t.id)) merged.push(t);
         }
         this.appState.setTickets(merged);
-        // Bulk has landed — any Applied Tickets sections that are gated on
-        // isLoadingTickets can stop spinning; the per-customer fetch (if still in flight)
-        // will silently backfill cross-TU/cross-customer tickets into the same signal.
+        // Bulk has landed — any Applied Tickets sections that were gated on
+        // isLoadingTickets can stop spinning; the per-customer unapplied fetch (if still
+        // in flight) silently backfills cross-TU/cross-customer tickets into the same signal.
         this._bulkTicketsArrived = true;
         this.isLoadingTickets.set(false);
+        // If a producer is already selected, refilter their per-customer ticket views from
+        // the freshly-arrived bulk. Without this, customerTickets stays frozen at whatever
+        // the unapplied-only fetch returned (no applied tickets ever surface in the
+        // contracts table when the user selects before the bulk lands).
+        const sel = this.selectedCustomer();
+        if (sel) this._loadCustomerData(sel.id);
       },
       error: () => {
-        // Treat error the same as a return — don't keep the UI stuck on Loading.
         this._bulkTicketsArrived = true;
         this.isLoadingTickets.set(false);
       }
@@ -621,8 +659,9 @@ export class HomeComponent {
     this._cancelSelection$.next();
     this.isLoadingPricingLines.set(false);
     this.isBackfillingTickets.set(false);
-    // New TU = new bulk fetch in flight — until it lands, customer clicks should
-    // gate Applied Tickets on the bulk's loading state.
+    this.isLoadingUnappliedTickets.set(false);
+    // New TU = new bulk fetch in flight — until it lands, customer clicks should gate
+    // Applied Tickets on the bulk's loading state.
     this._bulkTicketsArrived = false;
     // Reset loading flag so an explicit user selection is never blocked by a
     // background load that may still be in-flight.
@@ -697,10 +736,11 @@ export class HomeComponent {
     this.selectedCustomer.set(customer);
     this.appState.selectCustomer(customer);
     this.isLoadingContracts.set(true);
-    // Only show Loading on Applied Tickets if the bulk fetch hasn't returned yet.
-    // Once bulk is in memory, the per-customer fetch runs silently in the background
-    // — its job is to backfill cross-TU/cross-customer tickets the bulk missed.
+    // Only show Loading on Applied Tickets (contracts-table) if the bulk fetch hasn't
+    // returned yet. The Unapplied Tickets tab has its own flag below — driven by the fast
+    // per-customer fetch — so its spinner clears in <1s instead of waiting on the bulk.
     this.isLoadingTickets.set(!this._bulkTicketsArrived);
+    this.isLoadingUnappliedTickets.set(true);
     this.isLoadingStoredGrain.set(true);
     this._loadCustomerContractsAndTickets(customer.id, customer.scoularId);
     this._loadCustomerData(customer.id);
@@ -952,6 +992,7 @@ export class HomeComponent {
     if (this._customerLoadDone.has(customerId)) {
       this.isLoadingContracts.set(false);
       this.isLoadingTickets.set(false);
+      this.isLoadingUnappliedTickets.set(false);
       this.isBackfillingTickets.set(false);
       this.isLoadingStoredGrain.set(false);
       this._loadCustomerData(customerId);
@@ -984,36 +1025,43 @@ export class HomeComponent {
       error: () => { this.isLoadingContracts.set(false); }
     });
 
-    // Per-customer ticket fetch — catches cross-TU / cross-customer tickets the bulk
-    // missed. When bulk has already returned, this runs as a silent background backfill
-    // (isBackfillingTickets toggles a subtle "more may be loading" hint in the UI);
-    // otherwise it doubles as the main load (isLoadingTickets owns the full Loading state).
-    this.isBackfillingTickets.set(true);
-    this.apiService.getTicketsByCustomer(customerId, scoularId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
+    // FAST per-producer UNAPPLIED-tickets fetch — narrow CustomerCode-scoped query (<1s) so
+    // the unapplied tab populates immediately. Deliberately does NOT touch isLoadingTickets
+    // or isBackfillingTickets — those are owned by the bulk getTickets in _loadAllData so the
+    // contracts table keeps showing "(Loading…)" on Applied Tickets until the bulk lands. The
+    // bulk's contract-number branch catches cross-customer / split-entity applied tickets that
+    // this narrow CustomerCode-scoped fetch wouldn't see.
+    this.apiService.getUnappliedTicketsByCustomer(customerId, scoularId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (tickets) => {
         const existing = this.tickets();
         const merged = [...existing];
         tickets.forEach(t => { if (!merged.some(e => e.id === t.id)) merged.push(t); });
         this.tickets.set(merged);
-        // Merge into appState rather than overwrite — see comment in load path above.
+        // Merge into appState rather than overwrite — appState carries the bulk's full set
+        // (or whatever's arrived so far). Overwriting would drop cross-TU tickets that
+        // downstream pages (Insights) depend on.
         const appMerged = [...merged];
         const have = new Set(appMerged.map(t => t.id));
         for (const t of this.appState.tickets()) {
           if (!have.has(t.id)) appMerged.push(t);
         }
         this.appState.setTickets(appMerged);
-        this.isLoadingTickets.set(false);
-        this.isBackfillingTickets.set(false);
+        // Unapplied tab can stop spinning the moment its narrow fetch returns. Applied
+        // Tickets (contracts-table) continues to wait on the bulk via isLoadingTickets.
+        this.isLoadingUnappliedTickets.set(false);
         this._loadCustomerData(customerId);
 
+        // Auto-save derives commodities from tickets' ProductCode. The unapplied-only
+        // set here is narrower than the full per-customer fetch used to be, but the edit
+        // dialog merges in contracts' CommodityCode so it still gets a complete picture.
         const customer = this.customers().find(c => c.id === customerId) || this.selectedCustomer();
         if (customer) this._autoSaveCommodities(customer, tickets);
         ticketsDone = true;
         markIfAllDone();
       },
       error: () => {
-        this.isLoadingTickets.set(false);
-        this.isBackfillingTickets.set(false);
+        // Don't leave the Unapplied tab stuck spinning if the narrow fetch failed.
+        this.isLoadingUnappliedTickets.set(false);
       }
     });
 
@@ -1106,7 +1154,34 @@ export class HomeComponent {
     });
   }
 
-  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean }): void {
+  /** Save handler for the edit dialog. Trade-unit assignment (if any) runs FIRST — for an
+   *  onboarding candidate that PUT inserts them into dbo.Customer, which the ProducerDetails
+   *  save then depends on (FK). Existing customers with no TU change skip straight to the
+   *  details save, unchanged. */
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean }): void {
+    // Only call the trade-unit reconcile when the dialog flagged it safe + meaningful
+    // (onboarding a candidate, or the manual TU set actually changed). A pure details edit
+    // skips it entirely, and a failed TU-load never reconciles (so manual TUs can't be wiped).
+    if (data.reconcileTradeUnits) {
+      this.apiService.assignTradeUnits(data.customerId, data.tradeUnitCodes ?? []).subscribe({
+        next: () => {
+          // A brand-new onboarding: they're now in dbo.Customer — clear the candidate flag on
+          // the selected record so we stay on this producer and notes / details unlock.
+          const sel = this.selectedCustomer();
+          if (sel?.id === data.customerId && sel.isOnboardCandidate) {
+            this.toastService.success('Producer added and trade units assigned. Select that trade unit or group to see them.');
+            this.selectedCustomer.set({ ...sel, isManual: true, isOnboardCandidate: false });
+          }
+          this._saveProducerDetailsAndLinks(data);
+        },
+        error: () => this.toastService.error('Failed to update trade units')
+      });
+    } else {
+      this._saveProducerDetailsAndLinks(data);
+    }
+  }
+
+  private _saveProducerDetailsAndLinks(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean }): void {
     const customers = this.customers();
     const sel = this.selectedCustomer();
     const customer = customers.find(c => c.id === data.customerId)
@@ -1511,6 +1586,12 @@ export class HomeComponent {
   addNote(content: string): void {
     const sel = this.selectedCustomer();
     if (!sel) return;
+    // Not-yet-onboarded producer: there's no dbo.Customer row for a note to attach to
+    // (it FKs to Customer). Make them assign a trade unit + Save Changes first.
+    if (sel.isOnboardCandidate) {
+      this.toastService.error('Assign a trade unit and save this producer before adding notes.');
+      return;
+    }
     // Guard against overlapping submits at the parent layer too — covers any caller
     // that didn't honor the child's own isSavingNote disable.
     if (this.isSavingNote()) return;

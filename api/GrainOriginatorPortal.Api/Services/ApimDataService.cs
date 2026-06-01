@@ -42,6 +42,15 @@ public class ApimDataService : IDataService
     public Task<List<Customer>> SearchCustomersAsync(string searchTerm, List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for SearchCustomers");
 
+    public Task<List<Customer>> SearchOdsCustomersAsync(string searchTerm, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for SearchOdsCustomers");
+
+    public Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for AssignTradeUnits");
+
+    public Task<List<CustomerTradeUnitInfo>> GetCustomerTradeUnitsAsync(long customerId, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetCustomerTradeUnits");
+
     public Task<Customer?> GetCustomerByIdAsync(long id, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetCustomerById");
 
@@ -107,6 +116,12 @@ public class ApimDataService : IDataService
 
     public Task<List<Ticket>> GetTicketsByCustomerAsync(long customerId, string? scoularId = null, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetTicketsByCustomer");
+
+    public Task<List<Ticket>> GetUnappliedTicketsByCustomerAsync(long customerId, string? scoularId = null, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetUnappliedTicketsByCustomer");
+
+    public Task<List<Ticket>> GetAppliedTicketsByContractAsync(string sourceContractId, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetAppliedTicketsByContract");
 
     public Task<List<Ticket>> GetTicketsByFarmAsync(string farmId, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetTicketsByFarm");

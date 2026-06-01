@@ -119,6 +119,33 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
+  /** Searches the ODS customer master for producers not yet in our tables (onboarding fallback). */
+  searchOdsCustomers(searchTerm: string): Observable<Customer[]> {
+    const params = new HttpParams().set('searchTerm', searchTerm);
+    return this.http.get<Customer[]>(`${this.baseUrl}/customers/search-ods`, { params })
+      .pipe(catchError(() => of([] as Customer[])));
+  }
+
+  /** Assigns trade units to a producer, onboarding them into our tables if not present. */
+  assignTradeUnits(customerId: number, tradeUnitCodes: string[]): Observable<Customer> {
+    return this.http.put<Customer>(`${this.baseUrl}/customers/${customerId}/trade-units`, { tradeUnitCodes })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** A producer's active trade-unit memberships (code + isManual) for the edit dialog. */
+  getCustomerTradeUnits(customerId: number): Observable<{ tradeUnit: string; isManual: boolean }[]> {
+    return this.http.get<{ tradeUnit: string; isManual: boolean }[]>(`${this.baseUrl}/customers/${customerId}/trade-units`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** All trade units in the system (code + description) for the onboarding assign dropdown. */
+  getAllTradeUnits(): Observable<{ code: string; description?: string }[]> {
+    return this._dedupe('all-trade-units',
+      this.http.get<{ code: string; description?: string }[]>(`${this.baseUrl}/trade-units`)
+        .pipe(catchError(() => of([] as { code: string; description?: string }[])))
+    );
+  }
+
   /** Fetches a single customer by ID */
   getCustomerById(id: number): Observable<Customer> {
     return this.http.get<Customer>(`${this.baseUrl}/customers/${id}`)
@@ -238,6 +265,22 @@ export class ApiService {
     let params = new HttpParams();
     if (scoularId) params = params.set('scoularId', scoularId);
     return this.http.get<Ticket[]>(`${this.baseUrl}/tickets/customer/${customerId}`, { params })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Per-producer unapplied tickets — the fast, narrowly-scoped fetch the home page fires on
+   *  producer select. Applied tickets are loaded lazily per-contract via {@link getAppliedTicketsByContract}. */
+  getUnappliedTicketsByCustomer(customerId: number, scoularId?: string): Observable<Ticket[]> {
+    let params = new HttpParams();
+    if (scoularId) params = params.set('scoularId', scoularId);
+    return this.http.get<Ticket[]>(`${this.baseUrl}/tickets/customer/${customerId}/unapplied`, { params })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Lazy per-contract applied-tickets fetch — fires when the contracts table expands a row.
+   *  Contract numbers may contain spaces (e.g. "PC  13042") so the id must be URL-encoded. */
+  getAppliedTicketsByContract(sourceContractId: string): Observable<Ticket[]> {
+    return this.http.get<Ticket[]>(`${this.baseUrl}/tickets/contract/${encodeURIComponent(sourceContractId)}/applied`)
       .pipe(catchError(e => this.handleError(e)));
   }
 

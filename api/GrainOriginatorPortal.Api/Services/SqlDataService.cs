@@ -56,6 +56,26 @@ public class SqlDataService : IDataService
         string.Join(",", values.Select(v => System.Text.RegularExpressions.Regex.Replace(v, @"[^a-zA-Z0-9\-_ ]", "")));
 
     /// <summary>
+    /// CTRM represents an OPEN contract's ClosedDate three ways: NULL, blank (also reads as
+    /// NULL on a date column), or the 0001-01-01 min-date sentinel (DateTime.MinValue here).
+    /// A contract is open when its ClosedDate is null or this sentinel; any other (real) date
+    /// means closed. Used as the C# open/closed test and mirrored in SQL.
+    /// </summary>
+    private static readonly DateTime OpenClosedDateSentinel = new(1, 1, 1);
+
+    /// <summary>
+    /// Normalizes the 0001-01-01 "open" sentinel to null so the frontend's `!closedDate`
+    /// check and all downstream C# `== null` tests treat these contracts as open. Call
+    /// after materializing contracts from the ODS.
+    /// </summary>
+    private static void NormalizeOpenClosedDates(IEnumerable<Contract> contracts)
+    {
+        foreach (var c in contracts)
+            if (c.ClosedDate.HasValue && c.ClosedDate.Value <= OpenClosedDateSentinel)
+                c.ClosedDate = null;
+    }
+
+    /// <summary>
     /// Returns a stable, unique identifier for the current user.
     /// Priority: preferred_username (UPN) > UPN claim > oid (AAD object id) > Identity.Name > "System".
     /// The display-name claim ("name") is intentionally NOT used — display names can collide across
@@ -128,6 +148,18 @@ public class SqlDataService : IDataService
     private static string ApplyDisplayName(string? upn, IReadOnlyDictionary<string, string> map) =>
         !string.IsNullOrEmpty(upn) && map.TryGetValue(upn, out var dn) ? dn : (upn ?? string.Empty);
 
+    /// <summary>Sort key for customer names: strips leading non-alphanumeric characters
+    /// (e.g. a "(NICKNAME)" or "*" prefix carried on raw CTRM names such as
+    /// "(YOUNG) WESLEY TOTTEN") so those names sort in their natural alphabetical position
+    /// instead of ahead of every plain-letter name.</summary>
+    private static string NameSortKey(string? name)
+    {
+        if (string.IsNullOrEmpty(name)) return string.Empty;
+        var i = 0;
+        while (i < name.Length && !char.IsLetterOrDigit(name[i])) i++;
+        return i == 0 ? name : name[i..];
+    }
+
     // =========================================================================
     // Customer Operations
     // =========================================================================
@@ -154,7 +186,14 @@ public class SqlDataService : IDataService
                     && tradeUnits!.Contains(ctu.TradeUnit)));
             }
 
-            var customers = await query.OrderBy(c => c.Name).ToListAsync(cancellationToken);
+            // Sort in memory (the set is already materialized + enriched) using a key that
+            // ignores any leading non-alphanumeric prefix, so an onboarded "(YOUNG) WESLEY
+            // TOTTEN" slots in under W/Y rather than jumping to the top ahead of plain names.
+            var customers = await query.ToListAsync(cancellationToken);
+            customers = customers
+                .OrderBy(c => NameSortKey(c.Name), StringComparer.OrdinalIgnoreCase)
+                .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
             await EnrichCustomersWithESignAsync(customers, cancellationToken);
             _logger.LogInformation("Returning {Count} customers from Customer{Filter}", customers.Count, filterMsg);
@@ -276,6 +315,154 @@ public class SqlDataService : IDataService
                 searchTerm, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
+    }
+
+    /// <summary>
+    /// Searches the ODS customer master (base.vw_CurrentCustomers) for producers not yet
+    /// onboarded into the app. Used by the home-page search fallback so a user can find a
+    /// producer who exists in CTRM but has no contract/ticket (and therefore never synced
+    /// into dbo.Customer). Filters to active, non-duplicate producers (IndustryCode1='PR')
+    /// matching name / ScoularId / SourceCustomerId, and EXCLUDES anyone already in
+    /// dbo.Customer so the results never contain a producer we already have (no dupes).
+    /// </summary>
+    public async Task<List<Customer>> SearchOdsCustomersAsync(string searchTerm, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var searchWords = searchTerm.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                                        .Select(w => w.Trim())
+                                        .Where(w => w.Length > 0)
+                                        .ToList();
+            if (searchWords.Count == 0) return [];
+
+            // Mirror the quality filters baked into originations.vw_CustomerTradeUnits so the
+            // onboarding search never surfaces junk master-data records (placeholder /
+            // duplicate / do-not-use rows) the sync would also reject.
+            var whereClauses = new List<string>
+            {
+                "c.IndustryCode1 = 'PR'",
+                "c.IsActive = 1",
+                "c.IsDuplicate = 0",
+                "c.CustomerName NOT LIKE '%DUP%'",
+                "c.CustomerName NOT LIKE '%DO NOT USE%'",
+                "LEFT(c.CustomerName, 1) NOT IN ('*', '$')"
+            };
+            var parameters = new List<SqlParameter>();
+            for (int i = 0; i < searchWords.Count; i++)
+            {
+                var p = $"@w{i}";
+                parameters.Add(new SqlParameter(p, searchWords[i]));
+                whereClauses.Add($@"(
+                    c.CustomerName LIKE '%' + {p} + '%'
+                    OR c.ScoularId LIKE '%' + {p} + '%'
+                    OR c.SourceCustomerId LIKE '%' + {p} + '%'
+                )");
+            }
+            var where = string.Join(" AND ", whereClauses);
+
+            // TOP 50 keeps the result set bounded — this is a type-ahead, not an export.
+            var sql = $@"
+                SELECT TOP 50
+                    c.CustomerId, c.ScoularId, c.CustomerName, c.IndustryCode1,
+                    c.MerchandisingCity, c.MerchandisingStateProvince, c.MerchandisingAddressLine1, c.MerchandisingPostalCode,
+                    c.MerchandisingPhone, c.MerchandisingEmail, c.ExtendedPrimaryPhone, c.SupplementalEmail,
+                    c.ExtendedAddressLine1, c.ExtendedAddressLine2, c.ExtendedAddressLine3, c.ExtendedAddressLine4,
+                    c.ExtendedCity, c.ExtendedPostalCode, c.ExtendedStateProvince, c.ExtendedCountry,
+                    c.EffectiveStartDate, c.EffectiveEndDate
+                FROM base.vw_CurrentCustomers c
+                WHERE {where}
+                ORDER BY c.CustomerName";
+
+            var rows = await _context.Database
+                .SqlQueryRaw<OdsCustomerRow>(sql, parameters.ToArray())
+                .ToListAsync(cancellationToken);
+
+            if (rows.Count == 0) return [];
+
+            // Drop any that already live in dbo.Customer — those aren't "new" and would dupe.
+            var candidateIds = rows.Select(r => r.CustomerId).ToList();
+            var existingIds = (await _appContext.Customers.AsNoTracking()
+                    .Where(c => candidateIds.Contains(c.Id))
+                    .Select(c => c.Id)
+                    .ToListAsync(cancellationToken))
+                .ToHashSet();
+
+            var result = rows
+                .Where(r => !existingIds.Contains(r.CustomerId))
+                .Select(MapOdsRowToCustomer)
+                .ToList();
+
+            _logger.LogInformation("ODS customer search for '{SearchTerm}' returned {Count} onboardable producers", searchTerm, result.Count);
+            return result;
+        }
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
+        {
+            _logger.LogWarning(ex, "DB error in ODS customer search — returning empty [{TraceId}]", GetTraceId());
+            return [];
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in ODS customer search for term: {SearchTerm} [{TraceId}]", searchTerm, GetTraceId());
+            throw;
+        }
+    }
+
+    /// <summary>Maps a base.vw_CurrentCustomers row onto the Customer DTO. IsManual stays
+    /// false here — the row is only a search candidate until it's actually onboarded.</summary>
+    private static Customer MapOdsRowToCustomer(OdsCustomerRow r) => new()
+    {
+        Id = r.CustomerId,
+        ScoularId = r.ScoularId?.Trim(),
+        Name = r.CustomerName ?? string.Empty,
+        IndustryCode1 = r.IndustryCode1,
+        Location = r.MerchandisingCity,
+        StateProvince = r.MerchandisingStateProvince,
+        AddressLine1 = r.MerchandisingAddressLine1,
+        PostalCode = r.MerchandisingPostalCode,
+        Phone = r.MerchandisingPhone,
+        Email = r.MerchandisingEmail,
+        ExtendedPrimaryPhone = r.ExtendedPrimaryPhone,
+        SupplementalEmail = r.SupplementalEmail,
+        ExtendedAddressLine1 = r.ExtendedAddressLine1,
+        ExtendedAddressLine2 = r.ExtendedAddressLine2,
+        ExtendedAddressLine3 = r.ExtendedAddressLine3,
+        ExtendedAddressLine4 = r.ExtendedAddressLine4,
+        ExtendedCity = r.ExtendedCity,
+        ExtendedPostalCode = r.ExtendedPostalCode,
+        ExtendedStateProvince = r.ExtendedStateProvince,
+        ExtendedCountry = r.ExtendedCountry,
+        EffectiveStartDate = r.EffectiveStartDate,
+        EffectiveEndDate = r.EffectiveEndDate,
+        IsActive = true,
+        IsManual = false,
+    };
+
+    /// <summary>Row shape for base.vw_CurrentCustomers reads (search + onboard). Property
+    /// names match the selected column names so EF's SqlQueryRaw can bind them.</summary>
+    private sealed class OdsCustomerRow
+    {
+        public long CustomerId { get; set; }
+        public string? ScoularId { get; set; }
+        public string? CustomerName { get; set; }
+        public string? IndustryCode1 { get; set; }
+        public string? MerchandisingCity { get; set; }
+        public string? MerchandisingStateProvince { get; set; }
+        public string? MerchandisingAddressLine1 { get; set; }
+        public string? MerchandisingPostalCode { get; set; }
+        public string? MerchandisingPhone { get; set; }
+        public string? MerchandisingEmail { get; set; }
+        public string? ExtendedPrimaryPhone { get; set; }
+        public string? SupplementalEmail { get; set; }
+        public string? ExtendedAddressLine1 { get; set; }
+        public string? ExtendedAddressLine2 { get; set; }
+        public string? ExtendedAddressLine3 { get; set; }
+        public string? ExtendedAddressLine4 { get; set; }
+        public string? ExtendedCity { get; set; }
+        public string? ExtendedPostalCode { get; set; }
+        public string? ExtendedStateProvince { get; set; }
+        public string? ExtendedCountry { get; set; }
+        public DateTime? EffectiveStartDate { get; set; }
+        public DateTime? EffectiveEndDate { get; set; }
     }
 
     /// <summary>
@@ -545,6 +732,140 @@ public class SqlDataService : IDataService
         }
     }
 
+    /// <summary>
+    /// Reconciles a producer's MANUAL trade-unit assignments to exactly <paramref name="tradeUnitCodes"/>.
+    /// If the customer isn't in dbo.Customer yet, pulls their attributes from base.vw_CurrentCustomers
+    /// and inserts them (IsManual=true). Codes in the set are activated/inserted as manual; manual
+    /// assignments not in the set are soft-deactivated (preserved for re-adding). Sync-sourced rows
+    /// (IsManual=false) are never touched. An empty set is valid for an existing producer (clears all
+    /// manual assignments) but rejected for a brand-new onboarding (nothing to create them with).
+    /// Returns a status so the controller can 404 a bad id.
+    /// </summary>
+    public async Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, CancellationToken cancellationToken = default)
+    {
+        // Normalize: trim, drop blanks, de-dupe (case-insensitive).
+        var codes = tradeUnitCodes
+            .Select(c => c?.Trim() ?? string.Empty)
+            .Where(c => c.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // Ensure the customer exists in dbo.Customer — insert from ODS if this is a
+        // brand-new onboarding (producer with no contract/ticket).
+        var customerExists = await _appContext.Customers
+            .AnyAsync(c => c.Id == customerId, cancellationToken);
+
+        // An empty set can't onboard a brand-new producer (nothing anchors the insert), but
+        // for an existing producer it's a valid request to clear all manual assignments.
+        if (!customerExists && codes.Count == 0) return AssignTradeUnitsResult.NoCodes;
+
+        if (!customerExists)
+        {
+            var odsRow = await GetOdsCustomerRowAsync(customerId, cancellationToken);
+            if (odsRow is null)
+            {
+                _logger.LogWarning("AssignTradeUnits: customer {CustomerId} not found in base.vw_CurrentCustomers", customerId);
+                return AssignTradeUnitsResult.CustomerNotFound;
+            }
+            var inserted = MapOdsRowToCustomer(odsRow);
+            inserted.IsManual = true;
+            inserted.IsActive = true;
+            _appContext.Customers.Add(inserted);
+        }
+        else
+        {
+            // Reactivate a previously-deactivated customer being re-onboarded.
+            var existing = await _appContext.Customers.FirstAsync(c => c.Id == customerId, cancellationToken);
+            if (!existing.IsActive)
+            {
+                existing.IsActive = true;
+                existing.IsManual = true;
+            }
+        }
+
+        // Existing TU pairs for this customer — used to reconcile against the desired set.
+        var existingTus = await _appContext.CustomerTradeUnits
+            .Where(t => t.CustomerId == customerId)
+            .ToListAsync(cancellationToken);
+        var existingByCode = existingTus.ToDictionary(t => t.TradeUnit, StringComparer.OrdinalIgnoreCase);
+        var desired = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
+
+        // Activate / insert every desired code as a manual assignment. Re-adding a code that
+        // exists (e.g. a previously-removed manual row, IsActive=false) reactivates it in place
+        // rather than inserting a duplicate.
+        foreach (var code in codes)
+        {
+            if (existingByCode.TryGetValue(code, out var existingTu))
+            {
+                // Only (re)flag manual when we're actually activating a non-active row. Never
+                // re-stickify a row that's already an ACTIVE sync membership — it may have
+                // graduated to synced (IsManual=false) while this dialog was open, and we don't
+                // want a stale save to flip it back to manual. Active manual rows are left as-is.
+                if (!existingTu.IsActive)
+                {
+                    existingTu.IsActive = true;
+                    existingTu.IsManual = true;
+                }
+            }
+            else
+            {
+                _appContext.CustomerTradeUnits.Add(new CustomerTradeUnit
+                {
+                    CustomerId = customerId,
+                    TradeUnit  = code,
+                    IsActive   = true,
+                    IsManual   = true,
+                });
+            }
+        }
+
+        // Soft-deactivate manual assignments the user removed (active manual TUs not in the
+        // desired set). The row is preserved so it can be re-added/reactivated later. Sync
+        // assignments (IsManual=false) are never touched — they're locked in the UI.
+        var deactivated = 0;
+        foreach (var existing in existingTus)
+        {
+            if (existing.IsManual && existing.IsActive && !desired.Contains(existing.TradeUnit))
+            {
+                existing.IsActive = false;
+                deactivated++;
+            }
+        }
+
+        await _appContext.SaveChangesAsync(cancellationToken);
+        _logger.LogInformation("AssignTradeUnits: customer {CustomerId} reconciled to {Count} manual TU(s) [{Codes}], {Deactivated} deactivated",
+            customerId, codes.Count, string.Join(", ", codes), deactivated);
+        return AssignTradeUnitsResult.Ok;
+    }
+
+    public async Task<List<CustomerTradeUnitInfo>> GetCustomerTradeUnitsAsync(long customerId, CancellationToken cancellationToken = default)
+    {
+        return await _appContext.CustomerTradeUnits
+            .AsNoTracking()
+            .Where(t => t.CustomerId == customerId && t.IsActive)
+            .OrderBy(t => t.TradeUnit)
+            .Select(t => new CustomerTradeUnitInfo { TradeUnit = t.TradeUnit, IsManual = t.IsManual })
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>Reads a single producer row from base.vw_CurrentCustomers by CustomerId.</summary>
+    private async Task<OdsCustomerRow?> GetOdsCustomerRowAsync(long customerId, CancellationToken cancellationToken)
+    {
+        var rows = await _context.Database
+            .SqlQueryRaw<OdsCustomerRow>(@"
+                SELECT TOP 1
+                    c.CustomerId, c.ScoularId, c.CustomerName, c.IndustryCode1,
+                    c.MerchandisingCity, c.MerchandisingStateProvince, c.MerchandisingAddressLine1, c.MerchandisingPostalCode,
+                    c.MerchandisingPhone, c.MerchandisingEmail, c.ExtendedPrimaryPhone, c.SupplementalEmail,
+                    c.ExtendedAddressLine1, c.ExtendedAddressLine2, c.ExtendedAddressLine3, c.ExtendedAddressLine4,
+                    c.ExtendedCity, c.ExtendedPostalCode, c.ExtendedStateProvince, c.ExtendedCountry,
+                    c.EffectiveStartDate, c.EffectiveEndDate
+                FROM base.vw_CurrentCustomers c
+                WHERE c.CustomerId = @customerId", new SqlParameter("@customerId", customerId))
+            .ToListAsync(cancellationToken);
+        return rows.FirstOrDefault();
+    }
+
     // =========================================================================
     // Commodity Operations
     // =========================================================================
@@ -758,6 +1079,13 @@ public class SqlDataService : IDataService
     {
         try
         {
+            // vw_CurrentContracts joined to thousands of producer IDs via STRING_SPLIT can run
+            // well over the default 30s on larger environments (QA, prod). A timeout here causes
+            // the inner exception handler to return [] which makes "All producers with contracts"
+            // and other contract-aware queries silently come back empty. Same 300s ceiling we use
+            // on the tickets bulk; the call still runs once per TU change, not per click.
+            _context.Database.SetCommandTimeout(300);
+
             var hasTradeUnitFilter = tradeUnits != null && tradeUnits.Count > 0;
 
             // Two-path strategy. Both paths now use STRING_SPLIT downstream so we never hit
@@ -789,7 +1117,7 @@ public class SqlDataService : IDataService
                             INNER JOIN STRING_SPLIT({ctrmIdsCsv}, ',') ids
                                 ON c.CtrmCustomerId = ids.value
                             WHERE c.IsActive = 1 AND c.ContractPrefixType = 'P'
-                              AND (c.ClosedDate IS NULL OR c.CropYear >= {DateTime.Today.Year - 1})")
+                              AND (c.ClosedDate IS NULL OR c.ClosedDate <= {OpenClosedDateSentinel} OR c.CropYear >= {DateTime.Today.Year - 1})")
                         .AsNoTracking()
                         .OrderByDescending(c => c.Id)
                         .ToListAsync(cancellationToken);
@@ -827,7 +1155,7 @@ public class SqlDataService : IDataService
                             INNER JOIN STRING_SPLIT({ctrmIdsCsv}, ',') ids
                                 ON c.CtrmCustomerId = ids.value
                             WHERE c.IsActive = 1 AND c.ContractPrefixType = 'P'
-                              AND (c.ClosedDate IS NULL OR c.CropYear >= {DateTime.Today.Year - 1})")
+                              AND (c.ClosedDate IS NULL OR c.ClosedDate <= {OpenClosedDateSentinel} OR c.CropYear >= {DateTime.Today.Year - 1})")
                         .AsNoTracking()
                         .OrderByDescending(c => c.Id)
                         .ToListAsync(cancellationToken);
@@ -836,6 +1164,10 @@ public class SqlDataService : IDataService
 
             _logger.LogInformation("Loaded {ContractCount} contracts for customers who have contracts or tickets (filtered: {IsFiltered}, tradeUnitCount: {TradeUnitCount})",
                 contracts.Count, hasTradeUnitFilter, hasTradeUnitFilter ? tradeUnits!.Count : 0);
+
+            // Open contracts may carry the 0001-01-01 sentinel instead of NULL — normalize to
+            // null so the frontend and downstream code treat them as open.
+            NormalizeOpenClosedDates(contracts);
 
             // Calculate status and set defaults for fields not in ODS view
             var today = DateTime.Today;
@@ -966,9 +1298,12 @@ public class SqlDataService : IDataService
             var contracts = await _context.Contracts
                 .AsNoTracking()
                 .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId == scoularId
-                    && (c.ClosedDate == null || c.CropYear >= pacingCutoffYear))
+                    && (c.ClosedDate == null || c.ClosedDate <= OpenClosedDateSentinel || c.CropYear >= pacingCutoffYear))
                 .OrderByDescending(c => c.Id)
                 .ToListAsync(cancellationToken);
+
+            // Open contracts may carry the 0001-01-01 sentinel — normalize to null.
+            NormalizeOpenClosedDates(contracts);
 
             // Calculate status and set defaults for fields not in ODS view
             var today = DateTime.Today;
@@ -1030,7 +1365,7 @@ public class SqlDataService : IDataService
                       AND c.IsDeleted = 0
                       AND c.ContractPrefixType = 'P'
                       AND c.CtrmCustomerId = {scoularId}
-                      AND c.ClosedDate IS NOT NULL
+                      AND c.ClosedDate IS NOT NULL AND c.ClosedDate > {OpenClosedDateSentinel}
                       AND c.CropYear >= {pacingCutoffYear}")
                 .AsNoTracking()
                 .OrderByDescending(c => c.Id)
@@ -1108,6 +1443,9 @@ public class SqlDataService : IDataService
                 .AsNoTracking()
                 .OrderByDescending(c => c.Id)
                 .ToListAsync(cancellationToken);
+
+            // Normalize the 0001-01-01 open-sentinel to null so open/closed reads correctly.
+            NormalizeOpenClosedDates(contracts);
 
             var today = DateTime.Today;
             foreach (var contract in contracts)
@@ -1247,6 +1585,14 @@ public class SqlDataService : IDataService
     {
         if (openContractNumbers.Count == 0 && customerCodes.Count == 0) return new List<Ticket>();
 
+        // vw_CurrentTickets is a heavy view (~2M rows). The view's plan against ContractNumber
+        // can't seek (no usable index for our access pattern), so the bulk TU-wide scan can run
+        // 2-3+ minutes. A 120s cap was getting clipped (~125s) and returning [] which made the
+        // UI render "(0)" applied tickets forever. 300s is the practical ceiling — the bulk runs
+        // off the request path (background after TU select) and per-customer scopes still return
+        // in <2s when CustomerCode seeks cleanly. A local synced ticket table is the durable fix.
+        _context.Database.SetCommandTimeout(300);
+
         // STRING_SPLIT can't take an empty CSV in this app's existing pattern; pass a sentinel
         // that won't match anything when one list is empty so the OR branch becomes a no-op.
         // Contract numbers can legitimately contain spaces (e.g. "PW 452117"), so use the
@@ -1260,15 +1606,21 @@ public class SqlDataService : IDataService
         // (C# property Ticket.Date maps to DB column TicketBlDate; raw SQL has to use the column name.)
         var cutoff = cutoffDateInclusive ?? string.Empty;
 
-        // Two indexed lookups UNION'd, then DISTINCT — far faster than a single WHERE with OR/EXISTS
-        // on a 2M-row table. Each branch is an INNER JOIN to STRING_SPLIT on an indexed column
-        // (ContractNumber for applied, CustomerCode for unapplied), so the optimizer picks index
-        // seeks instead of scans. The cutoff is parameterized once and applied symmetrically.
+        // Two indexed lookups UNION ALL'd (the two branches are mutually exclusive — applied
+        // tickets carry a P-prefix contract number, unapplied carry U/L/C — so SQL Server's
+        // UNION dedup step is wasted work on a multi-million-row view). Each branch is an
+        // INNER JOIN to STRING_SPLIT on an indexed column (ContractNumber / CustomerCode), so
+        // the optimizer picks index seeks instead of scans. The cutoff is parameterized once
+        // and applied symmetrically.
         //
         // Column list is explicit (not SELECT *) — names every column the EF Ticket entity maps,
         // matching OriginationDbContext.OnModelCreating for Ticket. Saves the view's row-width
         // bloat from columns we don't read. Adding a new mapped column to Ticket REQUIRES adding
         // it here too — EF materialization will fail if a mapped column is missing from the result.
+        //
+        // The unapplied prefix predicate uses three sargable LIKE 'X%' tests (not LEFT(col,1) IN ...)
+        // so the optimizer can index-seek the prefix range on ContractNumber. The LEFT() form was
+        // non-sargable and forced a scan of every row reached by the CustomerCode seek.
         //
         // Excludes BSTATS='CSL' (Consolidated) tickets — those have already been merged INTO
         // another ticket and showing them double-counts the bushels. PRG (Purged) doesn't reach
@@ -1287,7 +1639,7 @@ public class SqlDataService : IDataService
                   AND (t.TicketStatusDescription IS NULL OR t.TicketStatusDescription <> 'Consolidated')
                   AND ({cutoff} = '' OR (t.TicketBlDate IS NOT NULL AND t.TicketBlDate >= {cutoff}))
 
-                UNION
+                UNION ALL
 
                 SELECT t.TicketId, t.ContractId, t.CustomerId, t.CustomerCode, t.ProductCode,
                        t.TicketPrefix, t.TicketNumber, t.TicketSuffix, t.ShipmentTicketNumber, t.ContractNumber,
@@ -1300,7 +1652,7 @@ public class SqlDataService : IDataService
                 WHERE t.IsActive = 1 AND t.TicketType IN ('U','P')
                   AND (t.TicketStatusDescription IS NULL OR t.TicketStatusDescription <> 'Consolidated')
                   AND t.ContractNumber IS NOT NULL
-                  AND LEFT(t.ContractNumber, 1) IN ('U','L','C')
+                  AND (t.ContractNumber LIKE 'U%' OR t.ContractNumber LIKE 'L%' OR t.ContractNumber LIKE 'C%')
                   AND ({cutoff} = '' OR (t.TicketBlDate IS NOT NULL AND t.TicketBlDate >= {cutoff}))")
             .AsNoTracking()
             .OrderByDescending(t => t.Date)
@@ -1341,7 +1693,7 @@ public class SqlDataService : IDataService
                     var openContractNumbers = await _context.Contracts
                         .AsNoTracking()
                         .Where(c => c.IsActive && c.ContractPrefixType == "P"
-                            && c.ClosedDate == null
+                            && (c.ClosedDate == null || c.ClosedDate <= OpenClosedDateSentinel)
                             && c.CtrmCustomerId != null && customerCodes.Contains(c.CtrmCustomerId)
                             && c.SourceContractId != null)
                         .Select(c => c.SourceContractId!)
@@ -1371,7 +1723,7 @@ public class SqlDataService : IDataService
                 var openContractNumbers = await _context.Contracts
                     .AsNoTracking()
                     .Where(c => c.IsActive && c.ContractPrefixType == "P"
-                        && c.ClosedDate == null
+                        && (c.ClosedDate == null || c.ClosedDate <= OpenClosedDateSentinel)
                         && c.CtrmCustomerId != null && customerCodes.Contains(c.CtrmCustomerId)
                         && c.SourceContractId != null)
                     .Select(c => c.SourceContractId!)
@@ -1575,7 +1927,7 @@ public class SqlDataService : IDataService
                     var openContractNumbers = await _context.Contracts
                         .AsNoTracking()
                         .Where(c => c.IsActive && c.ContractPrefixType == "P"
-                            && c.ClosedDate == null
+                            && (c.ClosedDate == null || c.ClosedDate <= OpenClosedDateSentinel)
                             && c.CtrmCustomerId != null && customerCodes.Contains(c.CtrmCustomerId)
                             && c.SourceContractId != null)
                         .Select(c => c.SourceContractId!)
@@ -1683,23 +2035,58 @@ public class SqlDataService : IDataService
                 }
             }
 
-            // Build the customer's open Purchase contract set so applied tickets are scoped
-            // by contract regardless of which CustomerCode the ticket carries (CTRM splits
-            // tickets across related entities, so ticket.CustomerCode can differ from
-            // contract.CtrmCustomerId even when the ticket is correctly applied to this
-            // customer's contract).
+            // Build the customer's open Purchase contract number set. We match tickets to
+            // contracts via the string SourceContractId ↔ ContractNumber pairing because the
+            // bigint Ticket.ContractId FK isn't reliably populated in vw_CurrentTickets (split
+            // tickets / older records can have null). The string contract number is the
+            // authoritative join key in the ODS shape. CtrmCustomerId is the customer-level
+            // filter on contracts; tickets may carry a different CustomerCode than the
+            // contract's CtrmCustomerId (CTRM splits across related entities), which is why
+            // the unapplied branch below still scopes by CustomerCode.
             var openContractNumbers = await _context.Contracts
                 .AsNoTracking()
                 .Where(c => c.IsActive && c.ContractPrefixType == "P"
-                    && c.ClosedDate == null
+                    && (c.ClosedDate == null || c.ClosedDate <= OpenClosedDateSentinel)
                     && c.CtrmCustomerId == scoularId
                     && c.SourceContractId != null)
                 .Select(c => c.SourceContractId!)
                 .Distinct()
                 .ToListAsync(cancellationToken);
 
-            var tickets = await LoadTicketsByContractAndCustomerScopeAsync(
-                openContractNumbers, new List<string> { scoularId! }, cancellationToken);
+            _context.Database.SetCommandTimeout(120);
+
+            // 3-year cutoff bounds the scan against the 2M-row ticket view. Open contracts almost
+            // always have delivery windows under a year, so 3 years is generous for applied tickets;
+            // unapplied tickets older than 3 years aren't actionable. TicketBlDate is stored as a
+            // string in the ODS, so the cutoff is an ISO yyyy-MM-dd literal which compares
+            // lexicographically (safe for that format).
+            var cutoff = DateTime.UtcNow.AddYears(-3).ToString("yyyy-MM-dd");
+
+            // Single LINQ query with applied ∪ unapplied as an OR. Applied side matches
+            // Ticket.ContractNumber against the customer's open Purchase contract numbers —
+            // for a per-customer scope the IN list is small (a handful of contracts) so EF
+            // emits an explicit IN clause the optimizer seeks on. The unapplied side is
+            // anchored on the single CustomerCode plus a sargable StartsWith on
+            // ContractNumber (translated to LIKE 'X%'). The two branches are mutually
+            // exclusive (P-prefix vs U/L/C-prefix), so the OR doesn't double-count.
+            var tickets = await _context.Tickets
+                .AsNoTracking()
+                .Where(t => t.IsActive
+                    && (t.TicketType == "U" || t.TicketType == "P")
+                    && (t.TicketStatusDescription == null || t.TicketStatusDescription != "Consolidated")
+                    && t.Date != null
+                    && string.Compare(t.Date, cutoff) >= 0
+                    && t.CtrmContractNumber != null
+                    && (
+                        openContractNumbers.Contains(t.CtrmContractNumber)
+                        ||
+                        (t.CustomerCode == scoularId
+                         && (t.CtrmContractNumber.StartsWith("U")
+                             || t.CtrmContractNumber.StartsWith("L")
+                             || t.CtrmContractNumber.StartsWith("C")))
+                    ))
+                .OrderByDescending(t => t.Date)
+                .ToListAsync(cancellationToken);
 
             // Load quality data for these tickets
             var ticketIds = tickets.Select(t => t.Id).ToList();
@@ -1745,6 +2132,136 @@ public class SqlDataService : IDataService
                 customerId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
+    }
+
+    /// <summary>
+    /// Fast per-producer unapplied-tickets fetch. Single CustomerCode predicate plus the U/L/C
+    /// contract-prefix filter — the optimizer's most-selective shape against vw_CurrentTickets.
+    /// Used by the home page on producer select; applied tickets are loaded lazily per-contract
+    /// (see <see cref="GetAppliedTicketsByContractAsync"/>) when the user expands a contract row.
+    /// </summary>
+    public async Task<List<Ticket>> GetUnappliedTicketsByCustomerAsync(long customerId, string? scoularId = null, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(scoularId))
+            {
+                scoularId = await _appContext.Customers.AsNoTracking()
+                    .Where(c => c.Id == customerId)
+                    .Select(c => c.ScoularId)
+                    .FirstOrDefaultAsync(cancellationToken);
+                if (string.IsNullOrEmpty(scoularId))
+                {
+                    _logger.LogWarning("Customer {CustomerId} not found or has no ScoularId", customerId);
+                    return [];
+                }
+            }
+
+            _context.Database.SetCommandTimeout(120);
+
+            // 3-year cutoff — old unapplied tickets aren't actionable.
+            var cutoff = DateTime.UtcNow.AddYears(-3).ToString("yyyy-MM-dd");
+
+            var tickets = await _context.Tickets
+                .AsNoTracking()
+                .Where(t => t.IsActive
+                    && (t.TicketType == "U" || t.TicketType == "P")
+                    && (t.TicketStatusDescription == null || t.TicketStatusDescription != "Consolidated")
+                    && t.CustomerCode == scoularId
+                    && t.CtrmContractNumber != null
+                    && (t.CtrmContractNumber.StartsWith("U")
+                        || t.CtrmContractNumber.StartsWith("L")
+                        || t.CtrmContractNumber.StartsWith("C"))
+                    && t.Date != null
+                    && string.Compare(t.Date, cutoff) >= 0)
+                .OrderByDescending(t => t.Date)
+                .ToListAsync(cancellationToken);
+
+            await PopulateQualityAndElevatorAsync(tickets, cancellationToken);
+
+            _logger.LogInformation("Found {TicketCount} unapplied tickets for customer {CustomerId} (ScoularId: {ScoularId})",
+                tickets.Count, customerId, scoularId);
+            return tickets;
+        }
+        catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
+        {
+            _logger.LogWarning(ex, "Tickets view missing column/object — returning empty list [{TraceId}]", GetTraceId());
+            return [];
+        }
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
+        {
+            _logger.LogWarning(ex, "DB error retrieving unapplied tickets for customer {CustomerId} — returning empty list [{TraceId}]",
+                customerId, GetTraceId());
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Lazy per-contract applied-tickets fetch. Single-literal predicate on ContractNumber gives
+    /// the optimizer its best shot at an index seek. Used by the contracts table when a row is
+    /// expanded.
+    /// </summary>
+    public async Task<List<Ticket>> GetAppliedTicketsByContractAsync(string sourceContractId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sourceContractId)) return [];
+        var trimmed = sourceContractId.Trim();
+
+        try
+        {
+            _context.Database.SetCommandTimeout(120);
+
+            var tickets = await _context.Tickets
+                .AsNoTracking()
+                .Where(t => t.IsActive
+                    && (t.TicketType == "U" || t.TicketType == "P")
+                    && (t.TicketStatusDescription == null || t.TicketStatusDescription != "Consolidated")
+                    && t.CtrmContractNumber == trimmed)
+                .OrderByDescending(t => t.Date)
+                .ToListAsync(cancellationToken);
+
+            await PopulateQualityAndElevatorAsync(tickets, cancellationToken);
+
+            _logger.LogInformation("Found {TicketCount} applied tickets for contract {ContractNumber}",
+                tickets.Count, trimmed);
+            return tickets;
+        }
+        catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
+        {
+            _logger.LogWarning(ex, "Tickets view missing column/object — returning empty list [{TraceId}]", GetTraceId());
+            return [];
+        }
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
+        {
+            _logger.LogWarning(ex, "DB error retrieving applied tickets for contract {ContractNumber} — returning empty list [{TraceId}]",
+                trimmed, GetTraceId());
+            return [];
+        }
+    }
+
+    /// <summary>Hydrates quality (moisture/protein/test weight) and elevator city/state onto a
+    /// loaded ticket set. Shared by the per-producer unapplied and per-contract applied fetches
+    /// so post-load enrichment stays consistent.</summary>
+    private async Task PopulateQualityAndElevatorAsync(List<Ticket> tickets, CancellationToken cancellationToken)
+    {
+        if (tickets.Count == 0) return;
+
+        var ticketIds = tickets.Select(t => t.Id).ToList();
+        var qualityList = await _context.TicketQualities
+            .AsNoTracking()
+            .Where(q => ticketIds.Contains(q.TicketId))
+            .ToListAsync(cancellationToken);
+        var qualityData = qualityList.ToDictionary(q => q.TicketId);
+        foreach (var ticket in tickets)
+        {
+            if (qualityData.TryGetValue(ticket.Id, out var quality))
+            {
+                ticket.Moisture = quality.GradeFactorMoisturePercent;
+                ticket.TestWeight = quality.GradeFactorTestWeightPercent;
+                ticket.ProteinPercent = quality.GradeFactorProteinPercent;
+            }
+        }
+
+        await PopulateElevatorLocations(tickets, cancellationToken);
     }
 
     public async Task<List<Ticket>> GetTicketsByFarmAsync(string farmId, CancellationToken cancellationToken = default)

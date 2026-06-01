@@ -79,8 +79,9 @@ public class PlantingIntentionsControllerTests
     {
         // Arrange
         var updated = new PlantingIntention { Id = 3, Crop = "Wheat", Acres = 100, PlantingYear = 2026 };
+        _dataServiceMock.Setup(s => s.GetPlantingIntentionByIdAsync(3, It.IsAny<CancellationToken>())).ReturnsAsync(updated);
         _dataServiceMock
-            .Setup(s => s.UpdatePlantingIntentionAsync(3, "Wheat", null, null, 100, 2026, It.IsAny<CancellationToken>()))
+            .Setup(s => s.UpdatePlantingIntentionAsync(3, "Wheat", null, null, null, 100, 2026, It.IsAny<CancellationToken>()))
             .ReturnsAsync(updated);
 
         var request = new UpdatePlantingIntentionRequest
@@ -102,7 +103,7 @@ public class PlantingIntentionsControllerTests
     {
         // Arrange
         _dataServiceMock
-            .Setup(s => s.UpdatePlantingIntentionAsync(99, It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Setup(s => s.UpdatePlantingIntentionAsync(99, It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((PlantingIntention?)null);
 
         var request = new UpdatePlantingIntentionRequest { Crop = "Corn", Acres = 100, PlantingYear = 2026 };
@@ -116,6 +117,7 @@ public class PlantingIntentionsControllerTests
     public async Task Delete_CallsDeleteAndReturnsNoContent()
     {
         // Arrange
+        _dataServiceMock.Setup(s => s.GetPlantingIntentionByIdAsync(4, It.IsAny<CancellationToken>())).ReturnsAsync(new PlantingIntention { Id = 4, Crop = "Corn", Acres = 50, PlantingYear = 2026 });
         _dataServiceMock.Setup(s => s.DeletePlantingIntentionAsync(4, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         // Act
