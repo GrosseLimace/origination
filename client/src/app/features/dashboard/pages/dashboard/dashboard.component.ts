@@ -1456,6 +1456,29 @@ export class DashboardComponent {
     this.tempMarketShareMap.update(m => ({ ...m, [category]: value }));
   }
 
+  /** Value to show in a yield input: the pending edit if one exists (including an
+   *  explicit null/cleared value), otherwise the saved estimate. Distinguishing
+   *  "no edit" (key absent) from "cleared" (key present, null) is what lets a user
+   *  actually empty the field — a plain `?? saved` would snap it back. */
+  yieldInputValue(cropCode: string, saved: number | null): number | null {
+    const m = this.tempYieldMap();
+    return cropCode in m ? m[cropCode] : saved;
+  }
+
+  marketShareInputValue(category: string, saved: number | null): number | null {
+    const m = this.tempMarketShareMap();
+    return category in m ? m[category] : saved;
+  }
+
+  /** Clears a yield/market-share field (marks it dirty with null → saved as cleared). */
+  clearTempYield(cropCode: string): void {
+    this.setTempYield(cropCode, null);
+  }
+
+  clearTempMarketShare(category: string): void {
+    this.setTempMarketShare(category, null);
+  }
+
   setTempHarvest(id: number, value: string): void {
     this.tempHarvestMap.update(m => ({ ...m, [id]: value }));
   }
