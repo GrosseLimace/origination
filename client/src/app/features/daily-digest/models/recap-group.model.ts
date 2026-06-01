@@ -30,5 +30,17 @@ export interface RecapGroup {
   members: RecapMember[];
   /** Extra email addresses on top of the resolved member recipients. */
   ccList: string[];
+  /** Microsoft Teams channel email — populated only when deliveryMethod is 'teams'.
+   *  The Logic App posts the recap to this channel address. */
+  teamsChannelEmail?: string;
   enabled: boolean;
+}
+
+/** Create/update payload sent to the API (no id/enabled — enabled is toggled separately). */
+export interface RecapGroupSaveRequest {
+  name: string;
+  deliveryMethod: DeliveryMethod;
+  teamsChannelEmail?: string;
+  members: RecapMember[];
+  ccList: string[];
 }

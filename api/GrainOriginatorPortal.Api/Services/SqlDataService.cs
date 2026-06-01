@@ -3288,6 +3288,172 @@ public class SqlDataService : IDataService
     }
 
     // =========================================================================
+    // Daily Recap Group Operations (Daily Digest)
+    // =========================================================================
+
+    private static RecapGroupDto MapRecapGroup(DailyRecapGroup g) => new()
+    {
+        Id = g.Id,
+        Name = g.Name,
+        DeliveryMethod = g.DeliveryMethod,
+        TeamsChannelEmail = g.TeamsChannelEmail,
+        Enabled = g.Enabled,
+        Members = g.Members
+            .Select(m => new RecapGroupMemberDto { Type = m.MemberType, Id = m.MemberId, Name = m.MemberName, Email = m.Email })
+            .ToList(),
+        CcList = g.CcEmails.Select(c => c.Email).ToList(),
+    };
+
+    /// <summary>Builds the child member/CC rows from a request. Member email is only kept for
+    /// person members (trade-unit / group members are re-resolved by the Logic App at send time).</summary>
+    private static (List<DailyRecapGroupMember> members, List<DailyRecapGroupCcEmail> cc) BuildRecapChildren(RecapGroupRequest req)
+    {
+        var members = req.Members.Select(m => new DailyRecapGroupMember
+        {
+            MemberType = m.Type,
+            MemberId = m.Id,
+            MemberName = m.Name,
+            Email = m.Type == "person" ? m.Email : null,
+        }).ToList();
+        var cc = req.CcEmails
+            .Select(e => e?.Trim() ?? string.Empty)
+            .Where(e => e.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(e => new DailyRecapGroupCcEmail { Email = e })
+            .ToList();
+        return (members, cc);
+    }
+
+    public async Task<List<RecapGroupDto>> GetRecapGroupsAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var currentUser = GetCurrentUser();
+            var groups = await _appContext.DailyRecapGroups
+                .AsNoTracking()
+                .Include(g => g.Members)
+                .Include(g => g.CcEmails)
+                .Where(g => g.CreatedBy == currentUser)
+                .OrderBy(g => g.Name)
+                .ToListAsync(cancellationToken);
+            return groups.Select(MapRecapGroup).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving recap groups [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            throw;
+        }
+    }
+
+    public async Task<RecapGroupDto> CreateRecapGroupAsync(RecapGroupRequest request, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var (members, cc) = BuildRecapChildren(request);
+            var group = new DailyRecapGroup
+            {
+                Name = request.Name.Trim(),
+                DeliveryMethod = request.DeliveryMethod,
+                TeamsChannelEmail = request.DeliveryMethod == "teams" ? request.TeamsChannelEmail?.Trim() : null,
+                Enabled = true,
+                CreatedBy = GetCurrentUser(),
+                CreatedAt = DateTime.UtcNow,
+                Members = members,
+                CcEmails = cc,
+            };
+            _appContext.DailyRecapGroups.Add(group);
+            await _appContext.SaveChangesAsync(cancellationToken);
+            return MapRecapGroup(group);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating recap group [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            throw;
+        }
+    }
+
+    public async Task<RecapGroupDto?> UpdateRecapGroupAsync(int groupId, RecapGroupRequest request, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var currentUser = GetCurrentUser();
+            var group = await _appContext.DailyRecapGroups
+                .Include(g => g.Members)
+                .Include(g => g.CcEmails)
+                .FirstOrDefaultAsync(g => g.Id == groupId && g.CreatedBy == currentUser, cancellationToken);
+            if (group == null) return null;
+
+            group.Name = request.Name.Trim();
+            group.DeliveryMethod = request.DeliveryMethod;
+            group.TeamsChannelEmail = request.DeliveryMethod == "teams" ? request.TeamsChannelEmail?.Trim() : null;
+            group.ModifiedBy = currentUser;
+            group.ModifiedAt = DateTime.UtcNow;
+
+            // Replace children wholesale — simplest correct way to reflect add/remove edits.
+            var (members, cc) = BuildRecapChildren(request);
+            _appContext.DailyRecapGroupMembers.RemoveRange(group.Members);
+            _appContext.DailyRecapGroupCcEmails.RemoveRange(group.CcEmails);
+            group.Members = members;
+            group.CcEmails = cc;
+
+            await _appContext.SaveChangesAsync(cancellationToken);
+            return MapRecapGroup(group);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating recap group {GroupId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                groupId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            throw;
+        }
+    }
+
+    public async Task<RecapGroupDto?> SetRecapGroupEnabledAsync(int groupId, bool enabled, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var currentUser = GetCurrentUser();
+            var group = await _appContext.DailyRecapGroups
+                .Include(g => g.Members)
+                .Include(g => g.CcEmails)
+                .FirstOrDefaultAsync(g => g.Id == groupId && g.CreatedBy == currentUser, cancellationToken);
+            if (group == null) return null;
+            group.Enabled = enabled;
+            group.ModifiedBy = currentUser;
+            group.ModifiedAt = DateTime.UtcNow;
+            await _appContext.SaveChangesAsync(cancellationToken);
+            return MapRecapGroup(group);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error toggling recap group {GroupId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                groupId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            throw;
+        }
+    }
+
+    public async Task DeleteRecapGroupAsync(int groupId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var currentUser = GetCurrentUser();
+            var group = await _appContext.DailyRecapGroups
+                .FirstOrDefaultAsync(g => g.Id == groupId && g.CreatedBy == currentUser, cancellationToken);
+            if (group == null) return;
+            // Cascade delete removes member + CC child rows.
+            _appContext.DailyRecapGroups.Remove(group);
+            await _appContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting recap group {GroupId} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                groupId, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            throw;
+        }
+    }
+
+    // =========================================================================
     // Dashboard Planting Estimate Operations
     // =========================================================================
 

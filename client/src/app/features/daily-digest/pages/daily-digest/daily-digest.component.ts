@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ApiService } from '@core/services/api.service';
+import { ToastService } from '@core/services/toast.service';
 import {
   DialogComponent,
   DialogHeaderComponent,
@@ -10,7 +11,7 @@ import {
   DialogDescriptionComponent,
   DialogFooterComponent,
 } from '@shared/components/dialog/dialog.component';
-import { DeliveryMethod, MemberType, RecapGroup, RecapMember } from '@features/daily-digest/models/recap-group.model';
+import { DeliveryMethod, MemberType, RecapGroup, RecapGroupSaveRequest, RecapMember } from '@features/daily-digest/models/recap-group.model';
 import { EntitlementsCatalog } from '@features/daily-digest/models/entitlements-catalog.model';
 
 type MemberTab = 'people' | 'trade-units' | 'groups';
@@ -24,7 +25,8 @@ type MemberTab = 'people' | 'trade-units' | 'groups';
  * via entitlements, gathers notes for the resolved producer set, and emails
  * the digest. This component is configuration-only.
  *
- * Data layer is currently in-memory mock state — API + DB land in a follow-up.
+ * Groups are creator-owned and persisted via /api/dailyrecapgroups; the user
+ * sees and manages only the groups they created.
  */
 @Component({
   selector: 'app-daily-digest',
@@ -43,6 +45,7 @@ type MemberTab = 'people' | 'trade-units' | 'groups';
 })
 export class DailyDigestComponent implements OnInit {
   private readonly apiService = inject(ApiService);
+  private readonly toast = inject(ToastService);
   private readonly destroyRef = inject(DestroyRef);
 
   // ── Catalogs fetched from /api/entitlements/catalog ─────────────────────
@@ -59,6 +62,7 @@ export class DailyDigestComponent implements OnInit {
 
   ngOnInit(): void {
     this._loadCatalog();
+    this._loadGroups();
   }
 
   private _loadCatalog(): void {
@@ -98,30 +102,29 @@ export class DailyDigestComponent implements OnInit {
       });
   }
 
-  // ── Persisted groups (mock — replace with API later) ────────────────────
-  protected readonly groups = signal<RecapGroup[]>([
-    {
-      id: 'RG001',
-      name: 'Iowa Territory Daily Recap',
-      deliveryMethod: 'email',
-      members: [
-        { id: 'P001', name: 'David Thompson', type: 'person', email: 'dthompson@company.com' },
-        { id: 'TU001', name: 'Iowa Territory', type: 'trade-unit' },
-      ],
-      ccList: ['lmartinez@company.com', 'manager@company.com'],
-      enabled: true,
-    },
-    {
-      id: 'RG002',
-      name: 'Executive Summary',
-      deliveryMethod: 'teams',
-      members: [
-        { id: 'TUG003', name: 'Executive Team', type: 'trade-unit-group' },
-      ],
-      ccList: ['admin@company.com'],
-      enabled: true,
-    },
-  ]);
+  // ── Persisted groups (loaded from /api/dailyrecapgroups) ────────────────
+  protected readonly groups = signal<RecapGroup[]>([]);
+  protected readonly groupsLoading = signal(false);
+  protected readonly groupsError = signal<string | null>(null);
+  /** Guards the Save button while a create/update request is in flight. */
+  protected readonly saving = signal(false);
+
+  private _loadGroups(): void {
+    this.groupsLoading.set(true);
+    this.groupsError.set(null);
+    this.apiService.getRecapGroups()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: groups => {
+          this.groups.set(groups);
+          this.groupsLoading.set(false);
+        },
+        error: () => {
+          this.groupsError.set('Could not load your recap groups. Try again later.');
+          this.groupsLoading.set(false);
+        },
+      });
+  }
 
   // ── Dialog + form state ─────────────────────────────────────────────────
   protected readonly dialogOpen = signal(false);
@@ -132,7 +135,44 @@ export class DailyDigestComponent implements OnInit {
   protected readonly formMembers = signal<RecapMember[]>([]);
   protected readonly formCcList = signal<string[]>([]);
   protected readonly newCcEmail = signal('');
+  // Microsoft Teams channel email — only used/required when deliveryMethod is 'teams'.
+  protected readonly formTeamsEmail = signal('');
   protected readonly memberPickerTab = signal<MemberTab>('people');
+  // Free-text filter for the member picker — applies to the active tab's list.
+  protected readonly memberSearch = signal('');
+
+  /** Switches the picker tab and clears the search so each tab starts fresh. */
+  protected setMemberTab(tab: MemberTab): void {
+    this.memberPickerTab.set(tab);
+    this.memberSearch.set('');
+  }
+
+  /** People matching the search term (name / email / UPN). */
+  protected readonly filteredPeople = computed(() => {
+    const q = this.memberSearch().trim().toLowerCase();
+    const list = this.availablePeople();
+    if (!q) return list;
+    return list.filter(p =>
+      p.name.toLowerCase().includes(q)
+      || (p.email?.toLowerCase().includes(q) ?? false)
+      || p.id.toLowerCase().includes(q));
+  });
+
+  /** Trade units matching the search term (code + description live in `name`). */
+  protected readonly filteredTradeUnits = computed(() => {
+    const q = this.memberSearch().trim().toLowerCase();
+    const list = this.availableTradeUnits();
+    if (!q) return list;
+    return list.filter(t => t.name.toLowerCase().includes(q));
+  });
+
+  /** Trade-unit groups matching the search term. */
+  protected readonly filteredTradeUnitGroups = computed(() => {
+    const q = this.memberSearch().trim().toLowerCase();
+    const list = this.availableTradeUnitGroups();
+    if (!q) return list;
+    return list.filter(g => g.name.toLowerCase().includes(q));
+  });
 
   // Tab definitions for the member picker — label includes a live count, mirroring
   // the Usage Dashboard's segmented control.
@@ -169,7 +209,18 @@ export class DailyDigestComponent implements OnInit {
   }
 
   protected readonly isEditing = computed(() => this.editingGroupId() !== null);
-  protected readonly canSubmit = computed(() => !!this.formName().trim() && this.formMembers().length > 0);
+  protected readonly canSubmit = computed(() =>
+    !!this.formName().trim()
+    && this.formMembers().length > 0
+    // Teams delivery requires a valid channel email so the recap has a destination.
+    && (this.formDeliveryMethod() !== 'teams' || this._isValidEmail(this.formTeamsEmail()))
+  );
+
+  /** Minimal email check — there's no shared validator in this feature (CC list relies on
+   *  the input's type="email" only). Kept local + simple for the Teams channel email. */
+  private _isValidEmail(value: string): boolean {
+    return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value.trim());
+  }
   protected readonly selectedMemberIds = computed(() => new Set(this.formMembers().map(m => m.id)));
 
   // ── Cascade selection ───────────────────────────────────────────────────
@@ -229,6 +280,7 @@ export class DailyDigestComponent implements OnInit {
     this.formMembers.set([...group.members]);
     this.formCcList.set([...group.ccList]);
     this.newCcEmail.set('');
+    this.formTeamsEmail.set(group.teamsChannelEmail ?? '');
     this.editingGroupId.set(group.id);
     this.dialogOpen.set(true);
   }
@@ -260,33 +312,72 @@ export class DailyDigestComponent implements OnInit {
 
   protected confirmDeleteGroup(): void {
     const id = this.pendingDeleteId();
-    if (id) {
-      this.groups.update(list => list.filter(g => g.id !== id));
+    if (!id) {
+      this.cancelDeleteGroup();
+      return;
     }
+    this.apiService.deleteRecapGroup(id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.groups.update(list => list.filter(g => g.id !== id));
+          this.toast.success('Recap group deleted.');
+        },
+        error: () => this.toast.error('Could not delete the recap group. Try again.'),
+      });
     this.cancelDeleteGroup();
   }
 
   protected toggleGroupEnabled(group: RecapGroup): void {
-    this.groups.update(list => list.map(g => g.id === group.id ? { ...g, enabled: !g.enabled } : g));
+    const next = !group.enabled;
+    // Optimistic flip; revert on failure.
+    this.groups.update(list => list.map(g => g.id === group.id ? { ...g, enabled: next } : g));
+    this.apiService.setRecapGroupEnabled(group.id, next)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: updated => this.groups.update(list => list.map(g => g.id === updated.id ? updated : g)),
+        error: () => {
+          this.groups.update(list => list.map(g => g.id === group.id ? { ...g, enabled: group.enabled } : g));
+          this.toast.error('Could not update the recap group. Try again.');
+        },
+      });
   }
 
   protected saveGroup(): void {
-    if (!this.canSubmit()) return;
+    if (!this.canSubmit() || this.saving()) return;
+    // Flush any CC address typed but not yet committed with Enter / the Add button,
+    // so a user who types an address and clicks Save directly doesn't lose it.
+    this.addCc();
     const editingId = this.editingGroupId();
-    const payload = {
+    const request: RecapGroupSaveRequest = {
       name: this.formName().trim(),
       deliveryMethod: this.formDeliveryMethod(),
       members: this.formMembers(),
       ccList: this.formCcList(),
+      // Only persist the Teams email for Teams groups; clear it if the method is Email.
+      teamsChannelEmail: this.formDeliveryMethod() === 'teams' ? this.formTeamsEmail().trim() : undefined,
     };
-    if (editingId) {
-      this.groups.update(list => list.map(g => g.id === editingId ? { ...g, ...payload } : g));
-    } else {
-      // Stable id for the mock — server-assigned once persistence lands.
-      const nextId = `RG${String(this.groups().length + 1).padStart(3, '0')}`;
-      this.groups.update(list => [...list, { id: nextId, ...payload, enabled: true }]);
-    }
-    this.closeDialog();
+    this.saving.set(true);
+    const request$ = editingId
+      ? this.apiService.updateRecapGroup(editingId, request)
+      : this.apiService.createRecapGroup(request);
+    request$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: saved => {
+          this.groups.update(list =>
+            editingId
+              ? list.map(g => g.id === saved.id ? saved : g)
+              : [...list, saved]);
+          this.saving.set(false);
+          this.toast.success(editingId ? 'Recap group updated.' : 'Recap group created.');
+          this.closeDialog();
+        },
+        error: () => {
+          this.saving.set(false);
+          this.toast.error('Could not save the recap group. Try again.');
+        },
+      });
   }
 
   // ── Member picker actions ───────────────────────────────────────────────
@@ -342,6 +433,8 @@ export class DailyDigestComponent implements OnInit {
     this.formMembers.set([]);
     this.formCcList.set([]);
     this.newCcEmail.set('');
+    this.formTeamsEmail.set('');
     this.memberPickerTab.set('people');
+    this.memberSearch.set('');
   }
 }

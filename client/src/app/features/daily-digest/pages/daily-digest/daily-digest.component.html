@@ -17,8 +17,18 @@
     </button>
   </div>
 
-  <!-- Empty state -->
-  @if (groups().length === 0) {
+  <!-- Loading state -->
+  @if (groupsLoading()) {
+    <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-6 py-14 text-center text-sm text-gray-500 dark:text-gray-400">
+      Loading recap groups…
+    </div>
+  } @else if (groupsError()) {
+    <!-- Error state -->
+    <div class="rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50/60 dark:bg-red-900/20 px-6 py-14 text-center">
+      <h3 class="text-base font-semibold text-red-700 dark:text-red-300">{{ groupsError() }}</h3>
+    </div>
+  } @else if (groups().length === 0) {
+    <!-- Empty state -->
     <div class="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 px-6 py-14 text-center">
       <div class="mx-auto w-12 h-12 rounded-full bg-scoular-green/10 dark:bg-scoular-green/20 flex items-center justify-center mb-4">
         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green">
@@ -65,6 +75,10 @@
                   </svg>
                 }
                 <span>{{ deliveryLabel(group.deliveryMethod) }}</span>
+                @if (group.deliveryMethod === 'teams' && group.teamsChannelEmail) {
+                  <span class="text-gray-300 dark:text-gray-600">·</span>
+                  <span class="truncate" [title]="group.teamsChannelEmail">{{ group.teamsChannelEmail }}</span>
+                }
                 <span class="text-gray-300 dark:text-gray-600">·</span>
                 <span>{{ group.members.length }} member{{ group.members.length === 1 ? '' : 's' }}</span>
                 @if (group.ccList.length > 0) {
@@ -235,6 +249,24 @@
       </div>
     </div>
 
+    <!-- Microsoft Teams channel email — only when Teams is the delivery method. Required to save. -->
+    @if (formDeliveryMethod() === 'teams') {
+      <div class="space-y-1.5">
+        <label for="recap-teams-email" class="text-sm font-medium text-gray-700 dark:text-gray-300">
+          Microsoft Teams Channel Email <span class="font-normal text-scoular-red">(required)</span>
+        </label>
+        <input
+          id="recap-teams-email"
+          type="email"
+          [ngModel]="formTeamsEmail()"
+          (ngModelChange)="formTeamsEmail.set($event)"
+          placeholder="channel@scoular.teams.ms"
+          class="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green/40 focus:border-scoular-green"
+        />
+        <p class="text-xs text-gray-400 dark:text-gray-500">The recap will be posted to this Teams channel's email address.</p>
+      </div>
+    }
+
     <!-- Members -->
     <div>
       <div class="flex items-baseline justify-between mb-2">
@@ -249,11 +281,34 @@
       <div class="w-full bg-gray-100 dark:bg-gray-700 rounded-full p-0.5 sm:p-1 mb-3 overflow-x-auto">
         <div class="flex min-w-0">
           @for (tab of memberPickerTabs(); track tab.id) {
-            <button type="button" (click)="memberPickerTab.set(tab.id)" [class]="memberTabClass(tab.id)">
+            <button type="button" (click)="setMemberTab(tab.id)" [class]="memberTabClass(tab.id)">
               {{ tab.label }}
             </button>
           }
         </div>
+      </div>
+
+      <!-- Search — filters the active tab's list -->
+      <div class="relative mb-3">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+          class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+        </svg>
+        <input
+          type="text"
+          [ngModel]="memberSearch()"
+          (ngModelChange)="memberSearch.set($event)"
+          [placeholder]="memberPickerTab() === 'people' ? 'Search people…' : memberPickerTab() === 'trade-units' ? 'Search trade units…' : 'Search groups…'"
+          class="w-full pl-9 pr-9 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green/40 focus:border-scoular-green"
+        />
+        @if (memberSearch()) {
+          <button type="button" (click)="memberSearch.set('')" title="Clear"
+            class="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-600">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+            </svg>
+          </button>
+        }
       </div>
 
       <!-- Results card — content depends on the selected tab -->
@@ -272,8 +327,10 @@
             @if (!catalogLoading() && memberPickerTab() === 'people') {
               @if (availablePeople().length === 0) {
                 <div class="py-10 text-center text-sm text-gray-400 dark:text-gray-500">No people in the directory.</div>
+              } @else if (filteredPeople().length === 0) {
+                <div class="py-10 text-center text-sm text-gray-400 dark:text-gray-500">No people match “{{ memberSearch() }}”.</div>
               }
-              @for (person of availablePeople(); track person.id) {
+              @for (person of filteredPeople(); track person.id) {
                 @let pState = memberState(person.id, 'person');
                 <div class="flex items-center justify-between px-3 py-2 border-b last:border-b-0 border-gray-100 dark:border-gray-700/50 transition-colors"
                   [class.bg-scoular-green\/5]="pState !== 'none'"
@@ -321,8 +378,10 @@
             @if (!catalogLoading() && memberPickerTab() === 'trade-units') {
               @if (availableTradeUnits().length === 0) {
                 <div class="py-10 text-center text-sm text-gray-400 dark:text-gray-500">No trade units in the directory.</div>
+              } @else if (filteredTradeUnits().length === 0) {
+                <div class="py-10 text-center text-sm text-gray-400 dark:text-gray-500">No trade units match “{{ memberSearch() }}”.</div>
               }
-              @for (unit of availableTradeUnits(); track unit.id) {
+              @for (unit of filteredTradeUnits(); track unit.id) {
                 @let tuState = memberState(unit.id, 'trade-unit');
                 <div class="flex items-center justify-between px-3 py-2 border-b last:border-b-0 border-gray-100 dark:border-gray-700/50 transition-colors"
                   [class.bg-scoular-green\/5]="tuState !== 'none'"
@@ -365,8 +424,10 @@
             @if (!catalogLoading() && memberPickerTab() === 'groups') {
               @if (availableTradeUnitGroups().length === 0) {
                 <div class="py-10 text-center text-sm text-gray-400 dark:text-gray-500">No trade-unit groups in the directory.</div>
+              } @else if (filteredTradeUnitGroups().length === 0) {
+                <div class="py-10 text-center text-sm text-gray-400 dark:text-gray-500">No groups match “{{ memberSearch() }}”.</div>
               }
-              @for (g of availableTradeUnitGroups(); track g.id) {
+              @for (g of filteredTradeUnitGroups(); track g.id) {
                 <div class="flex items-center justify-between px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 border-b last:border-b-0 border-gray-100 dark:border-gray-700/50">
                   <div class="flex items-center gap-3 min-w-0">
                     <span class="w-7 h-7 rounded-md bg-scoular-teal/15 dark:bg-scoular-teal/20 flex items-center justify-center flex-shrink-0">
@@ -456,9 +517,9 @@
       class="px-4 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
       Cancel
     </button>
-    <button type="button" (click)="saveGroup()" [disabled]="!canSubmit()"
+    <button type="button" (click)="saveGroup()" [disabled]="!canSubmit() || saving()"
       class="px-4 py-2 text-sm font-medium rounded-md bg-scoular-green-accessible text-white hover:bg-scoular-green disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-      {{ isEditing() ? 'Update Group' : 'Create Group' }}
+      {{ saving() ? 'Saving…' : (isEditing() ? 'Update Group' : 'Create Group') }}
     </button>
   </div>
 </app-dialog>

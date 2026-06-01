@@ -234,6 +234,21 @@ public class ApimDataService : IDataService
     public Task DeleteListAsync(int listId, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for DeleteList");
 
+    public Task<List<RecapGroupDto>> GetRecapGroupsAsync(CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetRecapGroups");
+
+    public Task<RecapGroupDto> CreateRecapGroupAsync(RecapGroupRequest request, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for CreateRecapGroup");
+
+    public Task<RecapGroupDto?> UpdateRecapGroupAsync(int groupId, RecapGroupRequest request, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for UpdateRecapGroup");
+
+    public Task<RecapGroupDto?> SetRecapGroupEnabledAsync(int groupId, bool enabled, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for SetRecapGroupEnabled");
+
+    public Task DeleteRecapGroupAsync(int groupId, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for DeleteRecapGroup");
+
     // =========================================================================
     // Dashboard Planting Estimate Operations
     // =========================================================================
