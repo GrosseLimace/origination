@@ -63,6 +63,8 @@ export class CustomerListComponent {
   readonly hasTradeUnitSelection = computed(() =>
     this.appStateService.selectedTradeUnits().length > 0 || this.appStateService.selectedGroupNames().length > 0
   );
+  /** "All Producers" mode — search spans every producer (our table + ODS onboarding fallback). */
+  readonly allProducersMode = computed(() => this.appStateService.allProducersMode());
 
   // Performance optimization: Cache last contact info to avoid repeated filtering/sorting
   // Signal so the OnPush template re-renders automatically when the cache is rebuilt.

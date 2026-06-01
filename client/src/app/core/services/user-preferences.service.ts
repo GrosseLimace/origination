@@ -38,10 +38,12 @@ export class UserPreferencesService {
       this.appState.savePrefsToLocalStorage(pref.selectedGroupNames, pref.selectedTradeUnits);
     });
 
-    // Save to localStorage + API whenever trade units change (debounced)
+    // Save to localStorage + API whenever trade units change (debounced).
+    // Skip while in "All Producers" mode — that mode clears the selection in-memory but must
+    // never overwrite the saved preference (which stays the user's real trade group).
     toObservable(this.appState.selectedTradeUnits).pipe(
       debounceTime(800),
-      filter(() => this.prefsLoaded),
+      filter(() => this.prefsLoaded && !this.appState.allProducersMode()),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe(units => {
       const groups = this.appState.selectedGroupNames();
@@ -49,10 +51,11 @@ export class UserPreferencesService {
       this.apiService.saveUserPreference(groups, units).pipe(catchError(() => of(null))).subscribe();
     });
 
-    // Save to localStorage + API whenever group names change (debounced)
+    // Save to localStorage + API whenever group names change (debounced).
+    // Skip while in "All Producers" mode (see note above) so the saved preference is preserved.
     toObservable(this.appState.selectedGroupNames).pipe(
       debounceTime(800),
-      filter(() => this.prefsLoaded),
+      filter(() => this.prefsLoaded && !this.appState.allProducersMode()),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe(groups => {
       const units = this.appState.selectedTradeUnits();

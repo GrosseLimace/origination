@@ -90,7 +90,16 @@
               <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green mb-4"></div>
               <p class="text-gray-500 dark:text-gray-400 font-medium">Loading producers...</p>
             </div>
-          } @else if (selectedTradeUnits.length === 0 && !searchInputValue) {
+          } @else if (allProducersMode() && !searchInputValue) {
+            <div class="p-8 text-center text-gray-500">
+              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 opacity-50">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="m21 21-4.3-4.3"/>
+              </svg>
+              <p class="font-medium">Search for any producer</p>
+              <p class="text-sm mt-2">Type a name or Scoular ID to find a producer across all trade units — including producers not yet added, who you can onboard by assigning a trade unit.</p>
+            </div>
+          } @else if (selectedTradeUnits.length === 0 && !searchInputValue && !allProducersMode()) {
             <div class="p-8 text-center text-gray-500">
               <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-4 opacity-50">
                 <path d="M3 3h18v18H3z"/>

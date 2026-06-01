@@ -74,6 +74,11 @@ export class AppStateService {
   selectedCustomer = signal<Customer | null>(null);
   selectedTradeUnits = signal<string[]>([]);
   selectedGroupNames = signal<string[]>([]);
+  // "All Producers" mode — a session-only override that clears scope so the customer-list
+  // search spans all producers (our table + ODS onboarding fallback). Deliberately NOT
+  // persisted (localStorage or server preference) and starts false every session, so the
+  // user's saved preference always remains a real trade group, never "All Producers".
+  allProducersMode = signal(false);
 
   // Scroll state — tracks last customer scrolled to in the list so re-navigation doesn't re-scroll
   lastScrolledCustomerId = signal<number | null>(null);
@@ -121,6 +126,10 @@ export class AppStateService {
 
   setSelectedGroupNames(groups: string[]): void {
     this.selectedGroupNames.set(groups);
+  }
+
+  setAllProducersMode(on: boolean): void {
+    this.allProducersMode.set(on);
   }
 
   setSearchQuery(query: string): void {
