@@ -290,6 +290,10 @@ public class OriginationDbContext : DbContext
             entity.Ignore(e => e.DateReceived);
         });
 
+        // Configure StorageCommodity — keyless projection for SqlQueryRaw (storage-commodity
+        // aggregate used to gate customer-storage unapplied tickets). No table/view mapping.
+        modelBuilder.Entity<StorageCommodity>(entity => entity.HasNoKey());
+
         // Configure SavedList entity - DISABLED: Table doesn't exist in ODS
         // modelBuilder.Entity<SavedList>(entity => { ... });
 
