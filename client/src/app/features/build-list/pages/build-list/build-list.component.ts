@@ -68,6 +68,12 @@ export class BuildListComponent {
   private _initTradeUnits: string[] = [];
   private _initialized = false;
   private _ticketsReady = signal(false);
+  // Mirrors _ticketsReady for contracts: false until a FRESH _loadFresh confirms contracts.
+  // Deliberately NOT set from the cache-restore path — cached contracts may be empty/stale
+  // (e.g. arriving from the home page before contracts finished, or a prior TU). Contract-aware
+  // queries wait on this so "All producers with contracts" can't filter against a not-yet-loaded
+  // contract set and falsely return "no producers matched".
+  private _contractsReady = signal(false);
   private _loadRequestId = 0;
   private _queryGenId = 0;
   private _pendingIncludedIds: number[] = [];
@@ -84,14 +90,16 @@ export class BuildListComponent {
     this.notes();
     this.storedGrain();
     this._ticketsReady();
+    this._contractsReady();
     if (this.queryText().trim() && this.isProcessing() && this.coreDataLoaded()) {
       untracked(() => {
         // Re-check if the needed data is now available
         const q = this.queryText();
         const ticketsOk = !this.nlqFilterService.queryInvolvesTickets(q) || this._ticketsReady();
+        const contractsOk = !this.nlqFilterService.queryInvolvesContracts(q) || this._contractsReady();
         const storageOk = !this.nlqFilterService.queryInvolvesStorage(q) || this.storedGrain().length > 0;
         const notesOk = !this.nlqFilterService.queryInvolvesContact(q) || this.notes().length > 0;
-        if (ticketsOk && storageOk && notesOk) {
+        if (ticketsOk && contractsOk && storageOk && notesOk) {
           this.waitingForTickets.set(false);
           this._applyNlqFilter();
           this.isProcessing.set(false);
@@ -151,6 +159,13 @@ export class BuildListComponent {
 
 
   readonly hasTradeUnits = computed(() => this.effectiveTradeUnits().length > 0);
+
+  /** True when the active query depends on contracts AND the contracts fetch failed on the last
+   *  load. The results area uses this to show a "couldn't load contract data — retry" panel
+   *  instead of a misleading "no producers found", since the filter would have run against an
+   *  empty contracts array. */
+  readonly contractsUnavailableForQuery = computed(() =>
+    this.contractsLoadFailed() && this.nlqFilterService.queryInvolvesContracts(this.queryText()));
 
   /** Only show saved lists whose trade units exactly match the currently selected TUs. */
   readonly visibleSavedLists = computed(() => {
@@ -751,6 +766,10 @@ export class BuildListComponent {
   loadingSavedLists = signal(false);
   detectedState = signal<string | null>(null);
   queryReturnedNoMatches = signal(false);
+  // True when the contracts fetch failed/timed out on the last load. Lets the results area
+  // distinguish "couldn't load contract data" from a genuine zero-match — a contract-aware
+  // query running against a silently-empty contracts array would otherwise read as "0 producers".
+  contractsLoadFailed = signal(false);
   showRefinePanel = signal(false);
   pendingRefinements = signal<RefinementFilters>({});
   appliedRefinements = signal<RefinementFilters>({});
@@ -1513,6 +1532,11 @@ export class BuildListComponent {
   private _loadFresh(clearSignals = false): void {
     const requestId = ++this._loadRequestId;
     this._ticketsReady.set(false);
+    // Fresh contracts not yet confirmed — contract-aware queries will wait on this until the
+    // forkJoin below resolves (covers the cache-restore background-refresh window).
+    this._contractsReady.set(false);
+    // Reset the contracts-failure flag so a retry / fresh load starts clean.
+    this.contractsLoadFailed.set(false);
     // Only reset coreDataLoaded when clearing signals (TU change / initial load).
     // For background refreshes (clearSignals=false with existing data), keep it true
     // so the UI stays interactive while fresh data loads behind the scenes.
@@ -1541,7 +1565,7 @@ export class BuildListComponent {
     // Fetch core data (everything except tickets — those are slow and load in background)
     forkJoin({
       customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
-      contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => of([] as Contract[]))),
+      contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => { this.contractsLoadFailed.set(true); return of([] as Contract[]); })),
       plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[]))),
       notes: this.apiService.getNotes().pipe(catchError(() => of([] as Note[]))),
       storedGrain: this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
@@ -1571,6 +1595,9 @@ export class BuildListComponent {
 
         this.loading.set(false);
         this.coreDataLoaded.set(true);
+        // Fresh contracts are now in hand (real data, or [] with contractsLoadFailed set on a
+        // failed inner fetch) — release any contract-aware query staged in processQuery.
+        this._contractsReady.set(true);
 
         // Re-run active query with fresh data — cached data may have been stale/incomplete
         // (e.g., notes hadn't finished loading on home page before user navigated here).
@@ -1585,6 +1612,7 @@ export class BuildListComponent {
         if (requestId !== this._loadRequestId) return;
         this.loading.set(false);
         this.coreDataLoaded.set(true); // Mark loaded even on error so UI isn't stuck
+        this._contractsReady.set(true); // Don't strand contract-queries waiting forever on error
         this.toastService.error('Failed to load data');
       }
     });
@@ -1776,6 +1804,15 @@ export class BuildListComponent {
     this.usageTracking.postClickEvent('interaction', 'build-a-list', 'query-request-submitted', text);
   }
 
+  /** Retry after a contracts-fetch failure surfaced the "couldn't load contract data" panel.
+   *  Sets isProcessing so the existing spinner shows, then re-fetches everything fresh; the
+   *  _dataReadyEffect re-applies the active query once core data lands. If contracts come back
+   *  this time, the panel clears and results render; if it fails again, the panel reappears. */
+  retryContractLoad(): void {
+    this.isProcessing.set(true);
+    this._loadFresh(true);
+  }
+
   processQuery(overrideTradeUnits?: string[]): void {
     if (!this.queryText().trim()) return;
     // Don't run if core data hasn't loaded yet — set isProcessing so the _dataReadyEffect
@@ -1804,7 +1841,17 @@ export class BuildListComponent {
       return;
     }
 
-    // All other data (notes, contracts, storage, planting) comes from the forkJoin
+    // If the query needs contracts and a fresh contracts fetch hasn't confirmed yet, wait.
+    // coreDataLoaded can be true with stale/empty cached contracts (cache-restore path sets it
+    // before the background refresh lands), so trusting it alone let "All producers with
+    // contracts" run against a not-yet-loaded set and falsely return zero. isProcessing is
+    // already true here, so _dataReadyEffect re-runs this query once _contractsReady flips.
+    const needsContracts = this.nlqFilterService.queryInvolvesContracts(this.queryText());
+    if (needsContracts && !this._contractsReady()) {
+      return;
+    }
+
+    // All other data (notes, storage, planting) comes from the forkJoin
     // which completes before coreDataLoaded is set. Run the NLQ immediately.
     this.waitingForTickets.set(false);
     this._applyNlqFilter();
@@ -1814,6 +1861,8 @@ export class BuildListComponent {
   /** Fetches fresh data for specific trade units and runs the NLQ filter. */
   private _fetchAndFilter(tradeUnits: string[]): void {
     const queryGen = this._queryGenId; // Capture to detect if a newer query supersedes this one
+    // Reset the contracts-failure flag — a fresh fetch is about to (re)determine it.
+    this.contractsLoadFailed.set(false);
 
     // Fast path: if requested TUs match what's already loaded AND all data the query
     // needs is ready, skip the fetch and run NLQ directly against in-memory data.
@@ -1837,7 +1886,7 @@ export class BuildListComponent {
     const tuParam = tradeUnits.length > 0 ? tradeUnits : undefined;
     forkJoin({
       customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
-      contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => of([] as Contract[]))),
+      contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => { this.contractsLoadFailed.set(true); return of([] as Contract[]); })),
       tickets: this.apiService.getTickets(tuParam).pipe(catchError(() => of([] as Ticket[]))),
       plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[]))),
       notes: this.apiService.getNotes().pipe(catchError(() => of([] as Note[]))),
