@@ -344,6 +344,9 @@ public interface IDataService
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<List<Commodity>> GetCommoditiesAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>Gets the curated commodities flagged for the Planting Intentions crop dropdown.</summary>
+    Task<List<Commodity>> GetPlantingCommoditiesAsync(CancellationToken cancellationToken = default);
+
     /// <summary>Gets commodity conversion factors (lbs per unit) from ODS.</summary>
     Task<List<CommodityConversion>> GetCommodityConversionsAsync(CancellationToken cancellationToken = default);
 

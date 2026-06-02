@@ -334,7 +334,12 @@ export class BidSheetComponent {
   newLocationLng = signal<number | null>(null);
   newLocationTu = signal<string>('');
   newLocationIsScoular = signal<boolean>(false);
-  newLocationCrops = signal<{ commodityCode: string; searchQuery: string; showDropdown: boolean; oldYear: number; oldBid: string; newYear: number; newBid: string }[]>([]);
+  // Each crop row always shows a Current Year bid; Prior (current-1) and Next (current+1)
+  // are optional, toggled on via the "+ Add year" menu and removable. Only the shown years
+  // with a value get persisted.
+  newLocationCrops = signal<{ commodityCode: string; searchQuery: string; showDropdown: boolean; currentYear: number; currentBid: string; priorYear: number; priorBid: string; showPrior: boolean; nextYear: number; nextBid: string; showNext: boolean }[]>([]);
+  /** Row index whose "+ Add year" menu is open, or null. */
+  yearMenuIndex = signal<number | null>(null);
   readonly addLocationYears: number[] = (() => { const y = new Date().getFullYear(); return [y - 1, y]; })();
   // (commodityCode stores the category value, e.g. "CORN", "WHEAT")
   private _addLocationPin: Leaflet.Marker | null = null;
@@ -1080,9 +1085,7 @@ export class BidSheetComponent {
     this.newLocationTu.set(tus.length === 1 ? tus[0] : '');
 
     // Open the form
-    const defOldYear = this.oldYear() ?? (this.selectedYear() - 1);
-    const defNewYear = this.newYear() ?? this.selectedYear();
-    this.newLocationCrops.set([{ commodityCode: '', searchQuery: '', showDropdown: false, oldYear: defOldYear, oldBid: '', newYear: defNewYear, newBid: '' }]);
+    this.newLocationCrops.set([this._makeCropRow()]);
     this.showAddLocationForm.set(true);
   }
 
@@ -1093,9 +1096,26 @@ export class BidSheetComponent {
     if (this.addLocationOrigin() === 'editBids') {
       return !!name && !!tu && hasCoords;
     }
-    const crops = this.newLocationCrops().filter(c => c.commodityCode.trim() && c.oldBid.trim() && c.newBid.trim());
+    // A crop counts as long as it has a commodity and at least ONE bid in a shown year.
+    const crops = this.newLocationCrops().filter(c => c.commodityCode.trim() && this._cropHasBid(c));
     return !!name && !!tu && crops.length > 0 && hasCoords;
   });
+
+  /** True when a crop row has a bid in any currently-shown year (current always; prior/next if toggled on). */
+  private _cropHasBid(c: { currentBid: string; priorBid: string; showPrior: boolean; nextBid: string; showNext: boolean }): boolean {
+    return !!c.currentBid.trim() || (c.showPrior && !!c.priorBid.trim()) || (c.showNext && !!c.nextBid.trim());
+  }
+
+  /** Builds a fresh crop row: Current Year shown, Prior/Next available via the menu. */
+  private _makeCropRow() {
+    const current = this.newYear() ?? this.selectedYear();
+    return {
+      commodityCode: '', searchQuery: '', showDropdown: false,
+      currentYear: current, currentBid: '',
+      priorYear: current - 1, priorBid: '', showPrior: false,
+      nextYear: current + 1, nextBid: '', showNext: false,
+    };
+  }
 
   clearCropSelection(index: number): void {
     this.newLocationCrops.update(rows => rows.map((r, i) =>
@@ -1104,21 +1124,50 @@ export class BidSheetComponent {
   }
 
   addCropRow(): void {
-    const defOldYear = this.oldYear() ?? (this.selectedYear() - 1);
-    const defNewYear = this.newYear() ?? this.selectedYear();
-    this.newLocationCrops.update(rows => [...rows, { commodityCode: '', searchQuery: '', showDropdown: false, oldYear: defOldYear, oldBid: '', newYear: defNewYear, newBid: '' }]);
+    this.newLocationCrops.update(rows => [...rows, this._makeCropRow()]);
   }
 
   removeCropRow(index: number): void {
     this.newLocationCrops.update(rows => rows.filter((_, i) => i !== index));
   }
 
-  updateCropOldBid(index: number, value: string): void {
-    this.newLocationCrops.update(rows => rows.map((r, i) => i === index ? { ...r, oldBid: value } : r));
+  updateCropCurrentBid(index: number, value: string): void {
+    this.newLocationCrops.update(rows => rows.map((r, i) => i === index ? { ...r, currentBid: value } : r));
   }
 
-  updateCropNewBid(index: number, value: string): void {
-    this.newLocationCrops.update(rows => rows.map((r, i) => i === index ? { ...r, newBid: value } : r));
+  updateCropPriorBid(index: number, value: string): void {
+    this.newLocationCrops.update(rows => rows.map((r, i) => i === index ? { ...r, priorBid: value } : r));
+  }
+
+  updateCropNextBid(index: number, value: string): void {
+    this.newLocationCrops.update(rows => rows.map((r, i) => i === index ? { ...r, nextBid: value } : r));
+  }
+
+  /** Toggles the "+ Add year" menu for a crop row. */
+  toggleYearMenu(index: number): void {
+    this.yearMenuIndex.update(cur => cur === index ? null : index);
+  }
+
+  /** Reveals the Prior Year bid input for a crop row. */
+  addPriorYear(index: number): void {
+    this.newLocationCrops.update(rows => rows.map((r, i) => i === index ? { ...r, showPrior: true } : r));
+    this.yearMenuIndex.set(null);
+  }
+
+  /** Reveals the Next Year bid input for a crop row. */
+  addNextYear(index: number): void {
+    this.newLocationCrops.update(rows => rows.map((r, i) => i === index ? { ...r, showNext: true } : r));
+    this.yearMenuIndex.set(null);
+  }
+
+  /** Hides + clears the Prior Year bid for a crop row. */
+  removePriorYear(index: number): void {
+    this.newLocationCrops.update(rows => rows.map((r, i) => i === index ? { ...r, showPrior: false, priorBid: '' } : r));
+  }
+
+  /** Hides + clears the Next Year bid for a crop row. */
+  removeNextYear(index: number): void {
+    this.newLocationCrops.update(rows => rows.map((r, i) => i === index ? { ...r, showNext: false, nextBid: '' } : r));
   }
 
   confirmAddLocation(): void {
@@ -1134,21 +1183,23 @@ export class BidSheetComponent {
 
     const crops = fromEditBids
       ? []
-      : this.newLocationCrops().filter(c => c.commodityCode.trim() && c.oldBid.trim() && c.newBid.trim());
+      : this.newLocationCrops().filter(c => c.commodityCode.trim() && this._cropHasBid(c));
 
-    if (!fromEditBids && crops.length === 0) { this.toastService.error('Add at least one crop with both bids'); return; }
+    if (!fromEditBids && crops.length === 0) { this.toastService.error('Add at least one crop with a bid'); return; }
 
-    // Build bids payload (2 per crop row: oldYear + newYear)
+    // Build bids payload — one record per shown year that actually has a bid (current always;
+    // prior/next only when toggled on). Skip empty years instead of persisting a blank bid.
     const commodityLookup = new Map(this.allCommodities().map(c => [c.code, c]));
     const bids = crops.flatMap(crop => {
       const code = crop.commodityCode.trim();
       const commodity = commodityLookup.get(code);
       const commodityName = commodity?.name ?? code;
       const commodityCategory = commodity?.category ?? undefined;
-      return [
-        { commodityCode: code, commodityName, commodityCategory, cropYear: crop.oldYear, bid: crop.oldBid.trim(), month: 0 },
-        { commodityCode: code, commodityName, commodityCategory, cropYear: crop.newYear, bid: crop.newBid.trim(), month: 0 }
-      ];
+      const out: Array<{ commodityCode: string; commodityName: string; commodityCategory?: string; cropYear: number; bid: string; month: number }> = [];
+      if (crop.showPrior && crop.priorBid.trim()) out.push({ commodityCode: code, commodityName, commodityCategory, cropYear: crop.priorYear, bid: crop.priorBid.trim(), month: 0 });
+      if (crop.currentBid.trim()) out.push({ commodityCode: code, commodityName, commodityCategory, cropYear: crop.currentYear, bid: crop.currentBid.trim(), month: 0 });
+      if (crop.showNext && crop.nextBid.trim()) out.push({ commodityCode: code, commodityName, commodityCategory, cropYear: crop.nextYear, bid: crop.nextBid.trim(), month: 0 });
+      return out;
     });
 
     this.apiService.createBidSheetLocation({
@@ -1779,6 +1830,7 @@ export class BidSheetComponent {
     this.newLocationTu.set('');
     this.newLocationIsScoular.set(false);
     this.newLocationCrops.set([]);
+    this.yearMenuIndex.set(null);
   }
 
   // =========================================================================

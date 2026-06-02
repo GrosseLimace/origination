@@ -63,6 +63,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Tier3).HasColumnName("Tier3").HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.BaseUOM).HasColumnName("BaseUOM").HasMaxLength(10).IsRequired(false);
             entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
+            entity.Property(e => e.ShowInPlantingIntentions).HasColumnName("ShowInPlantingIntentions").HasDefaultValue(false).IsRequired();
 
             entity.HasIndex(e => e.Code).IsUnique().HasDatabaseName("IX_Commodities_Code");
         });

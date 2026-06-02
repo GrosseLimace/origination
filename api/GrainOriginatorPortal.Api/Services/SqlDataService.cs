@@ -900,6 +900,37 @@ public class SqlDataService : IDataService
         }
     }
 
+    public async Task<List<Commodity>> GetPlantingCommoditiesAsync(CancellationToken cancellationToken = default)
+    {
+        const string cacheKey = "commodities:planting";
+        if (_cache.TryGetValue(cacheKey, out List<Commodity>? cached) && cached is not null)
+            return cached;
+
+        try
+        {
+            // Curated subset for the Planting Intentions crop dropdown — same source as
+            // GetCommoditiesAsync, narrowed to the ShowInPlantingIntentions flag.
+            var result = await _appContext.Commodities
+                .AsNoTracking()
+                .Where(c => c.IsActive && c.ShowInPlantingIntentions)
+                .OrderBy(c => c.Name)
+                .ToListAsync(cancellationToken);
+
+            _cache.Set(cacheKey, result, new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10),
+                Size = 1
+            });
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving planting commodities [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            throw;
+        }
+    }
+
     public async Task<List<CommodityConversion>> GetCommodityConversionsAsync(CancellationToken cancellationToken = default)
     {
         const string cacheKey = "commodity-conversions";
