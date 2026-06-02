@@ -1609,12 +1609,17 @@ public class SqlDataService : IDataService
     ///     C-prefix (customer-storage) tickets are then gated post-query against active storage
     ///     (see <see cref="GateCustomerStorageTickets"/>) so priced-out grain stops showing.
     /// Uses STRING_SPLIT for both lists to dodge the 2100-parameter IN-clause limit.
+    /// <para><paramref name="includeStorageTickets"/>: when false, customer-storage (C-prefix) tickets are
+    /// excluded entirely and the storage gate is skipped. Spot Loads (today's tickets) passes false —
+    /// storage grain isn't a spot load, and skipping it keeps that (UI-blocking) call off the slow
+    /// ctrm.vw_GNTA39D1 scan. The per-producer Unapplied list + Build-a-List pass true.</para>
     /// </summary>
     private async Task<List<Ticket>> LoadTicketsByContractAndCustomerScopeAsync(
         List<string> openContractNumbers,
         List<string> customerCodes,
         CancellationToken cancellationToken,
-        string? cutoffDateInclusive = null)
+        string? cutoffDateInclusive = null,
+        bool includeStorageTickets = true)
     {
         if (openContractNumbers.Count == 0 && customerCodes.Count == 0) return new List<Ticket>();
 
@@ -1638,6 +1643,10 @@ public class SqlDataService : IDataService
         // set at the SQL layer. Null cutoff = no date filter (used by the broad contracts page paths).
         // (C# property Ticket.Date maps to DB column TicketBlDate; raw SQL has to use the column name.)
         var cutoff = cutoffDateInclusive ?? string.Empty;
+
+        // 1 = include C-prefix (customer-storage) unapplied tickets; 0 = U/L only. When 0 the storage
+        // gate below is also skipped, so this whole call stays off the slow ctrm.vw_GNTA39D1 scan.
+        var storageFlag = includeStorageTickets ? 1 : 0;
 
         // Two indexed lookups UNION ALL'd (the two branches are mutually exclusive — applied
         // tickets carry a P-prefix contract number, unapplied carry U/L/C — so SQL Server's
@@ -1685,7 +1694,8 @@ public class SqlDataService : IDataService
                 WHERE t.IsActive = 1 AND t.TicketType IN ('U','P')
                   AND (t.TicketStatusDescription IS NULL OR t.TicketStatusDescription <> 'Consolidated')
                   AND t.ContractNumber IS NOT NULL
-                  AND (t.ContractNumber LIKE 'U%' OR t.ContractNumber LIKE 'L%' OR t.ContractNumber LIKE 'C%')
+                  AND (t.ContractNumber LIKE 'U%' OR t.ContractNumber LIKE 'L%'
+                       OR ({storageFlag} = 1 AND t.ContractNumber LIKE 'C%'))
                   AND ({cutoff} = '' OR (t.TicketBlDate IS NOT NULL AND t.TicketBlDate >= {cutoff}))")
             .AsNoTracking()
             .OrderByDescending(t => t.Date)
@@ -1696,7 +1706,10 @@ public class SqlDataService : IDataService
         // vw_CurrentTickets that would otherwise show as unapplied forever. Only the C-prefix
         // tickets (which come from the CustomerCode branch above) are affected; applied (P) and
         // U/L tickets pass through. Looked up only for the customers that actually have C tickets,
-        // so producers with no storage cost nothing.
+        // so producers with no storage cost nothing. Skipped entirely when storage is excluded
+        // (no C tickets to gate, and avoids the slow ctrm.vw_GNTA39D1 lookup).
+        if (!includeStorageTickets) return tickets;
+
         var storageCustomerCodes = tickets
             .Where(t => t.CtrmContractNumber is { Length: > 0 } cn
                 && cn.StartsWith("C", StringComparison.OrdinalIgnoreCase)
@@ -1990,7 +2003,7 @@ public class SqlDataService : IDataService
                         .ToListAsync(cancellationToken);
 
                     tickets = await LoadTicketsByContractAndCustomerScopeAsync(
-                        openContractNumbers, customerCodes, cancellationToken, cutoffStr);
+                        openContractNumbers, customerCodes, cancellationToken, cutoffStr, includeStorageTickets: false);
                 }
             }
             else
@@ -2021,7 +2034,7 @@ public class SqlDataService : IDataService
                 var customerCodes = contractCustomerCodes.Union(snapshotCustomerCodes).ToList();
 
                 tickets = await LoadTicketsByContractAndCustomerScopeAsync(
-                    openContractNumbers, customerCodes, cancellationToken, cutoffStr);
+                    openContractNumbers, customerCodes, cancellationToken, cutoffStr, includeStorageTickets: false);
             }
 
             _logger.LogInformation("Loaded {TicketCount} recent tickets for spot loads (filtered: {IsFiltered}, cutoff: {CutoffStr})",

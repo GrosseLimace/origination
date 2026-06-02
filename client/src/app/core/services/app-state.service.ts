@@ -202,6 +202,16 @@ export class AppStateService {
     this.ticketsLoading.set(loading);
   }
 
+  // Per-dataset loading flags — let each screen/category render as soon as ITS own data
+  // arrives instead of waiting on the slowest core query. Set by DataPreloadService: all
+  // true when a trade-unit load starts, each flipped false as its data streams in.
+  //   - Actionable Insights: Spot Loads waits on todaysTicketsLoading; the contract-based
+  //     categories (Unconfirmed Contracts, Unshipped Bushels) wait on contractsLoading.
+  //   - Dashboard: waits on customers + contracts, NOT tickets (it doesn't use them).
+  customersLoading = signal(false);
+  contractsLoading = signal(false);
+  todaysTicketsLoading = signal(false);
+
   // Dashboard cache — keyed by trade unit so navigating back shows data instantly
   dashboardCache = signal<DashboardCacheEntry | null>(null);
 
@@ -282,6 +292,9 @@ export class AppStateService {
     this.dashboardCache.set(null);
     this.preloadedDashboardSummary.set(null);
     this.dataLoading.set(false);
+    this.customersLoading.set(false);
+    this.contractsLoading.set(false);
+    this.todaysTicketsLoading.set(false);
     this.todaysTickets.set([]);
   }
 }
