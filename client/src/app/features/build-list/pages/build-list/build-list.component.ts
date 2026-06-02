@@ -159,6 +159,10 @@ export class BuildListComponent {
 
 
   readonly hasTradeUnits = computed(() => this.effectiveTradeUnits().length > 0);
+  /** "All Producers" mode is a customer-home search affordance with no trade-unit scope.
+   *  Build a List is inherently per-trade-unit, so in this mode we show a gate prompting the
+   *  user to pick a trade group/unit instead of the (unscoped) query library. */
+  readonly allProducersMode = computed(() => this.appState.allProducersMode());
 
   /** True when the active query depends on contracts AND the contracts fetch failed on the last
    *  load. The results area uses this to show a "couldn't load contract data — retry" panel
