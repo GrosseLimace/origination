@@ -37,7 +37,7 @@ export interface Ticket {
 
   // Classification — maps to GNP014.BCPFXT via ODS TicketType column
   ticketType?: string;  // P=Purchase, S=Sale, U=Unload, L=Loadout, B=Booking
-  isApplied: boolean;   // server-computed: false only when first char of ctrmContractNumber is U (Unload) or L (Loadout) — those are unapplied tickets. Everything else (P, S, C=Customer Storage, B, or no contract) is applied.
+  isApplied: boolean;   // server-computed: false when first char of ctrmContractNumber is U (Unload), L (Loadout), or C (Customer Storage) — those are unapplied. Everything else (P, S, B, or no contract) is applied. Note: C-prefix tickets are further gated server-side to active storage (priced-out storage grain is dropped from the unapplied list).
 
   // Status
   ticketStatusDescription?: string; // e.g. "Unload", "Final Settled", "P/A", "Force-Matched Unload"
