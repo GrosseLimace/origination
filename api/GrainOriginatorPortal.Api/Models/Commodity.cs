@@ -16,4 +16,9 @@ public class Commodity
     public string? Tier3 { get; set; }
     public string? BaseUOM { get; set; }
     public bool IsActive { get; set; } = true;
+
+    /// <summary>When true, this commodity appears in the curated Planting Intentions crop
+    /// dropdown. Defaults false; only an approved short list is flagged. The additive-only
+    /// commodity sync never resets it, so new auto-synced commodities stay hidden there.</summary>
+    public bool ShowInPlantingIntentions { get; set; }
 }

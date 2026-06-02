@@ -137,6 +137,13 @@ export class ContractsTableComponent {
    *  already-filtered list. */
   readonly groupedContracts = computed<Array<{ commodity: string; contracts: Contract[] }>>(() => {
     const list = this.displayedContracts();
+    // Delivery Period sort is cross-commodity: the user wants "what's next up to
+    // deliver" regardless of commodity, so skip the per-commodity buckets and return
+    // one flat, delivery-sorted group. displayedContracts() is already ordered by
+    // deliveryStart when that column is active. Toggling the sort off restores grouping.
+    if (this.currentSortColumn() === 'deliveryStart' && this.currentSortDirection() !== 'none') {
+      return [{ commodity: '__all__', contracts: list }];
+    }
     const map = new Map<string, Contract[]>();
     for (const c of list) {
       // Group by commodityCode so same-code rows always share a bucket — e.g.

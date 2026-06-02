@@ -507,6 +507,12 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
+  /** Curated commodities flagged for the Planting Intentions crop dropdown (subset of getCommodities). */
+  getPlantingCommodities(): Observable<Commodity[]> {
+    return this.http.get<Commodity[]>(`${this.baseUrl}/commodities/planting`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
   /** Fetches commodity conversion factors (lbs per bushel) from ODS */
   getCommodityConversions(): Observable<CommodityConversion[]> {
     return this._dedupe('commodity-conversions',

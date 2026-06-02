@@ -212,6 +212,9 @@ public class ApimDataService : IDataService
     public Task<List<Commodity>> GetCommoditiesAsync(CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetCommodities");
 
+    public Task<List<Commodity>> GetPlantingCommoditiesAsync(CancellationToken cancellationToken = default)
+        => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetPlantingCommodities");
+
     public Task<List<CommodityConversion>> GetCommodityConversionsAsync(CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetCommodityConversions");
 

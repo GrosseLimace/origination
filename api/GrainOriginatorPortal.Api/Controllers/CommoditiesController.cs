@@ -22,6 +22,15 @@ public class CommoditiesController : ControllerBase
         return Ok(await _dataService.GetCommoditiesAsync(cancellationToken));
     }
 
+    // -------------------------------------------------------------------------
+    /// <summary>Gets the curated commodities flagged for the Planting Intentions crop dropdown.</summary>
+    [HttpGet("planting")]
+    [ProducesResponseType(typeof(List<Commodity>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<Commodity>>> GetPlanting(CancellationToken cancellationToken = default)
+    {
+        return Ok(await _dataService.GetPlantingCommoditiesAsync(cancellationToken));
+    }
+
     /// <summary>Gets commodity conversion factors (lbs per bushel) from ODS.</summary>
     [HttpGet("conversions")]
     [ProducesResponseType(typeof(List<CommodityConversion>), StatusCodes.Status200OK)]

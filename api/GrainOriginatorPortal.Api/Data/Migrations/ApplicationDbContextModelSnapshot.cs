@@ -291,6 +291,12 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                         .HasColumnType("nvarchar(255)")
                         .HasColumnName("Name");
 
+                    b.Property<bool>("ShowInPlantingIntentions")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasColumnName("ShowInPlantingIntentions");
+
                     b.Property<string>("Tier1")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
