@@ -727,11 +727,19 @@
                             <tr [class]="categoryColorMap().get(row.category) || ''">
                               <td class="py-2.5 px-4 text-sm font-medium text-gray-800 dark:text-gray-100">{{ row.cropName }}</td>
                               <td class="py-2.5 px-4 text-right">
-                                <input type="number"
-                                  [ngModel]="tempYieldMap()[row.cropCode] ?? row.yieldEstimate"
-                                  (ngModelChange)="setTempYield(row.cropCode, $event)"
-                                  min="0" placeholder="—"
-                                  class="w-24 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+                                <div class="inline-flex items-center gap-1 justify-end">
+                                  <input type="number"
+                                    [ngModel]="yieldInputValue(row.cropCode, row.yieldEstimate)"
+                                    (ngModelChange)="setTempYield(row.cropCode, $event)"
+                                    min="0" placeholder="—"
+                                    class="w-24 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+                                  <button type="button" (click)="clearTempYield(row.cropCode)"
+                                    [disabled]="yieldInputValue(row.cropCode, row.yieldEstimate) == null"
+                                    title="Clear value"
+                                    class="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           }
@@ -764,11 +772,17 @@
                               <td class="py-2.5 px-4 text-right">
                                 <div class="inline-flex items-center gap-1 justify-end">
                                   <input type="number"
-                                    [ngModel]="tempMarketShareMap()[row.category] ?? row.marketSharePct"
+                                    [ngModel]="marketShareInputValue(row.category, row.marketSharePct)"
                                     (ngModelChange)="setTempMarketShare(row.category, $event)"
                                     min="0" max="100" step="1" placeholder="—"
                                     class="w-16 px-2 py-1 text-sm text-right border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-scoular-green [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
                                   <span class="text-xs text-gray-400">%</span>
+                                  <button type="button" (click)="clearTempMarketShare(row.category)"
+                                    [disabled]="marketShareInputValue(row.category, row.marketSharePct) == null"
+                                    title="Clear value"
+                                    class="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                  </button>
                                 </div>
                               </td>
                             </tr>
