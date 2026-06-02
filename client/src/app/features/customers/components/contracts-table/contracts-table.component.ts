@@ -267,14 +267,15 @@ export class ContractsTableComponent {
 
   get sortedContracts(): Contract[] {
     // When no row sort is active, fall back to the default within-group order:
-    // delivery period newest → oldest. Grouping happens after this in
-    // groupedContracts, which preserves whatever order this getter produced
-    // within each commodity bucket.
+    // delivery period earliest → latest (soonest delivery first). Grouping
+    // happens after this in groupedContracts, which preserves whatever order
+    // this getter produced within each commodity bucket. Contracts with no
+    // delivery start sort to the bottom (Infinity) rather than floating to top.
     if (!this.currentSortColumn() || this.currentSortDirection() === 'none') {
       return [...this.openContracts].sort((a, b) => {
-        const aTime = a.deliveryStart ? new Date(a.deliveryStart).getTime() : 0;
-        const bTime = b.deliveryStart ? new Date(b.deliveryStart).getTime() : 0;
-        return bTime - aTime;
+        const aTime = a.deliveryStart ? new Date(a.deliveryStart).getTime() : Infinity;
+        const bTime = b.deliveryStart ? new Date(b.deliveryStart).getTime() : Infinity;
+        return aTime - bTime;
       });
     }
 
