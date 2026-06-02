@@ -50,7 +50,13 @@ export class DashboardComponent {
   }
 
   private readonly _localLoading = signal(false);
-  readonly loading = computed(() => this.appStateService.dataLoading() || this._localLoading());
+  // The dashboard doesn't use tickets, so it shouldn't wait on them. Gate on the data it
+  // actually renders (customers + contracts) plus its own summary fetch — NOT the global
+  // dataLoading, which also waits on today's tickets (a slow ODS scan).
+  readonly loading = computed(() =>
+    this.appStateService.customersLoading()
+    || this.appStateService.contractsLoading()
+    || this._localLoading());
   totalAcres = signal(0);
   activeContracts = signal(0);
   totalContractValue = signal(0);

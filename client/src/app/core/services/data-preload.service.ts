@@ -53,10 +53,18 @@ export class DataPreloadService {
       switchMap(tradeUnits => {
         if (tradeUnits.length === 0) {
           this.appState.setDataLoading(false);
+          this.appState.customersLoading.set(false);
+          this.appState.contractsLoading.set(false);
+          this.appState.todaysTicketsLoading.set(false);
           return of(null);
         }
 
         this.appState.setDataLoading(true);
+        // Per-dataset flags — each flips false in its own tap below, so screens/categories
+        // render as soon as their data lands rather than waiting on the slowest core query.
+        this.appState.customersLoading.set(true);
+        this.appState.contractsLoading.set(true);
+        this.appState.todaysTicketsLoading.set(true);
         this.appState.clearDashboardCache();
         this.appState.clearPreloadedDashboardSummary();
 
@@ -73,6 +81,7 @@ export class DataPreloadService {
           catchError(() => of([] as Customer[])),
           tap(data => {
             this.appState.setCustomers(data);
+            this.appState.customersLoading.set(false);
             coreArrived.customers = true;
             if (coreArrived.contracts && coreArrived.todaysTickets) this.appState.setDataLoading(false);
           })
@@ -81,6 +90,7 @@ export class DataPreloadService {
           catchError(() => of([] as Contract[])),
           tap(data => {
             this.appState.setContracts(data);
+            this.appState.contractsLoading.set(false);
             coreArrived.contracts = true;
             if (coreArrived.customers && coreArrived.todaysTickets) this.appState.setDataLoading(false);
           })
@@ -89,6 +99,7 @@ export class DataPreloadService {
           catchError(() => of([] as Ticket[])),
           tap(data => {
             this.appState.setTodaysTickets(data);
+            this.appState.todaysTicketsLoading.set(false);
             coreArrived.todaysTickets = true;
             if (coreArrived.customers && coreArrived.contracts) this.appState.setDataLoading(false);
           })

@@ -153,13 +153,17 @@ export class InsightsComponent {
   readonly tickets = this.appState.tickets;
   readonly todaysTickets = this.appState.todaysTickets;
   readonly commodities = this.appState.commodities;
-  readonly isLoading = computed(() => this.appState.dataLoading());
-  // After the delivery-stats refactor, every category renders from data that arrives with
-  // the core load (contracts.openBalanceQuantity for Unshipped Bushels, contracts for
-  // Unconfirmed, today's tickets for Spot Loads). No category needs to wait on the bulk
-  // /api/tickets fetch — leave this returning false so categories stop blocking on it.
-  isCategoryLoading(_category: InsightCategory): boolean {
-    return false;
+  // Page shell waits only on customers (needed to group every category). Once customers are
+  // in, the three cards render and each shows its OWN skeleton until its data arrives.
+  readonly isLoading = computed(() => this.appState.customersLoading());
+  // Per-category loading so a slow dataset only spins its own card:
+  //   - Spot Loads is ticket-derived → waits on today's tickets (the slow ODS scan).
+  //   - Unconfirmed Contracts + Unshipped Bushels are contract-derived → wait on contracts.
+  // So when contracts land first, those two render while Spot Loads keeps spinning.
+  isCategoryLoading(category: InsightCategory): boolean {
+    return category === 'SpotLoads'
+      ? this.appState.todaysTicketsLoading()
+      : this.appState.contractsLoading();
   }
   isBackgroundRefreshing = signal(false);
   private readonly _dataLoading$ = toObservable(this.appState.dataLoading);
