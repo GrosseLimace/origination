@@ -44,6 +44,34 @@ interface BidSheetPanelItem {
 /** Width threshold (px) below which the filter bar wraps the search/clear group to a centered second row. */
 const FILTER_BAR_WRAP_WIDTH = 1050;
 
+/**
+ * A crop row in the Add Location form. Carries both the year-mode slots (prior/current/next
+ * *year*, month 0) and the month-mode slots (prior/current/next *month*, with the calendar
+ * year that month falls in). The form-level `newLocationPeriodMode` decides which set is shown
+ * and persisted; the bid value + show flags are shared between modes.
+ */
+interface AddLocationCropRow {
+  commodityCode: string;
+  searchQuery: string;
+  showDropdown: boolean;
+  currentBid: string;
+  priorBid: string;
+  showPrior: boolean;
+  nextBid: string;
+  showNext: boolean;
+  // Year mode
+  currentYear: number;
+  priorYear: number;
+  nextYear: number;
+  // Month mode (1-12 + the calendar year that month belongs to, rolling at Jan/Dec)
+  currentMonth: number;
+  currentMonthYear: number;
+  priorMonth: number;
+  priorMonthYear: number;
+  nextMonth: number;
+  nextMonthYear: number;
+}
+
 @Component({
   selector: 'app-bid-sheet',
   standalone: true,
@@ -337,8 +365,12 @@ export class BidSheetComponent {
   // Each crop row always shows a Current Year bid; Prior (current-1) and Next (current+1)
   // are optional, toggled on via the "+ Add year" menu and removable. Only the shown years
   // with a value get persisted.
-  newLocationCrops = signal<{ commodityCode: string; searchQuery: string; showDropdown: boolean; currentYear: number; currentBid: string; priorYear: number; priorBid: string; showPrior: boolean; nextYear: number; nextBid: string; showNext: boolean }[]>([]);
-  /** Row index whose "+ Add year" menu is open, or null. */
+  newLocationCrops = signal<AddLocationCropRow[]>([]);
+  // Add Location entry mode: 'year' (default) enters yearly bids (current year + optional
+  // prior/next year, month 0); 'month' enters monthly bids (current month + optional
+  // prior/next month). Same prior/next "add" mechanic in both modes.
+  newLocationPeriodMode = signal<'year' | 'month'>('year');
+  /** Row index whose "+ Add year" / "+ Add month" menu is open, or null. */
   yearMenuIndex = signal<number | null>(null);
   readonly addLocationYears: number[] = (() => { const y = new Date().getFullYear(); return [y - 1, y]; })();
   // (commodityCode stores the category value, e.g. "CORN", "WHEAT")
@@ -1102,19 +1134,55 @@ export class BidSheetComponent {
   });
 
   /** True when a crop row has a bid in any currently-shown year (current always; prior/next if toggled on). */
-  private _cropHasBid(c: { currentBid: string; priorBid: string; showPrior: boolean; nextBid: string; showNext: boolean }): boolean {
+  private _cropHasBid(c: AddLocationCropRow): boolean {
     return !!c.currentBid.trim() || (c.showPrior && !!c.priorBid.trim()) || (c.showNext && !!c.nextBid.trim());
   }
 
   /** Builds a fresh crop row: Current Year shown, Prior/Next available via the menu. */
-  private _makeCropRow() {
+  private _makeCropRow(): AddLocationCropRow {
     const current = this.newYear() ?? this.selectedYear();
+    const now = new Date();
+    const curMonth = now.getMonth() + 1;      // 1-12
+    const curMonthYear = now.getFullYear();
+    // Prior/next month roll the calendar year at the Jan/Dec boundaries.
+    const priorMonth = curMonth === 1 ? 12 : curMonth - 1;
+    const priorMonthYear = curMonth === 1 ? curMonthYear - 1 : curMonthYear;
+    const nextMonth = curMonth === 12 ? 1 : curMonth + 1;
+    const nextMonthYear = curMonth === 12 ? curMonthYear + 1 : curMonthYear;
     return {
       commodityCode: '', searchQuery: '', showDropdown: false,
-      currentYear: current, currentBid: '',
-      priorYear: current - 1, priorBid: '', showPrior: false,
-      nextYear: current + 1, nextBid: '', showNext: false,
+      currentBid: '', priorBid: '', showPrior: false, nextBid: '', showNext: false,
+      currentYear: current, priorYear: current - 1, nextYear: current + 1,
+      currentMonth: curMonth, currentMonthYear: curMonthYear,
+      priorMonth, priorMonthYear,
+      nextMonth, nextMonthYear,
     };
+  }
+
+  /**
+   * Switches the Add Location entry mode. Because a Year slot and a Month slot mean different
+   * things, switching clears the entered bids and collapses the optional prior/next slots so
+   * each value is re-entered under the new mode (prevents a "2025" bid silently becoming "May").
+   */
+  setLocationPeriodMode(mode: 'year' | 'month'): void {
+    if (this.newLocationPeriodMode() === mode) return;
+    this.newLocationPeriodMode.set(mode);
+    this.yearMenuIndex.set(null);
+    this.newLocationCrops.update(rows => rows.map(r => ({
+      ...r, currentBid: '', priorBid: '', nextBid: '', showPrior: false, showNext: false,
+    })));
+  }
+
+  /** Label for a bid slot, e.g. "Current Year (2026)" or "Current Month (Jun 26)". */
+  slotLabel(kind: 'Prior' | 'Current' | 'Next', crop: AddLocationCropRow): string {
+    if (this.newLocationPeriodMode() === 'month') {
+      const [m, y] = kind === 'Prior' ? [crop.priorMonth, crop.priorMonthYear]
+        : kind === 'Next' ? [crop.nextMonth, crop.nextMonthYear]
+        : [crop.currentMonth, crop.currentMonthYear];
+      return `${kind} Month (${this.formatMonthYear(m, y)})`;
+    }
+    const y = kind === 'Prior' ? crop.priorYear : kind === 'Next' ? crop.nextYear : crop.currentYear;
+    return `${kind} Year (${y})`;
   }
 
   clearCropSelection(index: number): void {
@@ -1196,9 +1264,10 @@ export class BidSheetComponent {
       const commodityName = commodity?.name ?? code;
       const commodityCategory = commodity?.category ?? undefined;
       const out: Array<{ commodityCode: string; commodityName: string; commodityCategory?: string; cropYear: number; bid: string; month: number }> = [];
-      if (crop.showPrior && crop.priorBid.trim()) out.push({ commodityCode: code, commodityName, commodityCategory, cropYear: crop.priorYear, bid: crop.priorBid.trim(), month: 0 });
-      if (crop.currentBid.trim()) out.push({ commodityCode: code, commodityName, commodityCategory, cropYear: crop.currentYear, bid: crop.currentBid.trim(), month: 0 });
-      if (crop.showNext && crop.nextBid.trim()) out.push({ commodityCode: code, commodityName, commodityCategory, cropYear: crop.nextYear, bid: crop.nextBid.trim(), month: 0 });
+      const isMonth = this.newLocationPeriodMode() === 'month';
+      if (crop.showPrior && crop.priorBid.trim()) out.push({ commodityCode: code, commodityName, commodityCategory, cropYear: isMonth ? crop.priorMonthYear : crop.priorYear, bid: crop.priorBid.trim(), month: isMonth ? crop.priorMonth : 0 });
+      if (crop.currentBid.trim()) out.push({ commodityCode: code, commodityName, commodityCategory, cropYear: isMonth ? crop.currentMonthYear : crop.currentYear, bid: crop.currentBid.trim(), month: isMonth ? crop.currentMonth : 0 });
+      if (crop.showNext && crop.nextBid.trim()) out.push({ commodityCode: code, commodityName, commodityCategory, cropYear: isMonth ? crop.nextMonthYear : crop.nextYear, bid: crop.nextBid.trim(), month: isMonth ? crop.nextMonth : 0 });
       return out;
     });
 
@@ -1831,6 +1900,7 @@ export class BidSheetComponent {
     this.newLocationIsScoular.set(false);
     this.newLocationCrops.set([]);
     this.yearMenuIndex.set(null);
+    this.newLocationPeriodMode.set('year');
   }
 
   // =========================================================================
