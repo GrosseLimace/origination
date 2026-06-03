@@ -1,3 +1,6 @@
+using System.Text.Json.Serialization;
+using GrainOriginatorPortal.Api.Json;
+
 namespace GrainOriginatorPortal.Api.Models;
 
 /// <summary>
@@ -36,10 +39,15 @@ public class Contract
     public decimal? Price { get; set; } // Calculated: TotalValue / Quantity
     public decimal? TotalValue { get; set; } // Total contract value from ODS
 
-    // Dates
+    // Dates — these are ODS SQL `date` (calendar dates, no time/zone). Use the date-only
+    // converter so they serialize without a UTC 'Z' and don't shift a day back in the browser.
+    [JsonConverter(typeof(DateOnlyJsonConverter))]
     public DateTime? ContractDate { get; set; }
+    [JsonConverter(typeof(DateOnlyJsonConverter))]
     public DateTime? DeliveryStart { get; set; } // Maps to StartShipDate
+    [JsonConverter(typeof(DateOnlyJsonConverter))]
     public DateTime? DeliveryEnd { get; set; } // Maps to FinalShipDate
+    [JsonConverter(typeof(DateOnlyJsonConverter))]
     public DateTime? ClosedDate { get; set; }
 
     // Crop year and open balance

@@ -99,6 +99,16 @@ function getLbsPerBushel(productCode: string | undefined | null, conversionMap?:
   return lbs && lbs > 0 ? lbs : null;
 }
 
+/**
+ * Formats an actionable-insight amount with thousands separators and 2 decimals
+ * (e.g. 1,234.56), matching the app's standard bushel display. Showing 2 decimals
+ * instead of Math.round keeps small loads like 0.02 bu visible rather than rounding
+ * them to 0 (which previously dropped the amount entirely).
+ */
+function formatInsightQty(n: number): string {
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 /** Pre-compute summary text for a customer group */
 function computeSummary(items: Insight[], category: InsightCategory): string {
   const count = items.length;
@@ -110,7 +120,7 @@ function computeSummary(items: Insight[], category: InsightCategory): string {
     case 'UnshippedBushels': {
       const total = items.reduce((sum, item) => sum + (item.quantity ?? 0), 0);
       return total > 0
-        ? `${Math.round(total).toLocaleString()} remaining`
+        ? `${formatInsightQty(total)} remaining`
         : `${count} contract${count !== 1 ? 's' : ''}`;
     }
     default: return '';
@@ -143,13 +153,17 @@ export class InsightsComponent {
   readonly tickets = this.appState.tickets;
   readonly todaysTickets = this.appState.todaysTickets;
   readonly commodities = this.appState.commodities;
-  readonly isLoading = computed(() => this.appState.dataLoading());
-  // After the delivery-stats refactor, every category renders from data that arrives with
-  // the core load (contracts.openBalanceQuantity for Unshipped Bushels, contracts for
-  // Unconfirmed, today's tickets for Spot Loads). No category needs to wait on the bulk
-  // /api/tickets fetch — leave this returning false so categories stop blocking on it.
-  isCategoryLoading(_category: InsightCategory): boolean {
-    return false;
+  // Page shell waits only on customers (needed to group every category). Once customers are
+  // in, the three cards render and each shows its OWN skeleton until its data arrives.
+  readonly isLoading = computed(() => this.appState.customersLoading());
+  // Per-category loading so a slow dataset only spins its own card:
+  //   - Spot Loads is ticket-derived → waits on today's tickets (the slow ODS scan).
+  //   - Unconfirmed Contracts + Unshipped Bushels are contract-derived → wait on contracts.
+  // So when contracts land first, those two render while Spot Loads keeps spinning.
+  isCategoryLoading(category: InsightCategory): boolean {
+    return category === 'SpotLoads'
+      ? this.appState.todaysTicketsLoading()
+      : this.appState.contractsLoading();
   }
   isBackgroundRefreshing = signal(false);
   private readonly _dataLoading$ = toObservable(this.appState.dataLoading);
@@ -234,7 +248,7 @@ export class InsightsComponent {
           const commodity = desc && code ? `${desc} (${code})` : desc || code || 'Unknown commodity';
           const rawQty = contract.quantity || contract.openBalanceQuantity || 0;
           const unitLabel = contract.unit || 'bu';
-          const qtyTag = rawQty ? `${Math.round(rawQty).toLocaleString()} ${unitLabel}` : null;
+          const qtyTag = rawQty ? `${formatInsightQty(rawQty)} ${unitLabel}` : null;
           const statusLabel = confirmStatus || 'No status';
           insights.push({
             customer,
@@ -278,7 +292,7 @@ export class InsightsComponent {
         if (!hasContractCoverage) {
           const lbs = ticket.appliedDockQuantity || ticket.unloadQuantity || 0;
           const lbsPerBu = getLbsPerBushel(ticket.productCode, conversionMap);
-          const bu = lbs && lbsPerBu ? Math.round(lbs / lbsPerBu) : null;
+          const bu = lbs && lbsPerBu ? lbs / lbsPerBu : null;
           // Parse the ticket date string as a LOCAL date to match Angular's date pipe
           // behavior on the customer Unapplied Tickets tab. Passing "2026-03-23" to
           // `new Date()` yields UTC midnight which toLocaleDateString then renders in
@@ -292,7 +306,7 @@ export class InsightsComponent {
             customer,
             category: 'SpotLoads',
             priority: 'Urgent',
-            message: `Ticket #${ticket.ticketNumber}${ticket.productCode ? ' — ' + ticket.productCode : ''}${bu ? ', ' + bu.toLocaleString() + ' bu' : ''}`,
+            message: `Ticket #${ticket.ticketNumber}${ticket.productCode ? ' — ' + ticket.productCode : ''}${bu ? ', ' + formatInsightQty(bu) + ' bu' : ''}`,
             ticketNumber: ticket.ticketNumber,
             productCode: ticket.productCode,
             sortDate: ticket.date,
@@ -300,7 +314,7 @@ export class InsightsComponent {
             tags: [
               { label: `#${ticket.ticketNumber}`, style: 'default' },
               ...(ticket.productCode ? [{ label: ticket.productCode, style: 'commodity' as InsightTagStyle }] : []),
-              ...(bu ? [{ label: `${bu.toLocaleString()} bu`, style: 'quantity' as InsightTagStyle }] : []),
+              ...(bu ? [{ label: `${formatInsightQty(bu)} bu`, style: 'quantity' as InsightTagStyle }] : []),
               { label: dateLabel, style: 'default' },
               { label: 'Spot', style: 'warning' },
             ],
@@ -334,7 +348,7 @@ export class InsightsComponent {
           const commodity = desc && code ? `${desc} (${code})` : desc || code || 'Unknown commodity';
           const rawQty = stats.remaining;
           const unitLabel = contract.unit || 'bu';
-          const qtyTag = rawQty ? `${Math.round(rawQty).toLocaleString()} ${unitLabel}` : null;
+          const qtyTag = rawQty ? `${formatInsightQty(rawQty)} ${unitLabel}` : null;
           const daysOverdue = Math.floor((today.getTime() - deliveryEnd.getTime()) / (1000 * 60 * 60 * 24));
           insights.push({
             customer,

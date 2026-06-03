@@ -50,7 +50,13 @@ export class DashboardComponent {
   }
 
   private readonly _localLoading = signal(false);
-  readonly loading = computed(() => this.appStateService.dataLoading() || this._localLoading());
+  // The dashboard doesn't use tickets, so it shouldn't wait on them. Gate on the data it
+  // actually renders (customers + contracts) plus its own summary fetch — NOT the global
+  // dataLoading, which also waits on today's tickets (a slow ODS scan).
+  readonly loading = computed(() =>
+    this.appStateService.customersLoading()
+    || this.appStateService.contractsLoading()
+    || this._localLoading());
   totalAcres = signal(0);
   activeContracts = signal(0);
   totalContractValue = signal(0);
@@ -1454,6 +1460,29 @@ export class DashboardComponent {
 
   setTempMarketShare(category: string, value: number | null): void {
     this.tempMarketShareMap.update(m => ({ ...m, [category]: value }));
+  }
+
+  /** Value to show in a yield input: the pending edit if one exists (including an
+   *  explicit null/cleared value), otherwise the saved estimate. Distinguishing
+   *  "no edit" (key absent) from "cleared" (key present, null) is what lets a user
+   *  actually empty the field — a plain `?? saved` would snap it back. */
+  yieldInputValue(cropCode: string, saved: number | null): number | null {
+    const m = this.tempYieldMap();
+    return cropCode in m ? m[cropCode] : saved;
+  }
+
+  marketShareInputValue(category: string, saved: number | null): number | null {
+    const m = this.tempMarketShareMap();
+    return category in m ? m[category] : saved;
+  }
+
+  /** Clears a yield/market-share field (marks it dirty with null → saved as cleared). */
+  clearTempYield(cropCode: string): void {
+    this.setTempYield(cropCode, null);
+  }
+
+  clearTempMarketShare(category: string): void {
+    this.setTempMarketShare(category, null);
   }
 
   setTempHarvest(id: number, value: string): void {

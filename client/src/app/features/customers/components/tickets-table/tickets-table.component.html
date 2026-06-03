@@ -129,7 +129,7 @@
                   </div>
                   <div class="text-center">
                     <p class="text-[10px] lg:text-xs text-gray-500 dark:text-gray-400">Avg Test Wt</p>
-                    <p class="text-xs lg:text-sm font-medium text-gray-900 dark:text-white">{{ group.avgTestWeight !== null ? (group.avgTestWeight | number:'1.1-1') + '%' : '—' }}</p>
+                    <p class="text-xs lg:text-sm font-medium text-gray-900 dark:text-white">{{ group.avgTestWeight !== null ? (group.avgTestWeight | number:'1.1-1') + ' lb/bu' : '—' }}</p>
                   </div>
                   @if (group.isWheat) {
                     <div class="text-center">
@@ -193,7 +193,7 @@
                           </span>
                         </app-table-head>
                         <app-table-head [sortable]="true" (click)="handleSort('testWeight')" >
-                          <span class="flex items-center justify-center gap-1">Test Wt %
+                          <span class="flex items-center justify-center gap-1">Test Wt (lb/bu)
                             <svg class="w-3.5 h-3.5" [class]="getSortIconClass('testWeight')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               @if (currentSortColumn === 'testWeight' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
                               @else if (currentSortColumn === 'testWeight' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
@@ -225,7 +225,7 @@
                           <app-table-cell class="text-center">{{ ticket.moisture | number:'1.1-1' }}%</app-table-cell>
                           <app-table-cell class="text-center" >
                             @if (ticket.testWeight !== null && ticket.testWeight !== undefined) {
-                              {{ ticket.testWeight | number:'1.1-1' }}%
+                              {{ ticket.testWeight | number:'1.1-1' }} lb/bu
                             } @else {
                               -
                             }

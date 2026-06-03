@@ -104,6 +104,7 @@ export class TradeUnitSelectorComponent implements OnInit {
   readonly userGroups = computed(() => this.appState.userGroups());
   readonly selectedTradeUnits = computed(() => this.appState.selectedTradeUnits());
   readonly selectedGroupNames = computed(() => this.appState.selectedGroupNames());
+  readonly allProducersMode = computed(() => this.appState.allProducersMode());
 
   // ---- Group helpers ----
 
@@ -125,6 +126,7 @@ export class TradeUnitSelectorComponent implements OnInit {
   }
 
   getGroupButtonText(): string {
+    if (this.appState.allProducersMode()) return 'All Producers';
     const sel = this.appState.selectedGroupNames();
     if (sel.length === 0) return 'Select a Group';
     if (sel.length === 1) return sel[0];
@@ -135,6 +137,17 @@ export class TradeUnitSelectorComponent implements OnInit {
     return this.appState.selectedGroupNames().includes(groupName);
   }
 
+  /** Enter "All Producers" mode: a session-only override that clears scope so the customer
+   *  list searches all producers (our table + ODS onboarding fallback). Set the flag BEFORE
+   *  clearing the selection so the debounced preference-save in UserPreferencesService sees
+   *  the mode and skips persisting the empty selection — the saved preference stays a group. */
+  selectAllProducers(): void {
+    this.appState.setAllProducersMode(true);
+    this.appState.setSelectedGroupNames([]);
+    this.appState.setTradeUnits([]);
+    this.isGroupDropdownOpen.set(false);
+  }
+
   toggleGroupDropdown(): void {
     this.isGroupDropdownOpen.update(v => !v);
     if (this.isGroupDropdownOpen()) {
@@ -143,6 +156,8 @@ export class TradeUnitSelectorComponent implements OnInit {
   }
 
   toggleGroupSelection(groupName: string): void {
+    // Picking a real group exits All Producers mode (mutually exclusive).
+    this.appState.setAllProducersMode(false);
     const current = this.appState.selectedGroupNames();
     // Single-select: if already selected, deselect; otherwise select only this one
     const updated = current.includes(groupName) ? [] : [groupName];

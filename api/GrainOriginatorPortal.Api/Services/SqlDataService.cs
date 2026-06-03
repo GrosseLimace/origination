@@ -900,6 +900,37 @@ public class SqlDataService : IDataService
         }
     }
 
+    public async Task<List<Commodity>> GetPlantingCommoditiesAsync(CancellationToken cancellationToken = default)
+    {
+        const string cacheKey = "commodities:planting";
+        if (_cache.TryGetValue(cacheKey, out List<Commodity>? cached) && cached is not null)
+            return cached;
+
+        try
+        {
+            // Curated subset for the Planting Intentions crop dropdown — same source as
+            // GetCommoditiesAsync, narrowed to the ShowInPlantingIntentions flag.
+            var result = await _appContext.Commodities
+                .AsNoTracking()
+                .Where(c => c.IsActive && c.ShowInPlantingIntentions)
+                .OrderBy(c => c.Name)
+                .ToListAsync(cancellationToken);
+
+            _cache.Set(cacheKey, result, new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10),
+                Size = 1
+            });
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving planting commodities [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            throw;
+        }
+    }
+
     public async Task<List<CommodityConversion>> GetCommodityConversionsAsync(CancellationToken cancellationToken = default)
     {
         const string cacheKey = "commodity-conversions";
@@ -1573,15 +1604,22 @@ public class SqlDataService : IDataService
     ///   - Applied path: ticket's CtrmContractNumber matches one of <paramref name="openContractNumbers"/> (any customer).
     ///     Critical for CTRM data where a ticket's CustomerCode can differ from the contract's CtrmCustomerId
     ///     (split tickets, partial applications, related-entity drift) — filtering by CustomerCode dropped these.
-    ///   - Unapplied path: ticket's CtrmContractNumber starts with U or L (the limbo prefixes) AND CustomerCode
+    ///   - Unapplied path: ticket's CtrmContractNumber starts with U, L, or C (the limbo prefixes) AND CustomerCode
     ///     is in <paramref name="customerCodes"/>. Spot Loads / Unapplied tab still rely on customer scope.
+    ///     C-prefix (customer-storage) tickets are then gated post-query against active storage
+    ///     (see <see cref="GateCustomerStorageTickets"/>) so priced-out grain stops showing.
     /// Uses STRING_SPLIT for both lists to dodge the 2100-parameter IN-clause limit.
+    /// <para><paramref name="includeStorageTickets"/>: when false, customer-storage (C-prefix) tickets are
+    /// excluded entirely and the storage gate is skipped. Spot Loads (today's tickets) passes false —
+    /// storage grain isn't a spot load, and skipping it keeps that (UI-blocking) call off the slow
+    /// ctrm.vw_GNTA39D1 scan. The per-producer Unapplied list + Build-a-List pass true.</para>
     /// </summary>
     private async Task<List<Ticket>> LoadTicketsByContractAndCustomerScopeAsync(
         List<string> openContractNumbers,
         List<string> customerCodes,
         CancellationToken cancellationToken,
-        string? cutoffDateInclusive = null)
+        string? cutoffDateInclusive = null,
+        bool includeStorageTickets = true)
     {
         if (openContractNumbers.Count == 0 && customerCodes.Count == 0) return new List<Ticket>();
 
@@ -1606,6 +1644,10 @@ public class SqlDataService : IDataService
         // (C# property Ticket.Date maps to DB column TicketBlDate; raw SQL has to use the column name.)
         var cutoff = cutoffDateInclusive ?? string.Empty;
 
+        // 1 = include C-prefix (customer-storage) unapplied tickets; 0 = U/L only. When 0 the storage
+        // gate below is also skipped, so this whole call stays off the slow ctrm.vw_GNTA39D1 scan.
+        var storageFlag = includeStorageTickets ? 1 : 0;
+
         // Two indexed lookups UNION ALL'd (the two branches are mutually exclusive — applied
         // tickets carry a P-prefix contract number, unapplied carry U/L/C — so SQL Server's
         // UNION dedup step is wasted work on a multi-million-row view). Each branch is an
@@ -1625,7 +1667,7 @@ public class SqlDataService : IDataService
         // Excludes BSTATS='CSL' (Consolidated) tickets — those have already been merged INTO
         // another ticket and showing them double-counts the bushels. PRG (Purged) doesn't reach
         // this view at all, so no filter needed. NULL-status rows kept defensively.
-        return await _context.Tickets
+        var tickets = await _context.Tickets
             .FromSqlInterpolated($@"
                 SELECT t.TicketId, t.ContractId, t.CustomerId, t.CustomerCode, t.ProductCode,
                        t.TicketPrefix, t.TicketNumber, t.TicketSuffix, t.ShipmentTicketNumber, t.ContractNumber,
@@ -1652,11 +1694,37 @@ public class SqlDataService : IDataService
                 WHERE t.IsActive = 1 AND t.TicketType IN ('U','P')
                   AND (t.TicketStatusDescription IS NULL OR t.TicketStatusDescription <> 'Consolidated')
                   AND t.ContractNumber IS NOT NULL
-                  AND (t.ContractNumber LIKE 'U%' OR t.ContractNumber LIKE 'L%' OR t.ContractNumber LIKE 'C%')
+                  AND (t.ContractNumber LIKE 'U%' OR t.ContractNumber LIKE 'L%'
+                       OR ({storageFlag} = 1 AND t.ContractNumber LIKE 'C%'))
                   AND ({cutoff} = '' OR (t.TicketBlDate IS NOT NULL AND t.TicketBlDate >= {cutoff}))")
             .AsNoTracking()
             .OrderByDescending(t => t.Date)
             .ToListAsync(cancellationToken);
+
+        // Gate customer-storage (C-prefix) tickets: keep one only while the producer still holds
+        // that commodity in active storage. Priced-out storage leaves orphan unload tickets in
+        // vw_CurrentTickets that would otherwise show as unapplied forever. Only the C-prefix
+        // tickets (which come from the CustomerCode branch above) are affected; applied (P) and
+        // U/L tickets pass through. Looked up only for the customers that actually have C tickets,
+        // so producers with no storage cost nothing. Skipped entirely when storage is excluded
+        // (no C tickets to gate, and avoids the slow ctrm.vw_GNTA39D1 lookup).
+        if (!includeStorageTickets) return tickets;
+
+        var storageCustomerCodes = tickets
+            .Where(t => t.CtrmContractNumber is { Length: > 0 } cn
+                && cn.StartsWith("C", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrEmpty(t.CustomerCode))
+            .Select(t => t.CustomerCode!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (storageCustomerCodes.Count > 0)
+        {
+            var storageByCustomer = await GetActiveStorageCommoditiesAsync(storageCustomerCodes, cancellationToken);
+            tickets = GateCustomerStorageTickets(tickets, storageByCustomer);
+        }
+
+        return tickets;
     }
 
     public async Task<List<Ticket>> GetTicketsAsync(List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
@@ -1935,7 +2003,7 @@ public class SqlDataService : IDataService
                         .ToListAsync(cancellationToken);
 
                     tickets = await LoadTicketsByContractAndCustomerScopeAsync(
-                        openContractNumbers, customerCodes, cancellationToken, cutoffStr);
+                        openContractNumbers, customerCodes, cancellationToken, cutoffStr, includeStorageTickets: false);
                 }
             }
             else
@@ -1966,7 +2034,7 @@ public class SqlDataService : IDataService
                 var customerCodes = contractCustomerCodes.Union(snapshotCustomerCodes).ToList();
 
                 tickets = await LoadTicketsByContractAndCustomerScopeAsync(
-                    openContractNumbers, customerCodes, cancellationToken, cutoffStr);
+                    openContractNumbers, customerCodes, cancellationToken, cutoffStr, includeStorageTickets: false);
             }
 
             _logger.LogInformation("Loaded {TicketCount} recent tickets for spot loads (filtered: {IsFiltered}, cutoff: {CutoffStr})",
@@ -2135,8 +2203,82 @@ public class SqlDataService : IDataService
     }
 
     /// <summary>
+    /// Commodity codes each customer currently holds in active customer storage (ctrm.vw_GNTA39D1,
+    /// latest snapshot, net qty &gt; 0), keyed by Scoular customer code. Used to gate C-prefix
+    /// (customer-storage) unapplied tickets: a storage unload ticket stays in vw_CurrentTickets
+    /// after the grain is priced out, so it only counts as unapplied while the producer still has
+    /// that commodity on hand here. Mirrors the STATUS / latest-run-stamp shape of the Storage tab
+    /// (<see cref="StoredGrainSql"/>) so the two screens agree on what's "in storage".
+    /// </summary>
+    private async Task<Dictionary<string, HashSet<string>>> GetActiveStorageCommoditiesAsync(
+        IReadOnlyCollection<string> customerCodes, CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        if (customerCodes.Count == 0) return result;
+
+        var codesCsv = SanitizeCsv(customerCodes);
+
+        // GROUP BY customer+commodity at the latest snapshot; HAVING net > 0 means the producer
+        // still physically holds that commodity. Join on raw CUSTOMER_ID (T-SQL '=' ignores the
+        // view's trailing spaces); SELECT/GROUP BY trim+upper for a clean dictionary key.
+        const string sql = """
+            SELECT UPPER(LTRIM(RTRIM(s.CUSTOMER_ID)))    AS CustomerCode,
+                   UPPER(LTRIM(RTRIM(s.COMMODITY_CODE)))  AS Commodity
+            FROM ctrm.vw_GNTA39D1 s
+            INNER JOIN STRING_SPLIT(@codesCsv, ',') c ON s.CUSTOMER_ID = c.value
+            WHERE s.STATUS IN ('S','F','D')
+              AND s.REPORT_RUN_STAMP = (SELECT MAX(REPORT_RUN_STAMP) FROM ctrm.vw_GNTA39D1)
+            GROUP BY UPPER(LTRIM(RTRIM(s.CUSTOMER_ID))), UPPER(LTRIM(RTRIM(s.COMMODITY_CODE)))
+            HAVING SUM(ISNULL(s.NET_QUANTITY, 0)) > 0
+            """;
+
+        var rows = await _context.Database
+            .SqlQueryRaw<StorageCommodity>(sql, new SqlParameter("@codesCsv", codesCsv))
+            .ToListAsync(cancellationToken);
+
+        foreach (var row in rows)
+        {
+            if (string.IsNullOrEmpty(row.CustomerCode) || string.IsNullOrEmpty(row.Commodity)) continue;
+            if (!result.TryGetValue(row.CustomerCode, out var set))
+            {
+                set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                result[row.CustomerCode] = set;
+            }
+            set.Add(row.Commodity);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Drops customer-storage (C-prefix) tickets whose grain is no longer in storage. A C-prefix
+    /// unload ticket lingers in vw_CurrentTickets after the producer prices the grain out; it's
+    /// only genuinely unapplied while that commodity still shows in <paramref name="storageByCustomer"/>.
+    /// U / L tickets and everything else pass through untouched. Match is commodity-level (the
+    /// ticket carries no storage-receipt id), so a producer who priced out one batch but still
+    /// stores another batch of the same commodity keeps the older tickets — a rare, accepted edge.
+    /// </summary>
+    private static List<Ticket> GateCustomerStorageTickets(
+        List<Ticket> tickets, Dictionary<string, HashSet<string>> storageByCustomer)
+    {
+        return tickets.Where(t =>
+        {
+            var contractNumber = t.CtrmContractNumber;
+            if (contractNumber is not { Length: > 0 } || !contractNumber.StartsWith("C", StringComparison.OrdinalIgnoreCase))
+                return true; // not customer-storage — unaffected
+
+            if (string.IsNullOrEmpty(t.CustomerCode) || string.IsNullOrEmpty(t.ProductCode))
+                return false; // storage ticket we can't match to a producer/commodity — treat as priced out
+
+            return storageByCustomer.TryGetValue(t.CustomerCode.Trim(), out var commodities)
+                && commodities.Contains(t.ProductCode.Trim());
+        }).ToList();
+    }
+
+    /// <summary>
     /// Fast per-producer unapplied-tickets fetch. Single CustomerCode predicate plus the U/L/C
     /// contract-prefix filter — the optimizer's most-selective shape against vw_CurrentTickets.
+    /// C-prefix (customer-storage) tickets are then gated against active storage so priced-out
+    /// grain stops showing (see <see cref="GateCustomerStorageTickets"/>).
     /// Used by the home page on producer select; applied tickets are loaded lazily per-contract
     /// (see <see cref="GetAppliedTicketsByContractAsync"/>) when the user expands a contract row.
     /// </summary>
@@ -2176,6 +2318,15 @@ public class SqlDataService : IDataService
                     && string.Compare(t.Date, cutoff) >= 0)
                 .OrderByDescending(t => t.Date)
                 .ToListAsync(cancellationToken);
+
+            // Customer-storage (C-prefix) tickets linger after the grain is priced out; keep one
+            // only if the producer still holds that commodity in active storage. Filter before
+            // enrichment so we don't hydrate quality/elevator for tickets we're about to drop.
+            if (tickets.Exists(t => t.CtrmContractNumber is { Length: > 0 } cn && cn.StartsWith("C", StringComparison.OrdinalIgnoreCase)))
+            {
+                var storageByCustomer = await GetActiveStorageCommoditiesAsync(new[] { scoularId }, cancellationToken);
+                tickets = GateCustomerStorageTickets(tickets, storageByCustomer);
+            }
 
             await PopulateQualityAndElevatorAsync(tickets, cancellationToken);
 

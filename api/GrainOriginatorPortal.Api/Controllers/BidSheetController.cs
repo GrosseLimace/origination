@@ -85,6 +85,7 @@ public class BidSheetController : ControllerBase
                 CommodityName = b.CommodityName,
                 CommodityCategory = b.CommodityCategory,
                 CropYear = b.CropYear,
+                Month = b.Month,
                 Bid = b.Bid,
                 CreatedBy = CurrentUserId,
                 CreatedAt = now

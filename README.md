@@ -203,11 +203,11 @@ Azure AD bearer tokens via `Microsoft.Identity.Web`. All API endpoints require a
 | MSAL Browser | ^5.4.0 | Azure AD authentication |
 | RxJS | ^7.8 | Reactive programming |
 | Leaflet | ^1.9.4 | Maps |
-| Vitest | ^4.0.18 | Unit testing |
+| Vitest | ^4.1.8 | Unit testing |
 
 ## Software Bill of Materials (SBOM)
 
-Last Updated: 2026-03-19
+Last Updated: 2026-06-01
 
 ### Backend Dependencies (C# / .NET 10)
 
@@ -240,7 +240,7 @@ Last Updated: 2026-03-19
 | tslib | 2.8.1 | 0BSD | TypeScript runtime helpers |
 | zone.js | 0.15.1 | MIT | Angular change detection zone |
 | tailwindcss | 4.2.1 | MIT | Utility-first CSS framework |
-| vitest | 4.0.18 | MIT | Unit testing framework |
+| vitest | 4.1.8 | MIT | Unit testing framework (CVE fix: ≥4.1.0) |
 | typescript | 5.9.3 | Apache-2.0 | TypeScript compiler |
 
 ## CI/CD

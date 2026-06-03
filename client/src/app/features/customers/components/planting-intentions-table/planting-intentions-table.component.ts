@@ -53,6 +53,10 @@ export class PlantingIntentionsTableComponent {
   public yearSelect = output<number>();
 
   allCommodities: Commodity[] = [];
+  // Curated subset (ShowInPlantingIntentions) used ONLY for the crop dropdown suggestions.
+  // Display/resolution still uses the full allCommodities list so existing intentions whose
+  // crop isn't in the curated set keep showing their name/category.
+  plantingCommodities: Commodity[] = [];
   isLoadingCommodities = false;
 
   // ── Crop search-and-select state (Add + Edit dialogs) ─────────────────────
@@ -258,12 +262,18 @@ export class PlantingIntentionsTableComponent {
   private _loadCommodities(): void {
     if (this.allCommodities.length > 0 || this.isLoadingCommodities) return;
     this.isLoadingCommodities = true;
+    // Full list — used for display/resolution everywhere in this component.
     this.apiService.getCommodities().subscribe({
       next: (commodities) => {
         this.allCommodities = commodities;
         this.isLoadingCommodities = false;
       },
       error: () => { this.isLoadingCommodities = false; }
+    });
+    // Curated subset — used only for the crop dropdown suggestions.
+    this.apiService.getPlantingCommodities().subscribe({
+      next: (commodities) => { this.plantingCommodities = commodities; },
+      error: () => { this.plantingCommodities = []; }
     });
   }
 
@@ -342,8 +352,11 @@ export class PlantingIntentionsTableComponent {
     if (!term) return [];
     const searchTerms = this._commodityAliases[term] ?? [term];
 
+    // Suggest only the curated planting commodities; fall back to the full list if the
+    // curated set hasn't loaded (e.g. transient error) so the dropdown is never blank.
+    const source = this.plantingCommodities.length > 0 ? this.plantingCommodities : this.allCommodities;
     const matches: { c: Commodity; rank: number }[] = [];
-    for (const c of this.allCommodities) {
+    for (const c of source) {
       const name = c.name.toLowerCase();
       const code = c.code.toLowerCase();
       let best = Number.POSITIVE_INFINITY;

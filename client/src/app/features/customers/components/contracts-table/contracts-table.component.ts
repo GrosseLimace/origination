@@ -137,6 +137,13 @@ export class ContractsTableComponent {
    *  already-filtered list. */
   readonly groupedContracts = computed<Array<{ commodity: string; contracts: Contract[] }>>(() => {
     const list = this.displayedContracts();
+    // Delivery Period sort is cross-commodity: the user wants "what's next up to
+    // deliver" regardless of commodity, so skip the per-commodity buckets and return
+    // one flat, delivery-sorted group. displayedContracts() is already ordered by
+    // deliveryStart when that column is active. Toggling the sort off restores grouping.
+    if (this.currentSortColumn() === 'deliveryStart' && this.currentSortDirection() !== 'none') {
+      return [{ commodity: '__all__', contracts: list }];
+    }
     const map = new Map<string, Contract[]>();
     for (const c of list) {
       // Group by commodityCode so same-code rows always share a bucket — e.g.
@@ -260,14 +267,15 @@ export class ContractsTableComponent {
 
   get sortedContracts(): Contract[] {
     // When no row sort is active, fall back to the default within-group order:
-    // delivery period newest → oldest. Grouping happens after this in
-    // groupedContracts, which preserves whatever order this getter produced
-    // within each commodity bucket.
+    // delivery period earliest → latest (soonest delivery first). Grouping
+    // happens after this in groupedContracts, which preserves whatever order
+    // this getter produced within each commodity bucket. Contracts with no
+    // delivery start sort to the bottom (Infinity) rather than floating to top.
     if (!this.currentSortColumn() || this.currentSortDirection() === 'none') {
       return [...this.openContracts].sort((a, b) => {
-        const aTime = a.deliveryStart ? new Date(a.deliveryStart).getTime() : 0;
-        const bTime = b.deliveryStart ? new Date(b.deliveryStart).getTime() : 0;
-        return bTime - aTime;
+        const aTime = a.deliveryStart ? new Date(a.deliveryStart).getTime() : Infinity;
+        const bTime = b.deliveryStart ? new Date(b.deliveryStart).getTime() : Infinity;
+        return aTime - bTime;
       });
     }
 

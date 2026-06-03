@@ -74,6 +74,11 @@ export class AppStateService {
   selectedCustomer = signal<Customer | null>(null);
   selectedTradeUnits = signal<string[]>([]);
   selectedGroupNames = signal<string[]>([]);
+  // "All Producers" mode — a session-only override that clears scope so the customer-list
+  // search spans all producers (our table + ODS onboarding fallback). Deliberately NOT
+  // persisted (localStorage or server preference) and starts false every session, so the
+  // user's saved preference always remains a real trade group, never "All Producers".
+  allProducersMode = signal(false);
 
   // Scroll state — tracks last customer scrolled to in the list so re-navigation doesn't re-scroll
   lastScrolledCustomerId = signal<number | null>(null);
@@ -121,6 +126,10 @@ export class AppStateService {
 
   setSelectedGroupNames(groups: string[]): void {
     this.selectedGroupNames.set(groups);
+  }
+
+  setAllProducersMode(on: boolean): void {
+    this.allProducersMode.set(on);
   }
 
   setSearchQuery(query: string): void {
@@ -192,6 +201,16 @@ export class AppStateService {
   setTicketsLoading(loading: boolean): void {
     this.ticketsLoading.set(loading);
   }
+
+  // Per-dataset loading flags — let each screen/category render as soon as ITS own data
+  // arrives instead of waiting on the slowest core query. Set by DataPreloadService: all
+  // true when a trade-unit load starts, each flipped false as its data streams in.
+  //   - Actionable Insights: Spot Loads waits on todaysTicketsLoading; the contract-based
+  //     categories (Unconfirmed Contracts, Unshipped Bushels) wait on contractsLoading.
+  //   - Dashboard: waits on customers + contracts, NOT tickets (it doesn't use them).
+  customersLoading = signal(false);
+  contractsLoading = signal(false);
+  todaysTicketsLoading = signal(false);
 
   // Dashboard cache — keyed by trade unit so navigating back shows data instantly
   dashboardCache = signal<DashboardCacheEntry | null>(null);
@@ -273,6 +292,9 @@ export class AppStateService {
     this.dashboardCache.set(null);
     this.preloadedDashboardSummary.set(null);
     this.dataLoading.set(false);
+    this.customersLoading.set(false);
+    this.contractsLoading.set(false);
+    this.todaysTicketsLoading.set(false);
     this.todaysTickets.set([]);
   }
 }

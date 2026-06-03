@@ -575,9 +575,22 @@
                 <!-- Crops & Bids — hidden when launched from Edit Bids screen -->
                 @if (addLocationOrigin() !== 'editBids') {
                 <div>
-                  <div class="flex items-center justify-between mb-2">
-                    <label class="text-xs font-medium text-gray-700 dark:text-gray-300">Crops & Bids <span class="text-scoular-red">*</span></label>
-                    <button (click)="addCropRow()" type="button" class="text-xs text-scoular-green-accessible hover:text-scoular-green font-medium flex items-center gap-1">
+                  <!-- Label, entry-mode toggle, and Add Crop all on one line. Year (default) enters
+                       yearly bids; Month enters monthly bids — same prior/next "add" mechanic in both. -->
+                  <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                    <label class="text-xs font-medium text-gray-700 dark:text-gray-300 shrink-0">Crops & Bids <span class="text-scoular-red">*</span></label>
+                    <div class="flex items-center gap-1.5">
+                      <span class="text-xs text-gray-500 dark:text-gray-400">Enter bids by</span>
+                      <div class="inline-flex rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden">
+                        <button type="button" (click)="setLocationPeriodMode('year')"
+                          class="px-3 py-1 text-xs font-medium transition-colors"
+                          [ngClass]="newLocationPeriodMode() === 'year' ? 'bg-scoular-green-accessible text-white' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'">Year</button>
+                        <button type="button" (click)="setLocationPeriodMode('month')"
+                          class="px-3 py-1 text-xs font-medium border-l border-gray-300 dark:border-gray-600 transition-colors"
+                          [ngClass]="newLocationPeriodMode() === 'month' ? 'bg-scoular-green-accessible text-white' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'">Month</button>
+                      </div>
+                    </div>
+                    <button (click)="addCropRow()" type="button" class="text-xs text-scoular-green-accessible hover:text-scoular-green font-medium flex items-center gap-1 shrink-0">
                       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
                       Add Crop
                     </button>
@@ -625,16 +638,58 @@
                           </button>
                         }
                       </div>
-                      <!-- Prior year / Current year bids -->
-                      <div class="grid grid-cols-2 gap-2">
+                      <!-- Bids: Current period always shown; Prior/Next optional via "+ Add". Labels
+                           follow the Year/Month entry mode (e.g. "Current Year (2026)" vs "Current Month (Jun 26)"). -->
+                      <div class="space-y-2">
+                        @if (crop.showPrior) {
+                          <div>
+                            <div class="flex items-center justify-between mb-1">
+                              <div class="text-xs text-gray-500 dark:text-gray-400 font-medium">{{ slotLabel('Prior', crop) }}</div>
+                              <button (click)="removePriorYear(rowIndex)" type="button" class="text-gray-400 hover:text-scoular-red shrink-0" [title]="'Remove ' + (newLocationPeriodMode() === 'month' ? 'prior month' : 'prior year')">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                              </button>
+                            </div>
+                            <input type="text" [ngModel]="crop.priorBid" (ngModelChange)="updateCropPriorBid(rowIndex, $event)" placeholder="Bid" class="w-full font-mono text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
+                          </div>
+                        }
                         <div>
-                          <div class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">Prior Year ({{ crop.oldYear }})</div>
-                          <input type="text" [ngModel]="crop.oldBid" (ngModelChange)="updateCropOldBid(rowIndex, $event)" placeholder="Bid" class="w-full font-mono text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
+                          <div class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">{{ slotLabel('Current', crop) }}</div>
+                          <input type="text" [ngModel]="crop.currentBid" (ngModelChange)="updateCropCurrentBid(rowIndex, $event)" placeholder="Bid" class="w-full font-mono text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
                         </div>
-                        <div>
-                          <div class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">Current Year ({{ crop.newYear }})</div>
-                          <input type="text" [ngModel]="crop.newBid" (ngModelChange)="updateCropNewBid(rowIndex, $event)" placeholder="Bid" class="w-full font-mono text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
-                        </div>
+                        @if (crop.showNext) {
+                          <div>
+                            <div class="flex items-center justify-between mb-1">
+                              <div class="text-xs text-gray-500 dark:text-gray-400 font-medium">{{ slotLabel('Next', crop) }}</div>
+                              <button (click)="removeNextYear(rowIndex)" type="button" class="text-gray-400 hover:text-scoular-red shrink-0" [title]="'Remove ' + (newLocationPeriodMode() === 'month' ? 'next month' : 'next year')">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                              </button>
+                            </div>
+                            <input type="text" [ngModel]="crop.nextBid" (ngModelChange)="updateCropNextBid(rowIndex, $event)" placeholder="Bid" class="w-full font-mono text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
+                          </div>
+                        }
+                        @if (!crop.showPrior || !crop.showNext) {
+                          @if (yearMenuIndex() === rowIndex) {
+                            <!-- Inline prior/next picker — flows in the form so it never gets clipped by the
+                                 scroll container, and there's no floating backdrop to dismiss it early. -->
+                            <div class="flex items-center gap-2 flex-wrap pt-0.5">
+                              <span class="text-xs font-medium text-gray-500 dark:text-gray-400">Add:</span>
+                              @if (!crop.showPrior) {
+                                <button type="button" (click)="addPriorYear(rowIndex)" class="px-2 py-1 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">{{ slotLabel('Prior', crop) }}</button>
+                              }
+                              @if (!crop.showNext) {
+                                <button type="button" (click)="addNextYear(rowIndex)" class="px-2 py-1 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">{{ slotLabel('Next', crop) }}</button>
+                              }
+                              <button type="button" (click)="yearMenuIndex.set(null)" title="Cancel" class="text-gray-400 hover:text-scoular-red shrink-0 p-0.5">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                              </button>
+                            </div>
+                          } @else {
+                            <button (click)="toggleYearMenu(rowIndex)" type="button" class="text-xs text-scoular-green-accessible hover:text-scoular-green font-medium flex items-center gap-1">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                              {{ newLocationPeriodMode() === 'month' ? 'Add month' : 'Add year' }}
+                            </button>
+                          }
+                        }
                       </div>
                     </div>
                   }
