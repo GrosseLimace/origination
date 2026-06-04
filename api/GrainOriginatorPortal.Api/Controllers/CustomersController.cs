@@ -157,4 +157,33 @@ public class CustomersController : ControllerBase
                 return Ok(customer);
         }
     }
+
+    // -------------------------------------------------------------------------
+    /// <summary>
+    /// Removes a producer from a SYNC-SOURCED (locked) trade unit they are dormant in — i.e. they
+    /// have no open purchase contract and no unapplied ticket in that TU. Re-validates dormancy
+    /// server-side (returns 409 if the producer is actually still active there, guarding a stale
+    /// dialog), then soft-deactivates the membership and sets UserDeactivated so the nightly sync
+    /// respects the removal until activity returns. Manual TU removal still goes through PUT
+    /// .../trade-units; this endpoint is only for locked-but-dormant memberships.
+    /// </summary>
+    [HttpDelete("{id:long}/trade-units/{tradeUnit}")]
+    [ProducesResponseType(typeof(List<CustomerTradeUnitInfo>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<List<CustomerTradeUnitInfo>>> RemoveDormantTradeUnit(long id, string tradeUnit, CancellationToken cancellationToken = default)
+    {
+        var result = await _dataService.DeactivateDormantTradeUnitAsync(id, tradeUnit, cancellationToken);
+
+        switch (result)
+        {
+            case DeactivateTradeUnitResult.NotFound:
+                throw new NotFoundException("CustomerTradeUnit", $"{id}:{tradeUnit}");
+            case DeactivateTradeUnitResult.StillActive:
+                return Conflict(new { message = "This producer still has an open contract or unapplied ticket in that trade unit, so it can't be removed." });
+            default:
+                // Return the refreshed membership list so the dialog can re-render immediately.
+                return Ok(await _dataService.GetCustomerTradeUnitsAsync(id, cancellationToken));
+        }
+    }
 }

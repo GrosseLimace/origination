@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using GrainOriginatorPortal.Api.Data;
+using GrainOriginatorPortal.Api.Interfaces;
 using GrainOriginatorPortal.Api.Models;
 
 namespace GrainOriginatorPortal.Api.Services;
@@ -40,6 +41,9 @@ public class CustomerSyncService
         using var scope = _scopeFactory.CreateScope();
         var odsDb = scope.ServiceProvider.GetRequiredService<OriginationDbContext>();
         var appDb = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        // Resolved in the same scope so it shares these DbContext instances. Used by the bring-back
+        // pass to evaluate open activity with the EXACT same rule the edit dialog uses.
+        var dataService = scope.ServiceProvider.GetRequiredService<IDataService>();
 
         _logger.LogInformation("CustomerSync starting");
 
@@ -133,6 +137,12 @@ public class CustomerSyncService
         {
             if (appTradeUnitsByKey.TryGetValue((customerId, tradeUnit), out var existing))
             {
+                // Respect an explicit user removal of a dormant locked TU: leave UserDeactivated
+                // rows untouched here (do NOT reactivate or re-lock), even though the producer is
+                // still in the ODS view. The bring-back pass below restores them only once the
+                // producer has open activity (contract/ticket) in that TU again.
+                if (existing.UserDeactivated) continue;
+
                 var changed = false;
                 if (existing.IsActive != odsRow.IsActive)
                 {
@@ -246,6 +256,49 @@ public class CustomerSyncService
             result.ManualCustomersReactivated, result.ManualCustomersDeactivated,
             phase.ElapsedMilliseconds);
 
+        // ── Bring-back pass for user-removed dormant TUs ──
+        // A CustomerTradeUnit with UserDeactivated=true was explicitly removed by a user while the
+        // producer was dormant in that TU. The producer is usually STILL in the ODS view, so the
+        // upsert pass above deliberately left these rows alone. Here we re-check ONLY those rows
+        // (a small set): if the producer now has open activity in that TU, we clear the flag and
+        // restore it to a normal locked (sync-sourced) membership.
+        //
+        // IMPORTANT: we call IDataService.GetOpenActivityTradeUnitsAsync — the SAME method the edit
+        // dialog uses to decide "dormant". Using one shared rule guarantees the dialog and the sync
+        // agree: a TU the dialog showed as removable won't be silently restored on the next sync
+        // unless the producer genuinely regained activity (no remove→resync→reappear loop).
+        // Scoped to just the affected producers (small set), so it stays fast.
+        phase.Restart();
+        var deactivatedRows = appTradeUnits.Where(t => t.UserDeactivated).ToList();
+        if (deactivatedRows.Count > 0)
+        {
+            // Compute each affected producer's open-activity TU set once (keyed by ScoularId).
+            var openByScoular = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var custId in deactivatedRows.Select(r => r.CustomerId).Distinct())
+            {
+                if (!appCustomersById.TryGetValue(custId, out var cust) || string.IsNullOrEmpty(cust.ScoularId))
+                    continue;
+                if (!openByScoular.ContainsKey(cust.ScoularId))
+                    openByScoular[cust.ScoularId] = await dataService.GetOpenActivityTradeUnitsAsync(cust.ScoularId, cancellationToken);
+            }
+
+            foreach (var row in deactivatedRows)
+            {
+                if (!appCustomersById.TryGetValue(row.CustomerId, out var cust) || string.IsNullOrEmpty(cust.ScoularId))
+                    continue;
+                if (openByScoular.TryGetValue(cust.ScoularId, out var openTus) && openTus.Contains(row.TradeUnit.Trim()))
+                {
+                    row.UserDeactivated = false;
+                    row.IsActive = true;
+                    row.IsManual = false;
+                    result.TradeUnitsBroughtBack++;
+                }
+            }
+        }
+        _logger.LogInformation(
+            "CustomerSync bring-back pass: {Checked} user-removed rows checked, {BroughtBack} restored ({Ms} ms)",
+            deactivatedRows.Count, result.TradeUnitsBroughtBack, phase.ElapsedMilliseconds);
+
         // ── Persist ──
         // SaveChangesAsync wraps its writes in an implicit transaction, and the
         // ApplicationDbContext has EnableRetryOnFailure configured, so the
@@ -350,6 +403,7 @@ public class CustomerSyncResult
     public int TradeUnitsInserted    { get; set; }
     public int TradeUnitsUpdated     { get; set; }
     public int TradeUnitsDeactivated { get; set; }
+    public int TradeUnitsBroughtBack { get; set; }  // user-removed dormant TUs restored once activity returned
     public int ManualCustomersRefreshed    { get; set; }
     public int ManualCustomersReactivated  { get; set; }
     public int ManualCustomersDeactivated  { get; set; }
