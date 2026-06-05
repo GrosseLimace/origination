@@ -107,4 +107,75 @@ public class CustomersControllerTests
         _dataServiceMock.Verify(s => s.SearchCustomersAsync("Smith", null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    // -------------------------------------------------------------------------
+    // Trade-unit memberships: dormant-removal endpoint (new "removable once dormant" feature).
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task GetTradeUnits_ReturnsOkWithMembershipsIncludingActivityFlag()
+    {
+        // Arrange
+        var tus = new List<CustomerTradeUnitInfo>
+        {
+            new() { TradeUnit = "2057", IsManual = false, HasOpenActivity = true },   // active-locked
+            new() { TradeUnit = "2190", IsManual = false, HasOpenActivity = false },  // dormant → removable
+        };
+        _dataServiceMock.Setup(s => s.GetCustomerTradeUnitsAsync(7, It.IsAny<CancellationToken>())).ReturnsAsync(tus);
+
+        // Act
+        var result = await _sut.GetTradeUnits(7);
+
+        // Assert
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var returned = Assert.IsAssignableFrom<List<CustomerTradeUnitInfo>>(ok.Value);
+        Assert.Equal(2, returned.Count);
+        Assert.Contains(returned, t => t.TradeUnit == "2190" && !t.HasOpenActivity);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task RemoveDormantTradeUnit_WhenOk_ReturnsRefreshedList()
+    {
+        // Arrange
+        _dataServiceMock.Setup(s => s.DeactivateDormantTradeUnitAsync(3, "2190", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(DeactivateTradeUnitResult.Ok);
+        var refreshed = new List<CustomerTradeUnitInfo> { new() { TradeUnit = "2057", IsManual = false, HasOpenActivity = true } };
+        _dataServiceMock.Setup(s => s.GetCustomerTradeUnitsAsync(3, It.IsAny<CancellationToken>())).ReturnsAsync(refreshed);
+
+        // Act
+        var result = await _sut.RemoveDormantTradeUnit(3, "2190");
+
+        // Assert
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var returned = Assert.IsAssignableFrom<List<CustomerTradeUnitInfo>>(ok.Value);
+        Assert.Single(returned);
+        _dataServiceMock.Verify(s => s.DeactivateDormantTradeUnitAsync(3, "2190", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task RemoveDormantTradeUnit_WhenStillActive_ReturnsConflictAndDoesNotRefresh()
+    {
+        // Arrange — server refuses because the producer still has open activity in that TU.
+        _dataServiceMock.Setup(s => s.DeactivateDormantTradeUnitAsync(3, "2057", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(DeactivateTradeUnitResult.StillActive);
+
+        // Act
+        var result = await _sut.RemoveDormantTradeUnit(3, "2057");
+
+        // Assert
+        Assert.IsType<ConflictObjectResult>(result.Result);
+        _dataServiceMock.Verify(s => s.GetCustomerTradeUnitsAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task RemoveDormantTradeUnit_WhenNotFound_ThrowsNotFoundException()
+    {
+        // Arrange
+        _dataServiceMock.Setup(s => s.DeactivateDormantTradeUnitAsync(9, "9999", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(DeactivateTradeUnitResult.NotFound);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<NotFoundException>(() => _sut.RemoveDormantTradeUnit(9, "9999"));
+    }
 }

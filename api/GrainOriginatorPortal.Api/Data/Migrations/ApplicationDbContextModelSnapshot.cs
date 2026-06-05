@@ -543,6 +543,12 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("TradeUnit");
 
+                    b.Property<bool>("UserDeactivated")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasColumnName("UserDeactivated");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CustomerId", "TradeUnit")

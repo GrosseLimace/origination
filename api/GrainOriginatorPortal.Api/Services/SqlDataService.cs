@@ -805,6 +805,11 @@ public class SqlDataService : IDataService
                 {
                     existingTu.IsActive = true;
                     existingTu.IsManual = true;
+                    // Clear any prior dormant-removal flag: a fresh manual re-add supersedes it, so
+                    // this becomes a normal manual row again and the sync won't keep "respecting a
+                    // removal" the user just undid. (Covers: dormant-remove a sync TU, then manually
+                    // re-add the same code.)
+                    existingTu.UserDeactivated = false;
                 }
             }
             else
@@ -840,12 +845,152 @@ public class SqlDataService : IDataService
 
     public async Task<List<CustomerTradeUnitInfo>> GetCustomerTradeUnitsAsync(long customerId, CancellationToken cancellationToken = default)
     {
-        return await _appContext.CustomerTradeUnits
+        // Active memberships (unchanged from before — this part is identical to the original query).
+        var memberships = await _appContext.CustomerTradeUnits
             .AsNoTracking()
             .Where(t => t.CustomerId == customerId && t.IsActive)
             .OrderBy(t => t.TradeUnit)
             .Select(t => new CustomerTradeUnitInfo { TradeUnit = t.TradeUnit, IsManual = t.IsManual })
             .ToListAsync(cancellationToken);
+
+        if (memberships.Count == 0) return memberships;
+
+        // NEW: tag each membership with HasOpenActivity so the dialog can show a LOCKED
+        // (sync-sourced) TU as "dormant → removable" once the producer has no open contract /
+        // unapplied ticket there. Computed on-demand (single producer → fast, seeks). FAIL-SAFE:
+        // any failure leaves HasOpenActivity = true, i.e. keep the TU locked — we never wrongly
+        // offer to remove a producer that might still be active.
+        try
+        {
+            var scoularId = await _appContext.Customers.AsNoTracking()
+                .Where(c => c.Id == customerId)
+                .Select(c => c.ScoularId)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (!string.IsNullOrEmpty(scoularId))
+            {
+                var openTus = await GetOpenActivityTradeUnitsAsync(scoularId, cancellationToken);
+                foreach (var m in memberships)
+                    m.HasOpenActivity = openTus.Contains(m.TradeUnit.Trim());
+            }
+            // else: no ScoularId → can't check activity → leave HasOpenActivity = true (locked).
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Open-activity check failed for customer {CustomerId}; keeping TUs locked (HasOpenActivity=true) [{TraceId}]",
+                customerId, GetTraceId());
+            // DTO defaults HasOpenActivity = true, so memberships already fail safe here.
+        }
+
+        return memberships;
+    }
+
+    /// <summary>
+    /// Returns the set of trade-unit codes the producer (by ScoularId) currently has OPEN activity
+    /// in: an open purchase contract, OR an active unapplied (U/L) ticket. Drives the "dormant →
+    /// removable" decision for sync-sourced TU memberships (used by <see cref="GetCustomerTradeUnitsAsync"/>,
+    /// the dormant-removal validation, and the CustomerSync bring-back pass).
+    ///
+    /// Reliable mappings (verified): a contract carries its <c>TradeUnit</c> directly; an unapplied
+    /// ticket's <c>OrganizationCode</c> IS its trade unit (org codes share the contract TradeUnit
+    /// domain and OrganizationCode is always populated). Single-producer scope → both reads seek
+    /// (CustomerCode/CtrmCustomerId), so this is cheap. Unapplied tickets include U/L AND C-prefix
+    /// (customer-storage); the C tickets are storage-gated exactly like the per-producer Unapplied
+    /// Tickets tab, so only grain the producer still actively holds counts (priced-out orphan
+    /// storage doesn't). The 3-year ticket cutoff mirrors <see cref="GetUnappliedTicketsByCustomerAsync"/>
+    /// so ancient orphan tickets don't lock a TU forever.
+    /// PUBLIC so CustomerSyncService's bring-back pass calls the EXACT same rule — if the dialog and
+    /// the sync disagreed on "active", a user removal could be undone on the next sync (a loop).
+    /// </summary>
+    public async Task<HashSet<string>> GetOpenActivityTradeUnitsAsync(string scoularId, CancellationToken cancellationToken)
+    {
+        var openTus = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrEmpty(scoularId)) return openTus;
+
+        // (a) Open purchase contracts → TradeUnit is on the contract. Open = ClosedDate null or the
+        // 0001-01-01 sentinel (same test used elsewhere, e.g. GetTodaysTicketsAsync).
+        var contractTus = await _context.Contracts
+            .AsNoTracking()
+            .Where(c => c.IsActive && c.ContractPrefixType == "P"
+                && c.CtrmCustomerId == scoularId
+                && c.TradeUnit != null
+                && (c.ClosedDate == null || c.ClosedDate <= OpenClosedDateSentinel))
+            .Select(c => c.TradeUnit!)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        foreach (var tu in contractTus)
+            if (!string.IsNullOrWhiteSpace(tu)) openTus.Add(tu.Trim());
+
+        // (b) Active unapplied tickets → OrganizationCode is the trade unit. Includes U/L AND
+        // C-prefix (customer-storage), then storage-gates the C tickets so priced-out orphan
+        // storage doesn't count. Same predicate + 3-year cutoff + 120s timeout + gate as the
+        // per-producer Unapplied Tickets tab, so this matches exactly what the user sees there.
+        _context.Database.SetCommandTimeout(120);
+        var cutoff = DateTime.UtcNow.AddYears(-3).ToString("yyyy-MM-dd");
+        var unappliedTickets = await _context.Tickets
+            .AsNoTracking()
+            .Where(t => t.IsActive
+                && (t.TicketType == "U" || t.TicketType == "P")
+                && (t.TicketStatusDescription == null || t.TicketStatusDescription != "Consolidated")
+                && t.CustomerCode == scoularId
+                && t.CtrmContractNumber != null
+                && (t.CtrmContractNumber.StartsWith("U") || t.CtrmContractNumber.StartsWith("L") || t.CtrmContractNumber.StartsWith("C"))
+                && t.OrganizationCode != null
+                && t.Date != null && string.Compare(t.Date, cutoff) >= 0)
+            .ToListAsync(cancellationToken);
+
+        // Gate C-prefix (storage) tickets against active storage (U/L pass through untouched).
+        // Only runs when there are C tickets, so producers with none cost nothing extra.
+        if (unappliedTickets.Exists(t => t.CtrmContractNumber is { Length: > 0 } cn && cn.StartsWith("C", StringComparison.OrdinalIgnoreCase)))
+        {
+            var storageByCustomer = await GetActiveStorageCommoditiesAsync(new[] { scoularId }, cancellationToken);
+            unappliedTickets = GateCustomerStorageTickets(unappliedTickets, storageByCustomer);
+        }
+
+        foreach (var t in unappliedTickets)
+            if (!string.IsNullOrWhiteSpace(t.OrganizationCode)) openTus.Add(t.OrganizationCode!.Trim());
+
+        return openTus;
+    }
+
+    /// <summary>
+    /// Removes a producer from a sync-sourced (locked) trade unit they are dormant in. Re-validates
+    /// dormancy server-side (guards a stale dialog), then soft-deactivates the row and sets
+    /// UserDeactivated=true so the nightly sync won't resurrect it until the producer regains open
+    /// activity in that TU (the sync's bring-back pass). Touches only this one membership row.
+    /// </summary>
+    public async Task<DeactivateTradeUnitResult> DeactivateDormantTradeUnitAsync(long customerId, string tradeUnit, CancellationToken cancellationToken = default)
+    {
+        var code = (tradeUnit ?? string.Empty).Trim();
+        if (code.Length == 0) return DeactivateTradeUnitResult.NotFound;
+
+        var row = await _appContext.CustomerTradeUnits
+            .FirstOrDefaultAsync(t => t.CustomerId == customerId && t.IsActive && t.TradeUnit == code, cancellationToken);
+        if (row == null) return DeactivateTradeUnitResult.NotFound;
+
+        // Re-validate dormancy: if the producer actually still has an open contract or unapplied
+        // ticket in this TU, refuse (the dialog was stale). Also refuse when we can't determine
+        // activity (no ScoularId) — fail safe = never remove an account we can't verify.
+        var scoularId = await _appContext.Customers.AsNoTracking()
+            .Where(c => c.Id == customerId)
+            .Select(c => c.ScoularId)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (string.IsNullOrEmpty(scoularId))
+            return DeactivateTradeUnitResult.StillActive; // can't verify → don't remove
+
+        var openTus = await GetOpenActivityTradeUnitsAsync(scoularId, cancellationToken);
+        if (openTus.Contains(code))
+            return DeactivateTradeUnitResult.StillActive;
+
+        // Dormant → remove. UserDeactivated is the signal the sync honors (see CustomerSyncService).
+        row.IsActive = false;
+        row.UserDeactivated = true;
+        await _appContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Dormant trade unit {TradeUnit} removed for customer {CustomerId} (user removal; UserDeactivated set) [{ErrorCode}] [{ErrorCategory}]",
+            code, customerId, "AUDIT_UPDATE", "DataMutation");
+        return DeactivateTradeUnitResult.Ok;
     }
 
     /// <summary>Reads a single producer row from base.vw_CurrentCustomers by CustomerId.</summary>

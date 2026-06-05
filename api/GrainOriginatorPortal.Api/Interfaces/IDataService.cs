@@ -8,6 +8,14 @@ public enum AssignTradeUnitsResult
     CustomerNotFound,
 }
 
+/// <summary>Outcome of a DeactivateDormantTradeUnitAsync call, so the controller can map to the right HTTP status.</summary>
+public enum DeactivateTradeUnitResult
+{
+    Ok,           // membership removed (UserDeactivated)
+    NotFound,     // no active membership for this (customer, trade unit)
+    StillActive,  // refused: the producer still has an open contract / unapplied ticket in that TU
+}
+
 /// <summary>
 /// Interface defining data access operations for the Grain Originator Portal.
 /// </summary>
@@ -41,9 +49,22 @@ public interface IDataService
     /// assignments are never touched. Idempotent — re-assigning an existing TU doesn't duplicate.</summary>
     Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, CancellationToken cancellationToken = default);
 
-    /// <summary>Gets a producer's ACTIVE trade-unit memberships (code + IsManual flag) so the edit
-    /// dialog can show which trade units they appear on and which are editable vs locked.</summary>
+    /// <summary>Gets a producer's ACTIVE trade-unit memberships (code + IsManual flag + HasOpenActivity)
+    /// so the edit dialog can show which trade units they appear on, which are editable vs locked, and
+    /// which locked ones are "dormant" (no open contract/unapplied ticket) and therefore removable.</summary>
     Task<List<CustomerTradeUnitInfo>> GetCustomerTradeUnitsAsync(long customerId, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns the set of trade-unit codes the producer (by ScoularId) currently has OPEN activity
+    /// in — an open purchase contract OR an active unapplied ticket (U/L, plus storage-gated C). Shared by
+    /// the edit dialog's dormancy flag, the dormant-removal validation, and the CustomerSync bring-back pass
+    /// so they all agree on "active".</summary>
+    Task<HashSet<string>> GetOpenActivityTradeUnitsAsync(string scoularId, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes a producer from a SYNC-SOURCED (locked) trade unit they're dormant in. Re-validates
+    /// server-side that the producer has NO open contract / unapplied ticket in that TU (returns
+    /// StillActive if they do), then soft-deactivates the membership and sets UserDeactivated=true so the
+    /// nightly sync respects the removal until activity returns. Does not affect any other membership.</summary>
+    Task<DeactivateTradeUnitResult> DeactivateDormantTradeUnitAsync(long customerId, string tradeUnit, CancellationToken cancellationToken = default);
 
     /// <summary>Gets a single customer by their unique identifier.</summary>
     /// <param name="id">The customer's unique identifier.</param>
