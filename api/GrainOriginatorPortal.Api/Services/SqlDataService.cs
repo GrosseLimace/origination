@@ -1872,6 +1872,78 @@ public class SqlDataService : IDataService
         return tickets;
     }
 
+    /// <summary>
+    /// Loads ONLY unapplied (U/L, optionally C-storage) tickets scoped by CustomerCode — the fast,
+    /// index-seekable branch of <see cref="LoadTicketsByContractAndCustomerScopeAsync"/> with the
+    /// 2M-row ContractNumber-scan branch omitted ENTIRELY (not just fed an empty list — that join
+    /// can't seek even for a no-match value, so it would still scan). Spot Loads / today's-tickets
+    /// is the only caller: the UI discards every applied ticket, so the contract-scoped branch was
+    /// pure waste there and was what made the dropdown spin for minutes.
+    /// <para>STRING_SPLIT keeps a large producer set under the 2100-parameter IN-clause limit.
+    /// C-prefix (customer-storage) tickets are gated against active storage only when
+    /// <paramref name="includeStorageTickets"/> is true; today's path passes false and skips the gate.</para>
+    /// </summary>
+    private async Task<List<Ticket>> LoadUnappliedTicketsByCustomerScopeAsync(
+        List<string> customerCodes,
+        CancellationToken cancellationToken,
+        string? cutoffDateInclusive = null,
+        bool includeStorageTickets = true)
+    {
+        if (customerCodes.Count == 0) return new List<Ticket>();
+
+        // CustomerCode seeks cleanly on vw_CurrentTickets, so this returns in <2s even TU-wide.
+        // (The slow path was the omitted ContractNumber-scan branch.) 120s is a generous cold-cache cap.
+        _context.Database.SetCommandTimeout(120);
+
+        // codesCsv is never empty here (guarded above), so no "__none__" sentinel is needed.
+        var codesCsv = SanitizeCsv(customerCodes);
+        var cutoff = cutoffDateInclusive ?? string.Empty;
+        var storageFlag = includeStorageTickets ? 1 : 0;
+
+        // Branch 2 of LoadTicketsByContractAndCustomerScopeAsync, standalone. The column list MUST
+        // stay in sync with the EF Ticket mapping (OriginationDbContext.OnModelCreating) — EF
+        // materialization fails if a mapped column is missing from the result.
+        var tickets = await _context.Tickets
+            .FromSqlInterpolated($@"
+                SELECT t.TicketId, t.ContractId, t.CustomerId, t.CustomerCode, t.ProductCode,
+                       t.TicketPrefix, t.TicketNumber, t.TicketSuffix, t.ShipmentTicketNumber, t.ContractNumber,
+                       t.OrganizationCode, t.ElevatorCode, t.UnloadOrganizationCode,
+                       t.TicketBlDate, t.FinalSettledDate,
+                       t.UnloadQuantity, t.LoadoutQuantity, t.AppliedNetQuantity,
+                       t.TicketType, t.TicketStatusDescription, t.IsActive, t.GradeCode
+                FROM base.vw_CurrentTickets t
+                INNER JOIN STRING_SPLIT({codesCsv}, ',') c ON t.CustomerCode = c.value
+                WHERE t.IsActive = 1 AND t.TicketType IN ('U','P')
+                  AND (t.TicketStatusDescription IS NULL OR t.TicketStatusDescription <> 'Consolidated')
+                  AND t.ContractNumber IS NOT NULL
+                  AND (t.ContractNumber LIKE 'U%' OR t.ContractNumber LIKE 'L%'
+                       OR ({storageFlag} = 1 AND t.ContractNumber LIKE 'C%'))
+                  AND ({cutoff} = '' OR (t.TicketBlDate IS NOT NULL AND t.TicketBlDate >= {cutoff}))")
+            .AsNoTracking()
+            .OrderByDescending(t => t.Date)
+            .ToListAsync(cancellationToken);
+
+        // Today's path passes includeStorageTickets: false, so it returns here and never touches
+        // the slow ctrm.vw_GNTA39D1 storage scan. Storage gating mirrors the shared method exactly.
+        if (!includeStorageTickets) return tickets;
+
+        var storageCustomerCodes = tickets
+            .Where(t => t.CtrmContractNumber is { Length: > 0 } cn
+                && cn.StartsWith("C", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrEmpty(t.CustomerCode))
+            .Select(t => t.CustomerCode!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (storageCustomerCodes.Count > 0)
+        {
+            var storageByCustomer = await GetActiveStorageCommoditiesAsync(storageCustomerCodes, cancellationToken);
+            tickets = GateCustomerStorageTickets(tickets, storageByCustomer);
+        }
+
+        return tickets;
+    }
+
     public async Task<List<Ticket>> GetTicketsAsync(List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
         try
@@ -2128,45 +2200,27 @@ public class SqlDataService : IDataService
                     .Select(c => c.ScoularId!)
                     .ToListAsync(cancellationToken);
 
-                if (customerCodes.Count == 0)
-                {
-                    tickets = [];
-                }
-                else
-                {
-                    // Same contract-scoped pattern as GetTicketsAsync — applied tickets follow
-                    // their contract, not the ticket's CustomerCode. Without this, Spot Loads
-                    // would silently miss split / cross-entity loads.
-                    var openContractNumbers = await _context.Contracts
-                        .AsNoTracking()
-                        .Where(c => c.IsActive && c.ContractPrefixType == "P"
-                            && (c.ClosedDate == null || c.ClosedDate <= OpenClosedDateSentinel)
-                            && c.CtrmCustomerId != null && customerCodes.Contains(c.CtrmCustomerId)
-                            && c.SourceContractId != null)
-                        .Select(c => c.SourceContractId!)
-                        .Distinct()
-                        .ToListAsync(cancellationToken);
-
-                    tickets = await LoadTicketsByContractAndCustomerScopeAsync(
-                        openContractNumbers, customerCodes, cancellationToken, cutoffStr, includeStorageTickets: false);
-                }
+                // Spot Loads only ever displays UNAPPLIED tickets (the UI skips applied ones), so we
+                // run the fast CustomerCode-scoped branch only. The old applied/contract-number branch
+                // scanned the 2M-row view (couldn't seek) and its rows were all discarded downstream —
+                // dropping it is what turns this from minutes into <2s. Empty codes return [] inside.
+                tickets = await LoadUnappliedTicketsByCustomerScopeAsync(
+                    customerCodes, cancellationToken, cutoffStr, includeStorageTickets: false);
             }
             else
             {
-                var tuContracts = await _context.Contracts
+                // Branch 1 (contract-number scope) is gone — Spot Loads discards applied tickets — but
+                // the contract-derived CUSTOMER codes still widen which producers' unapplied loads
+                // appear (a producer can have a P-contract tagged to a TU without an active
+                // CustomerTradeUnit snapshot row), so we keep deriving them to preserve identical
+                // producer scope. Only SourceContractId (which fed Branch 1) is dropped.
+                var contractCustomerCodes = await _context.Contracts
                     .AsNoTracking()
                     .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId != null
                         && c.TradeUnit != null && tradeUnits!.Contains(c.TradeUnit))
-                    .Select(c => new { c.CtrmCustomerId, c.SourceContractId })
+                    .Select(c => c.CtrmCustomerId!)
                     .Distinct()
                     .ToListAsync(cancellationToken);
-
-                var contractCustomerCodes = tuContracts.Select(c => c.CtrmCustomerId!).ToHashSet();
-                var openContractNumbers = tuContracts
-                    .Select(c => c.SourceContractId)
-                    .Where(n => n != null)
-                    .Cast<string>()
-                    .ToList();
 
                 var snapshotCustomerCodes = await _appContext.Customers
                     .AsNoTracking()
@@ -2178,32 +2232,18 @@ public class SqlDataService : IDataService
 
                 var customerCodes = contractCustomerCodes.Union(snapshotCustomerCodes).ToList();
 
-                tickets = await LoadTicketsByContractAndCustomerScopeAsync(
-                    openContractNumbers, customerCodes, cancellationToken, cutoffStr, includeStorageTickets: false);
+                tickets = await LoadUnappliedTicketsByCustomerScopeAsync(
+                    customerCodes, cancellationToken, cutoffStr, includeStorageTickets: false);
             }
 
             _logger.LogInformation("Loaded {TicketCount} recent tickets for spot loads (filtered: {IsFiltered}, cutoff: {CutoffStr})",
                 tickets.Count, hasTradeUnitFilter, cutoffStr);
 
-            // Load quality data
-            var ticketIds = tickets.Select(t => t.Id);
-            var qualityData = await _context.TicketQualities
-                .AsNoTracking()
-                .Where(q => ticketIds.Contains(q.TicketId))
-                .ToDictionaryAsync(q => q.TicketId, cancellationToken);
-
-            foreach (var ticket in tickets)
-            {
-                if (qualityData.TryGetValue(ticket.Id, out var quality))
-                {
-                    ticket.Moisture = quality.GradeFactorMoisturePercent;
-                    ticket.TestWeight = quality.GradeFactorTestWeightPercent;
-                    ticket.ProteinPercent = quality.GradeFactorProteinPercent;
-                }
-            }
-
-            await PopulateElevatorLocations(tickets, cancellationToken);
-
+            // Intentionally NO quality (moisture/protein/test-weight) or elevator city/state enrichment
+            // here: appState.todaysTickets is consumed only by Actionable Insights → Spot Loads, which
+            // displays none of those fields. Skipping them drops 1-3 extra round-trips (the
+            // TicketQualities IN-clause + the ctrm.vw_GNP026 / vw_GNP003 elevator lookups) off this
+            // UI-blocking call. The full /api/tickets path (GetTicketsAsync) still enriches.
             return tickets;
         }
         catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
