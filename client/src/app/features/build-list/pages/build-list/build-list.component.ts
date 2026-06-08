@@ -2176,10 +2176,11 @@ export class BuildListComponent {
     if (!this.manuallyIncludedCustomers().some(c => c.id === customer.id)) {
       this.manuallyIncludedCustomers.update(list => [...list, customer]);
     }
-    // Clear search
-    this.memberSearchTerm.set('');
-    this.memberSearchResults.set([]);
-    this.memberInResultsMatches.set([]);
+    // Keep the search open so several people from the same result set can be added/excluded
+    // in a row (e.g. related producers) without retyping. Just drop this person from the
+    // candidate lists; the rest stay selectable.
+    this.memberSearchResults.update(list => list.filter(c => c.id !== customer.id));
+    this.memberInResultsMatches.update(list => list.filter(c => c.id !== customer.id));
     this.usageTracking.postClickEvent('interaction', 'build-a-list', 'member-added', customer.id.toString());
   }
 
@@ -2196,10 +2197,10 @@ export class BuildListComponent {
         return updated;
       });
     }
-    // Clear search so user can immediately search for another
-    this.memberSearchTerm.set('');
-    this.memberSearchResults.set([]);
-    this.memberInResultsMatches.set([]);
+    // Keep the search open so several people from the same result set can be excluded/added
+    // in a row without retyping. Just drop this person from the candidate lists.
+    this.memberInResultsMatches.update(list => list.filter(c => c.id !== customerId));
+    this.memberSearchResults.update(list => list.filter(c => c.id !== customerId));
     this.usageTracking.postClickEvent('interaction', 'build-a-list', 'member-excluded', customerId.toString());
   }
 
