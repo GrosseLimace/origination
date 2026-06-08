@@ -348,6 +348,9 @@ export class BidSheetComponent {
 
   // --- Commodities lookup ---
   allCommodities = signal<Commodity[]>([]);
+  // Curated "Planting Intentions" commodity set — drives the Add-Location crop search so the picker
+  // matches the rest of the app. Full allCommodities is still used for code->name resolution.
+  plantingCommodities = signal<Commodity[]>([]);
 
   // --- Add competitor modal ---
   addLocationMode = signal<boolean>(false);       // map is in "pick location" mode
@@ -398,7 +401,10 @@ export class BidSheetComponent {
     if (words.length === 0) return [];
     const seen = new Set<string>();
     const results: { code: string; name: string; rank: number }[] = [];
-    for (const c of this.allCommodities()) {
+    // Search the curated Planting Intentions list; fall back to the full list if it's not loaded
+    // so the picker never goes blank.
+    const source = this.plantingCommodities().length > 0 ? this.plantingCommodities() : this.allCommodities();
+    for (const c of source) {
       const code = (c.code ?? '').trim();
       const cat = (c.category ?? '').trim().toUpperCase();
       const desc = (c.name ?? '').trim();
@@ -524,9 +530,17 @@ export class BidSheetComponent {
     // Load all bid sheet locations for map display (once)
     this._loadAllMapLocations();
 
-    // Load commodities on init (once)
+    // Load commodities on init (once). Two lists:
+    //  - allCommodities (full): used to resolve a bid's commodity code -> name (existing bids may
+    //    carry any code), so display never loses a name.
+    //  - plantingCommodities (curated "Planting Intentions" set): drives the Add-Location crop
+    //    SEARCH so the picker offers the same clean set as the rest of the app.
     this.apiService.getCommodities().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (commodities) => this.allCommodities.set(commodities),
+      error: () => {}
+    });
+    this.apiService.getPlantingCommodities().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (commodities) => this.plantingCommodities.set(commodities),
       error: () => {}
     });
 
@@ -1701,6 +1715,12 @@ export class BidSheetComponent {
   printAddress = signal('');
   printPhone = signal('');
   printHighlightScoularLocations = signal<boolean>(true);
+  // Old/New crop column naming, controlled independently for the Yearly column vs the Monthly
+  // columns. When on for a column type, that column expands into TWO crop years: the viewed year
+  // (editBidsYear) = "New Crop", the year before = "Old Crop", headed by those names instead of the
+  // year number. Off = the single viewed year as before. Old-crop values come from saved bids.
+  printOldNewCropYearly = signal<boolean>(false);
+  printOldNewCropMonthly = signal<boolean>(false);
 
   onPrintPhoneInput(event: Event): void {
     const raw = (event.target as HTMLInputElement).value.replace(/\D/g, '').slice(0, 10);
@@ -1718,16 +1738,58 @@ export class BidSheetComponent {
     return this.editGridColumns().filter(c => crops.has(c.crop) && months.has(c.month));
   });
 
-  /** Columns grouped by crop for the print preview — each group is one table section. */
+  /**
+   * Columns grouped by crop for the print preview — each group is one table section.
+   * Each column carries its crop YEAR so the preview/print can resolve the right bid.
+   * When the Old/New Crop toggle is on, every crop gets two blocks of columns: the prior
+   * year ("Old Crop") then the viewed year ("New Crop"); headers use those names instead of
+   * the year number. Otherwise it's the single viewed year, headed by month + year as before.
+   */
   readonly printCropGroups = computed(() => {
-    const cols = this.printFilteredColumns();
-    const map = new Map<string, typeof cols>();
-    for (const col of cols) {
-      if (!map.has(col.crop)) map.set(col.crop, []);
-      map.get(col.crop)!.push(col);
-    }
-    return [...map.entries()].map(([crop, columns]) => ({ crop, columns }));
+    const selectedCrops = this.printSelectedCrops();
+    const selectedMonths = this.printSelectedMonths();
+    const oldNewYearly = this.printOldNewCropYearly();
+    const oldNewMonthly = this.printOldNewCropMonthly();
+    const newYear = this.editBidsYear();
+    const oldYear = newYear - 1;
+    // Preserve crop order from the grid; sort months with "Yearly" (0) last (matches editGridColumns).
+    const crops = this.editBidsCrops().filter(c => selectedCrops.has(c));
+    const months = this.editBidsMonths()
+      .filter(m => selectedMonths.has(m))
+      .sort((a, b) => (a === 0 ? 1 : b === 0 ? -1 : a - b));
+
+    type PrintColumn = { key: string; crop: string; month: number; year: number; label: string };
+    return crops.map(crop => {
+      const columns: PrintColumn[] = [];
+      for (const m of months) {
+        // Old/New is controlled separately for the Yearly column (month 0) and Monthly columns,
+        // so one can be split while the other shows the single viewed year.
+        const oldNew = m === 0 ? oldNewYearly : oldNewMonthly;
+        if (oldNew) {
+          // Old + New for the same period sit next to each other.
+          columns.push({ key: `${crop}#${m}#${oldYear}`, crop, month: m, year: oldYear,
+            label: m === 0 ? `Old Crop (${oldYear})` : `${this.getMonthName(m)} Old Crop (${oldYear})` });
+          columns.push({ key: `${crop}#${m}#${newYear}`, crop, month: m, year: newYear,
+            label: m === 0 ? `New Crop (${newYear})` : `${this.getMonthName(m)} New Crop (${newYear})` });
+        } else {
+          columns.push({ key: `${crop}#${m}#${newYear}`, crop, month: m, year: newYear,
+            label: m === 0 ? `Yearly ${newYear}` : `${this.getMonthName(m)} ${newYear}` });
+        }
+      }
+      return { crop, columns };
+    });
   });
+
+  /**
+   * Resolve a printed cell's bid value. For the viewed (New Crop) year we read the live edit-grid
+   * value so unsaved edits print; for any other year (Old Crop) we read the saved bid from the lookup.
+   */
+  printCellValue(row: EditBidsRow, col: { crop: string; month: number; year: number }): string {
+    if (col.year === this.editBidsYear()) {
+      return (row.bids[`${col.crop}#${col.month}`] ?? '').trim();
+    }
+    return this._getLatestBid(row.name, col.year, col.crop, col.month).trim();
+  }
 
   printEditBids(): void {
     // Initialize selections with whatever is currently visible on the edit grid
@@ -1737,10 +1799,10 @@ export class BidSheetComponent {
   }
 
   /** Rows to show in a given crop group's preview table — excludes locations with no bid for any column in that group; Scoular locations sorted to top. */
-  previewRowsForGroup(group: { columns: { key: string }[] }): EditBidsRow[] {
+  previewRowsForGroup(group: { columns: { crop: string; month: number; year: number }[] }): EditBidsRow[] {
     const scoularNames = this.scoularLocationNames();
     return this.editBidsRows()
-      .filter(row => group.columns.some(col => (row.bids[col.key] ?? '').trim().length > 0))
+      .filter(row => group.columns.some(col => this.printCellValue(row, col).length > 0))
       .map((row, origIdx) => ({ row, origIdx }))
       .sort((a, b) => {
         const aS = scoularNames.has(a.row.name) ? 0 : 1;
@@ -1779,7 +1841,6 @@ export class BidSheetComponent {
   confirmPrint(): void {
     const rows = this.editBidsRows();
     const cropGroups = this.printCropGroups();
-    const year = this.editBidsYear();
     const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
     if (cropGroups.length === 0) return;
@@ -1803,14 +1864,13 @@ export class BidSheetComponent {
 
     const sections = cropGroups.map((group, gi) => {
       const monthHeaders = group.columns.map(c => {
-        const label = c.month === 0 ? `Yearly ${year}` : `${this.getMonthName(c.month)} ${year}`;
-        return `<th style="padding:10px 16px;text-align:center;font-size:12px;font-weight:600;color:#fff;background:#007CC0;border:1px solid #e5e7eb;white-space:nowrap;">${this._esc(label)}</th>`;
+        return `<th style="padding:10px 16px;text-align:center;font-size:12px;font-weight:600;color:#fff;background:#007CC0;border:1px solid #e5e7eb;white-space:nowrap;">${this._esc(c.label)}</th>`;
       }).join('');
 
       // Only include rows that have at least one bid value for any column in this crop group
       // Scoular locations sorted to the top (stable within each group)
       const rowsWithBids = rows
-        .filter(row => group.columns.some(col => (row.bids[col.key] ?? '').trim().length > 0))
+        .filter(row => group.columns.some(col => this.printCellValue(row, col).length > 0))
         .map((row, origIdx) => ({ row, origIdx }))
         .sort((a, b) => {
           const aS = scoularNames.has(a.row.name) ? 0 : 1;
@@ -1823,7 +1883,7 @@ export class BidSheetComponent {
         const isScoular = highlightScoular && scoularNames.has(row.name);
         const bg = isScoular ? scoularBg : (i % 2 === 0 ? '#ffffff' : '#f9fafb');
         const cells = group.columns.map(col => {
-          const val = (row.bids[col.key] ?? '').trim();
+          const val = this.printCellValue(row, col);
           const display = val ? this._esc(val) : '<span style="color:#d1d5db;">&mdash;</span>';
           return `<td style="padding:9px 16px;text-align:center;font-size:12px;border:1px solid #e5e7eb;background:${bg};font-family:'Cascadia Mono','Fira Code',monospace;-webkit-print-color-adjust:exact;print-color-adjust:exact;">${display}</td>`;
         }).join('');

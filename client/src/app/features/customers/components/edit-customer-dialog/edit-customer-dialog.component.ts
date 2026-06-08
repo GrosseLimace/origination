@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { DialogComponent, DialogHeaderComponent, DialogTitleComponent, DialogDescriptionComponent, DialogContentComponent, DialogFooterComponent } from '@shared/components/dialog/dialog.component';
 import { Customer, Contract, Ticket, Commodity } from '@models';
 import { ApiService } from '@core/services/api.service';
+import { ToastService } from '@core/services/toast.service';
 
 @Component({
   selector: 'app-edit-customer-dialog',
@@ -22,6 +23,7 @@ import { ApiService } from '@core/services/api.service';
 })
 export class EditCustomerDialogComponent {
   private readonly apiService = inject(ApiService);
+  private readonly toast = inject(ToastService);
 
   public isOpen = input(false);
   public customer = input<Customer | null>(null);
@@ -54,13 +56,32 @@ export class EditCustomerDialogComponent {
   // The producer's current active memberships, loaded on open. Sync-sourced ones are shown
   // locked; manual ones prefill selectedTuCodes (editable). tuListLoaded gates reconciliation
   // so a failed load can never wipe manual assignments by reconciling to an empty set.
-  currentTradeUnits = signal<{ tradeUnit: string; isManual: boolean }[]>([]);
+  currentTradeUnits = signal<{ tradeUnit: string; isManual: boolean; hasOpenActivity: boolean }[]>([]);
   tuListLoaded = signal(false);
   private _originalManualTuCodes: string[] = [];
 
-  /** Sync-sourced (locked) memberships — added by the nightly job from a contract/ticket. */
+  // Locked TUs the user removed this session because the producer is dormant in them. Staged
+  // here and committed on "Save Changes" (consistent with the manual reconcile-on-save flow), so
+  // a user can back out by cancelling. Each becomes a DELETE .../trade-units/{code} call in onSave.
+  removedDormantTuCodes = signal<string[]>([]);
+
+  /** All sync-sourced (locked) memberships, active or dormant — used to keep them out of the
+   *  add-search dropdown (they're already memberships). */
   readonly lockedTradeUnits = computed(() =>
     this.currentTradeUnits().filter(t => !t.isManual).map(t => t.tradeUnit));
+
+  /** Locked AND still active (open contract/ticket) → shown locked, not removable. */
+  readonly activeLockedTradeUnits = computed(() =>
+    this.currentTradeUnits().filter(t => !t.isManual && t.hasOpenActivity).map(t => t.tradeUnit));
+
+  /** Locked BUT dormant (no open contract/ticket) → shown with a remove button. Staged removals
+   *  are filtered out so the chip disappears immediately on click. */
+  readonly dormantTradeUnits = computed(() => {
+    const removed = new Set(this.removedDormantTuCodes());
+    return this.currentTradeUnits()
+      .filter(t => !t.isManual && !t.hasOpenActivity && !removed.has(t.tradeUnit))
+      .map(t => t.tradeUnit);
+  });
 
   /** True when the editable manual TU set differs from what was loaded. */
   readonly manualTusChanged = computed(() => {
@@ -131,17 +152,23 @@ export class EditCustomerDialogComponent {
   isLoadingProducers = signal(false);
 
   constructor() {
-    // Eagerly load commodity lookup so it's ready before the user opens the dialog
+    // Eagerly load the commodity picker list. Use the curated "Planting Intentions" list
+    // (getPlantingCommodities) so producer-details shows the same clean commodity set as the rest
+    // of the app, not the full ~250-code catalog. Falls back to the full list if the curated fetch
+    // is empty/errors so the dropdown never goes blank. Already-selected / ticket-derived
+    // commodities display as their own code chips, so they show regardless of this list.
     this.isLoadingCommodities.set(true);
-    this.apiService.getCommodities().subscribe({
+    this.apiService.getPlantingCommodities().subscribe({
       next: (commodities) => {
-        this.allCommodities.set(commodities);
-        this.isLoadingCommodities.set(false);
-        if (this.newCommodity().trim()) {
-          this.onCommoditySearch();
+        if (commodities.length > 0) {
+          this.allCommodities.set(commodities);
+          this.isLoadingCommodities.set(false);
+          if (this.newCommodity().trim()) this.onCommoditySearch();
+        } else {
+          this._loadCommoditiesFallback();
         }
       },
-      error: () => { this.isLoadingCommodities.set(false); }
+      error: () => this._loadCommoditiesFallback()
     });
 
     effect(() => {
@@ -195,6 +222,7 @@ export class EditCustomerDialogComponent {
         this.selectedTuCodes.set([]);
         this.tuSearch.set('');
         this.currentTradeUnits.set([]);
+        this.removedDormantTuCodes.set([]);
         this.tuListLoaded.set(false);
         this._originalManualTuCodes = [];
         if (this.allTradeUnits().length === 0 && !this.isLoadingTradeUnits()) {
@@ -267,6 +295,14 @@ export class EditCustomerDialogComponent {
     this.selectedTuCodes.update(list => list.filter(c => c !== code));
   }
 
+  /** Stage removal of a dormant LOCKED trade unit (committed on Save). Only dormant chips expose
+   *  this; the server re-validates dormancy when the DELETE runs in onSave(). */
+  removeDormantTradeUnit(code: string): void {
+    if (!this.removedDormantTuCodes().includes(code)) {
+      this.removedDormantTuCodes.update(list => [...list, code]);
+    }
+  }
+
   /** Save is blocked for a not-yet-onboarded candidate until at least one trade unit is
    *  picked — that assignment is what inserts them into our tables. */
   readonly canSave = computed(() => !this.isOnboardCandidate() || this.selectedTuCodes().length > 0);
@@ -276,6 +312,8 @@ export class EditCustomerDialogComponent {
     // Adding or removing a manual trade unit is itself a change (covers onboarding a fresh
     // candidate, and removing a manual TU from an existing producer with no other edits).
     if (this.manualTusChanged()) return true;
+    // Staging a dormant locked-TU removal is also a change.
+    if (this.removedDormantTuCodes().length > 0) return true;
 
     const linkedProducerIdsChanged = this.editLinkedProducerIds().length !== this._originalLinkedProducerIds.length
       || this.editLinkedProducerIds().some(id => !this._originalLinkedProducerIds.includes(id));
@@ -315,6 +353,19 @@ export class EditCustomerDialogComponent {
     'beans': ['soybeans', 'soy', 'beans', 'sb'],
     'soy': ['soybeans', 'soy', 'beans', 'sb'],
   };
+
+  /** Safety net: load the full commodity list if the curated list is empty/unavailable, so the
+   *  picker never blanks. */
+  private _loadCommoditiesFallback(): void {
+    this.apiService.getCommodities().subscribe({
+      next: (commodities) => {
+        this.allCommodities.set(commodities);
+        this.isLoadingCommodities.set(false);
+        if (this.newCommodity().trim()) this.onCommoditySearch();
+      },
+      error: () => { this.isLoadingCommodities.set(false); }
+    });
+  }
 
   onCommoditySearch(): void {
     const term = this.newCommodity().trim().toLowerCase();
@@ -485,6 +536,18 @@ export class EditCustomerDialogComponent {
   onSave(): void {
     const customer = this.customer();
     if (customer) {
+      // Commit any staged dormant locked-TU removals (separate from the manual reconcile the
+      // parent runs from the emitted payload — these are sync-sourced rows, a distinct DELETE
+      // per code). The server re-validates dormancy and returns 409 if the producer is actually
+      // still active in that TU, in which case we surface a toast (chip stays removed locally but
+      // wasn't committed; reopening the dialog will show it again from the refreshed list).
+      const dormantRemovals = this.removedDormantTuCodes();
+      for (const code of dormantRemovals) {
+        this.apiService.removeDormantTradeUnit(customer.id, code).subscribe({
+          error: () => this.toast.error(`Couldn't remove trade unit ${code} — the producer may still have an open contract or ticket there.`)
+        });
+      }
+
       // Only save user-added commodities to ProducerDetails — ticket-derived ones are
       // always re-derived fresh from current tickets, so they should never be persisted.
       this.save.emit({

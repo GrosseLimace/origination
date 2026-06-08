@@ -1058,7 +1058,7 @@
                                   <tr>
                                     <th style="padding:5px 8px;text-align:left;font-weight:700;color:#fff;background:#007CC0;border:1px solid #e5e7eb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ group.crop }} Basis</th>
                                     @for (col of group.columns; track col.key) {
-                                      <th style="padding:5px 8px;text-align:center;font-weight:600;color:#fff;background:#007CC0;border:1px solid #e5e7eb;white-space:nowrap;">{{ col.month === 0 ? 'Yearly ' + editBidsYear() : getMonthName(col.month) + ' ' + editBidsYear() }}</th>
+                                      <th style="padding:5px 8px;text-align:center;font-weight:600;color:#fff;background:#007CC0;border:1px solid #e5e7eb;white-space:nowrap;">{{ col.label }}</th>
                                     }
                                   </tr>
                                 </thead>
@@ -1068,9 +1068,10 @@
                                     <tr [style.background]="isScoular ? '#FFD400' : (i % 2 === 0 ? '#fff' : '#f9fafb')">
                                       <td [style.font-weight]="isScoular ? '700' : '500'" style="padding:5px 8px;color:#1f2937;border:1px solid #e5e7eb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ row.name }}</td>
                                       @for (col of group.columns; track col.key) {
+                                        @let cellVal = printCellValue(row, col);
                                         <td style="padding:5px 8px;text-align:center;border:1px solid #e5e7eb;font-family:'Cascadia Mono','Fira Code',monospace;">
-                                          @if ((row.bids[col.key] || '').trim()) {
-                                            {{ (row.bids[col.key] || '').trim() }}
+                                          @if (cellVal) {
+                                            {{ cellVal }}
                                           } @else {
                                             <span style="color:#d1d5db;">&mdash;</span>
                                           }
@@ -1137,6 +1138,22 @@
                               <span class="text-sm text-gray-700 dark:text-gray-300">{{ getMonthName(month) }}</span>
                             </label>
                           }
+                        </div>
+                      </div>
+                      <!-- Naming: Old Crop / New Crop columns -->
+                      <div>
+                        <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Show Old Crop / New Crop</h4>
+                        <div class="space-y-2">
+                          <label class="flex items-center gap-2.5 cursor-pointer">
+                            <input type="checkbox" [checked]="printOldNewCropYearly()" (change)="printOldNewCropYearly.set(!printOldNewCropYearly())"
+                              class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Yearly</span>
+                          </label>
+                          <label class="flex items-center gap-2.5 cursor-pointer">
+                            <input type="checkbox" [checked]="printOldNewCropMonthly()" (change)="printOldNewCropMonthly.set(!printOldNewCropMonthly())"
+                              class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green" />
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Monthly</span>
+                          </label>
                         </div>
                       </div>
                       <!-- Highlight Scoular facilities -->

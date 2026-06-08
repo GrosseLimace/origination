@@ -27,6 +27,21 @@ public class CustomerTradeUnit
     // IsManual rows so manual assignments aren't deactivated when absent from the ODS view.
     public bool IsManual { get; set; }
 
+    // True when a user explicitly removed a SYNC-SOURCED (IsManual=false) membership while the
+    // producer was "dormant" in that TU — i.e. had no open purchase contract and no unapplied
+    // ticket there. Such a row is IsManual=false, IsActive=false, UserDeactivated=true.
+    //
+    // Why a separate flag (vs reusing IsManual/IsActive): the producer is usually STILL returned
+    // by the ODS view (it keeps the pair even after contracts close), so the nightly sync would
+    // otherwise re-activate the row every run. This flag tells the sync to RESPECT the removal —
+    // the upsert pass leaves UserDeactivated rows alone, and a dedicated bring-back pass clears
+    // the flag + re-locks the row only once the producer has open activity in that TU again.
+    //
+    // ADDITIVE + SAFE: defaults to false, so every existing row is unaffected and all current
+    // behavior is unchanged until a user performs an explicit dormant removal. To roll back the
+    // feature, revert the branch; leaving this unused column in the DB is harmless.
+    public bool UserDeactivated { get; set; }
+
     // Navigation property — not always loaded; explicit Include() required.
     public Customer? Customer { get; set; }
 }

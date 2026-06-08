@@ -384,6 +384,9 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.TradeUnit).HasColumnName("TradeUnit").HasMaxLength(100).IsRequired();
             entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
             entity.Property(e => e.IsManual).HasColumnName("IsManual").HasDefaultValue(false).IsRequired();
+            // Additive flag (default false) — see CustomerTradeUnit.UserDeactivated. No-op for
+            // existing rows; only set when a user removes a dormant sync-sourced membership.
+            entity.Property(e => e.UserDeactivated).HasColumnName("UserDeactivated").HasDefaultValue(false).IsRequired();
 
             // FK to Customer.Id (the ODS CustomerId surrogate).
             entity.HasOne(e => e.Customer)

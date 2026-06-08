@@ -1,4 +1,4 @@
-import { Component, input, effect, signal, computed, inject } from '@angular/core';
+import { Component, input, output, effect, signal, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowComponent, TableHeadComponent, TableCellComponent } from '@shared/components/table/table.component';
@@ -8,8 +8,15 @@ import { Customer, Contract, Ticket, ContractPricingLine } from '@models';
 import { expandSearchWithAliases } from '@shared/utils/commodity-aliases';
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
 
-type SortColumn = 'contractNumber' | 'date' | 'crop' | 'quantity' | 'specialType' | 'price' | 'deliveryStart' | 'status';
+type SortColumn = 'contractNumber' | 'date' | 'crop' | 'quantity' | 'specialType' | 'price' | 'deliveryStart' | 'status'
+  | 'remaining' | 'delivered' | 'unsettled';
 type SortDirection = 'none' | 'asc' | 'desc';
+
+/** Optional fulfillment columns revealed by the "More columns" toolbar toggle. Adding a new
+ *  one is a single entry here (+ a SortColumn key + a comparator case). Value returns null when
+ *  the underlying data isn't populated yet, so the cell shows an em-dash instead of a misleading 0. */
+type ExtraColumnKey = 'remaining' | 'delivered' | 'unsettled';
+interface ExtraColumn { key: ExtraColumnKey; label: string; value: (c: Contract) => number | null; }
 
 @Component({
   selector: 'app-contracts-table',
@@ -48,6 +55,9 @@ export class ContractsTableComponent {
   /** True while /api/contracts/pricing-lines/customer/{id} is in flight. Pricing Lines
    *  section shows "Loading…" instead of disappearing when this is the case. */
   public isLoadingPricingLines = input(false);
+  /** Emitted when the optional fulfillment columns are shown/hidden, so the page can give the
+   *  contracts table full width (drop the Notes sidebar below) while expanded. */
+  public expandedColumnsChange = output<boolean>();
 
   expandedRows = new Set<number>();
   expandedTicketSections = new Set<number>();
@@ -74,6 +84,35 @@ export class ContractsTableComponent {
   groupSortDirection = signal<'asc' | 'desc'>('asc');
   showSearch = signal(false);
   searchQuery = signal('');
+
+  /** "More columns" toolbar toggle — reveals the optional fulfillment columns inline so the
+   *  user can scan delivered/remaining/unsettled without opening each row. In-memory only
+   *  (default collapsed); intentionally NOT reset on customer change so the preference sticks. */
+  showExtraColumns = signal(false);
+  /** Optional columns shown when showExtraColumns() is on. Values reuse the existing memoized
+   *  delivery-stats + unsettled helpers; null → em-dash (data not populated by CTRM yet). */
+  readonly extraColumns: ExtraColumn[] = [
+    { key: 'remaining', label: 'Remaining Quantity', value: c => c.openBalanceQuantity == null ? null : this.getDeliveryStats(c).remainingBushels },
+    { key: 'delivered', label: 'Total Delivered',    value: c => c.openBalanceQuantity == null ? null : this.getDeliveryStats(c).deliveredBushels },
+    { key: 'unsettled', label: 'Unsettled Quantity', value: c => this.getUnsettledQty(c) },
+  ];
+  /** Detail (expanded) row spans the base 8 columns plus any visible extra columns. */
+  readonly detailColspan = computed(() => 8 + (this.showExtraColumns() ? this.extraColumns.length : 0));
+
+  toggleExtraColumns(): void {
+    const turningOff = this.showExtraColumns();
+    this.showExtraColumns.set(!turningOff);
+    // If we're hiding the extra columns while sorted by one of them, clear the sort so a
+    // now-invisible derived column doesn't keep driving row order.
+    if (turningOff) {
+      const col = this.currentSortColumn();
+      if (col === 'remaining' || col === 'delivered' || col === 'unsettled') {
+        this.currentSortColumn.set(null);
+        this.currentSortDirection.set('none');
+      }
+    }
+    this.expandedColumnsChange.emit(this.showExtraColumns());
+  }
 
   /** Full month name for labels like "April Undelivered". */
   readonly currentMonthLabel = computed<string>(() =>
@@ -323,6 +362,16 @@ export class ContractsTableComponent {
           break;
         case 'status':
           comparison = this.getCalculatedStatus(a).localeCompare(this.getCalculatedStatus(b));
+          break;
+        case 'remaining':
+          comparison = this.getDeliveryStats(a).remainingBushels - this.getDeliveryStats(b).remainingBushels;
+          break;
+        case 'delivered':
+          comparison = this.getDeliveryStats(a).deliveredBushels - this.getDeliveryStats(b).deliveredBushels;
+          break;
+        case 'unsettled':
+          // null (data not populated) sorts as 0; the cell still shows an em-dash.
+          comparison = (this.getUnsettledQty(a) ?? 0) - (this.getUnsettledQty(b) ?? 0);
           break;
       }
       return comparison;

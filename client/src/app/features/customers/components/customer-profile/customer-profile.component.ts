@@ -80,6 +80,9 @@ export class CustomerProfileComponent {
   public onAddPlanting = output<{crop: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
   public onEditPlanting = output<{intentionId: number, crop: string, type?: string, description?: string, acres: number, plantingYear: number}>();
   public onDeletePlanting = output<number>();
+  /** True when the contracts table wants the page at full width (columns expanded on the
+   *  contracts tab) so the host page can drop the Notes sidebar below the profile. */
+  public onContractsWideChange = output<boolean>();
   public onAddNote = output<string>();
   public onTogglePin = output<Note>();
   public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean }>();
@@ -112,8 +115,22 @@ export class CustomerProfileComponent {
   showPrintReport = signal(false);
   selectedPlantingYear = signal(0); // 0 = auto (newest)
   private _yearUserSelected = false; // true only when user explicitly clicks a year tab
+  /** True while the contracts table's optional columns are expanded (set from its output). */
+  contractsColumnsExpanded = signal(false);
 
   constructor() {
+    effect(() => {
+      // Contracts wants full width only while its columns are expanded AND we're on the
+      // Contracts tab. Leaving the tab destroys the contracts-table (which comes back
+      // collapsed), so reset the flag on tab-leave and let the page revert to the sidebar.
+      const onContracts = this.activeTab() === 'contracts';
+      if (!onContracts && this.contractsColumnsExpanded()) {
+        this.contractsColumnsExpanded.set(false); // re-triggers this effect, which then emits false
+        return;
+      }
+      this.onContractsWideChange.emit(onContracts && this.contractsColumnsExpanded());
+    });
+
     effect(() => {
       // When arriving from Insights with a specific contract, switch to contracts tab
       // (contracts-table handles scrolling to the specific row)

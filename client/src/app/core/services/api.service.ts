@@ -204,9 +204,19 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** A producer's active trade-unit memberships (code + isManual) for the edit dialog. */
-  getCustomerTradeUnits(customerId: number): Observable<{ tradeUnit: string; isManual: boolean }[]> {
-    return this.http.get<{ tradeUnit: string; isManual: boolean }[]>(`${this.baseUrl}/customers/${customerId}/trade-units`)
+  /** A producer's active trade-unit memberships (code + isManual + hasOpenActivity) for the edit
+   *  dialog. hasOpenActivity=false on a locked (isManual=false) TU means it's dormant → removable. */
+  getCustomerTradeUnits(customerId: number): Observable<{ tradeUnit: string; isManual: boolean; hasOpenActivity: boolean }[]> {
+    return this.http.get<{ tradeUnit: string; isManual: boolean; hasOpenActivity: boolean }[]>(`${this.baseUrl}/customers/${customerId}/trade-units`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Removes a producer from a locked (sync-sourced) trade unit they're DORMANT in (no open
+   *  contract / unapplied ticket). The server re-validates and returns 409 if they're still active.
+   *  Returns the refreshed membership list. (Manual TU removal still goes through assignTradeUnits.) */
+  removeDormantTradeUnit(customerId: number, tradeUnit: string): Observable<{ tradeUnit: string; isManual: boolean; hasOpenActivity: boolean }[]> {
+    return this.http.delete<{ tradeUnit: string; isManual: boolean; hasOpenActivity: boolean }[]>(
+      `${this.baseUrl}/customers/${customerId}/trade-units/${encodeURIComponent(tradeUnit)}`)
       .pipe(catchError(e => this.handleError(e)));
   }
 
