@@ -2736,7 +2736,7 @@ public class SqlDataService : IDataService
         return intention;
     }
 
-    public async Task<PlantingIntention> AddPlantingIntentionAsync(long customerId, string customerName, string customerCode, string tradeUnit, string crop, string? category, string? type, string? description, int acres, int plantingYear, CancellationToken cancellationToken = default)
+    public async Task<PlantingIntention> AddPlantingIntentionAsync(long customerId, string customerName, string customerCode, string tradeUnit, string crop, string? category, string? type, string? description, int acres, int plantingYear, string? doubleCropGroupId, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -2755,6 +2755,7 @@ public class SqlDataService : IDataService
                 Description = description,
                 Acres = acres,
                 PlantingYear = plantingYear,
+                DoubleCropGroupId = doubleCropGroupId,
                 CreatedBy = GetCurrentUser(),
                 CreatedAt = DateTime.UtcNow
             };

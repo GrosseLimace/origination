@@ -216,7 +216,7 @@ public interface IDataService
     /// <summary>Creates a new planting intention.</summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The newly created planting intention.</returns>
-    Task<PlantingIntention> AddPlantingIntentionAsync(long customerId, string customerName, string customerCode, string tradeUnit, string crop, string? category, string? type, string? description, int acres, int plantingYear, CancellationToken cancellationToken = default);
+    Task<PlantingIntention> AddPlantingIntentionAsync(long customerId, string customerName, string customerCode, string tradeUnit, string crop, string? category, string? type, string? description, int acres, int plantingYear, string? doubleCropGroupId, CancellationToken cancellationToken = default);
 
     /// <summary>Updates an existing planting intention.</summary>
     /// <param name="intentionId">The planting intention's unique identifier.</param>

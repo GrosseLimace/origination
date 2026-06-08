@@ -77,7 +77,7 @@ export class CustomerProfileComponent {
   public allCustomerPlantingIntentions = input<PlantingIntention[]>([]);
   public allCustomerStoredGrain = input<StoredGrain[]>([]);
 
-  public onAddPlanting = output<{crop: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
+  public onAddPlanting = output<{crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string, doubleCropGroupId?: string}>();
   public onEditPlanting = output<{intentionId: number, crop: string, type?: string, description?: string, acres: number, plantingYear: number}>();
   public onDeletePlanting = output<number>();
   public onAddNote = output<string>();

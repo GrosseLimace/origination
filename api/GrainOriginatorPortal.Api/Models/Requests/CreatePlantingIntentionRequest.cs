@@ -34,6 +34,12 @@ public record CreatePlantingIntentionRequest
     [StringLength(255)]
     public string? Description { get; init; }
 
+    // For a Double Crop intention the client generates one GUID and sends it on BOTH
+    // create requests, linking the two rows so the UI can show them as a single line.
+    // Null/omitted for a normal single-crop intention.
+    [StringLength(50)]
+    public string? DoubleCropGroupId { get; init; }
+
     [Range(1, 100000)]
     public int Acres { get; init; }
 

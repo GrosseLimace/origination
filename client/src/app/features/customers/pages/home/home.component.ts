@@ -1474,13 +1474,14 @@ export class HomeComponent {
     }
   }
 
-  addPlantingIntention(data: {crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}): void {
+  addPlantingIntention(data: {crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string, doubleCropGroupId?: string}): void {
     const sel = this.selectedCustomer();
     if (!sel) return;
     this.apiService.createPlantingIntention({
       customerId: sel.id, customerName: sel.name, customerCode: sel.scoularId || '',
       tradeUnit: data.tradeUnit, crop: data.crop, category: data.category, type: data.type,
-      description: data.description, acres: data.acres, plantingYear: data.plantingYear
+      description: data.description, acres: data.acres, plantingYear: data.plantingYear,
+      doubleCropGroupId: data.doubleCropGroupId
     }).subscribe({
       next: (intention) => {
         this.plantingIntentions.update(arr => [...arr, intention]);

@@ -321,6 +321,7 @@ export class ApiService {
     description?: string;
     acres: number;
     plantingYear: number;
+    doubleCropGroupId?: string;
   }): Observable<PlantingIntention> {
     return this.http.post<PlantingIntention>(`${this.baseUrl}/plantingintentions`, data)
       .pipe(catchError(e => this.handleError(e)));
