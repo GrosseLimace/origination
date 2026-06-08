@@ -82,6 +82,9 @@ export class HomeComponent {
   readonly producerDetailsMap = signal<Map<number, ProducerDetails>>(new Map());
 
   readonly selectedCustomer = signal<Customer | null>(null);
+  /** True when the open-contracts table has its extra columns expanded — drops the Notes
+   *  sidebar below the profile so the table gets the full page width. */
+  readonly contractsWide = signal(false);
   readonly pendingContractId = signal<number | null>(null);
   readonly pendingTab = signal<string | null>(null);
   readonly pendingPlantingYear = signal<number | null>(null);
