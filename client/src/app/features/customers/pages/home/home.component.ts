@@ -90,6 +90,19 @@ export class HomeComponent {
   readonly pendingPlantingYear = signal<number | null>(null);
   readonly pendingTicketCrop = signal<string | null>(null);
   readonly selectedTradeUnits = signal<string[]>([]);
+  /** Saved lists whose trade units EXACTLY match the current selection — these are the lists the
+   *  producer can be quick-added to from the profile header. Reads the enriched savedLists() so the
+   *  Add-to-List checkboxes stay reactive after a toggle. */
+  readonly savedListsForSelectedCustomer = computed<SavedList[]>(() => {
+    const sel = this.selectedTradeUnits();
+    if (sel.length === 0) return [];
+    const set = new Set(sel);
+    return this.savedLists().filter(l => {
+      if (!l.tradeUnits) return false;
+      const u = l.tradeUnits.split(',').map(x => x.trim()).filter(Boolean);
+      return u.length === set.size && u.every(x => set.has(x));
+    });
+  });
   readonly customerContracts = signal<Contract[]>([]);
   readonly customerTickets = signal<Ticket[]>([]);
   readonly customerPricingLines = signal<ContractPricingLine[]>([]);
@@ -627,6 +640,68 @@ export class HomeComponent {
       );
       return { ...list, customerIds: ids };
     }));
+  }
+
+  /**
+   * Apply staged saved-list membership changes for the selected producer (from the profile
+   * header's Save). Membership lives in each list's included/excluded arrays; we mutate those
+   * (build-list rules), optimistically update + re-enrich locally, then persist each changed list
+   * via a full PUT (updateSavedList blanks omitted fields, so every field is sent). One success
+   * notification when all succeed; reverts everything on any error.
+   */
+  handleSaveSavedListMembership(changes: { listId: number; add: boolean }[]): void {
+    const customer = this.selectedCustomer();
+    if (!customer || changes.length === 0) return;
+    const cid = customer.id;
+    const originals = this.savedLists(); // snapshot (old object refs) for revert
+
+    const working = [...originals];
+    const updates$ = [];
+    for (const ch of changes) {
+      const idx = working.findIndex(l => l.id === ch.listId);
+      if (idx === -1) continue;
+      const list = working[idx];
+      const included = new Set(list.includedCustomerIds ?? []);
+      const excluded = new Set(list.excludedCustomerIds ?? []);
+      if (ch.add) {
+        excluded.delete(cid);
+        included.add(cid);
+      } else {
+        // Mirror build-list: drop a manual add if present, else exclude a query-matched member.
+        if (included.has(cid)) included.delete(cid);
+        else excluded.add(cid);
+      }
+      const newIncluded = [...included];
+      const newExcluded = [...excluded];
+      // Drop cached customerIds so _enrichSavedLists rebuilds this list's membership.
+      working[idx] = { ...list, includedCustomerIds: newIncluded, excludedCustomerIds: newExcluded, customerIds: undefined };
+      updates$.push(this.apiService.updateSavedList(list.id, {
+        name: list.name,
+        query: list.query,
+        tradeUnits: list.tradeUnits,
+        filters: list.filters,
+        includedCustomerIds: newIncluded,
+        excludedCustomerIds: newExcluded,
+      }));
+    }
+    if (updates$.length === 0) return;
+
+    // Optimistic local apply, then persist all changed lists together.
+    this.savedLists.set(working);
+    this.appState.setSavedLists(working);
+    this._enrichSavedLists(true);
+
+    forkJoin(updates$).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: () => this.toastService.success(
+        updates$.length === 1 ? 'Saved list updated' : `${updates$.length} saved lists updated`
+      ),
+      error: () => {
+        this.savedLists.set(originals);
+        this.appState.setSavedLists(originals);
+        this._enrichSavedLists(true);
+        this.toastService.error('Failed to save list changes');
+      }
+    });
   }
 
   handleClearSelection(): void {

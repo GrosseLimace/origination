@@ -1,4 +1,4 @@
-import { Component, input, output, inject, effect, computed, ChangeDetectionStrategy, ViewChild, ElementRef, signal, DestroyRef } from '@angular/core';
+import { Component, input, output, inject, effect, computed, ChangeDetectionStrategy, ViewChild, ElementRef, signal, DestroyRef, HostListener } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { ApiService } from '@core/services/api.service';
@@ -15,7 +15,7 @@ import { EditCustomerDialogComponent } from '../edit-customer-dialog/edit-custom
 import { CustomerPrintReportComponent } from '../customer-print-report/customer-print-report.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList } from '@models';
 
 @Component({
   selector: 'app-customer-profile',
@@ -83,6 +83,10 @@ export class CustomerProfileComponent {
   /** True when the contracts table wants the page at full width (columns expanded on the
    *  contracts tab) so the host page can drop the Notes sidebar below the profile. */
   public onContractsWideChange = output<boolean>();
+  /** Saved lists (already TU-matched + enriched) the current producer can be quick-added to. */
+  public savedListsForCustomer = input<SavedList[]>([]);
+  /** Save staged saved-list membership changes for the current producer; the host persists them. */
+  public onSaveSavedListMembership = output<{ listId: number; add: boolean }[]>();
   public onAddNote = output<string>();
   public onTogglePin = output<Note>();
   public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean }>();
@@ -113,8 +117,71 @@ export class CustomerProfileComponent {
   showESignRecipients = signal(false);
   showEditDialog = signal(false);
   showPrintReport = signal(false);
+  showAddToListMenu = signal(false); // "Add to List" header dropdown open state
+  /** Staged desired membership while the menu is open (listId -> member?). Applied on Save,
+   *  discarded on Cancel. Initialized from current membership each time the menu opens. */
+  stagedMembership = signal<Map<number, boolean>>(new Map());
   selectedPlantingYear = signal(0); // 0 = auto (newest)
   private _yearUserSelected = false; // true only when user explicitly clicks a year tab
+
+  /** Whether the current producer is currently (persisted) a member of the given saved list.
+   *  Excluded wins, then a manual include, then the enriched query-derived membership (covers
+   *  lists whose NLQ query matched no patterns and therefore have no cached customerIds). */
+  isInList(list: SavedList): boolean {
+    const id = this.customer().id;
+    if (list.excludedCustomerIds?.includes(id)) return false;
+    if (list.includedCustomerIds?.includes(id)) return true;
+    return (list.customerIds ?? []).includes(id);
+  }
+
+  /** The staged (checkbox) membership for a list — staged value if set, else current membership. */
+  isStagedMember(list: SavedList): boolean {
+    const staged = this.stagedMembership().get(list.id);
+    return staged ?? this.isInList(list);
+  }
+
+  /** Open the menu, seeding staged state from current membership; or cancel-close it. */
+  toggleAddToListMenu(): void {
+    if (this.showAddToListMenu()) { this.cancelAddToList(); return; }
+    const seed = new Map<number, boolean>();
+    for (const l of this.savedListsForCustomer()) seed.set(l.id, this.isInList(l));
+    this.stagedMembership.set(seed);
+    this.showAddToListMenu.set(true);
+  }
+
+  /** Toggle a single list's staged checkbox (no persistence until Save). */
+  toggleStaged(list: SavedList): void {
+    const next = new Map(this.stagedMembership());
+    next.set(list.id, !this.isStagedMember(list));
+    this.stagedMembership.set(next);
+  }
+
+  /** True when any staged value differs from current membership (enables the Save button). */
+  hasStagedChanges(): boolean {
+    return this.savedListsForCustomer().some(l => this.isStagedMember(l) !== this.isInList(l));
+  }
+
+  /** Apply staged changes: emit the diff for the host to persist, then close. */
+  saveAddToList(): void {
+    const changes = this.savedListsForCustomer()
+      .filter(l => this.isStagedMember(l) !== this.isInList(l))
+      .map(l => ({ listId: l.id, add: this.isStagedMember(l) }));
+    if (changes.length > 0) this.onSaveSavedListMembership.emit(changes);
+    this.cancelAddToList();
+  }
+
+  /** Close the menu and discard staged changes. */
+  cancelAddToList(): void {
+    this.showAddToListMenu.set(false);
+    this.stagedMembership.set(new Map());
+  }
+
+  /** Close (discard) on any outside click or Escape (the dropdown container stops propagation). */
+  @HostListener('document:click')
+  onDocumentClick(): void { if (this.showAddToListMenu()) this.cancelAddToList(); }
+
+  @HostListener('document:keydown.escape')
+  onEscape(): void { if (this.showAddToListMenu()) this.cancelAddToList(); }
   /** True while the contracts table's optional columns are expanded (set from its output). */
   contractsColumnsExpanded = signal(false);
 
@@ -165,6 +232,7 @@ export class CustomerProfileComponent {
       // If we arrived with an explicit openPlantingYear (e.g. from the dashboard), keep it.
       const _customer = this.customer();
       this.showESignRecipients.set(false);
+      this.cancelAddToList();
       const pendingYear = this.openPlantingYear();
       if (pendingYear && pendingYear > 0) {
         this._yearUserSelected = true;
