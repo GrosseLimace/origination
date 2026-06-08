@@ -152,17 +152,23 @@ export class EditCustomerDialogComponent {
   isLoadingProducers = signal(false);
 
   constructor() {
-    // Eagerly load commodity lookup so it's ready before the user opens the dialog
+    // Eagerly load the commodity picker list. Use the curated "Planting Intentions" list
+    // (getPlantingCommodities) so producer-details shows the same clean commodity set as the rest
+    // of the app, not the full ~250-code catalog. Falls back to the full list if the curated fetch
+    // is empty/errors so the dropdown never goes blank. Already-selected / ticket-derived
+    // commodities display as their own code chips, so they show regardless of this list.
     this.isLoadingCommodities.set(true);
-    this.apiService.getCommodities().subscribe({
+    this.apiService.getPlantingCommodities().subscribe({
       next: (commodities) => {
-        this.allCommodities.set(commodities);
-        this.isLoadingCommodities.set(false);
-        if (this.newCommodity().trim()) {
-          this.onCommoditySearch();
+        if (commodities.length > 0) {
+          this.allCommodities.set(commodities);
+          this.isLoadingCommodities.set(false);
+          if (this.newCommodity().trim()) this.onCommoditySearch();
+        } else {
+          this._loadCommoditiesFallback();
         }
       },
-      error: () => { this.isLoadingCommodities.set(false); }
+      error: () => this._loadCommoditiesFallback()
     });
 
     effect(() => {
@@ -347,6 +353,19 @@ export class EditCustomerDialogComponent {
     'beans': ['soybeans', 'soy', 'beans', 'sb'],
     'soy': ['soybeans', 'soy', 'beans', 'sb'],
   };
+
+  /** Safety net: load the full commodity list if the curated list is empty/unavailable, so the
+   *  picker never blanks. */
+  private _loadCommoditiesFallback(): void {
+    this.apiService.getCommodities().subscribe({
+      next: (commodities) => {
+        this.allCommodities.set(commodities);
+        this.isLoadingCommodities.set(false);
+        if (this.newCommodity().trim()) this.onCommoditySearch();
+      },
+      error: () => { this.isLoadingCommodities.set(false); }
+    });
+  }
 
   onCommoditySearch(): void {
     const term = this.newCommodity().trim().toLowerCase();
