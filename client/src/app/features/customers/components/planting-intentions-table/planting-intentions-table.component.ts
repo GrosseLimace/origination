@@ -132,7 +132,7 @@ export class PlantingIntentionsTableComponent {
       const b = this.allCommodities.find(c => c.code === this.editForm.secondCrop);
       const an = a?.category || this.getCropCategory(this.editForm.crop);
       const bn = b?.category || this.getCropCategory(this.editForm.secondCrop);
-      return `Double Crop ${an}/${bn}`;
+      return `Double Crop ${an} & ${bn}`;
     }
     return `${this.editForm.type ? this.editForm.type + ' ' : ''}${this.getCropCategory(this.editForm.crop)}`;
   }
@@ -263,10 +263,10 @@ export class PlantingIntentionsTableComponent {
     return out;
   }
 
-  /** Crop-column label for a row: "Double Crop Corn/Wheat" for a pair, else "[Type ]Category". */
+  /** Crop-column label for a row: "Double Crop Corn & Wheat" for a pair, else "[Type ]Category". */
   rowCropLabel(row: PlantingRow): string {
     if (row.doubleCropMembers && row.doubleCropMembers.length > 1) {
-      const crops = row.doubleCropMembers.map(m => this.getCropCategory(m.crop)).join('/');
+      const crops = row.doubleCropMembers.map(m => this.getCropCategory(m.crop)).join(' & ');
       return `Double Crop ${crops}`;
     }
     return `${row.type ? row.type + ' ' : ''}${this.getCropCategory(row.crop)}`;
