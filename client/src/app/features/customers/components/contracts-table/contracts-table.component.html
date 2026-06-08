@@ -33,6 +33,19 @@
                 </svg>
               </button>
             }
+            <!-- Reveal optional fulfillment columns (Remaining / Total Delivered / Unsettled) inline. -->
+            <button (click)="toggleExtraColumns()"
+              [title]="showExtraColumns() ? 'Hide extra columns' : 'Show more columns'"
+              class="flex items-center gap-1 flex-shrink-0 px-2 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                @if (showExtraColumns()) {
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/>
+                } @else {
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7"/>
+                }
+              </svg>
+              {{ showExtraColumns() ? 'Fewer columns' : 'More columns' }}
+            </button>
           </div>
         </div>
 
@@ -200,6 +213,30 @@
                   </span>
                 </span>
               </app-table-head>
+              @if (showExtraColumns()) {
+                @for (col of extraColumns; track col.key) {
+                  <app-table-head [sortable]="true" thClass="!text-center" (click)="handleSort(col.key)">
+                    <span class="flex items-center justify-center gap-1">
+                      {{ col.label }}
+                      <span [class]="getSortIconClass(col.key)">
+                        @if (currentSortColumn() === col.key && currentSortDirection() === 'asc') {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                          </svg>
+                        } @else if (currentSortColumn() === col.key && currentSortDirection() === 'desc') {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                          </svg>
+                        } @else {
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                          </svg>
+                        }
+                      </span>
+                    </span>
+                  </app-table-head>
+                }
+              }
             </app-table-row>
           </app-table-header>
           <app-table-body>
@@ -278,12 +315,26 @@
                     {{ getCalculatedStatus(contract) }}
                   </span>
                 </app-table-cell>
+                @if (showExtraColumns()) {
+                  @for (col of extraColumns; track col.key) {
+                    <app-table-cell tdClass="!text-center">
+                      @let v = col.value(contract);
+                      <span [class]="!contract.signed ? 'text-scoular-red-accessible dark:text-scoular-red' : ''">
+                        @if (v != null) {
+                          {{ v | number:'1.2-2' }} {{ contract.unit }}
+                        } @else {
+                          <span class="text-gray-400 dark:text-gray-500">&mdash;</span>
+                        }
+                      </span>
+                    </app-table-cell>
+                  }
+                }
               </app-table-row>
 
               <!-- Expanded Row -->
               @if (expandedRows.has(contract.id)) {
                 <app-table-row [class]="'bg-gray-50 dark:bg-gray-800/50 hover:!bg-gray-50 dark:hover:!bg-gray-800/50'">
-                  <app-table-cell [colspan]="8">
+                  <app-table-cell [colspan]="detailColspan()">
                     <div class="block py-6 px-4 lg:px-6 max-w-[calc(100vw-28rem)] 2xl:max-w-none">
                       @if ((contract.customerConfirmStatus && contract.customerConfirmStatus !== 'Confirmed') || getCalculatedStatus(contract) === 'Past Due') {
                         <div class="mb-4 flex items-center gap-2 flex-wrap">
@@ -402,27 +453,32 @@
                           </div>
                         </div>
 
-                        <!-- Column 3: Fulfillment -->
+                        <!-- Column 3: Fulfillment. Total Delivered / Remaining / Unsettled are
+                             hidden here when the table's extra columns are showing them already
+                             (no point repeating the same values). Delivery Progress has no column,
+                             so it always stays. -->
                         <div class="space-y-5">
-                          <div class="flex flex-col">
-                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Delivered</span>
-                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ getDeliveryStats(contract).deliveredBushels | number:'1.2-2' }} {{ contract.unit }}</span>
-                          </div>
-                          <div class="flex flex-col">
-                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Remaining Quantity</span>
-                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ getDeliveryStats(contract).remainingBushels | number:'1.2-2' }} {{ contract.unit }}</span>
-                          </div>
-                          <div class="flex flex-col">
-                            <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Unsettled Quantity</span>
-                            <span class="font-medium text-gray-900 dark:text-gray-100">
-                              @let unsettled = getUnsettledQty(contract);
-                              @if (unsettled != null) {
-                                {{ unsettled | number:'1.2-2' }} {{ contract.unit }}
-                              } @else {
-                                <span class="text-gray-400 dark:text-gray-500 italic text-sm">Loading…</span>
-                              }
-                            </span>
-                          </div>
+                          @if (!showExtraColumns()) {
+                            <div class="flex flex-col">
+                              <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Total Delivered</span>
+                              <span class="font-medium text-gray-900 dark:text-gray-100">{{ getDeliveryStats(contract).deliveredBushels | number:'1.2-2' }} {{ contract.unit }}</span>
+                            </div>
+                            <div class="flex flex-col">
+                              <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Remaining Quantity</span>
+                              <span class="font-medium text-gray-900 dark:text-gray-100">{{ getDeliveryStats(contract).remainingBushels | number:'1.2-2' }} {{ contract.unit }}</span>
+                            </div>
+                            <div class="flex flex-col">
+                              <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Unsettled Quantity</span>
+                              <span class="font-medium text-gray-900 dark:text-gray-100">
+                                @let unsettled = getUnsettledQty(contract);
+                                @if (unsettled != null) {
+                                  {{ unsettled | number:'1.2-2' }} {{ contract.unit }}
+                                } @else {
+                                  <span class="text-gray-400 dark:text-gray-500 italic text-sm">Loading…</span>
+                                }
+                              </span>
+                            </div>
+                          }
                           <div class="flex flex-col">
                             <span class="text-sm text-gray-500 dark:text-gray-400 mb-1">Delivery Progress</span>
                             <span class="font-medium text-gray-900 dark:text-gray-100">{{ getDeliveryStats(contract).progressPercent | number:'1.0-0' }}%</span>
