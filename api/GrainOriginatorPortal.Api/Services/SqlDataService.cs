@@ -3885,10 +3885,57 @@ public class SqlDataService : IDataService
             .ToListAsync(cancellationToken);
     }
 
+    /// <summary>True when a DbUpdateException was caused by a unique-index/PK violation (SQL 2601/2627).</summary>
+    private static bool IsUniqueViolation(DbUpdateException ex)
+        => ex.InnerException is SqlException { Number: 2601 or 2627 };
+
+    /// <summary>
+    /// Recovers from a unique-constraint race on bid inserts: a concurrent request (or a retried
+    /// request) already inserted a bid for the same (LocationId, CommodityCode, CropYear, Month).
+    /// For each pending Added bid that now collides with a row in the DB, detach the insert and
+    /// apply its value onto the existing row instead — so a re-save commits the whole batch (the
+    /// user's value wins) rather than 500-ing. Returns true if anything was reconciled.
+    /// </summary>
+    private async Task<bool> ReconcileDuplicateBidInsertsAsync(CancellationToken cancellationToken)
+    {
+        var added = _appContext.ChangeTracker.Entries<BidSheetLocationBid>()
+            .Where(e => e.State == EntityState.Added)
+            .Select(e => e.Entity)
+            .ToList();
+        var reconciled = false;
+        foreach (var bid in added)
+        {
+            // SQL Server's case-insensitive collation makes the CommodityCode compare match regardless of case.
+            var existing = await _appContext.BidSheetLocationBids.FirstOrDefaultAsync(
+                b => b.LocationId == bid.LocationId && b.CommodityCode == bid.CommodityCode
+                     && b.CropYear == bid.CropYear && b.Month == bid.Month, cancellationToken);
+            if (existing == null) continue;
+            _appContext.Entry(bid).State = EntityState.Detached; // drop the duplicate insert
+            existing.Bid = bid.Bid;
+            existing.CommodityName = bid.CommodityName;
+            existing.CommodityCategory = bid.CommodityCategory;
+            existing.ModifiedBy = bid.CreatedBy;
+            existing.ModifiedAt = DateTime.UtcNow;
+            reconciled = true;
+        }
+        return reconciled;
+    }
+
     public async Task<BidSheetLocation> CreateBidSheetLocationAsync(BidSheetLocation location, CancellationToken cancellationToken = default)
     {
         _appContext.BidSheetLocations.Add(location);
-        await _appContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _appContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            // A child bid collided with a concurrently-inserted one — reconcile to updates and retry.
+            _logger.LogWarning(ex, "CreateBidSheetLocation hit a unique-constraint race — reconciling [{TraceId}]", GetTraceId());
+            if (await ReconcileDuplicateBidInsertsAsync(cancellationToken))
+                await _appContext.SaveChangesAsync(cancellationToken);
+            else throw;
+        }
         return location;
     }
 
@@ -3909,7 +3956,17 @@ public class SqlDataService : IDataService
         existing.ModifiedBy = location.ModifiedBy;
         existing.ModifiedAt = DateTime.UtcNow;
 
-        await _appContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _appContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            _logger.LogWarning(ex, "UpdateBidSheetLocation hit a unique-constraint race — reconciling [{TraceId}]", GetTraceId());
+            if (await ReconcileDuplicateBidInsertsAsync(cancellationToken))
+                await _appContext.SaveChangesAsync(cancellationToken);
+            else throw;
+        }
         return existing;
     }
 
@@ -4056,8 +4113,20 @@ public class SqlDataService : IDataService
             }
         }
 
-        // Single final SaveChanges for all bid upserts
-        await _appContext.SaveChangesAsync(cancellationToken);
+        // Single final SaveChanges for all bid upserts. If a concurrent request inserted one of
+        // these bids first, reconcile the colliding inserts into updates and save again so the
+        // whole batch commits (rather than rolling back and 500-ing).
+        try
+        {
+            await _appContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            _logger.LogWarning(ex, "Bid upsert hit a unique-constraint race — reconciling [{TraceId}]", GetTraceId());
+            if (await ReconcileDuplicateBidInsertsAsync(cancellationToken))
+                await _appContext.SaveChangesAsync(cancellationToken);
+            else throw;
+        }
     }
 
     public async Task<List<int>> GetBidCropYearsAsync(string tradeUnitCode, CancellationToken cancellationToken = default)
