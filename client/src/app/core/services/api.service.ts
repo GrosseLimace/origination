@@ -75,9 +75,17 @@ export class ApiService {
       console.error('API Error:', error);
     }
 
-    if (error instanceof HttpErrorResponse && error.status === 403) {
-      const message = error.error?.error?.message || 'Access denied: you are not authorized for this resource.';
-      this.toastService.error(message);
+    if (error instanceof HttpErrorResponse) {
+      if (error.status === 403) {
+        const message = error.error?.error?.message || 'Access denied: you are not authorized for this resource.';
+        this.toastService.error(message);
+      }
+      // Surface the server's real message (falling back through the common shapes) + status, so
+      // callers can show something useful instead of a generic "Server error".
+      const serverMsg = error.error?.error?.message ?? error.error?.message ?? error.message;
+      const wrapped = new Error(serverMsg || 'Server error');
+      (wrapped as Error & { status?: number }).status = error.status;
+      return throwError(() => wrapped);
     }
 
     return throwError(() => error instanceof Error ? error : new Error('Server error'));
@@ -753,7 +761,7 @@ export class ApiService {
     name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string;
     latitude?: number; longitude?: number;
     commodityCode: string; commodityName?: string; commodityCategory?: string;
-    cropYear: number; bid: string;
+    cropYear: number; bid: string; month?: number;
   }>): Observable<void> {
     return this.http.post<void>(`${this.baseUrl}/bidsheet/bids/bulk`, bids)
       .pipe(catchError(e => this.handleError(e)));

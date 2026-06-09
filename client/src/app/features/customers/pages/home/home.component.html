@@ -70,7 +70,9 @@
             [openTab]="pendingTab()"
             [openTicketCrop]="pendingTicketCrop()"
             [openPlantingYear]="pendingPlantingYear()"
-            (onContractsWideChange)="contractsWide.set($event)">
+            [savedListsForCustomer]="savedListsForSelectedCustomer()"
+            (onContractsWideChange)="contractsWide.set($event)"
+            (onSaveSavedListMembership)="handleSaveSavedListMembership($event)">
           </app-customer-profile>
         } @else {
           <!-- Empty state — shown on desktop when no customer is selected -->

@@ -81,6 +81,52 @@
 
             <!-- Action buttons -->
             <div class="flex items-center gap-2 shrink-0">
+              <!-- Add to List: toggle the producer's membership in a trade-unit saved list. -->
+              <div class="relative" (click)="$event.stopPropagation()">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-colors"
+                  (click)="toggleAddToListMenu()"
+                  title="Add this producer to a saved list"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 12H3"/><path d="M16 6H3"/><path d="M16 18H3"/><path d="M18 9v6"/><path d="M21 12h-6"/>
+                  </svg>
+                  <span class="hidden sm:inline">Add to List</span>
+                  <svg class="w-3.5 h-3.5 transition-transform" [class.rotate-180]="showAddToListMenu()" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                  </svg>
+                </button>
+                @if (showAddToListMenu()) {
+                  <div class="absolute right-0 mt-1 w-64 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg z-50">
+                    <div class="px-3 py-2 border-b border-gray-200 dark:border-gray-600">
+                      <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Saved Lists</p>
+                    </div>
+                    @if (savedListsForCustomer().length === 0) {
+                      <div class="px-3 py-4 text-sm text-gray-500 dark:text-gray-400 text-center">No saved lists match the selected trade unit(s).</div>
+                      <div class="border-t border-gray-200 dark:border-gray-600 p-2 flex justify-end">
+                        <button type="button" (click)="cancelAddToList()" class="px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-md transition-colors">Close</button>
+                      </div>
+                    } @else {
+                      <div class="max-h-[260px] overflow-y-auto p-2 space-y-1" (wheel)="$event.stopPropagation()">
+                        @for (list of savedListsForCustomer(); track list.id) {
+                          <label class="flex items-center gap-2.5 px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-600 rounded cursor-pointer transition-colors">
+                            <input type="checkbox" [checked]="isStagedMember(list)" (change)="toggleStaged(list)"
+                              class="rounded border-gray-300 text-scoular-green-accessible focus:ring-scoular-green" />
+                            <span class="text-sm text-gray-900 dark:text-white truncate">{{ list.name }}</span>
+                          </label>
+                        }
+                      </div>
+                      <div class="border-t border-gray-200 dark:border-gray-600 p-2 flex items-center gap-2">
+                        <button type="button" (click)="cancelAddToList()" class="px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-md transition-colors">Cancel</button>
+                        <button type="button" (click)="saveAddToList()" [disabled]="!hasStagedChanges()"
+                          class="flex-1 px-3 py-2 text-sm font-medium text-white rounded-md transition-colors"
+                          [class]="hasStagedChanges() ? 'bg-scoular-green-accessible hover:bg-scoular-green' : 'bg-gray-300 dark:bg-gray-600 cursor-not-allowed opacity-70'">Save</button>
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
               <button
                 type="button"
                 class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-colors"
