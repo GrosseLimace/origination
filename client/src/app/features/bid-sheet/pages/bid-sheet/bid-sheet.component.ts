@@ -2171,19 +2171,11 @@ export class BidSheetComponent {
       .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save global print layout', err); } });
   }
 
-  /** Rows to show in a given crop group's preview table — excludes locations with no bid for any column in that group; Scoular locations sorted to top. */
+  /** Rows to show in a given crop group's preview table — excludes locations with no bid for any
+   *  column in that group, but otherwise keeps the SAME order as the edit grid (no Scoular re-sort). */
   previewRowsForGroup(group: { columns: { crop: string; month: number; year: number }[] }): EditBidsRow[] {
-    const scoularNames = this.scoularLocationNames();
     return this.editBidsRows()
-      .filter(row => group.columns.some(col => this.printCellValue(row, col).length > 0))
-      .map((row, origIdx) => ({ row, origIdx }))
-      .sort((a, b) => {
-        const aS = scoularNames.has(a.row.name) ? 0 : 1;
-        const bS = scoularNames.has(b.row.name) ? 0 : 1;
-        if (aS !== bS) return aS - bS;
-        return a.origIdx - b.origIdx;
-      })
-      .map(x => x.row);
+      .filter(row => group.columns.some(col => this.printCellValue(row, col).length > 0));
   }
 
   closePrintDialog(): void {
@@ -2247,18 +2239,10 @@ export class BidSheetComponent {
           + `</th>`;
       }).join('');
 
-      // Only include rows that have at least one bid value for any column in this crop group
-      // Scoular locations sorted to the top (stable within each group)
+      // Only include rows that have at least one bid value for any column in this crop group,
+      // keeping the SAME order as the edit grid (no Scoular re-sort) so print matches the screen.
       const rowsWithBids = rows
-        .filter(row => group.columns.some(col => this.printCellValue(row, col).length > 0))
-        .map((row, origIdx) => ({ row, origIdx }))
-        .sort((a, b) => {
-          const aS = scoularNames.has(a.row.name) ? 0 : 1;
-          const bS = scoularNames.has(b.row.name) ? 0 : 1;
-          if (aS !== bS) return aS - bS;
-          return a.origIdx - b.origIdx;
-        })
-        .map(x => x.row);
+        .filter(row => group.columns.some(col => this.printCellValue(row, col).length > 0));
       const dataRows = rowsWithBids.map((row, i) => {
         const isScoular = highlightScoular && scoularNames.has(row.name);
         const bg = isScoular ? scoularBg : (i % 2 === 0 ? '#ffffff' : '#f9fafb');
@@ -2765,24 +2749,40 @@ export class BidSheetComponent {
     // Build set of location names visible in the panel (respects crop/TU/search filters)
     const panelNames = new Set(this.filteredBidItems().map(i => i.name));
 
+    // View parity: All Producers (with derived crop-year data) renders bids/status like a single TU.
+    const hasIndividualTu = this.hasIndividualTu() || this.cropYears().length > 0;
+
+    // Pass 1: decide which coordinate groups actually render a marker (apply the skip filters once)
+    // and capture the per-group flags the draw pass needs.
+    const renderGroups: { locs: BidSheetLocation[]; names: string[]; isActiveTu: boolean; isRef: boolean; isPanelOpen: boolean; }[] = [];
     for (const [, locs] of locsByPos) {
       // If searching, skip this pin group unless at least one location name matches
       if (searchQ && !locs.some(l => l.name.toLowerCase().includes(searchQ))) continue;
-      const lat = locs[0].latitude!;
-      const lng = locs[0].longitude!;
       const names = locs.map(l => l.name);
       // In All Producers (no TU filter) every location is "in scope"; with a TU, only its locations are.
       const isActiveTu = activeTuSet.size === 0 || locs.some(l => activeTuSet.has(l.tradeUnitCode ?? ''));
-      // View parity: All Producers (with derived crop-year data) renders bids/status like a single TU.
-      const hasIndividualTu = this.hasIndividualTu() || this.cropYears().length > 0;
-      const showBidValues = isActiveTu && hasIndividualTu && crop;
-      const isRef = hasIndividualTu && refName && names.includes(refName);
-      const isPanelOpen = panelOpenName && names.includes(panelOpenName);
-
+      const isRef = !!(hasIndividualTu && refName && names.includes(refName));
+      const isPanelOpen = !!(panelOpenName && names.includes(panelOpenName));
       // When filters are active, only show locations that appear in the panel
       if (hasTu && !names.some(n => panelNames.has(n))) continue;
       // Skip locations with no bid for the selected crop/year/month
       if (crop && !names.some(n => this._getLatestBid(n, year, crop, month))) continue;
+      renderGroups.push({ locs, names, isActiveTu, isRef, isPanelOpen });
+    }
+
+    // Spread out groups whose pins would overlap on screen so none get hidden behind another. The
+    // offset is measured in screen pixels at the current zoom, so as you zoom in and the true
+    // positions separate, the spread shrinks and each pin glides back toward its real spot.
+    const displayPos = this._spreadOverlappingPins(
+      renderGroups.map(g => [g.locs[0].latitude!, g.locs[0].longitude!] as [number, number]),
+      zoom
+    );
+
+    // Pass 2: draw each group at its (possibly offset) display position.
+    renderGroups.forEach((g, gi) => {
+      const { locs, names, isActiveTu, isRef, isPanelOpen } = g;
+      const [lat, lng] = displayPos[gi];
+      const showBidValues = isActiveTu && hasIndividualTu && crop;
 
       // Panel-open location — render expanded with name + bid (uses status color if reference, otherwise gray)
       if (isPanelOpen) {
@@ -2798,11 +2798,13 @@ export class BidSheetComponent {
         const marker = L.marker([lat, lng], { icon: expandedIcon, zIndexOffset: 1000 });
         marker.on('click', () => this._selectMapLocation(locs[0]));
         this._clusterGroup.addLayer(marker);
-        continue;
+        return;
       }
 
-      // Below zoom threshold: colored dot — but when searching, always show name labels
-      if (zoom < 8 && !searchQ) {
+      // Below the bid-pin zoom threshold: colored dot — but when searching, always show name labels.
+      // Lowered from 8 → 6 so the bid-value pins appear sooner (esp. in All Producers, which opens at
+      // the wider US overview). Zoom 5 = national overview keeps dots; 6+ shows the bid pins.
+      if (zoom < 6 && !searchQ) {
         // Compute dot color from bid status (matches the pill colors used when zoomed in)
         let color: string, border: string;
         if (isRef) {
@@ -2827,7 +2829,7 @@ export class BidSheetComponent {
         const hoverBid2 = crop ? this._getLatestBid(locs[0].name, year, crop, month) : '';
         this._bindHoverExpand(m, dotIcon, locs[0].name, hoverBid2, color, border);
         this._clusterGroup.addLayer(m);
-        continue;
+        return;
       }
 
       if (showBidValues) {
@@ -2871,7 +2873,7 @@ export class BidSheetComponent {
           const hoverBid3 = crop ? this._getLatestBid(locs[0].name, year, crop, month) : '';
           this._bindHoverExpand(marker, divIcon, locs[0].name, hoverBid3, primaryBg, bidItems[0].border);
           this._clusterGroup.addLayer(marker);
-          continue;
+          return;
         }
       }
 
@@ -2901,7 +2903,67 @@ export class BidSheetComponent {
       const hoverBid4 = crop ? this._getLatestBid(locs[0].name, year, crop, month) : '';
       this._bindHoverExpand(marker, nameIcon, locs[0].name, hoverBid4, bg, border);
       this._clusterGroup.addLayer(marker);
+    });
+  }
+
+  /**
+   * Spreads pins whose on-screen positions would overlap so none get hidden behind another. Members
+   * of an overlapping cluster are pushed out to a fixed pixel radius around the cluster centroid; the
+   * spread is computed in screen pixels at the current zoom, so as you zoom in and the true positions
+   * separate, the offset shrinks and each pin glides back to its real spot. Returns one [lat,lng] per
+   * input point (aligned by index); points that don't overlap anything are returned unchanged.
+   */
+  private _spreadOverlappingPins(points: [number, number][], zoom: number): [number, number][] {
+    const L = this._L, map = this._map;
+    if (!L || !map || points.length < 2) return points;
+    const SPREAD_PX = 24;             // radius each overlapping pin is pushed from the cluster centroid
+    const OVERLAP_PX = SPREAD_PX * 2; // pins closer than this (screen px) are treated as overlapping
+    const pts = points.map(([la, ln]) => map.project(L.latLng(la, ln), zoom));
+
+    // Union-find: group pins that overlap (transitively) into clusters.
+    const parent = points.map((_, i) => i);
+    const find = (x: number): number => (parent[x] === x ? x : (parent[x] = find(parent[x])));
+    for (let i = 0; i < pts.length; i++) {
+      for (let j = i + 1; j < pts.length; j++) {
+        const dx = pts[i].x - pts[j].x, dy = pts[i].y - pts[j].y;
+        if (dx * dx + dy * dy < OVERLAP_PX * OVERLAP_PX) parent[find(i)] = find(j);
+      }
     }
+    const clusters = new Map<number, number[]>();
+    for (let i = 0; i < pts.length; i++) {
+      const r = find(i);
+      const arr = clusters.get(r) ?? [];
+      arr.push(i);
+      clusters.set(r, arr);
+    }
+
+    const out: [number, number][] = points.slice();
+    for (const members of clusters.values()) {
+      if (members.length < 2) continue;
+      let cx = 0, cy = 0;
+      for (const i of members) { cx += pts[i].x; cy += pts[i].y; }
+      cx /= members.length; cy /= members.length;
+      members.forEach((i, idx) => {
+        const vx = pts[i].x - cx, vy = pts[i].y - cy;
+        const d = Math.sqrt(vx * vx + vy * vy);
+        let nx: number, ny: number;
+        if (d < 0.001) {
+          // Coincident at this zoom — fan out evenly on a circle, ordered by index.
+          const ang = (2 * Math.PI * idx) / members.length;
+          nx = cx + SPREAD_PX * Math.cos(ang);
+          ny = cy + SPREAD_PX * Math.sin(ang);
+        } else if (d < SPREAD_PX) {
+          // Push outward to the spread radius (continuous: at d === SPREAD_PX this is a no-op).
+          const s = SPREAD_PX / d;
+          nx = cx + vx * s; ny = cy + vy * s;
+        } else {
+          return; // already far enough apart — keep the true position
+        }
+        const ll = map.unproject(L.point(nx, ny), zoom);
+        out[i] = [ll.lat, ll.lng];
+      });
+    }
+    return out;
   }
 
   private _buildStackedLabel(names: string[], bg: string, border: string): string {
@@ -2947,15 +3009,21 @@ export class BidSheetComponent {
   private _bindHoverExpand(marker: any, originalIcon: any, name: string, bid: string, bg: string, border: string): void {
     const hoverIcon = this._buildHoverIcon(name, bid, bg, border);
     marker.on('mouseover', () => {
-      // Reset any other marker that's still stuck on its hover icon
+      // Reset any other marker that's still stuck on its hover icon (and its raised z-index)
       if (this._hoveredMarker && this._hoveredMarker.marker !== marker) {
-        try { this._hoveredMarker.marker.setIcon(this._hoveredMarker.resetIcon); } catch { /* marker may have been removed */ }
+        try {
+          this._hoveredMarker.marker.setIcon(this._hoveredMarker.resetIcon);
+          this._hoveredMarker.marker.setZIndexOffset(0);
+        } catch { /* marker may have been removed */ }
       }
       marker.setIcon(hoverIcon);
+      // Raise above neighbors so the expanded bid is never hidden behind an overlapping pin
+      try { marker.setZIndexOffset(2000); } catch { /* ignore */ }
       this._hoveredMarker = { marker, resetIcon: originalIcon };
     });
     marker.on('mouseout', () => {
       marker.setIcon(originalIcon);
+      try { marker.setZIndexOffset(0); } catch { /* ignore */ }
       if (this._hoveredMarker?.marker === marker) this._hoveredMarker = null;
     });
   }
