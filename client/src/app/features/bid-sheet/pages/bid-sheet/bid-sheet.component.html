@@ -701,7 +701,7 @@
               <!-- Footer -->
               <div class="shrink-0 px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2 bg-white dark:bg-gray-900 rounded-b-xl">
                 <button (click)="cancelAddLocation()" class="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
-                <button (click)="confirmAddLocation()" [disabled]="!canSaveLocation()" class="px-3 py-1.5 text-sm font-medium text-white rounded-lg transition-colors" [ngClass]="canSaveLocation() ? 'bg-scoular-green-accessible hover:bg-scoular-green' : 'bg-gray-300 dark:bg-gray-600 cursor-not-allowed'">Save Location</button>
+                <button (click)="confirmAddLocation()" [disabled]="!canSaveLocation() || addLocationSaving()" class="px-3 py-1.5 text-sm font-medium text-white rounded-lg transition-colors" [ngClass]="(canSaveLocation() && !addLocationSaving()) ? 'bg-scoular-green-accessible hover:bg-scoular-green' : 'bg-gray-300 dark:bg-gray-600 cursor-not-allowed'">{{ addLocationSaving() ? 'Saving…' : 'Save Location' }}</button>
               </div>
             </div>
           }
@@ -973,6 +973,7 @@
                               [ngModel]="row.bids[col.key]"
                               (ngModelChange)="updateBid(rowIdx, col.key, $event)"
                               (keydown)="onBidKeyDown($event, rowIdx, colIdx)"
+                              (blur)="onBidBlur()"
                               placeholder="—"
                               class="w-full font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
                               [ngClass]="row.bids[col.key] !== row.originalBids[col.key]
@@ -1005,15 +1006,15 @@
             <!-- Footer -->
             <div class="shrink-0 px-5 py-3.5 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end gap-2 bg-gray-50/50 dark:bg-gray-800/30">
               <button
-                (click)="cancelEditBids()"
+                (click)="closeEditBids()"
                 class="px-3 py-1.5 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
-              >Cancel</button>
+              >Close</button>
               <button
-                (click)="saveEditBids()"
+                (click)="doneEditBids()"
                 [disabled]="editBidsSaving()"
                 class="px-4 py-2 text-sm font-semibold text-white rounded-lg transition-all shadow-sm"
                 [ngClass]="editBidsSaving() ? 'bg-gray-400 cursor-not-allowed' : 'bg-scoular-green-accessible hover:bg-scoular-green'"
-              >{{ editBidsSaving() ? 'Saving…' : 'Save Changes' }}</button>
+              >{{ editBidsSaving() ? 'Saving…' : 'Done' }}</button>
             </div>
 
             <!-- Print Preview Dialog -->

@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, signal,
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { forkJoin, map, Subject, switchMap } from 'rxjs';
+import { forkJoin, map, Subject, switchMap, catchError, of, retry, timer } from 'rxjs';
 import { CdkDragDrop, CdkDrag, CdkDropList, CdkDragHandle, moveItemInArray } from '@angular/cdk/drag-drop';
 import type * as Leaflet from 'leaflet';
 import { ApiService } from '@core/services/api.service';
@@ -303,8 +303,16 @@ export class BidSheetComponent {
   /** Set of crop codes hidden by the user via the multi-select crop dropdown. Empty = all visible. */
   hiddenCrops = signal<Set<string>>(new Set());
   showCropDropdown = signal(false);
-  editBidsSaving = signal(false);
+  editBidsSaving = signal(false); // gates ONLY the Done button; silent auto-save never touches it
+  addLocationSaving = signal(false); // in-flight guard for the Add-Location "Done" button
   editBidsGridLoading = signal(false);
+  // Silent auto-save coordination (blur / navigation). Plain fields — they don't drive UI.
+  private _autoSaving = false;
+  private _autoSaveRerun = false;
+  private _pendingOnDone: (() => void) | null = null;
+  // Distinct bid cells saved during the current edit session (incl. silent auto-saves), so "Done"
+  // can report the session total. Keyed by name|commodity|cropYear|month; reset when the grid opens.
+  private _editBidsSavedKeys = new Set<string>();
 
   readonly editBidsCrops = computed(() => {
     const hidden = this.hiddenCrops();
@@ -481,7 +489,7 @@ export class BidSheetComponent {
   private _zoomDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Emits to cancel the previous _loadBidData subscription when TU selection changes rapidly. */
-  private readonly _loadBidData$ = new Subject<{ tus: string[]; onLoaded?: () => void }>();
+  private readonly _loadBidData$ = new Subject<{ tus: string[]; onLoaded?: () => void; mode: 'initial' | 'refresh' }>();
 
   // Geocode cache removed — coordinates now come from API (dbo.ElevatorCoordinates)
 
@@ -544,9 +552,12 @@ export class BidSheetComponent {
       error: () => {}
     });
 
-    // switchMap pipeline: cancels the previous _loadBidData request when TU selection changes rapidly
+    // switchMap pipeline: cancels the previous _loadBidData request when TU selection changes rapidly.
+    // Each trade unit's fetch retries transient failures, then degrades to null (caught) so ONE
+    // trade unit hiccupping can't sink the whole reload. A 'refresh' load (run after a successful
+    // save) never shows the red "failed" error — the save already committed; at worst a soft notice.
     this._loadBidData$.pipe(
-      switchMap(({ tus, onLoaded }) => {
+      switchMap(({ tus, onLoaded, mode }) => {
         this.isLoading.set(true);
         // Set edit grid loading here (inside switchMap) so it survives cancellation of
         // the previous request. The previous onLoaded callback will never fire, but this
@@ -557,12 +568,28 @@ export class BidSheetComponent {
             locations: this.apiService.getBidSheetLocations(tu),
             cropYears: this.apiService.getBidCropYears(tu),
             bidCommodities: this.apiService.getBidCommodities(tu)
-          }))
-        ).pipe(map(results => ({ results, onLoaded })));
+          }).pipe(
+            // GETs are idempotent — give a transient blip a couple of quiet retries before giving up.
+            retry({ count: 2, delay: () => timer(400) }),
+            catchError(() => of(null))
+          ))
+        ).pipe(map(perTu => ({ perTu, onLoaded, mode })));
       }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe({
-      next: ({ results, onLoaded }) => {
+      next: ({ perTu, onLoaded, mode }) => {
+        // If any trade unit failed (even after retries), don't replace the screen with a partial
+        // set (that would drop a TU's locations). Keep what's shown — optimistic local updates
+        // already reflect the just-saved change — and surface only a soft notice, never a red error.
+        if (perTu.some(r => r == null)) {
+          this.isLoading.set(false);
+          this.editBidsGridLoading.set(false);
+          onLoaded?.();
+          if (mode === 'refresh') this.toastService.info('Your changes were saved — some bid data couldn’t be refreshed. Pull to refresh if needed.');
+          else this.toastService.error('Failed to load bid data');
+          return;
+        }
+        const results = perTu as NonNullable<(typeof perTu)[number]>[];
         const allLocations = results.flatMap(r => r.locations);
         let cropYears = [...new Set(results.flatMap(r => r.cropYears))].sort((a, b) => a - b);
         const bidCommodities = [...new Set(results.flatMap(r => r.bidCommodities))].sort();
@@ -589,6 +616,7 @@ export class BidSheetComponent {
         onLoaded?.();
       },
       error: () => {
+        // Per-TU failures are caught above, so this only fires on an unexpected pipeline error.
         this.isLoading.set(false);
         this.editBidsGridLoading.set(false);
         this.toastService.error('Failed to load bid data');
@@ -829,10 +857,12 @@ export class BidSheetComponent {
     }
   }
 
-  /** Triggers bid data load via switchMap — automatically cancels any previous in-flight request. */
-  private _loadBidData(tradeUnitCodes: string[], onLoaded?: () => void): void {
+  /** Triggers bid data load via switchMap — automatically cancels any previous in-flight request.
+   *  mode 'refresh' (a reload AFTER a successful save) degrades transient failures to a soft notice
+   *  instead of a red error, so a refresh hiccup never looks like the save failed. */
+  private _loadBidData(tradeUnitCodes: string[], onLoaded?: () => void, mode: 'initial' | 'refresh' = 'initial'): void {
     if (tradeUnitCodes.length === 0) return;
-    this._loadBidData$.next({ tus: tradeUnitCodes, onLoaded });
+    this._loadBidData$.next({ tus: tradeUnitCodes, onLoaded, mode });
   }
 
   // =========================================================================
@@ -1253,6 +1283,7 @@ export class BidSheetComponent {
   }
 
   confirmAddLocation(): void {
+    if (this.addLocationSaving()) return; // guard against a double-click firing two creates
     this.usageTracking.postClickEvent('interaction', 'bidsheet', 'locations-added');
     const name = this.newLocationName().trim();
     const tu = this.newLocationTu();
@@ -1285,6 +1316,7 @@ export class BidSheetComponent {
       return out;
     });
 
+    this.addLocationSaving.set(true);
     this.apiService.createBidSheetLocation({
       name,
       elevatorCode: this.newLocationElevatorCode().trim() || undefined,
@@ -1299,6 +1331,7 @@ export class BidSheetComponent {
       bids
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (saved) => {
+        this.addLocationSaving.set(false);
         // Immediately update local state so UI reflects the new location
         this.bidLocations.update(locs => [saved, ...locs]);
         this.allMapLocations.update(locs => [saved, ...locs]);
@@ -1324,15 +1357,17 @@ export class BidSheetComponent {
             this.filterBids();
             this._refreshMapMarkers();
             if (fromEditBids) { this.openEditBids(); }
-          });
+          }, 'refresh');
         } else {
           this.filterBids();
           this._refreshMapMarkers();
           if (fromEditBids) { this.openEditBids(); }
         }
       },
-      error: () => {
-        this.toastService.error('Failed to add location');
+      error: (err) => {
+        this.addLocationSaving.set(false);
+        if (isDevMode()) console.error('[BidSheet] add location failed', err);
+        this.toastService.error(err?.message ? `Failed to add location: ${err.message}` : 'Failed to add location');
       }
     });
   }
@@ -1363,6 +1398,7 @@ export class BidSheetComponent {
       this.editBidsMonths.set([this.selectedMonth()]);
     }
     this._buildEditGrid(year);
+    this._editBidsSavedKeys.clear();
     this.editBidsMode.set(true);
     this.usageTracking.postClickEvent('interaction', 'bidsheet', 'edit-bids-opened');
 
@@ -1513,13 +1549,16 @@ export class BidSheetComponent {
   /** Applies the pending crop visibility and closes the dropdown. */
   confirmCropSelection(): void {
     const changed = [...this.pendingHiddenCrops()].sort().join(',') !== [...this.hiddenCrops()].sort().join(',');
-    this.hiddenCrops.set(new Set(this.pendingHiddenCrops()));
-    this.showCropDropdown.set(false);
-    this._buildEditGrid(this.editBidsYear());
-    if (changed) {
-      this._saveHiddenCrops();
-      this.toastService.success('Crop selection saved');
-    }
+    // Save edits against the CURRENT columns before hiddenCrops changes (which reshapes editGridColumns).
+    this._saveDirtyBids(() => {
+      this.hiddenCrops.set(new Set(this.pendingHiddenCrops()));
+      this.showCropDropdown.set(false);
+      this._buildEditGrid(this.editBidsYear());
+      if (changed) {
+        this._saveHiddenCrops();
+        this.toastService.success('Crop selection saved');
+      }
+    });
   }
 
   /** Cancels pending crop changes and closes the dropdown. */
@@ -1541,22 +1580,29 @@ export class BidSheetComponent {
   applyEditBidsTuFilter(): void {
     const tus = this.activeTradeUnits();
     if (tus.length === 0) return;
-    this.editBidsGridLoading.set(true);
-    this._loadLocationOrder(tus);
-    this._loadBidData(tus, () => {
-      this._buildEditGrid(this.editBidsYear());
-      this.editBidsGridLoading.set(false);
-      this.filterBids();
-      this._refreshMapMarkers();
+    // Save edits for the current TU set first (rows still carry the pre-switch tradeUnitCode), then reload.
+    this._saveDirtyBids(() => {
+      this.editBidsGridLoading.set(true);
+      this._loadLocationOrder(tus);
+      this._loadBidData(tus, () => {
+        this._buildEditGrid(this.editBidsYear());
+        this.editBidsGridLoading.set(false);
+        this.filterBids();
+        this._refreshMapMarkers();
+      });
     });
   }
 
   onEditBidsYearChange(year: number): void {
-    this.editBidsYear.set(year);
-    this.editBidsGridLoading.set(true);
-    requestAnimationFrame(() => {
-      this._buildEditGrid(year);
-      this.editBidsGridLoading.set(false);
+    // Save edits for the CURRENT year first (cropYear is captured from editBidsYear()),
+    // then switch the year and rebuild. On save error the year does not change and edits are kept.
+    this._saveDirtyBids(() => {
+      this.editBidsYear.set(year);
+      this.editBidsGridLoading.set(true);
+      requestAnimationFrame(() => {
+        this._buildEditGrid(year);
+        this.editBidsGridLoading.set(false);
+      });
     });
   }
 
@@ -1583,13 +1629,16 @@ export class BidSheetComponent {
   /** Applies the pending month selection and closes the dropdown. */
   confirmMonthSelection(): void {
     const changed = JSON.stringify(this.pendingMonths()) !== JSON.stringify(this.editBidsMonths());
-    this.editBidsMonths.set([...this.pendingMonths()]);
-    this.showMonthDropdown.set(false);
-    this._buildEditGrid(this.editBidsYear());
-    if (changed) {
-      this._saveSelectedMonths();
-      this.toastService.success('Month selection saved');
-    }
+    // Save edits against the CURRENT columns before editBidsMonths changes (which reshapes editGridColumns).
+    this._saveDirtyBids(() => {
+      this.editBidsMonths.set([...this.pendingMonths()]);
+      this.showMonthDropdown.set(false);
+      this._buildEditGrid(this.editBidsYear());
+      if (changed) {
+        this._saveSelectedMonths();
+        this.toastService.success('Month selection saved');
+      }
+    });
   }
 
   /** Cancels the pending month selection and closes the dropdown. */
@@ -1635,11 +1684,14 @@ export class BidSheetComponent {
     });
   }
 
-  saveEditBids(): void {
+  /** Diff the current grid against the snapshot and build the upsert payload for changed cells.
+   *  Reads editBidsYear() and editGridColumns() at CALL TIME — callers that navigate (year/month/crop
+   *  change) must invoke a save BEFORE mutating those, so the payload reflects the cells the user edited. */
+  private _buildDirtyBids(): Array<{ name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; month?: number }> {
     const year = this.editBidsYear();
     const tu = this.activeTradeUnit();
     const commodityLookup = new Map(this.allCommodities().map(c => [c.code, c]));
-    const toCreate: Array<{ name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string }> = [];
+    const toCreate: Array<{ name?: string; elevatorCode?: string; tradeUnitCode?: string; groupName?: string; latitude?: number; longitude?: number; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; month?: number }> = [];
 
     for (const row of this.editBidsRows()) {
       for (const col of this.editGridColumns()) {
@@ -1660,45 +1712,192 @@ export class BidSheetComponent {
             cropYear: year,
             bid: current,
             month: col.month
-          } as any);
+          });
         }
       }
     }
+    return toCreate;
+  }
 
-    if (toCreate.length === 0) {
-      this._closeEditBids();
-      this.toastService.info('No changes to save');
+  /** Silently persists any changed cells (no toast, no reload, no close). Fired on input blur and
+   *  before any grid-rebuilding navigation, so an in-progress bid is never lost. The green "changed"
+   *  highlight clears as cells are confirmed saved (the only feedback). On success runs onDone (used by
+   *  navigation to rebuild AFTER the save). On error, onDone is NOT called — the edit is preserved.
+   *  Concurrency: at most one upsert in flight; edits arriving mid-flight coalesce into a single re-run. */
+  private _saveDirtyBids(onDone?: () => void): void {
+    const dirty = this._buildDirtyBids();
+    if (dirty.length === 0) { onDone?.(); return; }
+
+    if (this._autoSaving) {
+      // A save is already running — coalesce. Remember the latest navigation callback so it still fires.
+      this._autoSaveRerun = true;
+      if (onDone) this._pendingOnDone = onDone;
       return;
     }
 
-    // Track one bids-changed event per affected location so the Usage Dashboard
-    // can attribute edits to specific locations (Most Edited Location card +
-    // Top Edited Bid Locations list).
-    const affectedLocations = new Set(toCreate.map(b => b.name).filter((n): n is string => !!n));
+    this._autoSaving = true;
+    this.apiService.bulkUpsertBidSheetBids(dirty)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this._autoSaving = false;
+          this._clearDirtyForSaved(dirty);
+          this._applyBidsToLocalCache(dirty);
+          this._recordSaved(dirty);
+          if (this._autoSaveRerun) {
+            // Edits happened during the request — run once more; defer the callback to that final save.
+            // Prefer the latest coalesced navigation (_pendingOnDone) over this save's original onDone.
+            this._autoSaveRerun = false;
+            const next = this._pendingOnDone ?? onDone ?? undefined;
+            this._pendingOnDone = null;
+            this._saveDirtyBids(next);
+          } else {
+            const cb = this._pendingOnDone ?? onDone ?? undefined;
+            this._pendingOnDone = null;
+            cb?.();
+          }
+        },
+        error: (err) => {
+          this._autoSaving = false;
+          this._autoSaveRerun = false;
+          this._pendingOnDone = null;
+          if (isDevMode()) console.error('[BidSheet] auto-save bids failed', err);
+          this.toastService.error(err?.message ? `Failed to save bids: ${err.message}` : 'Failed to save bids');
+          // Deliberately NOT calling onDone — preserves the edit and aborts any pending navigation.
+        }
+      });
+  }
+
+  /** Marks the saved cells clean so the "changed" highlight clears — by setting originalBids to the
+   *  value that was actually SAVED (not the current input). If the user kept editing the same cell while
+   *  the save was in flight, current ≠ saved, so the cell stays dirty and the re-run / next blur catches it. */
+  private _clearDirtyForSaved(dirty: Array<{ name?: string; commodityCode: string; month?: number; bid: string }>): void {
+    const savedByName = new Map<string, Map<string, string>>();
+    for (const b of dirty) {
+      if (!b.name) continue;
+      const colKey = `${b.commodityCode}#${b.month ?? 0}`;
+      const m = savedByName.get(b.name) ?? new Map<string, string>();
+      m.set(colKey, b.bid);
+      savedByName.set(b.name, m);
+    }
+    this.editBidsRows.update(rows => rows.map(row => {
+      const saved = savedByName.get(row.name);
+      if (!saved) return row;
+      const originalBids = { ...row.originalBids };
+      for (const [colKey, val] of saved) originalBids[colKey] = val;
+      return { ...row, originalBids };
+    }));
+  }
+
+  /** Optimistically writes saved bids into the local location cache (bidLocations / allMapLocations),
+   *  which feed the computed bidEntries → bidLookup that _buildEditGrid reads. Without this, navigating
+   *  to another year and back rebuilds the grid from the stale cache and shows the pre-edit value until
+   *  a full server refresh. Mirrors the optimistic update confirmAddLocation does for a new location. */
+  private _applyBidsToLocalCache(dirty: Array<{ name?: string; tradeUnitCode?: string; commodityCode: string; commodityName?: string; commodityCategory?: string; cropYear: number; bid: string; month?: number }>): void {
+    if (dirty.length === 0) return;
+    const now = new Date().toISOString();
+
+    const upsertInto = (locs: BidSheetLocation[]): BidSheetLocation[] => {
+      let changed = false;
+      const next = locs.map(loc => {
+        const forLoc = dirty.filter(d => d.name === loc.name && (!d.tradeUnitCode || d.tradeUnitCode === loc.tradeUnitCode));
+        if (forLoc.length === 0) return loc;
+        changed = true;
+        const bids = [...loc.bids];
+        for (const d of forLoc) {
+          const month = d.month ?? 0;
+          const idx = bids.findIndex(b => b.commodityCode === d.commodityCode && b.cropYear === d.cropYear && b.month === month);
+          if (idx >= 0) {
+            bids[idx] = { ...bids[idx], bid: d.bid, commodityName: d.commodityName ?? bids[idx].commodityName, commodityCategory: d.commodityCategory ?? bids[idx].commodityCategory, modifiedAt: now };
+          } else {
+            bids.push({ id: 0, locationId: loc.id, commodityCode: d.commodityCode, commodityName: d.commodityName, commodityCategory: d.commodityCategory, cropYear: d.cropYear, month, bid: d.bid, createdBy: '', createdAt: now, modifiedAt: now });
+          }
+        }
+        return { ...loc, bids };
+      });
+      return changed ? next : locs; // preserve reference when untouched so dependent computeds don't churn
+    };
+
+    this.bidLocations.update(upsertInto);
+    this.allMapLocations.update(upsertInto);
+
+    // Surface any brand-new crop year to the panel / old-new navigation as well.
+    for (const d of dirty) {
+      if (!this.cropYears().includes(d.cropYear)) {
+        this.cropYears.update(yrs => [...yrs, d.cropYear].sort((a, b) => a - b));
+      }
+    }
+  }
+
+  /** Records the distinct cells saved this session so "Done" can report the running total. */
+  private _recordSaved(dirty: Array<{ name?: string; commodityCode: string; cropYear: number; month?: number }>): void {
+    for (const b of dirty) {
+      if (!b.name) continue;
+      this._editBidsSavedKeys.add(`${b.name}|${b.commodityCode}|${b.cropYear}|${b.month ?? 0}`);
+    }
+  }
+
+  /** Fired when a bid input loses focus — silently saves any changed cells. */
+  onBidBlur(): void {
+    this._saveDirtyBids();
+  }
+
+  /** Footer "Done": flush any remaining edits, then close + refresh, and report the session total.
+   *  (Most cells are already auto-saved on blur; this just sweeps up anything not yet flushed.) */
+  doneEditBids(): void {
+    const dirty = this._buildDirtyBids();
+    if (dirty.length === 0) {
+      this._announceSaved();
+      this._finishEditBids();
+      return;
+    }
+
+    // Track one bids-changed event per affected location so the Usage Dashboard can attribute edits
+    // (Most Edited Location card + Top Edited Bid Locations). Done-only, to avoid per-blur event spam.
+    const affectedLocations = new Set(dirty.map(b => b.name).filter((n): n is string => !!n));
     for (const locName of affectedLocations) {
       this.usageTracking.postClickEvent('interaction', 'bidsheet', 'bids-changed', locName);
     }
 
     this.editBidsSaving.set(true);
-    this.apiService.bulkUpsertBidSheetBids(toCreate)
+    this.apiService.bulkUpsertBidSheetBids(dirty)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
           this.editBidsSaving.set(false);
-          this._closeEditBids();
-          this.toastService.success(`Saved ${toCreate.length} bid ${toCreate.length !== 1 ? 'changes' : 'change'} successfully`, 4000);
-          this._loadBidData(this.activeTradeUnits());
+          this._applyBidsToLocalCache(dirty); // keep panel/map correct even if the post-close refresh hiccups
+          this._recordSaved(dirty);
+          this._announceSaved();
+          this._finishEditBids();
         },
-        error: () => {
+        error: (err) => {
           this.editBidsSaving.set(false);
-          this.toastService.error('Failed to save bids');
+          if (isDevMode()) console.error('[BidSheet] save bids failed', err);
+          this.toastService.error(err?.message ? `Failed to save bids: ${err.message}` : 'Failed to save bids');
         }
       });
   }
 
-  cancelEditBids(): void {
+  /** Shows a success toast summarizing how many distinct bids were saved this session (no toast if none). */
+  private _announceSaved(): void {
+    const n = this._editBidsSavedKeys.size;
+    if (n === 0) return;
+    this.toastService.success(`Saved ${n} bid ${n !== 1 ? 'changes' : 'change'} successfully`, 4000);
+  }
+
+  private _finishEditBids(): void {
     this._closeEditBids();
-    this.editBidsRows.set([]);
+    // 'refresh': a hiccup in this post-save reload is shown softly, never as a save failure.
+    this._loadBidData(this.activeTradeUnits(), undefined, 'refresh');
+  }
+
+  /** Footer "Close": there is no discard anymore — everything auto-saves on blur/navigation.
+   *  Does a final silent flush, then exits. On a save error the flush keeps the grid open (edit preserved). */
+  closeEditBids(): void {
+    this._saveDirtyBids(() => {
+      this._closeEditBids();
+      this.editBidsRows.set([]);
+    });
   }
 
   private _closeEditBids(): void {
