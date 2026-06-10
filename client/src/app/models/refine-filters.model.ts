@@ -63,6 +63,7 @@ export interface RefinementFilters {
   plantingYear?: number | null;
   irrigatedOnly?: boolean;
   drylandOnly?: boolean;
+  doubleCropOnly?: boolean;
   plantingAcresOver?: number | null;
   // Dynamic
   crops?: string[];

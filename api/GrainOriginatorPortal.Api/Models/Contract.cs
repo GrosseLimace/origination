@@ -72,12 +72,11 @@ public class Contract
     public string? MarketZone { get; set; }
     public string? BasisLocation { get; set; }
 
-    // Hedge market fields from base.Contract — UI prefers HedgeMarketCode, then falls
-    // back to HedgeMarketMonth (e.g. "K26"), then HedgeMarketMonthDescription
-    // (e.g. "May 2026") when the primary is empty.
-    public string? HedgeMarketCode { get; set; }
-    public string? HedgeMarketMonth { get; set; }
+    // Hedge / price market fields from base.Contract. The contracts-table "Hedge Market
+    // Month" column shows HedgeMarketMonthDescription (e.g. "May 2026"), falling back to
+    // PriceMarketMonthDescription, then "N/A" when both are empty.
     public string? HedgeMarketMonthDescription { get; set; }
+    public string? PriceMarketMonthDescription { get; set; }
 
     // ODS metadata fields
     public bool IsActive { get; set; }

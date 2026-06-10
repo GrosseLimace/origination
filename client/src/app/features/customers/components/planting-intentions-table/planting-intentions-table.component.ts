@@ -12,6 +12,9 @@ import { ApiService } from '@core/services/api.service';
 type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'createdAt';
 type SortDirection = 'none' | 'asc' | 'desc';
 
+/** A table row — a single planting intention. (Alias kept so existing bindings/signatures stay stable.) */
+type PlantingRow = PlantingIntention;
+
 @Component({
   selector: 'app-planting-intentions-table',
   standalone: true,
@@ -93,6 +96,11 @@ export class PlantingIntentionsTableComponent {
     return c ? `${c.name} (${c.code})` : '';
   }
 
+  /** Crop label for the Edit/Delete dialogs — "[Type ]Category" (e.g. "Double Crop Corn"). */
+  get editDialogCropLabel(): string {
+    return `${this.editForm.type ? this.editForm.type + ' ' : ''}${this.getCropCategory(this.editForm.crop)}`;
+  }
+
   constructor() {
     this._loadCommodities();
 
@@ -147,11 +155,14 @@ export class PlantingIntentionsTableComponent {
 
   /** Unique category options for the selected crop — includes Category + unique Tier2/Tier3 values, no duplicates. */
   get categoryOptionsForCrop(): string[] {
-    const crop = this.addForm.crop || this.editForm.crop;
+    return this._categoryOptionsFor(this.addForm.crop || this.editForm.crop);
+  }
+
+  /** Unique category options for a crop code — Category + unique Tier2/Tier3 in its group, no dups. */
+  private _categoryOptionsFor(crop: string): string[] {
     if (!crop) return [];
     const commodity = this.allCommodities.find(c => c.code === crop);
     if (!commodity) return [];
-    // Collect unique values from category and tiers for this commodity's category group
     const sameCategory = this.allCommodities.filter(c => c.category === commodity.category);
     const options = new Set<string>();
     if (commodity.category) options.add(commodity.category);
@@ -162,28 +173,35 @@ export class PlantingIntentionsTableComponent {
     return [...options].sort();
   }
 
-  get sortedIntentions(): PlantingIntention[] {
+  /** Crop-column label for a row: "[Type ]Category" (e.g. "Double Crop Corn", "Irrigated Wheat"). */
+  rowCropLabel(row: PlantingRow): string {
+    return `${row.type ? row.type + ' ' : ''}${this.getCropCategory(row.crop)}`;
+  }
+
+  get sortedIntentions(): PlantingRow[] {
+    const collapsed = this.plantingIntentions();
+
     // Default sort: newest year first (descending by year)
     if (!this.currentSortColumn || this.currentSortDirection === 'none') {
-      return [...this.plantingIntentions()].sort((a, b) => b.plantingYear - a.plantingYear);
+      return [...collapsed].sort((a, b) => b.plantingYear - a.plantingYear);
     }
 
     // Special case: When sorting by plantingYear, sort across all data (don't group by year)
     if (this.currentSortColumn === 'plantingYear') {
-      return [...this.plantingIntentions()].sort((a, b) => {
+      return [...collapsed].sort((a, b) => {
         const comparison = a.plantingYear - b.plantingYear;
         return this.currentSortDirection === 'desc' ? -comparison : comparison;
       });
     }
 
     // For other columns: Group by year, sort within each year group, then flatten
-    const groupedByYear = this.plantingIntentions().reduce((acc, intention) => {
+    const groupedByYear = collapsed.reduce((acc, intention) => {
       if (!acc[intention.plantingYear]) {
         acc[intention.plantingYear] = [];
       }
       acc[intention.plantingYear].push(intention);
       return acc;
-    }, {} as Record<number, PlantingIntention[]>);
+    }, {} as Record<number, PlantingRow[]>);
 
     // Sort each year group
     const sortedGroups = Object.entries(groupedByYear).map(([year, intentions]) => {
@@ -318,6 +336,7 @@ export class PlantingIntentionsTableComponent {
   }
 
   onAddTypeChange(): void {
+    // Re-derive the description from the (now-current) type + crop.
     if (this.addForm.crop) {
       this.onAddCropChange(this.addForm.crop);
     }
@@ -447,57 +466,71 @@ export class PlantingIntentionsTableComponent {
       && this.addForm.tradeUnit !== '';
   }
 
-  submitAdd(): void {
-    if (this.isAddFormValid()) {
-      const newAcres = this._parseIntInput(this.addForm.acres);
-      const newYear = this._parseIntInput(this.addForm.plantingYear);
-      const newType = this.addForm.type || undefined;
-      const newCrop = this.addForm.crop;
+  /**
+   * Emit one crop as either a new row (add) or an acre-accumulation onto an existing
+   * matching row (edit) — "already exists → accumulate, else add".
+   */
+  private _emitCropForAdd(
+    crop: string,
+    category: string | undefined,
+    description: string | undefined,
+    acres: number,
+    year: number,
+    type: string | undefined,
+    tradeUnit: string
+  ): void {
+    const existing = this.plantingIntentions().find(pi =>
+      pi.crop === crop &&
+      (pi.type || undefined) === type &&
+      pi.plantingYear === year
+    );
 
-      // If a row already exists for this type+crop+year, accumulate acres into it
-      const existing = this.plantingIntentions().find(pi =>
-        pi.crop === newCrop &&
-        (pi.type || undefined) === newType &&
-        pi.plantingYear === newYear
-      );
-
-      if (existing) {
-        this.edit.emit({
-          intentionId: existing.id,
-          crop: existing.crop,
-          category: this.addForm.category || undefined,
-          type: existing.type || undefined,
-          description: existing.description || undefined,
-          acres: existing.acres + newAcres,
-          plantingYear: existing.plantingYear
-        });
-      } else {
-        this.add.emit({
-          crop: newCrop,
-          category: this.addForm.category || undefined,
-          type: newType,
-          description: this.addForm.description || undefined,
-          acres: newAcres,
-          plantingYear: newYear,
-          tradeUnit: this.addForm.tradeUnit
-        });
-      }
-      this.closeAddDialog();
+    if (existing) {
+      this.edit.emit({
+        intentionId: existing.id,
+        crop: existing.crop,
+        category,
+        type: existing.type || undefined,
+        description: existing.description || undefined,
+        acres: existing.acres + acres,
+        plantingYear: existing.plantingYear
+      });
+    } else {
+      this.add.emit({ crop, category, type, description, acres, plantingYear: year, tradeUnit });
     }
   }
 
-  openEditDialog(intention: PlantingIntention): void {
-    this.selectedIntention = intention;
+  submitAdd(): void {
+    if (!this.isAddFormValid()) return;
+
+    const newAcres = this._parseIntInput(this.addForm.acres);
+    const newYear = this._parseIntInput(this.addForm.plantingYear);
+    const newType = this.addForm.type || undefined;
+    const tradeUnit = this.addForm.tradeUnit;
+
+    this._emitCropForAdd(
+      this.addForm.crop,
+      this.addForm.category || undefined,
+      this.addForm.description || undefined,
+      newAcres, newYear, newType, tradeUnit
+    );
+
+    this.closeAddDialog();
+  }
+
+  openEditDialog(row: PlantingRow): void {
+    this.selectedIntention = row;
+
     // Resolve category: use saved value if set, otherwise look up from Commodities table
-    const commodity = this.allCommodities.find(c => c.code === intention.crop);
-    const category = intention.category || commodity?.category || '';
+    const commodity = this.allCommodities.find(c => c.code === row.crop);
+    const category = row.category || commodity?.category || '';
     const formData = {
-      crop: intention.crop,
+      crop: row.crop,
       category,
-      type: intention.type || '',
-      description: intention.description || '',
-      acres: intention.acres.toString(),
-      plantingYear: intention.plantingYear.toString()
+      type: row.type || '',
+      description: row.description || '',
+      acres: row.acres.toString(),
+      plantingYear: row.plantingYear.toString()
     };
     this.editForm = { ...formData };
     this.originalEditForm = { ...formData };
@@ -536,18 +569,21 @@ export class PlantingIntentionsTableComponent {
   }
 
   submitEdit(): void {
-    if (this.isEditFormValid() && this.selectedIntention) {
-      this.edit.emit({
-        intentionId: this.selectedIntention.id,
-        crop: this.editForm.crop,
-        category: this.editForm.category || undefined,
-        type: this.editForm.type || undefined,
-        description: this.editForm.description || undefined,
-        acres: this._parseIntInput(this.editForm.acres),
-        plantingYear: this._parseIntInput(this.editForm.plantingYear)
-      });
-      this.closeEditDialog();
-    }
+    if (!this.isEditFormValid() || !this.selectedIntention) return;
+
+    const acres = this._parseIntInput(this.editForm.acres);
+    const year = this._parseIntInput(this.editForm.plantingYear);
+    const type = this.editForm.type || undefined;
+
+    this.edit.emit({
+      intentionId: this.selectedIntention.id,
+      crop: this.editForm.crop,
+      category: this.editForm.category || undefined,
+      type,
+      description: this.editForm.description || undefined,
+      acres, plantingYear: year
+    });
+    this.closeEditDialog();
   }
 
   openDeleteConfirm(): void {
@@ -561,10 +597,9 @@ export class PlantingIntentionsTableComponent {
   }
 
   confirmDelete(): void {
-    if (this.selectedIntention) {
-      this.delete.emit(this.selectedIntention.id);
-      this.closeDeleteConfirm();
-      this.closeEditDialog();
-    }
+    if (!this.selectedIntention) return;
+    this.delete.emit(this.selectedIntention.id);
+    this.closeDeleteConfirm();
+    this.closeEditDialog();
   }
 }

@@ -26,7 +26,7 @@
             </button>
             @if (showFilters()) {
             <app-trade-unit-selector />
-            @if (activeTradeUnits().length > 0) {
+            @if (hasIndividualTu() || cropYears().length > 0) {
             <div class="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
             <select [ngModel]="selectedCrop()" (ngModelChange)="selectedCrop.set($event); onMapCropChange()" class="px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
               @if (crops().length === 0) {
@@ -42,7 +42,7 @@
               }
             </select>
             <select [ngModel]="selectedMonth()" (ngModelChange)="onMonthDropdownChange(+$event)" class="px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
-              <option [value]="0">Yearly</option>
+              <option [value]="0">Year</option>
               <option [value]="1">January</option>
               <option [value]="2">February</option>
               <option [value]="3">March</option>
@@ -56,7 +56,7 @@
               <option [value]="11">November</option>
               <option [value]="12">December</option>
             </select>
-            @if (hasIndividualTu()) {
+            @if (hasIndividualTu() || cropYears().length > 0) {
             <select [ngModel]="selectedBasis()" (ngModelChange)="selectedBasis.set($event); onFilterChange()" class="px-2.5 py-1.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors">
               <option value="all">All Status</option>
               <option value="matching">Matching</option>
@@ -178,9 +178,11 @@
                 </button>
               } @else {
                 <h3 class="text-sm font-semibold text-gray-900 dark:text-white truncate flex-1">{{ panelSelectedLocation() }}</h3>
+                @if (hasIndividualTu()) {
                 <button (click)="startEditLocationName()" title="Edit location name" class="shrink-0 p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 </button>
+                }
                 <button (click)="togglePanel()" class="shrink-0 p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
                   <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                 </button>
@@ -198,6 +200,7 @@
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
                   @if (selectedLocationName() === panelSelectedLocation()) { Reference } @else { Set as Reference }
                 </button>
+                @if (hasIndividualTu()) {
                 <button (click)="toggleLocationScoularStatus()"
                   [title]="panelSelectedIsScoular() ? 'Unmark as Scoular facility' : 'Mark as Scoular facility'"
                   class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap"
@@ -214,6 +217,7 @@
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                   @if (deleteMode()) { Done } @else { Delete }
                 </button>
+                }
               </div>
 
 
@@ -301,14 +305,19 @@
             <!-- ========== LIST VIEW ========== -->
             <!-- Panel Header -->
             <div class="shrink-0 flex items-center gap-2 px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[52px]">
-              @if (activeTradeUnits().length > 0) {
-              <button (click)="openEditBids()" title="Edit bids" class="shrink-0 flex items-center gap-2 px-3.5 py-2 rounded-md text-sm font-semibold text-scoular-green-accessible dark:text-scoular-green border border-scoular-green-accessible/30 dark:border-scoular-green/30 hover:bg-scoular-green/10 dark:hover:bg-scoular-green/20 transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                Edit
+              @if (hasIndividualTu() || cropYears().length > 0) {
+              <button (click)="openEditBids()" [title]="editBidsReadOnly() ? 'View bids' : 'Edit bids'" class="shrink-0 flex items-center gap-2 px-3.5 py-2 rounded-md text-sm font-semibold text-scoular-green-accessible dark:text-scoular-green border border-scoular-green-accessible/30 dark:border-scoular-green/30 hover:bg-scoular-green/10 dark:hover:bg-scoular-green/20 transition-colors">
+                @if (editBidsReadOnly()) {
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                  View Bids
+                } @else {
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  Edit
+                }
               </button>
               }
               <h3 class="text-base font-bold text-gray-900 dark:text-white truncate flex-1">
-                @if (activeTradeUnits().length > 0) {
+                @if (selectedCrop() && (hasIndividualTu() || cropYears().length > 0)) {
                   {{ selectedCrop() }} · {{ formatMonthYear(selectedMonth(), selectedYear()) }}
                 } @else {
                   Locations
@@ -322,7 +331,7 @@
             <!-- Panel Body -->
             <div class="flex-1 overflow-auto">
 
-              @if (activeTradeUnits().length === 0) {
+              @if (!hasIndividualTu() && cropYears().length === 0) {
                 <div class="flex flex-col items-center justify-center h-full px-6 text-center">
                   <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-300 dark:text-gray-600 mb-4">
                     <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
@@ -744,7 +753,7 @@
                       <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white font-medium border-b border-gray-100 dark:border-gray-700">
                         <input type="checkbox" [checked]="pendingMonths().includes(0)" (change)="toggleEditMonth(0)"
                           class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
-                        Yearly
+                        Year
                       </label>
                       <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm text-gray-900 dark:text-white">
                         <input type="checkbox" [checked]="pendingMonths().includes(1)" (change)="toggleEditMonth(1)" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green cursor-pointer" />
@@ -974,16 +983,20 @@
                               (ngModelChange)="updateBid(rowIdx, col.key, $event)"
                               (keydown)="onBidKeyDown($event, rowIdx, colIdx)"
                               (blur)="onBidBlur()"
+                              [readonly]="editBidsReadOnly()"
                               placeholder="—"
                               class="w-full font-mono text-sm text-center rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green transition-colors border"
-                              [ngClass]="row.bids[col.key] !== row.originalBids[col.key]
-                                ? 'border-scoular-green-accessible bg-scoular-green-accessible/5 dark:bg-scoular-green-accessible/10 text-gray-900 dark:text-white'
-                                : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'"
+                              [ngClass]="editBidsReadOnly()
+                                ? 'border-transparent bg-transparent text-gray-700 dark:text-gray-300 cursor-default focus:ring-0 read-only:cursor-default'
+                                : (row.bids[col.key] !== row.originalBids[col.key]
+                                  ? 'border-scoular-green-accessible bg-scoular-green-accessible/5 dark:bg-scoular-green-accessible/10 text-gray-900 dark:text-white'
+                                  : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300')"
                             />
                           </td>
                         }
                       </tr>
                     }
+                    @if (!editBidsReadOnly()) {
                     <tr
                       (click)="addLocationFromEditBids()"
                       class="border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors"
@@ -998,6 +1011,7 @@
                       </td>
                       <td [attr.colspan]="editGridColumns().length + 1"></td>
                     </tr>
+                    }
                   </tbody>
                 </table>
               </div>
@@ -1009,12 +1023,14 @@
                 (click)="closeEditBids()"
                 class="px-3 py-1.5 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
               >Close</button>
+              @if (!editBidsReadOnly()) {
               <button
                 (click)="doneEditBids()"
                 [disabled]="editBidsSaving()"
                 class="px-4 py-2 text-sm font-semibold text-white rounded-lg transition-all shadow-sm"
                 [ngClass]="editBidsSaving() ? 'bg-gray-400 cursor-not-allowed' : 'bg-scoular-green-accessible hover:bg-scoular-green'"
               >{{ editBidsSaving() ? 'Saving…' : 'Done' }}</button>
+              }
             </div>
 
             <!-- Print Preview Dialog -->
@@ -1154,7 +1170,7 @@
                       @if (printHasYearly()) {
                         <div>
                           <div class="flex items-center justify-between mb-2">
-                            <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Yearly Columns</h4>
+                            <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Year Columns</h4>
                             <button (click)="addPrintYearlyRow()" [disabled]="printYearlyRows().length >= 5"
                               class="text-xs font-medium text-scoular-green-accessible hover:text-scoular-green disabled:text-gray-400 disabled:cursor-not-allowed">+ Add year</button>
                           </div>

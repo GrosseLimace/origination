@@ -207,7 +207,7 @@ export class BuildListComponent {
       r.storageDaysOver != null && r.storageDaysOver > 0,
       r.storageQuantityOver != null && r.storageQuantityOver > 0,
       r.storageReceivableOver != null && r.storageReceivableOver > 0,
-      r.plantingYear != null, r.irrigatedOnly, r.drylandOnly,
+      r.plantingYear != null, r.irrigatedOnly, r.drylandOnly, r.doubleCropOnly,
       r.plantingAcresOver != null && r.plantingAcresOver > 0,
       r.crops && r.crops.length > 0, r.states && r.states.length > 0
     ].filter(Boolean).length;
@@ -584,6 +584,12 @@ export class BuildListComponent {
       );
       list = list.filter(c => ids.has(c.id));
     }
+    if (r.doubleCropOnly) {
+      const ids = new Set<number>(
+        this.plantingIntentions().filter(p => p.type?.toLowerCase().includes('double crop')).map(p => p.customerId)
+      );
+      list = list.filter(c => ids.has(c.id));
+    }
     if (r.plantingAcresOver != null && r.plantingAcresOver > 0) {
       const customerAcres = new Map<number, number>();
       for (const p of this.plantingIntentions()) {
@@ -611,7 +617,7 @@ export class BuildListComponent {
         || r.avgTestWeightOver != null || r.avgTestWeightUnder != null
         || r.avgProteinOver != null || r.avgProteinUnder != null;
       const isPlanting = category === 'Planting' || r.hasPlantingIntentions
-        || r.plantingYear != null || r.irrigatedOnly || r.drylandOnly
+        || r.plantingYear != null || r.irrigatedOnly || r.drylandOnly || r.doubleCropOnly
         || (r.plantingAcresOver != null && r.plantingAcresOver > 0);
       const isContracts = category === 'Contracts'
         || r.hasActiveContracts || r.hasUnsignedContracts || r.hasUnpricedContracts
@@ -1342,6 +1348,7 @@ export class BuildListComponent {
     if (/planting.*\d{4}|\d{4}.*planting/.test(q)) hidden.add('plantingYear');
     if (q.includes('irrigat'))              hidden.add('irrigatedOnly');
     if (q.includes('dryland'))              hidden.add('drylandOnly');
+    if (q.includes('double crop'))          hidden.add('doubleCropOnly');
     if (q.includes('corn') && q.includes('planting')) hidden.add('plantingCrop');
     if (q.includes('wheat') && q.includes('planting')) hidden.add('plantingCrop');
     if (q.includes('in storage') || q.includes('stored')) hidden.add('hasGrainInStorage');
@@ -2434,7 +2441,7 @@ export class BuildListComponent {
       (filters.storageDaysOver != null && filters.storageDaysOver > 0) ||
       (filters.storageQuantityOver != null && filters.storageQuantityOver > 0) ||
       (filters.storageReceivableOver != null && filters.storageReceivableOver > 0) ||
-      filters.plantingYear != null || filters.irrigatedOnly || filters.drylandOnly ||
+      filters.plantingYear != null || filters.irrigatedOnly || filters.drylandOnly || filters.doubleCropOnly ||
       (filters.plantingAcresOver != null && filters.plantingAcresOver > 0) ||
       (filters.crops && filters.crops.length > 0) ||
       (filters.states && filters.states.length > 0)
@@ -2603,7 +2610,7 @@ export class BuildListComponent {
 
     // Planting intentions
     if (q.includes('planting') || q.includes('intention') ||
-        r.plantingYear != null || r.irrigatedOnly || r.drylandOnly ||
+        r.plantingYear != null || r.irrigatedOnly || r.drylandOnly || r.doubleCropOnly ||
         (r.plantingAcresOver != null && r.plantingAcresOver > 0) ||
         r.hasPlantingIntentions) {
       return 'planting';
