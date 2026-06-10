@@ -77,7 +77,7 @@ export class CustomerProfileComponent {
   public allCustomerPlantingIntentions = input<PlantingIntention[]>([]);
   public allCustomerStoredGrain = input<StoredGrain[]>([]);
 
-  public onAddPlanting = output<{crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string, doubleCropGroupId?: string}>();
+  public onAddPlanting = output<{crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
   public onEditPlanting = output<{intentionId: number, crop: string, type?: string, description?: string, acres: number, plantingYear: number}>();
   public onDeletePlanting = output<number>();
   /** True when the contracts table wants the page at full width (columns expanded on the

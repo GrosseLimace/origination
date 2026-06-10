@@ -103,7 +103,7 @@ Defined in [`client/src/app/models/refine-filters.model.ts`](../../client/src/ap
 - **Producer activity** — `hasActiveContracts`, `hasDeliveriesThisYear`, `hasPlantingIntentions`, `hasGrainInStorage`.
 - **Tickets** — `ticketQuantityOver`, `ticketsInLastDays`, `avgMoistureOver/Under`, `avgTestWeightOver/Under`, `avgProteinOver/Under`.
 - **Storage** — `storageDaysOver`, `storageQuantityOver`, `storageReceivableOver`.
-- **Planting** — `plantingYear`, `irrigatedOnly`, `drylandOnly`, `plantingAcresOver`.
+- **Planting** — `plantingYear`, `irrigatedOnly`, `drylandOnly`, `doubleCropOnly`, `plantingAcresOver`.
 - **Dynamic (NLQ-derived)** — `crops` (commodity codes), `states` (state names).
 
 ### Filter behavior notes (worth knowing before changing)

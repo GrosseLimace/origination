@@ -1378,14 +1378,13 @@ public class SqlDataService : IDataService
     private sealed class ContractHedgeRow
     {
         public long ContractId { get; set; }
-        public string? HedgeMarketCode { get; set; }
-        public string? HedgeMarketMonth { get; set; }
         public string? HedgeMarketMonthDescription { get; set; }
+        public string? PriceMarketMonthDescription { get; set; }
     }
 
     /// <summary>
-    /// Pulls HedgeMarketMonth / HedgeMarketMonthDescription from base.Contract for the
-    /// given contracts and assigns them onto the instances. These columns aren't exposed
+    /// Pulls HedgeMarketMonthDescription / PriceMarketMonthDescription from base.Contract for
+    /// the given contracts and assigns them onto the instances. These columns aren't exposed
     /// via vw_CurrentContracts, so the main fetch can't include them — this side-query
     /// fills the gap. Silently swallows DB errors so a missing column on the underlying
     /// table never breaks the contracts endpoint.
@@ -1399,7 +1398,7 @@ public class SqlDataService : IDataService
             var idsCsv = SanitizeIdentifierCsv(ids);
             var rows = await _context.Database
                 .SqlQueryRaw<ContractHedgeRow>(
-                    $@"SELECT c.ContractId, c.HedgeMarketCode, c.HedgeMarketMonth, c.HedgeMarketMonthDescription
+                    $@"SELECT c.ContractId, c.HedgeMarketMonthDescription, c.PriceMarketMonthDescription
                        FROM base.Contract c
                        INNER JOIN STRING_SPLIT('{idsCsv}', ',') ids ON c.ContractId = TRY_CAST(ids.value AS bigint)")
                 .ToListAsync(cancellationToken);
@@ -1408,9 +1407,8 @@ public class SqlDataService : IDataService
             {
                 if (byId.TryGetValue(c.Id, out var row))
                 {
-                    c.HedgeMarketCode = row.HedgeMarketCode;
-                    c.HedgeMarketMonth = row.HedgeMarketMonth;
                     c.HedgeMarketMonthDescription = row.HedgeMarketMonthDescription;
+                    c.PriceMarketMonthDescription = row.PriceMarketMonthDescription;
                 }
             }
         }
@@ -2736,7 +2734,7 @@ public class SqlDataService : IDataService
         return intention;
     }
 
-    public async Task<PlantingIntention> AddPlantingIntentionAsync(long customerId, string customerName, string customerCode, string tradeUnit, string crop, string? category, string? type, string? description, int acres, int plantingYear, string? doubleCropGroupId, CancellationToken cancellationToken = default)
+    public async Task<PlantingIntention> AddPlantingIntentionAsync(long customerId, string customerName, string customerCode, string tradeUnit, string crop, string? category, string? type, string? description, int acres, int plantingYear, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -2755,7 +2753,6 @@ public class SqlDataService : IDataService
                 Description = description,
                 Acres = acres,
                 PlantingYear = plantingYear,
-                DoubleCropGroupId = doubleCropGroupId,
                 CreatedBy = GetCurrentUser(),
                 CreatedAt = DateTime.UtcNow
             };

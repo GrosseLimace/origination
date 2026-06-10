@@ -1075,11 +1075,6 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                         .HasColumnType("nvarchar(255)")
                         .HasColumnName("Description");
 
-                    b.Property<string>("DoubleCropGroupId")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)")
-                        .HasColumnName("DoubleCropGroupId");
-
                     b.Property<DateTime?>("ModifiedAt")
                         .HasColumnType("datetime2")
                         .HasColumnName("ModifiedAt");

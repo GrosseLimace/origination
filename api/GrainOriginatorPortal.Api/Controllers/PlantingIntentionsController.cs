@@ -90,7 +90,6 @@ public class PlantingIntentionsController : ControllerBase
             request.Description,
             request.Acres,
             request.PlantingYear,
-            request.DoubleCropGroupId,
             cancellationToken
         );
         _logger.LogInformation(

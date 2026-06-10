@@ -327,73 +327,6 @@
                 </select>
               </div>
 
-              <!-- Second crop + its category — only for a Double Crop intention. Plants on the same
-                   ground/year right after the primary crop; saved as its own row sharing acres/year/trade unit. -->
-              @if (isAddDoubleCrop) {
-                <div class="space-y-2">
-                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Second Crop <span class="text-gray-400 font-normal">(double crop)</span></label>
-                  @if (addForm.secondCrop) {
-                    <div class="flex items-center justify-between gap-2 w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700">
-                      <span class="text-sm text-gray-900 dark:text-white">{{ secondSelectedCropDisplay }}</span>
-                      <button type="button" (click)="clearSecondCrop()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors" title="Change second crop">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-                      </button>
-                    </div>
-                  } @else {
-                    <div class="relative">
-                      <input
-                        type="text"
-                        [(ngModel)]="secondCropSearchInput"
-                        placeholder="Search crops by name or code..."
-                        (input)="onSecondCropSearch()"
-                        (keydown.enter)="selectFirstSecondCropSuggestion(); $event.preventDefault()"
-                        (focus)="showSecondCropSuggestions = true; onSecondCropSearch()"
-                        (blur)="hideSecondCropSuggestionsDelayed()"
-                        class="w-full h-10 pl-3 pr-9 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-scoular-green"
-                      />
-                      @if (secondCropSearchInput) {
-                        <button type="button" (mousedown)="$event.preventDefault()" (click)="secondCropSearchInput = ''; filteredSecondCrops = [];" title="Clear search"
-                          class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-                        </button>
-                      }
-                      @if (showSecondCropSuggestions && filteredSecondCrops.length > 0) {
-                        <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-48 overflow-y-auto">
-                          @for (commodity of filteredSecondCrops; track commodity.id) {
-                            <button
-                              type="button"
-                              class="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white transition-colors"
-                              (mousedown)="selectSecondCrop(commodity)"
-                            >
-                              <span class="font-medium">{{ commodity.name }}</span>
-                              <span class="text-gray-400 dark:text-gray-500 ml-1.5">({{ commodity.code }})</span>
-                            </button>
-                          }
-                        </div>
-                      } @else if (showSecondCropSuggestions && secondCropSearchInput.trim() && filteredSecondCrops.length === 0) {
-                        <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg px-3 py-2 text-sm text-gray-400 dark:text-gray-500">
-                          No matching crops found.
-                        </div>
-                      }
-                    </div>
-                  }
-                </div>
-
-                <div class="space-y-2">
-                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Second Category</label>
-                  <select
-                    [(ngModel)]="addForm.secondCategory"
-                    class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-scoular-green"
-                    [ngClass]="addForm.secondCategory ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500'"
-                  >
-                    <option value="" disabled class="text-gray-400 dark:text-gray-500">Select category...</option>
-                    @for (opt of categoryOptionsForSecondCrop; track opt) {
-                      <option [value]="opt" class="text-gray-900 dark:text-white">{{ opt }}</option>
-                    }
-                  </select>
-                </div>
-              }
-
               <div class="space-y-2">
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Acres</label>
                 <app-input type="text" inputmode="numeric" [maxlength]="10" [(ngModel)]="addForm.acres" placeholder="e.g., 1,200" class="placeholder:text-gray-400 dark:placeholder:text-gray-500"></app-input>
@@ -517,73 +450,6 @@
               </select>
             </div>
 
-            <!-- Second crop + its category — shown when editing a Double Crop pair. Edits the partner
-                 row; shares the same acreage/year as the primary crop. -->
-            @if (isEditDoubleCrop) {
-              <div class="space-y-2">
-                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Second Crop <span class="text-gray-400 font-normal">(double crop)</span></label>
-                @if (editForm.secondCrop) {
-                  <div class="flex items-center justify-between gap-2 w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700">
-                    <span class="text-sm text-gray-900 dark:text-white">{{ editSecondSelectedCropDisplay }}</span>
-                    <button type="button" (click)="clearEditSecondCrop()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors" title="Change second crop">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-                    </button>
-                  </div>
-                } @else {
-                  <div class="relative">
-                    <input
-                      type="text"
-                      [(ngModel)]="editSecondCropSearchInput"
-                      placeholder="Search crops by name or code..."
-                      (input)="onEditSecondCropSearch()"
-                      (keydown.enter)="selectFirstEditSecondCropSuggestion(); $event.preventDefault()"
-                      (focus)="showEditSecondCropSuggestions = true; onEditSecondCropSearch()"
-                      (blur)="hideEditSecondCropSuggestionsDelayed()"
-                      class="w-full h-10 pl-3 pr-9 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green"
-                    />
-                    @if (editSecondCropSearchInput) {
-                      <button type="button" (mousedown)="$event.preventDefault()" (click)="editSecondCropSearchInput = ''; filteredEditSecondCrops = [];" title="Clear search"
-                        class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-                      </button>
-                    }
-                    @if (showEditSecondCropSuggestions && filteredEditSecondCrops.length > 0) {
-                      <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-48 overflow-y-auto">
-                        @for (commodity of filteredEditSecondCrops; track commodity.id) {
-                          <button
-                            type="button"
-                            class="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white transition-colors"
-                            (mousedown)="selectEditSecondCrop(commodity)"
-                          >
-                            <span class="font-medium">{{ commodity.name }}</span>
-                            <span class="text-gray-400 dark:text-gray-500 ml-1.5">({{ commodity.code }})</span>
-                          </button>
-                        }
-                      </div>
-                    } @else if (showEditSecondCropSuggestions && editSecondCropSearchInput.trim() && filteredEditSecondCrops.length === 0) {
-                      <div class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg px-3 py-2 text-sm text-gray-400 dark:text-gray-500">
-                        No matching crops found.
-                      </div>
-                    }
-                  </div>
-                }
-              </div>
-
-              <div class="space-y-2">
-                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Second Category</label>
-                <select
-                  [(ngModel)]="editForm.secondCategory"
-                  class="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-scoular-green"
-                  [ngClass]="editForm.secondCategory ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500'"
-                >
-                  <option value="" disabled class="text-gray-400 dark:text-gray-500">Select category...</option>
-                  @for (opt of categoryOptionsForSecondCrop; track opt) {
-                    <option [value]="opt" class="text-gray-900 dark:text-white">{{ opt }}</option>
-                  }
-                </select>
-              </div>
-
-            }
 
             <div class="space-y-2">
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Acres</label>
@@ -618,11 +484,7 @@
           <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full p-6 overflow-y-auto max-h-[90vh]" (click)="$event.stopPropagation()">
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Delete Planting Intention?</h3>
             <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              @if (isEditDoubleCrop) {
-                Are you sure you want to delete this double crop? <span class="font-medium">Both crops</span> will be removed. This action cannot be undone.
-              } @else {
-                Are you sure you want to delete this planting intention? This action cannot be undone.
-              }
+              Are you sure you want to delete this planting intention? This action cannot be undone.
             </p>
             <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 mb-4 space-y-2">
               <div class="pb-2 mb-2 border-b border-gray-200 dark:border-gray-600">

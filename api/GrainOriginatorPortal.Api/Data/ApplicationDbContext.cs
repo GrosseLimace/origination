@@ -121,8 +121,6 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Crop).HasColumnName("Crop").HasMaxLength(100).IsRequired();
             entity.Property(e => e.Category).HasColumnName("Category").HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.Type).HasColumnName("Type").HasMaxLength(100).IsRequired(false);
-            // Shared GUID linking the two rows of a Double Crop intention; null for single crops.
-            entity.Property(e => e.DoubleCropGroupId).HasColumnName("DoubleCropGroupId").HasMaxLength(50).IsRequired(false);
             entity.Property(e => e.Description).HasColumnName("Description").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.Acres).HasColumnName("Acres").IsRequired();
             entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();

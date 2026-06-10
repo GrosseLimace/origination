@@ -372,14 +372,12 @@ export class DashboardComponent {
   }
 
   /**
-   * Crop key/label for the dashboard from a planting intention: planting type + label, EXCEPT
-   * "Double Crop" is treated as no type so it rolls up into the plain crop (e.g. "Corn" instead
-   * of "Double Crop Corn"). The Double Crop label stays on the customer-home planting intentions;
-   * the dashboard's Season Targets only splits Irrigated / Dryland.
+   * Crop key/label for the dashboard from a planting intention: planting type + label
+   * (e.g. "Irrigated Corn", "Double Crop Corn"). Double Crop is just a type now, so it splits
+   * out like Irrigated / Dryland — including in Season Targets.
    */
   private _dashboardCropKey(type: string | undefined, label: string): string {
-    const effectiveType = type && type !== 'Double Crop' ? type : '';
-    return [effectiveType, label].filter(Boolean).join(' ');
+    return [type, label].filter(Boolean).join(' ');
   }
 
   readonly cropBreakdown = computed(() => {

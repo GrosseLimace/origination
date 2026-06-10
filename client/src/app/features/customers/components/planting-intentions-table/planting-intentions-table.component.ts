@@ -12,15 +12,8 @@ import { ApiService } from '@core/services/api.service';
 type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'createdAt';
 type SortDirection = 'none' | 'asc' | 'desc';
 
-/**
- * A table row. Either a normal single-crop intention, or the collapsed view of a Double Crop
- * pair. Extends PlantingIntention so every existing template binding (.id, .acres, .plantingYear,
- * .createdAt, .tradeUnit, .type, .crop) keeps working off the representative (primary) member.
- * `doubleCropMembers` holds both underlying rows when this row is a collapsed pair.
- */
-interface PlantingRow extends PlantingIntention {
-  doubleCropMembers?: PlantingIntention[];
-}
+/** A table row — a single planting intention. (Alias kept so existing bindings/signatures stay stable.) */
+type PlantingRow = PlantingIntention;
 
 @Component({
   selector: 'app-planting-intentions-table',
@@ -57,7 +50,7 @@ export class PlantingIntentionsTableComponent {
   public customerCommodityCodes = input<string[]>([]);
   public yieldEstimateCrops = input<string[]>([]);
   public selectedYear = input<number>(0);
-  public add = output<{crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string, doubleCropGroupId?: string}>();
+  public add = output<{crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}>();
   public edit = output<{intentionId: number, crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number}>();
   public delete = output<number>();
   public yearSelect = output<number>();
@@ -84,11 +77,6 @@ export class PlantingIntentionsTableComponent {
   filteredEditCrops: Commodity[] = [];
   showEditCropSuggestions = false;
 
-  // Second-crop search state (Add dialog only, shown when type === 'Double Crop').
-  secondCropSearchInput = '';
-  filteredSecondCrops: Commodity[] = [];
-  showSecondCropSuggestions = false;
-
   private readonly _commodityAliases: Record<string, string[]> = {
     'milo':    ['milo', 'sorghum', 'sor', 'sg'],
     'sorghum': ['milo', 'sorghum', 'sor', 'sg'],
@@ -108,32 +96,8 @@ export class PlantingIntentionsTableComponent {
     return c ? `${c.name} (${c.code})` : '';
   }
 
-  /** Display label for the currently-selected Double Crop second crop (Add dialog) */
-  get secondSelectedCropDisplay(): string {
-    const c = this.allCommodities.find(c => c.code === this.addForm.secondCrop);
-    return c ? `${c.name} (${c.code})` : '';
-  }
-
-  /** Display label for the currently-selected Double Crop second crop (Edit dialog) */
-  get editSecondSelectedCropDisplay(): string {
-    const c = this.allCommodities.find(c => c.code === this.editForm.secondCrop);
-    return c ? `${c.name} (${c.code})` : '';
-  }
-
-  /** True when the Edit dialog is editing a Double Crop pair. */
-  get isEditDoubleCrop(): boolean {
-    return this.editGroupMemberIds.length > 1;
-  }
-
-  /** Crop label for the Edit/Delete dialogs ("Double Crop Corn/Wheat" or "[Type ]Category"). */
+  /** Crop label for the Edit/Delete dialogs — "[Type ]Category" (e.g. "Double Crop Corn"). */
   get editDialogCropLabel(): string {
-    if (this.isEditDoubleCrop) {
-      const a = this.allCommodities.find(c => c.code === this.editForm.crop);
-      const b = this.allCommodities.find(c => c.code === this.editForm.secondCrop);
-      const an = a?.category || this.getCropCategory(this.editForm.crop);
-      const bn = b?.category || this.getCropCategory(this.editForm.secondCrop);
-      return `Double Crop ${an} & ${bn}`;
-    }
     return `${this.editForm.type ? this.editForm.type + ' ' : ''}${this.getCropCategory(this.editForm.crop)}`;
   }
 
@@ -168,12 +132,7 @@ export class PlantingIntentionsTableComponent {
     description: '',
     acres: '',
     plantingYear: '',
-    tradeUnit: '',
-    // Second crop for a "Double Crop" intention (producer plants this crop on the same
-    // ground, same year, right after the primary crop). Only used when type === 'Double Crop';
-    // on save it becomes its own planting-intention row sharing acres/year/trade unit.
-    secondCrop: '',
-    secondCategory: ''
+    tradeUnit: ''
   };
 
   editForm = {
@@ -182,10 +141,7 @@ export class PlantingIntentionsTableComponent {
     type: '',
     description: '',
     acres: '',
-    plantingYear: '',
-    // Second crop when editing a Double Crop pair (shares acres/year with the primary).
-    secondCrop: '',
-    secondCategory: ''
+    plantingYear: ''
   };
 
   originalEditForm = {
@@ -194,28 +150,12 @@ export class PlantingIntentionsTableComponent {
     type: '',
     description: '',
     acres: '',
-    plantingYear: '',
-    secondCrop: '',
-    secondCategory: ''
+    plantingYear: ''
   };
-
-  // When editing a collapsed Double Crop pair, the two underlying row ids (primary, second).
-  // Empty for a normal single-row edit. Drives submitEdit/confirmDelete to act on both rows.
-  editGroupMemberIds: number[] = [];
-
-  // Edit-dialog second-crop search state (shown when editing a Double Crop pair).
-  editSecondCropSearchInput = '';
-  filteredEditSecondCrops: Commodity[] = [];
-  showEditSecondCropSuggestions = false;
 
   /** Unique category options for the selected crop — includes Category + unique Tier2/Tier3 values, no duplicates. */
   get categoryOptionsForCrop(): string[] {
     return this._categoryOptionsFor(this.addForm.crop || this.editForm.crop);
-  }
-
-  /** Category options for the Double Crop second crop (Add + Edit dialogs). */
-  get categoryOptionsForSecondCrop(): string[] {
-    return this._categoryOptionsFor(this.addForm.secondCrop || this.editForm.secondCrop);
   }
 
   /** Unique category options for a crop code — Category + unique Tier2/Tier3 in its group, no dups. */
@@ -233,48 +173,13 @@ export class PlantingIntentionsTableComponent {
     return [...options].sort();
   }
 
-  /**
-   * Collapse Double Crop pairs (rows sharing a doubleCropGroupId) into a single representative
-   * row carrying both members, so the table shows one "Double Crop Corn/Wheat" line. Single-crop
-   * rows pass through untouched. A group that somehow has only one member (lost its partner) is
-   * shown as a normal row so nothing ever disappears.
-   */
-  private _collapseDoubleCrops(rows: PlantingIntention[]): PlantingRow[] {
-    const out: PlantingRow[] = [];
-    const groups = new Map<string, PlantingIntention[]>();
-    for (const r of rows) {
-      if (r.doubleCropGroupId) {
-        const arr = groups.get(r.doubleCropGroupId) ?? [];
-        arr.push(r);
-        groups.set(r.doubleCropGroupId, arr);
-      } else {
-        out.push(r);
-      }
-    }
-    for (const members of groups.values()) {
-      if (members.length === 1) {
-        out.push(members[0]);
-      } else {
-        // Representative = earliest-created member (stable primary crop ordering).
-        const ordered = [...members].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-        out.push({ ...ordered[0], doubleCropMembers: ordered });
-      }
-    }
-    return out;
-  }
-
-  /** Crop-column label for a row: "Double Crop Corn & Wheat" for a pair, else "[Type ]Category". */
+  /** Crop-column label for a row: "[Type ]Category" (e.g. "Double Crop Corn", "Irrigated Wheat"). */
   rowCropLabel(row: PlantingRow): string {
-    if (row.doubleCropMembers && row.doubleCropMembers.length > 1) {
-      const crops = row.doubleCropMembers.map(m => this.getCropCategory(m.crop)).join(' & ');
-      return `Double Crop ${crops}`;
-    }
     return `${row.type ? row.type + ' ' : ''}${this.getCropCategory(row.crop)}`;
   }
 
   get sortedIntentions(): PlantingRow[] {
-    // Collapse Double Crop pairs first so they sort/display as a single line.
-    const collapsed = this._collapseDoubleCrops(this.plantingIntentions());
+    const collapsed = this.plantingIntentions();
 
     // Default sort: newest year first (descending by year)
     if (!this.currentSortColumn || this.currentSortDirection === 'none') {
@@ -431,78 +336,10 @@ export class PlantingIntentionsTableComponent {
   }
 
   onAddTypeChange(): void {
-    // "Double Crop" reveals the second-crop picker; switching away from it clears any
-    // second crop so we don't accidentally create a phantom second row.
-    if (this.addForm.type !== 'Double Crop') {
-      this.clearSecondCrop();
-    }
+    // Re-derive the description from the (now-current) type + crop.
     if (this.addForm.crop) {
       this.onAddCropChange(this.addForm.crop);
     }
-  }
-
-  // ── Second-crop (Double Crop) search-and-select handlers ─────────────────
-  onSecondCropSearch(): void {
-    this.filteredSecondCrops = this._rankedCropMatches(this.secondCropSearchInput);
-    this.showSecondCropSuggestions = true;
-  }
-
-  selectSecondCrop(commodity: Commodity): void {
-    this.addForm.secondCrop = commodity.code;
-    this.addForm.secondCategory = commodity.category || '';
-    this.secondCropSearchInput = '';
-    this.filteredSecondCrops = [];
-    this.showSecondCropSuggestions = false;
-  }
-
-  selectFirstSecondCropSuggestion(): void {
-    if (this.filteredSecondCrops.length > 0) {
-      this.selectSecondCrop(this.filteredSecondCrops[0]);
-    }
-  }
-
-  clearSecondCrop(): void {
-    this.addForm.secondCrop = '';
-    this.addForm.secondCategory = '';
-    this.secondCropSearchInput = '';
-    this.filteredSecondCrops = [];
-    this.showSecondCropSuggestions = false;
-  }
-
-  hideSecondCropSuggestionsDelayed(): void {
-    setTimeout(() => { this.showSecondCropSuggestions = false; }, 150);
-  }
-
-  // ── Edit-dialog second-crop (Double Crop) search-and-select handlers ─────
-  onEditSecondCropSearch(): void {
-    this.filteredEditSecondCrops = this._rankedCropMatches(this.editSecondCropSearchInput);
-    this.showEditSecondCropSuggestions = true;
-  }
-
-  selectEditSecondCrop(commodity: Commodity): void {
-    this.editForm.secondCrop = commodity.code;
-    this.editForm.secondCategory = commodity.category || '';
-    this.editSecondCropSearchInput = '';
-    this.filteredEditSecondCrops = [];
-    this.showEditSecondCropSuggestions = false;
-  }
-
-  selectFirstEditSecondCropSuggestion(): void {
-    if (this.filteredEditSecondCrops.length > 0) {
-      this.selectEditSecondCrop(this.filteredEditSecondCrops[0]);
-    }
-  }
-
-  clearEditSecondCrop(): void {
-    this.editForm.secondCrop = '';
-    this.editForm.secondCategory = '';
-    this.editSecondCropSearchInput = '';
-    this.filteredEditSecondCrops = [];
-    this.showEditSecondCropSuggestions = false;
-  }
-
-  hideEditSecondCropSuggestionsDelayed(): void {
-    setTimeout(() => { this.showEditSecondCropSuggestions = false; }, 150);
   }
 
   onEditCropChange(code: string): void {
@@ -599,16 +436,11 @@ export class PlantingIntentionsTableComponent {
       description: '',
       acres: '',
       plantingYear: currentYear.toString(),
-      tradeUnit: this.tradeUnits().length > 0 ? this.tradeUnits()[0] : '',
-      secondCrop: '',
-      secondCategory: ''
+      tradeUnit: this.tradeUnits().length > 0 ? this.tradeUnits()[0] : ''
     };
     this.addCropSearchInput = '';
     this.filteredAddCrops = [];
     this.showAddCropSuggestions = false;
-    this.secondCropSearchInput = '';
-    this.filteredSecondCrops = [];
-    this.showSecondCropSuggestions = false;
     this._loadCommodities();
     this.showAddDialog = true;
     document.body.style.overflow = 'hidden';
@@ -623,31 +455,20 @@ export class PlantingIntentionsTableComponent {
     return parseInt(value.replace(/[^0-9]/g, ''), 10);
   }
 
-  /** True when the Add form is a Double Crop intention (needs a distinct second crop). */
-  get isAddDoubleCrop(): boolean {
-    return this.addForm.type === 'Double Crop';
-  }
-
   isAddFormValid(): boolean {
     const acres = this._parseIntInput(this.addForm.acres);
     const year = this._parseIntInput(this.addForm.plantingYear);
-    // Double Crop additionally requires a second crop that differs from the primary
-    // (two rows with the same crop+type+year would just collide/accumulate).
-    const doubleCropValid = !this.isAddDoubleCrop
-      || (this.addForm.secondCrop !== '' && this.addForm.secondCrop !== this.addForm.crop);
     return this.addForm.crop !== ''
       && this.addForm.acres !== ''
       && !isNaN(acres) && acres > 0 && acres <= 100_000
       && this.addForm.plantingYear !== ''
       && !isNaN(year) && year >= 2020 && year <= 2100
-      && this.addForm.tradeUnit !== ''
-      && doubleCropValid;
+      && this.addForm.tradeUnit !== '';
   }
 
   /**
    * Emit one crop as either a new row (add) or an acre-accumulation onto an existing
-   * matching row (edit). Shared by the primary crop and the Double Crop second crop so
-   * both follow the identical "already exists → accumulate, else add" rule.
+   * matching row (edit) — "already exists → accumulate, else add".
    */
   private _emitCropForAdd(
     crop: string,
@@ -656,8 +477,7 @@ export class PlantingIntentionsTableComponent {
     acres: number,
     year: number,
     type: string | undefined,
-    tradeUnit: string,
-    doubleCropGroupId?: string
+    tradeUnit: string
   ): void {
     const existing = this.plantingIntentions().find(pi =>
       pi.crop === crop &&
@@ -676,7 +496,7 @@ export class PlantingIntentionsTableComponent {
         plantingYear: existing.plantingYear
       });
     } else {
-      this.add.emit({ crop, category, type, description, acres, plantingYear: year, tradeUnit, doubleCropGroupId });
+      this.add.emit({ crop, category, type, description, acres, plantingYear: year, tradeUnit });
     }
   }
 
@@ -687,66 +507,36 @@ export class PlantingIntentionsTableComponent {
     const newYear = this._parseIntInput(this.addForm.plantingYear);
     const newType = this.addForm.type || undefined;
     const tradeUnit = this.addForm.tradeUnit;
-    const isDouble = this.isAddDoubleCrop && !!this.addForm.secondCrop && this.addForm.secondCrop !== this.addForm.crop;
-    // One shared GUID links the two Double Crop rows so the table can collapse them into a
-    // single line and edit/delete them as a unit. Undefined for a normal single-crop intention.
-    const groupId = isDouble ? crypto.randomUUID() : undefined;
 
-    // Primary crop.
     this._emitCropForAdd(
       this.addForm.crop,
       this.addForm.category || undefined,
       this.addForm.description || undefined,
-      newAcres, newYear, newType, tradeUnit, groupId
+      newAcres, newYear, newType, tradeUnit
     );
-
-    // Double Crop: the second crop becomes its own row sharing the same acres / year /
-    // trade unit / type / group id. Category + description are derived from the second crop's
-    // commodity (the form's category/description describe the primary crop).
-    if (isDouble) {
-      const second = this.allCommodities.find(c => c.code === this.addForm.secondCrop);
-      const secondCategory = this.addForm.secondCategory || second?.category || undefined;
-      const secondDescription = [newType, second?.name].filter(Boolean).join(' ') || undefined;
-      this._emitCropForAdd(
-        this.addForm.secondCrop,
-        secondCategory,
-        secondDescription,
-        newAcres, newYear, newType, tradeUnit, groupId
-      );
-    }
 
     this.closeAddDialog();
   }
 
   openEditDialog(row: PlantingRow): void {
-    // For a collapsed Double Crop pair, edit both members together: primary crop, second
-    // crop, and the shared acreage/year. Otherwise edit the single row as before.
-    const members = row.doubleCropMembers && row.doubleCropMembers.length > 1 ? row.doubleCropMembers : null;
-    const primary = members ? members[0] : row;
-    this.selectedIntention = primary;
-    this.editGroupMemberIds = members ? members.map(m => m.id) : [];
+    this.selectedIntention = row;
 
     // Resolve category: use saved value if set, otherwise look up from Commodities table
-    const commodity = this.allCommodities.find(c => c.code === primary.crop);
-    const category = primary.category || commodity?.category || '';
+    const commodity = this.allCommodities.find(c => c.code === row.crop);
+    const category = row.category || commodity?.category || '';
     const formData = {
-      crop: primary.crop,
+      crop: row.crop,
       category,
-      type: primary.type || '',
-      description: primary.description || '',
-      acres: primary.acres.toString(),
-      plantingYear: primary.plantingYear.toString(),
-      secondCrop: members ? members[1].crop : '',
-      secondCategory: members ? (members[1].category || this.allCommodities.find(c => c.code === members[1].crop)?.category || '') : ''
+      type: row.type || '',
+      description: row.description || '',
+      acres: row.acres.toString(),
+      plantingYear: row.plantingYear.toString()
     };
     this.editForm = { ...formData };
     this.originalEditForm = { ...formData };
     this.editCropSearchInput = '';
     this.filteredEditCrops = [];
     this.showEditCropSuggestions = false;
-    this.editSecondCropSearchInput = '';
-    this.filteredEditSecondCrops = [];
-    this.showEditSecondCropSuggestions = false;
     this._loadCommodities();
     this.showEditDialog = true;
     document.body.style.overflow = 'hidden';
@@ -755,7 +545,6 @@ export class PlantingIntentionsTableComponent {
   closeEditDialog(): void {
     this.showEditDialog = false;
     this.selectedIntention = null;
-    this.editGroupMemberIds = [];
     document.body.style.overflow = '';
   }
 
@@ -765,23 +554,17 @@ export class PlantingIntentionsTableComponent {
       || this.editForm.type !== this.originalEditForm.type
       || this.editForm.description !== this.originalEditForm.description
       || this.editForm.acres !== this.originalEditForm.acres
-      || this.editForm.plantingYear !== this.originalEditForm.plantingYear
-      || this.editForm.secondCrop !== this.originalEditForm.secondCrop
-      || this.editForm.secondCategory !== this.originalEditForm.secondCategory;
+      || this.editForm.plantingYear !== this.originalEditForm.plantingYear;
   }
 
   isEditFormValid(): boolean {
     const acres = this._parseIntInput(this.editForm.acres);
     const year = this._parseIntInput(this.editForm.plantingYear);
-    // Editing a Double Crop pair requires a second crop that differs from the primary.
-    const doubleCropValid = !this.isEditDoubleCrop
-      || (this.editForm.secondCrop !== '' && this.editForm.secondCrop !== this.editForm.crop);
     return this.editForm.crop !== ''
       && this.editForm.acres !== ''
       && !isNaN(acres) && acres > 0 && acres <= 100_000
       && this.editForm.plantingYear !== ''
       && !isNaN(year) && year >= 2020 && year <= 2100
-      && doubleCropValid
       && this.hasEditFormChanged();
   }
 
@@ -792,38 +575,14 @@ export class PlantingIntentionsTableComponent {
     const year = this._parseIntInput(this.editForm.plantingYear);
     const type = this.editForm.type || undefined;
 
-    if (this.isEditDoubleCrop) {
-      // Update BOTH rows of the pair, sharing acres / year / type. Each row's category +
-      // description are derived from its own crop so they stay correct if a crop was changed.
-      const [primaryId, secondId] = this.editGroupMemberIds;
-      const primaryCommodity = this.allCommodities.find(c => c.code === this.editForm.crop);
-      const secondCommodity = this.allCommodities.find(c => c.code === this.editForm.secondCrop);
-      this.edit.emit({
-        intentionId: primaryId,
-        crop: this.editForm.crop,
-        category: this.editForm.category || primaryCommodity?.category || undefined,
-        type,
-        description: [type, primaryCommodity?.name].filter(Boolean).join(' ') || undefined,
-        acres, plantingYear: year
-      });
-      this.edit.emit({
-        intentionId: secondId,
-        crop: this.editForm.secondCrop,
-        category: this.editForm.secondCategory || secondCommodity?.category || undefined,
-        type,
-        description: [type, secondCommodity?.name].filter(Boolean).join(' ') || undefined,
-        acres, plantingYear: year
-      });
-    } else {
-      this.edit.emit({
-        intentionId: this.selectedIntention.id,
-        crop: this.editForm.crop,
-        category: this.editForm.category || undefined,
-        type,
-        description: this.editForm.description || undefined,
-        acres, plantingYear: year
-      });
-    }
+    this.edit.emit({
+      intentionId: this.selectedIntention.id,
+      crop: this.editForm.crop,
+      category: this.editForm.category || undefined,
+      type,
+      description: this.editForm.description || undefined,
+      acres, plantingYear: year
+    });
     this.closeEditDialog();
   }
 
@@ -838,15 +597,8 @@ export class PlantingIntentionsTableComponent {
   }
 
   confirmDelete(): void {
-    // For a Double Crop pair, delete BOTH rows; otherwise just the selected one.
-    // Capture ids before closeEditDialog() clears editGroupMemberIds.
-    const ids = this.isEditDoubleCrop
-      ? [...this.editGroupMemberIds]
-      : (this.selectedIntention ? [this.selectedIntention.id] : []);
-    if (ids.length === 0) return;
-    for (const id of ids) {
-      this.delete.emit(id);
-    }
+    if (!this.selectedIntention) return;
+    this.delete.emit(this.selectedIntention.id);
     this.closeDeleteConfirm();
     this.closeEditDialog();
   }

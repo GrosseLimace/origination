@@ -20,13 +20,6 @@ public class PlantingIntention
     public string? Description { get; set; }
     public int Acres { get; set; }
 
-    // Links the two rows of a "Double Crop" intention (producer plants two crops on the
-    // same ground in the same year). Both rows share one GUID; null for a normal single-crop
-    // intention. The two rows stay fully independent records — this only lets the UI collapse
-    // the pair into one display line and edit/delete them together. Reporting still counts
-    // each crop's acres separately.
-    public string? DoubleCropGroupId { get; set; }
-
     public DateTime CreatedAt { get; set; }
     public string CreatedBy { get; set; } = string.Empty;
     public DateTime? ModifiedAt { get; set; }
