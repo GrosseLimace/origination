@@ -1,18 +1,18 @@
 ---
 name: audit-angular
-description: Audit or remediate Angular code against style-guides/angular-guide.md. Use when reviewing Angular components, templates, services, signals, standalone components, Tailwind usage, testing, error handling, change detection, or frontend PR readiness.
+description: Audit or remediate Angular code against style-guides/angular.md. Use when reviewing Angular components, templates, services, signals, standalone components, Tailwind usage, testing, error handling, change detection, or frontend PR readiness.
 ---
 
 # Audit Angular
 
-Audit Angular code against `style-guides/angular-guide.md`.
+Audit Angular code against `style-guides/angular.md`.
 
 ## Workflow
 
 ### Phase 1: Explore
 
 - Confirm the repo contains Angular code such as `angular.json`, `project.json`, or `src/app/`.
-- Read `style-guides/angular-guide.md` before making any findings.
+- Read `style-guides/angular.md` before making any findings.
 - Inventory the frontend surface: components, services, directives, pipes, guards, routes, tests, and shared UI primitives.
 - Exclude generated output, `dist/`, and vendored files.
 - For large repos, split the review into bounded batches such as feature areas, shared UI, routing/state, and tests.
@@ -75,4 +75,4 @@ Report findings or completed fixes by severity with file references, then summar
 
 ## References
 
-- `style-guides/angular-guide.md`
+- `style-guides/angular.md`

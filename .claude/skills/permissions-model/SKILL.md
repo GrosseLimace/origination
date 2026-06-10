@@ -1,17 +1,17 @@
 ---
 name: permissions-model
-description: Implement, review, or extend the enterprise permissions model using style-guides/permissions-model-guide.md. Use when adding roles, permissions, ASP.NET Core authorization, Angular permission checks, seed data, audit logging, or required permissions tests.
+description: Implement, review, or extend the enterprise permissions model using style-guides/permissions-model.md. Use when adding roles, permissions, ASP.NET Core authorization, Angular permission checks, seed data, audit logging, or required permissions tests.
 ---
 
 # Permissions Model
 
-Use `style-guides/permissions-model-guide.md` for enterprise authorization work.
+Use `style-guides/permissions-model.md` for enterprise authorization work.
 
 ## Workflow
 
 ### Explore
 
-- Read `style-guides/permissions-model-guide.md`.
+- Read `style-guides/permissions-model.md`.
 - Inventory the current roles, permissions, backend enforcement points, frontend permission checks, seed data, audit logs, and tests.
 - Identify whether the task is greenfield implementation, extending an existing model, or auditing drift.
 
@@ -56,4 +56,4 @@ Summarize what changed, which permission scenarios were covered, and any require
 
 ## References
 
-- `style-guides/permissions-model-guide.md`
+- `style-guides/permissions-model.md`

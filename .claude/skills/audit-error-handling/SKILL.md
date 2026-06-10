@@ -1,17 +1,17 @@
 ---
 name: audit-error-handling
-description: Audit or remediate exception flow, API error contracts, retries, logging, and observability against style-guides/error-handling-guide.md. Use when reviewing failures, user-facing errors, resilience logic, or backend/frontend error consistency.
+description: Audit or remediate exception flow, API error contracts, retries, logging, and observability against style-guides/error-handling.md. Use when reviewing failures, user-facing errors, resilience logic, or backend/frontend error consistency.
 ---
 
 # Audit Error Handling
 
-Audit error and exception handling against `style-guides/error-handling-guide.md`.
+Audit error and exception handling against `style-guides/error-handling.md`.
 
 ## Workflow
 
 ### Phase 1: Explore
 
-- Read `style-guides/error-handling-guide.md` first.
+- Read `style-guides/error-handling.md` first.
 - Identify request boundaries, exception handlers, retry logic, logging calls, health checks, and user-facing error surfaces.
 - Locate tests covering failure paths, not just happy paths.
 - For large repos, split the review into bounded batches such as API boundaries, retry logic, logging, and tests.
@@ -68,5 +68,5 @@ Produce a findings-first report with explicit references to the violated standar
 
 ## References
 
-- `style-guides/error-handling-guide.md`
-- `style-guides/logging-guide.md` when application logging and observability findings dominate
+- `style-guides/error-handling.md`
+- `style-guides/logging.md` when application logging and observability findings dominate

@@ -44,14 +44,14 @@ For large repos, review one batch at a time and summarize interim findings befor
 
 Load only the style guides that matter to the reviewed files:
 
-- `style-guides/csharp-guide.md`
-- `style-guides/angular-guide.md`
-- `style-guides/sql-guide.md`
-- `style-guides/error-handling-guide.md`
-- `style-guides/logging-guide.md` when logging or observability changes matter
+- `style-guides/csharp.md`
+- `style-guides/angular.md`
+- `style-guides/sql.md`
+- `style-guides/error-handling.md`
+- `style-guides/logging.md` when logging or observability changes matter
 - `style-guides/git-201.md` when workflow or change hygiene matters
 
-Load `style-guides/security-guide.md` only if the user explicitly wants a security review or the finding is inseparable from security design.
+Load `style-guides/security.md` only if the user explicitly wants a security review or the finding is inseparable from security design.
 
 ### Phase 2: Plan
 

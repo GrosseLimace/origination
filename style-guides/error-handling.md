@@ -3,8 +3,8 @@
 > **Purpose:** This document defines the error handling and exception management standards for all development work. Follow these patterns consistently across all backend services, frontend applications, APIs, and background jobs.
 >
 > **Related guides:**
-> - Use `logging-guide.md` for broader application logging, Azure Monitor, Application Insights, and Azure SQL observability guidance.
-> - Use `security-guide.md` for security-specific response and logging controls.
+> - Use `logging.md` for broader application logging, Azure Monitor, Application Insights, and Azure SQL observability guidance.
+> - Use `security.md` for security-specific response and logging controls.
 
 ---
 

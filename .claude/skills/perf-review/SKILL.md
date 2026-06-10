@@ -78,6 +78,6 @@ Summarize:
 
 ## References
 
-- `style-guides/csharp-guide.md` when backend batching, caching, or outbound call design are central to the finding
-- `style-guides/logging-guide.md` when telemetry, sampling, traces, Query Store, or Azure Monitor evidence drive the review
-- `style-guides/sql-guide.md` when database query shape or indexing are central to the finding
+- `style-guides/csharp.md` when backend batching, caching, or outbound call design are central to the finding
+- `style-guides/logging.md` when telemetry, sampling, traces, Query Store, or Azure Monitor evidence drive the review
+- `style-guides/sql.md` when database query shape or indexing are central to the finding
