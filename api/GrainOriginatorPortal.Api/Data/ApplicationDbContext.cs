@@ -501,6 +501,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.CropOrder).HasColumnType("nvarchar(max)").IsRequired(false);
             entity.Property(e => e.HiddenCrops).HasColumnType("nvarchar(max)").IsRequired(false);
             entity.Property(e => e.SelectedMonths).HasColumnType("nvarchar(max)").IsRequired(false);
+            entity.Property(e => e.PrintLayout).HasColumnType("nvarchar(max)").IsRequired(false);
             entity.Property(e => e.ModifiedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.HasIndex(e => new { e.UserId, e.TradeUnitKey }).IsUnique().HasDatabaseName("UQ_BidSheetPreferences_User_TradeUnitKey");
             entity.HasIndex(e => e.UserId).HasDatabaseName("IX_BidSheetPreferences_UserId");
