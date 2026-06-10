@@ -347,14 +347,10 @@ export class BidSheetComponent {
     const months = this.editBidsMonths();
     const crops = this.editBidsCrops();
     const year = this.editBidsYear();
-    // Cross-product of crops × selected months. Yearly (0) goes LAST (after specific months).
-    const sortedMonths = [...months].sort((a, b) => {
-      if (a === 0) return 1;  // yearly goes to end
-      if (b === 0) return -1;
-      return a - b;           // months in calendar order
-    });
+    // Cross-product of crops × selected months, in the user's chosen month order (editBidsMonths is the
+    // canonical order — defaults to Yearly first, reorderable via the print dialog's Months list).
     return crops.flatMap(crop =>
-      sortedMonths.map(m => ({
+      months.map(m => ({
         key: `${crop}#${m}`,
         crop,
         month: m,
@@ -1659,12 +1655,18 @@ export class BidSheetComponent {
     });
   }
 
+  /** Default month ordering: Yearly (0) first, then months in calendar order. Custom order comes from drag. */
+  private _defaultMonthOrder(months: number[]): number[] {
+    return [...new Set(months)].sort((a, b) => (a === 0 ? -1 : b === 0 ? 1 : a - b));
+  }
+
   /** Applies the pending month selection and closes the dropdown. */
   confirmMonthSelection(): void {
     const changed = JSON.stringify(this.pendingMonths()) !== JSON.stringify(this.editBidsMonths());
     // Save edits against the CURRENT columns before editBidsMonths changes (which reshapes editGridColumns).
     this._saveDirtyBids(() => {
-      this.editBidsMonths.set([...this.pendingMonths()]);
+      // Selecting months (re)applies the default order (Yearly first); drag in the print dialog customizes it.
+      this.editBidsMonths.set(this._defaultMonthOrder(this.pendingMonths()));
       this.showMonthDropdown.set(false);
       this._buildEditGrid(this.editBidsYear());
       if (changed) {
@@ -1672,6 +1674,43 @@ export class BidSheetComponent {
         this.toastService.success('Month selection saved');
       }
     });
+  }
+
+  /** Reorders the period columns (grid + print) when a month is dragged in the print dialog's Months list.
+   *  editBidsMonths is the canonical order; editGridColumns/printCropGroups react to it (bids are keyed by
+   *  crop#month, so no grid rebuild is needed — and we avoid discarding any in-grid state). */
+  onPrintMonthDrop(event: CdkDragDrop<number[]>): void {
+    if (event.previousIndex === event.currentIndex) return;
+    this.editBidsMonths.update(months => {
+      const updated = [...months];
+      moveItemInArray(updated, event.previousIndex, event.currentIndex);
+      return updated;
+    });
+    this._saveSelectedMonths();
+  }
+
+  /** Reorders the crop tables (grid + print) when a crop is dragged in the print dialog's Crops list.
+   *  editBidsCrops follows the saved crop order, so updating it flows to both the grid and the print. */
+  onPrintCropDrop(event: CdkDragDrop<string[]>): void {
+    if (event.previousIndex === event.currentIndex) return;
+    const visible = [...this.editBidsCrops()];
+    moveItemInArray(visible, event.previousIndex, event.currentIndex);
+    const hidden = this.crops().filter(c => this.hiddenCrops().has(c));
+    const orderedCrops = [...visible, ...hidden]; // keep hidden crops parked at the end
+    this.crops.set(orderedCrops);
+    this._saveCropOrder(orderedCrops);
+  }
+
+  /** Persists the crop column order for the active TU (mirrors the grid's column-drag persistence). */
+  private _saveCropOrder(orderedCrops: string[]): void {
+    const key = this.activeTradeUnitKey();
+    if (!key) return;
+    const orderMap = new Map(this.cropOrderByTu());
+    orderMap.set(key, orderedCrops);
+    this.cropOrderByTu.set(orderMap);
+    this.apiService.setBidSheetPreference(key, this.selectedCrop() || null, this.selectedMonth(), this.selectedYear() || null, JSON.stringify(orderedCrops))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({ error: (err) => { if (isDevMode()) console.warn('Failed to save crop order', err); } });
   }
 
   /** Cancels the pending month selection and closes the dropdown. */
@@ -1986,11 +2025,9 @@ export class BidSheetComponent {
     const selectedMonths = this.printSelectedMonths();
     const viewedYear = this.editBidsYear();
     const yearlyRows = this.printYearlyRows().filter(r => r.enabled);
-    // Preserve crop order from the grid; sort periods with "Yearly" (0) last.
+    // Preserve crop + month order from the grid (editBidsMonths is the canonical, user-orderable order).
     const crops = this.editBidsCrops().filter(c => selectedCrops.has(c));
-    const months = this.editBidsMonths()
-      .filter(m => selectedMonths.has(m))
-      .sort((a, b) => (a === 0 ? 1 : b === 0 ? -1 : a - b));
+    const months = this.editBidsMonths().filter(m => selectedMonths.has(m));
 
     type PrintColumn = { key: string; crop: string; month: number; year: number; label: string; subLabel: string };
     return crops.map(crop => {
