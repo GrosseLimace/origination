@@ -3879,6 +3879,7 @@ public class SqlDataService : IDataService
     {
         return await _appContext.BidSheetLocations
             .AsNoTracking()
+            .Include(l => l.Bids)
             .OrderBy(l => l.Name)
             .ToListAsync(cancellationToken);
     }
