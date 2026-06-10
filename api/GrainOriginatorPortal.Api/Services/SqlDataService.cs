@@ -4209,7 +4209,7 @@ public class SqlDataService : IDataService
             .FirstOrDefaultAsync(p => p.UserId == userId && p.TradeUnitKey == tradeUnitKey, cancellationToken);
     }
 
-    public async Task SetBidSheetPreferenceAsync(string userId, string tradeUnitKey, string? cropCode, int? month, int? cropYear, string? cropOrder = null, string? hiddenCrops = null, string? selectedMonths = null, CancellationToken cancellationToken = default)
+    public async Task SetBidSheetPreferenceAsync(string userId, string tradeUnitKey, string? cropCode, int? month, int? cropYear, string? cropOrder = null, string? hiddenCrops = null, string? selectedMonths = null, string? printLayout = null, CancellationToken cancellationToken = default)
     {
         var existing = await _appContext.BidSheetPreferences
             .FirstOrDefaultAsync(p => p.UserId == userId && p.TradeUnitKey == tradeUnitKey, cancellationToken);
@@ -4222,6 +4222,7 @@ public class SqlDataService : IDataService
             if (cropOrder is not null) existing.CropOrder = cropOrder;
             if (hiddenCrops is not null) existing.HiddenCrops = hiddenCrops;
             if (selectedMonths is not null) existing.SelectedMonths = selectedMonths;
+            if (printLayout is not null) existing.PrintLayout = printLayout;
             existing.ModifiedAt = DateTime.UtcNow;
         }
         else
@@ -4236,6 +4237,7 @@ public class SqlDataService : IDataService
                 CropOrder = cropOrder,
                 HiddenCrops = hiddenCrops,
                 SelectedMonths = selectedMonths,
+                PrintLayout = printLayout,
                 ModifiedAt = DateTime.UtcNow
             });
         }

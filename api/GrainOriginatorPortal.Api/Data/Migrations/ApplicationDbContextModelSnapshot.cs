@@ -229,6 +229,9 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                     b.Property<int?>("Month")
                         .HasColumnType("int");
 
+                    b.Property<string>("PrintLayout")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("SelectedMonths")
                         .HasColumnType("nvarchar(max)");
 
