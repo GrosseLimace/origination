@@ -1,17 +1,17 @@
 ---
 name: audit-logging
-description: Audit or remediate application logging and observability against style-guides/logging-guide.md. Use when reviewing structured logging, Azure Monitor, Application Insights, Log Analytics usage, Azure SQL auditing, sampling, correlation, dashboards, alerts, or developer-docs logging configuration.
+description: Audit or remediate application logging and observability against style-guides/logging.md. Use when reviewing structured logging, Azure Monitor, Application Insights, Log Analytics usage, Azure SQL auditing, sampling, correlation, dashboards, alerts, or developer-docs logging configuration.
 ---
 
 # Audit Logging
 
-Audit application logging and observability against `style-guides/logging-guide.md`.
+Audit application logging and observability against `style-guides/logging.md`.
 
 ## Workflow
 
 ### Phase 1: Explore
 
-- Read `style-guides/logging-guide.md` before making any findings.
+- Read `style-guides/logging.md` before making any findings.
 - Identify the logging surface in scope: backend services, frontend telemetry, background jobs, Azure Monitor/Application Insights setup, Azure SQL observability, and `developer-docs/` operational notes.
 - Inventory current logging libraries, structured fields, trace propagation behavior, telemetry resources, dashboard/query references, and alert/runbook documentation.
 - For large repos, split the review into bounded batches such as backend logging, browser telemetry, Azure SQL observability, and `developer-docs/` operational configuration.
@@ -80,7 +80,7 @@ Summarize:
 
 ## References
 
-- `style-guides/logging-guide.md`
-- `style-guides/error-handling-guide.md` when error-path logging and trace IDs are central to the finding
-- `style-guides/security-guide.md` when privacy, redaction, or security event logging is central to the finding
-- `style-guides/sql-guide.md` when Azure SQL performance and auditing signals are central to the finding
+- `style-guides/logging.md`
+- `style-guides/error-handling.md` when error-path logging and trace IDs are central to the finding
+- `style-guides/security.md` when privacy, redaction, or security event logging is central to the finding
+- `style-guides/sql.md` when Azure SQL performance and auditing signals are central to the finding

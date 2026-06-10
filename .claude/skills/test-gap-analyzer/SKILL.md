@@ -12,7 +12,7 @@ Find the most important missing or weak tests in the current scope.
 ### Phase 1: Explore
 
 - Identify the code area in scope and the relevant test projects or test directories.
-- Read the local style guides that affect expected behavior, especially language-specific guides and `style-guides/error-handling-guide.md` when failure paths matter.
+- Read the local style guides that affect expected behavior, especially language-specific guides and `style-guides/error-handling.md` when failure paths matter.
 - Inventory existing tests before judging coverage quality.
 - For large repos, split the analysis into bounded batches and summarize each batch before moving on.
 - If useful and supported, optionally use sub-agents to inspect disjoint code areas in parallel. Do not depend on sub-agents for the core workflow.

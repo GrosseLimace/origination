@@ -1,17 +1,17 @@
 ---
 name: audit-security
-description: Review code and delivery workflows against style-guides/security-guide.md. Use when the developer asks for a security review, deployment-readiness check, auth/authz audit, secret handling review, logging review, or secure coding pass.
+description: Review code and delivery workflows against style-guides/security.md. Use when the developer asks for a security review, deployment-readiness check, auth/authz audit, secret handling review, logging review, or secure coding pass.
 ---
 
 # Audit Security
 
-Perform a focused security review against `style-guides/security-guide.md`.
+Perform a focused security review against `style-guides/security.md`.
 
 ## Workflow
 
 ### Phase 1: Explore
 
-- Read `style-guides/security-guide.md` first.
+- Read `style-guides/security.md` first.
 - Identify the app tier, auth model, exposed endpoints, secret/config sources, CI/CD files, and logging/monitoring surface.
 - Scope the review so it covers the highest-risk paths instead of the whole repo by default.
 - For large repos, split the review into bounded batches such as auth, secrets/config, delivery controls, and logging.
@@ -64,6 +64,6 @@ Produce a security-focused findings report with escalations and release blockers
 
 ## References
 
-- `style-guides/security-guide.md`
-- `style-guides/error-handling-guide.md` when error contracts are part of the finding
-- `style-guides/logging-guide.md` when logging or observability controls are part of the finding
+- `style-guides/security.md`
+- `style-guides/error-handling.md` when error contracts are part of the finding
+- `style-guides/logging.md` when logging or observability controls are part of the finding

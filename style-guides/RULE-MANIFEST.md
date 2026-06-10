@@ -1,4 +1,4 @@
-# Inline rule manifest — `*-guide.md`
+# Inline rule manifest — `*.md`
 
 The style guides in this directory are human-readable policy documents. The
 PR-gate pipeline (`pipelines/templates/dev-standards-check.yml` in each
@@ -6,7 +6,7 @@ consumer repo) needs a **machine-readable** subset of those rules to
 enforce them at PR time without drifting from the prose.
 
 This file documents the inline rule-block convention used in every
-`*-guide.md`. The extraction tool at `tools/extract-rules.py` walks
+`*.md`. The extraction tool at `tools/extract-rules.py` walks
 each guide, parses out the rule blocks, and emits a consolidated
 `sync-to-master/rules.yaml` that is consumed by the gate at PR time.
 
@@ -24,7 +24,7 @@ prose explaining the rationale, examples, exceptions…
 
 ```rule
 id: sql-no-select-star
-source: sql-guide.md§No-SELECT
+source: sql.md§No-SELECT
 severity: error
 description: Queries must enumerate columns; SELECT * is not allowed
 applies-to: [changed-files]
@@ -36,7 +36,7 @@ args:
   except: 'EXISTS[[:space:]]*\([[:space:]]*SELECT'
 message: |
   Enumerate the columns instead of using SELECT *. See
-  dev-standards/style-guides/sql-guide.md §No-SELECT.
+  dev-standards/style-guides/sql.md §No-SELECT.
 ```
 ````
 
@@ -82,7 +82,7 @@ message: |
 
 ## Build flow
 
-1. Author edits `*-guide.md` — adds/updates the prose AND the adjacent rule block.
+1. Author edits `*.md` — adds/updates the prose AND the adjacent rule block.
 2. CI on `IT/dev-standards` (`.github/workflows/sync-to-repos.yml` + a new pre-step) runs `tools/extract-rules.py`, which regenerates `sync-to-master/rules.yaml`.
 3. The existing weekly sync mirrors `sync-to-master/**` into each consumer repo's `dev-standards/` directory.
 4. Consumer-repo `pipelines/templates/dev-standards-check.yml` reads `dev-standards/rules.yaml` and dispatches each rule on every PR.

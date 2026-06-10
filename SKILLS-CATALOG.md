@@ -19,13 +19,13 @@ These skills are synced automatically from `dev-standards` via GitHub Actions. U
 
 | Skill | Command | Description |
 |-------|---------|-------------|
-| Audit Angular | `/audit-angular` | Review Angular structure, templates, state flow, forms, performance, and testing against `style-guides/angular-guide.md`, usually in phases for larger frontends |
-| Audit .NET | `/audit-dotnet` | Review C# and .NET architecture, async patterns, API design, data access, outbound calls, batching, caching, and tests against `style-guides/csharp-guide.md` |
-| Audit SQL | `/audit-sql` | Review schema design, data types, keys, indexes, foreign keys, migrations, and query quality against `style-guides/sql-guide.md`, even when only repo artifacts are available |
-| Audit Security | `/audit-security` | Review application code, secrets handling, auth flows, dependency exposure, and delivery pipeline risks against `style-guides/security-guide.md` |
-| Audit Error Handling | `/audit-error-handling` | Review exception flow, user-safe error contracts, retry behavior, failure boundaries, and operational visibility against `style-guides/error-handling-guide.md` |
-| Audit Logging | `/audit-logging` | Review structured application logging, correlation, Azure Monitor and Application Insights usage, Azure SQL logging, retention, and observability documentation against `style-guides/logging-guide.md` |
-| Permissions Model | `/permissions-model` | Implement or review authorization patterns, roles, scopes, and enforcement boundaries against `style-guides/permissions-model-guide.md` |
+| Audit Angular | `/audit-angular` | Review Angular structure, templates, state flow, forms, performance, and testing against `style-guides/angular.md`, usually in phases for larger frontends |
+| Audit .NET | `/audit-dotnet` | Review C# and .NET architecture, async patterns, API design, data access, outbound calls, batching, caching, and tests against `style-guides/csharp.md` |
+| Audit SQL | `/audit-sql` | Review schema design, data types, keys, indexes, foreign keys, migrations, and query quality against `style-guides/sql.md`, even when only repo artifacts are available |
+| Audit Security | `/audit-security` | Review application code, secrets handling, auth flows, dependency exposure, and delivery pipeline risks against `style-guides/security.md` |
+| Audit Error Handling | `/audit-error-handling` | Review exception flow, user-safe error contracts, retry behavior, failure boundaries, and operational visibility against `style-guides/error-handling.md` |
+| Audit Logging | `/audit-logging` | Review structured application logging, correlation, Azure Monitor and Application Insights usage, Azure SQL logging, retention, and observability documentation against `style-guides/logging.md` |
+| Permissions Model | `/permissions-model` | Implement or review authorization patterns, roles, scopes, and enforcement boundaries against `style-guides/permissions-model.md` |
 
 ### Quality Skills
 

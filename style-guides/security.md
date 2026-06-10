@@ -40,7 +40,7 @@
 
 ```rule
 id: no-hardcoded-password-literals
-source: security-guide.md§2
+source: security.md§2
 severity: error
 description: No hardcoded password literals in source
 applies-to: [changed-files]
@@ -50,12 +50,12 @@ args:
   pattern: 'password[[:space:]]*[:=][[:space:]]*"[^"$<{]{4,}"'
   ignore-case: true
   except: '(\$\(|\$\{|@Microsoft\.KeyVault|<<|placeholder|YOUR_|EXAMPLE|REDACTED|x{4,}|\*{4,}|\bnull\b|""|"""|TODO|TBD|sample|dummy|fake)'
-message: Use Azure Key Vault + Managed Identity (security-guide.md §2). No hardcoded password literals.
+message: Use Azure Key Vault + Managed Identity (security.md §2). No hardcoded password literals.
 ```
 
 ```rule
 id: no-hardcoded-api-keys
-source: security-guide.md§2
+source: security.md§2
 severity: error
 description: No hardcoded API keys / secret keys / access tokens / client secrets in source
 applies-to: [changed-files]
@@ -65,12 +65,12 @@ args:
   pattern: '(api[_-]?key|secret[_-]?key|access[_-]?token|client[_-]?secret|bearer[_-]?token)[[:space:]]*[:=][[:space:]]*"[A-Za-z0-9+/_=.\-]{16,}"'
   ignore-case: true
   except: '(\$\(|\$\{|@Microsoft\.KeyVault|<<|placeholder|YOUR_|EXAMPLE|REDACTED|x{4,}|\*{4,}|TODO|TBD|sample|dummy|fake)'
-message: Move the value to Key Vault and reference via @Microsoft.KeyVault(...) (security-guide.md §2 / §5).
+message: Move the value to Key Vault and reference via @Microsoft.KeyVault(...) (security.md §2 / §5).
 ```
 
 ```rule
 id: no-aws-access-key
-source: security-guide.md§2
+source: security.md§2
 severity: error
 description: AWS access keys in source (AKIA + 16 chars)
 applies-to: [changed-files]
@@ -83,7 +83,7 @@ message: Move credentials to a secure store; rotate any committed keys immediate
 
 ```rule
 id: no-private-key-material
-source: security-guide.md§2
+source: security.md§2
 severity: error
 description: Private key PEM blocks in source
 applies-to: [changed-files]
@@ -188,7 +188,7 @@ message: Private key material must never be committed; rotate immediately if it 
 
 ```rule
 id: angular-no-bypass-security-trust
-source: security-guide.md§4.2
+source: security.md§4.2
 severity: error
 description: Angular code must not call DomSanitizer.bypassSecurityTrust* — these calls disable XSS protection
 applies-to: [changed-files]
@@ -202,7 +202,7 @@ message: |
   to render trusted SVG icons or markup, use an inline-template component (e.g. the
   `IconComponent` pattern in @it/angular-components v0.2+) — do not wrap raw strings.
   If you genuinely need untrusted HTML rendering, use a DOMPurify-backed pipe with an
-  explicit allow-list. See style-guides/security-guide.md §4.2 and IT/gc-track-report
+  explicit allow-list. See style-guides/security.md §4.2 and IT/gc-track-report
   ADR-005.
 ```
 

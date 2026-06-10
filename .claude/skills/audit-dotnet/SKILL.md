@@ -1,18 +1,18 @@
 ---
 name: audit-dotnet
-description: Audit or remediate C# and .NET code against style-guides/csharp-guide.md. Use when reviewing API controllers, services, domain models, DTOs, DI patterns, async flows, exception handling, tests, or backend PR readiness.
+description: Audit or remediate C# and .NET code against style-guides/csharp.md. Use when reviewing API controllers, services, domain models, DTOs, DI patterns, async flows, exception handling, tests, or backend PR readiness.
 ---
 
 # Audit .NET
 
-Audit .NET code against `style-guides/csharp-guide.md`.
+Audit .NET code against `style-guides/csharp.md`.
 
 ## Workflow
 
 ### Phase 1: Explore
 
 - Confirm the repo contains `.sln`, `.csproj`, or C# source files.
-- Read `style-guides/csharp-guide.md` before making any findings.
+- Read `style-guides/csharp.md` before making any findings.
 - Inventory solution structure, project boundaries, test projects, controllers, services, entities, DTOs, and configuration files.
 - Exclude generated files such as `bin/`, `obj/`, and migration snapshots unless they are directly relevant.
 - For large repos, split the review into bounded batches such as API, application services, data layer, and tests.
@@ -71,6 +71,6 @@ Produce a findings-first report with severity, affected files, and follow-up ver
 
 ## References
 
-- `style-guides/csharp-guide.md`
-- `style-guides/error-handling-guide.md` when exception flow or API error contracts are involved
-- `style-guides/logging-guide.md` when backend logging or telemetry findings dominate
+- `style-guides/csharp.md`
+- `style-guides/error-handling.md` when exception flow or API error contracts are involved
+- `style-guides/logging.md` when backend logging or telemetry findings dominate
