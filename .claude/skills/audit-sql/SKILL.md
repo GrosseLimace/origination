@@ -1,18 +1,18 @@
 ---
 name: audit-sql
-description: Audit or remediate SQL schema, query, and migration work against style-guides/sql-guide.md. Use when reviewing tables, columns, indexes, stored procedures, migrations, performance patterns, or Azure SQL conventions.
+description: Audit or remediate SQL schema, query, and migration work against style-guides/sql.md. Use when reviewing tables, columns, indexes, stored procedures, migrations, performance patterns, or Azure SQL conventions.
 ---
 
 # Audit SQL
 
-Audit SQL assets against `style-guides/sql-guide.md`.
+Audit SQL assets against `style-guides/sql.md`.
 
 ## Workflow
 
 ### Phase 1: Explore
 
 - Locate `.sql` files, migrations, seed scripts, and any data-access layer that emits SQL.
-- Read `style-guides/sql-guide.md` before making any findings.
+- Read `style-guides/sql.md` before making any findings.
 - Separate schema work from query work and from deployment/migration scripts.
 - If live database access is not available, treat repo artifacts as the schema evidence source in this order: migrations, `CREATE/ALTER TABLE` scripts, EF Core model/configuration, stored procedures/views, and schema documentation such as `SCHEMA.md`.
 - For large repos, split the review into bounded batches such as schema objects, queries, migrations, and data-access seams.
@@ -92,6 +92,6 @@ Include:
 
 ## References
 
-- `style-guides/sql-guide.md`
-- `style-guides/security-guide.md` when the finding involves injection or sensitive-data handling
-- `style-guides/logging-guide.md` when Azure SQL auditing, Query Store, or observability findings dominate
+- `style-guides/sql.md`
+- `style-guides/security.md` when the finding involves injection or sensitive-data handling
+- `style-guides/logging.md` when Azure SQL auditing, Query Store, or observability findings dominate

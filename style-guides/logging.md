@@ -7,9 +7,9 @@
 
 > **Related guides:**
 >
-> - Use `error-handling-guide.md` for exception semantics, HTTP error contracts, and retry rules.
-> - Use `security-guide.md` for security logging and alerting minimums.
-> - Use `permissions-model-guide.md` for permission-specific audit logging requirements.
+> - Use `error-handling.md` for exception semantics, HTTP error contracts, and retry rules.
+> - Use `security.md` for security logging and alerting minimums.
+> - Use `permissions-model.md` for permission-specific audit logging requirements.
 
 ---
 
