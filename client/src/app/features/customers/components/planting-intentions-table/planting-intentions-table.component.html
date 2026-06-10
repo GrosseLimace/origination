@@ -44,7 +44,7 @@
             <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800">
               <div class="flex items-start justify-between mb-3">
                 <div class="flex-1">
-                  <div class="font-medium text-gray-900 dark:text-white">{{ intention.type ? intention.type + ' ' : '' }}{{ getCropCategory(intention.crop) }}</div>
+                  <div class="font-medium text-gray-900 dark:text-white">{{ rowCropLabel(intention) }}</div>
                 </div>
                 <button
                   type="button"
@@ -200,7 +200,7 @@
 
                 <!-- Data Row -->
                 <app-table-row>
-                  <app-table-cell class="text-center">{{ intention.type ? intention.type + ' ' : '' }}{{ getCropCategory(intention.crop) }}</app-table-cell>
+                  <app-table-cell class="text-center">{{ rowCropLabel(intention) }}</app-table-cell>
                   <app-table-cell class="text-center">{{ intention.acres | number }}</app-table-cell>
                   <app-table-cell class="text-center">{{ intention.plantingYear }}</app-table-cell>
                   <app-table-cell class="text-center">{{ intention.createdAt | date:'M/d/yy' }}</app-table-cell>
@@ -250,8 +250,9 @@
                   [ngClass]="addForm.type ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500'"
                 >
                   <option value="" class="text-gray-400 dark:text-gray-500">Select type...</option>
-                  <option value="Irrigated" class="text-gray-900 dark:text-white">Irrigated</option>
-                  <option value="Dryland"   class="text-gray-900 dark:text-white">Dryland</option>
+                  <option value="Irrigated"   class="text-gray-900 dark:text-white">Irrigated</option>
+                  <option value="Dryland"     class="text-gray-900 dark:text-white">Dryland</option>
+                  <option value="Double Crop" class="text-gray-900 dark:text-white">Double Crop</option>
                 </select>
               </div>
 
@@ -372,8 +373,9 @@
                 [ngClass]="editForm.type ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500'"
               >
                 <option value="" class="text-gray-400 dark:text-gray-500">Select type...</option>
-                <option value="Irrigated" class="text-gray-900 dark:text-white">Irrigated</option>
-                <option value="Dryland"   class="text-gray-900 dark:text-white">Dryland</option>
+                <option value="Irrigated"   class="text-gray-900 dark:text-white">Irrigated</option>
+                <option value="Dryland"     class="text-gray-900 dark:text-white">Dryland</option>
+                <option value="Double Crop" class="text-gray-900 dark:text-white">Double Crop</option>
               </select>
             </div>
 
@@ -448,6 +450,7 @@
               </select>
             </div>
 
+
             <div class="space-y-2">
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Acres</label>
               <app-input type="text" inputmode="numeric" [maxlength]="10" [(ngModel)]="editForm.acres" placeholder="e.g., 1,200" class="placeholder:text-gray-400 dark:placeholder:text-gray-500"></app-input>
@@ -489,7 +492,7 @@
               </div>
               <div class="flex justify-between">
                 <span class="text-sm text-gray-600 dark:text-gray-400">Crop:</span>
-                <span class="text-sm font-medium text-gray-900 dark:text-gray-300">{{ selectedIntention.type ? selectedIntention.type + ' ' : '' }}{{ getCropCategory(selectedIntention.crop) }}</span>
+                <span class="text-sm font-medium text-gray-900 dark:text-gray-300">{{ editDialogCropLabel }}</span>
               </div>
               @if (selectedIntention.description) {
                 <div class="flex justify-between">

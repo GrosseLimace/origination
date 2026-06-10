@@ -124,9 +124,8 @@ public class OriginationDbContext : DbContext
             // only and are enriched via a side-query in SqlDataService after the main
             // fetch (EnrichWithHedgeMarketMonthAsync). Ignored here so EF doesn't try
             // to project these columns from the view, which would throw SQL 207.
-            entity.Ignore(e => e.HedgeMarketCode);
-            entity.Ignore(e => e.HedgeMarketMonth);
             entity.Ignore(e => e.HedgeMarketMonthDescription);
+            entity.Ignore(e => e.PriceMarketMonthDescription);
 
             // Metadata
             entity.Property(e => e.IsActive).HasColumnName("IsActive").IsRequired();

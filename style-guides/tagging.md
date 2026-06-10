@@ -7,8 +7,8 @@
 
 > **Related guides:**
 >
-> - Use `security-guide.md` for data-classification handling and audit requirements.
-> - Use `logging-guide.md` for diagnostic/observability settings (separate from tags).
+> - Use `security.md` for data-classification handling and audit requirements.
+> - Use `logging.md` for diagnostic/observability settings (separate from tags).
 
 ---
 

@@ -199,7 +199,7 @@ export class DashboardComponent {
       const commodity = this._commodityByCode().get(p.crop);
       const category = p.category || commodity?.category || p.crop;
       const key = this.selectedCropFilter()
-        ? [p.type, category].filter(Boolean).join(' ')
+        ? this._dashboardCropKey(p.type, category)
         : category;
       const arr = map.get(key);
       if (arr) arr.push(p); else map.set(key, [p]);
@@ -315,7 +315,7 @@ export class DashboardComponent {
     return this.filteredIntentionsForYear().map(p => {
       const commodity = this._commodityByCode().get(p.crop);
       const category = p.category || commodity?.category || p.crop;
-      const cropKey = [p.type, category].filter(Boolean).join(' ');
+      const cropKey = this._dashboardCropKey(p.type, category);
       return { acres: p.acres, yieldEst: yieldMap.get(cropKey) ?? null };
     });
   });
@@ -371,13 +371,22 @@ export class DashboardComponent {
     return s.toLowerCase().replace(/\b\w/g, ch => ch.toUpperCase());
   }
 
+  /**
+   * Crop key/label for the dashboard from a planting intention: planting type + label
+   * (e.g. "Irrigated Corn", "Double Crop Corn"). Double Crop is just a type now, so it splits
+   * out like Irrigated / Dryland — including in Season Targets.
+   */
+  private _dashboardCropKey(type: string | undefined, label: string): string {
+    return [type, label].filter(Boolean).join(' ');
+  }
+
   readonly cropBreakdown = computed(() => {
     const cropAcresMap = new Map<string, number>();
     for (const p of this.filteredIntentionsForYear()) {
       const commodity = this._commodityByCode().get(p.crop);
       const category = p.category || commodity?.category || p.crop;
       const key = this.selectedCropFilter()
-        ? [p.type, category].filter(Boolean).join(' ')
+        ? this._dashboardCropKey(p.type, category)
         : category;
       cropAcresMap.set(key, (cropAcresMap.get(key) || 0) + p.acres);
     }
@@ -424,7 +433,7 @@ export class DashboardComponent {
       for (const p of matching) {
         const commodity = this._commodityByCode().get(p.crop);
         const category = p.category || commodity?.category || p.crop;
-        const cropKey = [p.type, category].filter(Boolean).join(' ');
+        const cropKey = this._dashboardCropKey(p.type, category);
         const yieldEst = yieldMap.get(cropKey);
         if (yieldEst != null) {
           totalProd += p.acres * yieldEst;
@@ -459,8 +468,8 @@ export class DashboardComponent {
     for (const p of this.filteredIntentionsForYear()) {
       const commodity = commodityByCode.get(p.crop);
       const category = p.category || commodity?.category || p.crop;
-      const categoryKey = [p.type, category].filter(Boolean).join(' ');
-      const displayKey = [p.type, p.crop].filter(Boolean).join(' ');
+      const categoryKey = this._dashboardCropKey(p.type, category);
+      const displayKey = this._dashboardCropKey(p.type, p.crop);
       const yieldEst = yieldMap.get(categoryKey);
       const production = yieldEst != null ? p.acres * yieldEst : 0;
       let entry = map.get(p.customerId);
@@ -1267,7 +1276,7 @@ export class DashboardComponent {
     for (const p of filtered) {
       const commodity = this._commodityByCode().get(p.crop);
       const category = p.category || commodity?.category || p.crop;
-      const cropKey = [p.type, category].filter(Boolean).join(' ');
+      const cropKey = this._dashboardCropKey(p.type, category);
       cropAcresMap.set(cropKey, (cropAcresMap.get(cropKey) || 0) + p.acres);
       cropCategoryMap.set(cropKey, category);
     }

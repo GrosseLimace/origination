@@ -298,7 +298,7 @@ CREATE TABLE Customer (
 
 ```rule
 id: sql-no-select-star
-source: sql-guide.md§Query-Formatting
+source: sql.md§Query-Formatting
 severity: error
 description: Queries must enumerate columns; SELECT * is not allowed (except inside EXISTS subqueries)
 applies-to: [changed-files]
@@ -311,12 +311,12 @@ args:
 message: |
   Enumerate the columns instead of using SELECT *. The only allowed use of
   SELECT * is inside an EXISTS(...) subquery where columns are immaterial.
-  See dev-standards/style-guides/sql-guide.md §Query-Formatting.
+  See dev-standards/style-guides/sql.md §Query-Formatting.
 ```
 
 ```rule
 id: sql-no-string-interpolated-query
-source: sql-guide.md / security-guide.md
+source: sql.md / security.md
 severity: error
 description: SQL must not be built via C# string interpolation. The pattern requires a SQL keyword followed by a SQL-context anchor (FROM / INTO / SET) so it doesn't fire on exception-message strings that merely contain words like "Delete".
 applies-to: [changed-files]
@@ -333,7 +333,7 @@ message: |
 
 ```rule
 id: sql-no-fromsqlraw-interpolation
-source: sql-guide.md / security-guide.md
+source: sql.md / security.md
 severity: error
 description: FromSqlRaw must not receive an interpolated string; use FromSqlInterpolated instead
 applies-to: [changed-files]

@@ -574,7 +574,7 @@ export class NlqFilterService {
         || filters.avgTestWeightOver != null || filters.avgTestWeightUnder != null
         || filters.avgProteinOver != null || filters.avgProteinUnder != null;
       const isPlanting = cat === 'Planting' || filters.hasPlantingIntentions
-        || filters.plantingYear != null || filters.irrigatedOnly || filters.drylandOnly
+        || filters.plantingYear != null || filters.irrigatedOnly || filters.drylandOnly || filters.doubleCropOnly
         || (filters.plantingAcresOver != null && filters.plantingAcresOver > 0);
       const isContracts = cat === 'Contracts'
         || filters.hasActiveContracts || filters.hasUnsignedContracts

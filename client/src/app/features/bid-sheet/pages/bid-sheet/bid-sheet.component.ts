@@ -99,6 +99,9 @@ export class BidSheetComponent {
   // --- Filters ---
   /** True when any TUs are active — either via individual checkboxes or group selection. Enables bid values, statuses, and reference features. */
   readonly hasIndividualTu = computed(() => this.activeTradeUnits().length > 0);
+  /** The bids grid is read-only in "All Producers" mode (no single TU to save against) — it's a
+   *  view of every location's bids for the selected year. Editing requires picking a trade unit. */
+  readonly editBidsReadOnly = computed(() => !this.hasIndividualTu());
   selectedYear = signal<number>(new Date().getFullYear());
   selectedCrop = signal<string>('');
   searchQuery = signal<string>('');
@@ -292,14 +295,14 @@ export class BidSheetComponent {
   editBidsMonths = signal<number[]>([0]); // [0]=yearly, [4,5,6]=Apr+May+Jun
 
   /** Label shown on the month-selector button.
-   *  Yearly-only → "Yearly". Months only → "N Months". Mixed → "N Months + Yearly". */
+   *  Year-only → "Year". Months only → "N Months". Mixed → "N Months + Year". */
   readonly editBidsMonthsLabel = computed(() => {
     const months = this.editBidsMonths();
     const hasYearly = months.includes(0);
     const specificCount = months.filter(m => m !== 0).length;
-    if (specificCount === 0) return 'Yearly';
+    if (specificCount === 0) return 'Year';
     const base = `${specificCount} Month${specificCount === 1 ? '' : 's'}`;
-    return hasYearly ? `${base} + Yearly` : base;
+    return hasYearly ? `${base} + Year` : base;
   });
   showMonthDropdown = signal(false);
   /** Crop code currently being dragged (for group highlight). Empty when not dragging. */
@@ -657,12 +660,34 @@ export class BidSheetComponent {
       next: (locs) => {
         this.allMapLocations.set(locs);
         if (this.activeTradeUnits().length === 0) {
+          this._applyAllProducersFilters();
           this.filterBids();
         }
         this._refreshMapMarkers();
       },
       error: () => this.toastService.error('Failed to load map locations')
     });
+  }
+
+  /**
+   * "All Producers" mode has no trade unit, so the per-TU bid load (which fills crops/cropYears)
+   * is skipped. Derive the crop + crop-year lists from every location's bids (allMapLocations) so
+   * the same crop / year / month filters and the old/new comparison work across all producers.
+   * Defaults the selected crop/year to a valid value so the comparison shows bids.
+   */
+  private _applyAllProducersFilters(): void {
+    const bids = this.allMapLocations().flatMap(l => l.bids ?? []);
+    const crops = [...new Set(bids.map(b => b.commodityCode).filter((c): c is string => !!c))].sort();
+    const years = [...new Set(bids.map(b => b.cropYear).filter((y): y is number => y != null))].sort((a, b) => a - b);
+    this.crops.set(crops);
+    this.cropYears.set(years);
+    if (!this.selectedCrop() || !crops.includes(this.selectedCrop())) {
+      this.selectedCrop.set(crops[0] ?? '');
+    }
+    if (years.length > 0 && !years.includes(this.selectedYear())) {
+      this.selectedYear.set(years[years.length - 1]);
+      this.yearOffset.set(0);
+    }
   }
 
   // =========================================================================
@@ -698,11 +723,10 @@ export class BidSheetComponent {
       this.tradeUnitElevators.set([]);
       this.bidLocations.set([]);
       this.locationOrderByTu.set(new Map());
-      this.crops.set([]);
-      this.cropYears.set([]);
-      this.yearOffset.set(0);
-      this.selectedCrop.set('');
       this.selectedBasis.set('all');
+      // All Producers: derive crop/year filters from every location's bids so they still work
+      // (allMapLocations may already be loaded; if not, _loadAllMapLocations re-applies on arrival).
+      this._applyAllProducersFilters();
       this.filterBids();
       this._refreshMapMarkers();
       // Reset map to US overview
@@ -978,13 +1002,20 @@ export class BidSheetComponent {
 
   filterBids(): void {
     const hasTu = this.activeTradeUnits().length > 0;
-    const hasIndividualTu = this.hasIndividualTu();
+    // Comparison/status applies for a single TU AND for All Producers (view-only) — both derive
+    // crop-year data, so the reference/beating/matching logic runs identically; only editing differs.
+    const hasIndividualTu = this.hasIndividualTu() || this.cropYears().length > 0;
     const basis = this.selectedBasis();
 
     let items: BidSheetPanelItem[] = [];
 
-    if (!hasTu) {
-      // No selection — show all locations by name, no bid values
+    // Show the bid comparison whenever we have crop-year data — for a single TU, or for
+    // All Producers (where crops/years are derived from every location's bids). Only fall back
+    // to the name-only list when there's no bid data to compare yet.
+    const canCompare = hasTu || this.cropYears().length > 0;
+
+    if (!canCompare) {
+      // No data yet — show all locations by name, no bid values
       const seen = new Set<string>();
       for (const loc of this.allMapLocations()) {
         if (seen.has(loc.name)) continue;
@@ -1139,6 +1170,7 @@ export class BidSheetComponent {
   }
 
   addLocationFromEditBids(): void {
+    if (this.editBidsReadOnly()) return; // view-only grid has no add-location row
     this.addLocationOrigin.set('editBids');
     this.editBidsMode.set(false);
     this.enterAddLocationMode();
@@ -1749,6 +1781,7 @@ export class BidSheetComponent {
   }
 
   updateBid(rowIndex: number, crop: string, value: string): void {
+    if (this.editBidsReadOnly()) return; // All Producers grid is view-only
     this.editBidsRows.update(rows => {
       const updated = [...rows];
       updated[rowIndex] = { ...updated[rowIndex], bids: { ...updated[rowIndex].bids, [crop]: value } };
@@ -1911,6 +1944,7 @@ export class BidSheetComponent {
 
   /** Fired when a bid input loses focus — silently saves any changed cells. */
   onBidBlur(): void {
+    if (this.editBidsReadOnly()) return; // view-only: never auto-save
     this._saveDirtyBids();
   }
 
@@ -2174,7 +2208,7 @@ export class BidSheetComponent {
   }
 
   getMonthName(month: number): string {
-    if (month === 0) return 'Yearly';
+    if (month === 0) return 'Year';
     return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][month - 1] ?? '';
   }
 
@@ -2323,18 +2357,8 @@ export class BidSheetComponent {
       this.usageTracking.postClickEvent('interaction', 'bidsheet', 'location-selected', item.name);
     }
 
-    // Populate the TU dropdown if no individual TU is selected (group-only counts as empty here),
-    // or if the location's TU isn't already in the individual selection.
-    if (!alreadyOpen && item.latitude != null) {
-      const loc = this.allMapLocations().find(l => l.name === item.name);
-      const tu = loc?.tradeUnitCode;
-      if (tu) {
-        const individualTus = this.appState.selectedTradeUnits();
-        if (!individualTus.includes(tu)) {
-          this.appState.setTradeUnits([tu]);
-        }
-      }
-    }
+    // Opening a location does NOT change the trade-unit/group scope — stays in the current view
+    // (All Producers or the selected group) so it can be compared against all other locations.
 
     // Pan the map to the selected location so the user can see the enlarged pin
     if (!alreadyOpen && item.latitude != null && item.longitude != null) {
@@ -2371,6 +2395,7 @@ export class BidSheetComponent {
   }
 
   confirmDeleteLocation(): void {
+    if (this.editBidsReadOnly()) return; // read-only in All Producers — no deletes
     const name = this.panelSelectedLocation();
     if (!name) return;
     const loc = this.allMapLocations().find(l => l.name === name);
@@ -2408,6 +2433,7 @@ export class BidSheetComponent {
   }
 
   confirmDeleteCrop(): void {
+    if (this.editBidsReadOnly()) return; // read-only in All Producers — no deletes
     const crop = this.pendingDeleteCrop();
     const name = this.panelSelectedLocation();
     if (!crop || !name) return;
@@ -2450,6 +2476,7 @@ export class BidSheetComponent {
   }
 
   saveLocationName(): void {
+    if (this.editBidsReadOnly()) return; // read-only in All Producers
     const newName = this.editLocationNameValue().trim();
     const oldName = this.panelSelectedLocation();
     if (!newName || newName === oldName) {
@@ -2488,6 +2515,7 @@ export class BidSheetComponent {
   }
 
   toggleLocationScoularStatus(): void {
+    if (this.editBidsReadOnly()) return; // read-only in All Producers
     const name = this.panelSelectedLocation();
     if (!name) return;
     const loc = this.allMapLocations().find(l => l.name === name);
@@ -2530,30 +2558,16 @@ export class BidSheetComponent {
     }
   }
 
-  /** Called when a map pin is clicked — populates filters with that location's TU/group and loads bid data. */
+  /** Called when a map pin is clicked — toggles it as the comparison reference. Does NOT change the
+   *  trade-unit/group scope, so the location is compared against all others in the current view
+   *  (All Producers or the selected group). */
   private _selectMapLocation(loc: BidSheetLocation): void {
-    const tu = (loc.tradeUnitCode ?? '').trim();
-    const groupName = (loc.groupName ?? '').trim();
-
-    // Toggle selected location for highlighted pin
+    // Toggle selected location for highlighted pin / comparison reference
     const alreadySelected = this.selectedLocationName() === loc.name;
     this.selectedLocationName.set(alreadySelected ? '' : loc.name);
     if (alreadySelected) {
       this._refreshMapMarkers();
       return;
-    }
-
-    // Populate the TU dropdown if no individual TU is selected, OR if the clicked location's TU
-    // isn't already in the individual selection. Keeps existing selection when the TU is already there.
-    const individualTus = this.appState.selectedTradeUnits();
-    const tuInIndividual = tu && individualTus.includes(tu);
-    if (!tuInIndividual) {
-      if (groupName && this.appState.selectedGroupNames().length === 0) {
-        this.appState.setSelectedGroupNames([groupName]);
-      }
-      if (tu) {
-        this.appState.setTradeUnits([tu]);
-      }
     }
 
     // Open the panel BEFORE flying so the offset calculation knows about it
@@ -2757,8 +2771,10 @@ export class BidSheetComponent {
       const lat = locs[0].latitude!;
       const lng = locs[0].longitude!;
       const names = locs.map(l => l.name);
-      const isActiveTu = locs.some(l => activeTuSet.has(l.tradeUnitCode ?? ''));
-      const hasIndividualTu = this.hasIndividualTu();
+      // In All Producers (no TU filter) every location is "in scope"; with a TU, only its locations are.
+      const isActiveTu = activeTuSet.size === 0 || locs.some(l => activeTuSet.has(l.tradeUnitCode ?? ''));
+      // View parity: All Producers (with derived crop-year data) renders bids/status like a single TU.
+      const hasIndividualTu = this.hasIndividualTu() || this.cropYears().length > 0;
       const showBidValues = isActiveTu && hasIndividualTu && crop;
       const isRef = hasIndividualTu && refName && names.includes(refName);
       const isPanelOpen = panelOpenName && names.includes(panelOpenName);
