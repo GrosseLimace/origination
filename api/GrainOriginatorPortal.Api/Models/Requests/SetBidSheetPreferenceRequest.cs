@@ -15,4 +15,5 @@ public class SetBidSheetPreferenceRequest
     public string? CropOrder { get; set; }
     public string? HiddenCrops { get; set; }
     public string? SelectedMonths { get; set; }
+    public string? PrintLayout { get; set; }
 }
