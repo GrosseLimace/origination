@@ -121,25 +121,10 @@ export class HomeComponent {
   readonly commodities = signal<Commodity[]>([]);
   readonly isLoadingYieldData = signal(false);
   readonly isLoadingContracts = signal(false);
-  readonly isLoadingTickets = signal(false);
   /** True only while the FAST per-customer unapplied-tickets fetch is in flight. Drives the
-   *  spinner on the Unapplied Tickets tab specifically — separate from isLoadingTickets,
-   *  which is the slow bulk's flag and stays true for 1–2 min while the contracts-table
-   *  Applied Tickets section waits for the bulk to land. Without splitting these, the
-   *  Unapplied tab would show a spinner overlaying its already-loaded data the whole time
-   *  the bulk was still grinding. */
+   *  spinner on the Unapplied Tickets tab. */
   readonly isLoadingUnappliedTickets = signal(false);
-  /** True while the per-customer unapplied-tickets fetch is in flight AFTER the bulk has
-   *  already populated appState. Used by the Applied Tickets section to show a subtle
-   *  "more may still be loading" hint instead of a full Loading… state, since whatever's
-   *  currently displayed is real (from the bulk) and might grow once the per-customer
-   *  call surfaces cross-TU / cross-customer tickets. */
-  readonly isBackfillingTickets = signal(false);
   readonly isLoadingPricingLines = signal(false);
-  /** Set true once the bulk /api/tickets fetch returns (any result, including empty) for
-   *  the current TU. Until it lands, contracts-table treats the Applied Tickets section as
-   *  "still loading" so it doesn't show a misleading "(0)" while the bulk is in flight. */
-  private _bulkTicketsArrived = false;
   readonly isLoadingStoredGrain = signal(false);
   readonly isLoadingPlanting = signal(true);
 
@@ -222,8 +207,6 @@ export class HomeComponent {
         const fresh = stateTickets.filter(t => !localIds.has(t.id));
         if (fresh.length === 0) return;
         this.tickets.set([...this.tickets(), ...fresh]);
-        this._bulkTicketsArrived = true;
-        this.isLoadingTickets.set(false);
         const sel = this.selectedCustomer();
         if (sel) this._loadCustomerData(sel.id);
       });
@@ -395,11 +378,6 @@ export class HomeComponent {
           if (!have.has(t.id)) merged.push(t);
         }
         this.appState.setTickets(merged);
-        // Bulk has landed — any Applied Tickets sections that were gated on
-        // isLoadingTickets can stop spinning; the per-customer unapplied fetch (if still
-        // in flight) silently backfills cross-TU/cross-customer tickets into the same signal.
-        this._bulkTicketsArrived = true;
-        this.isLoadingTickets.set(false);
         // If a producer is already selected, refilter their per-customer ticket views from
         // the freshly-arrived bulk. Without this, customerTickets stays frozen at whatever
         // the unapplied-only fetch returned (no applied tickets ever surface in the
@@ -407,10 +385,7 @@ export class HomeComponent {
         const sel = this.selectedCustomer();
         if (sel) this._loadCustomerData(sel.id);
       },
-      error: () => {
-        this._bulkTicketsArrived = true;
-        this.isLoadingTickets.set(false);
-      }
+      error: () => {}
     });
 
     this.apiService.getPlantingIntentions(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -736,11 +711,7 @@ export class HomeComponent {
     // no longer arriving.
     this._cancelSelection$.next();
     this.isLoadingPricingLines.set(false);
-    this.isBackfillingTickets.set(false);
     this.isLoadingUnappliedTickets.set(false);
-    // New TU = new bulk fetch in flight — until it lands, customer clicks should gate
-    // Applied Tickets on the bulk's loading state.
-    this._bulkTicketsArrived = false;
     // Reset loading flag so an explicit user selection is never blocked by a
     // background load that may still be in-flight.
     this._isLoading = false;
@@ -814,10 +785,6 @@ export class HomeComponent {
     this.selectedCustomer.set(customer);
     this.appState.selectCustomer(customer);
     this.isLoadingContracts.set(true);
-    // Only show Loading on Applied Tickets (contracts-table) if the bulk fetch hasn't
-    // returned yet. The Unapplied Tickets tab has its own flag below — driven by the fast
-    // per-customer fetch — so its spinner clears in <1s instead of waiting on the bulk.
-    this.isLoadingTickets.set(!this._bulkTicketsArrived);
     this.isLoadingUnappliedTickets.set(true);
     this.isLoadingStoredGrain.set(true);
     this._loadCustomerContractsAndTickets(customer.id, customer.scoularId);
@@ -1069,9 +1036,7 @@ export class HomeComponent {
     // and re-run the local merge so the UI updates with the cached data.
     if (this._customerLoadDone.has(customerId)) {
       this.isLoadingContracts.set(false);
-      this.isLoadingTickets.set(false);
       this.isLoadingUnappliedTickets.set(false);
-      this.isBackfillingTickets.set(false);
       this.isLoadingStoredGrain.set(false);
       this._loadCustomerData(customerId);
       return;
@@ -1104,11 +1069,9 @@ export class HomeComponent {
     });
 
     // FAST per-producer UNAPPLIED-tickets fetch — narrow CustomerCode-scoped query (<1s) so
-    // the unapplied tab populates immediately. Deliberately does NOT touch isLoadingTickets
-    // or isBackfillingTickets — those are owned by the bulk getTickets in _loadAllData so the
-    // contracts table keeps showing "(Loading…)" on Applied Tickets until the bulk lands. The
-    // bulk's contract-number branch catches cross-customer / split-entity applied tickets that
-    // this narrow CustomerCode-scoped fetch wouldn't see.
+    // the unapplied tab populates immediately. The bulk getTickets in _loadAllData separately
+    // catches cross-customer / split-entity applied tickets that this narrow CustomerCode-scoped
+    // fetch wouldn't see, merging them into the same ticket set by id.
     this.apiService.getUnappliedTicketsByCustomer(customerId, scoularId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (tickets) => {
         const existing = this.tickets();
@@ -1124,8 +1087,7 @@ export class HomeComponent {
           if (!have.has(t.id)) appMerged.push(t);
         }
         this.appState.setTickets(appMerged);
-        // Unapplied tab can stop spinning the moment its narrow fetch returns. Applied
-        // Tickets (contracts-table) continues to wait on the bulk via isLoadingTickets.
+        // Unapplied tab can stop spinning the moment its narrow fetch returns.
         this.isLoadingUnappliedTickets.set(false);
         this._loadCustomerData(customerId);
 
