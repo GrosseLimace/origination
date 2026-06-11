@@ -44,14 +44,6 @@ export class ContractsTableComponent {
   public pricingLines = input<ContractPricingLine[]>([]);
   public customer = input.required<Customer>();
   public openContractId = input<number | null>(null);
-  /** True while the bulk /api/tickets fetch is in flight. Applied Tickets section
-   *  shows "Loading…" instead of "(0)" when this is the case. */
-  public isLoadingTickets = input(false);
-  /** True while the per-customer unapplied-tickets fetch is running AFTER the bulk has
-   *  populated the in-memory ticket set. Applied Tickets section shows a subtle "more may
-   *  still be loading" hint so the user knows the displayed count might grow from cross-TU
-   *  backfill, without blocking the UI with a full Loading state. */
-  public isBackfillingTickets = input(false);
   /** True while /api/contracts/pricing-lines/customer/{id} is in flight. Pricing Lines
    *  section shows "Loading…" instead of disappearing when this is the case. */
   public isLoadingPricingLines = input(false);
@@ -690,36 +682,6 @@ export class ContractsTableComponent {
 
       return false;
     }).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-  }
-
-  /** True when the visible applied tickets sum to the contract's Total Delivered (within
-   *  1 bushel of lbs) — meaning there's nothing left to find. Lets us hide the "more may
-   *  still be loading" spinner per-contract once a contract's tickets are demonstrably
-   *  accounted for, even if the global per-customer backfill is still in flight.
-   *
-   *  Special case: when Total Delivered is 0, there cannot BE any applied tickets, so
-   *  zero tickets is itself a complete answer — also return true. */
-  appliedTicketsCoverDelivered(contract: Contract): boolean {
-    const stats = this.getDeliveryStats(contract);
-    const applied = this.getAppliedTickets(contract);
-    // Nothing delivered → no tickets expected. As long as we haven't already found some
-    // (which would indicate a CTRM aggregate vs ticket sum mismatch worth surfacing), the
-    // empty list IS the complete answer.
-    if (stats.deliveredBushels <= 0) return applied.length === 0;
-    if (applied.length === 0) return false;
-    const lbsPerBushel = this._lookupLbsPerBushel(contract.commodityCode || '');
-    if (lbsPerBushel == null || lbsPerBushel <= 0) return false;
-    // Ticket appliedDockQuantity is stored in pounds — sum directly.
-    const ticketLbs = applied.reduce((sum, t) => sum + (t.appliedDockQuantity || 0), 0);
-    // Convert the contract's Delivered (native unit) → pounds for an apples-to-apples
-    // comparison against the ticket pound sum.
-    const u = (contract.unit || '').toLowerCase().trim();
-    let deliveredLbs: number;
-    if (u === 'st' || u.includes('ton')) deliveredLbs = stats.deliveredBushels * 2000;
-    else if (u.includes('pound') || u.includes('lb')) deliveredLbs = stats.deliveredBushels;
-    else if (u === 'cwt' || u.includes('hundredweight')) deliveredLbs = stats.deliveredBushels * 100;
-    else deliveredLbs = stats.deliveredBushels * lbsPerBushel;
-    return Math.abs(ticketLbs - deliveredLbs) < lbsPerBushel;
   }
 
   hasWheatInAppliedTickets(contract: Contract): boolean {

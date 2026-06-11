@@ -156,15 +156,7 @@ The Contracts tab inside `CustomerProfileComponent` is the most logic-heavy pane
 
 **Delivery math comes from one shared util.** `getContractDeliveryStats(contract)` in [`client/src/app/shared/utils/contract-delivery.ts`](../../client/src/app/shared/utils/contract-delivery.ts) is the single source of truth for `delivered`, `remaining`, `progressPercent`, and `isEffectivelyComplete`. It reads `contract.openBalanceQuantity` (the CTRM aggregate from `vw_CurrentContracts`) — **not** a sum of applied tickets. A sub-0.1%-of-contract residue is treated as complete, so a 99.97%-delivered contract reports as filled. The same util is used by the Contracts table, Actionable Insights' Unshipped Bushels, the standalone `/unshipped-bushels` view, the customer-print report, and the Activity Summary — they no longer drift apart.
 
-**Applied Tickets has a three-state header.** On first customer click, the bulk `getTickets` fetch may still be in flight (the underlying `vw_CurrentTickets` query is the longest pole on home-page cold start). Per-customer ticket fetches (`getTicketsByCustomer`) run in the background to backfill — they merge by ticket id, never overwrite. The Applied Tickets section header reflects:
-
-| State | Header | Body |
-| --- | --- | --- |
-| Bulk load still pending | "Loading…" | Skeleton rows; "no tickets" message suppressed |
-| Bulk done, per-customer backfill running | "Loading…" if applied-ticket pounds don't yet cover `contract.delivered` | Same suppression |
-| Done | Tickets list or "No tickets applied to this contract yet" | Real data |
-
-The backfill-coverage heuristic (`appliedTicketsCoverDelivered` in `contracts-table.component.ts`) compares the sum of currently-loaded applied-ticket pounds against `contract.delivered`. If they line up, the table shows what it has rather than waiting on a backfill that won't add anything visible.
+**Applied Tickets shows the live count and list.** Ticket data loads via a bulk `getTickets` fetch (kicked off at trade-unit selection) plus per-customer fetches that backfill by ticket id (never overwrite). The bulk query seeks `base.Ticket.IX_Ticket_ContractNumber`, so it returns near-instantly and the section simply shows the applied-ticket count and list, or "No tickets applied to this contract yet." (Earlier builds gated this on a "Loading… / more may still be loading" state because the pre-index `vw_CurrentTickets` scan ran for minutes; that loading UI — and its `appliedTicketsCoverDelivered` coverage heuristic — was removed once the `ContractNumber` index made the fetch fast.)
 
 Ticket-to-contract matching is **by `ContractNumber` only** (not `ContractNumber + CustomerCode`). Customer-code-coupled matching missed applied tickets where the ticket carried a different customer code than the contract. This affects the Contracts table here, Actionable Insights' Spot Loads, and Build a List's NLQ ticket filters.
 
