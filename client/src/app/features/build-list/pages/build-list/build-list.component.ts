@@ -86,12 +86,18 @@ export class BuildListComponent {
   // Re-trigger a staged query when needed data arrives from the background refresh.
   // When processQuery() detects missing data, it keeps isProcessing=true and returns.
   // This effect watches the data signals and re-triggers processQuery when they update.
+  //
+  // The guard also fires on waitingForTickets(): a ticket query whose _applyNlqFilter ran via
+  // the background-refresh path (forkJoin success re-runs it while !isProcessing) parks on the
+  // "Loading ticket data…" spinner with isProcessing already false. Gating only on isProcessing
+  // left that spinner stuck once _ticketsReady flipped true — the user had to change TU and
+  // reselect to recover. Including waitingForTickets() clears it as soon as tickets land.
   private _dataReadyEffect = effect(() => {
     this.notes();
     this.storedGrain();
     this._ticketsReady();
     this._contractsReady();
-    if (this.queryText().trim() && this.isProcessing() && this.coreDataLoaded()) {
+    if (this.queryText().trim() && (this.isProcessing() || this.waitingForTickets()) && this.coreDataLoaded()) {
       untracked(() => {
         // Re-check if the needed data is now available
         const q = this.queryText();
