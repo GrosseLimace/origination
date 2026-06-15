@@ -227,10 +227,10 @@ Last Updated: 2026-06-15
 
 | Package | Version | License | Purpose |
 |---------|---------|---------|---------|
-| @angular/core | 21.2.1 | MIT | UI framework |
-| @angular/router | 21.2.1 | MIT | Client-side routing |
-| @angular/forms | 21.2.1 | MIT | Reactive forms |
-| @angular/animations | 21.2.1 | MIT | Animation support |
+| @angular/core | 21.2.17 | MIT | UI framework (security fix: hydration DOM-clobbering / HttpTransferCache poisoning, ≥21.2.17) |
+| @angular/router | 21.2.17 | MIT | Client-side routing |
+| @angular/forms | 21.2.17 | MIT | Reactive forms |
+| @angular/animations | 21.2.17 | MIT | Animation support |
 | @azure/msal-angular | 5.1.1 | MIT | Azure AD authentication (Angular) |
 | @azure/msal-browser | 5.4.0 | MIT | MSAL browser runtime |
 | @it/design-system | 0.1.1 | Internal | Scoular IT design system components |
@@ -243,6 +243,10 @@ Last Updated: 2026-06-15
 | vitest | 4.1.8 | MIT | Unit testing framework (CVE fix: ≥4.1.0) |
 | typescript | 5.9.3 | Apache-2.0 | TypeScript compiler |
 | esbuild | ≥0.28.1 | MIT | Bundler — transitive (via @angular/build, vitest), pinned in `overrides` (security fix: RCE via NPM_CONFIG_REGISTRY + Windows path traversal, ≥0.28.1) |
+| vite | ≥7.3.5 | MIT | Dev server/bundler — transitive (via @angular/build), pinned in `overrides` (security fix: `server.fs.deny` bypass + launch-editor NTLM disclosure on Windows, ≥7.3.5) |
+| @babel/core | ≥7.29.6 | MIT | JS compiler — transitive (via @angular/build, @angular/compiler-cli), pinned in `overrides` (security fix: arbitrary file read via sourceMappingURL, ≥7.29.6) |
+| tar | ≥7.5.16 | ISC | Tar parser — transitive (via @angular/cli), pinned in `overrides` (security fix: PAX header smuggling / parser differential, ≥7.5.16) |
+| ws | ≥8.21.0 | MIT | WebSocket — transitive (via happy-dom test env), pinned in `overrides` (security fix: memory-exhaustion DoS, ≥8.21.0) |
 
 ## CI/CD
 
