@@ -178,7 +178,7 @@ export class CustomerListComponent {
     // intentions arrive AFTER the first run. Without this, a saved list whose query
     // needs tickets (e.g. "Producers with unapplied tickets") runs once when those
     // signals are empty, returns 0 from the live NLQ, and stays stuck on the saved
-    // includedCustomerIds (typically 4 from the last save). When the bulk fetch
+    // includedCustomerIds (typically 4 from the last save). When the lazy ticket fetch
     // finishes the count should update — this effect makes that happen.
     effect(() => {
       const tickets = this.appStateService.tickets();
@@ -432,7 +432,11 @@ export class CustomerListComponent {
     if (this.nlqFilterService.queryInvolvesStorage(query) && this.appStateService.storedGrain().length === 0) {
       missing['storedGrain'] = this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[])));
     }
-    if (this.nlqFilterService.queryInvolvesTickets(query) && this.appStateService.tickets().length === 0) {
+    // Guard on the explicit ticketsLoaded flag, not `.length === 0`: tickets are no longer
+    // eagerly bulk-loaded, and per-producer selection no longer writes into appState.tickets, so an
+    // emptiness check could misfire (or skip the fetch after a partial write). ticketsLoaded is only
+    // true once a TU-wide set has been loaded; it's reset on TU change.
+    if (this.nlqFilterService.queryInvolvesTickets(query) && !this.appStateService.ticketsLoaded()) {
       missing['tickets'] = this.apiService.getTickets(tuParam).pipe(catchError(() => of([] as Ticket[])));
     }
     if (this.nlqFilterService.queryInvolvesPlanting(query) && this.appStateService.plantingIntentions().length === 0) {

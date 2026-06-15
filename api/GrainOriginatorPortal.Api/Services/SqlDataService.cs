@@ -2345,6 +2345,17 @@ public class SqlDataService : IDataService
                 .OrderByDescending(t => t.Date)
                 .ToListAsync(cancellationToken);
 
+            // Customer-storage (C-prefix) tickets linger after the grain is priced out; keep one only
+            // if the producer still holds that commodity in active storage. Gate before enrichment so
+            // we don't hydrate quality/elevator for tickets we're about to drop. Mirrors
+            // GetUnappliedTicketsByCustomerAsync so the customer page's Unapplied tab shows the same
+            // storage-gated set regardless of which fetch populated it.
+            if (tickets.Exists(t => t.CtrmContractNumber is { Length: > 0 } cn && cn.StartsWith("C", StringComparison.OrdinalIgnoreCase)))
+            {
+                var storageByCustomer = await GetActiveStorageCommoditiesAsync(new[] { scoularId }, cancellationToken);
+                tickets = GateCustomerStorageTickets(tickets, storageByCustomer);
+            }
+
             // Load quality data for these tickets
             var ticketIds = tickets.Select(t => t.Id).ToList();
             var qualityList = await _context.TicketQualities
