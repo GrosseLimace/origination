@@ -1635,11 +1635,10 @@ export class BuildListComponent {
     });
 
     // Tickets load in background — processQuery waits for them only if the query needs tickets.
-    // On timeout / error the inner `catchError` swallows to [], but we DO NOT clobber the
-    // global appState.tickets signal with the empty array. Home's separate bulk fetch may
-    // still be in flight; overwriting with [] would silently zero out every ticket-dependent
-    // view in the app (home customer list, Insights, Activity Summary, contracts-table).
-    // Only write through to appState when the response actually carried tickets.
+    // On timeout / error the inner `catchError` swallows to [], but we DO NOT clobber the global
+    // appState.tickets signal (the TU-wide list/NLQ cache) with the empty array; another lazy
+    // consumer (e.g. customer-list) may have populated it. Only write through to appState when the
+    // response actually carried tickets.
     this.apiService.getTickets(tuParam).pipe(
       timeout(60000),
       catchError(() => of([] as Ticket[])),
@@ -1650,8 +1649,8 @@ export class BuildListComponent {
         this.tickets.set(tickets);
         this.appState.setTickets(tickets);
       } else if (this.appState.tickets().length > 0) {
-        // Timeout fired locally but the global signal already has data (e.g. home's
-        // bulk landed first). Hydrate local from appState so the build-list filter sees
+        // Timeout fired locally but the TU-wide cache already has data (e.g. another lazy
+        // consumer populated it). Hydrate local from appState so the build-list filter sees
         // the real tickets instead of [].
         this.tickets.set(this.appState.tickets());
       }

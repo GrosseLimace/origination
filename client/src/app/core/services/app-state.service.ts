@@ -155,6 +155,7 @@ export class AppStateService {
 
   setTickets(tickets: Ticket[]): void {
     this.tickets.set(tickets);
+    this.ticketsLoaded.set(true);
   }
 
   setPlantingIntentions(plantingIntentions: PlantingIntention[]): void {
@@ -200,6 +201,17 @@ export class AppStateService {
 
   setTicketsLoading(loading: boolean): void {
     this.ticketsLoading.set(loading);
+  }
+
+  // True once the TU-wide ticket set has been loaded into `tickets` (via setTickets). List/NLQ
+  // consumers (customer-list, build-list) gate their own lazy TU-wide fetch on this instead of
+  // `tickets().length === 0`, because per-producer selection no longer populates `tickets` — so an
+  // emptiness check would misfire. Reset on TU change / logout via clearTicketsCache().
+  ticketsLoaded = signal(false);
+
+  clearTicketsCache(): void {
+    this.tickets.set([]);
+    this.ticketsLoaded.set(false);
   }
 
   // Per-dataset loading flags — let each screen/category render as soon as ITS own data
@@ -280,7 +292,7 @@ export class AppStateService {
     this.selectedSavedListId.set('');
     this.customers.set([]);
     this.contracts.set([]);
-    this.tickets.set([]);
+    this.clearTicketsCache();
     this.plantingIntentions.set([]);
     this.notes.set([]);
     this.storedGrain.set([]);
