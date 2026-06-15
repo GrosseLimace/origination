@@ -207,7 +207,7 @@ Azure AD bearer tokens via `Microsoft.Identity.Web`. All API endpoints require a
 
 ## Software Bill of Materials (SBOM)
 
-Last Updated: 2026-06-01
+Last Updated: 2026-06-15
 
 ### Backend Dependencies (C# / .NET 10)
 
@@ -242,6 +242,7 @@ Last Updated: 2026-06-01
 | tailwindcss | 4.2.1 | MIT | Utility-first CSS framework |
 | vitest | 4.1.8 | MIT | Unit testing framework (CVE fix: ≥4.1.0) |
 | typescript | 5.9.3 | Apache-2.0 | TypeScript compiler |
+| esbuild | ≥0.28.1 | MIT | Bundler — transitive (via @angular/build, vitest), pinned in `overrides` (security fix: RCE via NPM_CONFIG_REGISTRY + Windows path traversal, ≥0.28.1) |
 
 ## CI/CD
 
