@@ -1753,9 +1753,10 @@ public class SqlDataService : IDataService
     ///     (see <see cref="GateCustomerStorageTickets"/>) so priced-out grain stops showing.
     /// Uses STRING_SPLIT for both lists to dodge the 2100-parameter IN-clause limit.
     /// <para><paramref name="includeStorageTickets"/>: when false, customer-storage (C-prefix) tickets are
-    /// excluded entirely and the storage gate is skipped. Spot Loads (today's tickets) passes false —
-    /// storage grain isn't a spot load, and skipping it keeps that (UI-blocking) call off the slow
-    /// ctrm.vw_GNTA39D1 scan. The per-producer Unapplied list + Build-a-List pass true.</para>
+    /// excluded entirely and the storage gate is skipped — this avoids the slow ctrm.vw_GNTA39D1 scan.
+    /// When true, C-prefix tickets are included and gated to active storage. Spot Loads (today's tickets),
+    /// the per-producer Unapplied list, and Build-a-List all pass true so storage loads show consistently
+    /// across the app — at the cost of the storage lookup, which runs only for customers that have C tickets.</para>
     /// </summary>
     private async Task<List<Ticket>> LoadTicketsByContractAndCustomerScopeAsync(
         List<string> openContractNumbers,
@@ -2202,8 +2203,11 @@ public class SqlDataService : IDataService
                 // run the fast CustomerCode-scoped branch only. The old applied/contract-number branch
                 // scanned the 2M-row view (couldn't seek) and its rows were all discarded downstream —
                 // dropping it is what turns this from minutes into <2s. Empty codes return [] inside.
+                // includeStorageTickets: true so C-prefix (customer-storage) loads appear here too,
+                // matching the customer page's Unapplied Tickets tab (gated to active storage). Adds
+                // the ctrm.vw_GNTA39D1 storage lookup, but only for customers that actually have C tickets.
                 tickets = await LoadUnappliedTicketsByCustomerScopeAsync(
-                    customerCodes, cancellationToken, cutoffStr, includeStorageTickets: false);
+                    customerCodes, cancellationToken, cutoffStr, includeStorageTickets: true);
             }
             else
             {
@@ -2230,8 +2234,10 @@ public class SqlDataService : IDataService
 
                 var customerCodes = contractCustomerCodes.Union(snapshotCustomerCodes).ToList();
 
+                // includeStorageTickets: true — see the no-filter branch above. C-prefix storage loads
+                // are surfaced in Spot Loads (gated to active storage) for parity with the customer page.
                 tickets = await LoadUnappliedTicketsByCustomerScopeAsync(
-                    customerCodes, cancellationToken, cutoffStr, includeStorageTickets: false);
+                    customerCodes, cancellationToken, cutoffStr, includeStorageTickets: true);
             }
 
             _logger.LogInformation("Loaded {TicketCount} recent tickets for spot loads (filtered: {IsFiltered}, cutoff: {CutoffStr})",
