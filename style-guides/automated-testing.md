@@ -15,7 +15,7 @@ Every automated test **MUST** fall into one of the categories below. The categor
 | Category | What it verifies | Touches | Speed target | Stack examples |
 |---|---|---|---|---|
 | **Unit** | A single class or function in isolation | In-memory only; no I/O | < 50 ms each | A C# domain service with mocked dependencies; an Angular pipe or signal-based service |
-| **Integration** | Several real components wired together, including infrastructure | Real database, real HTTP pipeline | < 2 s each | An ASP.NET Core endpoint hitting a containerized Azure SQL database via Entity Framework Core |
+| **Integration** | Several real components wired together, including infrastructure | Real database, real HTTP pipeline | < 2 s each | An ASP.NET Core endpoint hitting a dedicated Azure SQL test database via Entity Framework Core |
 | **Component** (frontend) | One Angular component rendered, exercised as a user would | Rendered Document Object Model (DOM), mocked services | < 500 ms each | A form component verified through accessible queries |
 | **Contract** | An API honors its published request/response shape | Serialized boundary | < 1 s each | Verifying the error envelope from `error-handling.md` |
 | **End-to-end** (E2E) | A full user journey through the deployed app | Real browser, real (or staged) backend | Seconds to minutes | A Playwright flow: sign in → submit a bid → see confirmation |
@@ -107,7 +107,7 @@ This section refines, for testing, the rules in `csharp.md`. Where they conflict
 |---|---|---|
 | Test framework + runner | **xUnit** (current major version) | NUnit or MSTest acceptable on existing projects; new projects use xUnit. |
 | In-memory web host | **`Microsoft.AspNetCore.Mvc.Testing`** (`WebApplicationFactory<TEntryPoint>`) | Spins up the real HTTP pipeline without deploying. |
-| Containerized dependencies | **Testcontainers for .NET** | Real Azure SQL / Redis / etc. in Docker; see [§6.4](#64-integration-tests) and [§8](#8-data-layer--azure-sql--entity-framework-core). |
+| Integration dependencies | **Provisioned test services** | Real Azure SQL / Redis / etc. supplied through environment-specific test resources; see [§6.4](#64-integration-tests) and [§8](#8-data-layer--azure-sql--entity-framework-core). |
 | Mocking / test doubles | **NSubstitute** | **Do not adopt Moq on new projects** — Moq 4.20.0 through 4.20.1 bundled **SponsorLink**, which exfiltrated developer email hashes at build time (a supply-chain and privacy trust break). SponsorLink was removed in 4.20.2, but new projects **SHOULD** use the lower-risk standard. Existing Moq usage MAY remain until convenient to migrate. |
 | Assertions | **xUnit built-in `Assert`**, or **Shouldly** / **AwesomeAssertions** for fluent style | **Do NOT add FluentAssertions v8+** for commercial work unless licensing has been explicitly approved: it became a **commercial, paid-per-seat license** in January 2025 (≈ $129.95/seat). Projects still on FluentAssertions v7 (Apache 2.0) **MUST** pin the version to `[7.*]` in the `.csproj` to avoid an inadvertent license breach on update; prefer migrating to a free alternative. |
 | Coverage | **coverlet** via `dotnet test --collect:"XPlat Code Coverage"` | Report in CI; enforce the diff floor from [§4](#4-coverage-and-quality-gates). |
@@ -145,30 +145,36 @@ public class SlotSwapServiceTests
 
 ### 6.4 Integration tests
 
-Integration tests **MUST** run against the real ASP.NET Core pipeline via `WebApplicationFactory<TEntryPoint>`, and against real infrastructure via Testcontainers — never an in-memory database provider (see [§8](#8-data-layer--azure-sql--entity-framework-core)).
+Integration tests **MUST** run against the real ASP.NET Core pipeline via `WebApplicationFactory<TEntryPoint>`, and against provisioned test infrastructure — never an in-memory database provider (see [§8](#8-data-layer--azure-sql--entity-framework-core)).
 
 ```csharp
 public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
-    private readonly MsSqlContainer _db = new MsSqlBuilder().Build();
+    private readonly string _connectionString =
+        Environment.GetEnvironmentVariable("ConnectionStrings__IntegrationTestDb")
+        ?? throw new InvalidOperationException("Set ConnectionStrings__IntegrationTestDb.");
 
-    public async Task InitializeAsync() => await _db.StartAsync();
-    public new async Task DisposeAsync() => await _db.DisposeAsync();
+    public async ValueTask InitializeAsync()
+    {
+        using var scope = Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await db.Database.MigrateAsync();
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        // Inject the container's DYNAMIC connection string — never hardcode a port.
+        // Inject the environment's test database connection string.
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<DbContextOptions<AppDbContext>>();
-            services.AddDbContext<AppDbContext>(o => o.UseSqlServer(_db.GetConnectionString()));
+            services.AddDbContext<AppDbContext>(o => o.UseSqlServer(_connectionString));
         });
     }
 }
 ```
 
-- Implement `IAsyncLifetime` on the factory (or a shared fixture) to start the container once and tear it down at the end of the run — the default is **one container per test run**, not per test, with database state reset between tests ([§8](#8-data-layer--azure-sql--entity-framework-core)). Suites that run heavily in parallel **MAY** use one container, database, or schema per test collection or worker when that is required for reliable isolation.
-- **MUST NOT** hardcode connection strings or ports; Testcontainers assigns dynamic ports. Read them at runtime and inject via `ConfigureWebHost`.
+- Implement `IAsyncLifetime` on the factory (or a shared fixture) to apply migrations once per run and perform any shared setup. Database state **MUST** still be reset between tests ([§8](#8-data-layer--azure-sql--entity-framework-core)). Suites that run heavily in parallel **MAY** use one database or schema per test collection or worker when that is required for reliable isolation.
+- **MUST NOT** hardcode connection strings. Read them from CI secrets, developer secrets, or environment variables and inject via `ConfigureWebHost`.
 
 ---
 
@@ -219,19 +225,21 @@ it('should disable submit until the form is valid', async () => {
 
 The application database is **Azure SQL**, accessed through **Entity Framework Core** (an object-relational mapper, or ORM). Database tests are where our most expensive defects hide, so they get the strictest rules. This section pairs with `sql.md`.
 
-- Integration tests that touch data **MUST** run against a **real SQL Server engine in a container** (Testcontainers `MsSqlBuilder`), because Azure SQL and SQL Server are close enough for almost all test purposes.
+- Integration tests that touch data **MUST** run against a **real Azure SQL test database** or another explicitly approved SQL Server-family test database, because database behavior, constraints, transactions, query translation, and migrations are part of what the test is verifying.
 - Tests **MUST NOT** use the EF Core **in-memory provider** or `EnsureCreated()` for behavior that depends on the database engine. The in-memory provider does not enforce relational constraints, foreign keys (FKs), or real SQL semantics, so it produces false confidence — a missing `.Include()` that returns `null` in production passes silently against in-memory.
 - Schema **MUST** be created by running the **real EF Core migrations** in test setup (`dbContext.Database.Migrate()`), never `EnsureCreated()`. This means a broken migration fails the test suite before it fails production.
 - Between tests, reset state with **Respawn** (preferred for speed) or by wrapping each test in a transaction that rolls back. Each test **MUST** start from a known, clean database state.
-- **Azure SQL parity:** SQL Server in a container covers the overwhelming majority of cases. Before a release, the integration suite **SHOULD** also be run at least once against an actual **Azure SQL** instance (a dedicated test database), because a small set of features (for example, certain elastic/serverless and security behaviors) differ from on-box SQL Server.
+- **Azure SQL parity:** Pull-request gates **SHOULD** use a dedicated Azure SQL test database when the application production database is Azure SQL. A local or shared SQL Server-family database **MAY** be used for fast developer feedback, but release validation **MUST** include the Azure SQL-backed integration suite.
 
 ```csharp
-// One container for the run; Respawn resets between tests.
-private static readonly MsSqlContainer Db = new MsSqlBuilder().Build();
+// Respawn resets the provisioned test database between tests.
+private static readonly string ConnectionString =
+    Environment.GetEnvironmentVariable("ConnectionStrings__IntegrationTestDb")
+    ?? throw new InvalidOperationException("Set ConnectionStrings__IntegrationTestDb.");
 
 public async Task ResetAsync()
 {
-    using var conn = new SqlConnection(Db.GetConnectionString());
+    using var conn = new SqlConnection(ConnectionString);
     await conn.OpenAsync();
     var respawner = await Respawner.CreateAsync(conn,
         new RespawnerOptions { DbAdapter = DbAdapter.SqlServer });
@@ -314,7 +322,7 @@ The release sequence **MUST** be:
 | Anti-pattern | Why it's wrong | Do instead |
 |---|---|---|
 | Asserting on Tailwind class names | Brittle; tests styling, not behavior | Query by role/text; visual regression for looks |
-| EF Core in-memory provider / `EnsureCreated()` for DB tests | False confidence; no real SQL semantics | Testcontainers SQL + run real migrations |
+| EF Core in-memory provider / `EnsureCreated()` for DB tests | False confidence; no real SQL semantics | Dedicated SQL test database + run real migrations |
 | Auto-retrying flaky tests to green | Hides concurrency bugs; erodes trust in CI | Use retries only for diagnosis; quarantine, ticket, fix at source, replace, or delete |
 | Adding FluentAssertions v8+ without approval | Commercial use requires a paid license | Shouldly / AwesomeAssertions / xUnit `Assert` |
 | New Moq usage | SponsorLink supply-chain/privacy trust risk | NSubstitute |
@@ -352,7 +360,6 @@ This guide builds upon and references:
 
 - **[xUnit documentation](https://xunit.net/)** — backend test framework.
 - **[ASP.NET Core integration tests (Microsoft Learn)](https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests)** — `WebApplicationFactory` patterns.
-- **[Testcontainers for .NET](https://dotnet.testcontainers.org/)** — containerized integration dependencies.
 - **[Testing against your production database system (EF Core, Microsoft Learn)](https://learn.microsoft.com/en-us/ef/core/testing/testing-with-the-database)** — why to test on a real engine.
 - **[Angular testing guide](https://angular.dev/guide/testing)** and **[Migrating to Vitest](https://angular.dev/guide/testing/migrating-to-vitest)** — frontend runner and patterns.
 - **[Angular component harnesses](https://angular.dev/guide/testing/using-component-harnesses)** — harness-based component testing.
