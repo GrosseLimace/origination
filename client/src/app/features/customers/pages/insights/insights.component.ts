@@ -198,8 +198,15 @@ export class InsightsComponent {
   readonly allInsights = computed(() => {
     const customers = this.customers();
     if (customers.length === 0) return [] as Insight[];
-    const contracts = this.contracts().filter(c => !c.closedDate);
-    const todaysTickets = this.todaysTickets();
+    // Scope to the selected trade unit(s): a producer can belong to multiple TUs, so their
+    // contracts (TradeUnit) and unapplied tickets (OrganizationCode) from OTHER trade units
+    // would otherwise surface here. Filter both source sets to the selected TU codes so only
+    // the selected TU's activity is shown. No selection (e.g. all-producers mode) = no filter.
+    const tuSet = new Set(this.selectedTradeUnits.map(t => t.trim()).filter(Boolean));
+    const inSelectedTu = (code?: string | null): boolean =>
+      tuSet.size === 0 || (!!code && tuSet.has(code.trim()));
+    const contracts = this.contracts().filter(c => !c.closedDate && inSelectedTu(c.tradeUnit));
+    const todaysTickets = this.todaysTickets().filter(t => inSelectedTu(t.organizationCode));
     // Skip the O(n) customer loop if neither contracts nor today's tickets have arrived yet.
     if (contracts.length === 0 && todaysTickets.length === 0) return [] as Insight[];
 
