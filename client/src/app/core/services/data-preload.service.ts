@@ -67,14 +67,15 @@ export class DataPreloadService {
         this.appState.todaysTicketsLoading.set(true);
         this.appState.clearDashboardCache();
         this.appState.clearPreloadedDashboardSummary();
+        // The TU-wide ticket set is no longer eagerly bulk-loaded — it's lazily fetched by the
+        // list/NLQ consumers (customer-list, build-list) when a ticket query needs it. Clear it on
+        // TU change so those consumers re-fetch for the new TU instead of reusing the prior TU's set.
+        this.appState.clearTicketsCache();
 
         // Core group — dataLoading clears when all three are ready so that
         // Unconfirmed Contracts, Spot Loads, and Unshipped Bushels all appear
         // simultaneously. todaysTickets$ is a fast query (today's date filter)
         // and resolves in roughly the same time as customers + contracts.
-        // The full ticket set IS also pre-loaded (tickets$ below) but in the
-        // background — it can take minutes against the slow ODS view and must
-        // not block the dataLoading signal.
         let coreArrived = { customers: false, contracts: false, todaysTickets: false };
 
         const customers$ = this.apiService.getCustomers(tradeUnits).pipe(
@@ -102,18 +103,6 @@ export class DataPreloadService {
             this.appState.todaysTicketsLoading.set(false);
             coreArrived.todaysTickets = true;
             if (coreArrived.customers && coreArrived.contracts) this.appState.setDataLoading(false);
-          })
-        );
-        // Bulk tickets load — fires in the background after the page is already interactive.
-        // The full ticket set against vw_CurrentTickets is slow (minutes for some TUs) because
-        // the view doesn't seek on ContractNumber; per-customer queries against it have an even
-        // worse plan, so a single background scan that fills appState is the practical answer
-        // until a local synced ticket table replaces this. The home page reads from appState
-        // for applied-tickets-per-contract once this lands.
-        const tickets$ = this.apiService.getTickets(tradeUnits).pipe(
-          catchError(() => of([] as Ticket[])),
-          tap(data => {
-            this.appState.setTickets(data);
           })
         );
         const notes$ = this.apiService.getNotes().pipe(
@@ -175,7 +164,7 @@ export class DataPreloadService {
           })
         );
 
-        return merge(customers$, contracts$, todaysTickets$, tickets$, notes$, plantingIntentions$, storedGrain$, savedLists$, commodities$, harvestWindows$, producerDetails$, dashboardSummary$);
+        return merge(customers$, contracts$, todaysTickets$, notes$, plantingIntentions$, storedGrain$, savedLists$, commodities$, harvestWindows$, producerDetails$, dashboardSummary$);
       }),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe();

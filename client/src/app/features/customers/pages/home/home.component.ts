@@ -191,27 +191,6 @@ export class HomeComponent {
       untracked(() => this.notes.set(stateNotes));
     });
 
-    // Mirror appState.tickets() into the home component's local tickets signal.
-    // The bulk getTickets fires in both data-preload AND _loadAllData, but only the
-    // _loadAllData path writes to this.tickets() directly. When data-preload wins the
-    // race (or _loadAllData skips because customers were already cached), this effect
-    // picks up the bulk's data, marks the bulk as arrived, and re-filters the selected
-    // customer's per-customer ticket subset so applied tickets surface in the contracts
-    // table. Without it, customerTickets stays frozen at whatever the per-customer
-    // unapplied fetch returned and Applied Tickets renders "(0)".
-    effect(() => {
-      const stateTickets = this.appState.tickets();
-      if (stateTickets.length === 0) return;
-      untracked(() => {
-        const localIds = new Set(this.tickets().map(t => t.id));
-        const fresh = stateTickets.filter(t => !localIds.has(t.id));
-        if (fresh.length === 0) return;
-        this.tickets.set([...this.tickets(), ...fresh]);
-        const sel = this.selectedCustomer();
-        if (sel) this._loadCustomerData(sel.id);
-      });
-    });
-
     // React to global trade unit changes made via TradeUnitSelectorComponent
     effect(() => {
       const tradeUnits = this.appState.selectedTradeUnits();
@@ -244,7 +223,10 @@ export class HomeComponent {
     if (stateCustomers.length > 0) {
       this.customers.set(stateCustomers);
       this.contracts.set(this.appState.contracts());
-      this.tickets.set(this.appState.tickets());
+      // Tickets are loaded per-producer, not held TU-wide, so don't reseed from appState.tickets
+      // (which is now only the lazy list/NLQ cache). The selected customer's tickets are re-fetched
+      // below; selecting any producer re-fetches theirs.
+      this.tickets.set([]);
       this.plantingIntentions.set(this.appState.plantingIntentions());
       this.isLoadingPlanting.set(false);
       this.notes.set(this.appState.notes());
@@ -267,7 +249,10 @@ export class HomeComponent {
       if (stateSelectedCustomer) {
         this.selectedCustomer.set(stateSelectedCustomer);
         this.customerPricingLines.set(this.appState.pricingLines());
+        // Re-fetch this producer's tickets — they're no longer pre-loaded in appState.
+        this.isLoadingUnappliedTickets.set(true);
         this._loadCustomerData(stateSelectedCustomer.id);
+        this._loadCustomerTickets(stateSelectedCustomer.id, stateSelectedCustomer.scoularId);
         // Re-fetch per-customer planting intentions on navigation back —
         // these are not stored in appState so they must be reloaded.
         this.allCustomerPlantingIntentions.set([]);
@@ -358,35 +343,9 @@ export class HomeComponent {
       error: () => {}
     });
 
-    // Bulk tickets fetch — slow against the ODS view (minutes for some TUs) but runs in
-    // the background so the home page is interactive immediately. The per-customer
-    // unapplied fetch (kicked off on producer click) gives the user usable applied-tickets-
-    // adjacent data fast; this bulk lands later and populates the applied-tickets-per-contract
-    // view in contracts-table. data-preload also fires this; whichever returns first wins.
-    this.apiService.getTickets(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (data) => {
-        const list = data ?? [];
-        const batchIds = new Set(list.map(t => t.id));
-        const fkExtras = this.tickets().filter(t => !batchIds.has(t.id));
-        this.tickets.set([...list, ...fkExtras]);
-        // Merge into appState rather than overwrite — appState may have cross-TU tickets
-        // (linked producers) that aren't in our local copy. Overwriting would drop them
-        // and break downstream pages (Insights) that depend on the global ticket set.
-        const merged = [...this.tickets()];
-        const have = new Set(merged.map(t => t.id));
-        for (const t of this.appState.tickets()) {
-          if (!have.has(t.id)) merged.push(t);
-        }
-        this.appState.setTickets(merged);
-        // If a producer is already selected, refilter their per-customer ticket views from
-        // the freshly-arrived bulk. Without this, customerTickets stays frozen at whatever
-        // the unapplied-only fetch returned (no applied tickets ever surface in the
-        // contracts table when the user selects before the bulk lands).
-        const sel = this.selectedCustomer();
-        if (sel) this._loadCustomerData(sel.id);
-      },
-      error: () => {}
-    });
+    // Tickets are no longer bulk-loaded here. They're fetched per-producer on select (applied +
+    // unapplied via _loadCustomerTickets) since applied tickets are only ever viewed on a selected
+    // producer; list/NLQ ticket queries lazily fetch the TU-wide set themselves when needed.
 
     this.apiService.getPlantingIntentions(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
@@ -696,6 +655,10 @@ export class HomeComponent {
     this.appState.setCustomers([]);
     this.notes.set([]);
     this.appState.setNotes([]);
+    // Per-producer tickets accumulate in the local signal across selections, so clear them on TU
+    // change to drop the prior TU's producers' tickets. (appState.tickets — the TU-wide list/NLQ
+    // cache — is cleared separately by data-preload's clearTicketsCache.)
+    this.tickets.set([]);
     // Drop the per-customer caches — TU change can include / exclude different
     // customers, and re-clicking a producer that overlaps the new TU must re-fetch
     // contracts/tickets/pricing/grain to reflect the new scope. Without this, the
@@ -1068,42 +1031,10 @@ export class HomeComponent {
       error: () => { this.isLoadingContracts.set(false); }
     });
 
-    // FAST per-producer UNAPPLIED-tickets fetch — narrow CustomerCode-scoped query (<1s) so
-    // the unapplied tab populates immediately. The bulk getTickets in _loadAllData separately
-    // catches cross-customer / split-entity applied tickets that this narrow CustomerCode-scoped
-    // fetch wouldn't see, merging them into the same ticket set by id.
-    this.apiService.getUnappliedTicketsByCustomer(customerId, scoularId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (tickets) => {
-        const existing = this.tickets();
-        const merged = [...existing];
-        tickets.forEach(t => { if (!merged.some(e => e.id === t.id)) merged.push(t); });
-        this.tickets.set(merged);
-        // Merge into appState rather than overwrite — appState carries the bulk's full set
-        // (or whatever's arrived so far). Overwriting would drop cross-TU tickets that
-        // downstream pages (Insights) depend on.
-        const appMerged = [...merged];
-        const have = new Set(appMerged.map(t => t.id));
-        for (const t of this.appState.tickets()) {
-          if (!have.has(t.id)) appMerged.push(t);
-        }
-        this.appState.setTickets(appMerged);
-        // Unapplied tab can stop spinning the moment its narrow fetch returns.
-        this.isLoadingUnappliedTickets.set(false);
-        this._loadCustomerData(customerId);
-
-        // Auto-save derives commodities from tickets' ProductCode. The unapplied-only
-        // set here is narrower than the full per-customer fetch used to be, but the edit
-        // dialog merges in contracts' CommodityCode so it still gets a complete picture.
-        const customer = this.customers().find(c => c.id === customerId) || this.selectedCustomer();
-        if (customer) this._autoSaveCommodities(customer, tickets);
-        ticketsDone = true;
-        markIfAllDone();
-      },
-      error: () => {
-        // Don't leave the Unapplied tab stuck spinning if the narrow fetch failed.
-        this.isLoadingUnappliedTickets.set(false);
-      }
-    });
+    // Per-producer ticket fetch (applied + unapplied), scoped to this customer. Replaces the old
+    // eager TU-wide bulk: applied tickets are matched server-side by the customer's open contract
+    // numbers, so cross-customer / split-entity applied tickets still surface here.
+    this._loadCustomerTickets(customerId, scoularId, () => { ticketsDone = true; markIfAllDone(); });
 
     this.apiService.getStoredGrainByCustomer(customerId).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (grain) => {
@@ -1118,6 +1049,34 @@ export class HomeComponent {
       },
       error: () => { this.isLoadingStoredGrain.set(false); }
     });
+  }
+
+  /** Loads one producer's tickets (applied + unapplied) into the LOCAL ticket signal and re-filters
+   *  the per-customer views. Used on producer select and on navigation-restore. Deliberately does
+   *  NOT write to appState.tickets — that signal is the TU-wide cache for list/NLQ queries only;
+   *  polluting it with one producer's tickets would make the customer-list/build-list NLQ guard
+   *  think the full TU set is loaded. Applied tickets are matched server-side by the customer's open
+   *  contract numbers, so split / cross-CustomerCode applied tickets are included. */
+  private _loadCustomerTickets(customerId: number, scoularId: string | undefined, onDone?: () => void): void {
+    this.apiService.getTicketsByCustomer(customerId, scoularId)
+      .pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (tickets) => {
+          const merged = [...this.tickets()];
+          tickets.forEach(t => { if (!merged.some(e => e.id === t.id)) merged.push(t); });
+          this.tickets.set(merged);
+          this.isLoadingUnappliedTickets.set(false);
+          this._loadCustomerData(customerId);
+          // Auto-save derives commodities from ticket ProductCodes; the edit dialog also merges
+          // contracts' CommodityCode, so the commodity set stays complete.
+          const customer = this.customers().find(c => c.id === customerId) || this.selectedCustomer();
+          if (customer) this._autoSaveCommodities(customer, tickets);
+          onDone?.();
+        },
+        error: () => {
+          this.isLoadingUnappliedTickets.set(false);
+        }
+      });
   }
 
   private _loadCustomerData(customerId: number, customer?: Customer): void {
