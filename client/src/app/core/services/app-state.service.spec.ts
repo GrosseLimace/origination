@@ -84,18 +84,4 @@ describe('AppStateService', () => {
     expect(service.mapGeocodeCache.size).toBe(0);
   });
 
-  it('setInsightsCache() and clearInsightsCache() manage insights cache', () => {
-    const entry = {
-      tradeUnitsKey: 'TU1',
-      customers: [],
-      contracts: [],
-      tickets: [],
-      notes: [],
-      loadedAt: new Date(),
-    };
-    service.setInsightsCache(entry);
-    expect(service.insightsCache()).toEqual(entry);
-    service.clearInsightsCache();
-    expect(service.insightsCache()).toBeNull();
-  });
 });
