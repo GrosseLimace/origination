@@ -3,6 +3,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Caching.Memory;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using static GrainOriginatorPortal.Infrastructure.Data.SqlSanitization;
 using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Models;
 
@@ -39,28 +40,6 @@ public class SqlDataService : IDataService
         _httpContextAccessor.HttpContext?.Items[CorrelationIdMiddleware.ItemsKey]?.ToString()
         ?? _httpContextAccessor.HttpContext?.TraceIdentifier
         ?? "no-trace";
-
-    /// <summary>Sanitizes a list of ID strings for safe use in STRING_SPLIT CSV parameters.
-    /// Strips any character that isn't alphanumeric, hyphen, or underscore.</summary>
-    /// <summary>
-    /// Strips every character except [a-zA-Z0-9-_] from each value, then joins with commas.
-    /// The output is guaranteed safe to interpolate into a SQL statement — no quotes, semicolons,
-    /// whitespace, or SQL metacharacters can survive. Used with STRING_SPLIT to pass an identifier
-    /// collection (TradeUnit codes, ScoularIds, etc.) into a parameterized SqlParameter value.
-    /// DO NOT bypass this method when passing caller-controlled identifier collections into raw SQL.
-    /// </summary>
-    internal static string SanitizeCsv(IEnumerable<string> values) =>
-        string.Join(",", values.Select(v => System.Text.RegularExpressions.Regex.Replace(v, @"[^a-zA-Z0-9\-_]", "")));
-
-    /// <summary>
-    /// Same guarantees as <see cref="SanitizeCsv"/>, but also preserves spaces. CTRM contract
-    /// numbers (e.g. "PW 452117") legitimately contain a space mid-identifier; the standard
-    /// sanitizer would strip it and the resulting STRING_SPLIT key would never match the column
-    /// value. Spaces aren't a SQL-injection risk because the joined CSV is sent as a single
-    /// parameterized nvarchar; SQL Server treats it as a literal string for STRING_SPLIT.
-    /// </summary>
-    internal static string SanitizeIdentifierCsv(IEnumerable<string> values) =>
-        string.Join(",", values.Select(v => System.Text.RegularExpressions.Regex.Replace(v, @"[^a-zA-Z0-9\-_ ]", "")));
 
     /// <summary>
     /// CTRM represents an OPEN contract's ClosedDate three ways: NULL, blank (also reads as
