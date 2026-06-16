@@ -30,9 +30,10 @@ public class SqlDataService : IDataService
     private readonly IProducerDetailsRepository _producerDetailsRepository;
     private readonly IPlantingIntentionRepository _plantingIntentionRepository;
     private readonly INoteRepository _noteRepository;
+    private readonly IDashboardRepository _dashboardRepository;
     private readonly IFarmRepository _farmRepository;
 
-    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor, IMemoryCache cache, IQueryLibraryRepository queryLibraryRepository, ICommodityRepository commodityRepository, IStoredGrainRepository storedGrainRepository, ISavedListRepository savedListRepository, IDisplayNameLookupRepository displayNameLookup, IProducerDetailsRepository producerDetailsRepository, IFarmRepository farmRepository, IPlantingIntentionRepository plantingIntentionRepository, INoteRepository noteRepository)
+    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor, IMemoryCache cache, IQueryLibraryRepository queryLibraryRepository, ICommodityRepository commodityRepository, IStoredGrainRepository storedGrainRepository, ISavedListRepository savedListRepository, IDisplayNameLookupRepository displayNameLookup, IProducerDetailsRepository producerDetailsRepository, IFarmRepository farmRepository, IPlantingIntentionRepository plantingIntentionRepository, INoteRepository noteRepository, IDashboardRepository dashboardRepository)
     {
         _context = context;
         _appContext = appContext;
@@ -47,6 +48,7 @@ public class SqlDataService : IDataService
         _producerDetailsRepository = producerDetailsRepository;
         _plantingIntentionRepository = plantingIntentionRepository;
         _noteRepository = noteRepository;
+        _dashboardRepository = dashboardRepository;
         _farmRepository = farmRepository;
     }
 
@@ -3019,24 +3021,10 @@ public class SqlDataService : IDataService
     {
         // EF Core DbContext is not thread-safe — run sequentially instead of Task.WhenAll.
         // These are small app tables (< 20ms each), so sequential is still far faster
-        // than 3 separate HTTP round-trips from the client.
-        var estimates = await _appContext.DashboardPlantingEstimates
-            .AsNoTracking()
-            .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear)
-            .OrderBy(e => e.Crop)
-            .ToListAsync(cancellationToken);
-
-        var marketShares = await _appContext.DashboardMarketShares
-            .AsNoTracking()
-            .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear)
-            .OrderBy(e => e.CropCategory)
-            .ToListAsync(cancellationToken);
-
-        var actualHarvest = await _appContext.DashboardActualHarvests
-            .AsNoTracking()
-            .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear - 1)
-            .OrderBy(e => e.CropCategory)
-            .ToListAsync(cancellationToken);
+        // than 3 separate HTTP round-trips from the client. Actual harvest is the prior year.
+        var estimates = await _dashboardRepository.GetPlantingEstimatesAsync(tradeUnitKey, plantingYear, cancellationToken);
+        var marketShares = await _dashboardRepository.GetMarketSharesAsync(tradeUnitKey, plantingYear, cancellationToken);
+        var actualHarvest = await _dashboardRepository.GetActualHarvestAsync(tradeUnitKey, plantingYear - 1, cancellationToken);
 
         return new DashboardSummaryResponse
         {
@@ -3046,190 +3034,50 @@ public class SqlDataService : IDataService
         };
     }
 
-    public async Task<List<DashboardPlantingEstimate>> GetDashboardPlantingEstimatesAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default)
-    {
-        return await _appContext.DashboardPlantingEstimates
-            .AsNoTracking()
-            .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear)
-            .OrderBy(e => e.Crop)
-            .ToListAsync(cancellationToken);
-    }
+    public Task<List<DashboardPlantingEstimate>> GetDashboardPlantingEstimatesAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default) =>
+        _dashboardRepository.GetPlantingEstimatesAsync(tradeUnitKey, plantingYear, cancellationToken);
 
-    public async Task UpsertDashboardPlantingEstimatesAsync(List<UpsertDashboardEstimateRequest> estimates, string username, CancellationToken cancellationToken = default)
-    {
-        if (estimates.Count == 0) return;
-        var strategy = _appContext.Database.CreateExecutionStrategy();
-        await strategy.ExecuteAsync(async () =>
-        {
-            await using var transaction = await _appContext.Database.BeginTransactionAsync(cancellationToken);
-
-            // Load all existing records for this TU+year in one query, then do in-memory lookup.
-            // Use OrdinalIgnoreCase on the dictionary because SQL Server's default collation is
-            // case-insensitive — a DB row stored as "Irrigated corn" must match a request for
-            // "Irrigated Corn" on the .NET side too, or the update branch is skipped and the
-            // insert branch then trips the unique key constraint on (TradeUnitKey, Crop, Year).
-            var tuKey = estimates[0].TradeUnitKey;
-            var year = estimates[0].PlantingYear;
-            var existingMap = await _appContext.DashboardPlantingEstimates
-                .Where(e => e.TradeUnitKey == tuKey && e.PlantingYear == year)
-                .ToDictionaryAsync(e => e.Crop, StringComparer.OrdinalIgnoreCase, cancellationToken);
-
-            foreach (var req in estimates)
+    public Task UpsertDashboardPlantingEstimatesAsync(List<UpsertDashboardEstimateRequest> estimates, string username, CancellationToken cancellationToken = default) =>
+        _dashboardRepository.UpsertPlantingEstimatesAsync(
+            estimates.Select(r => new DashboardPlantingEstimate
             {
-                existingMap.TryGetValue(req.Crop, out var existing);
-                if (req.YieldEstimate == null)
-                {
-                    if (existing != null)
-                        _appContext.DashboardPlantingEstimates.Remove(existing);
-                }
-                else if (existing != null)
-                {
-                    existing.YieldEstimate = req.YieldEstimate;
-                    // Normalize the stored Crop casing to match the request — the unique index
-                    // is case-insensitive so this doesn't violate anything, and keeping the DB
-                    // in sync with the Commodities table's display casing means the UI can find
-                    // the value when it re-fetches after save.
-                    existing.Crop = req.Crop;
-                    existing.ModifiedAt = DateTime.UtcNow;
-                    existing.ModifiedBy = username;
-                }
-                else
-                {
-                    _appContext.DashboardPlantingEstimates.Add(new DashboardPlantingEstimate
-                    {
-                        TradeUnitKey = req.TradeUnitKey,
-                        Crop = req.Crop,
-                        PlantingYear = req.PlantingYear,
-                        YieldEstimate = req.YieldEstimate,
-                        CreatedAt = DateTime.UtcNow,
-                        CreatedBy = username
-                    });
-                }
-            }
-            await _appContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-        });
-    }
+                TradeUnitKey = r.TradeUnitKey,
+                Crop = r.Crop,
+                PlantingYear = r.PlantingYear,
+                YieldEstimate = r.YieldEstimate
+            }).ToList(),
+            username, cancellationToken);
 
-    public async Task<List<DashboardMarketShare>> GetDashboardMarketSharesAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default)
-    {
-        return await _appContext.DashboardMarketShares
-            .AsNoTracking()
-            .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear)
-            .OrderBy(e => e.CropCategory)
-            .ToListAsync(cancellationToken);
-    }
+    public Task<List<DashboardMarketShare>> GetDashboardMarketSharesAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default) =>
+        _dashboardRepository.GetMarketSharesAsync(tradeUnitKey, plantingYear, cancellationToken);
 
-    public async Task UpsertDashboardMarketSharesAsync(List<UpsertDashboardMarketShareRequest> shares, string username, CancellationToken cancellationToken = default)
-    {
-        if (shares.Count == 0) return;
-        var strategy = _appContext.Database.CreateExecutionStrategy();
-        await strategy.ExecuteAsync(async () =>
-        {
-            await using var transaction = await _appContext.Database.BeginTransactionAsync(cancellationToken);
-
-            // OrdinalIgnoreCase — SQL collation is case-insensitive, so the dictionary must match.
-            var tuKey = shares[0].TradeUnitKey;
-            var year = shares[0].PlantingYear;
-            var existingMap = await _appContext.DashboardMarketShares
-                .Where(e => e.TradeUnitKey == tuKey && e.PlantingYear == year)
-                .ToDictionaryAsync(e => e.CropCategory, StringComparer.OrdinalIgnoreCase, cancellationToken);
-
-            foreach (var req in shares)
+    public Task UpsertDashboardMarketSharesAsync(List<UpsertDashboardMarketShareRequest> shares, string username, CancellationToken cancellationToken = default) =>
+        _dashboardRepository.UpsertMarketSharesAsync(
+            shares.Select(r => new DashboardMarketShare
             {
-                existingMap.TryGetValue(req.CropCategory, out var existing);
-                if (req.MarketSharePct == null)
-                {
-                    if (existing != null)
-                        _appContext.DashboardMarketShares.Remove(existing);
-                }
-                else if (existing != null)
-                {
-                    existing.MarketSharePct = req.MarketSharePct;
-                    existing.CropCategory = req.CropCategory;  // normalize casing to match request
-                    existing.ModifiedAt = DateTime.UtcNow;
-                    existing.ModifiedBy = username;
-                }
-                else
-                {
-                    _appContext.DashboardMarketShares.Add(new DashboardMarketShare
-                    {
-                        TradeUnitKey = req.TradeUnitKey,
-                        CropCategory = req.CropCategory,
-                        PlantingYear = req.PlantingYear,
-                        MarketSharePct = req.MarketSharePct,
-                        CreatedAt = DateTime.UtcNow,
-                        CreatedBy = username
-                    });
-                }
-            }
-            await _appContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-        });
-    }
+                TradeUnitKey = r.TradeUnitKey,
+                CropCategory = r.CropCategory,
+                PlantingYear = r.PlantingYear,
+                MarketSharePct = r.MarketSharePct
+            }).ToList(),
+            username, cancellationToken);
 
-    // Dashboard Actual Harvest Operations
-    public async Task<List<DashboardActualHarvest>> GetDashboardActualHarvestAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default)
-    {
-        return await _appContext.DashboardActualHarvests
-            .AsNoTracking()
-            .Where(e => e.TradeUnitKey == tradeUnitKey && e.PlantingYear == plantingYear)
-            .OrderBy(e => e.CropCategory)
-            .ToListAsync(cancellationToken);
-    }
+    public Task<List<DashboardActualHarvest>> GetDashboardActualHarvestAsync(string tradeUnitKey, int plantingYear, CancellationToken cancellationToken = default) =>
+        _dashboardRepository.GetActualHarvestAsync(tradeUnitKey, plantingYear, cancellationToken);
 
-    public async Task UpsertDashboardActualHarvestAsync(List<UpsertDashboardActualHarvestRequest> items, string username, CancellationToken cancellationToken = default)
-    {
-        if (items.Count == 0) return;
-        var strategy = _appContext.Database.CreateExecutionStrategy();
-        await strategy.ExecuteAsync(async () =>
-        {
-            await using var transaction = await _appContext.Database.BeginTransactionAsync(cancellationToken);
-
-            // OrdinalIgnoreCase — SQL collation is case-insensitive, so the dictionary must match.
-            var tuKey = items[0].TradeUnitKey;
-            var year = items[0].PlantingYear;
-            var existingMap = await _appContext.DashboardActualHarvests
-                .Where(e => e.TradeUnitKey == tuKey && e.PlantingYear == year)
-                .ToDictionaryAsync(e => e.CropCategory, StringComparer.OrdinalIgnoreCase, cancellationToken);
-
-            foreach (var req in items)
+    public Task UpsertDashboardActualHarvestAsync(List<UpsertDashboardActualHarvestRequest> items, string username, CancellationToken cancellationToken = default) =>
+        _dashboardRepository.UpsertActualHarvestAsync(
+            items.Select(r => new DashboardActualHarvest
             {
-                existingMap.TryGetValue(req.CropCategory, out var existing);
-                if (existing != null)
-                {
-                    existing.Bushels = req.Bushels;
-                    existing.CropCategory = req.CropCategory;  // normalize casing to match request
-                    existing.ModifiedAt = DateTime.UtcNow;
-                    existing.ModifiedBy = username;
-                }
-                else
-                {
-                    _appContext.DashboardActualHarvests.Add(new DashboardActualHarvest
-                    {
-                        TradeUnitKey = req.TradeUnitKey,
-                        CropCategory = req.CropCategory,
-                        PlantingYear = req.PlantingYear,
-                        Bushels = req.Bushels,
-                        CreatedAt = DateTime.UtcNow,
-                        CreatedBy = username
-                    });
-                }
-            }
-            await _appContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-        });
-    }
+                TradeUnitKey = r.TradeUnitKey,
+                CropCategory = r.CropCategory,
+                PlantingYear = r.PlantingYear,
+                Bushels = r.Bushels
+            }).ToList(),
+            username, cancellationToken);
 
-    public async Task DeleteDashboardActualHarvestAsync(int id, CancellationToken cancellationToken = default)
-    {
-        var entity = await _appContext.DashboardActualHarvests.FindAsync([id], cancellationToken);
-        if (entity != null)
-        {
-            _appContext.DashboardActualHarvests.Remove(entity);
-            await _appContext.SaveChangesAsync(cancellationToken);
-        }
-    }
+    public Task DeleteDashboardActualHarvestAsync(int id, CancellationToken cancellationToken = default) =>
+        _dashboardRepository.DeleteActualHarvestAsync(id, cancellationToken);
 
     // =========================================================================
     // Bid Sheet Operations

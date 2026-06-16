@@ -91,6 +91,7 @@ public static class DependencyInjection
         services.AddScoped<IFarmRepository, FarmRepository>();
         services.AddScoped<IPlantingIntentionRepository, PlantingIntentionRepository>();
         services.AddScoped<INoteRepository, NoteRepository>();
+        services.AddScoped<IDashboardRepository, DashboardRepository>();
 
         return services;
     }
