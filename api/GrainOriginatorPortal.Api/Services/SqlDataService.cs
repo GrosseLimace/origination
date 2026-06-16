@@ -16,8 +16,6 @@ namespace GrainOriginatorPortal.Api.Services;
 /// </summary>
 public class SqlDataService : IDataService
 {
-    private readonly OriginationDbContext _context;
-    private readonly ApplicationDbContext _appContext;
     private readonly ILogger<SqlDataService> _logger;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IMemoryCache _cache;
@@ -38,10 +36,8 @@ public class SqlDataService : IDataService
     private readonly ICustomerRepository _customerRepository;
     private readonly IFarmRepository _farmRepository;
 
-    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor, IMemoryCache cache, IQueryLibraryRepository queryLibraryRepository, ICommodityRepository commodityRepository, IStoredGrainRepository storedGrainRepository, ISavedListRepository savedListRepository, IDisplayNameLookupRepository displayNameLookup, IProducerDetailsRepository producerDetailsRepository, IFarmRepository farmRepository, IPlantingIntentionRepository plantingIntentionRepository, INoteRepository noteRepository, IDashboardRepository dashboardRepository, ITicketRepository ticketRepository, IContractRepository contractRepository, IBidSheetRepository bidSheetRepository, ICustomerRepository customerRepository)
+    public SqlDataService(ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor, IMemoryCache cache, IQueryLibraryRepository queryLibraryRepository, ICommodityRepository commodityRepository, IStoredGrainRepository storedGrainRepository, ISavedListRepository savedListRepository, IDisplayNameLookupRepository displayNameLookup, IProducerDetailsRepository producerDetailsRepository, IFarmRepository farmRepository, IPlantingIntentionRepository plantingIntentionRepository, INoteRepository noteRepository, IDashboardRepository dashboardRepository, ITicketRepository ticketRepository, IContractRepository contractRepository, IBidSheetRepository bidSheetRepository, ICustomerRepository customerRepository)
     {
-        _context = context;
-        _appContext = appContext;
         _logger = logger;
         _httpContextAccessor = httpContextAccessor;
         _cache = cache;
@@ -353,10 +349,7 @@ public class SqlDataService : IDataService
         if (_cache.TryGetValue(cacheKey, out List<HarvestWindow>? cached) && cached is not null)
             return cached;
 
-        var result = await _appContext.HarvestWindows
-            .AsNoTracking()
-            .Where(h => h.IsActive)
-            .ToListAsync(cancellationToken);
+        var result = (await _commodityRepository.GetHarvestWindowsAsync(cancellationToken)).ToList();
 
         _cache.Set(cacheKey, result, new MemoryCacheEntryOptions
         {
@@ -374,94 +367,8 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var existingCodesList = await _appContext.Commodities
-                .Where(c => c.IsActive)
-                .Select(c => c.Code)
-                .ToListAsync(cancellationToken);
-
-            var existingCodes = new HashSet<string>(existingCodesList, StringComparer.OrdinalIgnoreCase);
-
-            // Pull all commodity data from contracts (Code, Name, Category)
-            var contractCommodities = await _context.Contracts
-                .AsNoTracking()
-                .Where(c => c.IsActive && c.ContractPrefixType == "P"
-                    && !string.IsNullOrEmpty(c.CommodityCode)
-                    && !string.IsNullOrEmpty(c.CommodityDescription))
-                .Select(c => new { c.CommodityCode, c.CommodityDescription, c.CommodityGroup })
-                .Distinct()
-                .ToListAsync(cancellationToken);
-
-            // Pull all distinct product codes from tickets
-            var ticketProductCodes = await _context.Tickets
-                .AsNoTracking()
-                .Where(t => t.IsActive && (t.TicketType == "U" || t.TicketType == "P") && !string.IsNullOrEmpty(t.ProductCode))
-                .Select(t => t.ProductCode!)
-                .Distinct()
-                .ToListAsync(cancellationToken);
-
-            // Build lookup from contracts for description and category
-            var contractLookup = contractCommodities
-                .GroupBy(c => c.CommodityCode!, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-
-            bool changed = false;
-
-            // Add any contract commodities not yet in the table
-            foreach (var item in contractCommodities)
-            {
-                if (!existingCodes.Contains(item.CommodityCode!))
-                {
-                    _appContext.Commodities.Add(new Commodity
-                    {
-                        Code = item.CommodityCode!,
-                        Name = item.CommodityDescription!,
-                        Category = item.CommodityGroup,
-                        IsActive = true
-                    });
-                    existingCodes.Add(item.CommodityCode!);
-                    changed = true;
-                }
-            }
-
-            // Add any ticket product codes not already covered by contracts
-            foreach (var productCode in ticketProductCodes)
-            {
-                if (!existingCodes.Contains(productCode))
-                {
-                    contractLookup.TryGetValue(productCode, out var match);
-                    _appContext.Commodities.Add(new Commodity
-                    {
-                        Code = productCode,
-                        Name = match?.CommodityDescription ?? productCode,
-                        Category = match?.CommodityGroup,
-                        IsActive = true
-                    });
-                    existingCodes.Add(productCode);
-                    changed = true;
-                }
-            }
-
-            // Backfill Category for any commodities missing it
-            var allCommodities = await _appContext.Commodities.Where(c => c.IsActive).ToListAsync(cancellationToken);
-            foreach (var commodity in allCommodities.Where(c => string.IsNullOrEmpty(c.Category)))
-            {
-                if (contractLookup.TryGetValue(commodity.Code, out var match)
-                    && !string.IsNullOrEmpty(match.CommodityGroup))
-                {
-                    commodity.Category = match.CommodityGroup;
-                    changed = true;
-                }
-            }
-
-            if (changed)
-            {
-                await _appContext.SaveChangesAsync(cancellationToken);
-                _logger.LogInformation("Synced commodities from ODS - now {Count} total", allCommodities.Count);
-            }
-            else
-            {
-                _logger.LogInformation("Commodity sync complete - no changes ({Count} total)", allCommodities.Count);
-            }
+            var total = await _commodityRepository.SyncAsync(cancellationToken);
+            _logger.LogInformation("Commodity sync complete ({Count} total)", total);
         }
         catch (Exception ex)
         {
