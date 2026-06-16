@@ -1,0 +1,16 @@
+using GrainOriginatorPortal.Infrastructure.Data.Entities;
+
+namespace GrainOriginatorPortal.Infrastructure.Interfaces;
+
+/// <summary>Read-only access to commodity reference data (app DB) and unit conversions (ODS).</summary>
+public interface ICommodityRepository
+{
+    /// <summary>Active commodities, ordered by name.</summary>
+    Task<IReadOnlyList<Commodity>> GetActiveAsync(CancellationToken cancellationToken);
+
+    /// <summary>Active commodities flagged for the Planting Intentions crop dropdown, ordered by name.</summary>
+    Task<IReadOnlyList<Commodity>> GetPlantingAsync(CancellationToken cancellationToken);
+
+    /// <summary>Commodity unit conversions (lbs per unit > 0) from the ODS.</summary>
+    Task<IReadOnlyList<CommodityConversion>> GetConversionsAsync(CancellationToken cancellationToken);
+}

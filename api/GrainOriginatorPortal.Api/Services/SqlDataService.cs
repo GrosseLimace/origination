@@ -22,8 +22,9 @@ public class SqlDataService : IDataService
     // Phase 2: domain repositories are introduced one at a time; SqlDataService forwards to them
     // during the transition. Once all domains are migrated, SqlDataService + IDataService are deleted.
     private readonly IQueryLibraryRepository _queryLibraryRepository;
+    private readonly ICommodityRepository _commodityRepository;
 
-    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor, IMemoryCache cache, IQueryLibraryRepository queryLibraryRepository)
+    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor, IMemoryCache cache, IQueryLibraryRepository queryLibraryRepository, ICommodityRepository commodityRepository)
     {
         _context = context;
         _appContext = appContext;
@@ -31,6 +32,7 @@ public class SqlDataService : IDataService
         _httpContextAccessor = httpContextAccessor;
         _cache = cache;
         _queryLibraryRepository = queryLibraryRepository;
+        _commodityRepository = commodityRepository;
     }
 
     private string GetTraceId() =>
@@ -1029,11 +1031,7 @@ public class SqlDataService : IDataService
         try
         {
             // Fast read-only query — sync runs at startup via SyncCommoditiesAsync
-            var result = await _appContext.Commodities
-                .AsNoTracking()
-                .Where(c => c.IsActive)
-                .OrderBy(c => c.Name)
-                .ToListAsync(cancellationToken);
+            var result = (await _commodityRepository.GetActiveAsync(cancellationToken)).ToList();
 
             _cache.Set(cacheKey, result, new MemoryCacheEntryOptions
             {
@@ -1060,11 +1058,7 @@ public class SqlDataService : IDataService
         {
             // Curated subset for the Planting Intentions crop dropdown — same source as
             // GetCommoditiesAsync, narrowed to the ShowInPlantingIntentions flag.
-            var result = await _appContext.Commodities
-                .AsNoTracking()
-                .Where(c => c.IsActive && c.ShowInPlantingIntentions)
-                .OrderBy(c => c.Name)
-                .ToListAsync(cancellationToken);
+            var result = (await _commodityRepository.GetPlantingAsync(cancellationToken)).ToList();
 
             _cache.Set(cacheKey, result, new MemoryCacheEntryOptions
             {
@@ -1087,10 +1081,7 @@ public class SqlDataService : IDataService
         if (_cache.TryGetValue(cacheKey, out List<CommodityConversion>? cached) && cached is not null)
             return cached;
 
-        var result = await _context.CommodityConversions
-            .AsNoTracking()
-            .Where(c => c.LbsPerUnit > 0)
-            .ToListAsync(cancellationToken);
+        var result = (await _commodityRepository.GetConversionsAsync(cancellationToken)).ToList();
 
         _cache.Set(cacheKey, result, new MemoryCacheEntryOptions
         {

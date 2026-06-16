@@ -83,6 +83,7 @@ public static class DependencyInjection
 
         // ── Repositories (per-domain, added incrementally during the Phase 2 migration) ──
         services.AddScoped<IQueryLibraryRepository, QueryLibraryRepository>();
+        services.AddScoped<ICommodityRepository, CommodityRepository>();
 
         return services;
     }
