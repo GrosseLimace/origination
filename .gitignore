@@ -15,3 +15,13 @@ api/**/wwwroot/
 tmpclaude-*-cwd
 client/tmpclaude-*-cwd
 api/GrainOriginatorPortal.Api/wwwroot/
+
+# Logs
+*.log
+
+# Test coverage output
+client/coverage/
+
+# Local IDE / tooling config
+.vscode/
+.claude/
