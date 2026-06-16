@@ -28,9 +28,10 @@ public class SqlDataService : IDataService
     private readonly ISavedListRepository _savedListRepository;
     private readonly IDisplayNameLookupRepository _displayNameLookup;
     private readonly IProducerDetailsRepository _producerDetailsRepository;
+    private readonly IPlantingIntentionRepository _plantingIntentionRepository;
     private readonly IFarmRepository _farmRepository;
 
-    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor, IMemoryCache cache, IQueryLibraryRepository queryLibraryRepository, ICommodityRepository commodityRepository, IStoredGrainRepository storedGrainRepository, ISavedListRepository savedListRepository, IDisplayNameLookupRepository displayNameLookup, IProducerDetailsRepository producerDetailsRepository, IFarmRepository farmRepository)
+    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor, IMemoryCache cache, IQueryLibraryRepository queryLibraryRepository, ICommodityRepository commodityRepository, IStoredGrainRepository storedGrainRepository, ISavedListRepository savedListRepository, IDisplayNameLookupRepository displayNameLookup, IProducerDetailsRepository producerDetailsRepository, IFarmRepository farmRepository, IPlantingIntentionRepository plantingIntentionRepository)
     {
         _context = context;
         _appContext = appContext;
@@ -43,6 +44,7 @@ public class SqlDataService : IDataService
         _savedListRepository = savedListRepository;
         _displayNameLookup = displayNameLookup;
         _producerDetailsRepository = producerDetailsRepository;
+        _plantingIntentionRepository = plantingIntentionRepository;
         _farmRepository = farmRepository;
     }
 
@@ -2572,51 +2574,12 @@ public class SqlDataService : IDataService
     {
         try
         {
-            IQueryable<PlantingIntention> query = _appContext.PlantingIntentions
-                .AsNoTracking()
-                .Include(p => p.Customer);
-            var tuList = tradeUnits?.Where(t => !string.IsNullOrEmpty(t)).ToList();
-            if (tuList is { Count: > 0 })
-            {
-                // Find customer codes from TU contracts + customer/TU memberships, then load
-                // ALL their planting (cross-TU). Codes are resolved to CustomerIds and the
-                // planting filter is on the FK column (CustomerCode column is gone in Phase 3b).
-                var contractCustomerCodes = await _context.Contracts
-                    .AsNoTracking()
-                    .Where(c => c.IsActive && c.ContractPrefixType == "P" && c.CtrmCustomerId != null
-                             && c.TradeUnit != null && tuList.Contains(c.TradeUnit))
-                    .Select(c => c.CtrmCustomerId!)
-                    .Distinct()
-                    .ToListAsync(cancellationToken);
-
-                var customerIds = await _appContext.Customers
-                    .AsNoTracking()
-                    .Where(c => c.IsActive &&
-                        ((c.ScoularId != null && contractCustomerCodes.Contains(c.ScoularId))
-                         || _appContext.CustomerTradeUnits.Any(ctu =>
-                                ctu.CustomerId == c.Id && ctu.IsActive && tuList.Contains(ctu.TradeUnit))))
-                    .Select(c => c.Id)
-                    .ToListAsync(cancellationToken);
-
-                query = query.Where(p => customerIds.Contains(p.CustomerId));
-            }
-            if (plantingYear.HasValue)
-            {
-                query = query.Where(p => p.PlantingYear == plantingYear.Value);
-            }
-            var results = await query
-                .OrderByDescending(p => p.PlantingYear)
-                .ThenBy(p => p.Customer!.Name)
-                .ToListAsync(cancellationToken);
+            var results = await _plantingIntentionRepository.GetAsync(tradeUnits, plantingYear, cancellationToken);
             var nameMap = await ResolveDisplayNamesAsync(
                 results.Select(r => r.CreatedBy).Concat(results.Select(r => r.ModifiedBy ?? string.Empty)),
                 cancellationToken);
             foreach (var r in results)
             {
-                // CustomerName / CustomerCode now come from the Customer FK join
-                // (the columns were dropped from dbo.ProducerPlantingIntentions in Phase 3b).
-                r.CustomerName = r.Customer?.Name ?? string.Empty;
-                r.CustomerCode = r.Customer?.ScoularId ?? string.Empty;
                 r.CreatedBy = ApplyDisplayName(r.CreatedBy, nameMap);
                 r.ModifiedBy = string.IsNullOrEmpty(r.ModifiedBy) ? r.ModifiedBy : ApplyDisplayName(r.ModifiedBy, nameMap);
             }
@@ -2639,20 +2602,12 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var results = await _appContext.PlantingIntentions
-                .AsNoTracking()
-                .Include(p => p.Customer)
-                .Where(p => p.CustomerId == customerId)
-                .OrderByDescending(p => p.PlantingYear)
-                .ThenBy(p => p.Crop)
-                .ToListAsync(cancellationToken);
+            var results = await _plantingIntentionRepository.GetByCustomerAsync(customerId, cancellationToken);
             var nameMap = await ResolveDisplayNamesAsync(
                 results.Select(r => r.CreatedBy).Concat(results.Select(r => r.ModifiedBy ?? string.Empty)),
                 cancellationToken);
             foreach (var r in results)
             {
-                r.CustomerName = r.Customer?.Name ?? string.Empty;
-                r.CustomerCode = r.Customer?.ScoularId ?? string.Empty;
                 r.CreatedBy = ApplyDisplayName(r.CreatedBy, nameMap);
                 r.ModifiedBy = string.IsNullOrEmpty(r.ModifiedBy) ? r.ModifiedBy : ApplyDisplayName(r.ModifiedBy, nameMap);
             }
@@ -2671,46 +2626,15 @@ public class SqlDataService : IDataService
         }
     }
 
-    public async Task<PlantingIntention?> GetPlantingIntentionByIdAsync(int intentionId, CancellationToken cancellationToken = default)
-    {
-        var intention = await _appContext.PlantingIntentions.AsNoTracking()
-            .Include(p => p.Customer)
-            .FirstOrDefaultAsync(p => p.Id == intentionId, cancellationToken);
-        if (intention != null)
-        {
-            intention.CustomerName = intention.Customer?.Name ?? string.Empty;
-            intention.CustomerCode = intention.Customer?.ScoularId ?? string.Empty;
-        }
-        return intention;
-    }
+    public Task<PlantingIntention?> GetPlantingIntentionByIdAsync(int intentionId, CancellationToken cancellationToken = default) =>
+        _plantingIntentionRepository.GetByIdAsync(intentionId, cancellationToken);
 
     public async Task<PlantingIntention> AddPlantingIntentionAsync(long customerId, string customerName, string customerCode, string tradeUnit, string crop, string? category, string? type, string? description, int acres, int plantingYear, CancellationToken cancellationToken = default)
     {
         try
         {
-            // CustomerName / CustomerCode are kept on the in-memory entity for the
-            // API response, but EF .Ignore()s them — they're not persisted to the
-            // dropped columns. They come back fresh via FK join on subsequent reads.
-            var intention = new PlantingIntention
-            {
-                CustomerId = customerId,
-                CustomerName = customerName,
-                CustomerCode = customerCode,
-                TradeUnit = tradeUnit,
-                Crop = crop,
-                Category = category,
-                Type = type,
-                Description = description,
-                Acres = acres,
-                PlantingYear = plantingYear,
-                CreatedBy = GetCurrentUser(),
-                CreatedAt = DateTime.UtcNow
-            };
-
-            _appContext.PlantingIntentions.Add(intention);
-            await _appContext.SaveChangesAsync(cancellationToken);
-
-            _logger.LogInformation("Created planting intention {Id} for customer {CustomerId}", intention.Id, customerId);
+            var intention = await _plantingIntentionRepository.AddAsync(customerId, customerName, customerCode, tradeUnit,
+                crop, category, type, description, acres, plantingYear, GetCurrentUser(), cancellationToken);
             var nameMap = await ResolveDisplayNamesAsync(new[] { intention.CreatedBy }, cancellationToken);
             intention.CreatedBy = ApplyDisplayName(intention.CreatedBy, nameMap);
             return intention;
@@ -2727,28 +2651,13 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var intention = await _appContext.PlantingIntentions
-                .Include(p => p.Customer)
-                .FirstOrDefaultAsync(p => p.Id == intentionId, cancellationToken);
+            var intention = await _plantingIntentionRepository.UpdateAsync(intentionId, crop, category, type,
+                description, acres, plantingYear, GetCurrentUser(), cancellationToken);
             if (intention == null)
             {
                 return null;
             }
 
-            intention.Crop = crop;
-            intention.Category = category;
-            intention.Type = type;
-            intention.Description = description;
-            intention.Acres = acres;
-            intention.PlantingYear = plantingYear;
-            intention.ModifiedBy = GetCurrentUser();
-            intention.ModifiedAt = DateTime.UtcNow;
-
-            await _appContext.SaveChangesAsync(cancellationToken);
-
-            _logger.LogInformation("Updated planting intention {Id}", intentionId);
-            intention.CustomerName = intention.Customer?.Name ?? string.Empty;
-            intention.CustomerCode = intention.Customer?.ScoularId ?? string.Empty;
             var nameMap = await ResolveDisplayNamesAsync(
                 new[] { intention.CreatedBy, intention.ModifiedBy ?? string.Empty }, cancellationToken);
             intention.CreatedBy = ApplyDisplayName(intention.CreatedBy, nameMap);
@@ -2767,13 +2676,7 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var intention = await _appContext.PlantingIntentions.FirstOrDefaultAsync(p => p.Id == intentionId, cancellationToken);
-            if (intention != null)
-            {
-                _appContext.PlantingIntentions.Remove(intention);
-                await _appContext.SaveChangesAsync(cancellationToken);
-                _logger.LogInformation("Deleted planting intention {Id}", intentionId);
-            }
+            await _plantingIntentionRepository.DeleteAsync(intentionId, cancellationToken);
         }
         catch (Exception ex)
         {
