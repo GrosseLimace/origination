@@ -1,8 +1,8 @@
 // Project namespaces
-using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Api.Exceptions;
+using GrainOriginatorPortal.Api.Models.Requests;
+using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
-using Microsoft.EntityFrameworkCore;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -12,93 +12,64 @@ namespace GrainOriginatorPortal.Api.Controllers;
 [Produces("application/json")]
 public class NotesController : ControllerBase
 {
-    private readonly IDataService _dataService;
+    private readonly INoteService _service;
     private readonly ILogger<NotesController> _logger;
-    private readonly IUserEntitlementService _entitlementService;
-    private readonly ApplicationDbContext _appContext;
 
-    public NotesController(IDataService dataService, ILogger<NotesController> logger, IUserEntitlementService entitlementService, ApplicationDbContext appContext)
+    public NotesController(INoteService service, ILogger<NotesController> logger)
     {
-        _dataService = dataService;
+        _service = service;
         _logger = logger;
-        _entitlementService = entitlementService;
-        _appContext = appContext;
     }
 
     // -------------------------------------------------------------------------
     /// <summary>Gets all notes.</summary>
     [HttpGet]
-    [ProducesResponseType(typeof(List<Note>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<Note>>> GetAll([FromQuery] string? tradeUnits = null, CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(List<NoteResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<NoteResponse>>> GetAll([FromQuery] string? tradeUnits = null, CancellationToken cancellationToken = default)
     {
-        var tuList = tradeUnits?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var notes = await _dataService.GetNotesAsync(tuList, cancellationToken);
-        if (_entitlementService.EntitlementsAvailable)
-        {
-            var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);
-            notes = notes.Where(n => n.TradeUnit == null || allowed.Contains(n.TradeUnit)).ToList();
-        }
-        return Ok(notes);
+        return Ok(await _service.GetAllAsync(tradeUnits, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
     /// <summary>Gets all notes for a specific customer. Open to any authenticated originator —
     /// trade-unit entitlements are a UX default, not an access-control boundary.</summary>
     [HttpGet("customer/{customerId:long}")]
-    [ProducesResponseType(typeof(List<Note>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<Note>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(List<NoteResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<NoteResponse>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetNotesByCustomerAsync(customerId, cancellationToken));
+        return Ok(await _service.GetByCustomerAsync(customerId, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
     /// <summary>Creates a new note for a customer.</summary>
     [HttpPost]
-    [ProducesResponseType(typeof(Note), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(NoteResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
-    public async Task<ActionResult<Note>> Create([FromBody] CreateNoteRequest request, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<NoteResponse>> Create([FromBody] CreateNoteRequest request, CancellationToken cancellationToken = default)
     {
-        // Trade units are a UX filter, not an access boundary — any rep may add a note for any customer.
-
-        // Derive TradeUnit from the authoritative dbo.CustomerTradeUnit rather than trusting the client-supplied value.
-        // This prevents a caller from assigning a foreign trade unit to manipulate note visibility.
-        // If a customer has multiple TUs, FirstOrDefaultAsync picks one non-deterministically.
-        var tradeUnit = await _appContext.CustomerTradeUnits
-            .Where(ctu => ctu.CustomerId == request.CustomerId && ctu.IsActive)
-            .Select(ctu => ctu.TradeUnit)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        try
-        {
-            var note = await _dataService.AddNoteAsync(request.CustomerId, request.Content, tradeUnit, cancellationToken);
-            _logger.LogInformation(
-                "Note created [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}, CustomerId={CustomerId}",
-                "AUDIT_CREATE", "DataMutation", note.Id, request.CustomerId);
-            return Created($"/api/notes/{note.Id}", note);
-        }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("database permissions"))
-        {
-            throw new InfrastructureException(
-                "Notes service is temporarily unavailable due to a permissions issue.",
-                "INFRASTRUCTURE_DATABASE_UNAVAILABLE",
-                ex,
-                StatusCodes.Status503ServiceUnavailable);
-        }
+        // Trade units are a UX filter, not an access boundary — any rep may add a note for any
+        // customer. The service derives the authoritative trade unit and translates a DB-permissions
+        // failure to a 503.
+        var note = await _service.CreateAsync(request.CustomerId, request.Content, cancellationToken);
+        _logger.LogInformation(
+            "Note created [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}, CustomerId={CustomerId}",
+            "AUDIT_CREATE", "DataMutation", note.Id, request.CustomerId);
+        return Created($"/api/notes/{note.Id}", note);
     }
 
     // -------------------------------------------------------------------------
     /// <summary>Toggles the pinned status of a note.</summary>
     [HttpPut("{id:long}/toggle-pin")]
-    [ProducesResponseType(typeof(Note), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(NoteResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<Note>> TogglePin(long id, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<NoteResponse>> TogglePin(long id, CancellationToken cancellationToken = default)
     {
         // Trade units are a UX filter, not an access boundary — any rep may pin any note.
-        _ = await _dataService.GetNoteByIdAsync(id, cancellationToken)
+        _ = await _service.GetByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("Note", id);
-        var note = await _dataService.ToggleNotePinAsync(id, cancellationToken)
+        var note = await _service.TogglePinAsync(id, cancellationToken)
             ?? throw new NotFoundException("Note", id);
         _logger.LogInformation(
             "Note pin toggled [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}, IsPinned={IsPinned}",
@@ -109,15 +80,15 @@ public class NotesController : ControllerBase
     // -------------------------------------------------------------------------
     /// <summary>Updates the content of a note.</summary>
     [HttpPut("{id:long}")]
-    [ProducesResponseType(typeof(Note), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(NoteResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<Note>> Update(long id, [FromBody] UpdateNoteRequest request, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<NoteResponse>> Update(long id, [FromBody] UpdateNoteRequest request, CancellationToken cancellationToken = default)
     {
         // Trade units are a UX filter, not an access boundary — any rep may edit any note.
-        _ = await _dataService.GetNoteByIdAsync(id, cancellationToken)
+        _ = await _service.GetByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("Note", id);
-        var note = await _dataService.UpdateNoteAsync(id, request.Content, cancellationToken)
+        var note = await _service.UpdateAsync(id, request.Content, cancellationToken)
             ?? throw new NotFoundException("Note", id);
         _logger.LogInformation(
             "Note updated [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}",
@@ -133,9 +104,9 @@ public class NotesController : ControllerBase
     public async Task<ActionResult> Delete(long id, CancellationToken cancellationToken = default)
     {
         // Trade units are a UX filter, not an access boundary — any rep may delete any note.
-        _ = await _dataService.GetNoteByIdAsync(id, cancellationToken)
+        _ = await _service.GetByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("Note", id);
-        await _dataService.DeleteNoteAsync(id, cancellationToken);
+        await _service.DeleteAsync(id, cancellationToken);
         _logger.LogInformation(
             "Note deleted [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}",
             "AUDIT_DELETE", "DataMutation", id);
