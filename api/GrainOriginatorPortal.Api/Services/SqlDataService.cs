@@ -3,6 +3,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Caching.Memory;
 using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Repositories;
 using static GrainOriginatorPortal.Infrastructure.Data.SqlSanitization;
 using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Models;
@@ -33,9 +34,10 @@ public class SqlDataService : IDataService
     private readonly IDashboardRepository _dashboardRepository;
     private readonly ITicketRepository _ticketRepository;
     private readonly IContractRepository _contractRepository;
+    private readonly IBidSheetRepository _bidSheetRepository;
     private readonly IFarmRepository _farmRepository;
 
-    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor, IMemoryCache cache, IQueryLibraryRepository queryLibraryRepository, ICommodityRepository commodityRepository, IStoredGrainRepository storedGrainRepository, ISavedListRepository savedListRepository, IDisplayNameLookupRepository displayNameLookup, IProducerDetailsRepository producerDetailsRepository, IFarmRepository farmRepository, IPlantingIntentionRepository plantingIntentionRepository, INoteRepository noteRepository, IDashboardRepository dashboardRepository, ITicketRepository ticketRepository, IContractRepository contractRepository)
+    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor, IMemoryCache cache, IQueryLibraryRepository queryLibraryRepository, ICommodityRepository commodityRepository, IStoredGrainRepository storedGrainRepository, ISavedListRepository savedListRepository, IDisplayNameLookupRepository displayNameLookup, IProducerDetailsRepository producerDetailsRepository, IFarmRepository farmRepository, IPlantingIntentionRepository plantingIntentionRepository, INoteRepository noteRepository, IDashboardRepository dashboardRepository, ITicketRepository ticketRepository, IContractRepository contractRepository, IBidSheetRepository bidSheetRepository)
     {
         _context = context;
         _appContext = appContext;
@@ -53,6 +55,7 @@ public class SqlDataService : IDataService
         _dashboardRepository = dashboardRepository;
         _ticketRepository = ticketRepository;
         _contractRepository = contractRepository;
+        _bidSheetRepository = bidSheetRepository;
         _farmRepository = farmRepository;
     }
 
@@ -2025,12 +2028,7 @@ public class SqlDataService : IDataService
         if (_cache.TryGetValue(cacheKey, out List<ElevatorCache>? cached) && cached is not null)
             return cached;
 
-        var query = _appContext.ElevatorCaches.AsNoTracking().Where(e => e.IsActive);
-
-        if (!string.IsNullOrEmpty(tradeUnitCode))
-            query = query.Where(e => e.TradeUnitCode == tradeUnitCode);
-
-        var result = await query.ToListAsync(cancellationToken);
+        var result = await _bidSheetRepository.GetElevatorsAsync(tradeUnitCode, cancellationToken);
         _cache.Set(cacheKey, result, new MemoryCacheEntryOptions
         {
             AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10),
@@ -2039,383 +2037,74 @@ public class SqlDataService : IDataService
         return result;
     }
 
-    public async Task<List<BidSheetLocation>> GetBidSheetLocationsAsync(string tradeUnitCode, CancellationToken cancellationToken = default)
-    {
-        return await _appContext.BidSheetLocations
-            .AsNoTracking()
-            .Include(l => l.Bids)
-            .Where(l => l.TradeUnitCode == tradeUnitCode)
-            .OrderBy(l => l.Name)
-            .ToListAsync(cancellationToken);
-    }
+    public Task<List<BidSheetLocation>> GetBidSheetLocationsAsync(string tradeUnitCode, CancellationToken cancellationToken = default) =>
+        _bidSheetRepository.GetLocationsAsync(tradeUnitCode, cancellationToken);
 
-    public async Task<List<BidSheetLocation>> GetAllBidSheetLocationsAsync(CancellationToken cancellationToken = default)
-    {
-        return await _appContext.BidSheetLocations
-            .AsNoTracking()
-            .Include(l => l.Bids)
-            .OrderBy(l => l.Name)
-            .ToListAsync(cancellationToken);
-    }
+    public Task<List<BidSheetLocation>> GetAllBidSheetLocationsAsync(CancellationToken cancellationToken = default) =>
+        _bidSheetRepository.GetAllLocationsAsync(cancellationToken);
 
-    /// <summary>True when a DbUpdateException was caused by a unique-index/PK violation (SQL 2601/2627).</summary>
-    private static bool IsUniqueViolation(DbUpdateException ex)
-        => ex.InnerException is SqlException { Number: 2601 or 2627 };
+    public Task<BidSheetLocation> CreateBidSheetLocationAsync(BidSheetLocation location, CancellationToken cancellationToken = default) =>
+        _bidSheetRepository.CreateLocationAsync(location, cancellationToken);
 
-    /// <summary>
-    /// Recovers from a unique-constraint race on bid inserts: a concurrent request (or a retried
-    /// request) already inserted a bid for the same (LocationId, CommodityCode, CropYear, Month).
-    /// For each pending Added bid that now collides with a row in the DB, detach the insert and
-    /// apply its value onto the existing row instead — so a re-save commits the whole batch (the
-    /// user's value wins) rather than 500-ing. Returns true if anything was reconciled.
-    /// </summary>
-    private async Task<bool> ReconcileDuplicateBidInsertsAsync(CancellationToken cancellationToken)
-    {
-        var added = _appContext.ChangeTracker.Entries<BidSheetLocationBid>()
-            .Where(e => e.State == EntityState.Added)
-            .Select(e => e.Entity)
-            .ToList();
-        var reconciled = false;
-        foreach (var bid in added)
-        {
-            // SQL Server's case-insensitive collation makes the CommodityCode compare match regardless of case.
-            var existing = await _appContext.BidSheetLocationBids.FirstOrDefaultAsync(
-                b => b.LocationId == bid.LocationId && b.CommodityCode == bid.CommodityCode
-                     && b.CropYear == bid.CropYear && b.Month == bid.Month, cancellationToken);
-            if (existing == null) continue;
-            _appContext.Entry(bid).State = EntityState.Detached; // drop the duplicate insert
-            existing.Bid = bid.Bid;
-            existing.CommodityName = bid.CommodityName;
-            existing.CommodityCategory = bid.CommodityCategory;
-            existing.ModifiedBy = bid.CreatedBy;
-            existing.ModifiedAt = DateTime.UtcNow;
-            reconciled = true;
-        }
-        return reconciled;
-    }
+    public Task<BidSheetLocation?> UpdateBidSheetLocationAsync(int id, BidSheetLocation location, CancellationToken cancellationToken = default) =>
+        _bidSheetRepository.UpdateLocationAsync(id, location, cancellationToken);
 
-    public async Task<BidSheetLocation> CreateBidSheetLocationAsync(BidSheetLocation location, CancellationToken cancellationToken = default)
-    {
-        _appContext.BidSheetLocations.Add(location);
-        try
-        {
-            await _appContext.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
-        {
-            // A child bid collided with a concurrently-inserted one — reconcile to updates and retry.
-            _logger.LogWarning(ex, "CreateBidSheetLocation hit a unique-constraint race — reconciling [{TraceId}]", GetTraceId());
-            if (await ReconcileDuplicateBidInsertsAsync(cancellationToken))
-                await _appContext.SaveChangesAsync(cancellationToken);
-            else throw;
-        }
-        return location;
-    }
+    public Task DeleteBidSheetLocationAsync(int id, CancellationToken cancellationToken = default) =>
+        _bidSheetRepository.DeleteLocationAsync(id, cancellationToken);
 
-    public async Task<BidSheetLocation?> UpdateBidSheetLocationAsync(int id, BidSheetLocation location, CancellationToken cancellationToken = default)
-    {
-        var existing = await _appContext.BidSheetLocations
-            .Include(l => l.Bids)
-            .FirstOrDefaultAsync(l => l.Id == id, cancellationToken);
-        if (existing == null) return null;
+    public Task DeleteBidSheetBidsAsync(int locationId, string commodityCode, int? month = null, CancellationToken cancellationToken = default) =>
+        _bidSheetRepository.DeleteBidsAsync(locationId, commodityCode, month, cancellationToken);
 
-        existing.Name = location.Name;
-        existing.Address = location.Address;
-        existing.City = location.City;
-        existing.State = location.State;
-        existing.Latitude = location.Latitude;
-        existing.Longitude = location.Longitude;
-        existing.IsScoularFacility = location.IsScoularFacility;
-        existing.ModifiedBy = location.ModifiedBy;
-        existing.ModifiedAt = DateTime.UtcNow;
-
-        try
-        {
-            await _appContext.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
-        {
-            _logger.LogWarning(ex, "UpdateBidSheetLocation hit a unique-constraint race — reconciling [{TraceId}]", GetTraceId());
-            if (await ReconcileDuplicateBidInsertsAsync(cancellationToken))
-                await _appContext.SaveChangesAsync(cancellationToken);
-            else throw;
-        }
-        return existing;
-    }
-
-    public async Task DeleteBidSheetLocationAsync(int id, CancellationToken cancellationToken = default)
-    {
-        var existing = await _appContext.BidSheetLocations.FindAsync([id], cancellationToken);
-        if (existing != null)
-        {
-            _appContext.BidSheetLocations.Remove(existing);
-            await _appContext.SaveChangesAsync(cancellationToken);
-        }
-    }
-
-    public async Task DeleteBidSheetBidsAsync(int locationId, string commodityCode, int? month = null, CancellationToken cancellationToken = default)
-    {
-        var query = _appContext.BidSheetLocationBids
-            .Where(b => b.LocationId == locationId && b.CommodityCode == commodityCode);
-        if (month.HasValue)
-            query = query.Where(b => b.Month == month.Value);
-        var bids = await query.ToListAsync(cancellationToken);
-
-        if (bids.Count > 0)
-        {
-            _appContext.BidSheetLocationBids.RemoveRange(bids);
-            await _appContext.SaveChangesAsync(cancellationToken);
-        }
-    }
-
-    public async Task BulkUpsertBidSheetBidsAsync(
+    public Task BulkUpsertBidSheetBidsAsync(
         IEnumerable<GrainOriginatorPortal.Api.Models.Requests.UpsertBidSheetBidRequest> requests,
         string tradeUnitCode,
         string userId,
-        CancellationToken cancellationToken = default)
-    {
-        var now = DateTime.UtcNow;
-        var requestList = requests.ToList();
-
-        // Batch-load all locations for the trade unit (1 query instead of N)
-        var allLocations = await _appContext.BidSheetLocations
-            .Where(l => l.TradeUnitCode == tradeUnitCode)
-            .ToListAsync(cancellationToken);
-
-        var byElevator = new Dictionary<string, BidSheetLocation>();
-        foreach (var l in allLocations.Where(l => !string.IsNullOrEmpty(l.ElevatorCode)))
-            byElevator.TryAdd(l.ElevatorCode!, l);
-        var byName = new Dictionary<string, BidSheetLocation>(StringComparer.OrdinalIgnoreCase);
-        foreach (var l in allLocations)
-            byName.TryAdd(l.Name.Trim(), l);
-
-        // First pass: create any missing locations in batch
-        var newLocations = new List<BidSheetLocation>();
-        foreach (var req in requestList)
-        {
-            BidSheetLocation? loc = null;
-            if (!string.IsNullOrEmpty(req.ElevatorCode))
-                byElevator.TryGetValue(req.ElevatorCode, out loc);
-            if (loc == null && !string.IsNullOrEmpty(req.Name))
-                byName.TryGetValue(req.Name.Trim(), out loc);
-
-            if (loc == null)
+        CancellationToken cancellationToken = default) =>
+        _bidSheetRepository.BulkUpsertBidsAsync(
+            requests.Select(r => new BidUpsertInput
             {
-                var name = (req.Name ?? req.ElevatorCode ?? string.Empty).Trim();
-                // Check if we already queued a new location with this name
-                if (!byName.TryGetValue(name, out loc))
-                {
-                    loc = new BidSheetLocation
-                    {
-                        Name = name,
-                        ElevatorCode = req.ElevatorCode,
-                        TradeUnitCode = tradeUnitCode,
-                        GroupName = req.GroupName,
-                        Latitude = req.Latitude,
-                        Longitude = req.Longitude,
-                        CreatedBy = userId,
-                        CreatedAt = now
-                    };
-                    _appContext.BidSheetLocations.Add(loc);
-                    newLocations.Add(loc);
-                    byName[name] = loc;
-                    if (!string.IsNullOrEmpty(req.ElevatorCode))
-                        byElevator[req.ElevatorCode] = loc;
-                }
-            }
-        }
+                Name = r.Name,
+                ElevatorCode = r.ElevatorCode,
+                GroupName = r.GroupName,
+                Latitude = r.Latitude,
+                Longitude = r.Longitude,
+                CommodityCode = r.CommodityCode,
+                CommodityName = r.CommodityName,
+                CommodityCategory = r.CommodityCategory,
+                CropYear = r.CropYear,
+                Month = r.Month,
+                Bid = r.Bid
+            }),
+            tradeUnitCode, userId, cancellationToken);
 
-        // Single SaveChanges to persist all new locations and get their IDs
-        if (newLocations.Count > 0)
-            await _appContext.SaveChangesAsync(cancellationToken);
+    public Task<List<int>> GetBidCropYearsAsync(string tradeUnitCode, CancellationToken cancellationToken = default) =>
+        _bidSheetRepository.GetBidCropYearsAsync(tradeUnitCode, cancellationToken);
 
-        // Batch-load all existing bids for the affected locations (1 query instead of N)
-        var locationIds = allLocations.Concat(newLocations).Select(l => l.Id).ToHashSet();
-        var existingBids = await _appContext.BidSheetLocationBids
-            .Where(b => locationIds.Contains(b.LocationId))
-            .ToListAsync(cancellationToken);
-        // CommodityCode is normalized to uppercase on both the stored key and the lookup key
-        // so a DB value of "yc" matches a request value of "YC". Matches SQL Server's
-        // case-insensitive collation; avoids INSERT attempts that would trip the unique index.
-        var bidLookup = new Dictionary<(int, string, int, int), BidSheetLocationBid>();
-        foreach (var b in existingBids)
-            bidLookup.TryAdd((b.LocationId, (b.CommodityCode ?? "").ToUpperInvariant(), b.CropYear, b.Month), b);
+    public Task<List<string>> GetBidCommoditiesAsync(string tradeUnitCode, CancellationToken cancellationToken = default) =>
+        _bidSheetRepository.GetBidCommoditiesAsync(tradeUnitCode, cancellationToken);
 
-        // Second pass: upsert bids using in-memory lookups (0 queries)
-        foreach (var req in requestList)
-        {
-            BidSheetLocation? loc = null;
-            if (!string.IsNullOrEmpty(req.ElevatorCode))
-                byElevator.TryGetValue(req.ElevatorCode, out loc);
-            if (loc == null && !string.IsNullOrEmpty(req.Name))
-                byName.TryGetValue(req.Name.Trim(), out loc);
-            if (loc == null) continue;
-
-            var key = (loc.Id, (req.CommodityCode ?? "").ToUpperInvariant(), req.CropYear, req.Month);
-            if (string.IsNullOrWhiteSpace(req.Bid))
-            {
-                // Empty bid = user cleared the input → delete the existing row if present
-                if (bidLookup.TryGetValue(key, out var toRemove))
-                {
-                    _appContext.BidSheetLocationBids.Remove(toRemove);
-                    bidLookup.Remove(key);
-                }
-            }
-            else if (bidLookup.TryGetValue(key, out var bid))
-            {
-                bid.Bid = req.Bid;
-                bid.ModifiedBy = userId;
-                bid.ModifiedAt = now;
-            }
-            else
-            {
-                var newBid = new BidSheetLocationBid
-                {
-                    LocationId = loc.Id,
-                    CommodityCode = req.CommodityCode,
-                    CommodityName = req.CommodityName,
-                    CommodityCategory = req.CommodityCategory,
-                    CropYear = req.CropYear,
-                    Month = req.Month,
-                    Bid = req.Bid,
-                    CreatedBy = userId,
-                    CreatedAt = now
-                };
-                _appContext.BidSheetLocationBids.Add(newBid);
-                bidLookup[key] = newBid;
-            }
-        }
-
-        // Single final SaveChanges for all bid upserts. If a concurrent request inserted one of
-        // these bids first, reconcile the colliding inserts into updates and save again so the
-        // whole batch commits (rather than rolling back and 500-ing).
-        try
-        {
-            await _appContext.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
-        {
-            _logger.LogWarning(ex, "Bid upsert hit a unique-constraint race — reconciling [{TraceId}]", GetTraceId());
-            if (await ReconcileDuplicateBidInsertsAsync(cancellationToken))
-                await _appContext.SaveChangesAsync(cancellationToken);
-            else throw;
-        }
-    }
-
-    public async Task<List<int>> GetBidCropYearsAsync(string tradeUnitCode, CancellationToken cancellationToken = default)
-    {
-        return await _appContext.BidSheetLocationBids
-            .AsNoTracking()
-            .Where(b => b.Location.TradeUnitCode == tradeUnitCode)
-            .Select(b => b.CropYear)
-            .Distinct()
-            .OrderBy(y => y)
-            .ToListAsync(cancellationToken);
-    }
-
-    public async Task<List<string>> GetBidCommoditiesAsync(string tradeUnitCode, CancellationToken cancellationToken = default)
-    {
-        return await _appContext.BidSheetLocationBids
-            .AsNoTracking()
-            .Where(b => b.Location.TradeUnitCode == tradeUnitCode)
-            .Select(b => b.CommodityCode)
-            .Distinct()
-            .OrderBy(c => c)
-            .ToListAsync(cancellationToken);
-    }
-
-    public async Task<List<int>> GetBidMonthsAsync(string tradeUnitCode, int cropYear, CancellationToken cancellationToken = default)
-    {
-        return await _appContext.BidSheetLocationBids
-            .AsNoTracking()
-            .Where(b => b.Location.TradeUnitCode == tradeUnitCode && b.CropYear == cropYear)
-            .Select(b => b.Month)
-            .Distinct()
-            .OrderBy(m => m)
-            .ToListAsync(cancellationToken);
-    }
+    public Task<List<int>> GetBidMonthsAsync(string tradeUnitCode, int cropYear, CancellationToken cancellationToken = default) =>
+        _bidSheetRepository.GetBidMonthsAsync(tradeUnitCode, cropYear, cancellationToken);
 
     // =========================================================================
     // Bid Sheet Location Order (drag-to-reorder persistence)
     // =========================================================================
 
-    public async Task<BidSheetLocationOrder?> GetBidSheetLocationOrderAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken = default)
-    {
-        return await _appContext.BidSheetLocationOrders
-            .AsNoTracking()
-            .FirstOrDefaultAsync(r => r.UserId == userId && r.TradeUnitKey == tradeUnitKey, cancellationToken);
-    }
+    public Task<BidSheetLocationOrder?> GetBidSheetLocationOrderAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken = default) =>
+        _bidSheetRepository.GetLocationOrderAsync(userId, tradeUnitKey, cancellationToken);
 
-    public async Task SetBidSheetLocationOrderAsync(string userId, string tradeUnitKey, string locationOrderJson, CancellationToken cancellationToken = default)
-    {
-        var existing = await _appContext.BidSheetLocationOrders
-            .FirstOrDefaultAsync(r => r.UserId == userId && r.TradeUnitKey == tradeUnitKey, cancellationToken);
-
-        if (existing is not null)
-        {
-            existing.LocationOrder = locationOrderJson;
-            existing.ModifiedAt = DateTime.UtcNow;
-        }
-        else
-        {
-            _appContext.BidSheetLocationOrders.Add(new BidSheetLocationOrder
-            {
-                UserId = userId,
-                TradeUnitKey = tradeUnitKey,
-                LocationOrder = locationOrderJson,
-                ModifiedAt = DateTime.UtcNow
-            });
-        }
-
-        await _appContext.SaveChangesAsync(cancellationToken);
-    }
+    public Task SetBidSheetLocationOrderAsync(string userId, string tradeUnitKey, string locationOrderJson, CancellationToken cancellationToken = default) =>
+        _bidSheetRepository.SetLocationOrderAsync(userId, tradeUnitKey, locationOrderJson, cancellationToken);
 
     // =========================================================================
     // Bid Sheet Preferences (per-user per-TU UI preferences)
     // =========================================================================
 
-    public async Task<BidSheetPreference?> GetBidSheetPreferenceAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken = default)
-    {
-        return await _appContext.BidSheetPreferences
-            .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.UserId == userId && p.TradeUnitKey == tradeUnitKey, cancellationToken);
-    }
+    public Task<BidSheetPreference?> GetBidSheetPreferenceAsync(string userId, string tradeUnitKey, CancellationToken cancellationToken = default) =>
+        _bidSheetRepository.GetPreferenceAsync(userId, tradeUnitKey, cancellationToken);
 
-    public async Task SetBidSheetPreferenceAsync(string userId, string tradeUnitKey, string? cropCode, int? month, int? cropYear, string? cropOrder = null, string? hiddenCrops = null, string? selectedMonths = null, string? printLayout = null, CancellationToken cancellationToken = default)
-    {
-        var existing = await _appContext.BidSheetPreferences
-            .FirstOrDefaultAsync(p => p.UserId == userId && p.TradeUnitKey == tradeUnitKey, cancellationToken);
-
-        if (existing is not null)
-        {
-            existing.CropCode = cropCode;
-            existing.Month = month;
-            existing.CropYear = cropYear;
-            if (cropOrder is not null) existing.CropOrder = cropOrder;
-            if (hiddenCrops is not null) existing.HiddenCrops = hiddenCrops;
-            if (selectedMonths is not null) existing.SelectedMonths = selectedMonths;
-            if (printLayout is not null) existing.PrintLayout = printLayout;
-            existing.ModifiedAt = DateTime.UtcNow;
-        }
-        else
-        {
-            _appContext.BidSheetPreferences.Add(new BidSheetPreference
-            {
-                UserId = userId,
-                TradeUnitKey = tradeUnitKey,
-                CropCode = cropCode,
-                Month = month,
-                CropYear = cropYear,
-                CropOrder = cropOrder,
-                HiddenCrops = hiddenCrops,
-                SelectedMonths = selectedMonths,
-                PrintLayout = printLayout,
-                ModifiedAt = DateTime.UtcNow
-            });
-        }
-
-        await _appContext.SaveChangesAsync(cancellationToken);
-    }
+    public Task SetBidSheetPreferenceAsync(string userId, string tradeUnitKey, string? cropCode, int? month, int? cropYear, string? cropOrder = null, string? hiddenCrops = null, string? selectedMonths = null, string? printLayout = null, CancellationToken cancellationToken = default) =>
+        _bidSheetRepository.SetPreferenceAsync(userId, tradeUnitKey, cropCode, month, cropYear, cropOrder, hiddenCrops, selectedMonths, printLayout, cancellationToken);
 
     // =========================================================================
     // Query Library Operations
