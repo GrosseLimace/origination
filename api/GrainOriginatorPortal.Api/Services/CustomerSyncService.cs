@@ -1,9 +1,5 @@
 using System.Diagnostics;
-using Microsoft.Data.SqlClient;
-using Microsoft.EntityFrameworkCore;
-using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
-using GrainOriginatorPortal.Api.Models;
 
 namespace GrainOriginatorPortal.Api.Services;
 
@@ -39,17 +35,16 @@ public class CustomerSyncService
         var result = new CustomerSyncResult();
 
         using var scope = _scopeFactory.CreateScope();
-        var odsDb = scope.ServiceProvider.GetRequiredService<OriginationDbContext>();
-        var appDb = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        // Resolved in the same scope so it shares these DbContext instances. Used by the bring-back
-        // pass to evaluate open activity with the EXACT same rule the edit dialog uses.
+        var repo = scope.ServiceProvider.GetRequiredService<ICustomerSyncRepository>();
+        // Resolved in the same scope. Used by the bring-back pass to evaluate open activity with the
+        // EXACT same rule the edit dialog uses.
         var customerRepository = scope.ServiceProvider.GetRequiredService<ICustomerRepository>();
 
         _logger.LogInformation("CustomerSync starting");
 
         // ── Load source rows from ODS ──
         phase.Restart();
-        var odsRows = await odsDb.CustomerTradeUnits.AsNoTracking().ToListAsync(cancellationToken);
+        var odsRows = await repo.LoadOdsTradeUnitRowsAsync(cancellationToken);
         _logger.LogInformation("CustomerSync loaded {Count} rows from ODS vw_CustomerTradeUnits ({Ms} ms)", odsRows.Count, phase.ElapsedMilliseconds);
 
         // ── Distinct customers from the ODS rows ──
@@ -64,12 +59,12 @@ public class CustomerSyncService
 
         // ── Load existing app-DB state (tracked, since we'll mutate) ──
         phase.Restart();
-        var appCustomers = await appDb.Customers.ToListAsync(cancellationToken);
+        var appCustomers = await repo.LoadAppCustomersAsync(cancellationToken);
         var appCustomersById = appCustomers.ToDictionary(c => c.Id);
         _logger.LogInformation("CustomerSync loaded {Count} Customer rows from app DB ({Ms} ms)", appCustomers.Count, phase.ElapsedMilliseconds);
 
         phase.Restart();
-        var appTradeUnits = await appDb.CustomerTradeUnits.ToListAsync(cancellationToken);
+        var appTradeUnits = await repo.LoadAppTradeUnitsAsync(cancellationToken);
         var appTradeUnitsByKey = appTradeUnits
             .GroupBy(t => (t.CustomerId, t.TradeUnit))
             .ToDictionary(g => g.Key, g => g.First());
@@ -102,7 +97,7 @@ public class CustomerSyncService
             {
                 var inserted = odsRow.ToCustomer();
                 inserted.IsActive = true;
-                appDb.Customers.Add(inserted);
+                repo.AddCustomer(inserted);
                 result.CustomersInserted++;
             }
         }
@@ -163,7 +158,7 @@ public class CustomerSyncService
             }
             else
             {
-                appDb.CustomerTradeUnits.Add(new CustomerTradeUnit
+                repo.AddTradeUnit(new CustomerTradeUnit
                 {
                     CustomerId = customerId,
                     TradeUnit  = tradeUnit,
@@ -205,25 +200,8 @@ public class CustomerSyncService
 
         if (manualOutsideView.Count > 0)
         {
-            // base.vw_CurrentCustomers is a heavy view (~20s even for a single id), so give it
-            // a generous timeout — matches the 120s used for other heavy ODS reads and keeps a
-            // slow night from cancelling this query at the 30s default. Nightly job, off the
-            // request path, so the longer ceiling is harmless.
-            odsDb.Database.SetCommandTimeout(120);
-            var idCsv = string.Join(",", manualOutsideView.Select(c => c.Id));
-            var masterRows = await odsDb.Database
-                .SqlQueryRaw<CurrentCustomerRow>(@"
-                    SELECT
-                        c.CustomerId, c.ScoularId, c.CustomerName, c.IndustryCode1,
-                        c.MerchandisingCity, c.MerchandisingStateProvince, c.MerchandisingAddressLine1, c.MerchandisingPostalCode,
-                        c.MerchandisingPhone, c.MerchandisingEmail, c.ExtendedPrimaryPhone, c.SupplementalEmail,
-                        c.ExtendedAddressLine1, c.ExtendedAddressLine2, c.ExtendedAddressLine3, c.ExtendedAddressLine4,
-                        c.ExtendedCity, c.ExtendedPostalCode, c.ExtendedStateProvince, c.ExtendedCountry,
-                        c.EffectiveStartDate, c.EffectiveEndDate
-                    FROM base.vw_CurrentCustomers c
-                    WHERE c.CustomerId IN (SELECT TRY_CAST(value AS bigint) FROM STRING_SPLIT(@ids, ','))",
-                    new SqlParameter("@ids", idCsv))
-                .ToListAsync(cancellationToken);
+            var masterRows = await repo.LoadCurrentCustomerMasterAsync(
+                manualOutsideView.Select(c => c.Id).ToList(), cancellationToken);
             var masterById = masterRows.ToDictionary(r => r.CustomerId);
 
             foreach (var existing in manualOutsideView)
@@ -307,7 +285,7 @@ public class CustomerSyncService
         // with the retrying execution strategy).
         phase.Restart();
         _logger.LogInformation("CustomerSync calling SaveChangesAsync — this can take a while for large change sets");
-        await appDb.SaveChangesAsync(cancellationToken);
+        await repo.SaveChangesAsync(cancellationToken);
         _logger.LogInformation("CustomerSync SaveChanges done ({Ms} ms)", phase.ElapsedMilliseconds);
 
         sw.Stop();
@@ -361,35 +339,6 @@ public class CustomerSyncService
         target.ExtendedPostalCode    = source.ExtendedPostalCode;
         target.ExtendedStateProvince = source.ExtendedStateProvince;
         target.ExtendedCountry       = source.ExtendedCountry;
-    }
-
-    /// <summary>Row shape for the base.vw_CurrentCustomers read in the manual-producer refresh
-    /// pass. Property names match the selected columns so EF's SqlQueryRaw can bind them, and
-    /// it implements <see cref="ICustomerOdsAttributes"/> so it shares <see cref="ApplyAttributes"/>.</summary>
-    private sealed class CurrentCustomerRow : ICustomerOdsAttributes
-    {
-        public long CustomerId { get; set; }
-        public string? ScoularId { get; set; }
-        public string? CustomerName { get; set; }
-        public string? IndustryCode1 { get; set; }
-        public string? MerchandisingCity { get; set; }
-        public string? MerchandisingStateProvince { get; set; }
-        public string? MerchandisingAddressLine1 { get; set; }
-        public string? MerchandisingPostalCode { get; set; }
-        public string? MerchandisingPhone { get; set; }
-        public string? MerchandisingEmail { get; set; }
-        public string? ExtendedPrimaryPhone { get; set; }
-        public string? SupplementalEmail { get; set; }
-        public string? ExtendedAddressLine1 { get; set; }
-        public string? ExtendedAddressLine2 { get; set; }
-        public string? ExtendedAddressLine3 { get; set; }
-        public string? ExtendedAddressLine4 { get; set; }
-        public string? ExtendedCity { get; set; }
-        public string? ExtendedPostalCode { get; set; }
-        public string? ExtendedStateProvince { get; set; }
-        public string? ExtendedCountry { get; set; }
-        public DateTime? EffectiveStartDate { get; set; }
-        public DateTime? EffectiveEndDate { get; set; }
     }
 }
 

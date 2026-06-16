@@ -99,6 +99,7 @@ public static class DependencyInjection
         services.AddScoped<IUserPreferenceRepository, UserPreferenceRepository>();
         services.AddScoped<IEntitlementsRepository, EntitlementsRepository>();
         services.AddScoped<IUsageRepository, UsageRepository>();
+        services.AddScoped<ICustomerSyncRepository, CustomerSyncRepository>();
 
         return services;
     }
