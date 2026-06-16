@@ -5,7 +5,6 @@ using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Infrastructure.Repositories;
 using static GrainOriginatorPortal.Infrastructure.Data.SqlSanitization;
-using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Models;
 
 namespace GrainOriginatorPortal.Api.Services;
@@ -17,7 +16,7 @@ namespace GrainOriginatorPortal.Api.Services;
 public class SqlDataService : IDataService
 {
     private readonly ILogger<SqlDataService> _logger;
-    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IRequestContextService _requestContext;
     private readonly IMemoryCache _cache;
     // Phase 2: domain repositories are introduced one at a time; SqlDataService forwards to them
     // during the transition. Once all domains are migrated, SqlDataService + IDataService are deleted.
@@ -36,10 +35,10 @@ public class SqlDataService : IDataService
     private readonly ICustomerRepository _customerRepository;
     private readonly IFarmRepository _farmRepository;
 
-    public SqlDataService(ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor, IMemoryCache cache, IQueryLibraryRepository queryLibraryRepository, ICommodityRepository commodityRepository, IStoredGrainRepository storedGrainRepository, ISavedListRepository savedListRepository, IDisplayNameLookupRepository displayNameLookup, IProducerDetailsRepository producerDetailsRepository, IFarmRepository farmRepository, IPlantingIntentionRepository plantingIntentionRepository, INoteRepository noteRepository, IDashboardRepository dashboardRepository, ITicketRepository ticketRepository, IContractRepository contractRepository, IBidSheetRepository bidSheetRepository, ICustomerRepository customerRepository)
+    public SqlDataService(ILogger<SqlDataService> logger, IRequestContextService requestContext, IMemoryCache cache, IQueryLibraryRepository queryLibraryRepository, ICommodityRepository commodityRepository, IStoredGrainRepository storedGrainRepository, ISavedListRepository savedListRepository, IDisplayNameLookupRepository displayNameLookup, IProducerDetailsRepository producerDetailsRepository, IFarmRepository farmRepository, IPlantingIntentionRepository plantingIntentionRepository, INoteRepository noteRepository, IDashboardRepository dashboardRepository, ITicketRepository ticketRepository, IContractRepository contractRepository, IBidSheetRepository bidSheetRepository, ICustomerRepository customerRepository)
     {
         _logger = logger;
-        _httpContextAccessor = httpContextAccessor;
+        _requestContext = requestContext;
         _cache = cache;
         _queryLibraryRepository = queryLibraryRepository;
         _commodityRepository = commodityRepository;
@@ -57,28 +56,11 @@ public class SqlDataService : IDataService
         _farmRepository = farmRepository;
     }
 
-    private string GetTraceId() =>
-        _httpContextAccessor.HttpContext?.Items[CorrelationIdMiddleware.ItemsKey]?.ToString()
-        ?? _httpContextAccessor.HttpContext?.TraceIdentifier
-        ?? "no-trace";
+    // Thin delegates so the many call sites below stay unchanged; the HttpContext reads now live
+    // in the request-scoped IRequestContextService (Api/Services).
+    private string GetTraceId() => _requestContext.GetTraceId();
 
-    /// <summary>
-    /// Returns a stable, unique identifier for the current user.
-    /// Priority: preferred_username (UPN) > UPN claim > oid (AAD object id) > Identity.Name > "System".
-    /// The display-name claim ("name") is intentionally NOT used — display names can collide across
-    /// users and are unstable, which would corrupt CreatedBy/ModifiedBy ownership on persisted rows.
-    /// For user-facing display, use <see cref="ResolveDisplayNamesAsync"/> to convert UPN to the
-    /// Azure AD display name via the UserTradeUnitSnapshot lookup.
-    /// </summary>
-    private string GetCurrentUser()
-    {
-        var user = _httpContextAccessor.HttpContext?.User;
-        return user?.FindFirst("preferred_username")?.Value
-            ?? user?.FindFirst(System.Security.Claims.ClaimTypes.Upn)?.Value
-            ?? user?.FindFirst("oid")?.Value
-            ?? user?.Identity?.Name
-            ?? "System";
-    }
+    private string GetCurrentUser() => _requestContext.GetCurrentUser();
 
     /// <summary>
     /// Builds a UPN -> display-name dictionary from <c>UserTradeUnitSnapshot</c>. The snapshot

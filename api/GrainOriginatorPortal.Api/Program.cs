@@ -219,6 +219,10 @@ builder.Services.AddInfrastructure(builder.Configuration, builder.Environment.Is
 //   STEP 4 - Fill in the APIM endpoint URLs in ApimDataService.cs
 // =============================================================================
 
+// Request-scoped helpers (current-user + trace id) read from HttpContext; injected by
+// SqlDataService and, going forward, the domain services.
+builder.Services.AddScoped<IRequestContextService, RequestContextService>();
+
 // CURRENT: Direct SQL connection via Entity Framework Core
 // TO SWITCH TO APIM: See instructions above
 builder.Services.AddScoped<IDataService, SqlDataService>();
