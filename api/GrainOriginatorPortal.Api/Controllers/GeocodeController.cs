@@ -1,5 +1,7 @@
 // System namespaces
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 
 // Microsoft namespaces
@@ -85,24 +87,24 @@ public class GeocodeController : ControllerBase
             }
             else if (response.StatusCode == HttpStatusCode.TooManyRequests)
             {
-                _logger.LogError("Nominatim rate limit hit for {CacheKey} [{ErrorCode}] [{ErrorCategory}]",
-                    cacheKey, "INFRASTRUCTURE_GEOCODE_RATE_LIMITED", "Infrastructure");
+                _logger.LogError("Nominatim rate limit hit for {KeyHash} [{ErrorCode}] [{ErrorCategory}]",
+                    Fingerprint(cacheKey), "INFRASTRUCTURE_GEOCODE_RATE_LIMITED", "Infrastructure");
             }
             else
             {
-                _logger.LogError("Nominatim returned {StatusCode} for {CacheKey} [{ErrorCode}] [{ErrorCategory}]",
-                    (int)response.StatusCode, cacheKey, "INFRASTRUCTURE_GEOCODE_UNAVAILABLE", "Infrastructure");
+                _logger.LogError("Nominatim returned {StatusCode} for {KeyHash} [{ErrorCode}] [{ErrorCategory}]",
+                    (int)response.StatusCode, Fingerprint(cacheKey), "INFRASTRUCTURE_GEOCODE_UNAVAILABLE", "Infrastructure");
             }
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogError(ex, "Geocode HTTP failure for {CacheKey} [{ErrorCode}] [{ErrorCategory}]",
-                cacheKey, "INFRASTRUCTURE_GEOCODE_UNAVAILABLE", "Infrastructure");
+            _logger.LogError(ex, "Geocode HTTP failure for {KeyHash} [{ErrorCode}] [{ErrorCategory}]",
+                Fingerprint(cacheKey), "INFRASTRUCTURE_GEOCODE_UNAVAILABLE", "Infrastructure");
         }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            _logger.LogError(ex, "Geocode request timed out for {CacheKey} [{ErrorCode}] [{ErrorCategory}]",
-                cacheKey, "INFRASTRUCTURE_TIMEOUT", "Infrastructure");
+            _logger.LogError(ex, "Geocode request timed out for {KeyHash} [{ErrorCode}] [{ErrorCategory}]",
+                Fingerprint(cacheKey), "INFRASTRUCTURE_TIMEOUT", "Infrastructure");
         }
         finally
         {
@@ -155,8 +157,8 @@ public class GeocodeController : ControllerBase
                     // Exponential backoff with jitter per §6.2: min(baseDelay × 2^attempt + jitter, maxDelay)
                     var backoffMs = (int)Math.Min(500 * Math.Pow(2, rateLimitAttempt) + Random.Shared.Next(0, 200), 30_000);
                     _logger.LogError(
-                        "Nominatim rate limit on batch item {CacheKey}. Backing off {BackoffMs}ms (attempt {Attempt}) [{ErrorCode}] [{ErrorCategory}]",
-                        cacheKey, backoffMs, rateLimitAttempt + 1, "INFRASTRUCTURE_GEOCODE_RATE_LIMITED", "Infrastructure");
+                        "Nominatim rate limit on batch item {KeyHash}. Backing off {BackoffMs}ms (attempt {Attempt}) [{ErrorCode}] [{ErrorCategory}]",
+                        Fingerprint(cacheKey), backoffMs, rateLimitAttempt + 1, "INFRASTRUCTURE_GEOCODE_RATE_LIMITED", "Infrastructure");
                     await Task.Delay(backoffMs, cancellationToken);
                     rateLimitAttempt++;
                     results.Add(new GeocodeResult { Key = req.Key });
@@ -184,8 +186,8 @@ public class GeocodeController : ControllerBase
                 }
                 else
                 {
-                    _logger.LogError("Nominatim returned {StatusCode} for batch item {CacheKey} [{ErrorCode}] [{ErrorCategory}]",
-                        (int)response.StatusCode, cacheKey, "INFRASTRUCTURE_GEOCODE_UNAVAILABLE", "Infrastructure");
+                    _logger.LogError("Nominatim returned {StatusCode} for batch item {KeyHash} [{ErrorCode}] [{ErrorCategory}]",
+                        (int)response.StatusCode, Fingerprint(cacheKey), "INFRASTRUCTURE_GEOCODE_UNAVAILABLE", "Infrastructure");
                     results.Add(new GeocodeResult { Key = req.Key });
                 }
 
@@ -194,14 +196,14 @@ public class GeocodeController : ControllerBase
             }
             catch (HttpRequestException ex)
             {
-                _logger.LogError(ex, "Batch geocode HTTP failure for {CacheKey} [{ErrorCode}] [{ErrorCategory}]",
-                    cacheKey, "INFRASTRUCTURE_GEOCODE_UNAVAILABLE", "Infrastructure");
+                _logger.LogError(ex, "Batch geocode HTTP failure for {KeyHash} [{ErrorCode}] [{ErrorCategory}]",
+                    Fingerprint(cacheKey), "INFRASTRUCTURE_GEOCODE_UNAVAILABLE", "Infrastructure");
                 results.Add(new GeocodeResult { Key = req.Key });
             }
             catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
             {
-                _logger.LogError(ex, "Batch geocode timed out for {CacheKey} [{ErrorCode}] [{ErrorCategory}]",
-                    cacheKey, "INFRASTRUCTURE_TIMEOUT", "Infrastructure");
+                _logger.LogError(ex, "Batch geocode timed out for {KeyHash} [{ErrorCode}] [{ErrorCategory}]",
+                    Fingerprint(cacheKey), "INFRASTRUCTURE_TIMEOUT", "Infrastructure");
                 results.Add(new GeocodeResult { Key = req.Key });
             }
         }
@@ -264,19 +266,19 @@ public class GeocodeController : ControllerBase
             }
             else
             {
-                _logger.LogError("Nominatim search returned {StatusCode} for query {Query} [{ErrorCode}] [{ErrorCategory}]",
-                    (int)response.StatusCode, q, "INFRASTRUCTURE_GEOCODE_UNAVAILABLE", "Infrastructure");
+                _logger.LogError("Nominatim search returned {StatusCode} for query {QueryHash} [{ErrorCode}] [{ErrorCategory}]",
+                    (int)response.StatusCode, Fingerprint(q), "INFRASTRUCTURE_GEOCODE_UNAVAILABLE", "Infrastructure");
             }
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogError(ex, "Geocode search HTTP failure for query {Query} [{ErrorCode}] [{ErrorCategory}]",
-                q, "INFRASTRUCTURE_GEOCODE_UNAVAILABLE", "Infrastructure");
+            _logger.LogError(ex, "Geocode search HTTP failure for query {QueryHash} [{ErrorCode}] [{ErrorCategory}]",
+                Fingerprint(q), "INFRASTRUCTURE_GEOCODE_UNAVAILABLE", "Infrastructure");
         }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            _logger.LogError(ex, "Geocode search timed out for query {Query} [{ErrorCode}] [{ErrorCategory}]",
-                q, "INFRASTRUCTURE_TIMEOUT", "Infrastructure");
+            _logger.LogError(ex, "Geocode search timed out for query {QueryHash} [{ErrorCode}] [{ErrorCategory}]",
+                Fingerprint(q), "INFRASTRUCTURE_TIMEOUT", "Infrastructure");
         }
         finally
         {
@@ -303,5 +305,18 @@ public class GeocodeController : ControllerBase
         if (!string.IsNullOrWhiteSpace(r.State)) queryParams.Add($"state={Uri.EscapeDataString(r.State)}");
         if (!string.IsNullOrWhiteSpace(r.Zip)) queryParams.Add($"postalcode={Uri.EscapeDataString(r.Zip)}");
         return $"search?{string.Join("&", queryParams)}";
+    }
+
+    // -------------------------------------------------------------------------
+    /// <summary>
+    /// One-way short hash of caller-supplied address/query text for log correlation. The raw cache
+    /// key and search string are built from street/city/state/ZIP/free-text, so they must never be
+    /// written to long-lived logs (M-014). The 12-hex-char SHA-256 prefix lets operators correlate
+    /// repeated failures for the same input without persisting the address itself.
+    /// </summary>
+    private static string Fingerprint(string value)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(value ?? string.Empty));
+        return Convert.ToHexString(hash, 0, 6);
     }
 }
