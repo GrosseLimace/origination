@@ -1395,12 +1395,16 @@ public class SqlDataService : IDataService
         try
         {
             var ids = contracts.Select(c => c.Id.ToString()).ToList();
+            // SanitizeIdentifierCsv strips SQL metacharacters as defense-in-depth, but the value is
+            // also passed as an explicit SqlParameter so it is never concatenated into the SQL text
+            // (M-015 — matches the parameterized pattern used by every other raw query in this file).
             var idsCsv = SanitizeIdentifierCsv(ids);
             var rows = await _context.Database
                 .SqlQueryRaw<ContractHedgeRow>(
-                    $@"SELECT c.ContractId, c.HedgeMarketMonthDescription, c.PriceMarketMonthDescription
+                    @"SELECT c.ContractId, c.HedgeMarketMonthDescription, c.PriceMarketMonthDescription
                        FROM base.Contract c
-                       INNER JOIN STRING_SPLIT('{idsCsv}', ',') ids ON c.ContractId = TRY_CAST(ids.value AS bigint)")
+                       INNER JOIN STRING_SPLIT(@ids, ',') ids ON c.ContractId = TRY_CAST(ids.value AS bigint)",
+                    new SqlParameter("@ids", idsCsv))
                 .ToListAsync(cancellationToken);
             var byId = rows.ToDictionary(r => r.ContractId);
             foreach (var c in contracts)
