@@ -11,6 +11,20 @@ jobs:
       id-token: write
       contents: read
     steps:
+      # TEMP DIAGNOSTIC — remove once the OIDC root cause is confirmed. Prints whether this job is
+      # receiving GitHub's OIDC token endpoint (the env vars azure/login needs). Shows only presence
+      # ("yes"/empty) and the non-secret issuer host — never the token value itself.
+      - name: Diagnose OIDC token availability
+        run: |
+          echo "Runner: ${RUNNER_NAME:-?} (${RUNNER_OS:-?}/${RUNNER_ARCH:-?})"
+          echo "ACTIONS_ID_TOKEN_REQUEST_URL present: ${ACTIONS_ID_TOKEN_REQUEST_URL:+yes}"
+          echo "ACTIONS_ID_TOKEN_REQUEST_TOKEN present: ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+yes}"
+          if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "OIDC issuer host: $(printf '%s' "$ACTIONS_ID_TOKEN_REQUEST_URL" | sed -E 's#^(https?://[^/]+).*#\1#')"
+          else
+            echo "OIDC issuer host: <none — id-token not being injected into this job>"
+          fi
+
       - uses: actions/checkout@v4
 
       - name: Setup Node.js
