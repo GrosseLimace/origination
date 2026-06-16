@@ -2,7 +2,7 @@ using System.Diagnostics;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using GrainOriginatorPortal.Infrastructure.Data;
-using GrainOriginatorPortal.Api.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Api.Models;
 
 namespace GrainOriginatorPortal.Api.Services;
@@ -43,7 +43,7 @@ public class CustomerSyncService
         var appDb = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         // Resolved in the same scope so it shares these DbContext instances. Used by the bring-back
         // pass to evaluate open activity with the EXACT same rule the edit dialog uses.
-        var dataService = scope.ServiceProvider.GetRequiredService<IDataService>();
+        var customerRepository = scope.ServiceProvider.GetRequiredService<ICustomerRepository>();
 
         _logger.LogInformation("CustomerSync starting");
 
@@ -263,7 +263,7 @@ public class CustomerSyncService
         // (a small set): if the producer now has open activity in that TU, we clear the flag and
         // restore it to a normal locked (sync-sourced) membership.
         //
-        // IMPORTANT: we call IDataService.GetOpenActivityTradeUnitsAsync — the SAME method the edit
+        // IMPORTANT: we call ICustomerRepository.GetOpenActivityTradeUnitsAsync — the SAME method the edit
         // dialog uses to decide "dormant". Using one shared rule guarantees the dialog and the sync
         // agree: a TU the dialog showed as removable won't be silently restored on the next sync
         // unless the producer genuinely regained activity (no remove→resync→reappear loop).
@@ -279,7 +279,7 @@ public class CustomerSyncService
                 if (!appCustomersById.TryGetValue(custId, out var cust) || string.IsNullOrEmpty(cust.ScoularId))
                     continue;
                 if (!openByScoular.ContainsKey(cust.ScoularId))
-                    openByScoular[cust.ScoularId] = await dataService.GetOpenActivityTradeUnitsAsync(cust.ScoularId, cancellationToken);
+                    openByScoular[cust.ScoularId] = await customerRepository.GetOpenActivityTradeUnitsAsync(cust.ScoularId, cancellationToken);
             }
 
             foreach (var row in deactivatedRows)

@@ -22,7 +22,6 @@ using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Json;
 using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Api.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -197,33 +196,16 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddInfrastructure(builder.Configuration, builder.Environment.IsDevelopment());
 
 // =============================================================================
-// DATA SERVICE REGISTRATION
-// Currently using direct SQL connection (SqlDataService).
-// When APIM is ready, follow these steps to switch:
-//
-//   STEP 1 - Add APIM config to appsettings.json:
-//     "Apim": {
-//       "BaseUrl": "https://<your-apim-instance>.azure-api.net",
-//       "SubscriptionKey": "<your-subscription-key>"
-//     }
-//
-//   STEP 2 - Register the APIM HTTP client (replace the AddScoped line below):
-//     builder.Services.AddHttpClient<IDataService, ApimDataService>(client =>
-//     {
-//         client.BaseAddress = new Uri(builder.Configuration["Apim:BaseUrl"]!);
-//         client.DefaultRequestHeaders.Add("Ocp-Apim-Subscription-Key", builder.Configuration["Apim:SubscriptionKey"]);
-//     });
-//
-//   STEP 3 - Remove or comment out the DbContext registration above (no longer needed)
-//
-//   STEP 4 - Fill in the APIM endpoint URLs in ApimDataService.cs
+// SERVICE REGISTRATION
+// Controllers depend on per-domain Api services; those depend on Infrastructure
+// repositories (registered via AddInfrastructure). The old IDataService/SqlDataService
+// god-service has been fully decomposed and removed.
 // =============================================================================
 
-// Request-scoped helpers (current-user + trace id) read from HttpContext; injected by
-// SqlDataService and, going forward, the domain services.
+// Request-scoped helpers (current-user + trace id) read from HttpContext.
 builder.Services.AddScoped<IRequestContextService, RequestContextService>();
 
-// Phase 3: domain services (Api layer) — controllers depend on these, not IDataService.
+// Per-domain services (Api layer) — controllers depend on these.
 builder.Services.AddScoped<IQueryLibraryService, QueryLibraryService>();
 builder.Services.AddScoped<ICommodityService, CommodityService>();
 builder.Services.AddScoped<IStoredGrainService, StoredGrainService>();
@@ -243,14 +225,6 @@ builder.Services.AddScoped<ITradeUnitService, TradeUnitService>();
 // Singleton so the Nominatim rate-limiter + last-call timestamp are shared across requests.
 builder.Services.AddSingleton<IGeocodeService, GeocodeService>();
 builder.Services.AddScoped<IUsageDashboardService, UsageDashboardService>();
-
-// CURRENT: Direct SQL connection via Entity Framework Core
-// TO SWITCH TO APIM: See instructions above
-builder.Services.AddScoped<IDataService, SqlDataService>();
-
-// OPTIONAL: Keep MockDataService for testing/comparison
-// Uncomment to use mock data instead of database:
-// builder.Services.AddSingleton<IDataService, MockDataService>();
 
 // Configure CORS — allowed origins come from configuration so they can be overridden
 // per environment via Azure App Service settings without code changes.

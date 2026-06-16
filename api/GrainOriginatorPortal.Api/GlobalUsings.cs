@@ -8,7 +8,6 @@ global using Microsoft.AspNetCore.Mvc;
 global using Microsoft.Extensions.Logging;
 
 // Project namespaces
-global using GrainOriginatorPortal.Api.Interfaces;
 global using GrainOriginatorPortal.Api.Models;
 global using GrainOriginatorPortal.Api.Models.Requests;
 global using GrainOriginatorPortal.Api.Models.Responses;
