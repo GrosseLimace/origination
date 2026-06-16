@@ -85,6 +85,8 @@ public static class DependencyInjection
         services.AddScoped<IQueryLibraryRepository, QueryLibraryRepository>();
         services.AddScoped<ICommodityRepository, CommodityRepository>();
         services.AddScoped<IStoredGrainRepository, StoredGrainRepository>();
+        services.AddScoped<ISavedListRepository, SavedListRepository>();
+        services.AddScoped<IDisplayNameLookupRepository, DisplayNameLookupRepository>();
 
         return services;
     }

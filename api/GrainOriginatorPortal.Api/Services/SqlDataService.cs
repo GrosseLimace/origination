@@ -25,8 +25,10 @@ public class SqlDataService : IDataService
     private readonly IQueryLibraryRepository _queryLibraryRepository;
     private readonly ICommodityRepository _commodityRepository;
     private readonly IStoredGrainRepository _storedGrainRepository;
+    private readonly ISavedListRepository _savedListRepository;
+    private readonly IDisplayNameLookupRepository _displayNameLookup;
 
-    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor, IMemoryCache cache, IQueryLibraryRepository queryLibraryRepository, ICommodityRepository commodityRepository, IStoredGrainRepository storedGrainRepository)
+    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor, IMemoryCache cache, IQueryLibraryRepository queryLibraryRepository, ICommodityRepository commodityRepository, IStoredGrainRepository storedGrainRepository, ISavedListRepository savedListRepository, IDisplayNameLookupRepository displayNameLookup)
     {
         _context = context;
         _appContext = appContext;
@@ -36,6 +38,8 @@ public class SqlDataService : IDataService
         _queryLibraryRepository = queryLibraryRepository;
         _commodityRepository = commodityRepository;
         _storedGrainRepository = storedGrainRepository;
+        _savedListRepository = savedListRepository;
+        _displayNameLookup = displayNameLookup;
     }
 
     private string GetTraceId() =>
@@ -89,48 +93,8 @@ public class SqlDataService : IDataService
     /// Rows not found in the snapshot are absent from the dictionary; callers fall back to the
     /// original value.
     /// </summary>
-    private async Task<Dictionary<string, string>> ResolveDisplayNamesAsync(IEnumerable<string> userIds, CancellationToken cancellationToken)
-    {
-        var distinct = userIds
-            .Where(u => !string.IsNullOrEmpty(u))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        if (distinct.Count == 0) return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        // Snapshot stores the left-of-@ portion, so match by the short form.
-        var shortForms = distinct.Select(v =>
-        {
-            var at = v.IndexOf('@');
-            return at > 0 ? v[..at] : v;
-        }).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-
-        var rows = await _appContext.UserTradeUnitSnapshots
-            .AsNoTracking()
-            .Where(u => shortForms.Contains(u.UserId))
-            .Select(u => new { u.UserId, u.DisplayName })
-            .Distinct()
-            .ToListAsync(cancellationToken);
-
-        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var r in rows.GroupBy(r => r.UserId, StringComparer.OrdinalIgnoreCase))
-        {
-            var displayName = r.First().DisplayName;
-            // Register the short form so direct lookups work
-            map[r.Key] = displayName;
-            // Also register every full-UPN form that came in for this short form so callers
-            // passing "CEgr@scoular.com" or "cegr@scoular.com" both resolve.
-            foreach (var full in distinct)
-            {
-                var at = full.IndexOf('@');
-                var shortForm = at > 0 ? full[..at] : full;
-                if (shortForm.Equals(r.Key, StringComparison.OrdinalIgnoreCase))
-                {
-                    map[full] = displayName;
-                }
-            }
-        }
-        return map;
-    }
+    private Task<Dictionary<string, string>> ResolveDisplayNamesAsync(IEnumerable<string> userIds, CancellationToken cancellationToken) =>
+        _displayNameLookup.ResolveAsync(userIds, cancellationToken);
 
     /// <summary>Replace UPN in a single value with its display name, or leave unchanged if unknown.</summary>
     private static string ApplyDisplayName(string? upn, IReadOnlyDictionary<string, string> map) =>
@@ -3364,12 +3328,7 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var currentUser = GetCurrentUser();
-            var lists = await _appContext.SavedLists
-                .AsNoTracking()
-                .Where(s => s.IsActive && s.CreatedBy == currentUser)
-                .OrderByDescending(s => s.CreatedAt)
-                .ToListAsync(cancellationToken);
+            var lists = await _savedListRepository.GetByUserAsync(GetCurrentUser(), cancellationToken);
             var nameMap = await ResolveDisplayNamesAsync(
                 lists.Select(l => l.CreatedBy).Concat(lists.Select(l => l.ModifiedBy ?? string.Empty)),
                 cancellationToken);
@@ -3403,8 +3362,7 @@ public class SqlDataService : IDataService
                 CreatedBy = GetCurrentUser(),
                 CreatedAt = DateTime.UtcNow
             };
-            _appContext.SavedLists.Add(savedList);
-            await _appContext.SaveChangesAsync(cancellationToken);
+            await _savedListRepository.AddAsync(savedList, cancellationToken);
             var nameMap = await ResolveDisplayNamesAsync(new[] { savedList.CreatedBy }, cancellationToken);
             savedList.CreatedBy = ApplyDisplayName(savedList.CreatedBy, nameMap);
             return savedList;
@@ -3421,18 +3379,8 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var currentUser = GetCurrentUser();
-            var list = await _appContext.SavedLists.FirstOrDefaultAsync(s => s.Id == listId && s.CreatedBy == currentUser, cancellationToken);
+            var list = await _savedListRepository.UpdateAsync(listId, GetCurrentUser(), name, query, tradeUnits, filters, includedCustomerIds, excludedCustomerIds, cancellationToken);
             if (list == null) return null;
-            list.Name = name;
-            list.Query = query;
-            list.TradeUnits = tradeUnits;
-            list.Filters = filters;
-            list.IncludedCustomerIds = includedCustomerIds;
-            list.ExcludedCustomerIds = excludedCustomerIds;
-            list.ModifiedAt = DateTime.UtcNow;
-            list.ModifiedBy = currentUser;
-            await _appContext.SaveChangesAsync(cancellationToken);
             var nameMap = await ResolveDisplayNamesAsync(
                 new[] { list.CreatedBy, list.ModifiedBy ?? string.Empty }, cancellationToken);
             list.CreatedBy = ApplyDisplayName(list.CreatedBy, nameMap);
@@ -3451,11 +3399,7 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var currentUser = GetCurrentUser();
-            var list = await _appContext.SavedLists.FirstOrDefaultAsync(s => s.Id == listId && s.CreatedBy == currentUser, cancellationToken);
-            if (list == null) return;
-            _appContext.SavedLists.Remove(list);
-            await _appContext.SaveChangesAsync(cancellationToken);
+            await _savedListRepository.DeleteAsync(listId, GetCurrentUser(), cancellationToken);
         }
         catch (Exception ex)
         {
