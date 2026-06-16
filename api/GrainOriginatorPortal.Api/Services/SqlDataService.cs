@@ -1162,9 +1162,9 @@ public class SqlDataService : IDataService
 
         return new DashboardSummaryResponse
         {
-            Estimates = estimates,
-            MarketShares = marketShares,
-            ActualHarvest = actualHarvest
+            Estimates = estimates.Select(Mappings.DashboardMappings.ToResponse).ToList(),
+            MarketShares = marketShares.Select(Mappings.DashboardMappings.ToResponse).ToList(),
+            ActualHarvest = actualHarvest.Select(Mappings.DashboardMappings.ToResponse).ToList()
         };
     }
 
