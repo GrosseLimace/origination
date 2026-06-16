@@ -227,6 +227,7 @@ builder.Services.AddScoped<IRequestContextService, RequestContextService>();
 builder.Services.AddScoped<IQueryLibraryService, QueryLibraryService>();
 builder.Services.AddScoped<ICommodityService, CommodityService>();
 builder.Services.AddScoped<IStoredGrainService, StoredGrainService>();
+builder.Services.AddScoped<ISavedListService, SavedListService>();
 
 // CURRENT: Direct SQL connection via Entity Framework Core
 // TO SWITCH TO APIM: See instructions above
