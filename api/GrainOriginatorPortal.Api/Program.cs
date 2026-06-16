@@ -223,6 +223,9 @@ builder.Services.AddInfrastructure(builder.Configuration, builder.Environment.Is
 // SqlDataService and, going forward, the domain services.
 builder.Services.AddScoped<IRequestContextService, RequestContextService>();
 
+// Phase 3: domain services (Api layer) — controllers depend on these, not IDataService.
+builder.Services.AddScoped<IQueryLibraryService, QueryLibraryService>();
+
 // CURRENT: Direct SQL connection via Entity Framework Core
 // TO SWITCH TO APIM: See instructions above
 builder.Services.AddScoped<IDataService, SqlDataService>();
