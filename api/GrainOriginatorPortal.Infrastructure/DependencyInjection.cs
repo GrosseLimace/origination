@@ -97,6 +97,7 @@ public static class DependencyInjection
         services.AddScoped<IBidSheetRepository, BidSheetRepository>();
         services.AddScoped<ICustomerRepository, CustomerRepository>();
         services.AddScoped<IUserPreferenceRepository, UserPreferenceRepository>();
+        services.AddScoped<IEntitlementsRepository, EntitlementsRepository>();
 
         return services;
     }

@@ -31,4 +31,8 @@ public interface ICustomerRepository
     /// <summary>The customer's first active trade-unit code (or null), used to stamp records
     /// authoritatively rather than trusting client-supplied trade units.</summary>
     Task<string?> GetFirstActiveTradeUnitAsync(long customerId, CancellationToken cancellationToken);
+
+    /// <summary>All distinct active trade-unit codes from dbo.CustomerTradeUnit, ordered — the
+    /// fallback TU catalog when the Entitlements DB is unavailable.</summary>
+    Task<List<string>> GetAllActiveTradeUnitCodesAsync(CancellationToken cancellationToken);
 }

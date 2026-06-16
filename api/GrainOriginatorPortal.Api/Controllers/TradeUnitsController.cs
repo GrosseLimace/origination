@@ -1,7 +1,7 @@
-using GrainOriginatorPortal.Infrastructure.Data;
+using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -15,69 +15,21 @@ namespace GrainOriginatorPortal.Api.Controllers;
 [Authorize]
 [ApiController]
 [Route("api/trade-units")]
+[Produces("application/json")]
 public class TradeUnitsController : ControllerBase
 {
-    private readonly EntitlementsDbContext _entitlementsDb;
-    private readonly ApplicationDbContext _appDb;
-    private readonly ILogger<TradeUnitsController> _logger;
+    private readonly ITradeUnitService _service;
 
-    public TradeUnitsController(EntitlementsDbContext entitlementsDb, ApplicationDbContext appDb, ILogger<TradeUnitsController> logger)
+    public TradeUnitsController(ITradeUnitService service)
     {
-        _entitlementsDb = entitlementsDb;
-        _appDb = appDb;
-        _logger = logger;
+        _service = service;
     }
 
     /// <summary>Returns every distinct trade unit (code + description), ordered by code.</summary>
     [HttpGet]
-    [ProducesResponseType(typeof(List<TradeUnitOption>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<TradeUnitOption>>> GetAll(CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(List<TradeUnitOptionResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<TradeUnitOptionResponse>>> GetAll(CancellationToken cancellationToken = default)
     {
-        try
-        {
-            var rows = await _entitlementsDb.UserTradeUnitAccess
-                .AsNoTracking()
-                .Where(u => u.TradeUnitCode != null && u.TradeUnitCode != "")
-                .Select(u => new { u.TradeUnitCode, u.Description })
-                .ToListAsync(cancellationToken);
-
-            var options = rows
-                .GroupBy(r => r.TradeUnitCode, StringComparer.OrdinalIgnoreCase)
-                .Select(g => new TradeUnitOption
-                {
-                    Code = g.Key,
-                    Description = g.Select(x => x.Description).FirstOrDefault(d => !string.IsNullOrWhiteSpace(d)),
-                })
-                .OrderBy(o => o.Code, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            return Ok(options);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Entitlements TU catalog unavailable — falling back to dbo.CustomerTradeUnit");
-            try
-            {
-                var codes = await _appDb.CustomerTradeUnits
-                    .AsNoTracking()
-                    .Where(t => t.IsActive)
-                    .Select(t => t.TradeUnit)
-                    .Distinct()
-                    .OrderBy(t => t)
-                    .ToListAsync(cancellationToken);
-                return Ok(codes.Select(c => new TradeUnitOption { Code = c }).ToList());
-            }
-            catch (Exception inner)
-            {
-                _logger.LogWarning(inner, "CustomerTradeUnit fallback also failed — returning empty TU list");
-                return Ok(new List<TradeUnitOption>());
-            }
-        }
+        return Ok(await _service.GetAllAsync(cancellationToken));
     }
-}
-
-public class TradeUnitOption
-{
-    public string Code { get; set; } = string.Empty;
-    public string? Description { get; set; }
 }

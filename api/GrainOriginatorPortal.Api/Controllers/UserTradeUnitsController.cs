@@ -1,7 +1,7 @@
-using GrainOriginatorPortal.Infrastructure.Data;
+using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -11,92 +11,23 @@ namespace GrainOriginatorPortal.Api.Controllers;
 [Produces("application/json")]
 public class UserTradeUnitsController : ControllerBase
 {
-    private readonly EntitlementsDbContext _entitlementsDb;
-    private readonly ApplicationDbContext _appDb;
-    private readonly ILogger<UserTradeUnitsController> _logger;
-    private readonly IHostEnvironment _env;
+    private readonly IUserTradeUnitService _service;
 
-    public UserTradeUnitsController(EntitlementsDbContext entitlementsDb, ApplicationDbContext appDb, ILogger<UserTradeUnitsController> logger, IHostEnvironment env)
+    public UserTradeUnitsController(IUserTradeUnitService service)
     {
-        _entitlementsDb = entitlementsDb;
-        _appDb = appDb;
-        _logger = logger;
-        _env = env;
+        _service = service;
     }
 
     /// <summary>
     /// Returns the trade unit codes assigned to the currently authenticated user,
     /// grouped by Azure AD group name. UserId is derived from the UPN claim
-    /// (e.g. CEgr@scoular.com → CEgr).
+    /// (e.g. CEgr@scoular.com → CEgr). Falls back to all trade units from
+    /// dbo.CustomerTradeUnit when the Entitlements DB is unavailable.
     /// </summary>
     [HttpGet]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> Get()
+    [ProducesResponseType(typeof(List<UserTradeUnitGroupResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<UserTradeUnitGroupResponse>>> Get(CancellationToken cancellationToken = default)
     {
-        var upn = User.FindFirst("preferred_username")?.Value
-            ?? User.FindFirst("upn")?.Value
-            ?? User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn")?.Value
-            ?? User.Identity?.Name
-            ?? string.Empty;
-
-        var userId = upn.Contains('@') ? upn.Split('@')[0] : upn;
-
-        if (string.IsNullOrWhiteSpace(userId))
-            return Unauthorized("Unable to determine user identity from token.");
-
-        try
-        {
-            var rows = await _entitlementsDb.UserTradeUnitAccess
-                .Where(u => u.UserId == userId)
-                .Select(u => new UserTradeUnitRow { GroupName = u.GroupName, TradeUnitCode = u.TradeUnitCode })
-                .Distinct()
-                .ToListAsync();
-
-            var result = rows
-                .GroupBy(u => u.GroupName ?? "Default")
-                .OrderBy(g => g.Key)
-                .Select(g => new
-                {
-                    groupName = g.Key,
-                    tradeUnitCodes = g.Select(u => u.TradeUnitCode).Distinct().OrderBy(c => c).ToList()
-                });
-
-            return Ok(result);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Entitlements DB unavailable for user {UserId} — falling back to all trade units from dbo.CustomerTradeUnit", userId);
-
-            return Ok(await GetFallbackTradeUnitsAsync());
-        }
+        return Ok(await _service.GetForCurrentUserAsync(cancellationToken));
     }
-    private async Task<object[]> GetFallbackTradeUnitsAsync()
-    {
-        try
-        {
-            var units = await _appDb.CustomerTradeUnits
-                .AsNoTracking()
-                .Where(ctu => ctu.IsActive)
-                .Select(ctu => ctu.TradeUnit)
-                .Distinct()
-                .OrderBy(u => u)
-                .ToListAsync();
-
-            if (units.Count == 0) return [];
-
-            return [new { groupName = "All Trade Units", tradeUnitCodes = units }];
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "CustomerTradeUnit fallback also failed — returning empty trade unit list");
-            return [];
-        }
-    }
-}
-
-file class UserTradeUnitRow
-{
-    public string? GroupName { get; set; }
-    public string TradeUnitCode { get; set; } = string.Empty;
 }

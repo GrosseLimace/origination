@@ -741,6 +741,17 @@ public class CustomerRepository : ICustomerRepository
             .FirstOrDefaultAsync(cancellationToken);
     }
 
+    public async Task<List<string>> GetAllActiveTradeUnitCodesAsync(CancellationToken cancellationToken)
+    {
+        return await _appContext.CustomerTradeUnits
+            .AsNoTracking()
+            .Where(ctu => ctu.IsActive)
+            .Select(ctu => ctu.TradeUnit)
+            .Distinct()
+            .OrderBy(t => t)
+            .ToListAsync(cancellationToken);
+    }
+
     /// <summary>Reads a single producer row from base.vw_CurrentCustomers by CustomerId.</summary>
     private async Task<OdsCustomerRow?> GetOdsCustomerRowAsync(long customerId, CancellationToken cancellationToken)
     {
