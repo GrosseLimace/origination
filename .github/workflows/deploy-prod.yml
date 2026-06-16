@@ -31,7 +31,24 @@ jobs:
       - name: Build and Publish
         run: dotnet publish api/GrainOriginatorPortal.Api -c Release -o ./publish
 
+      # azure/login has no built-in retry, and the GHE data-residency OIDC token service can blip
+      # intermittently ("Failed to fetch federated token from GitHub"). Attempt once, wait, then retry —
+      # the job fails only if BOTH attempts fail. (Token handling stays inside the action; never logged.)
       - name: Azure Login (OIDC)
+        id: azlogin
+        continue-on-error: true
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_PROD }}
+
+      - name: Wait before Azure login retry
+        if: steps.azlogin.outcome == 'failure'
+        run: sleep 15
+
+      - name: Azure Login (OIDC) — retry
+        if: steps.azlogin.outcome == 'failure'
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
