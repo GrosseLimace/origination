@@ -1,4 +1,4 @@
-namespace GrainOriginatorPortal.Infrastructure.Repositories;
+namespace GrainOriginatorPortal.Infrastructure.Abstractions;
 
 /// <summary>
 /// Layer-neutral input for a bulk bid upsert. The Api request DTO is mapped onto this so the

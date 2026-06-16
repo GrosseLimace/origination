@@ -11,6 +11,7 @@ using Microsoft.Data.SqlClient;
 
 // Project namespaces
 using GrainOriginatorPortal.Infrastructure.Data;
+using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Services;

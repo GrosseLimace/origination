@@ -1,6 +1,9 @@
-using GrainOriginatorPortal.Api.Controllers;
+// Microsoft namespaces
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+
+// Project namespaces
+using GrainOriginatorPortal.Api.Controllers;
 
 namespace GrainOriginatorPortal.Api.Tests;
 
@@ -13,20 +16,24 @@ public class ControllerAuthorizationTests
 {
     public static IEnumerable<object[]> AllControllerTypes()
     {
-        yield return new object[] { typeof(CustomersController) };
-        yield return new object[] { typeof(ContractsController) };
-        yield return new object[] { typeof(TicketsController) };
-        yield return new object[] { typeof(FarmsController) };
-        yield return new object[] { typeof(StoredGrainController) };
+        yield return new object[] { typeof(BidSheetController) };
         yield return new object[] { typeof(CommoditiesController) };
+        yield return new object[] { typeof(ContractsController) };
+        yield return new object[] { typeof(CustomersController) };
         yield return new object[] { typeof(DashboardPlantingEstimatesController) };
-        yield return new object[] { typeof(ProducerDetailsController) };
         yield return new object[] { typeof(DiagnosticsController) };
+        yield return new object[] { typeof(FarmsController) };
+        yield return new object[] { typeof(GeocodeController) };
+        yield return new object[] { typeof(MeController) };
         yield return new object[] { typeof(NotesController) };
         yield return new object[] { typeof(PlantingIntentionsController) };
+        yield return new object[] { typeof(ProducerDetailsController) };
+        yield return new object[] { typeof(QueryLibraryController) };
         yield return new object[] { typeof(SavedListsController) };
-        yield return new object[] { typeof(GeocodeController) };
-        yield return new object[] { typeof(BidSheetController) };
+        yield return new object[] { typeof(StoredGrainController) };
+        yield return new object[] { typeof(TicketsController) };
+        yield return new object[] { typeof(TradeUnitsController) };
+        yield return new object[] { typeof(UsageDashboardController) };
         yield return new object[] { typeof(UserPreferencesController) };
         yield return new object[] { typeof(UserTradeUnitsController) };
     }

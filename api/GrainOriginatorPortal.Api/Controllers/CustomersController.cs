@@ -4,6 +4,7 @@ using GrainOriginatorPortal.Api.Filters;
 using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Infrastructure.Abstractions;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 

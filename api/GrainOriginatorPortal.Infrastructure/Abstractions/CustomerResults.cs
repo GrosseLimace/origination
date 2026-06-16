@@ -1,4 +1,4 @@
-namespace GrainOriginatorPortal.Infrastructure.Repositories;
+namespace GrainOriginatorPortal.Infrastructure.Abstractions;
 
 /// <summary>Outcome of an AssignTradeUnitsAsync call, so the controller can map to the right HTTP status.</summary>
 public enum AssignTradeUnitsResult

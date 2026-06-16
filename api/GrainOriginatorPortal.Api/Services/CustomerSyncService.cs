@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
 
 namespace GrainOriginatorPortal.Api.Services;

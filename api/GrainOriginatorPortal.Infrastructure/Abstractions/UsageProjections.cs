@@ -1,4 +1,4 @@
-namespace GrainOriginatorPortal.Infrastructure.Repositories;
+namespace GrainOriginatorPortal.Infrastructure.Abstractions;
 
 // Small query-result projection shapes for the usage-dashboard aggregations. These are neither EF
 // entities nor wire DTOs — they're the materialized output of the repository's GROUP BY queries,

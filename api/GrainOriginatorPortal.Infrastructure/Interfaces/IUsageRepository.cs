@@ -1,5 +1,5 @@
+using GrainOriginatorPortal.Infrastructure.Abstractions;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Repositories;
 
 namespace GrainOriginatorPortal.Infrastructure.Interfaces;
 

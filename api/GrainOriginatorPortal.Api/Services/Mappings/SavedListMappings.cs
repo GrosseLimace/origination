@@ -1,4 +1,5 @@
 using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Infrastructure.Data.Entities;
 
 namespace GrainOriginatorPortal.Api.Services.Mappings;
 

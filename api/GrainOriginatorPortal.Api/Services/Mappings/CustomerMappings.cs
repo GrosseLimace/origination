@@ -1,5 +1,6 @@
 using GrainOriginatorPortal.Api.Models.Responses;
-using GrainOriginatorPortal.Infrastructure.Repositories;
+using GrainOriginatorPortal.Infrastructure.Abstractions;
+using GrainOriginatorPortal.Infrastructure.Data.Entities;
 
 namespace GrainOriginatorPortal.Api.Services.Mappings;
 

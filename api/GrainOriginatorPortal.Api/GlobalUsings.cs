@@ -11,9 +11,9 @@ global using Microsoft.Extensions.Logging;
 global using GrainOriginatorPortal.Api.Models;
 global using GrainOriginatorPortal.Api.Models.Requests;
 global using GrainOriginatorPortal.Api.Models.Responses;
-// Infrastructure layer — entities + DbContexts resolved by short name (temporary; Phase 3
-// removes entity references from the Api layer).
+// Infrastructure DbContexts (DiagnosticsController only — every other controller goes through a
+// service). Entity types are NOT globally imported: Api code that touches an entity (mappings,
+// services constructing entities for writes) must `using …Infrastructure.Data.Entities;` explicitly,
+// so entity usage in the Api layer is greppable. Repository contract types live in
+// …Infrastructure.Abstractions, never the impl namespace …Infrastructure.Repositories.
 global using GrainOriginatorPortal.Infrastructure.Data;
-global using GrainOriginatorPortal.Infrastructure.Data.Entities;
-// Domain result enums (AssignTradeUnitsResult / DeactivateTradeUnitResult) live here.
-global using GrainOriginatorPortal.Infrastructure.Repositories;
