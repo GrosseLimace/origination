@@ -16,6 +16,13 @@ public interface IRequestContextService
     /// </summary>
     string GetCurrentUser();
 
+    /// <summary>
+    /// The current user's short identifier — the UPN with any "@domain" stripped (e.g.
+    /// "CEgr@scoular.com" → "CEgr"). This is the key used by the Entitlements DB and per-user
+    /// preference tables, which store the short form rather than the full UPN.
+    /// </summary>
+    string GetCurrentUserShortName();
+
     /// <summary>The correlation id for the current request, falling back to the trace identifier.</summary>
     string GetTraceId();
 }

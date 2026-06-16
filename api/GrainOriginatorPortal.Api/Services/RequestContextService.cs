@@ -24,6 +24,18 @@ public class RequestContextService : IRequestContextService
     }
 
     /// <inheritdoc />
+    public string GetCurrentUserShortName()
+    {
+        var user = _httpContextAccessor.HttpContext?.User;
+        var upn = user?.FindFirst("preferred_username")?.Value
+            ?? user?.FindFirst("upn")?.Value
+            ?? user?.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn")?.Value
+            ?? user?.Identity?.Name
+            ?? string.Empty;
+        return upn.Contains('@') ? upn.Split('@')[0] : upn;
+    }
+
+    /// <inheritdoc />
     public string GetTraceId() =>
         _httpContextAccessor.HttpContext?.Items[CorrelationIdMiddleware.ItemsKey]?.ToString()
         ?? _httpContextAccessor.HttpContext?.TraceIdentifier

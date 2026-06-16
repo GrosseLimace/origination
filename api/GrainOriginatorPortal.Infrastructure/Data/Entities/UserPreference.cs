@@ -8,9 +8,3 @@ public class UserPreference
     public string SelectedTradeUnits { get; set; } = "[]"; // JSON array of trade unit code strings
     public DateTime UpdatedAt { get; set; }
 }
-
-public class UserPreferenceDto
-{
-    public string[] SelectedGroupNames { get; set; } = [];
-    public string[] SelectedTradeUnits { get; set; } = [];
-}

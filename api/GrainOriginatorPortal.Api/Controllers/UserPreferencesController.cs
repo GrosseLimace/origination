@@ -1,9 +1,7 @@
-using System.Text.Json;
-using GrainOriginatorPortal.Infrastructure.Data;
-using GrainOriginatorPortal.Api.Models;
+using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -13,21 +11,9 @@ namespace GrainOriginatorPortal.Api.Controllers;
 [Produces("application/json")]
 public class UserPreferencesController : ControllerBase
 {
-    private readonly ApplicationDbContext _db;
+    private readonly IUserPreferenceService _service;
 
-    public UserPreferencesController(ApplicationDbContext db) => _db = db;
-
-    private string CurrentUserId
-    {
-        get
-        {
-            var upn = User.FindFirst("preferred_username")?.Value
-                   ?? User.FindFirst("upn")?.Value
-                   ?? User.Identity?.Name
-                   ?? string.Empty;
-            return upn.Contains('@') ? upn.Split('@')[0] : upn;
-        }
-    }
+    public UserPreferencesController(IUserPreferenceService service) => _service = service;
 
     // -------------------------------------------------------------------------
     /// <summary>Gets the current user's saved trade unit / group preferences.</summary>
@@ -35,13 +21,7 @@ public class UserPreferencesController : ControllerBase
     [ProducesResponseType(typeof(UserPreferenceDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<UserPreferenceDto>> Get(CancellationToken cancellationToken)
     {
-        var pref = await _db.UserPreferences.FirstOrDefaultAsync(p => p.UserId == CurrentUserId, cancellationToken);
-        if (pref == null) return Ok(new UserPreferenceDto());
-        return Ok(new UserPreferenceDto
-        {
-            SelectedGroupNames = JsonSerializer.Deserialize<string[]>(pref.SelectedGroupNames) ?? [],
-            SelectedTradeUnits = JsonSerializer.Deserialize<string[]>(pref.SelectedTradeUnits) ?? []
-        });
+        return Ok(await _service.GetAsync(cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -50,16 +30,7 @@ public class UserPreferencesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> Upsert([FromBody] UserPreferenceDto dto, CancellationToken cancellationToken)
     {
-        var pref = await _db.UserPreferences.FirstOrDefaultAsync(p => p.UserId == CurrentUserId, cancellationToken);
-        if (pref == null)
-        {
-            pref = new UserPreference { UserId = CurrentUserId };
-            _db.UserPreferences.Add(pref);
-        }
-        pref.SelectedGroupNames = JsonSerializer.Serialize(dto.SelectedGroupNames ?? []);
-        pref.SelectedTradeUnits = JsonSerializer.Serialize(dto.SelectedTradeUnits ?? []);
-        pref.UpdatedAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync(cancellationToken);
+        await _service.SetAsync(dto, cancellationToken);
         return NoContent();
     }
 }
