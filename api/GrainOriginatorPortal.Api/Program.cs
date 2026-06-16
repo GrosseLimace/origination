@@ -236,6 +236,7 @@ builder.Services.AddScoped<ITicketService, TicketService>();
 builder.Services.AddScoped<IContractService, ContractService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
+builder.Services.AddScoped<IBidSheetService, BidSheetService>();
 
 // CURRENT: Direct SQL connection via Entity Framework Core
 // TO SWITCH TO APIM: See instructions above
