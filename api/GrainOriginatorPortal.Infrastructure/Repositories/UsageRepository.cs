@@ -1,4 +1,5 @@
 using GrainOriginatorPortal.Infrastructure.Data;
+using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,11 +9,13 @@ public class UsageRepository : IUsageRepository
 {
     private readonly ApplicationDbContext _appDb;
     private readonly OriginationDbContext _odsDb;
+    private readonly EntitlementsDbContext _entDb;
 
-    public UsageRepository(ApplicationDbContext appDb, OriginationDbContext odsDb)
+    public UsageRepository(ApplicationDbContext appDb, OriginationDbContext odsDb, EntitlementsDbContext entDb)
     {
         _appDb = appDb;
         _odsDb = odsDb;
+        _entDb = entDb;
     }
 
     // ── Identity / snapshot ──
@@ -310,5 +313,286 @@ public class UsageRepository : IUsageRepository
                 c => c.Id.ToString(),
                 c => string.IsNullOrEmpty(c.CommodityCode) ? c.ContractNumber : $"{c.ContractNumber} — {c.CommodityCode}",
                 cancellationToken);
+    }
+
+    // ── Writes (usage-tracking background service) ──
+
+    public async Task AddActivitiesAndClicksAsync(IReadOnlyList<UserActivity> activities, IReadOnlyList<UserClickEvent> clicks, CancellationToken cancellationToken)
+    {
+        if (activities.Count > 0) _appDb.UserActivities.AddRange(activities);
+        if (clicks.Count > 0) _appDb.UserClickEvents.AddRange(clicks);
+        await _appDb.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task ApplyActivitySessionsAsync(IReadOnlyList<UserActivity> activities, TimeSpan sessionGap, CancellationToken cancellationToken)
+    {
+        var userLatest = activities
+            .GroupBy(r => r.UserId, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new { UserId = g.Key, LatestTimestamp = g.Max(r => r.Timestamp) })
+            .ToList();
+        if (userLatest.Count == 0) return;
+
+        var userIds = userLatest.Select(x => x.UserId).ToList();
+        // Anyone whose most recent activity sits beyond this cutoff must start a new session.
+        var cutoff = userLatest.Min(x => x.LatestTimestamp) - sessionGap;
+
+        // Fetch candidate open sessions for these users in one query, then pick latest per user in memory
+        // (avoids the GroupBy+First LINQ translation pitfalls that caused the old seed query to fail).
+        var candidates = await _appDb.UserSessions
+            .Where(s => userIds.Contains(s.UserId) && s.LastActivityTime >= cutoff)
+            .ToListAsync(cancellationToken);
+
+        var latestOpenByUser = candidates
+            .GroupBy(s => s.UserId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderByDescending(s => s.LastActivityTime).First(),
+                StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in userLatest)
+        {
+            if (latestOpenByUser.TryGetValue(entry.UserId, out var openSession)
+                && (entry.LatestTimestamp - openSession.LastActivityTime) < sessionGap)
+            {
+                // Extend the existing session — only update if the new timestamp is newer.
+                if (entry.LatestTimestamp > openSession.LastActivityTime)
+                    openSession.LastActivityTime = entry.LatestTimestamp;
+            }
+            else
+            {
+                _appDb.UserSessions.Add(new UserSession
+                {
+                    UserId = entry.UserId,
+                    LoginTime = entry.LatestTimestamp,
+                    LastActivityTime = entry.LatestTimestamp
+                });
+            }
+        }
+
+        await _appDb.SaveChangesAsync(cancellationToken);
+    }
+
+    // ── Aggregation jobs (usage-aggregation background service) ──
+
+    public async Task AggregateUserActivityDailyAsync(DateOnly date, CancellationToken cancellationToken)
+    {
+        var dayStart = date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var dayEnd = dayStart.AddDays(1);
+
+        var userActivities = await _appDb.UserActivities
+            .Where(a => a.Timestamp >= dayStart && a.Timestamp < dayEnd)
+            .GroupBy(a => a.UserId)
+            .Select(g => new
+            {
+                UserId = g.Key,
+                RequestCount = g.Count(),
+                CustomersViewed = g.Count(a => a.SubFeatureCode == "customer-details"),
+                ContractsViewed = g.Count(a => a.SubFeatureCode == "contracts"),
+                NotesCreated = g.Count(a => a.SubFeatureCode == "notes-create"),
+                ListsBuilt = g.Count(a => a.FeatureCode == "build-a-list" && a.SubFeatureCode == "save-list"),
+                PlantingIntentionsAdded = g.Count(a => a.SubFeatureCode == "planting-intentions" && a.HttpMethod == "POST"),
+                ProducerDetailsViewed = g.Count(a => a.SubFeatureCode == "producer-details"),
+            })
+            .ToListAsync(cancellationToken);
+
+        var userSessions = await _appDb.UserSessions
+            .Where(s => s.LoginTime >= dayStart && s.LoginTime < dayEnd)
+            .GroupBy(s => s.UserId)
+            .Select(g => new { UserId = g.Key, SessionCount = g.Count(), TotalSessionMinutes = g.Sum(s => s.DurationMinutes) })
+            .ToListAsync(cancellationToken);
+        var sessionLookup = userSessions.ToDictionary(s => s.UserId, StringComparer.OrdinalIgnoreCase);
+
+        var userClicks = await _appDb.UserClickEvents
+            .Where(c => c.Timestamp >= dayStart && c.Timestamp < dayEnd)
+            .GroupBy(c => c.UserId)
+            .Select(g => new { UserId = g.Key, CallClicks = g.Count(c => c.EventType == "call_click"), EmailClicks = g.Count(c => c.EventType == "email_click") })
+            .ToListAsync(cancellationToken);
+        var clickLookup = userClicks.ToDictionary(c => c.UserId, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var ua in userActivities)
+        {
+            sessionLookup.TryGetValue(ua.UserId, out var sessions);
+            clickLookup.TryGetValue(ua.UserId, out var clicks);
+
+            var existing = await _appDb.UserActivityDailies
+                .FirstOrDefaultAsync(d => d.UserId == ua.UserId && d.ActivityDate == date, cancellationToken);
+
+            if (existing != null)
+            {
+                existing.RequestCount = ua.RequestCount;
+                existing.SessionCount = sessions?.SessionCount ?? 0;
+                existing.TotalSessionMinutes = sessions?.TotalSessionMinutes ?? 0;
+                existing.CustomersViewed = ua.CustomersViewed;
+                existing.ContractsViewed = ua.ContractsViewed;
+                existing.NotesCreated = ua.NotesCreated;
+                existing.ListsBuilt = ua.ListsBuilt;
+                existing.PlantingIntentionsAdded = ua.PlantingIntentionsAdded;
+                existing.ProducerDetailsViewed = ua.ProducerDetailsViewed;
+                existing.CallClicks = clicks?.CallClicks ?? 0;
+                existing.EmailClicks = clicks?.EmailClicks ?? 0;
+            }
+            else
+            {
+                _appDb.UserActivityDailies.Add(new UserActivityDaily
+                {
+                    UserId = ua.UserId,
+                    ActivityDate = date,
+                    RequestCount = ua.RequestCount,
+                    SessionCount = sessions?.SessionCount ?? 0,
+                    TotalSessionMinutes = sessions?.TotalSessionMinutes ?? 0,
+                    CustomersViewed = ua.CustomersViewed,
+                    ContractsViewed = ua.ContractsViewed,
+                    NotesCreated = ua.NotesCreated,
+                    ListsBuilt = ua.ListsBuilt,
+                    PlantingIntentionsAdded = ua.PlantingIntentionsAdded,
+                    ProducerDetailsViewed = ua.ProducerDetailsViewed,
+                    CallClicks = clicks?.CallClicks ?? 0,
+                    EmailClicks = clicks?.EmailClicks ?? 0
+                });
+            }
+        }
+
+        await _appDb.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task AggregateFeatureUsageDailyAsync(DateOnly date, CancellationToken cancellationToken)
+    {
+        var dayStart = date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var dayEnd = dayStart.AddDays(1);
+
+        var featureGroups = await _appDb.UserActivities
+            .Where(a => a.Timestamp >= dayStart && a.Timestamp < dayEnd)
+            .GroupBy(a => new { a.FeatureCode, SubFeatureCode = a.SubFeatureCode ?? "__total__" })
+            .Select(g => new { g.Key.FeatureCode, g.Key.SubFeatureCode, RequestCount = g.Count(), UniqueUsers = g.Select(a => a.UserId).Distinct().Count() })
+            .ToListAsync(cancellationToken);
+
+        var clickGroups = await _appDb.UserClickEvents
+            .Where(c => c.Timestamp >= dayStart && c.Timestamp < dayEnd)
+            .GroupBy(c => new { c.FeatureCode, SubFeatureCode = c.SubFeatureCode ?? "__total__" })
+            .Select(g => new { g.Key.FeatureCode, g.Key.SubFeatureCode, ClickCount = g.Count() })
+            .ToListAsync(cancellationToken);
+        var clickLookup = clickGroups.ToDictionary(c => (c.FeatureCode, c.SubFeatureCode), c => c.ClickCount);
+
+        foreach (var fg in featureGroups)
+        {
+            clickLookup.TryGetValue((fg.FeatureCode, fg.SubFeatureCode), out var clickCount);
+
+            var existing = await _appDb.FeatureUsageDailies
+                .FirstOrDefaultAsync(f => f.ActivityDate == date
+                    && f.FeatureCode == fg.FeatureCode
+                    && f.SubFeatureCode == fg.SubFeatureCode, cancellationToken);
+
+            if (existing != null)
+            {
+                existing.RequestCount = fg.RequestCount;
+                existing.UniqueUsers = fg.UniqueUsers;
+                existing.ClickCount = clickCount;
+                existing.SessionCount = fg.UniqueUsers; // approximate: unique users as proxy for sessions
+            }
+            else
+            {
+                _appDb.FeatureUsageDailies.Add(new FeatureUsageDaily
+                {
+                    ActivityDate = date,
+                    FeatureCode = fg.FeatureCode,
+                    SubFeatureCode = fg.SubFeatureCode,
+                    RequestCount = fg.RequestCount,
+                    UniqueUsers = fg.UniqueUsers,
+                    SessionCount = fg.UniqueUsers,
+                    ClickCount = clickCount
+                });
+            }
+        }
+
+        await _appDb.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task AggregateWeeklyLoginsAsync(DateOnly weekStart, CancellationToken cancellationToken)
+    {
+        var weekEnd = weekStart.AddDays(7);
+
+        var weeklyData = await _appDb.UserActivityDailies
+            .Where(d => d.ActivityDate >= weekStart && d.ActivityDate < weekEnd)
+            .GroupBy(d => d.UserId)
+            .Select(g => new
+            {
+                UserId = g.Key,
+                LoginCount = g.Sum(d => d.SessionCount),
+                SessionCount = g.Sum(d => d.SessionCount),
+                TotalSessionMin = g.Sum(d => d.TotalSessionMinutes)
+            })
+            .ToListAsync(cancellationToken);
+
+        foreach (var wd in weeklyData)
+        {
+            var existing = await _appDb.WeeklyLoginAggregates
+                .FirstOrDefaultAsync(w => w.WeekStartDate == weekStart && w.UserId == wd.UserId, cancellationToken);
+
+            if (existing != null)
+            {
+                existing.LoginCount = wd.LoginCount;
+                existing.SessionCount = wd.SessionCount;
+                existing.TotalSessionMin = wd.TotalSessionMin;
+            }
+            else
+            {
+                _appDb.WeeklyLoginAggregates.Add(new WeeklyLoginAggregate
+                {
+                    WeekStartDate = weekStart,
+                    UserId = wd.UserId,
+                    LoginCount = wd.LoginCount,
+                    SessionCount = wd.SessionCount,
+                    TotalSessionMin = wd.TotalSessionMin
+                });
+            }
+        }
+
+        await _appDb.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<(int Unique, int Raw)> RefreshTradeUnitSnapshotAsync(CancellationToken cancellationToken)
+    {
+        // Load current entitlements and deduplicate by (UserId, TradeUnitCode)
+        var entitlements = await _entDb.UserTradeUnitAccess.ToListAsync(cancellationToken);
+        var deduped = entitlements
+            .GroupBy(e => $"{e.UserId}|{e.TradeUnitCode}".ToUpperInvariant())
+            .Select(g => g.First())
+            .ToList();
+
+        // Raw DELETE, then chunked inserts clearing the tracker between chunks to avoid conflicts.
+        await _appDb.Database.ExecuteSqlRawAsync("DELETE FROM dbo.UserTradeUnitSnapshot", cancellationToken);
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        foreach (var batch in deduped.Chunk(200))
+        {
+            foreach (var e in batch)
+            {
+                _appDb.UserTradeUnitSnapshots.Add(new UserTradeUnitSnapshot
+                {
+                    UserId = e.UserId,
+                    DisplayName = e.DisplayName,
+                    TradeUnitCode = e.TradeUnitCode,
+                    GroupName = e.GroupName,
+                    SnapshotDate = today
+                });
+            }
+            await _appDb.SaveChangesAsync(cancellationToken);
+            _appDb.ChangeTracker.Clear();
+        }
+
+        return (deduped.Count, entitlements.Count);
+    }
+
+    public async Task<(int Activities, int Clicks)> CleanupUsageRetentionAsync(int retentionDays, CancellationToken cancellationToken)
+    {
+        var cutoff = DateTime.UtcNow.AddDays(-retentionDays);
+
+        var deletedActivities = await _appDb.Database.ExecuteSqlRawAsync(
+            "DELETE FROM dbo.UserActivity WHERE Timestamp < {0}", [cutoff], cancellationToken);
+
+        var deletedClicks = await _appDb.Database.ExecuteSqlRawAsync(
+            "DELETE FROM dbo.UserClickEvent WHERE Timestamp < {0}", [cutoff], cancellationToken);
+
+        return (deletedActivities, deletedClicks);
     }
 }
