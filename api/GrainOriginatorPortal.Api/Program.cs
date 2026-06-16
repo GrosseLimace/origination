@@ -233,6 +233,7 @@ builder.Services.AddScoped<IFarmService, FarmService>();
 builder.Services.AddScoped<IPlantingIntentionService, PlantingIntentionService>();
 builder.Services.AddScoped<INoteService, NoteService>();
 builder.Services.AddScoped<ITicketService, TicketService>();
+builder.Services.AddScoped<IContractService, ContractService>();
 
 // CURRENT: Direct SQL connection via Entity Framework Core
 // TO SWITCH TO APIM: See instructions above

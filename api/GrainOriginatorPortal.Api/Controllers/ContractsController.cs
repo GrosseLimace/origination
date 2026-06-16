@@ -1,6 +1,7 @@
 // Project namespaces
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Filters;
+using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Controllers;
@@ -11,30 +12,30 @@ namespace GrainOriginatorPortal.Api.Controllers;
 [Produces("application/json")]
 public class ContractsController : ControllerBase
 {
-    private readonly IDataService _dataService;
+    private readonly IContractService _service;
 
-    public ContractsController(IDataService dataService)
+    public ContractsController(IContractService service)
     {
-        _dataService = dataService;
+        _service = service;
     }
 
     // -------------------------------------------------------------------------
     /// <summary>Gets all contracts, optionally filtered by trade units.</summary>
     [HttpGet]
     [EnforceTradeUnitAccess]
-    [ProducesResponseType(typeof(List<Contract>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<Contract>>> GetAll([FromQuery] List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(List<ContractResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<ContractResponse>>> GetAll([FromQuery] List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetContractsAsync(tradeUnits, cancellationToken));
+        return Ok(await _service.GetAllAsync(tradeUnits, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
     /// <summary>Gets all contracts for a specific customer.</summary>
     [HttpGet("customer/{customerId:long}")]
-    [ProducesResponseType(typeof(List<Contract>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<Contract>>> GetByCustomer(long customerId, [FromQuery] string? scoularId = null, CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(List<ContractResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<ContractResponse>>> GetByCustomer(long customerId, [FromQuery] string? scoularId = null, CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetContractsByCustomerAsync(customerId, scoularId, cancellationToken));
+        return Ok(await _service.GetByCustomerAsync(customerId, scoularId, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -43,10 +44,10 @@ public class ContractsController : ControllerBase
     /// Open to any authenticated originator — trade-unit entitlements are a UX default,
     /// not an access-control boundary.</summary>
     [HttpGet("pacing/{customerId:long}")]
-    [ProducesResponseType(typeof(List<Contract>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<Contract>>> GetPacingHistorical(long customerId, CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(List<ContractResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<ContractResponse>>> GetPacingHistorical(long customerId, CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetHistoricalContractsForPacingAsync(customerId, cancellationToken));
+        return Ok(await _service.GetHistoricalForPacingAsync(customerId, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -55,20 +56,20 @@ public class ContractsController : ControllerBase
     /// Harvest &amp; Contracts tab so older planting years still show closed historical contracts.</summary>
     [HttpGet("by-crop-year/{cropYear:int}")]
     [EnforceTradeUnitAccess]
-    [ProducesResponseType(typeof(List<Contract>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<Contract>>> GetByCropYear(int cropYear, [FromQuery] List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(List<ContractResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<ContractResponse>>> GetByCropYear(int cropYear, [FromQuery] List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetContractsByCropYearAsync(cropYear, tradeUnits, cancellationToken));
+        return Ok(await _service.GetByCropYearAsync(cropYear, tradeUnits, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
     /// <summary>Gets all contracts for a specific farm. Open to any authenticated originator —
     /// trade-unit entitlements are a UX default, not an access-control boundary.</summary>
     [HttpGet("farm/{farmId}")]
-    [ProducesResponseType(typeof(List<Contract>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<Contract>>> GetByFarm(string farmId, CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(List<ContractResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<ContractResponse>>> GetByFarm(string farmId, CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetContractsByFarmAsync(farmId, cancellationToken));
+        return Ok(await _service.GetByFarmAsync(farmId, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -76,27 +77,27 @@ public class ContractsController : ControllerBase
     /// Open to any authenticated originator — trade-unit entitlements are a UX default,
     /// not an access-control boundary.</summary>
     [HttpGet("pricing-lines")]
-    [ProducesResponseType(typeof(List<ContractPricingLine>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(List<ContractPricingLineResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<List<ContractPricingLine>>> GetPricingLines([FromQuery] string sourceContractId, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<List<ContractPricingLineResponse>>> GetPricingLines([FromQuery] string sourceContractId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(sourceContractId))
             throw new ValidationException("sourceContractId", "sourceContractId is required.");
 
-        return Ok(await _dataService.GetPricingLinesAsync(sourceContractId, cancellationToken));
+        return Ok(await _service.GetPricingLinesAsync(sourceContractId, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
     /// <summary>Gets all pricing lines for a customer's contracts by scoularId.</summary>
     [HttpGet("pricing-lines/by-customer")]
-    [ProducesResponseType(typeof(List<ContractPricingLine>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(List<ContractPricingLineResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<List<ContractPricingLine>>> GetPricingLinesByCustomer([FromQuery] string scoularId, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<List<ContractPricingLineResponse>>> GetPricingLinesByCustomer([FromQuery] string scoularId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(scoularId))
         {
             throw new ValidationException("scoularId", "scoularId is required.");
         }
-        return Ok(await _dataService.GetPricingLinesByCustomerAsync(scoularId, cancellationToken));
+        return Ok(await _service.GetPricingLinesByCustomerAsync(scoularId, cancellationToken));
     }
 }
