@@ -1,5 +1,5 @@
 // Project namespaces
-using GrainOriginatorPortal.Api.Data;
+using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Services;
 using Microsoft.EntityFrameworkCore;

@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Caching.Memory;
-using GrainOriginatorPortal.Api.Data;
+using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Models;
 

@@ -12,3 +12,7 @@ global using GrainOriginatorPortal.Api.Interfaces;
 global using GrainOriginatorPortal.Api.Models;
 global using GrainOriginatorPortal.Api.Models.Requests;
 global using GrainOriginatorPortal.Api.Models.Responses;
+// Infrastructure layer — entities + DbContexts resolved by short name (temporary; Phase 3
+// removes entity references from the Api layer).
+global using GrainOriginatorPortal.Infrastructure.Data;
+global using GrainOriginatorPortal.Infrastructure.Data.Entities;

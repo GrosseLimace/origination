@@ -2,7 +2,7 @@ using System.Threading.Channels;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using GrainOriginatorPortal.Api.Data;
+using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Models;
 

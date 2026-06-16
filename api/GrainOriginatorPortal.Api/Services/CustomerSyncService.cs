@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
-using GrainOriginatorPortal.Api.Data;
+using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Api.Interfaces;
 using GrainOriginatorPortal.Api.Models;
 

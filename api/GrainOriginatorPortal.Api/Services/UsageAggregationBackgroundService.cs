@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using GrainOriginatorPortal.Api.Data;
+using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Api.Models;
 
 namespace GrainOriginatorPortal.Api.Services;

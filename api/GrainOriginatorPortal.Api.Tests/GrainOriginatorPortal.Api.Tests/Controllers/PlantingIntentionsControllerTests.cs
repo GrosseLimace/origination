@@ -8,10 +8,10 @@ using Moq;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Controllers;
-using GrainOriginatorPortal.Api.Data;
+using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Interfaces;
-using GrainOriginatorPortal.Api.Models;
+using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Services;
 

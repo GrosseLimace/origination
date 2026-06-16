@@ -20,8 +20,8 @@ public class QueryLibraryController : ControllerBase
 
     /// <summary>Gets all active query library items, sorted by category then sort order.</summary>
     [HttpGet]
-    [ProducesResponseType(typeof(List<Models.QueryLibraryItem>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<Models.QueryLibraryItem>>> GetAll(CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(List<QueryLibraryItem>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<QueryLibraryItem>>> GetAll(CancellationToken cancellationToken = default)
     {
         return Ok(await _dataService.GetQueryLibraryAsync(cancellationToken));
     }

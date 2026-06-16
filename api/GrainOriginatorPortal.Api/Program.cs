@@ -17,8 +17,9 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Data;
-using GrainOriginatorPortal.Api.Json;
+using GrainOriginatorPortal.Infrastructure;
+using GrainOriginatorPortal.Infrastructure.Data;
+using GrainOriginatorPortal.Infrastructure.Json;
 using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Api.Interfaces;
@@ -190,82 +191,10 @@ builder.Services.AddMemoryCache(options => options.SizeLimit = 5000);
 
 builder.Services.AddHttpContextAccessor();
 
-// Configure Entity Framework Core with SQL Server and Managed Identity
-// - Uses connection string from appsettings.json or Azure App Settings
-// - Authentication via DefaultAzureCredential (Azure CLI locally, Managed Identity in Azure)
-// - Retry logic handles transient network failures (5 attempts, 30 second max delay)
-builder.Services.AddDbContext<OriginationDbContext>(options =>
-{
-    var connectionString = builder.Configuration.GetConnectionString("ODSConnection");
-
-    options.UseSqlServer(connectionString, sqlOptions =>
-    {
-        // Enable retry on transient failures (required for Azure SQL)
-        sqlOptions.EnableRetryOnFailure(
-            maxRetryCount: 5,
-            maxRetryDelay: TimeSpan.FromSeconds(30),
-            errorNumbersToAdd: null);
-
-        // Set command timeout to 2 minutes for large ODS queries
-        sqlOptions.CommandTimeout(120);
-    });
-
-    // Enable detailed errors in development (compile-time guard prevents accidental use in Release builds)
-#if DEBUG
-    if (builder.Environment.IsDevelopment())
-    {
-        options.EnableSensitiveDataLogging();
-        options.EnableDetailedErrors();
-    }
-#endif
-});
-
-// Configure ApplicationDbContext for app-owned tables in the Origination database
-// (Notes, and eventually TradeUnits once that table is created)
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-{
-    var connectionString = builder.Configuration.GetConnectionString("OriginationConnection");
-
-    options.UseSqlServer(connectionString, sqlOptions =>
-    {
-        sqlOptions.EnableRetryOnFailure(
-            maxRetryCount: 5,
-            maxRetryDelay: TimeSpan.FromSeconds(30),
-            errorNumbersToAdd: null);
-        sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "dbo");
-    });
-
-#if DEBUG
-    if (builder.Environment.IsDevelopment())
-    {
-        options.EnableSensitiveDataLogging();
-        options.EnableDetailedErrors();
-    }
-#endif
-});
-
-// Configure EntitlementsDbContext for read-only access to the Entitlements database
-// Used to resolve user-specific trade unit assignments via vw_UserTradeUnitAccess
-builder.Services.AddDbContext<EntitlementsDbContext>(options =>
-{
-    var connectionString = builder.Configuration.GetConnectionString("EntitlementsConnection");
-
-    options.UseSqlServer(connectionString, sqlOptions =>
-    {
-        sqlOptions.EnableRetryOnFailure(
-            maxRetryCount: 5,
-            maxRetryDelay: TimeSpan.FromSeconds(30),
-            errorNumbersToAdd: null);
-    });
-
-#if DEBUG
-    if (builder.Environment.IsDevelopment())
-    {
-        options.EnableSensitiveDataLogging();
-        options.EnableDetailedErrors();
-    }
-#endif
-});
+// Entity Framework Core DbContexts (ODS, Application, Entitlements) are registered by the
+// Infrastructure layer. Connection strings come from appsettings / Azure App Settings; auth via
+// DefaultAzureCredential; retry logic handles transient Azure SQL failures.
+builder.Services.AddInfrastructure(builder.Configuration, builder.Environment.IsDevelopment());
 
 // =============================================================================
 // DATA SERVICE REGISTRATION

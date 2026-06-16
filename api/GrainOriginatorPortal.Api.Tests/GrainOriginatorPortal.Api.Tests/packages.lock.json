@@ -852,12 +852,20 @@
         "dependencies": {
           "Azure.Extensions.AspNetCore.Configuration.Secrets": "[1.5.0, )",
           "Azure.Identity": "[1.18.0, )",
+          "GrainOriginatorPortal.Infrastructure": "[1.0.0, )",
           "Microsoft.AspNetCore.OpenApi": "[10.0.1, )",
           "Microsoft.Data.SqlClient": "[6.1.4, )",
           "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.1, )",
           "Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore": "[10.0.3, )",
           "Microsoft.Extensions.Http.Resilience": "[10.3.0, )",
           "Microsoft.Identity.Web": "[3.8.4, )"
+        }
+      },
+      "grainoriginatorportal.infrastructure": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Data.SqlClient": "[6.1.4, )",
+          "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.1, )"
         }
       }
     }

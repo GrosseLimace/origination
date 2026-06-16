@@ -1,4 +1,4 @@
-using GrainOriginatorPortal.Api.Data;
+using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Api.Services;
 using Microsoft.EntityFrameworkCore;
 
