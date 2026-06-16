@@ -93,6 +93,7 @@ public static class DependencyInjection
         services.AddScoped<INoteRepository, NoteRepository>();
         services.AddScoped<IDashboardRepository, DashboardRepository>();
         services.AddScoped<ITicketRepository, TicketRepository>();
+        services.AddScoped<IContractRepository, ContractRepository>();
 
         return services;
     }
