@@ -127,9 +127,12 @@ public class GlobalExceptionHandler : IExceptionHandler
             httpContext.Response.Headers["Retry-After"] = "30";
         }
 
-        // In non-production environments, attach the real exception details so developers
-        // can see the root cause directly in DevTools Network tab without needing log access.
-        if (!_env.IsProduction() && response.Error.Debug is null)
+        // In local Development only, attach the real exception details so developers can see the
+        // root cause directly in the DevTools Network tab without needing log access. This is
+        // deliberately NOT enabled for shared non-prod environments (e.g. QA): exposing exception
+        // text there would disclose SQL/object names and dependency internals to any authenticated
+        // caller who can force a server-side failure (M-016). Full detail still goes to server logs.
+        if (_env.IsDevelopment() && response.Error.Debug is null)
         {
             response = response with
             {
