@@ -87,6 +87,7 @@ public static class DependencyInjection
         services.AddScoped<IStoredGrainRepository, StoredGrainRepository>();
         services.AddScoped<ISavedListRepository, SavedListRepository>();
         services.AddScoped<IDisplayNameLookupRepository, DisplayNameLookupRepository>();
+        services.AddScoped<IProducerDetailsRepository, ProducerDetailsRepository>();
 
         return services;
     }
