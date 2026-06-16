@@ -28,8 +28,9 @@ public class SqlDataService : IDataService
     private readonly ISavedListRepository _savedListRepository;
     private readonly IDisplayNameLookupRepository _displayNameLookup;
     private readonly IProducerDetailsRepository _producerDetailsRepository;
+    private readonly IFarmRepository _farmRepository;
 
-    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor, IMemoryCache cache, IQueryLibraryRepository queryLibraryRepository, ICommodityRepository commodityRepository, IStoredGrainRepository storedGrainRepository, ISavedListRepository savedListRepository, IDisplayNameLookupRepository displayNameLookup, IProducerDetailsRepository producerDetailsRepository)
+    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor, IMemoryCache cache, IQueryLibraryRepository queryLibraryRepository, ICommodityRepository commodityRepository, IStoredGrainRepository storedGrainRepository, ISavedListRepository savedListRepository, IDisplayNameLookupRepository displayNameLookup, IProducerDetailsRepository producerDetailsRepository, IFarmRepository farmRepository)
     {
         _context = context;
         _appContext = appContext;
@@ -42,6 +43,7 @@ public class SqlDataService : IDataService
         _savedListRepository = savedListRepository;
         _displayNameLookup = displayNameLookup;
         _producerDetailsRepository = producerDetailsRepository;
+        _farmRepository = farmRepository;
     }
 
     private string GetTraceId() =>
@@ -1166,29 +1168,17 @@ public class SqlDataService : IDataService
     // Farm Operations - DISABLED: Farms table doesn't exist in ODS
     // =========================================================================
 
-    public Task<List<Farm>> GetFarmsAsync(List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
-    {
-        _logger.LogWarning("Farms table doesn't exist in ODS - returning empty list");
-        return Task.FromResult(new List<Farm>());
-    }
+    public Task<List<Farm>> GetFarmsAsync(List<string>? tradeUnits = null, CancellationToken cancellationToken = default) =>
+        _farmRepository.GetAsync(tradeUnits, cancellationToken);
 
-    public Task<List<Farm>> GetFarmsByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
-    {
-        _logger.LogWarning("Farms table doesn't exist in ODS - returning empty list for customer {CustomerId}", customerId);
-        return Task.FromResult(new List<Farm>());
-    }
+    public Task<List<Farm>> GetFarmsByCustomerAsync(long customerId, CancellationToken cancellationToken = default) =>
+        _farmRepository.GetByCustomerAsync(customerId, cancellationToken);
 
-    public Task<Farm?> GetFarmByIdAsync(string id, CancellationToken cancellationToken = default)
-    {
-        _logger.LogWarning("Farms table doesn't exist in ODS - returning null for farm {FarmId}", id);
-        return Task.FromResult<Farm?>(null);
-    }
+    public Task<Farm?> GetFarmByIdAsync(string id, CancellationToken cancellationToken = default) =>
+        _farmRepository.GetByIdAsync(id, cancellationToken);
 
-    public Task<string> CreateFarmAsync(string name, string location, int acres, CancellationToken cancellationToken = default)
-    {
-        _logger.LogWarning("Farms table doesn't exist in ODS - cannot create farm {FarmName}", name);
-        throw new NotImplementedException("Farm creation is not supported - Farms table doesn't exist in ODS");
-    }
+    public Task<string> CreateFarmAsync(string name, string location, int acres, CancellationToken cancellationToken = default) =>
+        _farmRepository.CreateAsync(name, location, acres, cancellationToken);
 
     // =========================================================================
     // Contract Operations
