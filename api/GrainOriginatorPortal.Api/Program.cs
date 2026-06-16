@@ -230,6 +230,7 @@ builder.Services.AddScoped<IStoredGrainService, StoredGrainService>();
 builder.Services.AddScoped<ISavedListService, SavedListService>();
 builder.Services.AddScoped<IProducerDetailsService, ProducerDetailsService>();
 builder.Services.AddScoped<IFarmService, FarmService>();
+builder.Services.AddScoped<IPlantingIntentionService, PlantingIntentionService>();
 
 // CURRENT: Direct SQL connection via Entity Framework Core
 // TO SWITCH TO APIM: See instructions above

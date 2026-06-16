@@ -733,6 +733,14 @@ public class CustomerRepository : ICustomerRepository
             .ToHashSetAsync(cancellationToken);
     }
 
+    public async Task<string?> GetFirstActiveTradeUnitAsync(long customerId, CancellationToken cancellationToken)
+    {
+        return await _appContext.CustomerTradeUnits
+            .Where(ctu => ctu.CustomerId == customerId && ctu.IsActive)
+            .Select(ctu => ctu.TradeUnit)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     /// <summary>Reads a single producer row from base.vw_CurrentCustomers by CustomerId.</summary>
     private async Task<OdsCustomerRow?> GetOdsCustomerRowAsync(long customerId, CancellationToken cancellationToken)
     {

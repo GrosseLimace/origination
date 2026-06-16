@@ -27,4 +27,8 @@ public interface ICustomerRepository
     /// <summary>Active customer IDs that belong to any of the given trade units — used by services
     /// to scope list results to the caller's entitled trade units.</summary>
     Task<HashSet<long>> GetActiveCustomerIdsInTradeUnitsAsync(IReadOnlyCollection<string> tradeUnits, CancellationToken cancellationToken);
+
+    /// <summary>The customer's first active trade-unit code (or null), used to stamp records
+    /// authoritatively rather than trusting client-supplied trade units.</summary>
+    Task<string?> GetFirstActiveTradeUnitAsync(long customerId, CancellationToken cancellationToken);
 }
