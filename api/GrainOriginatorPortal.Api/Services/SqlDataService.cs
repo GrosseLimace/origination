@@ -29,9 +29,10 @@ public class SqlDataService : IDataService
     private readonly IDisplayNameLookupRepository _displayNameLookup;
     private readonly IProducerDetailsRepository _producerDetailsRepository;
     private readonly IPlantingIntentionRepository _plantingIntentionRepository;
+    private readonly INoteRepository _noteRepository;
     private readonly IFarmRepository _farmRepository;
 
-    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor, IMemoryCache cache, IQueryLibraryRepository queryLibraryRepository, ICommodityRepository commodityRepository, IStoredGrainRepository storedGrainRepository, ISavedListRepository savedListRepository, IDisplayNameLookupRepository displayNameLookup, IProducerDetailsRepository producerDetailsRepository, IFarmRepository farmRepository, IPlantingIntentionRepository plantingIntentionRepository)
+    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor, IMemoryCache cache, IQueryLibraryRepository queryLibraryRepository, ICommodityRepository commodityRepository, IStoredGrainRepository storedGrainRepository, ISavedListRepository savedListRepository, IDisplayNameLookupRepository displayNameLookup, IProducerDetailsRepository producerDetailsRepository, IFarmRepository farmRepository, IPlantingIntentionRepository plantingIntentionRepository, INoteRepository noteRepository)
     {
         _context = context;
         _appContext = appContext;
@@ -45,6 +46,7 @@ public class SqlDataService : IDataService
         _displayNameLookup = displayNameLookup;
         _producerDetailsRepository = producerDetailsRepository;
         _plantingIntentionRepository = plantingIntentionRepository;
+        _noteRepository = noteRepository;
         _farmRepository = farmRepository;
     }
 
@@ -2694,43 +2696,12 @@ public class SqlDataService : IDataService
     {
         try
         {
-            _logger.LogInformation("Attempting to retrieve notes from database");
-
-            var query = _appContext.Notes.AsNoTracking()
-                .Include(n => n.Customer)
-                .Where(n => !n.IsDeleted);
-            var tuList = tradeUnits?.Where(t => !string.IsNullOrEmpty(t)).ToList();
-            if (tuList is { Count: > 0 })
-            {
-                // Filter by the CUSTOMER's current trade unit, not the note's own
-                // TradeUnit tag. The tag is set at note-creation time via
-                // FirstOrDefaultAsync on CustomerTradeUnit — non-deterministic when
-                // a customer is in multiple TUs — so notes on the same producer can
-                // end up scattered across TU tags. The result was that a single-TU
-                // selection could miss notes for a multi-TU producer that the user
-                // was actively viewing. Anchoring the filter on the customer's
-                // current TU set returns every note for any customer in scope,
-                // regardless of which TU happened to win the FirstOrDefaultAsync
-                // race at write time. (The TradeUnit column is now informational
-                // only; writes still set it for audit purposes.)
-                query = query.Where(n =>
-                    _appContext.CustomerTradeUnits.Any(ctu =>
-                        ctu.CustomerId == n.CustomerId
-                        && ctu.IsActive
-                        && tuList.Contains(ctu.TradeUnit)));
-            }
-            var notes = await query
-                .OrderByDescending(n => n.CreatedAt)
-                .ToListAsync(cancellationToken);
+            var notes = await _noteRepository.GetAsync(tradeUnits, cancellationToken);
             var nameMap = await ResolveDisplayNamesAsync(
                 notes.Select(n => n.CreatedBy).Concat(notes.Select(n => n.ModifiedBy ?? string.Empty)),
                 cancellationToken);
             foreach (var n in notes)
             {
-                // CustomerName / CustomerCode now come from the Customer FK join
-                // (the columns were dropped from dbo.Notes in Phase 3b).
-                n.CustomerName = n.Customer?.Name ?? string.Empty;
-                n.CustomerCode = n.Customer?.ScoularId;
                 n.CreatedBy = ApplyDisplayName(n.CreatedBy, nameMap);
                 n.ModifiedBy = string.IsNullOrEmpty(n.ModifiedBy) ? n.ModifiedBy : ApplyDisplayName(n.ModifiedBy, nameMap);
             }
@@ -2753,19 +2724,12 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var notes = await _appContext.Notes
-                .AsNoTracking()
-                .Include(n => n.Customer)
-                .Where(n => n.CustomerId == customerId && !n.IsDeleted)
-                .OrderByDescending(n => n.CreatedAt)
-                .ToListAsync(cancellationToken);
+            var notes = await _noteRepository.GetByCustomerAsync(customerId, cancellationToken);
             var nameMap = await ResolveDisplayNamesAsync(
                 notes.Select(n => n.CreatedBy).Concat(notes.Select(n => n.ModifiedBy ?? string.Empty)),
                 cancellationToken);
             foreach (var n in notes)
             {
-                n.CustomerName = n.Customer?.Name ?? string.Empty;
-                n.CustomerCode = n.Customer?.ScoularId;
                 n.CreatedBy = ApplyDisplayName(n.CreatedBy, nameMap);
                 n.ModifiedBy = string.IsNullOrEmpty(n.ModifiedBy) ? n.ModifiedBy : ApplyDisplayName(n.ModifiedBy, nameMap);
             }
@@ -2784,44 +2748,14 @@ public class SqlDataService : IDataService
         }
     }
 
-    public async Task<Note?> GetNoteByIdAsync(long noteId, CancellationToken cancellationToken = default)
-    {
-        var note = await _appContext.Notes.AsNoTracking()
-            .Include(n => n.Customer)
-            .FirstOrDefaultAsync(n => n.Id == noteId && !n.IsDeleted, cancellationToken);
-        if (note != null)
-        {
-            note.CustomerName = note.Customer?.Name ?? string.Empty;
-            note.CustomerCode = note.Customer?.ScoularId;
-        }
-        return note;
-    }
+    public Task<Note?> GetNoteByIdAsync(long noteId, CancellationToken cancellationToken = default) =>
+        _noteRepository.GetByIdAsync(noteId, cancellationToken);
 
     public async Task<Note> AddNoteAsync(long customerId, string content, string? tradeUnit = null, CancellationToken cancellationToken = default)
     {
         try
         {
-            // Resolve denormalized name/code from dbo.Customer (the UI's source of truth).
-            var snap = await _appContext.Customers.AsNoTracking()
-                .Where(c => c.Id == customerId)
-                .Select(c => new { CustomerName = c.Name, c.ScoularId })
-                .FirstOrDefaultAsync(cancellationToken);
-
-            var note = new Note
-            {
-                CustomerId = customerId,
-                CustomerName = snap?.CustomerName ?? string.Empty,
-                CustomerCode = snap?.ScoularId,
-                TradeUnit = tradeUnit,
-                Description = content,
-                CreatedBy = GetCurrentUser(),
-                CreatedAt = DateTime.UtcNow
-            };
-
-            _appContext.Notes.Add(note);
-            await _appContext.SaveChangesAsync(cancellationToken);
-
-            _logger.LogInformation("Created note {NoteId} for customer {CustomerId}", note.Id, customerId);
+            var note = await _noteRepository.AddAsync(customerId, content, tradeUnit, GetCurrentUser(), cancellationToken);
             // Resolve display name on the return path so the client sees "Caden Egr", not the UPN.
             // DB still has the UPN for stable ownership filtering.
             var nameMap = await ResolveDisplayNamesAsync(new[] { note.CreatedBy }, cancellationToken);
@@ -2840,20 +2774,12 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var note = await _appContext.Notes
-                .Include(n => n.Customer)
-                .FirstOrDefaultAsync(n => n.Id == noteId && !n.IsDeleted, cancellationToken);
+            var note = await _noteRepository.TogglePinAsync(noteId, cancellationToken);
             if (note == null)
             {
                 return null;
             }
 
-            note.IsPinned = !note.IsPinned;
-            await _appContext.SaveChangesAsync(cancellationToken);
-
-            _logger.LogInformation("Toggled pin for note {NoteId} - IsPinned is now {IsPinned}", noteId, note.IsPinned);
-            note.CustomerName = note.Customer?.Name ?? string.Empty;
-            note.CustomerCode = note.Customer?.ScoularId;
             var nameMap = await ResolveDisplayNamesAsync(
                 new[] { note.CreatedBy, note.ModifiedBy ?? string.Empty }, cancellationToken);
             note.CreatedBy = ApplyDisplayName(note.CreatedBy, nameMap);
@@ -2872,22 +2798,12 @@ public class SqlDataService : IDataService
     {
         try
         {
-            var note = await _appContext.Notes
-                .Include(n => n.Customer)
-                .FirstOrDefaultAsync(n => n.Id == noteId && !n.IsDeleted, cancellationToken);
+            var note = await _noteRepository.UpdateAsync(noteId, content, GetCurrentUser(), cancellationToken);
             if (note == null)
             {
                 return null;
             }
 
-            note.Description = content;
-            note.ModifiedBy = GetCurrentUser();
-            note.ModifiedAt = DateTime.UtcNow;
-            await _appContext.SaveChangesAsync(cancellationToken);
-
-            _logger.LogInformation("Updated note {NoteId}", noteId);
-            note.CustomerName = note.Customer?.Name ?? string.Empty;
-            note.CustomerCode = note.Customer?.ScoularId;
             var nameMap = await ResolveDisplayNamesAsync(
                 new[] { note.CreatedBy, note.ModifiedBy ?? string.Empty }, cancellationToken);
             note.CreatedBy = ApplyDisplayName(note.CreatedBy, nameMap);
@@ -2906,21 +2822,7 @@ public class SqlDataService : IDataService
     {
         try
         {
-            // Soft delete: keep the row, mark IsDeleted/DeletedAt/DeletedBy. Reads filter on
-            // !IsDeleted so the user-facing behavior is unchanged, but the record can be
-            // recovered later by flipping IsDeleted back to false.
-            var note = await _appContext.Notes.FirstOrDefaultAsync(n => n.Id == noteId && !n.IsDeleted, cancellationToken);
-            if (note == null)
-            {
-                return;
-            }
-
-            note.IsDeleted = true;
-            note.DeletedAt = DateTime.UtcNow;
-            note.DeletedBy = GetCurrentUser();
-            await _appContext.SaveChangesAsync(cancellationToken);
-
-            _logger.LogInformation("Soft-deleted note {NoteId} (DeletedBy={DeletedBy})", noteId, note.DeletedBy);
+            await _noteRepository.DeleteAsync(noteId, GetCurrentUser(), cancellationToken);
         }
         catch (Exception ex)
         {

@@ -90,6 +90,7 @@ public static class DependencyInjection
         services.AddScoped<IProducerDetailsRepository, ProducerDetailsRepository>();
         services.AddScoped<IFarmRepository, FarmRepository>();
         services.AddScoped<IPlantingIntentionRepository, PlantingIntentionRepository>();
+        services.AddScoped<INoteRepository, NoteRepository>();
 
         return services;
     }
