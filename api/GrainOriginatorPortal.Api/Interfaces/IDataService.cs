@@ -1,20 +1,8 @@
 namespace GrainOriginatorPortal.Api.Interfaces;
 
-/// <summary>Outcome of an AssignTradeUnitsAsync call, so the controller can map to the right HTTP status.</summary>
-public enum AssignTradeUnitsResult
-{
-    Ok,
-    NoCodes,
-    CustomerNotFound,
-}
-
-/// <summary>Outcome of a DeactivateDormantTradeUnitAsync call, so the controller can map to the right HTTP status.</summary>
-public enum DeactivateTradeUnitResult
-{
-    Ok,           // membership removed (UserDeactivated)
-    NotFound,     // no active membership for this (customer, trade unit)
-    StillActive,  // refused: the producer still has an open contract / unapplied ticket in that TU
-}
+// AssignTradeUnitsResult / DeactivateTradeUnitResult moved to the Infrastructure layer
+// (GrainOriginatorPortal.Infrastructure.Repositories) so the repository can return them
+// directly; they're resolved here via the Api project's GlobalUsings.
 
 /// <summary>
 /// Interface defining data access operations for the Grain Originator Portal.

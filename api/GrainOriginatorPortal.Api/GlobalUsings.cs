@@ -16,3 +16,5 @@ global using GrainOriginatorPortal.Api.Models.Responses;
 // removes entity references from the Api layer).
 global using GrainOriginatorPortal.Infrastructure.Data;
 global using GrainOriginatorPortal.Infrastructure.Data.Entities;
+// Domain result enums (AssignTradeUnitsResult / DeactivateTradeUnitResult) live here.
+global using GrainOriginatorPortal.Infrastructure.Repositories;

@@ -10,6 +10,7 @@ using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Interfaces;
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Infrastructure.Repositories;
 using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
