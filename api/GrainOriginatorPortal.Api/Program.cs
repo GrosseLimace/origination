@@ -240,6 +240,8 @@ builder.Services.AddScoped<IBidSheetService, BidSheetService>();
 builder.Services.AddScoped<IUserPreferenceService, UserPreferenceService>();
 builder.Services.AddScoped<IUserTradeUnitService, UserTradeUnitService>();
 builder.Services.AddScoped<ITradeUnitService, TradeUnitService>();
+// Singleton so the Nominatim rate-limiter + last-call timestamp are shared across requests.
+builder.Services.AddSingleton<IGeocodeService, GeocodeService>();
 
 // CURRENT: Direct SQL connection via Entity Framework Core
 // TO SWITCH TO APIM: See instructions above
