@@ -11,25 +11,6 @@ jobs:
       id-token: write
       contents: read
     steps:
-      # TEMP DIAGNOSTIC — remove once the OIDC root cause is confirmed. The token IS issued (env vars
-      # present), so this now probes whether the runner can REACH the GHE token service. Unauthenticated
-      # GET — the token value/bearer is never touched, only presence flags + the resulting HTTP status.
-      - name: Diagnose OIDC token availability
-        run: |
-          echo "Runner: ${RUNNER_NAME:-?} (${RUNNER_OS:-?}/${RUNNER_ARCH:-?})"
-          echo "ACTIONS_ID_TOKEN_REQUEST_URL present: ${ACTIONS_ID_TOKEN_REQUEST_URL:+yes}"
-          echo "ACTIONS_ID_TOKEN_REQUEST_TOKEN present: ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+yes}"
-          echo "HTTPS_PROXY set: ${HTTPS_PROXY:+yes}${https_proxy:+yes}   NO_PROXY set: ${NO_PROXY:+yes}${no_proxy:+yes}"
-          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then echo "id-token not injected — stopping"; exit 0; fi
-          host=$(printf '%s' "$ACTIONS_ID_TOKEN_REQUEST_URL" | sed -E 's#^(https?://[^/]+).*#\1#')
-          echo "OIDC issuer host: $host"
-          # Reachability only (no Authorization header → token never used). Any HTTP code proves the
-          # host is reachable; '000' means the TCP/TLS connection itself failed (egress/proxy blocked).
-          code=$(curl -sS --connect-timeout 10 -m 20 -o /dev/null -w '%{http_code}' "$ACTIONS_ID_TOKEN_REQUEST_URL" 2>/tmp/curlerr || true)
-          echo "Token endpoint reachability (unauthenticated): HTTP ${code:-000}"
-          echo "curl error (if any): $(cat /tmp/curlerr 2>/dev/null)"
-          echo "Interpretation: 000 => cannot connect (egress/proxy/firewall to \$host); 401/403/400 => reachable, so cause is downstream (azure/login version or Azure federated-credential issuer)."
-
       - uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -50,7 +31,24 @@ jobs:
       - name: Build and Publish
         run: dotnet publish api/GrainOriginatorPortal.Api -c Release -o ./publish
 
+      # azure/login has no built-in retry, and the GHE data-residency OIDC token service can blip
+      # intermittently ("Failed to fetch federated token from GitHub"). Attempt once, wait, then retry —
+      # the job fails only if BOTH attempts fail. (Token handling stays inside the action; never logged.)
       - name: Azure Login (OIDC)
+        id: azlogin
+        continue-on-error: true
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_PROD }}
+
+      - name: Wait before Azure login retry
+        if: steps.azlogin.outcome == 'failure'
+        run: sleep 15
+
+      - name: Azure Login (OIDC) — retry
+        if: steps.azlogin.outcome == 'failure'
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
