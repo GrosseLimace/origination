@@ -7,25 +7,22 @@ using Moq;
 // Project namespaces
 using GrainOriginatorPortal.Api.Controllers;
 using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Interfaces;
 using GrainOriginatorPortal.Api.Models;
-using GrainOriginatorPortal.Infrastructure.Data.Entities;
-using GrainOriginatorPortal.Infrastructure.Repositories;
+using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Infrastructure.Repositories;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 
 public class CustomersControllerTests
 {
-    private readonly Mock<IDataService> _dataServiceMock;
-    private readonly Mock<IUserEntitlementService> _entitlementServiceMock;
+    private readonly Mock<ICustomerService> _serviceMock;
     private readonly CustomersController _sut;
 
     public CustomersControllerTests()
     {
-        _dataServiceMock = new Mock<IDataService>();
-        _entitlementServiceMock = new Mock<IUserEntitlementService>();
-        _sut = new CustomersController(_dataServiceMock.Object, _entitlementServiceMock.Object);
+        _serviceMock = new Mock<ICustomerService>();
+        _sut = new CustomersController(_serviceMock.Object);
     }
 
     // -------------------------------------------------------------------------
@@ -33,19 +30,19 @@ public class CustomersControllerTests
     public async Task GetAll_ReturnsOkWithCustomers()
     {
         // Arrange
-        var customers = new List<Customer>
+        var customers = new List<CustomerResponse>
         {
-            new Customer { Id = 1, Name = "Smith Farm", Location = "Omaha, NE", Phone = "", Email = "" },
-            new Customer { Id = 2, Name = "Jones Farm", Location = "Lincoln, NE", Phone = "", Email = "" }
+            new() { Id = 1, Name = "Smith Farm", Location = "Omaha, NE" },
+            new() { Id = 2, Name = "Jones Farm", Location = "Lincoln, NE" }
         };
-        _dataServiceMock.Setup(s => s.GetCustomersAsync(null, It.IsAny<CancellationToken>())).ReturnsAsync(customers);
+        _serviceMock.Setup(s => s.GetAllAsync(null, It.IsAny<CancellationToken>())).ReturnsAsync(customers);
 
         // Act
         var result = await _sut.GetAll(null);
 
         // Assert
         var ok = Assert.IsType<OkObjectResult>(result.Result);
-        var returned = Assert.IsAssignableFrom<List<Customer>>(ok.Value);
+        var returned = Assert.IsAssignableFrom<List<CustomerResponse>>(ok.Value);
         Assert.Equal(2, returned.Count);
     }
 
@@ -54,8 +51,8 @@ public class CustomersControllerTests
     public async Task GetById_WhenExists_ReturnsOk()
     {
         // Arrange
-        var customer = new Customer { Id = 5, Name = "Test Farm", Location = "Test, NE", Phone = "", Email = "" };
-        _dataServiceMock.Setup(s => s.GetCustomerByIdAsync(5, It.IsAny<CancellationToken>())).ReturnsAsync(customer);
+        var customer = new CustomerResponse { Id = 5, Name = "Test Farm", Location = "Test, NE" };
+        _serviceMock.Setup(s => s.GetByIdAsync(5, It.IsAny<CancellationToken>())).ReturnsAsync(customer);
 
         // Act
         var result = await _sut.GetById(5);
@@ -70,7 +67,7 @@ public class CustomersControllerTests
     public async Task GetById_WhenNotFound_ThrowsNotFoundException()
     {
         // Arrange
-        _dataServiceMock.Setup(s => s.GetCustomerByIdAsync(999, It.IsAny<CancellationToken>())).ReturnsAsync((Customer?)null);
+        _serviceMock.Setup(s => s.GetByIdAsync(999, It.IsAny<CancellationToken>())).ReturnsAsync((CustomerResponse?)null);
 
         // Act & Assert
         await Assert.ThrowsAsync<NotFoundException>(() => _sut.GetById(999));
@@ -81,16 +78,16 @@ public class CustomersControllerTests
     public async Task Search_WithEmptyTerm_ReturnsGetCustomers()
     {
         // Arrange
-        var customers = new List<Customer> { new Customer { Id = 1, Name = "Farm", Location = "", Phone = "", Email = "" } };
-        _dataServiceMock.Setup(s => s.GetCustomersAsync(null, It.IsAny<CancellationToken>())).ReturnsAsync(customers);
+        var customers = new List<CustomerResponse> { new() { Id = 1, Name = "Farm" } };
+        _serviceMock.Setup(s => s.GetAllAsync(null, It.IsAny<CancellationToken>())).ReturnsAsync(customers);
 
         // Act
         var result = await _sut.Search("", null);
 
         // Assert
-        var ok = Assert.IsType<OkObjectResult>(result.Result);
-        _dataServiceMock.Verify(s => s.GetCustomersAsync(null, It.IsAny<CancellationToken>()), Times.Once);
-        _dataServiceMock.Verify(s => s.SearchCustomersAsync(It.IsAny<string>(), It.IsAny<List<string>?>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.IsType<OkObjectResult>(result.Result);
+        _serviceMock.Verify(s => s.GetAllAsync(null, It.IsAny<CancellationToken>()), Times.Once);
+        _serviceMock.Verify(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<List<string>?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // -------------------------------------------------------------------------
@@ -98,15 +95,14 @@ public class CustomersControllerTests
     public async Task Search_WithTerm_CallsSearchCustomers()
     {
         // Arrange
-        var customers = new List<Customer>();
-        _dataServiceMock.Setup(s => s.SearchCustomersAsync("Smith", null, It.IsAny<CancellationToken>())).ReturnsAsync(customers);
+        _serviceMock.Setup(s => s.SearchAsync("Smith", null, It.IsAny<CancellationToken>())).ReturnsAsync(new List<CustomerResponse>());
 
         // Act
         var result = await _sut.Search("Smith", null);
 
         // Assert
         Assert.IsType<OkObjectResult>(result.Result);
-        _dataServiceMock.Verify(s => s.SearchCustomersAsync("Smith", null, It.IsAny<CancellationToken>()), Times.Once);
+        _serviceMock.Verify(s => s.SearchAsync("Smith", null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // -------------------------------------------------------------------------
@@ -121,7 +117,7 @@ public class CustomersControllerTests
             new() { TradeUnit = "2057", IsManual = false, HasOpenActivity = true },   // active-locked
             new() { TradeUnit = "2190", IsManual = false, HasOpenActivity = false },  // dormant → removable
         };
-        _dataServiceMock.Setup(s => s.GetCustomerTradeUnitsAsync(7, It.IsAny<CancellationToken>())).ReturnsAsync(tus);
+        _serviceMock.Setup(s => s.GetTradeUnitsAsync(7, It.IsAny<CancellationToken>())).ReturnsAsync(tus);
 
         // Act
         var result = await _sut.GetTradeUnits(7);
@@ -138,10 +134,10 @@ public class CustomersControllerTests
     public async Task RemoveDormantTradeUnit_WhenOk_ReturnsRefreshedList()
     {
         // Arrange
-        _dataServiceMock.Setup(s => s.DeactivateDormantTradeUnitAsync(3, "2190", It.IsAny<CancellationToken>()))
+        _serviceMock.Setup(s => s.DeactivateDormantTradeUnitAsync(3, "2190", It.IsAny<CancellationToken>()))
             .ReturnsAsync(DeactivateTradeUnitResult.Ok);
         var refreshed = new List<CustomerTradeUnitInfo> { new() { TradeUnit = "2057", IsManual = false, HasOpenActivity = true } };
-        _dataServiceMock.Setup(s => s.GetCustomerTradeUnitsAsync(3, It.IsAny<CancellationToken>())).ReturnsAsync(refreshed);
+        _serviceMock.Setup(s => s.GetTradeUnitsAsync(3, It.IsAny<CancellationToken>())).ReturnsAsync(refreshed);
 
         // Act
         var result = await _sut.RemoveDormantTradeUnit(3, "2190");
@@ -150,7 +146,7 @@ public class CustomersControllerTests
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var returned = Assert.IsAssignableFrom<List<CustomerTradeUnitInfo>>(ok.Value);
         Assert.Single(returned);
-        _dataServiceMock.Verify(s => s.DeactivateDormantTradeUnitAsync(3, "2190", It.IsAny<CancellationToken>()), Times.Once);
+        _serviceMock.Verify(s => s.DeactivateDormantTradeUnitAsync(3, "2190", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // -------------------------------------------------------------------------
@@ -158,7 +154,7 @@ public class CustomersControllerTests
     public async Task RemoveDormantTradeUnit_WhenStillActive_ReturnsConflictAndDoesNotRefresh()
     {
         // Arrange — server refuses because the producer still has open activity in that TU.
-        _dataServiceMock.Setup(s => s.DeactivateDormantTradeUnitAsync(3, "2057", It.IsAny<CancellationToken>()))
+        _serviceMock.Setup(s => s.DeactivateDormantTradeUnitAsync(3, "2057", It.IsAny<CancellationToken>()))
             .ReturnsAsync(DeactivateTradeUnitResult.StillActive);
 
         // Act
@@ -166,7 +162,7 @@ public class CustomersControllerTests
 
         // Assert
         Assert.IsType<ConflictObjectResult>(result.Result);
-        _dataServiceMock.Verify(s => s.GetCustomerTradeUnitsAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
+        _serviceMock.Verify(s => s.GetTradeUnitsAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // -------------------------------------------------------------------------
@@ -174,7 +170,7 @@ public class CustomersControllerTests
     public async Task RemoveDormantTradeUnit_WhenNotFound_ThrowsNotFoundException()
     {
         // Arrange
-        _dataServiceMock.Setup(s => s.DeactivateDormantTradeUnitAsync(9, "9999", It.IsAny<CancellationToken>()))
+        _serviceMock.Setup(s => s.DeactivateDormantTradeUnitAsync(9, "9999", It.IsAny<CancellationToken>()))
             .ReturnsAsync(DeactivateTradeUnitResult.NotFound);
 
         // Act & Assert
