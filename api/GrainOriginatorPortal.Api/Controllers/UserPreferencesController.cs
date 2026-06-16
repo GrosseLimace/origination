@@ -33,9 +33,9 @@ public class UserPreferencesController : ControllerBase
     /// <summary>Gets the current user's saved trade unit / group preferences.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(UserPreferenceDto), StatusCodes.Status200OK)]
-    public async Task<ActionResult<UserPreferenceDto>> Get(CancellationToken ct)
+    public async Task<ActionResult<UserPreferenceDto>> Get(CancellationToken cancellationToken)
     {
-        var pref = await _db.UserPreferences.FirstOrDefaultAsync(p => p.UserId == CurrentUserId, ct);
+        var pref = await _db.UserPreferences.FirstOrDefaultAsync(p => p.UserId == CurrentUserId, cancellationToken);
         if (pref == null) return Ok(new UserPreferenceDto());
         return Ok(new UserPreferenceDto
         {
@@ -48,9 +48,9 @@ public class UserPreferencesController : ControllerBase
     /// <summary>Creates or updates the current user's trade unit / group preferences.</summary>
     [HttpPut]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> Upsert([FromBody] UserPreferenceDto dto, CancellationToken ct)
+    public async Task<IActionResult> Upsert([FromBody] UserPreferenceDto dto, CancellationToken cancellationToken)
     {
-        var pref = await _db.UserPreferences.FirstOrDefaultAsync(p => p.UserId == CurrentUserId, ct);
+        var pref = await _db.UserPreferences.FirstOrDefaultAsync(p => p.UserId == CurrentUserId, cancellationToken);
         if (pref == null)
         {
             pref = new UserPreference { UserId = CurrentUserId };
@@ -59,7 +59,7 @@ public class UserPreferencesController : ControllerBase
         pref.SelectedGroupNames = JsonSerializer.Serialize(dto.SelectedGroupNames ?? []);
         pref.SelectedTradeUnits = JsonSerializer.Serialize(dto.SelectedTradeUnits ?? []);
         pref.UpdatedAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync(ct);
+        await _db.SaveChangesAsync(cancellationToken);
         return NoContent();
     }
 }

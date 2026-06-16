@@ -38,11 +38,11 @@ public class UsageDashboardController : ControllerBase
     }
 
     /// <summary>Returns a set of UserIds filtered by trade unit codes (or all if none specified).</summary>
-    private async Task<HashSet<string>> GetFilteredUserIdsAsync(string? tradeUnitKey, CancellationToken ct)
+    private async Task<HashSet<string>> GetFilteredUserIdsAsync(string? tradeUnitKey, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(tradeUnitKey))
         {
-            var all = await _appDb.UserTradeUnitSnapshots.Select(s => s.UserId).Distinct().ToListAsync(ct);
+            var all = await _appDb.UserTradeUnitSnapshots.Select(s => s.UserId).Distinct().ToListAsync(cancellationToken);
             return new HashSet<string>(all, StringComparer.OrdinalIgnoreCase);
         }
 
@@ -51,18 +51,18 @@ public class UsageDashboardController : ControllerBase
             .Where(s => codes.Contains(s.TradeUnitCode))
             .Select(s => s.UserId)
             .Distinct()
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
         return new HashSet<string>(filtered, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>Returns display name lookup from the snapshot table.</summary>
-    private async Task<Dictionary<string, string>> GetDisplayNameLookupAsync(HashSet<string> userIds, CancellationToken ct)
+    private async Task<Dictionary<string, string>> GetDisplayNameLookupAsync(HashSet<string> userIds, CancellationToken cancellationToken)
     {
         var snapshots = await _appDb.UserTradeUnitSnapshots
             .Where(s => userIds.Contains(s.UserId))
             .Select(s => new { s.UserId, s.DisplayName })
             .Distinct()
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
         return snapshots
             .GroupBy(s => s.UserId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First().DisplayName, StringComparer.OrdinalIgnoreCase);
@@ -72,23 +72,23 @@ public class UsageDashboardController : ControllerBase
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<UsageDashboardSummaryDto>> GetSummary(
         [FromQuery] DateTime from, [FromQuery] DateTime to,
-        [FromQuery] string? tradeUnitKey = null, CancellationToken ct = default)
+        [FromQuery] string? tradeUnitKey = null, CancellationToken cancellationToken = default)
     {
         var fromUtc = from.ToUniversalTime();
         var toUtc = to.ToUniversalTime().Date.AddDays(1);
-        var userIds = await GetFilteredUserIdsAsync(tradeUnitKey, ct);
+        var userIds = await GetFilteredUserIdsAsync(tradeUnitKey, cancellationToken);
         var totalUsers = userIds.Count;
 
         var activeUserIds = await _appDb.UserActivities
             .Where(a => a.Timestamp >= fromUtc && a.Timestamp < toUtc && userIds.Contains(a.UserId))
-            .Select(a => a.UserId).Distinct().ToListAsync(ct);
+            .Select(a => a.UserId).Distinct().ToListAsync(cancellationToken);
         var activeUsers = activeUserIds.Count;
 
         var adoptionRate = totalUsers > 0 ? Math.Round((double)activeUsers / totalUsers * 100, 1) : 0;
 
         var sessions = await _appDb.UserSessions
             .Where(s => s.LoginTime >= fromUtc && s.LoginTime < toUtc && userIds.Contains(s.UserId))
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         var totalWeeks = Math.Max(1, (toUtc - fromUtc).TotalDays / 7.0);
         var avgLoginsPerWeek = sessions.Count > 0 ? Math.Round(sessions.Count / totalWeeks, 1) : 0;
@@ -115,25 +115,25 @@ public class UsageDashboardController : ControllerBase
     public async Task<ActionResult<List<UsageDashboardUserDto>>> GetUsers(
         [FromQuery] DateTime from, [FromQuery] DateTime to,
         [FromQuery] string? tradeUnitKey = null, [FromQuery] string? status = null,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         var fromUtc = from.ToUniversalTime();
         var toUtc = to.ToUniversalTime().Date.AddDays(1);
-        var userIds = await GetFilteredUserIdsAsync(tradeUnitKey, ct);
-        var displayNames = await GetDisplayNameLookupAsync(userIds, ct);
+        var userIds = await GetFilteredUserIdsAsync(tradeUnitKey, cancellationToken);
+        var displayNames = await GetDisplayNameLookupAsync(userIds, cancellationToken);
 
         var activityByUser = await _appDb.UserActivities
             .Where(a => a.Timestamp >= fromUtc && a.Timestamp < toUtc && userIds.Contains(a.UserId))
             .GroupBy(a => a.UserId)
             .Select(g => new { UserId = g.Key, LastActive = g.Max(a => a.Timestamp) })
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
         var activityLookup = activityByUser.ToDictionary(a => a.UserId, StringComparer.OrdinalIgnoreCase);
 
         var sessionsByUser = await _appDb.UserSessions
             .Where(s => s.LoginTime >= fromUtc && s.LoginTime < toUtc && userIds.Contains(s.UserId))
             .GroupBy(s => s.UserId)
             .Select(g => new { UserId = g.Key, LoginCount = g.Count(), AvgDuration = g.Average(s => (double)s.DurationMinutes) })
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
         var sessionLookup = sessionsByUser.ToDictionary(s => s.UserId, StringComparer.OrdinalIgnoreCase);
 
         // Customers contacted: call + email click events (per user, date filtered, NOT trade-unit filtered)
@@ -142,7 +142,7 @@ public class UsageDashboardController : ControllerBase
                 && (c.EventType == "call_click" || c.EventType == "email_click"))
             .GroupBy(c => c.UserId)
             .Select(g => new { UserId = g.Key, ContactCount = g.Count() })
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
         var clicksLookup = clicksByUser.ToDictionary(c => c.UserId, StringComparer.OrdinalIgnoreCase);
 
         // Notes created: count POST /api/notes from UserActivity (per user, date filtered, NOT trade-unit filtered)
@@ -152,7 +152,7 @@ public class UsageDashboardController : ControllerBase
                 && a.SubFeatureCode == "notes-create" && a.HttpMethod == "POST")
             .GroupBy(a => a.UserId)
             .Select(g => new { UserId = g.Key, Count = g.Count() })
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
         var notesLookup = notesByUser.ToDictionary(n => n.UserId, n => n.Count, StringComparer.OrdinalIgnoreCase);
 
         var sevenDaysAgo = DateTime.UtcNow.AddDays(-7);
@@ -192,18 +192,18 @@ public class UsageDashboardController : ControllerBase
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<DailyActiveDto>>> GetDailyActive(
         [FromQuery] DateTime from, [FromQuery] DateTime to,
-        [FromQuery] string? tradeUnitKey = null, CancellationToken ct = default)
+        [FromQuery] string? tradeUnitKey = null, CancellationToken cancellationToken = default)
     {
         var fromUtc = from.ToUniversalTime();
         var toUtc = to.ToUniversalTime().Date.AddDays(1);
-        var userIds = await GetFilteredUserIdsAsync(tradeUnitKey, ct);
+        var userIds = await GetFilteredUserIdsAsync(tradeUnitKey, cancellationToken);
 
         // Query raw UserActivity for real-time data
         var activities = await _appDb.UserActivities
             .Where(a => a.Timestamp >= fromUtc && a.Timestamp < toUtc && userIds.Contains(a.UserId))
             .Select(a => new { a.UserId, Date = a.Timestamp.Date })
             .Distinct()
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         var dailyCounts = activities
             .GroupBy(a => a.Date)
@@ -226,11 +226,11 @@ public class UsageDashboardController : ControllerBase
     public async Task<ActionResult<List<FeatureSessionsDto>>> GetFeatureSessions(
         [FromQuery] DateTime from, [FromQuery] DateTime to,
         [FromQuery] string? tradeUnitKey = null, [FromQuery] string? screen = null,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         var fromUtc = from.ToUniversalTime();
         var toUtc = to.ToUniversalTime().Date.AddDays(1);
-        var userIds = await GetFilteredUserIdsAsync(tradeUnitKey, ct);
+        var userIds = await GetFilteredUserIdsAsync(tradeUnitKey, cancellationToken);
 
         // --- TIME SPENT per screen ---
         // Uses explicit screen_enter events from the frontend (fired on every Angular route navigation).
@@ -240,7 +240,7 @@ public class UsageDashboardController : ControllerBase
                 && c.EventType == "screen_enter" && userIds.Contains(c.UserId))
             .Select(c => new { c.UserId, c.FeatureCode, c.Timestamp })
             .OrderBy(c => c.UserId).ThenBy(c => c.Timestamp)
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         var timePerFeature = new Dictionary<string, double>();
 
@@ -273,7 +273,7 @@ public class UsageDashboardController : ControllerBase
         var clickCounts = await clickQuery
             .GroupBy(c => new { c.FeatureCode, c.SubFeatureCode })
             .Select(g => new { g.Key.FeatureCode, SubFeatureCode = g.Key.SubFeatureCode ?? "__total__", Count = g.Count() })
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         // Also count notes-create from UserActivity (POST /api/notes) since that's tracked via middleware
         var notesCreateCounts = await _appDb.UserActivities
@@ -282,7 +282,7 @@ public class UsageDashboardController : ControllerBase
                 && userIds.Contains(a.UserId))
             .GroupBy(a => a.FeatureCode)
             .Select(g => new { FeatureCode = g.Key, Count = g.Count() })
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         var featureLabels = new Dictionary<string, string>
         {
@@ -351,16 +351,16 @@ public class UsageDashboardController : ControllerBase
     [HttpGet("weekly-trend")]
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<WeeklyTrendDto>>> GetWeeklyTrend(
-        [FromQuery] string? tradeUnitKey = null, CancellationToken ct = default)
+        [FromQuery] string? tradeUnitKey = null, CancellationToken cancellationToken = default)
     {
-        var userIds = await GetFilteredUserIdsAsync(tradeUnitKey, ct);
+        var userIds = await GetFilteredUserIdsAsync(tradeUnitKey, cancellationToken);
         var eightWeeksAgo = DateTime.UtcNow.AddDays(-56);
 
         // Query raw UserSession for real-time data
         var sessions = await _appDb.UserSessions
             .Where(s => s.LoginTime >= eightWeeksAgo && userIds.Contains(s.UserId))
             .Select(s => new { s.UserId, s.LoginTime })
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         // Group by week (Monday start)
         var weeklyData = sessions
@@ -386,12 +386,12 @@ public class UsageDashboardController : ControllerBase
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<ActivityBreakdownDto>>> GetActivityBreakdown(
         [FromQuery] DateTime from, [FromQuery] DateTime to,
-        [FromQuery] string? tradeUnitKey = null, CancellationToken ct = default)
+        [FromQuery] string? tradeUnitKey = null, CancellationToken cancellationToken = default)
     {
         var fromUtc = from.ToUniversalTime();
         var toUtc = to.ToUniversalTime().Date.AddDays(1);
-        var userIds = await GetFilteredUserIdsAsync(tradeUnitKey, ct);
-        var displayNames = await GetDisplayNameLookupAsync(userIds, ct);
+        var userIds = await GetFilteredUserIdsAsync(tradeUnitKey, cancellationToken);
+        var displayNames = await GetDisplayNameLookupAsync(userIds, cancellationToken);
 
         // Notes created and planting intentions added are authoritative via POST API calls
         // (server-side UserActivity log). Everything else is driven by explicit frontend
@@ -406,7 +406,7 @@ public class UsageDashboardController : ControllerBase
                 NotesTaken = g.Count(a => a.SubFeatureCode == "notes-create" && a.HttpMethod == "POST"),
                 PlantingIntentionsAdded = g.Count(a => a.SubFeatureCode == "planting-intentions" && a.HttpMethod == "POST")
             })
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
         var activityMap = activityByUser.ToDictionary(a => a.UserId, StringComparer.OrdinalIgnoreCase);
 
         // All interaction-style counts come from the explicit click events the UI posts.
@@ -415,7 +415,7 @@ public class UsageDashboardController : ControllerBase
         var rawClicks = await _appDb.UserClickEvents
             .Where(c => c.Timestamp >= fromUtc && c.Timestamp < toUtc && userIdList.Contains(c.UserId))
             .Select(c => new { c.UserId, c.EventType, c.FeatureCode, c.SubFeatureCode, c.TargetId })
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         var clicksMap = rawClicks.GroupBy(c => c.UserId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => new
@@ -458,25 +458,25 @@ public class UsageDashboardController : ControllerBase
     public async Task<ActionResult<List<UsageDashboardInactiveUserDto>>> GetInactiveUsers(
         [FromQuery] DateTime from, [FromQuery] DateTime to,
         [FromQuery] string? tradeUnitKey = null, [FromQuery] int daysThreshold = 30,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         var fromUtc = from.ToUniversalTime();
         var toUtc = to.ToUniversalTime().Date.AddDays(1);
-        var userIds = await GetFilteredUserIdsAsync(tradeUnitKey, ct);
-        var displayNames = await GetDisplayNameLookupAsync(userIds, ct);
+        var userIds = await GetFilteredUserIdsAsync(tradeUnitKey, cancellationToken);
+        var displayNames = await GetDisplayNameLookupAsync(userIds, cancellationToken);
 
         var lastActivityByUser = await _appDb.UserActivities
             .Where(a => userIds.Contains(a.UserId))
             .GroupBy(a => a.UserId)
             .Select(g => new { UserId = g.Key, LastActive = g.Max(a => a.Timestamp) })
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
         var lastActivityLookup = lastActivityByUser.ToDictionary(a => a.UserId, StringComparer.OrdinalIgnoreCase);
 
         var sessionsByUser = await _appDb.UserSessions
             .Where(s => userIds.Contains(s.UserId))
             .GroupBy(s => s.UserId)
             .Select(g => new { UserId = g.Key, LoginCount = g.Count(), AvgDuration = g.Average(s => (double)s.DurationMinutes) })
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
         var sessionLookup = sessionsByUser.ToDictionary(s => s.UserId, StringComparer.OrdinalIgnoreCase);
 
         var now = DateTime.UtcNow;
@@ -511,7 +511,7 @@ public class UsageDashboardController : ControllerBase
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<UnderusedFeatureDto>>> GetUnderusedFeatures(
         [FromQuery] DateTime from, [FromQuery] DateTime to,
-        [FromQuery] string? tradeUnitKey = null, CancellationToken ct = default)
+        [FromQuery] string? tradeUnitKey = null, CancellationToken cancellationToken = default)
     {
         var fromDate = DateOnly.FromDateTime(from.ToUniversalTime());
         var toDate = DateOnly.FromDateTime(to.ToUniversalTime().Date.AddDays(1));
@@ -530,7 +530,7 @@ public class UsageDashboardController : ControllerBase
             .Where(f => f.ActivityDate >= fromDate && f.ActivityDate < toDate && f.SubFeatureCode == "__total__")
             .GroupBy(f => f.FeatureCode)
             .Select(g => new { FeatureCode = g.Key, SessionCount = g.Sum(f => f.SessionCount) })
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         var featureLookup = featureData.ToDictionary(f => f.FeatureCode, StringComparer.OrdinalIgnoreCase);
 
@@ -548,11 +548,11 @@ public class UsageDashboardController : ControllerBase
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<QueryLibraryUsageDto>>> GetQueryLibraryUsage(
         [FromQuery] DateTime from, [FromQuery] DateTime to,
-        [FromQuery] string? tradeUnitKey = null, CancellationToken ct = default)
+        [FromQuery] string? tradeUnitKey = null, CancellationToken cancellationToken = default)
     {
         var fromUtc = from.ToUniversalTime();
         var toUtc = to.ToUniversalTime().Date.AddDays(1);
-        var userIds = await GetFilteredUserIdsAsync(tradeUnitKey, ct);
+        var userIds = await GetFilteredUserIdsAsync(tradeUnitKey, cancellationToken);
 
         // Group click events by query ID (TargetId) to find most-used library queries
         var rawUsage = await _appDb.UserClickEvents
@@ -565,7 +565,7 @@ public class UsageDashboardController : ControllerBase
             .GroupBy(c => c.TargetId!)
             .Select(g => new { QueryId = g.Key, TimesUsed = g.Count() })
             .OrderByDescending(q => q.TimesUsed)
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         // Resolve query IDs to their display name from the QueryLibrary table
         var ids = rawUsage
@@ -574,7 +574,7 @@ public class UsageDashboardController : ControllerBase
             .ToList();
         var names = await _appDb.QueryLibrary
             .Where(q => ids.Contains(q.Id))
-            .ToDictionaryAsync(q => q.Id.ToString(), q => q.Name, ct);
+            .ToDictionaryAsync(q => q.Id.ToString(), q => q.Name, cancellationToken);
 
         var result = rawUsage.Select(r => new QueryLibraryUsageDto
         {
@@ -589,11 +589,11 @@ public class UsageDashboardController : ControllerBase
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<List<QuerySearchGapDto>>> GetQuerySearchGaps(
         [FromQuery] DateTime from, [FromQuery] DateTime to,
-        [FromQuery] string? tradeUnitKey = null, CancellationToken ct = default)
+        [FromQuery] string? tradeUnitKey = null, CancellationToken cancellationToken = default)
     {
         var fromUtc = from.ToUniversalTime();
         var toUtc = to.ToUniversalTime().Date.AddDays(1);
-        var userIds = await GetFilteredUserIdsAsync(tradeUnitKey, ct);
+        var userIds = await GetFilteredUserIdsAsync(tradeUnitKey, cancellationToken);
 
         // Shows search terms that didn't match any library query — signal for what to add next
         var gaps = await _appDb.UserClickEvents
@@ -607,7 +607,7 @@ public class UsageDashboardController : ControllerBase
             .Select(g => new QuerySearchGapDto { SearchText = g.Key, TimesSearched = g.Count() })
             .OrderByDescending(q => q.TimesSearched)
             .Take(20)
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         return Ok(gaps);
     }
@@ -622,7 +622,7 @@ public class UsageDashboardController : ControllerBase
         string userId,
         [FromQuery] DateTime from, [FromQuery] DateTime to,
         [FromQuery] string? tradeUnitKey = null,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         var fromUtc = from.ToUniversalTime();
         var toUtc = to.ToUniversalTime().Date.AddDays(1);
@@ -630,18 +630,18 @@ public class UsageDashboardController : ControllerBase
         // Confirm the userId is in the allowed set (TU-filtered when a key is provided,
         // all known snapshot users otherwise). If it isn't, the URL was crafted by hand
         // or the snapshot is stale — return 404 rather than leak a partial response.
-        var allowedIds = await GetFilteredUserIdsAsync(tradeUnitKey, ct);
+        var allowedIds = await GetFilteredUserIdsAsync(tradeUnitKey, cancellationToken);
         if (!allowedIds.Contains(userId))
             return NotFound();
 
-        var displayNames = await GetDisplayNameLookupAsync(new HashSet<string>(new[] { userId }, StringComparer.OrdinalIgnoreCase), ct);
+        var displayNames = await GetDisplayNameLookupAsync(new HashSet<string>(new[] { userId }, StringComparer.OrdinalIgnoreCase), cancellationToken);
         var displayName = displayNames.GetValueOrDefault(userId, userId);
 
         // Sessions in window (drives login count, total time, avg session)
         var sessions = await _appDb.UserSessions
             .Where(s => s.UserId == userId && s.LoginTime >= fromUtc && s.LoginTime < toUtc)
             .Select(s => new { s.DurationMinutes })
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         var loginCount = sessions.Count;
         var totalMinutes = sessions.Sum(s => (double)s.DurationMinutes);
@@ -652,7 +652,7 @@ public class UsageDashboardController : ControllerBase
             .Where(a => a.UserId == userId)
             .OrderByDescending(a => a.Timestamp)
             .Select(a => (DateTime?)a.Timestamp)
-            .FirstOrDefaultAsync(ct);
+            .FirstOrDefaultAsync(cancellationToken);
 
         var sevenDaysAgo = DateTime.UtcNow.AddDays(-7);
         var status = lastActive == null ? "Never Logged In"
@@ -664,13 +664,13 @@ public class UsageDashboardController : ControllerBase
         var clicks = await _appDb.UserClickEvents
             .Where(c => c.UserId == userId && c.Timestamp >= fromUtc && c.Timestamp < toUtc)
             .Select(c => new { c.EventType, c.FeatureCode, c.SubFeatureCode, c.TargetId, c.Timestamp })
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         // Activity events for server-side-tracked actions (notes / planting POSTs)
         var activities = await _appDb.UserActivities
             .Where(a => a.UserId == userId && a.Timestamp >= fromUtc && a.Timestamp < toUtc)
             .Select(a => new { a.SubFeatureCode, a.HttpMethod })
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         // Build daily series (event count + screen minutes)
         var screenEnters = clicks
@@ -742,7 +742,7 @@ public class UsageDashboardController : ControllerBase
             var snap = await _appDb.Customers
                 .Where(c => c.Id == topProducerGroup.CustomerId)
                 .Select(c => new { CustomerName = c.Name, c.ScoularId })
-                .FirstOrDefaultAsync(ct);
+                .FirstOrDefaultAsync(cancellationToken);
             if (snap != null)
             {
                 topProducer = new TopProducerDto
@@ -792,7 +792,7 @@ public class UsageDashboardController : ControllerBase
         var topQueryNames = topQueryIds.Count > 0
             ? await _appDb.QueryLibrary
                 .Where(q => topQueryIds.Contains(q.Id))
-                .ToDictionaryAsync(q => q.Id.ToString(), q => q.Name, ct)
+                .ToDictionaryAsync(q => q.Id.ToString(), q => q.Name, cancellationToken)
             : new Dictionary<string, string>();
 
         var buildList = new BuildListEngagementDto
@@ -927,7 +927,7 @@ public class UsageDashboardController : ControllerBase
             ? await _appDb.Customers
                 .Where(c => customerTargetIds.Contains(c.Id))
                 .Select(c => new { CustomerId = c.Id, Name = c.Name, Code = c.ScoularId })
-                .ToDictionaryAsync(g => g.CustomerId.ToString(), g => string.IsNullOrEmpty(g.Code) ? g.Name : $"{g.Name} ({g.Code})", ct)
+                .ToDictionaryAsync(g => g.CustomerId.ToString(), g => string.IsNullOrEmpty(g.Code) ? g.Name : $"{g.Name} ({g.Code})", cancellationToken)
             : new Dictionary<string, string>();
 
         var libraryTargetIds = recentActivity
@@ -942,7 +942,7 @@ public class UsageDashboardController : ControllerBase
         var libraryNames = libraryTargetIds.Count > 0
             ? await _appDb.QueryLibrary
                 .Where(q => libraryTargetIds.Contains(q.Id))
-                .ToDictionaryAsync(q => q.Id.ToString(), q => q.Name, ct)
+                .ToDictionaryAsync(q => q.Id.ToString(), q => q.Name, cancellationToken)
             : new Dictionary<string, string>();
 
         // Contracts: featureCode='customers' / sub='contracts'. TargetId is the
@@ -966,7 +966,7 @@ public class UsageDashboardController : ControllerBase
                     c => string.IsNullOrEmpty(c.CommodityCode)
                         ? c.ContractNumber
                         : $"{c.ContractNumber} — {c.CommodityCode}",
-                    ct)
+                    cancellationToken)
             : new Dictionary<string, string>();
 
         foreach (var row in recentActivity)

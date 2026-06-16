@@ -32,7 +32,7 @@ public class UserEntitlementService : IUserEntitlementService
         _logger = logger;
     }
 
-    public async Task<IReadOnlySet<string>> GetAllowedTradeUnitCodesAsync(CancellationToken ct = default)
+    public async Task<IReadOnlySet<string>> GetAllowedTradeUnitCodesAsync(CancellationToken cancellationToken = default)
     {
         if (_cachedEntitlements is not null)
             return _cachedEntitlements;
@@ -48,7 +48,7 @@ public class UserEntitlementService : IUserEntitlementService
                 .Where(u => u.UserId == userId)
                 .Select(u => u.TradeUnitCode)
                 .Distinct()
-                .ToListAsync(ct);
+                .ToListAsync(cancellationToken);
         }
         catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
         {
@@ -69,9 +69,9 @@ public class UserEntitlementService : IUserEntitlementService
         return _cachedEntitlements;
     }
 
-    public async Task ValidateTradeUnitsOrThrowAsync(IEnumerable<string> tradeUnitCodes, CancellationToken ct = default)
+    public async Task ValidateTradeUnitsOrThrowAsync(IEnumerable<string> tradeUnitCodes, CancellationToken cancellationToken = default)
     {
-        var allowed = await GetAllowedTradeUnitCodesAsync(ct);
+        var allowed = await GetAllowedTradeUnitCodesAsync(cancellationToken);
         var requested = tradeUnitCodes.Where(c => !string.IsNullOrWhiteSpace(c)).ToList();
 
         if (requested.Count == 0)
@@ -90,7 +90,7 @@ public class UserEntitlementService : IUserEntitlementService
         }
     }
 
-    public async Task ValidateCustomerAccessAsync(long customerId, CancellationToken ct = default)
+    public async Task ValidateCustomerAccessAsync(long customerId, CancellationToken cancellationToken = default)
     {
         // Look up customer's trade unit(s) from the live ODS view
         var customerTradeUnits = await _originationDb.CustomerTradeUnits
@@ -98,7 +98,7 @@ public class UserEntitlementService : IUserEntitlementService
             .Select(c => c.TradeUnit)
             .Where(tu => tu != null)
             .Distinct()
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         if (customerTradeUnits.Count == 0)
         {
@@ -109,7 +109,7 @@ public class UserEntitlementService : IUserEntitlementService
             return;
         }
 
-        var allowed = await GetAllowedTradeUnitCodesAsync(ct);
+        var allowed = await GetAllowedTradeUnitCodesAsync(cancellationToken);
         var hasAccess = customerTradeUnits.Any(tu => allowed.Contains(tu!));
 
         if (!hasAccess)

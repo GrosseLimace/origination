@@ -47,7 +47,7 @@ public class SavedListsController : ControllerBase
 
     // -------------------------------------------------------------------------
     /// <summary>Updates an existing saved list by ID.</summary>
-    [HttpPut("{id}")]
+    [HttpPut("{id:int}")]
     [ProducesResponseType(typeof(SavedList), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<SavedList>> Update(int id, [FromBody] CreateSavedListRequest request, CancellationToken cancellationToken = default)
@@ -63,7 +63,7 @@ public class SavedListsController : ControllerBase
 
     // -------------------------------------------------------------------------
     /// <summary>Deletes a saved list by ID.</summary>
-    [HttpDelete("{id}")]
+    [HttpDelete("{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<ActionResult> Delete(int id, CancellationToken cancellationToken = default)
     {
@@ -75,7 +75,7 @@ public class SavedListsController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    private async Task ValidateTradeUnitsInRequest(string? tradeUnits, CancellationToken ct)
+    private async Task ValidateTradeUnitsInRequest(string? tradeUnits, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(tradeUnits))
             return;
@@ -83,7 +83,7 @@ public class SavedListsController : ControllerBase
         var codes = tradeUnits.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (codes.Length > 0)
         {
-            await _entitlementService.ValidateTradeUnitsOrThrowAsync(codes, ct);
+            await _entitlementService.ValidateTradeUnitsOrThrowAsync(codes, cancellationToken);
         }
     }
 }

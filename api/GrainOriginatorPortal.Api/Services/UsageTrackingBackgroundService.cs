@@ -104,7 +104,7 @@ public class UsageTrackingBackgroundService : BackgroundService
         _logger.LogInformation("UsageTrackingBackgroundService stopped");
     }
 
-    private async Task FlushBatchAsync(List<UserActivityRecord> activities, List<UserClickEventRecord> clicks, CancellationToken ct)
+    private async Task FlushBatchAsync(List<UserActivityRecord> activities, List<UserClickEventRecord> clicks, CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -140,11 +140,11 @@ public class UsageTrackingBackgroundService : BackgroundService
             });
         }
 
-        await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(cancellationToken);
 
         // Update sessions from activity records
         if (activities.Count > 0)
-            await UpdateSessionsAsync(db, activities, ct);
+            await UpdateSessionsAsync(db, activities, cancellationToken);
     }
 
     /// <summary>
@@ -153,7 +153,7 @@ public class UsageTrackingBackgroundService : BackgroundService
     /// The DB is the source of truth — no in-memory cache — so this is correct regardless of process
     /// restarts, instance count, or deploy swaps.
     /// </summary>
-    private async Task UpdateSessionsAsync(ApplicationDbContext db, List<UserActivityRecord> batch, CancellationToken ct)
+    private async Task UpdateSessionsAsync(ApplicationDbContext db, List<UserActivityRecord> batch, CancellationToken cancellationToken)
     {
         var userLatest = batch
             .GroupBy(r => r.UserId, StringComparer.OrdinalIgnoreCase)
@@ -169,7 +169,7 @@ public class UsageTrackingBackgroundService : BackgroundService
         // (avoids the GroupBy+First LINQ translation pitfalls that caused the old seed query to fail).
         var candidates = await db.UserSessions
             .Where(s => userIds.Contains(s.UserId) && s.LastActivityTime >= cutoff)
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         var latestOpenByUser = candidates
             .GroupBy(s => s.UserId, StringComparer.OrdinalIgnoreCase)
@@ -198,7 +198,7 @@ public class UsageTrackingBackgroundService : BackgroundService
             }
         }
 
-        await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(cancellationToken);
     }
 }
 

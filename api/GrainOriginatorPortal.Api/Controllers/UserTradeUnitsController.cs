@@ -8,6 +8,7 @@ namespace GrainOriginatorPortal.Api.Controllers;
 [Authorize]
 [ApiController]
 [Route("api/[controller]")]
+[Produces("application/json")]
 public class UserTradeUnitsController : ControllerBase
 {
     private readonly EntitlementsDbContext _entitlementsDb;
@@ -29,6 +30,8 @@ public class UserTradeUnitsController : ControllerBase
     /// (e.g. CEgr@scoular.com → CEgr).
     /// </summary>
     [HttpGet]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Get()
     {
         var upn = User.FindFirst("preferred_username")?.Value

@@ -429,12 +429,12 @@ public class DiagnosticsController : ControllerBase
     /// <summary>Returns current geocoding progress.</summary>
     [HttpGet("elevator-cache/geocode-status")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetGeocodeStatus(CancellationToken ct = default)
+    public async Task<IActionResult> GetGeocodeStatus(CancellationToken cancellationToken = default)
     {
         if (DenyIfNotDevelopment() is { } deny) return deny;
 
-        var total = await _appContext.ElevatorCaches.CountAsync(e => e.IsActive, ct);
-        var withCoords = await _appContext.ElevatorCaches.CountAsync(e => e.IsActive && e.Latitude != null, ct);
+        var total = await _appContext.ElevatorCaches.CountAsync(e => e.IsActive, cancellationToken);
+        var withCoords = await _appContext.ElevatorCaches.CountAsync(e => e.IsActive && e.Latitude != null, cancellationToken);
         var missing = total - withCoords;
 
         return Ok(new
@@ -517,13 +517,13 @@ public class DiagnosticsController : ControllerBase
     /// <summary>Geocode missing elevators using zip code centroids (zippopotam.us).</summary>
     [HttpPost("elevator-cache/geocode-zip")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<IActionResult> GeocodeByZip(CancellationToken ct = default)
+    public async Task<IActionResult> GeocodeByZip(CancellationToken cancellationToken = default)
     {
         if (DenyIfNotDevelopment() is { } deny) return deny;
 
         var missing = await _appContext.ElevatorCaches
             .Where(e => e.Latitude == null && e.IsActive && e.ZipCode != null && e.ZipCode != "0")
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         if (missing.Count == 0)
             return Ok(new { Message = "No elevators need zip-based geocoding", Updated = 0 });
@@ -546,11 +546,11 @@ public class DiagnosticsController : ControllerBase
             {
                 try
                 {
-                    await Task.Delay(100, ct); // Be polite
-                    var response = await client.GetAsync($"https://api.zippopotam.us/us/{zip}", ct);
+                    await Task.Delay(100, cancellationToken); // Be polite
+                    var response = await client.GetAsync($"https://api.zippopotam.us/us/{zip}", cancellationToken);
                     if (response.IsSuccessStatusCode)
                     {
-                        var json = await response.Content.ReadAsStringAsync(ct);
+                        var json = await response.Content.ReadAsStringAsync(cancellationToken);
                         var doc = JsonSerializer.Deserialize<JsonElement>(json);
                         var places = doc.GetProperty("places");
                         if (places.GetArrayLength() > 0)
@@ -576,10 +576,10 @@ public class DiagnosticsController : ControllerBase
             }
 
             // Save every 100
-            if (updated % 100 == 0) await _appContext.SaveChangesAsync(ct);
+            if (updated % 100 == 0) await _appContext.SaveChangesAsync(cancellationToken);
         }
 
-        await _appContext.SaveChangesAsync(ct);
+        await _appContext.SaveChangesAsync(cancellationToken);
 
         return Ok(new
         {

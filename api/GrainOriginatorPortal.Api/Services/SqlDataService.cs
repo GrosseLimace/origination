@@ -101,7 +101,7 @@ public class SqlDataService : IDataService
     /// Rows not found in the snapshot are absent from the dictionary; callers fall back to the
     /// original value.
     /// </summary>
-    private async Task<Dictionary<string, string>> ResolveDisplayNamesAsync(IEnumerable<string> userIds, CancellationToken ct)
+    private async Task<Dictionary<string, string>> ResolveDisplayNamesAsync(IEnumerable<string> userIds, CancellationToken cancellationToken)
     {
         var distinct = userIds
             .Where(u => !string.IsNullOrEmpty(u))
@@ -121,7 +121,7 @@ public class SqlDataService : IDataService
             .Where(u => shortForms.Contains(u.UserId))
             .Select(u => new { u.UserId, u.DisplayName })
             .Distinct()
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var r in rows.GroupBy(r => r.UserId, StringComparer.OrdinalIgnoreCase))

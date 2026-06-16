@@ -100,7 +100,7 @@ public class PlantingIntentionsController : ControllerBase
 
     // -------------------------------------------------------------------------
     /// <summary>Updates an existing planting intention.</summary>
-    [HttpPut("{id}")]
+    [HttpPut("{id:int}")]
     [ProducesResponseType(typeof(PlantingIntention), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -131,7 +131,7 @@ public class PlantingIntentionsController : ControllerBase
 
     // -------------------------------------------------------------------------
     /// <summary>Deletes a planting intention by ID.</summary>
-    [HttpDelete("{id}")]
+    [HttpDelete("{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult> Delete(int id, CancellationToken cancellationToken = default)

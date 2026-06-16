@@ -70,7 +70,7 @@ public class UsageAggregationBackgroundService : BackgroundService
         _logger.LogInformation("UsageAggregationBackgroundService stopped");
     }
 
-    private async Task AggregateUserActivityDailyAsync(DateOnly date, CancellationToken ct)
+    private async Task AggregateUserActivityDailyAsync(DateOnly date, CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -93,7 +93,7 @@ public class UsageAggregationBackgroundService : BackgroundService
                 PlantingIntentionsAdded = g.Count(a => a.SubFeatureCode == "planting-intentions" && a.HttpMethod == "POST"),
                 ProducerDetailsViewed = g.Count(a => a.SubFeatureCode == "producer-details"),
             })
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         // Get session data for the date
         var userSessions = await db.UserSessions
@@ -105,7 +105,7 @@ public class UsageAggregationBackgroundService : BackgroundService
                 SessionCount = g.Count(),
                 TotalSessionMinutes = g.Sum(s => s.DurationMinutes)
             })
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
         var sessionLookup = userSessions.ToDictionary(s => s.UserId, StringComparer.OrdinalIgnoreCase);
 
         // Get click events for the date
@@ -118,7 +118,7 @@ public class UsageAggregationBackgroundService : BackgroundService
                 CallClicks = g.Count(c => c.EventType == "call_click"),
                 EmailClicks = g.Count(c => c.EventType == "email_click")
             })
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
         var clickLookup = userClicks.ToDictionary(c => c.UserId, StringComparer.OrdinalIgnoreCase);
 
         foreach (var ua in userActivities)
@@ -127,7 +127,7 @@ public class UsageAggregationBackgroundService : BackgroundService
             clickLookup.TryGetValue(ua.UserId, out var clicks);
 
             var existing = await db.UserActivityDailies
-                .FirstOrDefaultAsync(d => d.UserId == ua.UserId && d.ActivityDate == date, ct);
+                .FirstOrDefaultAsync(d => d.UserId == ua.UserId && d.ActivityDate == date, cancellationToken);
 
             if (existing != null)
             {
@@ -164,10 +164,10 @@ public class UsageAggregationBackgroundService : BackgroundService
             }
         }
 
-        await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task AggregateFeatureUsageDailyAsync(DateOnly date, CancellationToken ct)
+    private async Task AggregateFeatureUsageDailyAsync(DateOnly date, CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -186,7 +186,7 @@ public class UsageAggregationBackgroundService : BackgroundService
                 RequestCount = g.Count(),
                 UniqueUsers = g.Select(a => a.UserId).Distinct().Count()
             })
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         // Click-based feature usage
         var clickGroups = await db.UserClickEvents
@@ -198,7 +198,7 @@ public class UsageAggregationBackgroundService : BackgroundService
                 g.Key.SubFeatureCode,
                 ClickCount = g.Count()
             })
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
         var clickLookup = clickGroups.ToDictionary(
             c => (c.FeatureCode, c.SubFeatureCode),
             c => c.ClickCount);
@@ -210,7 +210,7 @@ public class UsageAggregationBackgroundService : BackgroundService
             var existing = await db.FeatureUsageDailies
                 .FirstOrDefaultAsync(f => f.ActivityDate == date
                     && f.FeatureCode == fg.FeatureCode
-                    && f.SubFeatureCode == fg.SubFeatureCode, ct);
+                    && f.SubFeatureCode == fg.SubFeatureCode, cancellationToken);
 
             if (existing != null)
             {
@@ -234,10 +234,10 @@ public class UsageAggregationBackgroundService : BackgroundService
             }
         }
 
-        await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task AggregateWeeklyLoginsAsync(DateOnly weekStart, CancellationToken ct)
+    private async Task AggregateWeeklyLoginsAsync(DateOnly weekStart, CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -254,12 +254,12 @@ public class UsageAggregationBackgroundService : BackgroundService
                 SessionCount = g.Sum(d => d.SessionCount),
                 TotalSessionMin = g.Sum(d => d.TotalSessionMinutes)
             })
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         foreach (var wd in weeklyData)
         {
             var existing = await db.WeeklyLoginAggregates
-                .FirstOrDefaultAsync(w => w.WeekStartDate == weekStart && w.UserId == wd.UserId, ct);
+                .FirstOrDefaultAsync(w => w.WeekStartDate == weekStart && w.UserId == wd.UserId, cancellationToken);
 
             if (existing != null)
             {
@@ -280,10 +280,10 @@ public class UsageAggregationBackgroundService : BackgroundService
             }
         }
 
-        await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task RefreshTradeUnitSnapshotAsync(CancellationToken ct)
+    private async Task RefreshTradeUnitSnapshotAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -292,15 +292,15 @@ public class UsageAggregationBackgroundService : BackgroundService
             var appDb = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
             // Load current entitlements and deduplicate by (UserId, TradeUnitCode)
-            var entitlements = await entDb.UserTradeUnitAccess.ToListAsync(ct);
+            var entitlements = await entDb.UserTradeUnitAccess.ToListAsync(cancellationToken);
             var deduped = entitlements
                 .GroupBy(e => $"{e.UserId}|{e.TradeUnitCode}".ToUpperInvariant())
                 .Select(g => g.First())
                 .ToList();
 
             // Use raw SQL DELETE then a fresh DbContext scope to avoid EF tracking conflicts
-            await appDb.Database.ExecuteSqlRawAsync("DELETE FROM dbo.UserTradeUnitSnapshot", ct);
-            await appDb.SaveChangesAsync(ct); // flush the delete
+            await appDb.Database.ExecuteSqlRawAsync("DELETE FROM dbo.UserTradeUnitSnapshot", cancellationToken);
+            await appDb.SaveChangesAsync(cancellationToken); // flush the delete
 
             // Insert with a fresh scope so the change tracker is clean
             using var insertScope = _scopeFactory.CreateScope();
@@ -320,7 +320,7 @@ public class UsageAggregationBackgroundService : BackgroundService
                         SnapshotDate = today
                     });
                 }
-                await insertDb.SaveChangesAsync(ct);
+                await insertDb.SaveChangesAsync(cancellationToken);
                 insertDb.ChangeTracker.Clear();
             }
 
@@ -332,7 +332,7 @@ public class UsageAggregationBackgroundService : BackgroundService
         }
     }
 
-    private async Task CleanupRetentionAsync(CancellationToken ct)
+    private async Task CleanupRetentionAsync(CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -340,10 +340,10 @@ public class UsageAggregationBackgroundService : BackgroundService
         var cutoff = DateTime.UtcNow.AddDays(-RetentionDays);
 
         var deletedActivities = await db.Database.ExecuteSqlRawAsync(
-            "DELETE FROM dbo.UserActivity WHERE Timestamp < {0}", [cutoff], ct);
+            "DELETE FROM dbo.UserActivity WHERE Timestamp < {0}", [cutoff], cancellationToken);
 
         var deletedClicks = await db.Database.ExecuteSqlRawAsync(
-            "DELETE FROM dbo.UserClickEvent WHERE Timestamp < {0}", [cutoff], ct);
+            "DELETE FROM dbo.UserClickEvent WHERE Timestamp < {0}", [cutoff], cancellationToken);
 
         if (deletedActivities > 0 || deletedClicks > 0)
         {
