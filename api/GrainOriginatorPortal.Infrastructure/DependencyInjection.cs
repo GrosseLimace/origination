@@ -1,4 +1,6 @@
 using GrainOriginatorPortal.Infrastructure.Data;
+using GrainOriginatorPortal.Infrastructure.Interfaces;
+using GrainOriginatorPortal.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -78,6 +80,9 @@ public static class DependencyInjection
             }
 #endif
         });
+
+        // ── Repositories (per-domain, added incrementally during the Phase 2 migration) ──
+        services.AddScoped<IQueryLibraryRepository, QueryLibraryRepository>();
 
         return services;
     }

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Caching.Memory;
 using GrainOriginatorPortal.Infrastructure.Data;
+using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Models;
 
@@ -18,14 +19,18 @@ public class SqlDataService : IDataService
     private readonly ILogger<SqlDataService> _logger;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IMemoryCache _cache;
+    // Phase 2: domain repositories are introduced one at a time; SqlDataService forwards to them
+    // during the transition. Once all domains are migrated, SqlDataService + IDataService are deleted.
+    private readonly IQueryLibraryRepository _queryLibraryRepository;
 
-    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor, IMemoryCache cache)
+    public SqlDataService(OriginationDbContext context, ApplicationDbContext appContext, ILogger<SqlDataService> logger, IHttpContextAccessor httpContextAccessor, IMemoryCache cache, IQueryLibraryRepository queryLibraryRepository)
     {
         _context = context;
         _appContext = appContext;
         _logger = logger;
         _httpContextAccessor = httpContextAccessor;
         _cache = cache;
+        _queryLibraryRepository = queryLibraryRepository;
     }
 
     private string GetTraceId() =>
@@ -4266,24 +4271,20 @@ public class SqlDataService : IDataService
 
     public async Task<List<QueryLibraryItem>> GetQueryLibraryAsync(CancellationToken cancellationToken = default)
     {
-        return await _appContext.QueryLibrary
-            .AsNoTracking()
-            .Where(q => q.IsActive)
-            .OrderBy(q => q.Category)
-            .ThenBy(q => q.SortOrder)
-            .ThenBy(q => q.Name)
-            .ToListAsync(cancellationToken);
+        var items = await _queryLibraryRepository.GetActiveAsync(cancellationToken);
+        return items as List<QueryLibraryItem> ?? items.ToList();
     }
 
     public async Task LogQuerySearchAsync(string searchText, int? matchedQueryId, CancellationToken cancellationToken = default)
     {
-        _appContext.QuerySearchLogs.Add(new QuerySearchLog
+        // UserId + timestamp are request/business context, so the entity is built here and the
+        // repository just persists it.
+        await _queryLibraryRepository.AddSearchLogAsync(new QuerySearchLog
         {
             UserId = GetCurrentUser(),
             SearchText = searchText,
             MatchedQueryId = matchedQueryId,
             Timestamp = DateTime.UtcNow
-        });
-        await _appContext.SaveChangesAsync(cancellationToken);
+        }, cancellationToken);
     }
 }
