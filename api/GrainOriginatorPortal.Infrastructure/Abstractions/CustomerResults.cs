@@ -17,13 +17,16 @@ public enum DeactivateTradeUnitResult
 }
 
 /// <summary>
-/// Layer-neutral projection of a producer's active trade-unit membership. The Api layer maps this
-/// onto its CustomerTradeUnitInfo response DTO. <see cref="HasOpenActivity"/> defaults true so a
-/// membership whose activity can't be determined is treated as locked (never wrongly offered for removal).
+/// Layer-neutral projection of a producer's trade-unit membership. The Api layer maps this onto its
+/// CustomerTradeUnitInfo response DTO. <see cref="HasOpenActivity"/> defaults true so a membership whose
+/// activity can't be determined is treated as locked (never wrongly offered for removal).
+/// <see cref="IsActive"/> distinguishes current memberships from previously-removed ones (the dialog
+/// offers the removed ones as re-addable suggestions); defaults true for back-compat.
 /// </summary>
 public record CustomerTradeUnitMembership
 {
     public string TradeUnit { get; set; } = string.Empty;
     public bool IsManual { get; set; }
     public bool HasOpenActivity { get; set; } = true;
+    public bool IsActive { get; set; } = true;
 }

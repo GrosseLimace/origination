@@ -23,6 +23,9 @@ public class CustomerSyncService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<CustomerSyncService> _logger;
 
+    // Audit author for every sync-driven CustomerTradeUnit write (manual app actions stamp a user UPN).
+    private const string SyncActor = "system";
+
     public CustomerSyncService(IServiceScopeFactory scopeFactory, ILogger<CustomerSyncService> logger)
     {
         _scopeFactory = scopeFactory;
@@ -34,6 +37,8 @@ public class CustomerSyncService
         var sw = Stopwatch.StartNew();
         var phase = Stopwatch.StartNew();
         var result = new CustomerSyncResult();
+        // One timestamp for every CustomerTradeUnit row this run touches, so a run's audit stamps are consistent.
+        var syncTime = DateTime.UtcNow;
 
         using var scope = _scopeFactory.CreateScope();
         var repo = scope.ServiceProvider.GetRequiredService<ICustomerSyncRepository>();
@@ -155,7 +160,12 @@ public class CustomerSyncService
                     existing.IsManual = false;
                     changed = true;
                 }
-                if (changed) result.TradeUnitsUpdated++;
+                if (changed)
+                {
+                    existing.ModifiedAt = syncTime;
+                    existing.ModifiedBy = SyncActor;
+                    result.TradeUnitsUpdated++;
+                }
             }
             else
             {
@@ -163,7 +173,9 @@ public class CustomerSyncService
                 {
                     CustomerId = customerId,
                     TradeUnit  = tradeUnit,
-                    IsActive   = odsRow.IsActive
+                    IsActive   = odsRow.IsActive,
+                    CreatedAt  = syncTime,
+                    CreatedBy  = SyncActor
                 });
                 result.TradeUnitsInserted++;
             }
@@ -178,6 +190,8 @@ public class CustomerSyncService
             if (!odsTradeUnitsByKey.ContainsKey(key) && existing.IsActive && !existing.IsManual)
             {
                 existing.IsActive = false;
+                existing.ModifiedAt = syncTime;
+                existing.ModifiedBy = SyncActor;
                 result.TradeUnitsDeactivated++;
             }
         }
@@ -270,6 +284,8 @@ public class CustomerSyncService
                     row.UserDeactivated = false;
                     row.IsActive = true;
                     row.IsManual = false;
+                    row.ModifiedAt = syncTime;
+                    row.ModifiedBy = SyncActor;
                     result.TradeUnitsBroughtBack++;
                 }
             }

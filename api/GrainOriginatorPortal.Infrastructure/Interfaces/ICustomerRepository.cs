@@ -19,10 +19,10 @@ public interface ICustomerRepository
     Task<Customer?> GetByScoularIdAsync(string scoularId, CancellationToken cancellationToken);
     Task<List<Customer>> GetLinkedToAsync(string scoularId, CancellationToken cancellationToken);
     Task UpdateAsync(long customerId, string location, string phone, string email, List<string> farmIds, List<string> linkedProducerIds, CancellationToken cancellationToken);
-    Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, CancellationToken cancellationToken);
+    Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, string currentUser, CancellationToken cancellationToken);
     Task<List<CustomerTradeUnitMembership>> GetTradeUnitsAsync(long customerId, CancellationToken cancellationToken);
     Task<HashSet<string>> GetOpenActivityTradeUnitsAsync(string scoularId, CancellationToken cancellationToken);
-    Task<DeactivateTradeUnitResult> DeactivateDormantTradeUnitAsync(long customerId, string tradeUnit, CancellationToken cancellationToken);
+    Task<DeactivateTradeUnitResult> DeactivateDormantTradeUnitAsync(long customerId, string tradeUnit, string currentUser, CancellationToken cancellationToken);
 
     /// <summary>Active customer IDs that belong to any of the given trade units — used by services
     /// to scope list results to the caller's entitled trade units.</summary>

@@ -498,7 +498,7 @@ public class CustomerRepository : ICustomerRepository
         _logger.LogInformation("UpdateCustomerAsync called for {CustomerId} — no-op (write path lives on ProducerDetails).", customerId);
     }
 
-    public async Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, CancellationToken cancellationToken)
+    public async Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, string currentUser, CancellationToken cancellationToken)
     {
         // Normalize: trim, drop blanks, de-dupe (case-insensitive).
         var codes = tradeUnitCodes
@@ -506,6 +506,9 @@ public class CustomerRepository : ICustomerRepository
             .Where(c => c.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+        // Audit: this is a manual user action, so stamp the acting user's UPN (not "system").
+        var now = DateTime.UtcNow;
 
         // Ensure the customer exists in dbo.Customer — insert from ODS if this is a
         // brand-new onboarding (producer with no contract/ticket).
@@ -567,6 +570,8 @@ public class CustomerRepository : ICustomerRepository
                     // removal" the user just undid. (Covers: dormant-remove a sync TU, then manually
                     // re-add the same code.)
                     existingTu.UserDeactivated = false;
+                    existingTu.ModifiedAt = now;
+                    existingTu.ModifiedBy = currentUser;
                 }
             }
             else
@@ -577,6 +582,8 @@ public class CustomerRepository : ICustomerRepository
                     TradeUnit  = code,
                     IsActive   = true,
                     IsManual   = true,
+                    CreatedAt  = now,
+                    CreatedBy  = currentUser,
                 });
             }
         }
@@ -590,6 +597,8 @@ public class CustomerRepository : ICustomerRepository
             if (existing.IsManual && existing.IsActive && !desired.Contains(existing.TradeUnit))
             {
                 existing.IsActive = false;
+                existing.ModifiedAt = now;
+                existing.ModifiedBy = currentUser;
                 deactivated++;
             }
         }
@@ -602,12 +611,15 @@ public class CustomerRepository : ICustomerRepository
 
     public async Task<List<CustomerTradeUnitMembership>> GetTradeUnitsAsync(long customerId, CancellationToken cancellationToken)
     {
-        // Active memberships (unchanged from before — this part is identical to the original query).
+        // All memberships for this producer — active AND previously-removed (soft-deactivated). The
+        // dialog shows active ones as chips; inactive ones are offered as re-addable suggestions so a
+        // user can undo a removal even for a TU that isn't in the entitlements catalog. (There's at
+        // most one row per (CustomerId, TradeUnit), so a code is either active or inactive, not both.)
         var memberships = await _appContext.CustomerTradeUnits
             .AsNoTracking()
-            .Where(t => t.CustomerId == customerId && t.IsActive)
+            .Where(t => t.CustomerId == customerId)
             .OrderBy(t => t.TradeUnit)
-            .Select(t => new CustomerTradeUnitMembership { TradeUnit = t.TradeUnit, IsManual = t.IsManual })
+            .Select(t => new CustomerTradeUnitMembership { TradeUnit = t.TradeUnit, IsManual = t.IsManual, IsActive = t.IsActive })
             .ToListAsync(cancellationToken);
 
         if (memberships.Count == 0) return memberships;
@@ -692,7 +704,7 @@ public class CustomerRepository : ICustomerRepository
         return openTus;
     }
 
-    public async Task<DeactivateTradeUnitResult> DeactivateDormantTradeUnitAsync(long customerId, string tradeUnit, CancellationToken cancellationToken)
+    public async Task<DeactivateTradeUnitResult> DeactivateDormantTradeUnitAsync(long customerId, string tradeUnit, string currentUser, CancellationToken cancellationToken)
     {
         var code = (tradeUnit ?? string.Empty).Trim();
         if (code.Length == 0) return DeactivateTradeUnitResult.NotFound;
@@ -716,8 +728,11 @@ public class CustomerRepository : ICustomerRepository
             return DeactivateTradeUnitResult.StillActive;
 
         // Dormant → remove. UserDeactivated is the signal the sync honors (see CustomerSyncService).
+        // Manual user action → stamp the acting user's UPN.
         row.IsActive = false;
         row.UserDeactivated = true;
+        row.ModifiedAt = DateTime.UtcNow;
+        row.ModifiedBy = currentUser;
         await _appContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(

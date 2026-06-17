@@ -49,5 +49,6 @@ public static class CustomerMappings
         TradeUnit = m.TradeUnit,
         IsManual = m.IsManual,
         HasOpenActivity = m.HasOpenActivity,
+        IsActive = m.IsActive,
     };
 }

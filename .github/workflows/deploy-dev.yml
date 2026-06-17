@@ -1,12 +1,8 @@
 name: Originations Deploy to DEV
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - 'developer-docs/**'
-      - 'style-guides/**'
-      - '*.md'
+  # Manual-only, matching QA and Prod. Merging to main no longer auto-deploys to Dev;
+  # trigger this deployment explicitly from the Actions tab (Run workflow).
   workflow_dispatch:
 
 jobs:

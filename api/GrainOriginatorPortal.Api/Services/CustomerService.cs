@@ -11,11 +11,13 @@ namespace GrainOriginatorPortal.Api.Services;
 public class CustomerService : ICustomerService
 {
     private readonly ICustomerRepository _repository;
+    private readonly IRequestContextService _requestContext;
     private readonly ILogger<CustomerService> _logger;
 
-    public CustomerService(ICustomerRepository repository, ILogger<CustomerService> logger)
+    public CustomerService(ICustomerRepository repository, IRequestContextService requestContext, ILogger<CustomerService> logger)
     {
         _repository = repository;
+        _requestContext = requestContext;
         _logger = logger;
     }
 
@@ -71,11 +73,11 @@ public class CustomerService : ICustomerService
 
     /// <inheritdoc />
     public Task<AssignTradeUnitsResult> AssignTradeUnitsAsync(long customerId, List<string> tradeUnitCodes, CancellationToken cancellationToken) =>
-        _repository.AssignTradeUnitsAsync(customerId, tradeUnitCodes, cancellationToken);
+        _repository.AssignTradeUnitsAsync(customerId, tradeUnitCodes, _requestContext.GetCurrentUser(), cancellationToken);
 
     /// <inheritdoc />
     public Task<DeactivateTradeUnitResult> DeactivateDormantTradeUnitAsync(long customerId, string tradeUnit, CancellationToken cancellationToken) =>
-        _repository.DeactivateDormantTradeUnitAsync(customerId, tradeUnit, cancellationToken);
+        _repository.DeactivateDormantTradeUnitAsync(customerId, tradeUnit, _requestContext.GetCurrentUser(), cancellationToken);
 
     /// <summary>
     /// Runs a customer list fetch and maps to DTOs, degrading to an empty list on a database error

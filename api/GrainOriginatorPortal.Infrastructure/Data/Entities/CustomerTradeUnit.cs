@@ -42,6 +42,16 @@ public class CustomerTradeUnit
     // feature, revert the branch; leaving this unused column in the DB is harmless.
     public bool UserDeactivated { get; set; }
 
+    // Audit columns — match the convention used across the app's writable tables (Notes,
+    // ProducerDetails, Dashboard*, etc.). Authorship distinguishes machine vs. human writes:
+    // the nightly CustomerSync stamps "system"; manual onboarding / dormant-removal stamp the
+    // acting user's UPN. CreatedAt/CreatedBy are set on insert; ModifiedAt/ModifiedBy on every
+    // subsequent change. (Existing rows were backfilled when the columns were added.)
+    public DateTime CreatedAt { get; set; }
+    public string CreatedBy { get; set; } = string.Empty;
+    public DateTime? ModifiedAt { get; set; }
+    public string? ModifiedBy { get; set; }
+
     // Navigation property — not always loaded; explicit Include() required.
     public Customer? Customer { get; set; }
 }
