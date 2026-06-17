@@ -1,0 +1,81 @@
+name: CI
+
+# Pull-request gate (style-guides/automated-testing.md §13): runs the fast tiers —
+# static build + frontend unit/component (Vitest) + backend unit (xUnit) — on every PR
+# to main. SQL-backed integration tests (Category=Integration) and Playwright E2E are
+# NOT run here; they live in their own lanes (see e2e.yml / the deferred integration lane).
+# This workflow does not touch Azure, so it needs no OIDC.
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - 'developer-docs/**'
+      - 'style-guides/**'
+      - '*.md'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: self-hosted
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history so the (report-only) diff-coverage step can compare against origin/main.
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+
+      - name: Install Angular dependencies
+        run: npm ci
+        working-directory: client
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Frontend unit + component tests (Vitest)
+        run: npm run test:coverage
+        working-directory: client
+
+      - name: Frontend build
+        run: npx ng build --configuration development
+        working-directory: client
+
+      - name: Restore .NET solution
+        run: dotnet restore GrainOriginatorPortal.sln --locked-mode
+
+      - name: Build .NET solution
+        run: dotnet build GrainOriginatorPortal.sln -c Release --no-restore
+
+      - name: Backend unit tests (xUnit)
+        # Integration tests (when added) carry [Trait("Category","Integration")] and run in a
+        # separate DB-backed lane, never on the per-PR gate.
+        run: >
+          dotnet test GrainOriginatorPortal.sln -c Release --no-build
+          --filter "Category!=Integration"
+          --collect:"XPlat Code Coverage"
+          --results-directory TestResults
+
+      - name: Publish coverage reports (report-only)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            client/coverage/
+            TestResults/**/coverage.cobertura.xml
+          if-no-files-found: ignore
+
+      # Coverage is REPORTED, not yet enforced (per the approved plan). Vitest prints a
+      # frontend summary above; the backend Cobertura report is uploaded as an artifact.
+      # TODO: once both suites have a baseline, add a diff-coverage step (e.g. `diff-cover`)
+      # with `--fail-under 80` to enforce the §4 floor on changed lines.
