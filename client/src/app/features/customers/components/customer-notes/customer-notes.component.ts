@@ -1,9 +1,20 @@
-import { Component, input, output, effect, DestroyRef, inject, ChangeDetectionStrategy, signal } from '@angular/core';
+import { Component, input, output, effect, DestroyRef, inject, ChangeDetectionStrategy, signal, computed, viewChild, ElementRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { ToastService } from '@core/services/toast.service';
-import { Customer, Note } from '@models';
+import { ApiService } from '@core/services/api.service';
+import { Customer, Note, NoteMention, MentionCatalog } from '@models';
+
+/** A single selectable row in the "@" mention dropdown. */
+interface MentionOption {
+  type: NoteMention['type'];
+  id: string;
+  name: string;
+  email?: string;
+  secondary?: string;
+}
 
 @Component({
   selector: 'app-customer-notes',
@@ -30,15 +41,44 @@ export class CustomerNotesComponent {
   /** When set, the add-note form is disabled and this message is shown instead of the
    *  input — used for a not-yet-onboarded producer who must be assigned a trade unit first. */
   public addDisabledReason = input<string | null>(null);
-  public addNote = output<string>();
+  public addNote = output<{ content: string; mentions: NoteMention[] }>();
   public togglePin = output<Note>();
   public editNote = output<{ noteId: number; content: string }>();
   public deleteNote = output<number>();
 
   private readonly destroyRef = inject(DestroyRef);
   private readonly toastService = inject(ToastService);
+  private readonly apiService = inject(ApiService);
 
   newNote = signal('');
+
+  // ---- "@" mention picker state ----
+  noteTextarea = viewChild<ElementRef<HTMLTextAreaElement>>('noteTextarea');
+  mentionCatalog = signal<MentionCatalog>({ people: [], tradeUnits: [], groups: [] });
+  /** Structured mentions chosen for the note being composed; sent to the API on submit. */
+  mentions = signal<NoteMention[]>([]);
+  mentionDropdownOpen = signal(false);
+  mentionQuery = signal('');
+  mentionActiveIndex = signal(0);
+  private mentionAtIndex = -1;  // index of the triggering '@' in the textarea value
+  private mentionCaret = 0;     // caret position when the query was captured
+
+  /** Catalog rows filtered by the current "@" query, capped for the dropdown. */
+  mentionOptions = computed<MentionOption[]>(() => {
+    if (!this.mentionDropdownOpen()) return [];
+    const q = this.mentionQuery().toLowerCase();
+    const cat = this.mentionCatalog();
+    const people: MentionOption[] = cat.people
+      .filter(p => !q || p.displayName.toLowerCase().includes(q) || p.userId.toLowerCase().includes(q))
+      .map(p => ({ type: 'person', id: p.userId, name: p.displayName, email: p.email, secondary: p.email }));
+    const tus: MentionOption[] = cat.tradeUnits
+      .filter(t => !q || t.code.toLowerCase().includes(q) || (t.description ?? '').toLowerCase().includes(q))
+      .map(t => ({ type: 'trade-unit', id: t.code, name: t.code, secondary: t.description || 'Trade unit' }));
+    const groups: MentionOption[] = cat.groups
+      .filter(g => !q || g.name.toLowerCase().includes(q))
+      .map(g => ({ type: 'trade-unit-group', id: String(g.groupId), name: g.name, secondary: 'Group' }));
+    return [...people, ...tus, ...groups].slice(0, 8);
+  });
   openMenuId = signal<number | null>(null);
   editingNoteId = signal<number | null>(null);
   editContent = signal('');
@@ -50,6 +90,11 @@ export class CustomerNotesComponent {
   sortedNotesCache = signal<Note[]>([]);
 
   constructor() {
+    // Load the "@" mention catalog once (per-user, not per-customer).
+    this.apiService.getMentionCatalog()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(c => this.mentionCatalog.set(c));
+
     effect(() => {
       const _notes = this.notes();
       this._updateSortedNotesCache();
@@ -71,6 +116,8 @@ export class CustomerNotesComponent {
       const current = this.noteSaveSucceededCounter();
       if (current > lastSeenSuccessCount) {
         this.newNote.set('');
+        this.mentions.set([]);
+        this.closeMentionDropdown();
       }
       lastSeenSuccessCount = current;
     });
@@ -174,11 +221,88 @@ export class CustomerNotesComponent {
       this.toastService.error('Note exceeds 5,000 character limit. Please shorten it before submitting.');
       return;
     }
-    this.addNote.emit(text);
+    // Only keep mentions whose "@Name" is still present in the note text — so a mention the
+    // user deleted from the text isn't sent. The text is the source of truth; mentions are
+    // tracked silently (no visible chips) for the future send endpoint.
+    const mentions = this.mentions().filter(m => text.includes('@' + m.name));
+    this.addNote.emit({ content: text, mentions });
     // Don't clear the textarea here — wait for the parent to report success
     // (noteSaveSucceededCounter increments). If the save fails, the user's text
     // stays intact so they can retry without retyping.
   }
+
+  // ---- "@" mention picker ----
+
+  /** Recompute the mention dropdown from the caret position. Fires on input/keyup/click. */
+  onNoteCaretChange(): void {
+    const ta = this.noteTextarea()?.nativeElement;
+    if (!ta) return;
+    const value = ta.value;
+    const pos = ta.selectionStart ?? value.length;
+    // Active mention = an "@" at a word boundary, followed by at least one non-space char,
+    // ending at the caret. The "+" means a bare "@" shows nothing until the user types a letter.
+    const match = value.slice(0, pos).match(/(?:^|\s)@([^\s@]+)$/);
+    if (match) {
+      this.mentionAtIndex = pos - match[1].length - 1;
+      this.mentionCaret = pos;
+      this.mentionQuery.set(match[1]);
+      this.mentionActiveIndex.set(0);
+      this.mentionDropdownOpen.set(true);
+    } else {
+      this.closeMentionDropdown();
+    }
+  }
+
+  /** Arrow/Enter/Escape navigation while the dropdown is open. */
+  onNoteKeydown(event: KeyboardEvent): void {
+    if (!this.mentionDropdownOpen()) return;
+    const opts = this.mentionOptions();
+    if (opts.length === 0) return;
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      this.mentionActiveIndex.update(i => (i + 1) % opts.length);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      this.mentionActiveIndex.update(i => (i - 1 + opts.length) % opts.length);
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      this.selectMention(opts[this.mentionActiveIndex()]);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      this.closeMentionDropdown();
+    }
+  }
+
+  /** Insert the chosen mention into the text and record it structurally. */
+  selectMention(opt: MentionOption): void {
+    if (this.mentionAtIndex < 0) return;
+    const value = this.newNote();
+    const before = value.slice(0, this.mentionAtIndex);
+    const after = value.slice(this.mentionCaret);
+    const insert = `@${opt.name} `;
+    this.newNote.set(before + insert + after);
+    // Dedupe by type+id — the same person/TU/group is only sent once even if @-ed twice.
+    this.mentions.update(list =>
+      list.some(x => x.type === opt.type && x.id === opt.id)
+        ? list
+        : [...list, { type: opt.type, id: opt.id, name: opt.name, email: opt.email }]);
+    this.closeMentionDropdown();
+    const caretPos = (before + insert).length;
+    setTimeout(() => {
+      const ta = this.noteTextarea()?.nativeElement;
+      if (ta) {
+        ta.focus();
+        ta.setSelectionRange(caretPos, caretPos);
+      }
+    });
+  }
+
+  closeMentionDropdown(): void {
+    this.mentionDropdownOpen.set(false);
+    this.mentionQuery.set('');
+    this.mentionAtIndex = -1;
+  }
+
 
   toggleMenu(noteId: number, event: Event) {
     event.stopPropagation();

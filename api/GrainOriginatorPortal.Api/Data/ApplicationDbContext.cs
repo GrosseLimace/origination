@@ -87,11 +87,14 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(200).IsRequired(false);
             entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
             entity.Property(e => e.IsPinned).HasColumnName("IsPinned").HasDefaultValue(false).IsRequired();
+            entity.Property(e => e.Subject).HasColumnName("Subject").HasMaxLength(500).IsRequired(false);
+            entity.Property(e => e.MentionsJson).HasColumnName("Mentions").HasColumnType("nvarchar(max)").IsRequired(false);
             entity.Property(e => e.IsDeleted).HasColumnName("IsDeleted").HasDefaultValue(false).IsRequired();
             entity.Property(e => e.DeletedAt).HasColumnName("DeletedAt").IsRequired(false);
             entity.Property(e => e.DeletedBy).HasColumnName("DeletedBy").HasMaxLength(200).IsRequired(false);
 
             entity.Ignore(e => e.Content);
+            entity.Ignore(e => e.Mentions);
 
             // FK to dbo.Customer — NoAction so cascading deletes from Customer don't
             // wipe user-authored notes. The populate endpoint disables this constraint

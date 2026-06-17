@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Caching.Memory;
@@ -2981,7 +2982,7 @@ public class SqlDataService : IDataService
         return note;
     }
 
-    public async Task<Note> AddNoteAsync(long customerId, string content, string? tradeUnit = null, CancellationToken cancellationToken = default)
+    public async Task<Note> AddNoteAsync(long customerId, string content, string? tradeUnit = null, IReadOnlyList<NoteMention>? mentions = null, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -2998,6 +2999,7 @@ public class SqlDataService : IDataService
                 CustomerCode = snap?.ScoularId,
                 TradeUnit = tradeUnit,
                 Description = content,
+                MentionsJson = mentions is { Count: > 0 } ? JsonSerializer.Serialize(mentions) : null,
                 CreatedBy = GetCurrentUser(),
                 CreatedAt = DateTime.UtcNow
             };
@@ -3052,7 +3054,7 @@ public class SqlDataService : IDataService
         }
     }
 
-    public async Task<Note?> UpdateNoteAsync(long noteId, string content, CancellationToken cancellationToken = default)
+    public async Task<Note?> UpdateNoteAsync(long noteId, string content, IReadOnlyList<NoteMention>? mentions = null, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -3065,6 +3067,10 @@ public class SqlDataService : IDataService
             }
 
             note.Description = content;
+            // null mentions = "leave existing mentions unchanged" (content-only edit); a non-null
+            // list replaces them (empty list clears). Prevents a plain text edit from wiping mentions.
+            if (mentions != null)
+                note.MentionsJson = mentions.Count > 0 ? JsonSerializer.Serialize(mentions) : null;
             note.ModifiedBy = GetCurrentUser();
             note.ModifiedAt = DateTime.UtcNow;
             await _appContext.SaveChangesAsync(cancellationToken);

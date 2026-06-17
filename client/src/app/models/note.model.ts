@@ -1,3 +1,5 @@
+import { NoteMention } from './note-mention.model';
+
 export interface Note {
   id: number;
   customerId: number;
@@ -10,4 +12,5 @@ export interface Note {
   createdAt: Date;
   modifiedBy?: string;
   modifiedAt?: Date;
+  mentions?: NoteMention[];
 }

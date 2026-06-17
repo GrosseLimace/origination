@@ -16,13 +16,15 @@ public class NotesController : ControllerBase
     private readonly ILogger<NotesController> _logger;
     private readonly IUserEntitlementService _entitlementService;
     private readonly ApplicationDbContext _appContext;
+    private readonly EntitlementsDbContext _entitlementsDb;
 
-    public NotesController(IDataService dataService, ILogger<NotesController> logger, IUserEntitlementService entitlementService, ApplicationDbContext appContext)
+    public NotesController(IDataService dataService, ILogger<NotesController> logger, IUserEntitlementService entitlementService, ApplicationDbContext appContext, EntitlementsDbContext entitlementsDb)
     {
         _dataService = dataService;
         _logger = logger;
         _entitlementService = entitlementService;
         _appContext = appContext;
+        _entitlementsDb = entitlementsDb;
     }
 
     // -------------------------------------------------------------------------
@@ -52,6 +54,85 @@ public class NotesController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
+    /// <summary>
+    /// Lookup data for the "@" mention picker — people, trade units, and groups the caller
+    /// can mention, scoped to the caller's trade-unit access (vw_UserTradeUnitAccess). Returns
+    /// empty lists if the Entitlements DB is unavailable so the picker degrades gracefully.
+    /// </summary>
+    [HttpGet("mention-catalog")]
+    [ProducesResponseType(typeof(MentionCatalogResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<MentionCatalogResponse>> GetMentionCatalog(CancellationToken cancellationToken = default)
+    {
+        // Derive the caller's UserId from the UPN claim (e.g. CEgr@scoular.com → CEgr),
+        // matching how vw_UserTradeUnitAccess.UserId is stored.
+        var upn = User.FindFirst("preferred_username")?.Value
+            ?? User.FindFirst("upn")?.Value
+            ?? User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn")?.Value
+            ?? User.Identity?.Name
+            ?? string.Empty;
+        var userId = upn.Contains('@') ? upn.Split('@')[0] : upn;
+
+        var response = new MentionCatalogResponse();
+        if (string.IsNullOrWhiteSpace(userId))
+            return Ok(response);
+
+        try
+        {
+            // The caller's own trade-unit assignments (gives their TU codes + group memberships).
+            var callerRows = await _entitlementsDb.UserTradeUnitAccess
+                .Where(u => u.UserId == userId)
+                .Select(u => new { u.TradeUnitCode, u.Description, u.GroupId, u.GroupName })
+                .ToListAsync(cancellationToken);
+
+            var callerTuCodes = callerRows.Select(r => r.TradeUnitCode).Distinct().ToList();
+            if (callerTuCodes.Count == 0)
+                return Ok(response);
+
+            // People who share at least one of the caller's trade units (excluding the caller).
+            var peopleRows = await _entitlementsDb.UserTradeUnitAccess
+                .Where(u => callerTuCodes.Contains(u.TradeUnitCode) && u.UserId != userId)
+                .Select(u => new { u.UserId, u.DisplayName })
+                .Distinct()
+                .ToListAsync(cancellationToken);
+
+            response.People = peopleRows
+                .GroupBy(p => p.UserId)
+                .Select(g => new MentionCatalogPerson
+                {
+                    UserId = g.Key,
+                    DisplayName = g.Select(x => x.DisplayName).FirstOrDefault(d => !string.IsNullOrWhiteSpace(d)) ?? g.Key,
+                    Email = g.Key.Contains('@') ? g.Key : $"{g.Key}@scoular.com"
+                })
+                .OrderBy(p => p.DisplayName)
+                .ToList();
+
+            response.TradeUnits = callerRows
+                .GroupBy(r => r.TradeUnitCode)
+                .Select(g => new MentionCatalogTradeUnit
+                {
+                    Code = g.Key,
+                    Description = g.Select(x => x.Description).FirstOrDefault(d => !string.IsNullOrWhiteSpace(d))
+                })
+                .OrderBy(t => t.Code)
+                .ToList();
+
+            response.Groups = callerRows
+                .Where(r => r.GroupId != null && !string.IsNullOrWhiteSpace(r.GroupName))
+                .GroupBy(r => r.GroupId!.Value)
+                .Select(g => new MentionCatalogGroup { GroupId = g.Key, Name = g.Select(x => x.GroupName!).First() })
+                .OrderBy(g => g.Name)
+                .ToList();
+
+            return Ok(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Mention catalog: Entitlements DB unavailable for user {UserId} — returning empty catalog", userId);
+            return Ok(response);
+        }
+    }
+
+    // -------------------------------------------------------------------------
     /// <summary>Creates a new note for a customer.</summary>
     [HttpPost]
     [ProducesResponseType(typeof(Note), StatusCodes.Status201Created)]
@@ -71,7 +152,7 @@ public class NotesController : ControllerBase
 
         try
         {
-            var note = await _dataService.AddNoteAsync(request.CustomerId, request.Content, tradeUnit, cancellationToken);
+            var note = await _dataService.AddNoteAsync(request.CustomerId, request.Content, tradeUnit, request.Mentions, cancellationToken);
             _logger.LogInformation(
                 "Note created [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}, CustomerId={CustomerId}",
                 "AUDIT_CREATE", "DataMutation", note.Id, request.CustomerId);
@@ -117,7 +198,7 @@ public class NotesController : ControllerBase
         // Trade units are a UX filter, not an access boundary — any rep may edit any note.
         _ = await _dataService.GetNoteByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("Note", id);
-        var note = await _dataService.UpdateNoteAsync(id, request.Content, cancellationToken)
+        var note = await _dataService.UpdateNoteAsync(id, request.Content, request.Mentions, cancellationToken)
             ?? throw new NotFoundException("Note", id);
         _logger.LogInformation(
             "Note updated [{ErrorCode}] [{ErrorCategory}]: NoteId={NoteId}",

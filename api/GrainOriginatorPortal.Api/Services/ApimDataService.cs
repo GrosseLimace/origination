@@ -170,13 +170,13 @@ public class ApimDataService : IDataService
     public Task<List<Note>> GetNotesByCustomerAsync(long customerId, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Confirm Notes approach with APIM team");
 
-    public Task<Note> AddNoteAsync(long customerId, string content, string? tradeUnit = null, CancellationToken cancellationToken = default)
+    public Task<Note> AddNoteAsync(long customerId, string content, string? tradeUnit = null, IReadOnlyList<NoteMention>? mentions = null, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Confirm Notes approach with APIM team");
 
     public Task<Note?> ToggleNotePinAsync(long noteId, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Confirm Notes approach with APIM team");
 
-    public Task<Note?> UpdateNoteAsync(long noteId, string content, CancellationToken cancellationToken = default)
+    public Task<Note?> UpdateNoteAsync(long noteId, string content, IReadOnlyList<NoteMention>? mentions = null, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Confirm Notes approach with APIM team");
 
     public Task DeleteNoteAsync(long noteId, CancellationToken cancellationToken = default)

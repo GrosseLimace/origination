@@ -252,9 +252,10 @@ public interface IDataService
     /// <param name="customerId">The customer's unique identifier.</param>
     /// <param name="content">The note text content.</param>
     /// <param name="tradeUnit">Optional trade unit association.</param>
+    /// <param name="mentions">Optional "@" mentions to persist with the note.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The newly created note.</returns>
-    Task<Note> AddNoteAsync(long customerId, string content, string? tradeUnit = null, CancellationToken cancellationToken = default);
+    Task<Note> AddNoteAsync(long customerId, string content, string? tradeUnit = null, IReadOnlyList<NoteMention>? mentions = null, CancellationToken cancellationToken = default);
 
     /// <summary>Toggles the pinned state of a note.</summary>
     /// <param name="noteId">The note's unique identifier.</param>
@@ -265,9 +266,10 @@ public interface IDataService
     /// <summary>Updates the text content of an existing note.</summary>
     /// <param name="noteId">The note's unique identifier.</param>
     /// <param name="content">The new note text content.</param>
+    /// <param name="mentions">Optional "@" mentions to persist; replaces any existing mentions.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The updated note if found; otherwise, null.</returns>
-    Task<Note?> UpdateNoteAsync(long noteId, string content, CancellationToken cancellationToken = default);
+    Task<Note?> UpdateNoteAsync(long noteId, string content, IReadOnlyList<NoteMention>? mentions = null, CancellationToken cancellationToken = default);
 
     /// <summary>Deletes a note by its identifier.</summary>
     /// <param name="noteId">The note's unique identifier.</param>

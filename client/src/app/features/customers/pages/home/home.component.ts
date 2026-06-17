@@ -9,7 +9,7 @@ import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity, NoteMention } from '@models';
 import { CustomerListComponent } from '../../components/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customer-profile/customer-profile.component';
 import { CustomerNotesComponent } from '../../components/customer-notes/customer-notes.component';
@@ -1582,7 +1582,8 @@ export class HomeComponent {
    *  fails, the user's typed content survives and they can retry. */
   readonly noteSaveSucceededCounter = signal(0);
 
-  addNote(content: string): void {
+  addNote(payload: { content: string; mentions: NoteMention[] }): void {
+    const { content, mentions } = payload;
     const sel = this.selectedCustomer();
     if (!sel) return;
     // Not-yet-onboarded producer: there's no dbo.Customer row for a note to attach to
@@ -1596,7 +1597,7 @@ export class HomeComponent {
     if (this.isSavingNote()) return;
     const tradeUnit = this.selectedTradeUnits().length === 1 ? this.selectedTradeUnits()[0] : undefined;
     this.isSavingNote.set(true);
-    this.apiService.createNote(sel.id, content, tradeUnit).subscribe({
+    this.apiService.createNote(sel.id, content, tradeUnit, mentions).subscribe({
       next: (note) => {
         this.notes.update(arr => [...arr, note]);
         this.appState.setNotes(this.notes());

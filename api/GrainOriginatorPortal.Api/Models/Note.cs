@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace GrainOriginatorPortal.Api.Models;
@@ -20,6 +21,10 @@ public class Note
     public DateTime? ModifiedAt { get; set; }
     public bool IsPinned { get; set; }
 
+    // Future-use column. Added to the schema now so it's ready; the application does not
+    // yet read or write it.
+    public string? Subject { get; set; }
+
     // Soft-delete fields. Notes are never hard-deleted so a record can be recovered.
     // Reads filter on IsDeleted = false; the row stays in the table with DeletedAt/DeletedBy
     // populated for audit + restoration.
@@ -29,6 +34,19 @@ public class Note
 
     // Computed alias for frontend compatibility
     public string Content => Description;
+
+    // Backs the Notes.Mentions column (nvarchar(max)) — the raw JSON array of NoteMention.
+    // [JsonIgnore] keeps the raw string out of API responses; the structured Mentions
+    // property below is what the client sees, mirroring the Description -> Content pattern.
+    [JsonIgnore]
+    public string? MentionsJson { get; set; }
+
+    // Structured, API-facing view of the "@" mentions. EF ignores this (see ApplicationDbContext);
+    // it (de)serializes MentionsJson on demand.
+    public IReadOnlyList<NoteMention> Mentions =>
+        string.IsNullOrEmpty(MentionsJson)
+            ? []
+            : JsonSerializer.Deserialize<List<NoteMention>>(MentionsJson) ?? [];
 
     // Navigation property — FK to dbo.Customer. Populated via Include() so the
     // service layer can copy CustomerName / CustomerCode onto the DTO without

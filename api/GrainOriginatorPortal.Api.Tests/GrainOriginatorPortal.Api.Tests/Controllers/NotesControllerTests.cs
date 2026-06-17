@@ -34,7 +34,11 @@ public class NotesControllerTests
             .UseInMemoryDatabase(databaseName: $"NotesTest_{Guid.NewGuid()}")
             .Options;
         var appContext = new ApplicationDbContext(options);
-        _sut = new NotesController(_dataServiceMock.Object, new Mock<ILogger<NotesController>>().Object, _entitlementServiceMock.Object, appContext);
+        var entitlementsOptions = new DbContextOptionsBuilder<EntitlementsDbContext>()
+            .UseInMemoryDatabase(databaseName: $"NotesEntTest_{Guid.NewGuid()}")
+            .Options;
+        var entitlementsContext = new EntitlementsDbContext(entitlementsOptions);
+        _sut = new NotesController(_dataServiceMock.Object, new Mock<ILogger<NotesController>>().Object, _entitlementServiceMock.Object, appContext, entitlementsContext);
     }
 
     // -------------------------------------------------------------------------
@@ -110,7 +114,7 @@ public class NotesControllerTests
         // Arrange
         var note = new Note { Id = 3, CustomerId = 1, Description = "Updated content" };
         _dataServiceMock.Setup(s => s.GetNoteByIdAsync(3, It.IsAny<CancellationToken>())).ReturnsAsync(note);
-        _dataServiceMock.Setup(s => s.UpdateNoteAsync(3, "Updated content", It.IsAny<CancellationToken>())).ReturnsAsync(note);
+        _dataServiceMock.Setup(s => s.UpdateNoteAsync(3, "Updated content", It.IsAny<IReadOnlyList<NoteMention>?>(), It.IsAny<CancellationToken>())).ReturnsAsync(note);
         var request = new UpdateNoteRequest { Content = "Updated content" };
 
         // Act
@@ -126,7 +130,7 @@ public class NotesControllerTests
     public async Task Update_WhenNoteNotFound_ThrowsNotFoundException()
     {
         // Arrange
-        _dataServiceMock.Setup(s => s.UpdateNoteAsync(99, It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((Note?)null);
+        _dataServiceMock.Setup(s => s.UpdateNoteAsync(99, It.IsAny<string>(), It.IsAny<IReadOnlyList<NoteMention>?>(), It.IsAny<CancellationToken>())).ReturnsAsync((Note?)null);
         var request = new UpdateNoteRequest { Content = "Some content" };
 
         // Act & Assert

@@ -60,7 +60,7 @@
             (onEditPlanting)="editPlantingIntention($event)"
             (onDeletePlanting)="deletePlantingIntention($event)"
             [linkedCustomers]="getLinkedGroup(customer)"
-            (onAddNote)="addNote($event)"
+            (onAddNote)="addNote({ content: $event, mentions: [] })"
             (onTogglePin)="toggleNotePin($event)"
             (onSaveCustomer)="handleSaveCustomer($event)"
             (onSelectLinkedCustomer)="handleSelectLinkedCustomer($event)"

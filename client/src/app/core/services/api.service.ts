@@ -35,7 +35,9 @@ import {
   ActivityBreakdown,
   UnderusedFeature,
   UserUsageDetail,
-  QueryLibraryItem
+  QueryLibraryItem,
+  NoteMention,
+  MentionCatalog
 } from '@models';
 import { environment } from '@env/environment';
 import { ToastService } from '@core/services/toast.service';
@@ -428,10 +430,18 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Creates a new note for a customer */
-  createNote(customerId: number, content: string, tradeUnit?: string): Observable<Note> {
-    return this.http.post<Note>(`${this.baseUrl}/notes`, { customerId, content, tradeUnit })
+  /** Creates a new note for a customer (optionally with "@" mentions) */
+  createNote(customerId: number, content: string, tradeUnit?: string, mentions?: NoteMention[]): Observable<Note> {
+    return this.http.post<Note>(`${this.baseUrl}/notes`, { customerId, content, tradeUnit, mentions })
       .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Lookup data (people / trade units / groups) for the note "@" mention picker */
+  getMentionCatalog(): Observable<MentionCatalog> {
+    return this._dedupe('mention-catalog',
+      this.http.get<MentionCatalog>(`${this.baseUrl}/notes/mention-catalog`)
+        .pipe(catchError(() => of<MentionCatalog>({ people: [], tradeUnits: [], groups: [] })))
+    );
   }
 
   /** Toggles the pinned status of a note */

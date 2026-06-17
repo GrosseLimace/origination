@@ -1029,6 +1029,10 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                         .HasDefaultValue(false)
                         .HasColumnName("IsPinned");
 
+                    b.Property<string>("MentionsJson")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("Mentions");
+
                     b.Property<DateTime?>("ModifiedAt")
                         .HasColumnType("datetime2")
                         .HasColumnName("ModifiedAt");
@@ -1037,6 +1041,11 @@ namespace GrainOriginatorPortal.Api.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)")
                         .HasColumnName("ModifiedBy");
+
+                    b.Property<string>("Subject")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("Subject");
 
                     b.Property<string>("TradeUnit")
                         .HasMaxLength(100)
