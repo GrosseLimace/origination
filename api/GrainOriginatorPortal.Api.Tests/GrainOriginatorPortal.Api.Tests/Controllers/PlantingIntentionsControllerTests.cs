@@ -27,6 +27,9 @@ public class PlantingIntentionsControllerTests
     {
         _dataServiceMock = new Mock<IDataService>();
         _entitlementServiceMock = new Mock<IUserEntitlementService>();
+        // §8 DEVIATION: the EF in-memory provider is banned for DB tests (automated-testing.md §8) —
+        // it doesn't enforce FKs/constraints/SQL semantics. Slated to move onto the real-SQL
+        // WebApplicationFactory harness in plan Phase D; only then can the InMemory package be removed.
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(databaseName: $"PlantingIntentionsTest_{Guid.NewGuid()}")
             .Options;

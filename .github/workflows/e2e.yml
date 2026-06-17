@@ -1,0 +1,50 @@
+name: E2E (Playwright)
+
+# Thin end-to-end smoke (style-guides/automated-testing.md §10/§13). Runs nightly and
+# on-demand — NOT on the per-PR gate (E2E belongs at the pre-deploy/scheduled tier). A future
+# step can wire this as a pre-deploy workflow_call from the deploy workflows against a slot.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 7 * * 1-5'  # weekday mornings (UTC)
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: self-hosted
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: client
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+        working-directory: client
+
+      - name: Run E2E smoke
+        run: npm run e2e
+        working-directory: client
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: client/playwright-report/
+          if-no-files-found: ignore
