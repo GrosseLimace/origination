@@ -24,7 +24,8 @@
       "@features/*": ["./src/app/features/*"],
       "@models": ["./src/app/models/index.ts"],
       "@models/*": ["./src/app/models/*"],
-      "@env/*": ["./src/environments/*"]
+      "@env/*": ["./src/environments/*"],
+      "@testing/*": ["./src/testing/*"]
     }
   },
   "angularCompilerOptions": {

@@ -8,6 +8,16 @@ client/node_modules/
 client/dist/
 client/.angular/
 
+# Test / coverage artifacts
+client/coverage/
+client/out-tsc/
+client/test-results/
+client/playwright-report/
+client/blob-report/
+client/.playwright/
+TestResults/
+*.log
+
 # Angular build output in API wwwroot (rebuilt fresh by CI/CD each deploy)
 api/**/wwwroot/
 
