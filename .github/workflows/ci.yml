@@ -1,4 +1,4 @@
-name: CI
+name: PR Validation
 
 # Pull-request gate (style-guides/automated-testing.md §13): runs the fast tiers —
 # static build + frontend unit/component (Vitest) + backend unit (xUnit) — on every PR
@@ -21,6 +21,13 @@ concurrency:
 
 jobs:
   build-and-test:
+    # SECURITY (self-hosted + untrusted PR code): only run for PRs from branches IN THIS REPO
+    # (block forks) or on manual dispatch. This pairs with two other controls:
+    #   1. The repo's "Require approval for all pull-request runs" Actions setting — a maintainer
+    #      reviews the diff before any PR code executes on the self-hosted runner. (Manual repo setting.)
+    #   2. NPM_TOKEN scoped to the install step, which runs `npm ci --ignore-scripts` so dependency /
+    #      package.json lifecycle scripts can't execute (or read the token) during install.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: self-hosted
     permissions:
       contents: read
@@ -37,7 +44,10 @@ jobs:
           node-version: '24.x'
 
       - name: Install Angular dependencies
-        run: npm ci
+        # --ignore-scripts: don't execute dependency/package.json lifecycle (postinstall) scripts,
+        # so untrusted PR code can't run or exfiltrate NPM_TOKEN during install. The token is scoped
+        # to THIS step only. (Browsers for E2E are installed in e2e.yml, not here.)
+        run: npm ci --ignore-scripts
         working-directory: client
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
