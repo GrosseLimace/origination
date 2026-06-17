@@ -53,10 +53,11 @@ export class EditCustomerDialogComponent {
   tuSearch = signal('');
   isLoadingTradeUnits = signal(false);
 
-  // The producer's current active memberships, loaded on open. Sync-sourced ones are shown
-  // locked; manual ones prefill selectedTuCodes (editable). tuListLoaded gates reconciliation
-  // so a failed load can never wipe manual assignments by reconciling to an empty set.
-  currentTradeUnits = signal<{ tradeUnit: string; isManual: boolean; hasOpenActivity: boolean }[]>([]);
+  // The producer's memberships, loaded on open. Includes active ones (sync-sourced shown locked;
+  // manual ones prefill selectedTuCodes) AND previously-removed ones (isActive=false), which feed
+  // the re-addable suggestions in the add-search. tuListLoaded gates reconciliation so a failed
+  // load can never wipe manual assignments by reconciling to an empty set.
+  currentTradeUnits = signal<{ tradeUnit: string; isManual: boolean; hasOpenActivity: boolean; isActive: boolean }[]>([]);
   tuListLoaded = signal(false);
   private _originalManualTuCodes: string[] = [];
 
@@ -65,23 +66,30 @@ export class EditCustomerDialogComponent {
   // a user can back out by cancelling. Each becomes a DELETE .../trade-units/{code} call in onSave.
   removedDormantTuCodes = signal<string[]>([]);
 
-  /** All sync-sourced (locked) memberships, active or dormant — used to keep them out of the
-   *  add-search dropdown (they're already memberships). */
+  /** Active sync-sourced (locked) memberships — used to keep them out of the add-search dropdown
+   *  (they're already active memberships). Inactive rows are excluded so a removed TU can be re-added. */
   readonly lockedTradeUnits = computed(() =>
-    this.currentTradeUnits().filter(t => !t.isManual).map(t => t.tradeUnit));
+    this.currentTradeUnits().filter(t => !t.isManual && t.isActive).map(t => t.tradeUnit));
 
   /** Locked AND still active (open contract/ticket) → shown locked, not removable. */
   readonly activeLockedTradeUnits = computed(() =>
-    this.currentTradeUnits().filter(t => !t.isManual && t.hasOpenActivity).map(t => t.tradeUnit));
+    this.currentTradeUnits().filter(t => !t.isManual && t.isActive && t.hasOpenActivity).map(t => t.tradeUnit));
 
   /** Locked BUT dormant (no open contract/ticket) → shown with a remove button. Staged removals
    *  are filtered out so the chip disappears immediately on click. */
   readonly dormantTradeUnits = computed(() => {
     const removed = new Set(this.removedDormantTuCodes());
     return this.currentTradeUnits()
-      .filter(t => !t.isManual && !t.hasOpenActivity && !removed.has(t.tradeUnit))
+      .filter(t => !t.isManual && t.isActive && !t.hasOpenActivity && !removed.has(t.tradeUnit))
       .map(t => t.tradeUnit);
   });
+
+  /** Codes the producer previously had but that are now removed (manual removal or a dormant
+   *  sync-TU removal). Surfaced in the add-search so a removal can always be undone — including a
+   *  TU that isn't in the entitlements catalog. Re-adding reactivates the row (and clears the
+   *  dormant-removal flag) server-side via the manual reconcile on Save. */
+  readonly reAddableTradeUnits = computed(() =>
+    this.currentTradeUnits().filter(t => !t.isActive).map(t => t.tradeUnit));
 
   /** True when the editable manual TU set differs from what was loaded. */
   readonly manualTusChanged = computed(() => {
@@ -107,11 +115,23 @@ export class EditCustomerDialogComponent {
    *  moment a trade unit is picked. Existing customers are never locked. */
   readonly detailsLocked = computed(() => this.isOnboardCandidate() && this.selectedTuCodes().length === 0);
 
-  /** TUs not already selected or locked, matched by CODE only. Capped for a tidy dropdown. */
+  /** TUs not already selected or locked, matched by CODE only. Capped for a tidy dropdown.
+   *  The candidate pool is the entitlements TU catalog PLUS this producer's previously-removed
+   *  memberships — so a removed TU is always re-addable, even one absent from the catalog. */
   readonly filteredTradeUnits = computed(() => {
     const taken = new Set([...this.selectedTuCodes(), ...this.lockedTradeUnits()]);
     const q = this.tuSearch().trim().toLowerCase();
-    return this.allTradeUnits()
+    const catalog = this.allTradeUnits();
+    // Match codes case-/whitespace-insensitively so a removed TU that IS in the catalog shows the
+    // catalog entry (with its real description, e.g. "1028 NE/CO Truck") rather than a duplicate.
+    const norm = (c: string) => c.trim().toLowerCase();
+    const catalogCodes = new Set(catalog.map(tu => norm(tu.code)));
+    // Removed memberships genuinely absent from the catalog — shown as just the code (no description
+    // available), reading like any other option. Re-adding reactivates the row on Save.
+    const reAddable = this.reAddableTradeUnits()
+      .filter(code => !catalogCodes.has(norm(code)))
+      .map(code => ({ code, description: undefined as string | undefined }));
+    return [...catalog, ...reAddable]
       .filter(tu => !taken.has(tu.code))
       .filter(tu => !q || tu.code.toLowerCase().includes(q))
       .slice(0, 50);
@@ -240,7 +260,9 @@ export class EditCustomerDialogComponent {
           this.apiService.getCustomerTradeUnits(customer.id).subscribe({
             next: (tus) => {
               this.currentTradeUnits.set(tus);
-              const manualCodes = tus.filter(t => t.isManual).map(t => t.tradeUnit);
+              // Only ACTIVE manual memberships prefill the editable set — removed ones (isActive=false)
+              // are offered as re-addable suggestions instead, not pre-selected.
+              const manualCodes = tus.filter(t => t.isManual && t.isActive).map(t => t.tradeUnit);
               this.selectedTuCodes.set(manualCodes);
               this._originalManualTuCodes = [...manualCodes];
               this.tuListLoaded.set(true);

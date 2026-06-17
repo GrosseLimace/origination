@@ -385,6 +385,14 @@ public class ApplicationDbContext : DbContext
             // existing rows; only set when a user removes a dormant sync-sourced membership.
             entity.Property(e => e.UserDeactivated).HasColumnName("UserDeactivated").HasDefaultValue(false).IsRequired();
 
+            // Audit columns — same convention as Notes/ProducerDetails/Dashboard*. CreatedAt
+            // defaults to GETUTCDATE() at the DB; CreatedBy is required; Modified* are nullable.
+            // The nightly sync writes "system"; manual user actions write the acting user's UPN.
+            entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
+            entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
+            entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
+
             // FK to Customer.Id (the ODS CustomerId surrogate).
             entity.HasOne(e => e.Customer)
                   .WithMany()
