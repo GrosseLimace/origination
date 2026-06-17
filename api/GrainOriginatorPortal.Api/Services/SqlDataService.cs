@@ -750,6 +750,10 @@ public class SqlDataService : IDataService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        // Audit: this is a manual user action, so stamp the acting user's UPN (not "system").
+        var actor = GetCurrentUser();
+        var now = DateTime.UtcNow;
+
         // Ensure the customer exists in dbo.Customer — insert from ODS if this is a
         // brand-new onboarding (producer with no contract/ticket).
         var customerExists = await _appContext.Customers
@@ -810,6 +814,8 @@ public class SqlDataService : IDataService
                     // removal" the user just undid. (Covers: dormant-remove a sync TU, then manually
                     // re-add the same code.)
                     existingTu.UserDeactivated = false;
+                    existingTu.ModifiedAt = now;
+                    existingTu.ModifiedBy = actor;
                 }
             }
             else
@@ -820,6 +826,8 @@ public class SqlDataService : IDataService
                     TradeUnit  = code,
                     IsActive   = true,
                     IsManual   = true,
+                    CreatedAt  = now,
+                    CreatedBy  = actor,
                 });
             }
         }
@@ -833,6 +841,8 @@ public class SqlDataService : IDataService
             if (existing.IsManual && existing.IsActive && !desired.Contains(existing.TradeUnit))
             {
                 existing.IsActive = false;
+                existing.ModifiedAt = now;
+                existing.ModifiedBy = actor;
                 deactivated++;
             }
         }
@@ -845,12 +855,15 @@ public class SqlDataService : IDataService
 
     public async Task<List<CustomerTradeUnitInfo>> GetCustomerTradeUnitsAsync(long customerId, CancellationToken cancellationToken = default)
     {
-        // Active memberships (unchanged from before — this part is identical to the original query).
+        // All memberships for this producer — active AND previously-removed (soft-deactivated). The
+        // dialog shows active ones as chips; inactive ones are offered as re-addable suggestions so a
+        // user can undo a removal even for a TU that isn't in the entitlements catalog. (There's at
+        // most one row per (CustomerId, TradeUnit), so a code is either active or inactive, not both.)
         var memberships = await _appContext.CustomerTradeUnits
             .AsNoTracking()
-            .Where(t => t.CustomerId == customerId && t.IsActive)
+            .Where(t => t.CustomerId == customerId)
             .OrderBy(t => t.TradeUnit)
-            .Select(t => new CustomerTradeUnitInfo { TradeUnit = t.TradeUnit, IsManual = t.IsManual })
+            .Select(t => new CustomerTradeUnitInfo { TradeUnit = t.TradeUnit, IsManual = t.IsManual, IsActive = t.IsActive })
             .ToListAsync(cancellationToken);
 
         if (memberships.Count == 0) return memberships;
@@ -983,8 +996,11 @@ public class SqlDataService : IDataService
             return DeactivateTradeUnitResult.StillActive;
 
         // Dormant → remove. UserDeactivated is the signal the sync honors (see CustomerSyncService).
+        // Manual user action → stamp the acting user's UPN.
         row.IsActive = false;
         row.UserDeactivated = true;
+        row.ModifiedAt = DateTime.UtcNow;
+        row.ModifiedBy = GetCurrentUser();
         await _appContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
