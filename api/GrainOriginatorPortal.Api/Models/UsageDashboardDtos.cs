@@ -1,6 +1,6 @@
 namespace GrainOriginatorPortal.Api.Models;
 
-public class UsageDashboardSummaryDto
+public record UsageDashboardSummaryDto
 {
     public double AdoptionRate { get; set; }
     public double AvgLoginsPerWeek { get; set; }
@@ -10,7 +10,7 @@ public class UsageDashboardSummaryDto
     public int NeedsAttentionCount { get; set; }
 }
 
-public class UsageDashboardUserDto
+public record UsageDashboardUserDto
 {
     public string UserId { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
@@ -22,13 +22,13 @@ public class UsageDashboardUserDto
     public int NotesCreated { get; set; }
 }
 
-public class DailyActiveDto
+public record DailyActiveDto
 {
     public string Date { get; set; } = string.Empty;
     public int UniqueUserCount { get; set; }
 }
 
-public class FeatureSessionsDto
+public record FeatureSessionsDto
 {
     public string FeatureCode { get; set; } = string.Empty;
     public string FeatureLabel { get; set; } = string.Empty;
@@ -36,21 +36,21 @@ public class FeatureSessionsDto
     public List<SubFeatureSessionDto> SubFeatures { get; set; } = [];
 }
 
-public class SubFeatureSessionDto
+public record SubFeatureSessionDto
 {
     public string SubFeatureCode { get; set; } = string.Empty;
     public string Label { get; set; } = string.Empty;
     public int SessionCount { get; set; }
 }
 
-public class WeeklyTrendDto
+public record WeeklyTrendDto
 {
     public string WeekStart { get; set; } = string.Empty;
     public int TotalLogins { get; set; }
     public int TotalSessions { get; set; }
 }
 
-public class ActivityBreakdownDto
+public record ActivityBreakdownDto
 {
     public string UserId { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
@@ -63,7 +63,7 @@ public class ActivityBreakdownDto
     public int ProducerDetails { get; set; }
 }
 
-public class UsageDashboardInactiveUserDto
+public record UsageDashboardInactiveUserDto
 {
     public string UserId { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
@@ -73,37 +73,29 @@ public class UsageDashboardInactiveUserDto
     public int LoginCount { get; set; }
 }
 
-public class UnderusedFeatureDto
+public record UnderusedFeatureDto
 {
     public string FeatureName { get; set; } = string.Empty;
     public int SessionCount { get; set; }
 }
 
-public class QueryLibraryUsageDto
+public record QueryLibraryUsageDto
 {
     public string QueryText { get; set; } = string.Empty;
     public int TimesUsed { get; set; }
 }
 
-public class QuerySearchGapDto
+public record QuerySearchGapDto
 {
     public string SearchText { get; set; } = string.Empty;
     public int TimesSearched { get; set; }
-}
-
-public class ClickEventRequest
-{
-    public string EventType { get; set; } = string.Empty;
-    public string FeatureCode { get; set; } = string.Empty;
-    public string? SubFeatureCode { get; set; }
-    public string? TargetId { get; set; }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Per-user drill-down DTOs (UsageDashboardController.GetUserDetail)
 // ─────────────────────────────────────────────────────────────────────────────
 
-public class UserUsageDetailDto
+public record UserUsageDetailDto
 {
     public string UserId { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
@@ -124,14 +116,14 @@ public class UserUsageDetailDto
     public List<RecentActivityDto> RecentActivity { get; set; } = [];
 }
 
-public class UserDailyActivityDto
+public record UserDailyActivityDto
 {
     public string Date { get; set; } = string.Empty;
     public int EventCount { get; set; }
     public double ScreenMinutes { get; set; }
 }
 
-public class CustomerEngagementDto
+public record CustomerEngagementDto
 {
     public int ProfilesViewed { get; set; }
     public int ContractsExpanded { get; set; }
@@ -147,7 +139,7 @@ public class CustomerEngagementDto
     public TopProducerDto? TopProducer { get; set; }
 }
 
-public class TopProducerDto
+public record TopProducerDto
 {
     public long CustomerId { get; set; }
     public string CustomerName { get; set; } = string.Empty;
@@ -155,7 +147,7 @@ public class TopProducerDto
     public int InteractionCount { get; set; }
 }
 
-public class BuildListEngagementDto
+public record BuildListEngagementDto
 {
     public int ListsSaved { get; set; }
     public int ListsLoaded { get; set; }
@@ -170,13 +162,13 @@ public class BuildListEngagementDto
     public List<TopLibraryQueryDto> TopLibraryQueries { get; set; } = [];
 }
 
-public class TopLibraryQueryDto
+public record TopLibraryQueryDto
 {
     public string QueryName { get; set; } = string.Empty;
     public int TimesUsed { get; set; }
 }
 
-public class InsightsEngagementDto
+public record InsightsEngagementDto
 {
     public int UnconfirmedContractsClicks { get; set; }
     public int SpotLoadsClicks { get; set; }
@@ -184,7 +176,7 @@ public class InsightsEngagementDto
     public int OtherCategoryClicks { get; set; }
 }
 
-public class BidSheetEngagementDto
+public record BidSheetEngagementDto
 {
     public int LocationsAdded { get; set; }
     public int LocationsDeleted { get; set; }
@@ -199,13 +191,13 @@ public class BidSheetEngagementDto
     public List<TopBidLocationDto> TopEditedLocations { get; set; } = [];
 }
 
-public class TopBidLocationDto
+public record TopBidLocationDto
 {
     public string LocationName { get; set; } = string.Empty;
     public int EditCount { get; set; }
 }
 
-public class PlantingDashEngagementDto
+public record PlantingDashEngagementDto
 {
     public int ByCropTabClicks { get; set; }
     public int ProducersTabClicks { get; set; }
@@ -214,14 +206,14 @@ public class PlantingDashEngagementDto
     public int SeasonTargetsSaved { get; set; }
 }
 
-public class ScreenTimeDto
+public record ScreenTimeDto
 {
     public string FeatureCode { get; set; } = string.Empty;
     public string FeatureLabel { get; set; } = string.Empty;
     public int Minutes { get; set; }
 }
 
-public class RecentActivityDto
+public record RecentActivityDto
 {
     public DateTime Timestamp { get; set; }
     public string EventType { get; set; } = string.Empty;

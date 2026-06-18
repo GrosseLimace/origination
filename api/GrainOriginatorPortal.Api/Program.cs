@@ -17,11 +17,11 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 
 // Project namespaces
-using GrainOriginatorPortal.Api.Data;
-using GrainOriginatorPortal.Api.Json;
+using GrainOriginatorPortal.Infrastructure;
+using GrainOriginatorPortal.Infrastructure.Data;
+using GrainOriginatorPortal.Infrastructure.Json;
 using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Services;
-using GrainOriginatorPortal.Api.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -190,113 +190,42 @@ builder.Services.AddMemoryCache(options => options.SizeLimit = 5000);
 
 builder.Services.AddHttpContextAccessor();
 
-// Configure Entity Framework Core with SQL Server and Managed Identity
-// - Uses connection string from appsettings.json or Azure App Settings
-// - Authentication via DefaultAzureCredential (Azure CLI locally, Managed Identity in Azure)
-// - Retry logic handles transient network failures (5 attempts, 30 second max delay)
-builder.Services.AddDbContext<OriginationDbContext>(options =>
-{
-    var connectionString = builder.Configuration.GetConnectionString("ODSConnection");
-
-    options.UseSqlServer(connectionString, sqlOptions =>
-    {
-        // Enable retry on transient failures (required for Azure SQL)
-        sqlOptions.EnableRetryOnFailure(
-            maxRetryCount: 5,
-            maxRetryDelay: TimeSpan.FromSeconds(30),
-            errorNumbersToAdd: null);
-
-        // Set command timeout to 2 minutes for large ODS queries
-        sqlOptions.CommandTimeout(120);
-    });
-
-    // Enable detailed errors in development (compile-time guard prevents accidental use in Release builds)
-#if DEBUG
-    if (builder.Environment.IsDevelopment())
-    {
-        options.EnableSensitiveDataLogging();
-        options.EnableDetailedErrors();
-    }
-#endif
-});
-
-// Configure ApplicationDbContext for app-owned tables in the Origination database
-// (Notes, and eventually TradeUnits once that table is created)
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-{
-    var connectionString = builder.Configuration.GetConnectionString("OriginationConnection");
-
-    options.UseSqlServer(connectionString, sqlOptions =>
-    {
-        sqlOptions.EnableRetryOnFailure(
-            maxRetryCount: 5,
-            maxRetryDelay: TimeSpan.FromSeconds(30),
-            errorNumbersToAdd: null);
-        sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "dbo");
-    });
-
-#if DEBUG
-    if (builder.Environment.IsDevelopment())
-    {
-        options.EnableSensitiveDataLogging();
-        options.EnableDetailedErrors();
-    }
-#endif
-});
-
-// Configure EntitlementsDbContext for read-only access to the Entitlements database
-// Used to resolve user-specific trade unit assignments via vw_UserTradeUnitAccess
-builder.Services.AddDbContext<EntitlementsDbContext>(options =>
-{
-    var connectionString = builder.Configuration.GetConnectionString("EntitlementsConnection");
-
-    options.UseSqlServer(connectionString, sqlOptions =>
-    {
-        sqlOptions.EnableRetryOnFailure(
-            maxRetryCount: 5,
-            maxRetryDelay: TimeSpan.FromSeconds(30),
-            errorNumbersToAdd: null);
-    });
-
-#if DEBUG
-    if (builder.Environment.IsDevelopment())
-    {
-        options.EnableSensitiveDataLogging();
-        options.EnableDetailedErrors();
-    }
-#endif
-});
+// Entity Framework Core DbContexts (ODS, Application, Entitlements) are registered by the
+// Infrastructure layer. Connection strings come from appsettings / Azure App Settings; auth via
+// DefaultAzureCredential; retry logic handles transient Azure SQL failures.
+builder.Services.AddInfrastructure(builder.Configuration, builder.Environment.IsDevelopment());
 
 // =============================================================================
-// DATA SERVICE REGISTRATION
-// Currently using direct SQL connection (SqlDataService).
-// When APIM is ready, follow these steps to switch:
-//
-//   STEP 1 - Add APIM config to appsettings.json:
-//     "Apim": {
-//       "BaseUrl": "https://<your-apim-instance>.azure-api.net",
-//       "SubscriptionKey": "<your-subscription-key>"
-//     }
-//
-//   STEP 2 - Register the APIM HTTP client (replace the AddScoped line below):
-//     builder.Services.AddHttpClient<IDataService, ApimDataService>(client =>
-//     {
-//         client.BaseAddress = new Uri(builder.Configuration["Apim:BaseUrl"]!);
-//         client.DefaultRequestHeaders.Add("Ocp-Apim-Subscription-Key", builder.Configuration["Apim:SubscriptionKey"]);
-//     });
-//
-//   STEP 3 - Remove or comment out the DbContext registration above (no longer needed)
-//
-//   STEP 4 - Fill in the APIM endpoint URLs in ApimDataService.cs
+// SERVICE REGISTRATION
+// Controllers depend on per-domain Api services; those depend on Infrastructure
+// repositories (registered via AddInfrastructure). The old IDataService/SqlDataService
+// god-service has been fully decomposed and removed.
 // =============================================================================
 
-// CURRENT: Direct SQL connection via Entity Framework Core
-// TO SWITCH TO APIM: See instructions above
-builder.Services.AddScoped<IDataService, SqlDataService>();
+// Request-scoped helpers (current-user + trace id) read from HttpContext.
+builder.Services.AddScoped<IRequestContextService, RequestContextService>();
 
-// OPTIONAL: Keep MockDataService for testing/comparison
-// Uncomment to use mock data instead of database:
-// builder.Services.AddSingleton<IDataService, MockDataService>();
+// Per-domain services (Api layer) — controllers depend on these.
+builder.Services.AddScoped<IQueryLibraryService, QueryLibraryService>();
+builder.Services.AddScoped<ICommodityService, CommodityService>();
+builder.Services.AddScoped<IStoredGrainService, StoredGrainService>();
+builder.Services.AddScoped<ISavedListService, SavedListService>();
+builder.Services.AddScoped<IProducerDetailsService, ProducerDetailsService>();
+builder.Services.AddScoped<IFarmService, FarmService>();
+builder.Services.AddScoped<IPlantingIntentionService, PlantingIntentionService>();
+builder.Services.AddScoped<INoteService, NoteService>();
+builder.Services.AddScoped<ITicketService, TicketService>();
+builder.Services.AddScoped<IContractService, ContractService>();
+builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<ICustomerService, CustomerService>();
+builder.Services.AddScoped<IBidSheetService, BidSheetService>();
+builder.Services.AddScoped<IUserPreferenceService, UserPreferenceService>();
+builder.Services.AddScoped<IUserTradeUnitService, UserTradeUnitService>();
+builder.Services.AddScoped<ITradeUnitService, TradeUnitService>();
+// Singleton so the Nominatim rate-limiter + last-call timestamp are shared across requests.
+builder.Services.AddSingleton<IGeocodeService, GeocodeService>();
+builder.Services.AddScoped<IUsageDashboardService, UsageDashboardService>();
+builder.Services.AddScoped<IDailyRecapGroupService, DailyRecapGroupService>();
 
 // Configure CORS — allowed origins come from configuration so they can be overridden
 // per environment via Azure App Service settings without code changes.

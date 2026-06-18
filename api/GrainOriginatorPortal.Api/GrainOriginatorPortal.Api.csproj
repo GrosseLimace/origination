@@ -25,4 +25,8 @@
     <PackageReference Include="Microsoft.Identity.Web" Version="3.8.4" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\GrainOriginatorPortal.Infrastructure\GrainOriginatorPortal.Infrastructure.csproj" />
+  </ItemGroup>
+
 </Project>

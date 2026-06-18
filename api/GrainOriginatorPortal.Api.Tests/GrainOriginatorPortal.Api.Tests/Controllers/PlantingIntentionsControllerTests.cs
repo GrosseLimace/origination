@@ -1,6 +1,5 @@
 // Microsoft namespaces
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 // Third-party namespaces
@@ -8,33 +7,22 @@ using Moq;
 
 // Project namespaces
 using GrainOriginatorPortal.Api.Controllers;
-using GrainOriginatorPortal.Api.Data;
 using GrainOriginatorPortal.Api.Exceptions;
-using GrainOriginatorPortal.Api.Interfaces;
-using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Models.Requests;
+using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Tests.Controllers;
 
 public class PlantingIntentionsControllerTests
 {
-    private readonly Mock<IDataService> _dataServiceMock;
-    private readonly Mock<IUserEntitlementService> _entitlementServiceMock;
+    private readonly Mock<IPlantingIntentionService> _serviceMock;
     private readonly PlantingIntentionsController _sut;
 
     public PlantingIntentionsControllerTests()
     {
-        _dataServiceMock = new Mock<IDataService>();
-        _entitlementServiceMock = new Mock<IUserEntitlementService>();
-        // §8 DEVIATION: the EF in-memory provider is banned for DB tests (automated-testing.md §8) —
-        // it doesn't enforce FKs/constraints/SQL semantics. Slated to move onto the real-SQL
-        // WebApplicationFactory harness in plan Phase D; only then can the InMemory package be removed.
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase(databaseName: $"PlantingIntentionsTest_{Guid.NewGuid()}")
-            .Options;
-        var appContext = new ApplicationDbContext(options);
-        _sut = new PlantingIntentionsController(_dataServiceMock.Object, new Mock<ILogger<PlantingIntentionsController>>().Object, _entitlementServiceMock.Object, appContext);
+        _serviceMock = new Mock<IPlantingIntentionService>();
+        _sut = new PlantingIntentionsController(_serviceMock.Object, new Mock<ILogger<PlantingIntentionsController>>().Object);
     }
 
     // -------------------------------------------------------------------------
@@ -42,18 +30,18 @@ public class PlantingIntentionsControllerTests
     public async Task GetAll_ReturnsOkWithIntentions()
     {
         // Arrange
-        var intentions = new List<PlantingIntention>
+        var intentions = new List<PlantingIntentionResponse>
         {
-            new PlantingIntention { Id = 1, CustomerId = 10, Crop = "Corn", Acres = 200, PlantingYear = 2026 }
+            new() { Id = 1, CustomerId = 10, Crop = "Corn", Acres = 200, PlantingYear = 2026 }
         };
-        _dataServiceMock.Setup(s => s.GetPlantingIntentionsAsync(It.IsAny<IEnumerable<string>?>(), It.IsAny<int?>(), It.IsAny<CancellationToken>())).ReturnsAsync(intentions);
+        _serviceMock.Setup(s => s.GetAllAsync(It.IsAny<string?>(), It.IsAny<int?>(), It.IsAny<CancellationToken>())).ReturnsAsync(intentions);
 
         // Act
         var result = await _sut.GetAll();
 
         // Assert
         var ok = Assert.IsType<OkObjectResult>(result.Result);
-        var returned = Assert.IsAssignableFrom<List<PlantingIntention>>(ok.Value);
+        var returned = Assert.IsAssignableFrom<List<PlantingIntentionResponse>>(ok.Value);
         Assert.Single(returned);
     }
 
@@ -62,18 +50,18 @@ public class PlantingIntentionsControllerTests
     public async Task GetByCustomer_ReturnsOkWithCustomerIntentions()
     {
         // Arrange
-        var intentions = new List<PlantingIntention>
+        var intentions = new List<PlantingIntentionResponse>
         {
-            new PlantingIntention { Id = 2, CustomerId = 5, Crop = "Soybeans", Acres = 150, PlantingYear = 2026 }
+            new() { Id = 2, CustomerId = 5, Crop = "Soybeans", Acres = 150, PlantingYear = 2026 }
         };
-        _dataServiceMock.Setup(s => s.GetPlantingIntentionsByCustomerAsync(5, It.IsAny<CancellationToken>())).ReturnsAsync(intentions);
+        _serviceMock.Setup(s => s.GetByCustomerAsync(5, It.IsAny<CancellationToken>())).ReturnsAsync(intentions);
 
         // Act
         var result = await _sut.GetByCustomer(5);
 
         // Assert
         var ok = Assert.IsType<OkObjectResult>(result.Result);
-        Assert.Single(Assert.IsAssignableFrom<List<PlantingIntention>>(ok.Value));
+        Assert.Single(Assert.IsAssignableFrom<List<PlantingIntentionResponse>>(ok.Value));
     }
 
     // -------------------------------------------------------------------------
@@ -81,10 +69,11 @@ public class PlantingIntentionsControllerTests
     public async Task Update_WhenFound_ReturnsOk()
     {
         // Arrange
-        var updated = new PlantingIntention { Id = 3, Crop = "Wheat", Acres = 100, PlantingYear = 2026 };
-        _dataServiceMock.Setup(s => s.GetPlantingIntentionByIdAsync(3, It.IsAny<CancellationToken>())).ReturnsAsync(updated);
-        _dataServiceMock
-            .Setup(s => s.UpdatePlantingIntentionAsync(3, "Wheat", null, null, null, 100, 2026, It.IsAny<CancellationToken>()))
+        var existing = new PlantingIntentionResponse { Id = 3, Crop = "Wheat", Acres = 100, PlantingYear = 2026 };
+        var updated = new PlantingIntentionResponse { Id = 3, Crop = "Wheat", Acres = 100, PlantingYear = 2026 };
+        _serviceMock.Setup(s => s.GetByIdAsync(3, It.IsAny<CancellationToken>())).ReturnsAsync(existing);
+        _serviceMock
+            .Setup(s => s.UpdateAsync(3, "Wheat", null, null, null, 100, 2026, It.IsAny<CancellationToken>()))
             .ReturnsAsync(updated);
 
         var request = new UpdatePlantingIntentionRequest
@@ -104,10 +93,8 @@ public class PlantingIntentionsControllerTests
     [Fact]
     public async Task Update_WhenNotFound_ThrowsNotFoundException()
     {
-        // Arrange
-        _dataServiceMock
-            .Setup(s => s.UpdatePlantingIntentionAsync(99, It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((PlantingIntention?)null);
+        // Arrange — existence check returns null, so the controller throws before calling UpdateAsync.
+        _serviceMock.Setup(s => s.GetByIdAsync(99, It.IsAny<CancellationToken>())).ReturnsAsync((PlantingIntentionResponse?)null);
 
         var request = new UpdatePlantingIntentionRequest { Crop = "Corn", Acres = 100, PlantingYear = 2026 };
 
@@ -120,14 +107,15 @@ public class PlantingIntentionsControllerTests
     public async Task Delete_CallsDeleteAndReturnsNoContent()
     {
         // Arrange
-        _dataServiceMock.Setup(s => s.GetPlantingIntentionByIdAsync(4, It.IsAny<CancellationToken>())).ReturnsAsync(new PlantingIntention { Id = 4, Crop = "Corn", Acres = 50, PlantingYear = 2026 });
-        _dataServiceMock.Setup(s => s.DeletePlantingIntentionAsync(4, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _serviceMock.Setup(s => s.GetByIdAsync(4, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PlantingIntentionResponse { Id = 4, Crop = "Corn", Acres = 50, PlantingYear = 2026 });
+        _serviceMock.Setup(s => s.DeleteAsync(4, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         // Act
         var result = await _sut.Delete(4);
 
         // Assert
         Assert.IsType<NoContentResult>(result);
-        _dataServiceMock.Verify(s => s.DeletePlantingIntentionAsync(4, It.IsAny<CancellationToken>()), Times.Once);
+        _serviceMock.Verify(s => s.DeleteAsync(4, It.IsAny<CancellationToken>()), Times.Once);
     }
 }
