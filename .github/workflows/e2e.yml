@@ -34,7 +34,11 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
+        # Download the Chromium binary only — NOT `--with-deps`, which shells out to `sudo apt-get`
+        # to install OS libraries. The self-hosted runner's service account has no passwordless sudo
+        # (no TTY), so `--with-deps` fails ("sudo: a password is required"). The required system
+        # libraries are a ONE-TIME host install by a runner admin: `sudo npx playwright install-deps chromium`.
+        run: npx playwright install chromium
         working-directory: client
 
       - name: Run E2E smoke
