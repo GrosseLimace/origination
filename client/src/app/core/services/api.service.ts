@@ -146,6 +146,9 @@ export class ApiService {
       ccList: dto.ccList ?? [],
       teamsChannelEmail: dto.teamsChannelEmail,
       enabled: dto.enabled,
+      // Created groups come back from create/update without this flag → default to owner (true).
+      isOwner: dto.isOwner ?? true,
+      createdBy: dto.createdBy ?? '',
     };
   }
 
@@ -515,11 +518,11 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Lookup data (people / trade units / groups) for the note "@" mention picker */
+  /** Lookup data (people / trade units / groups / recap groups) for the note "@" mention picker */
   getMentionCatalog(): Observable<MentionCatalog> {
     return this._dedupe('mention-catalog',
       this.http.get<MentionCatalog>(`${this.baseUrl}/notes/mention-catalog`)
-        .pipe(catchError(() => of<MentionCatalog>({ people: [], tradeUnits: [], groups: [] })))
+        .pipe(catchError(() => of<MentionCatalog>({ people: [], tradeUnits: [], groups: [], recapGroups: [] })))
     );
   }
 

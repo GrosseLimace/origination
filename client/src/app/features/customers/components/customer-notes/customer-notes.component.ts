@@ -54,7 +54,7 @@ export class CustomerNotesComponent {
 
   // ---- "@" mention picker state ----
   noteTextarea = viewChild<ElementRef<HTMLTextAreaElement>>('noteTextarea');
-  mentionCatalog = signal<MentionCatalog>({ people: [], tradeUnits: [], groups: [] });
+  mentionCatalog = signal<MentionCatalog>({ people: [], tradeUnits: [], groups: [], recapGroups: [] });
   /** Structured mentions chosen for the note being composed; sent to the API on submit. */
   mentions = signal<NoteMention[]>([]);
   mentionDropdownOpen = signal(false);
@@ -77,7 +77,10 @@ export class CustomerNotesComponent {
     const groups: MentionOption[] = cat.groups
       .filter(g => !q || g.name.toLowerCase().includes(q))
       .map(g => ({ type: 'trade-unit-group', id: String(g.groupId), name: g.name, secondary: 'Group' }));
-    return [...people, ...tus, ...groups].slice(0, 8);
+    const recapGroups: MentionOption[] = cat.recapGroups
+      .filter(g => !q || g.name.toLowerCase().includes(q))
+      .map(g => ({ type: 'recap-group', id: String(g.recapGroupId), name: g.name, secondary: 'Recap group' }));
+    return [...people, ...tus, ...groups, ...recapGroups].slice(0, 8);
   });
   openMenuId = signal<number | null>(null);
   editingNoteId = signal<number | null>(null);
@@ -239,15 +242,21 @@ export class CustomerNotesComponent {
     if (!ta) return;
     const value = ta.value;
     const pos = ta.selectionStart ?? value.length;
-    // Active mention = an "@" at a word boundary, followed by at least one non-space char,
-    // ending at the caret. The "+" means a bare "@" shows nothing until the user types a letter.
-    const match = value.slice(0, pos).match(/(?:^|\s)@([^\s@]+)$/);
+    // Active mention = an "@" at a word boundary, then a first non-space char, then any run of
+    // characters up to the caret — spaces allowed, so multi-word names like "Caden Testing" match
+    // while typing. No newline or second "@" inside. Requiring the first char to be non-space means
+    // a bare "@" (or "@ ") shows nothing until the user types a letter.
+    const match = value.slice(0, pos).match(/(?:^|\s)@([^\s@][^\n@]*)$/);
     if (match) {
       this.mentionAtIndex = pos - match[1].length - 1;
       this.mentionCaret = pos;
       this.mentionQuery.set(match[1]);
       this.mentionActiveIndex.set(0);
       this.mentionDropdownOpen.set(true);
+      // The query now tolerates spaces, so it would otherwise keep matching after a completed
+      // mention (e.g. "@Corn Belt and then..."). Close once nothing matches instead of leaving an
+      // empty dropdown open.
+      if (this.mentionOptions().length === 0) this.closeMentionDropdown();
     } else {
       this.closeMentionDropdown();
     }

@@ -123,6 +123,26 @@ public class NotesController : ControllerBase
                 .OrderBy(g => g.Name)
                 .ToList();
 
+            // Mentionable Daily Recap groups: ones the caller CREATED plus ones they're a MEMBER of
+            // (directly as a person, or via a trade unit / trade-unit group they belong to). Member
+            // ids mirror the Daily Digest picker: person = UPN prefix, trade-unit = TU code,
+            // trade-unit-group = entitlements GroupId (as string); CreatedBy is the full UPN.
+            var myGroupIds = callerRows
+                .Where(r => r.GroupId != null)
+                .Select(r => r.GroupId!.Value.ToString())
+                .Distinct()
+                .ToList();
+            response.RecapGroups = await _appContext.DailyRecapGroups
+                .AsNoTracking()
+                .Where(g => g.CreatedBy == upn
+                    || g.Members.Any(m =>
+                        (m.MemberType == "person" && m.MemberId == userId)
+                        || (m.MemberType == "trade-unit" && callerTuCodes.Contains(m.MemberId))
+                        || (m.MemberType == "trade-unit-group" && myGroupIds.Contains(m.MemberId))))
+                .OrderBy(g => g.Name)
+                .Select(g => new MentionCatalogRecapGroup { RecapGroupId = g.Id, Name = g.Name })
+                .ToListAsync(cancellationToken);
+
             return Ok(response);
         }
         catch (Exception ex)

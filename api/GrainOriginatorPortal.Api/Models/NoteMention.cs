@@ -13,11 +13,11 @@ public record NoteMention
 {
     [Required]
     [StringLength(20)]
-    public required string Type { get; init; }   // "person" | "trade-unit" | "trade-unit-group"
+    public required string Type { get; init; }   // "person" | "trade-unit" | "trade-unit-group" | "recap-group"
 
     [Required]
     [StringLength(256)]
-    public required string Id { get; init; }      // UPN (person) | TU code | group name
+    public required string Id { get; init; }      // UPN (person) | TU code | TU-group id | RecapGroupId
 
     [Required]
     [StringLength(256)]

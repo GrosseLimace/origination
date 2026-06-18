@@ -1,9 +1,9 @@
-export type NoteMentionType = 'person' | 'trade-unit' | 'trade-unit-group';
+export type NoteMentionType = 'person' | 'trade-unit' | 'trade-unit-group' | 'recap-group';
 
 /** A single "@" mention saved with a note. Mirrors the backend NoteMention record. */
 export interface NoteMention {
   type: NoteMentionType;
-  id: string;        // UPN prefix (person) | TU code | group id-as-string
+  id: string;        // UPN prefix (person) | TU code | TU-group id | RecapGroupId (recap-group)
   name: string;      // display label
   email?: string;    // only for person; TU/group resolved at send time
 }
@@ -25,8 +25,14 @@ export interface MentionCatalogGroup {
   name: string;
 }
 
+export interface MentionCatalogRecapGroup {
+  recapGroupId: number;
+  name: string;
+}
+
 export interface MentionCatalog {
   people: MentionCatalogPerson[];
   tradeUnits: MentionCatalogTradeUnit[];
   groups: MentionCatalogGroup[];
+  recapGroups: MentionCatalogRecapGroup[];
 }

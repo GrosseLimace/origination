@@ -34,6 +34,11 @@ export interface RecapGroup {
    *  The Logic App posts the recap to this channel address. */
   teamsChannelEmail?: string;
   enabled: boolean;
+  /** True when the current user created this group (editable). False for groups they only see
+   *  because they're a member — shown faded and read-only. */
+  isOwner: boolean;
+  /** Creator's UPN/email. Shown on read-only (member) cards so a member can reach out. */
+  createdBy: string;
 }
 
 /** Create/update payload sent to the API (no id/enabled — enabled is toggled separately). */

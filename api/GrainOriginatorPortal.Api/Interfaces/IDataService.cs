@@ -422,8 +422,13 @@ public interface IDataService
     // Daily Recap Group Operations (Daily Digest)
     // =========================================================================
 
-    /// <summary>Gets the current user's daily recap groups (creator-owned), with members + CC emails.</summary>
-    Task<List<RecapGroupDto>> GetRecapGroupsAsync(CancellationToken cancellationToken = default);
+    /// <summary>Gets the recap groups visible to the current user — ones they created (IsOwner=true,
+    /// editable) plus ones they're a member of (IsOwner=false, read-only). Membership is matched
+    /// against the caller's entitlements (trade-unit codes + trade-unit-group ids) passed in.</summary>
+    Task<List<RecapGroupDto>> GetRecapGroupsAsync(
+        IReadOnlyCollection<string> memberTradeUnitCodes,
+        IReadOnlyCollection<string> memberGroupIds,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Creates a recap group owned by the current user.</summary>
     Task<RecapGroupDto> CreateRecapGroupAsync(RecapGroupRequest request, CancellationToken cancellationToken = default);
