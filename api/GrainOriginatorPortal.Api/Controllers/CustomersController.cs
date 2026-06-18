@@ -1,7 +1,10 @@
 // Project namespaces
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Filters;
+using GrainOriginatorPortal.Api.Models.Requests;
+using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
+using GrainOriginatorPortal.Infrastructure.Abstractions;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -11,37 +14,35 @@ namespace GrainOriginatorPortal.Api.Controllers;
 [Produces("application/json")]
 public class CustomersController : ControllerBase
 {
-    private readonly IDataService _dataService;
-    private readonly IUserEntitlementService _entitlementService;
+    private readonly ICustomerService _service;
 
-    public CustomersController(IDataService dataService, IUserEntitlementService entitlementService)
+    public CustomersController(ICustomerService service)
     {
-        _dataService = dataService;
-        _entitlementService = entitlementService;
+        _service = service;
     }
 
     // -------------------------------------------------------------------------
     /// <summary>Gets all customers, optionally filtered by trade units.</summary>
     [HttpGet]
     [EnforceTradeUnitAccess]
-    [ProducesResponseType(typeof(List<Customer>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<Customer>>> GetAll([FromQuery] List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(List<CustomerResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<CustomerResponse>>> GetAll([FromQuery] List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetCustomersAsync(tradeUnits, cancellationToken));
+        return Ok(await _service.GetAllAsync(tradeUnits, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
     /// <summary>Searches customers by name (max 15 results).</summary>
     [HttpGet("search")]
     [EnforceTradeUnitAccess]
-    [ProducesResponseType(typeof(List<Customer>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<Customer>>> Search([FromQuery] string searchTerm, [FromQuery] List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(List<CustomerResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<CustomerResponse>>> Search([FromQuery] string searchTerm, [FromQuery] List<string>? tradeUnits = null, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(searchTerm))
         {
-            return Ok(await _dataService.GetCustomersAsync(tradeUnits, cancellationToken));
+            return Ok(await _service.GetAllAsync(tradeUnits, cancellationToken));
         }
-        return Ok(await _dataService.SearchCustomersAsync(searchTerm, tradeUnits, cancellationToken));
+        return Ok(await _service.SearchAsync(searchTerm, tradeUnits, cancellationToken));
     }
 
     /// <summary>
@@ -51,22 +52,22 @@ public class CustomersController : ControllerBase
     /// No trade-unit scoping — these producers have no TU yet, which is the whole point.
     /// </summary>
     [HttpGet("search-ods")]
-    [ProducesResponseType(typeof(List<Customer>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<Customer>>> SearchOds([FromQuery] string searchTerm, CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(List<CustomerResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<CustomerResponse>>> SearchOds([FromQuery] string searchTerm, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(searchTerm))
-            return Ok(new List<Customer>());
-        return Ok(await _dataService.SearchOdsCustomersAsync(searchTerm, cancellationToken));
+            return Ok(new List<CustomerResponse>());
+        return Ok(await _service.SearchOdsAsync(searchTerm, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
     /// <summary>Gets a single customer by ID.</summary>
     [HttpGet("{id:long}")]
-    [ProducesResponseType(typeof(Customer), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(CustomerResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<Customer>> GetById(long id, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<CustomerResponse>> GetById(long id, CancellationToken cancellationToken = default)
     {
-        var customer = await _dataService.GetCustomerByIdAsync(id, cancellationToken)
+        var customer = await _service.GetByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("Customer", id);
         return Ok(customer);
     }
@@ -74,11 +75,11 @@ public class CustomersController : ControllerBase
     // -------------------------------------------------------------------------
     /// <summary>Gets a single customer by their source system ID (e.g. CTRM customer code).</summary>
     [HttpGet("by-source/{sourceId}")]
-    [ProducesResponseType(typeof(Customer), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(CustomerResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<Customer>> GetBySourceId(string sourceId, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<CustomerResponse>> GetBySourceId(string sourceId, CancellationToken cancellationToken = default)
     {
-        var customer = await _dataService.GetCustomerByScoularIdAsync(sourceId, cancellationToken)
+        var customer = await _service.GetByScoularIdAsync(sourceId, cancellationToken)
             ?? throw new NotFoundException("Customer", sourceId);
         return Ok(customer);
     }
@@ -89,24 +90,21 @@ public class CustomersController : ControllerBase
     /// search path so the customer profile can show bidirectional linked producers even when no TU
     /// is selected.</summary>
     [HttpGet("linked-to/{sourceId}")]
-    [ProducesResponseType(typeof(List<Customer>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<Customer>>> GetLinkedTo(string sourceId, CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(List<CustomerResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<CustomerResponse>>> GetLinkedTo(string sourceId, CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetCustomersLinkedToAsync(sourceId, cancellationToken));
+        return Ok(await _service.GetLinkedToAsync(sourceId, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
     /// <summary>Updates an existing customer's contact and farm information.</summary>
     [HttpPut("{id:long}")]
-    [ProducesResponseType(typeof(Customer), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(CustomerResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<Customer>> Update(long id, [FromBody] UpdateCustomerRequest request, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<CustomerResponse>> Update(long id, [FromBody] UpdateCustomerRequest request, CancellationToken cancellationToken = default)
     {
         // Trade units are a UX filter, not an access boundary — any rep may act on any customer.
-        var customer = await _dataService.GetCustomerByIdAsync(id, cancellationToken)
-            ?? throw new NotFoundException("Customer", id);
-
-        await _dataService.UpdateCustomerAsync(
+        var updated = await _service.UpdateAsync(
             id,
             request.Location ?? string.Empty,
             request.Phone ?? string.Empty,
@@ -114,9 +112,8 @@ public class CustomersController : ControllerBase
             request.FarmIds ?? new List<string>(),
             request.LinkedProducerIds ?? new List<string>(),
             cancellationToken
-        );
+        ) ?? throw new NotFoundException("Customer", id);
 
-        var updated = await _dataService.GetCustomerByIdAsync(id, cancellationToken);
         return Ok(updated);
     }
 
@@ -127,7 +124,7 @@ public class CustomersController : ControllerBase
     [ProducesResponseType(typeof(List<CustomerTradeUnitInfo>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<CustomerTradeUnitInfo>>> GetTradeUnits(long id, CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetCustomerTradeUnitsAsync(id, cancellationToken));
+        return Ok(await _service.GetTradeUnitsAsync(id, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -138,13 +135,13 @@ public class CustomersController : ControllerBase
     /// touched. Used to surface producers who exist in CTRM but have no contract/ticket.
     /// </summary>
     [HttpPut("{id:long}/trade-units")]
-    [ProducesResponseType(typeof(Customer), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(CustomerResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<Customer>> AssignTradeUnits(long id, [FromBody] AssignTradeUnitsRequest request, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<CustomerResponse>> AssignTradeUnits(long id, [FromBody] AssignTradeUnitsRequest request, CancellationToken cancellationToken = default)
     {
         var codes = request.TradeUnitCodes ?? new List<string>();
-        var result = await _dataService.AssignTradeUnitsAsync(id, codes, cancellationToken);
+        var result = await _service.AssignTradeUnitsAsync(id, codes, cancellationToken);
 
         switch (result)
         {
@@ -153,7 +150,7 @@ public class CustomersController : ControllerBase
             case AssignTradeUnitsResult.CustomerNotFound:
                 throw new NotFoundException("Customer", id);
             default:
-                var customer = await _dataService.GetCustomerByIdAsync(id, cancellationToken);
+                var customer = await _service.GetByIdAsync(id, cancellationToken);
                 return Ok(customer);
         }
     }
@@ -173,7 +170,7 @@ public class CustomersController : ControllerBase
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<List<CustomerTradeUnitInfo>>> RemoveDormantTradeUnit(long id, string tradeUnit, CancellationToken cancellationToken = default)
     {
-        var result = await _dataService.DeactivateDormantTradeUnitAsync(id, tradeUnit, cancellationToken);
+        var result = await _service.DeactivateDormantTradeUnitAsync(id, tradeUnit, cancellationToken);
 
         switch (result)
         {
@@ -183,7 +180,7 @@ public class CustomersController : ControllerBase
                 return Conflict(new { message = "This producer still has an open contract or unapplied ticket in that trade unit, so it can't be removed." });
             default:
                 // Return the refreshed membership list so the dialog can re-render immediately.
-                return Ok(await _dataService.GetCustomerTradeUnitsAsync(id, cancellationToken));
+                return Ok(await _service.GetTradeUnitsAsync(id, cancellationToken));
         }
     }
 }

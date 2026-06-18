@@ -1,7 +1,6 @@
-using GrainOriginatorPortal.Api.Data;
 using GrainOriginatorPortal.Api.Exceptions;
+using GrainOriginatorPortal.Infrastructure.Interfaces;
 using Microsoft.Data.SqlClient;
-using Microsoft.EntityFrameworkCore;
 
 namespace GrainOriginatorPortal.Api.Services;
 
@@ -12,43 +11,36 @@ namespace GrainOriginatorPortal.Api.Services;
 /// </summary>
 public class UserEntitlementService : IUserEntitlementService
 {
-    private readonly EntitlementsDbContext _entitlementsDb;
-    private readonly OriginationDbContext _originationDb;
-    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IEntitlementsRepository _entitlements;
+    private readonly IRequestContextService _requestContext;
     private readonly ILogger<UserEntitlementService> _logger;
 
     private HashSet<string>? _cachedEntitlements;
     public bool EntitlementsAvailable { get; private set; } = true;
 
     public UserEntitlementService(
-        EntitlementsDbContext entitlementsDb,
-        OriginationDbContext originationDb,
-        IHttpContextAccessor httpContextAccessor,
+        IEntitlementsRepository entitlements,
+        IRequestContextService requestContext,
         ILogger<UserEntitlementService> logger)
     {
-        _entitlementsDb = entitlementsDb;
-        _originationDb = originationDb;
-        _httpContextAccessor = httpContextAccessor;
+        _entitlements = entitlements;
+        _requestContext = requestContext;
         _logger = logger;
     }
 
-    public async Task<IReadOnlySet<string>> GetAllowedTradeUnitCodesAsync(CancellationToken ct = default)
+    public async Task<IReadOnlySet<string>> GetAllowedTradeUnitCodesAsync(CancellationToken cancellationToken = default)
     {
         if (_cachedEntitlements is not null)
             return _cachedEntitlements;
 
-        var userId = ExtractUserId();
+        var userId = _requestContext.GetCurrentUserShortName();
         if (string.IsNullOrWhiteSpace(userId))
             throw new ForbiddenException("Unable to determine user identity from token.");
 
         List<string> tradeUnitCodes;
         try
         {
-            tradeUnitCodes = await _entitlementsDb.UserTradeUnitAccess
-                .Where(u => u.UserId == userId)
-                .Select(u => u.TradeUnitCode)
-                .Distinct()
-                .ToListAsync(ct);
+            tradeUnitCodes = await _entitlements.GetTradeUnitCodesForUserAsync(userId, cancellationToken);
         }
         catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
         {
@@ -69,9 +61,9 @@ public class UserEntitlementService : IUserEntitlementService
         return _cachedEntitlements;
     }
 
-    public async Task ValidateTradeUnitsOrThrowAsync(IEnumerable<string> tradeUnitCodes, CancellationToken ct = default)
+    public async Task ValidateTradeUnitsOrThrowAsync(IEnumerable<string> tradeUnitCodes, CancellationToken cancellationToken = default)
     {
-        var allowed = await GetAllowedTradeUnitCodesAsync(ct);
+        var allowed = await GetAllowedTradeUnitCodesAsync(cancellationToken);
         var requested = tradeUnitCodes.Where(c => !string.IsNullOrWhiteSpace(c)).ToList();
 
         if (requested.Count == 0)
@@ -80,7 +72,7 @@ public class UserEntitlementService : IUserEntitlementService
         var denied = requested.Where(c => !allowed.Contains(c)).ToList();
         if (denied.Count > 0)
         {
-            var userId = ExtractUserId();
+            var userId = _requestContext.GetCurrentUserShortName();
             _logger.LogWarning(
                 "Trade unit access denied for user {UserId}. Requested: [{Requested}], Denied: [{Denied}]",
                 userId, string.Join(", ", requested), string.Join(", ", denied));
@@ -90,15 +82,10 @@ public class UserEntitlementService : IUserEntitlementService
         }
     }
 
-    public async Task ValidateCustomerAccessAsync(long customerId, CancellationToken ct = default)
+    public async Task ValidateCustomerAccessAsync(long customerId, CancellationToken cancellationToken = default)
     {
         // Look up customer's trade unit(s) from the live ODS view
-        var customerTradeUnits = await _originationDb.CustomerTradeUnits
-            .Where(c => c.CustomerId == customerId)
-            .Select(c => c.TradeUnit)
-            .Where(tu => tu != null)
-            .Distinct()
-            .ToListAsync(ct);
+        var customerTradeUnits = await _entitlements.GetCustomerTradeUnitCodesAsync(customerId, cancellationToken);
 
         if (customerTradeUnits.Count == 0)
         {
@@ -109,12 +96,12 @@ public class UserEntitlementService : IUserEntitlementService
             return;
         }
 
-        var allowed = await GetAllowedTradeUnitCodesAsync(ct);
-        var hasAccess = customerTradeUnits.Any(tu => allowed.Contains(tu!));
+        var allowed = await GetAllowedTradeUnitCodesAsync(cancellationToken);
+        var hasAccess = customerTradeUnits.Any(tu => allowed.Contains(tu));
 
         if (!hasAccess)
         {
-            var userId = ExtractUserId();
+            var userId = _requestContext.GetCurrentUserShortName();
             _logger.LogWarning(
                 "Customer access denied for user {UserId}. Customer {CustomerId} belongs to trade units [{CustomerTUs}]",
                 userId, customerId, string.Join(", ", customerTradeUnits));
@@ -122,20 +109,5 @@ public class UserEntitlementService : IUserEntitlementService
             throw new ForbiddenException(
                 $"Access denied: you are not authorized to access customer {customerId}.");
         }
-    }
-
-    private string ExtractUserId()
-    {
-        var user = _httpContextAccessor.HttpContext?.User;
-        if (user is null)
-            return string.Empty;
-
-        var upn = user.FindFirst("preferred_username")?.Value
-            ?? user.FindFirst("upn")?.Value
-            ?? user.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn")?.Value
-            ?? user.Identity?.Name
-            ?? string.Empty;
-
-        return upn.Contains('@') ? upn.Split('@')[0] : upn;
     }
 }

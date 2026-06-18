@@ -25,8 +25,8 @@ type MemberTab = 'people' | 'trade-units' | 'groups';
  * via entitlements, gathers notes for the resolved producer set, and emails
  * the digest. This component is configuration-only.
  *
- * Groups are creator-owned and persisted via /api/dailyrecapgroups; the user
- * sees and manages only the groups they created.
+ * Persisted via /api/dailyrecapgroups. The user manages the groups they created and
+ * additionally sees groups they're a member of, shown faded and read-only.
  */
 @Component({
   selector: 'app-daily-digest',

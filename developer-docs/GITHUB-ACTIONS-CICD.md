@@ -117,6 +117,41 @@ If your workflow runs Entity Framework Core migrations, there are two parts: the
 > To fix this, your EF Core project must include a **design-time factory** that excludes managed
 > identity from the credential chain. See the next section.
 
+#### This repo: split project/startup-project flags (post-restructure)
+
+Since the structural refactor (`rebuild_CodeRestructure`), the `DbContext`s and `Migrations/` live in
+**`GrainOriginatorPortal.Infrastructure`** while the host (and the design-time factory's DI/host wiring)
+lives in **`GrainOriginatorPortal.Api`**. Every `dotnet ef` command therefore needs **both** the migrations
+project (`-p`) and the startup project (`-s`), plus `--context` because the solution has three `DbContext`s
+(`ApplicationDbContext`, `OriginationDbContext`, `EntitlementsDbContext` — only `ApplicationDbContext` owns
+app-table migrations):
+
+```bash
+# List migrations (verify the design-time factory resolves)
+dotnet ef migrations list \
+  -p api/GrainOriginatorPortal.Infrastructure \
+  -s api/GrainOriginatorPortal.Api \
+  --context ApplicationDbContext
+
+# Add a migration
+dotnet ef migrations add <Name> \
+  -p api/GrainOriginatorPortal.Infrastructure \
+  -s api/GrainOriginatorPortal.Api \
+  --context ApplicationDbContext
+
+# Apply (also what the CI step runs — substitute `database update`)
+dotnet ef database update \
+  -p api/GrainOriginatorPortal.Infrastructure \
+  -s api/GrainOriginatorPortal.Api \
+  --context ApplicationDbContext
+```
+
+Migration files are namespaced `GrainOriginatorPortal.Api.Migrations.ApplicationDb` (a pre-restructure
+label) but physically reside in the Infrastructure project — EF tracks migrations by class name, not
+namespace, so this is cosmetic and safe to leave. The design-time factory eagerly acquires an Azure AD
+token, so `az login` (or the CI service principal) must be active even for read-only commands like
+`migrations list`.
+
 #### Design-time factory (required for CI/CD migrations)
 
 Your EF Core infrastructure project needs an `IDesignTimeDbContextFactory` that acquires the

@@ -1,4 +1,5 @@
 using GrainOriginatorPortal.Api.Models.Requests;
+using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Controllers;
@@ -9,21 +10,21 @@ namespace GrainOriginatorPortal.Api.Controllers;
 [Produces("application/json")]
 public class QueryLibraryController : ControllerBase
 {
-    private readonly IDataService _dataService;
+    private readonly IQueryLibraryService _service;
     private readonly ILogger<QueryLibraryController> _logger;
 
-    public QueryLibraryController(IDataService dataService, ILogger<QueryLibraryController> logger)
+    public QueryLibraryController(IQueryLibraryService service, ILogger<QueryLibraryController> logger)
     {
-        _dataService = dataService;
+        _service = service;
         _logger = logger;
     }
 
     /// <summary>Gets all active query library items, sorted by category then sort order.</summary>
     [HttpGet]
-    [ProducesResponseType(typeof(List<Models.QueryLibraryItem>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<Models.QueryLibraryItem>>> GetAll(CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(List<QueryLibraryItemResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<QueryLibraryItemResponse>>> GetAll(CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetQueryLibraryAsync(cancellationToken));
+        return Ok(await _service.GetAllAsync(cancellationToken));
     }
 
     /// <summary>Logs a user's query library search for gap analysis (unmatched searches help identify missing queries).</summary>
@@ -31,7 +32,7 @@ public class QueryLibraryController : ControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> LogSearch([FromBody] LogQuerySearchRequest request, CancellationToken cancellationToken = default)
     {
-        await _dataService.LogQuerySearchAsync(request.SearchText, request.MatchedQueryId, cancellationToken);
+        await _service.LogSearchAsync(request.SearchText, request.MatchedQueryId, cancellationToken);
         return NoContent();
     }
 }
