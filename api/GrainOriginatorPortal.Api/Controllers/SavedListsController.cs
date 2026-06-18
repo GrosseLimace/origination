@@ -31,6 +31,17 @@ public class SavedListsController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
+    /// <summary>Manager-only: all saved lists created by other users whose trade units overlap the
+    /// requested CSV. Gated by the same "Admin" role that gates the Usage Dashboard.</summary>
+    [HttpGet("team")]
+    [Authorize(Policy = "AdminOnly")]
+    [ProducesResponseType(typeof(List<SavedListResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<SavedListResponse>>> GetTeam([FromQuery] string? tradeUnits, CancellationToken cancellationToken = default)
+    {
+        return Ok(await _service.GetTeamListsAsync(tradeUnits, cancellationToken));
+    }
+
+    // -------------------------------------------------------------------------
     /// <summary>Creates a new saved customer list.</summary>
     [HttpPost]
     [ProducesResponseType(typeof(SavedListResponse), StatusCodes.Status201Created)]

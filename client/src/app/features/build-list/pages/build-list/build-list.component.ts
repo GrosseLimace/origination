@@ -10,6 +10,7 @@ import { AppStateService, BuildListState } from '@core/services/app-state.servic
 import { DataPreloadService } from '@core/services/data-preload.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
+import { UserRolesService } from '@core/services/user-roles.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, ProducerDetails, RefinementFilters, QueryLibraryItem } from '@models';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '@shared/components/card/card.component';
@@ -63,6 +64,11 @@ export class BuildListComponent {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
   private readonly usageTracking = inject(UsageTrackingService);
+  private readonly userRoles = inject(UserRolesService);
+
+  /** Manager = holds the "Admin" app role (same gate as the Usage Dashboard). Drives the
+   *  manager-only "Team Lists" library category. */
+  readonly isManager = this.userRoles.isAdmin;
 
   // Trade units captured at init — used to detect changes on destroy
   private _initTradeUnits: string[] = [];
@@ -156,6 +162,22 @@ export class BuildListComponent {
   notes = signal<Note[]>([]);
   storedGrain = signal<StoredGrain[]>([]);
   savedLists = signal<SavedList[]>([]);
+  /** Saved lists belonging to other users in the selected trade unit(s) — manager-only. */
+  teamSavedLists = signal<SavedList[]>([]);
+
+  /** Reload team lists whenever the manager status resolves or the trade-unit selection changes.
+   *  Non-managers (and empty selections) always see an empty set. */
+  private _teamListsEffect = effect(() => {
+    const isMgr = this.isManager();
+    const tus = this.effectiveTradeUnits();
+    untracked(() => {
+      if (!isMgr || tus.length === 0) {
+        this.teamSavedLists.set([]);
+        return;
+      }
+      this._refreshTeamLists(tus);
+    });
+  });
 
   /** Returns the effective trade units — explicit selection if any, otherwise all user-accessible TUs. */
   readonly effectiveTradeUnits = computed(() => {
@@ -1269,11 +1291,31 @@ export class BuildListComponent {
   readonly libraryCategories = computed(() => {
     const cats = new Set(this.queryLibrary().map(q => q.category));
     const sorted = [...cats].sort();
-    // Prepend a 'Saved Lists' pseudo-category so it sits right after "All" (which is rendered
-    // separately, before this loop). Always shown — when the user has no lists yet, selecting
-    // the tab renders an empty-state hint instead of hiding the entry point entirely.
+    // Prepend pseudo-categories so they sit right after "All" (rendered separately, before this loop).
+    // 'Team Lists' (managers only) goes between 'Saved Lists' and the first real category. unshift in
+    // reverse order so the final order is: Saved Lists, Team Lists, <alphabetical categories>.
+    if (this.isManager()) sorted.unshift('Team Lists');
     sorted.unshift('Saved Lists');
     return sorted;
+  });
+
+  /** Team lists shown in the library — manager-only, scoped to the current TU (overlap match done
+   *  server-side), and matched against the library search text. Hidden when a non-'Team Lists'
+   *  category is selected. */
+  readonly libraryTeamLists = computed(() => {
+    if (!this.isManager()) return [];
+    const cat = this.selectedCategory();
+    if (cat && cat !== 'Team Lists') return [];
+    const search = this.librarySearchText().toLowerCase().trim();
+    let lists = this.teamSavedLists();
+    if (search) {
+      lists = lists.filter(l =>
+        l.name.toLowerCase().includes(search) ||
+        l.query.toLowerCase().includes(search) ||
+        (l.createdBy ?? '').toLowerCase().includes(search)
+      );
+    }
+    return lists;
   });
 
   /** Saved lists shown in the library — user-owned (API filters by createdBy already), scoped
@@ -2034,7 +2076,7 @@ export class BuildListComponent {
     return this.nlqFilterService.getStateDisplayName(state);
   }
 
-  loadSavedList(list: SavedList): void {
+  loadSavedList(list: SavedList, source: 'saved' | 'team' = 'saved'): void {
     if (this.loading() || this.isProcessing()) {
       // Don't drop the click silently — tell the user why nothing happened so they aren't
       // wondering whether the click landed. The processing spinner is already on screen but
@@ -2042,7 +2084,8 @@ export class BuildListComponent {
       this.toastService.info('Still loading — please wait a moment and try again');
       return;
     }
-    this.usageTracking.postClickEvent('interaction', 'build-a-list', 'saved-list-loaded', list.id.toString());
+    this.usageTracking.postClickEvent('interaction', 'build-a-list',
+      source === 'team' ? 'team-list-loaded' : 'saved-list-loaded', list.id.toString());
     this.activeSavedList.set(list);
     this.queryText.set(list.query);
     // Do NOT set selectedLibraryQuery here — that would make the "Active Query" indicator
@@ -2514,6 +2557,7 @@ export class BuildListComponent {
       next: () => {
         this.toastService.success(`List "${listName}" saved`);
         this._refreshSavedLists();
+        this._refreshTeamLists(); // a manager may have edited a teammate's list
       },
       error: () => {
         this.toastService.error('Failed to save list');
@@ -2537,8 +2581,10 @@ export class BuildListComponent {
     this.usageTracking.postClickEvent('interaction', 'build-a-list', 'saved-list-deleted', listId.toString());
     this.closeDeleteDialog();
 
-    // Remove from local array immediately for instant UI feedback
+    // Remove from local arrays immediately for instant UI feedback. The id may live in either the
+    // user's own lists (savedLists) or, for a manager, a teammate's list (teamSavedLists).
     this.savedLists.update(lists => lists.filter(l => l.id !== listId));
+    this.teamSavedLists.update(lists => lists.filter(l => l.id !== listId));
     this.appState.setSavedLists(this.savedLists());
     if (this.activeSavedList()?.id === listId) {
       this.activeSavedList.set(null);
@@ -2551,6 +2597,7 @@ export class BuildListComponent {
       error: () => {
         this.toastService.error('Failed to delete list');
         this._refreshSavedLists(); // Re-fetch on error to restore
+        this._refreshTeamLists();
       }
     });
   }
@@ -2562,6 +2609,19 @@ export class BuildListComponent {
         this.appState.setSavedLists(data);
       },
       error: () => this.toastService.error('Failed to refresh lists')
+    });
+  }
+
+  /** Reloads the manager-only team lists for the given trade units (defaults to the current selection).
+   *  Silent on failure — the team view is supplementary to the user's own saved lists. */
+  private _refreshTeamLists(tus: string[] = this.effectiveTradeUnits()): void {
+    if (!this.isManager() || tus.length === 0) {
+      this.teamSavedLists.set([]);
+      return;
+    }
+    this.apiService.getTeamSavedLists(tus.join(',')).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (data) => this.teamSavedLists.set(data),
+      error: () => { /* supplementary view — leave the prior set in place */ }
     });
   }
 

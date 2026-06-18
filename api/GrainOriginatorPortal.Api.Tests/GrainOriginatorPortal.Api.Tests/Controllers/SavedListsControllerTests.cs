@@ -44,6 +44,28 @@ public class SavedListsControllerTests
 
     // -------------------------------------------------------------------------
     [Fact]
+    public async Task GetTeam_ReturnsOkWithTeamLists()
+    {
+        // Arrange
+        var lists = new List<SavedListResponse>
+        {
+            new() { Id = 7, Name = "Joe's List", Query = "wheat", CreatedBy = "Joe Originator" }
+        };
+        _serviceMock
+            .Setup(s => s.GetTeamListsAsync("TU1,TU2", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(lists);
+
+        // Act
+        var result = await _sut.GetTeam("TU1,TU2");
+
+        // Assert
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var returned = Assert.IsAssignableFrom<List<SavedListResponse>>(ok.Value);
+        Assert.Equal("Joe Originator", Assert.Single(returned).CreatedBy);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
     public async Task Create_ReturnsCreated_WithNewList()
     {
         // Arrange

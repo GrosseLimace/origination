@@ -10,4 +10,5 @@ export interface SavedList {
   excludedCustomerIds?: number[];   // Manually removed customers (persisted to DB as JSON)
   customerIds?: number[];           // Computed client-side, NOT stored in DB
   createdAt: string;
+  createdBy?: string;               // Creator's display name (resolved server-side). Used by the manager "Team Lists" view.
 }

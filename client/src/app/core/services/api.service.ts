@@ -590,6 +590,24 @@ export class ApiService {
     );
   }
 
+  /** Manager-only: fetches all saved lists tied to the given trade unit(s) that belong to other
+   *  users, each carrying the creator's display name. Same JSON deserialization as getSavedLists. */
+  getTeamSavedLists(tradeUnits: string): Observable<SavedList[]> {
+    const parseJson = <T>(val: string | null | undefined): T | undefined => {
+      if (!val) return undefined;
+      try { return JSON.parse(val) as T; } catch { return undefined; }
+    };
+    return this.http.get<any[]>(`${this.baseUrl}/savedlists/team`, { params: { tradeUnits } }).pipe(
+      map(lists => lists.map(l => ({
+        ...l,
+        filters: parseJson<RefinementFilters>(l.filters),
+        includedCustomerIds: parseJson<number[]>(l.includedCustomerIds),
+        excludedCustomerIds: parseJson<number[]>(l.excludedCustomerIds),
+      }))),
+      catchError(e => this.handleError(e))
+    );
+  }
+
   /** Creates a new saved list */
   createSavedList(data: { name: string; query: string; tradeUnits?: string; filters?: RefinementFilters; includedCustomerIds?: number[]; excludedCustomerIds?: number[] }): Observable<SavedList> {
     const payload = {

@@ -36,6 +36,26 @@ public class SavedListService : ISavedListService
     }
 
     /// <inheritdoc />
+    public async Task<List<SavedListResponse>> GetTeamListsAsync(string? tradeUnitsCsv, CancellationToken cancellationToken)
+    {
+        var requested = (tradeUnitsCsv ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (requested.Length == 0) return new List<SavedListResponse>();
+
+        // Defense in depth: only ever query trade units the caller is actually entitled to, even though
+        // the build-list selector already bounds the request to the manager's TUs.
+        var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);
+        var scoped = requested.Where(allowed.Contains).ToArray();
+        if (scoped.Length == 0) return new List<SavedListResponse>();
+
+        var lists = await _repository.GetByTradeUnitsAsync(scoped, _requestContext.GetCurrentUser(), cancellationToken);
+        var nameMap = await _displayNameLookup.ResolveAsync(
+            lists.Select(l => l.CreatedBy).Concat(lists.Select(l => l.ModifiedBy ?? string.Empty)),
+            cancellationToken);
+        return lists.Select(l => l.ToResponse(nameMap)).ToList();
+    }
+
+    /// <inheritdoc />
     public async Task<SavedListResponse> CreateAsync(string name, string query, string? tradeUnits, string? filters,
         string? includedCustomerIds, string? excludedCustomerIds, CancellationToken cancellationToken)
     {
@@ -64,8 +84,8 @@ public class SavedListService : ISavedListService
     {
         await ValidateTradeUnitsAsync(tradeUnits, cancellationToken);
 
-        var list = await _repository.UpdateAsync(listId, _requestContext.GetCurrentUser(), name, query, tradeUnits,
-            filters, includedCustomerIds, excludedCustomerIds, cancellationToken);
+        var list = await _repository.UpdateAsync(listId, _requestContext.GetCurrentUser(), _requestContext.IsAdmin(),
+            name, query, tradeUnits, filters, includedCustomerIds, excludedCustomerIds, cancellationToken);
         if (list == null) return null;
 
         var nameMap = await _displayNameLookup.ResolveAsync(
@@ -75,7 +95,7 @@ public class SavedListService : ISavedListService
 
     /// <inheritdoc />
     public Task DeleteAsync(int listId, CancellationToken cancellationToken) =>
-        _repository.DeleteAsync(listId, _requestContext.GetCurrentUser(), cancellationToken);
+        _repository.DeleteAsync(listId, _requestContext.GetCurrentUser(), _requestContext.IsAdmin(), cancellationToken);
 
     /// <summary>Validates the CSV of requested trade units against the caller's entitlements (throws
     /// when one is not allowed). No-op when the request carries no trade units.</summary>

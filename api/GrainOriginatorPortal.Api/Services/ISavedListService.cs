@@ -7,6 +7,11 @@ namespace GrainOriginatorPortal.Api.Services;
 public interface ISavedListService
 {
     Task<List<SavedListResponse>> GetAllAsync(CancellationToken cancellationToken);
+
+    /// <summary>Manager-only: all saved lists created by other users whose trade units overlap the
+    /// requested CSV (intersected with the caller's entitled trade units), with creator display names.</summary>
+    Task<List<SavedListResponse>> GetTeamListsAsync(string? tradeUnitsCsv, CancellationToken cancellationToken);
+
     Task<SavedListResponse> CreateAsync(string name, string query, string? tradeUnits, string? filters,
         string? includedCustomerIds, string? excludedCustomerIds, CancellationToken cancellationToken);
     Task<SavedListResponse?> UpdateAsync(int listId, string name, string query, string? tradeUnits, string? filters,
