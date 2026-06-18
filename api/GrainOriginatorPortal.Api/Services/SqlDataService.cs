@@ -3662,7 +3662,7 @@ public class SqlDataService : IDataService
     // Daily Recap Group Operations (Daily Digest)
     // =========================================================================
 
-    private static RecapGroupDto MapRecapGroup(DailyRecapGroup g) => new()
+    private static RecapGroupDto MapRecapGroup(DailyRecapGroup g, bool isOwner = true) => new()
     {
         Id = g.Id,
         Name = g.Name,
@@ -3673,6 +3673,8 @@ public class SqlDataService : IDataService
             .Select(m => new RecapGroupMemberDto { Type = m.MemberType, Id = m.MemberId, Name = m.MemberName, Email = m.Email })
             .ToList(),
         CcList = g.CcEmails.Select(c => c.Email).ToList(),
+        IsOwner = isOwner,
+        CreatedBy = g.CreatedBy,
     };
 
     /// <summary>Builds the child member/CC rows from a request. Member email is only kept for
@@ -3695,19 +3697,31 @@ public class SqlDataService : IDataService
         return (members, cc);
     }
 
-    public async Task<List<RecapGroupDto>> GetRecapGroupsAsync(CancellationToken cancellationToken = default)
+    public async Task<List<RecapGroupDto>> GetRecapGroupsAsync(
+        IReadOnlyCollection<string> memberTradeUnitCodes,
+        IReadOnlyCollection<string> memberGroupIds,
+        CancellationToken cancellationToken = default)
     {
         try
         {
+            // Groups the caller OWNS (CreatedBy = full UPN) plus ones they're a MEMBER of — directly
+            // as a person (MemberId = UPN prefix), or via a trade unit / trade-unit group they belong
+            // to (caller's entitlements passed in from the controller). Owned groups are editable;
+            // member-only groups come back IsOwner=false so the UI shows them faded and read-only.
             var currentUser = GetCurrentUser();
+            var userId = currentUser.Contains('@') ? currentUser.Split('@')[0] : currentUser;
             var groups = await _appContext.DailyRecapGroups
                 .AsNoTracking()
                 .Include(g => g.Members)
                 .Include(g => g.CcEmails)
-                .Where(g => g.CreatedBy == currentUser)
+                .Where(g => g.CreatedBy == currentUser
+                    || g.Members.Any(m =>
+                        (m.MemberType == "person" && m.MemberId == userId)
+                        || (m.MemberType == "trade-unit" && memberTradeUnitCodes.Contains(m.MemberId))
+                        || (m.MemberType == "trade-unit-group" && memberGroupIds.Contains(m.MemberId))))
                 .OrderBy(g => g.Name)
                 .ToListAsync(cancellationToken);
-            return groups.Select(MapRecapGroup).ToList();
+            return groups.Select(g => MapRecapGroup(g, isOwner: g.CreatedBy == currentUser)).ToList();
         }
         catch (Exception ex)
         {

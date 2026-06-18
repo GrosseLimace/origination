@@ -243,7 +243,10 @@ public class ApimDataService : IDataService
     public Task DeleteListAsync(int listId, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for DeleteList");
 
-    public Task<List<RecapGroupDto>> GetRecapGroupsAsync(CancellationToken cancellationToken = default)
+    public Task<List<RecapGroupDto>> GetRecapGroupsAsync(
+        IReadOnlyCollection<string> memberTradeUnitCodes,
+        IReadOnlyCollection<string> memberGroupIds,
+        CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: Wire up APIM endpoint for GetRecapGroups");
 
     public Task<RecapGroupDto> CreateRecapGroupAsync(RecapGroupRequest request, CancellationToken cancellationToken = default)

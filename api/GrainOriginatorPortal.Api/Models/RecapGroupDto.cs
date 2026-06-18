@@ -11,6 +11,14 @@ public record RecapGroupDto
     public bool Enabled { get; init; }
     public List<RecapGroupMemberDto> Members { get; init; } = [];
     public List<string> CcList { get; init; } = [];
+
+    /// <summary>True when the caller created this group (full edit rights). False for groups the
+    /// caller only sees because they're a member — the UI shows those faded and read-only.</summary>
+    public bool IsOwner { get; init; } = true;
+
+    /// <summary>The creator's UPN/email. Shown on read-only (member) cards so a member can reach
+    /// out to whoever owns the group.</summary>
+    public string CreatedBy { get; init; } = string.Empty;
 }
 
 public record RecapGroupMemberDto

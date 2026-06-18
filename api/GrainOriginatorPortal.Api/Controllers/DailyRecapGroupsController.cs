@@ -1,14 +1,17 @@
 // Project namespaces
+using GrainOriginatorPortal.Api.Data;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Services;
+using Microsoft.EntityFrameworkCore;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
 /// <summary>
-/// CRUD for Daily Recap groups (Daily Digest). Groups are creator-owned — each user sees and
-/// manages only the groups they created. The external Logic App reads the underlying tables
-/// directly and re-resolves trade-unit / group members against entitlements at send time.
+/// CRUD for Daily Recap groups (Daily Digest). Create/update/delete are creator-owned. The list
+/// (GetAll) also returns groups the caller is a member of (read-only on the client). The external
+/// Logic App reads the underlying tables directly and re-resolves trade-unit / group members
+/// against entitlements at send time.
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
@@ -17,21 +20,54 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class DailyRecapGroupsController : ControllerBase
 {
     private readonly IDataService _dataService;
+    private readonly EntitlementsDbContext _entitlementsDb;
     private readonly ILogger<DailyRecapGroupsController> _logger;
 
-    public DailyRecapGroupsController(IDataService dataService, ILogger<DailyRecapGroupsController> logger)
+    public DailyRecapGroupsController(IDataService dataService, EntitlementsDbContext entitlementsDb, ILogger<DailyRecapGroupsController> logger)
     {
         _dataService = dataService;
+        _entitlementsDb = entitlementsDb;
         _logger = logger;
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Gets the current user's recap groups.</summary>
+    /// <summary>Gets the recap groups the caller created (editable) plus ones they're a member of
+    /// (read-only). Membership is matched against the caller's trade-unit / group entitlements.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(List<RecapGroupDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<RecapGroupDto>>> GetAll(CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetRecapGroupsAsync(cancellationToken));
+        // Resolve the caller's entitlements so the service can include groups they're a MEMBER of
+        // (by trade unit or trade-unit group), not just ones they created. Member ids mirror the
+        // Daily Digest picker: trade-unit = TU code, trade-unit-group = entitlements GroupId (string).
+        var upn = User.FindFirst("preferred_username")?.Value
+            ?? User.FindFirst("upn")?.Value
+            ?? User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn")?.Value
+            ?? User.Identity?.Name
+            ?? string.Empty;
+        var userId = upn.Contains('@') ? upn.Split('@')[0] : upn;
+
+        var tuCodes = new List<string>();
+        var groupIds = new List<string>();
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            try
+            {
+                var rows = await _entitlementsDb.UserTradeUnitAccess
+                    .Where(u => u.UserId == userId)
+                    .Select(u => new { u.TradeUnitCode, u.GroupId })
+                    .ToListAsync(cancellationToken);
+                tuCodes = rows.Where(r => !string.IsNullOrWhiteSpace(r.TradeUnitCode)).Select(r => r.TradeUnitCode).Distinct().ToList();
+                groupIds = rows.Where(r => r.GroupId != null).Select(r => r.GroupId!.Value.ToString()).Distinct().ToList();
+            }
+            catch (Exception ex)
+            {
+                // Entitlements unavailable → fall back to creator-owned groups only (empty member sets).
+                _logger.LogWarning(ex, "Entitlements unavailable for {UserId} — recap group list limited to owned groups", userId);
+            }
+        }
+
+        return Ok(await _dataService.GetRecapGroupsAsync(tuCodes, groupIds, cancellationToken));
     }
 
     // -------------------------------------------------------------------------

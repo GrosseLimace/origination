@@ -25,8 +25,8 @@ type MemberTab = 'people' | 'trade-units' | 'groups';
  * via entitlements, gathers notes for the resolved producer set, and emails
  * the digest. This component is configuration-only.
  *
- * Groups are creator-owned and persisted via /api/dailyrecapgroups; the user
- * sees and manages only the groups they created.
+ * Persisted via /api/dailyrecapgroups. The user manages the groups they created and
+ * additionally sees groups they're a member of, shown faded and read-only.
  */
 @Component({
   selector: 'app-daily-digest',
@@ -275,6 +275,7 @@ export class DailyDigestComponent implements OnInit {
   }
 
   protected openEditDialog(group: RecapGroup): void {
+    if (!group.isOwner) return;   // member-only groups are read-only
     this.formName.set(group.name);
     this.formDeliveryMethod.set(group.deliveryMethod);
     this.formMembers.set([...group.members]);
@@ -301,6 +302,7 @@ export class DailyDigestComponent implements OnInit {
   });
 
   protected requestDeleteGroup(group: RecapGroup): void {
+    if (!group.isOwner) return;   // member-only groups are read-only
     this.pendingDeleteId.set(group.id);
     this.deleteDialogOpen.set(true);
   }
@@ -329,6 +331,7 @@ export class DailyDigestComponent implements OnInit {
   }
 
   protected toggleGroupEnabled(group: RecapGroup): void {
+    if (!group.isOwner) return;   // member-only groups are read-only
     const next = !group.enabled;
     // Optimistic flip; revert on failure.
     this.groups.update(list => list.map(g => g.id === group.id ? { ...g, enabled: next } : g));

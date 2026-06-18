@@ -144,6 +144,9 @@ export class ApiService {
       ccList: dto.ccList ?? [],
       teamsChannelEmail: dto.teamsChannelEmail,
       enabled: dto.enabled,
+      // Created groups come back from create/update without these flags → default to owner.
+      isOwner: dto.isOwner ?? true,
+      createdBy: dto.createdBy ?? '',
     };
   }
 
