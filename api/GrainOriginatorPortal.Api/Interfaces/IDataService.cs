@@ -419,6 +419,25 @@ public interface IDataService
     Task DeleteListAsync(int listId, CancellationToken cancellationToken = default);
 
     // =========================================================================
+    // Daily Recap Group Operations (Daily Digest)
+    // =========================================================================
+
+    /// <summary>Gets the current user's daily recap groups (creator-owned), with members + CC emails.</summary>
+    Task<List<RecapGroupDto>> GetRecapGroupsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Creates a recap group owned by the current user.</summary>
+    Task<RecapGroupDto> CreateRecapGroupAsync(RecapGroupRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates a recap group the current user owns; returns null if not found/owned.</summary>
+    Task<RecapGroupDto?> UpdateRecapGroupAsync(int groupId, RecapGroupRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Toggles a recap group's Enabled flag; returns null if not found/owned.</summary>
+    Task<RecapGroupDto?> SetRecapGroupEnabledAsync(int groupId, bool enabled, CancellationToken cancellationToken = default);
+
+    /// <summary>Deletes a recap group the current user owns (cascade removes members + CC emails).</summary>
+    Task DeleteRecapGroupAsync(int groupId, CancellationToken cancellationToken = default);
+
+    // =========================================================================
     // Bid Sheet Operations
     // =========================================================================
 

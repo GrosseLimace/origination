@@ -9,7 +9,7 @@ import { Component, input, output, inject, DestroyRef, effect } from '@angular/c
       <div class="fixed inset-0 bg-black/55 z-[60]" (click)="onBackdropClick()"></div>
 
       <!-- Dialog wrapper -->
-      <div class="fixed inset-0 z-[60] flex items-center justify-center py-8 px-4 overflow-y-auto" (click)="onBackdropClick()">
+      <div class="fixed inset-0 z-[60] flex justify-center px-4 overflow-y-auto" [class]="alignClass" (click)="onBackdropClick()">
         <div
           class="relative w-full bg-white dark:bg-gray-800 rounded-lg shadow-xl max-h-[calc(100vh-4rem)] overflow-y-auto border border-gray-200 dark:border-gray-700"
           [class]="sizeClass"
@@ -37,6 +37,10 @@ export class DialogComponent {
   public size = input<'sm' | 'md' | 'lg' | 'xl' | '2xl'>('md');
   public closeOnBackdrop = input<boolean>(true);
   public showCloseButton = input<boolean>(true);
+  /** Vertical placement. 'center' (default) keeps the existing centered behavior;
+   *  'top' anchors the dialog in the upper third — better for short confirm dialogs
+   *  that otherwise read as "low" when dead-centered on a tall viewport. */
+  public align = input<'center' | 'top'>('center');
   public close = output<void>();
 
   constructor() {
@@ -49,6 +53,12 @@ export class DialogComponent {
     destroyRef.onDestroy(() => {
       document.body.style.overflow = '';
     });
+  }
+
+  public get alignClass(): string {
+    // 'top' uses a viewport-relative top offset so the dialog sits in the upper
+    // third; 'center' preserves the original items-center + py-8 spacing.
+    return this.align() === 'top' ? 'items-start pt-[12vh] pb-8' : 'items-center py-8';
   }
 
   public get sizeClass(): string {
