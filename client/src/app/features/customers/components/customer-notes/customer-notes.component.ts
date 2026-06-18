@@ -54,7 +54,7 @@ export class CustomerNotesComponent {
 
   // ---- "@" mention picker state ----
   noteTextarea = viewChild<ElementRef<HTMLTextAreaElement>>('noteTextarea');
-  mentionCatalog = signal<MentionCatalog>({ people: [], tradeUnits: [], groups: [], recapGroups: [] });
+  mentionCatalog = signal<MentionCatalog>({ people: [], tradeUnits: [], groups: [] });
   /** Structured mentions chosen for the note being composed; sent to the API on submit. */
   mentions = signal<NoteMention[]>([]);
   mentionDropdownOpen = signal(false);
@@ -63,24 +63,45 @@ export class CustomerNotesComponent {
   private mentionAtIndex = -1;  // index of the triggering '@' in the textarea value
   private mentionCaret = 0;     // caret position when the query was captured
 
-  /** Catalog rows filtered by the current "@" query, capped for the dropdown. */
+  /** Catalog rows ranked by relevance to the current "@" query, capped for the dropdown.
+   *  Mentionable types: people, trade units, and trade-unit groups.
+   *  Ranking puts matches on the PRIMARY identifier (TU code, person name/UPN, group name)
+   *  above matches that only hit a SECONDARY field (TU description, person email). So "@1084"
+   *  surfaces that trade unit, and "@Corn Belt" surfaces the group above trade units whose
+   *  location name merely contains "corn" (e.g. "ABI WET BREW CORN"). */
   mentionOptions = computed<MentionOption[]>(() => {
     if (!this.mentionDropdownOpen()) return [];
-    const q = this.mentionQuery().toLowerCase();
+    const q = this.mentionQuery().trim().toLowerCase();
+    if (!q) return [];
     const cat = this.mentionCatalog();
-    const people: MentionOption[] = cat.people
-      .filter(p => !q || p.displayName.toLowerCase().includes(q) || p.userId.toLowerCase().includes(q))
-      .map(p => ({ type: 'person', id: p.userId, name: p.displayName, email: p.email, secondary: p.email }));
-    const tus: MentionOption[] = cat.tradeUnits
-      .filter(t => !q || t.code.toLowerCase().includes(q) || (t.description ?? '').toLowerCase().includes(q))
-      .map(t => ({ type: 'trade-unit', id: t.code, name: t.code, secondary: t.description || 'Trade unit' }));
-    const groups: MentionOption[] = cat.groups
-      .filter(g => !q || g.name.toLowerCase().includes(q))
-      .map(g => ({ type: 'trade-unit-group', id: String(g.groupId), name: g.name, secondary: 'Group' }));
-    const recapGroups: MentionOption[] = cat.recapGroups
-      .filter(g => !q || g.name.toLowerCase().includes(q))
-      .map(g => ({ type: 'recap-group', id: String(g.recapGroupId), name: g.name, secondary: 'Recap group' }));
-    return [...people, ...tus, ...groups, ...recapGroups].slice(0, 8);
+
+    // Lower score = better match. -1 means no match (excluded).
+    const score = (primary: string[], secondary: string[]): number => {
+      const prim = primary.map(s => s.toLowerCase()).filter(Boolean);
+      const sec = secondary.map(s => s.toLowerCase()).filter(Boolean);
+      if (prim.some(s => s.startsWith(q))) return 0;
+      if (prim.some(s => s.includes(q))) return 1;
+      if (sec.some(s => s.startsWith(q))) return 2;
+      if (sec.some(s => s.includes(q))) return 3;
+      return -1;
+    };
+
+    const ranked: { opt: MentionOption; score: number }[] = [];
+    for (const p of cat.people) {
+      const s = score([p.displayName, p.userId], [p.email]);
+      if (s >= 0) ranked.push({ opt: { type: 'person', id: p.userId, name: p.displayName, email: p.email, secondary: p.email }, score: s });
+    }
+    for (const t of cat.tradeUnits) {
+      const s = score([t.code], [t.description ?? '']);
+      if (s >= 0) ranked.push({ opt: { type: 'trade-unit', id: t.code, name: t.code, secondary: t.description || 'Trade unit' }, score: s });
+    }
+    for (const g of cat.groups) {
+      const s = score([g.name], []);
+      if (s >= 0) ranked.push({ opt: { type: 'trade-unit-group', id: String(g.groupId), name: g.name, secondary: 'Group' }, score: s });
+    }
+
+    ranked.sort((a, b) => a.score - b.score || a.opt.name.localeCompare(b.opt.name));
+    return ranked.map(r => r.opt).slice(0, 8);
   });
   openMenuId = signal<number | null>(null);
   editingNoteId = signal<number | null>(null);

@@ -1,17 +1,15 @@
 namespace GrainOriginatorPortal.Api.Models;
 
 /// <summary>
-/// Lookup data for the note "@" mention picker. People / trade units / trade-unit groups are
-/// scoped to the caller's trade-unit access (from dbo.vw_UserTradeUnitAccess in the Entitlements
-/// DB); recap groups are the caller's own saved Daily Recap groups. The lists map to the
-/// <see cref="NoteMention"/> types a user can mention.
+/// Lookup data for the note "@" mention picker, scoped to the calling user's trade-unit
+/// access (resolved from dbo.vw_UserTradeUnitAccess in the Entitlements DB). The three lists
+/// map to the three <see cref="NoteMention"/> types a user can mention.
 /// </summary>
 public class MentionCatalogResponse
 {
     public List<MentionCatalogPerson> People { get; set; } = [];
     public List<MentionCatalogTradeUnit> TradeUnits { get; set; } = [];
     public List<MentionCatalogGroup> Groups { get; set; } = [];
-    public List<MentionCatalogRecapGroup> RecapGroups { get; set; } = [];
 }
 
 /// <summary>A person who shares at least one trade unit with the caller.</summary>
@@ -33,12 +31,5 @@ public class MentionCatalogTradeUnit
 public class MentionCatalogGroup
 {
     public int GroupId { get; set; }
-    public string Name { get; set; } = string.Empty;
-}
-
-/// <summary>A saved Daily Recap group the caller owns — mentionable so a note can target it.</summary>
-public class MentionCatalogRecapGroup
-{
-    public int RecapGroupId { get; set; }
     public string Name { get; set; } = string.Empty;
 }
