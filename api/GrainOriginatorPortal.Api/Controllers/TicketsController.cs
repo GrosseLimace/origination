@@ -43,6 +43,7 @@ public class TicketsController : ControllerBase
     [ProducesResponseType(typeof(List<TicketResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<TicketResponse>>> GetByCustomer(long customerId, [FromQuery] string? scoularId = null, CancellationToken cancellationToken = default)
     {
+        // Open to any rep — no per-producer object-level authz by design; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
         return Ok(await _service.GetByCustomerAsync(customerId, scoularId, cancellationToken));
     }
 

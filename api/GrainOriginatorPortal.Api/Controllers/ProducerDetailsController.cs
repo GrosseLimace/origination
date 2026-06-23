@@ -45,6 +45,7 @@ public class ProducerDetailsController : ControllerBase
     public async Task<ActionResult<ProducerDetailsResponse>> Upsert(long customerId, [FromBody] UpsertProducerDetailsRequest request, CancellationToken cancellationToken = default)
     {
         // Trade units are a UX filter, not an access boundary — any rep may save producer details for any customer.
+        // No per-record ownership check is intentional; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-01).
         var details = await _service.UpsertAsync(
             customerId,
             request.ScoularId,

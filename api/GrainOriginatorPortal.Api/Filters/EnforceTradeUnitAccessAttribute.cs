@@ -1,3 +1,4 @@
+using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Services;
 using Microsoft.AspNetCore.Mvc.Filters;
 
@@ -37,12 +38,20 @@ public class EnforceTradeUnitAccessAttribute : Attribute, IFilterFactory
             var isReadRequest = HttpMethods.IsGet(context.HttpContext.Request.Method)
                              || HttpMethods.IsHead(context.HttpContext.Request.Method);
 
-            // If the Entitlements DB was unreachable, skip filtering on read requests rather
-            // than stripping all trade units and causing 400/empty responses.
+            // If the Entitlements DB was unreachable AND there was no last-known-good cache to fall
+            // back on (UserEntitlementService), fail CLOSED rather than serving unfiltered data:
+            // skipping the filter here would let every user see all trade units' data during the
+            // outage (CWE-285). Return 503 so the client retries instead. Writes already fail closed
+            // via ValidateTradeUnitsOrThrowAsync below.
             if (!_entitlementService.EntitlementsAvailable && isReadRequest)
             {
-                await next();
-                return;
+                _logger.LogError(
+                    "Entitlements unavailable and uncached — refusing unfiltered read for {Path}. [{ErrorCode}]",
+                    context.HttpContext.Request.Path, "ENTITLEMENTS_FAIL_CLOSED");
+                throw new InfrastructureException(
+                    "Authorization data is temporarily unavailable. Please retry shortly.",
+                    "ENTITLEMENTS_DB_UNAVAILABLE",
+                    StatusCodes.Status503ServiceUnavailable);
             }
 
             // Pattern 1: tradeUnits as List<string> (Customers, Contracts, Tickets)
