@@ -52,12 +52,15 @@ public class ProducerDetailsService : IProducerDetailsService
         }
 
         // Entitlement scoping: narrow to producers in the caller's allowed trade units.
-        if (_entitlementService.EntitlementsAvailable)
-        {
-            var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);
-            var allowedCustomerIds = await _customerRepository.GetActiveCustomerIdsInTradeUnitsAsync(allowed, cancellationToken);
-            all = all.Where(d => allowedCustomerIds.Contains(d.CustomerId)).ToList();
-        }
+        var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);
+        // Fail closed: if entitlements are unavailable and uncached, refuse rather than returning
+        // data we can't authorize (CWE-285). Mirrors EnforceTradeUnitAccessAttribute.
+        if (!_entitlementService.EntitlementsAvailable)
+            throw new GrainOriginatorPortal.Api.Exceptions.InfrastructureException(
+                "Authorization data is temporarily unavailable. Please retry shortly.",
+                "ENTITLEMENTS_DB_UNAVAILABLE", StatusCodes.Status503ServiceUnavailable);
+        var allowedCustomerIds = await _customerRepository.GetActiveCustomerIdsInTradeUnitsAsync(allowed, cancellationToken);
+        all = all.Where(d => allowedCustomerIds.Contains(d.CustomerId)).ToList();
 
         return all.Select(p => p.ToResponse(nameMap)).ToList();
     }

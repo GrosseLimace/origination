@@ -42,6 +42,7 @@ public class NotesController : ControllerBase
     [ProducesResponseType(typeof(List<NoteResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<NoteResponse>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
+        // Open to any rep — no per-producer object-level authz by design; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
         return Ok(await _service.GetByCustomerAsync(customerId, cancellationToken));
     }
 
@@ -170,6 +171,7 @@ public class NotesController : ControllerBase
     public async Task<ActionResult<NoteResponse>> Update(long id, [FromBody] UpdateNoteRequest request, CancellationToken cancellationToken = default)
     {
         // Trade units are a UX filter, not an access boundary — any rep may edit any note.
+        // No per-record ownership check is intentional; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-01).
         _ = await _service.GetByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("Note", id);
         var note = await _service.UpdateAsync(id, request.Content, request.Mentions, cancellationToken)
