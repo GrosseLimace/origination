@@ -1,6 +1,9 @@
 // Project namespaces
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Filters;
+using GrainOriginatorPortal.Api.Models.Requests;
+using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -11,22 +14,14 @@ namespace GrainOriginatorPortal.Api.Controllers;
 [EnforceTradeUnitAccess]
 public class DashboardPlantingEstimatesController : ControllerBase
 {
-    private readonly IDataService _dataService;
+    private readonly IDashboardService _service;
     private readonly ILogger<DashboardPlantingEstimatesController> _logger;
 
-    public DashboardPlantingEstimatesController(IDataService dataService, ILogger<DashboardPlantingEstimatesController> logger)
+    public DashboardPlantingEstimatesController(IDashboardService service, ILogger<DashboardPlantingEstimatesController> logger)
     {
-        _dataService = dataService;
+        _service = service;
         _logger = logger;
     }
-
-    // Resolve the authenticated user's identity for audit trail in upsert operations.
-    // security-guide.md §8.1: administrative actions must be attributable to a specific user.
-    private string CurrentUserId =>
-        User.FindFirst("preferred_username")?.Value
-        ?? User.FindFirst("oid")?.Value
-        ?? User.Identity?.Name
-        ?? "unknown";
 
     // -------------------------------------------------------------------------
     /// <summary>Gets all three dashboard datasets (estimates, market shares, actual harvest) in a single request.</summary>
@@ -37,18 +32,18 @@ public class DashboardPlantingEstimatesController : ControllerBase
     public async Task<ActionResult<DashboardSummaryResponse>> GetSummary([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear, CancellationToken cancellationToken = default)
     {
         ValidateDashboardParams(tradeUnitKey, plantingYear);
-        return Ok(await _dataService.GetDashboardSummaryAsync(tradeUnitKey, plantingYear, cancellationToken));
+        return Ok(await _service.GetSummaryAsync(tradeUnitKey, plantingYear, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
     /// <summary>Gets planting estimates for a trade unit key and year.</summary>
     [HttpGet]
-    [ProducesResponseType(typeof(List<DashboardPlantingEstimate>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(List<DashboardPlantingEstimateResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<List<DashboardPlantingEstimate>>> Get([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<List<DashboardPlantingEstimateResponse>>> Get([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear, CancellationToken cancellationToken = default)
     {
         ValidateDashboardParams(tradeUnitKey, plantingYear);
-        return Ok(await _dataService.GetDashboardPlantingEstimatesAsync(tradeUnitKey, plantingYear, cancellationToken));
+        return Ok(await _service.GetPlantingEstimatesAsync(tradeUnitKey, plantingYear, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -62,7 +57,7 @@ public class DashboardPlantingEstimatesController : ControllerBase
         {
             throw new ValidationException("estimates", "At least one estimate must be provided.");
         }
-        await _dataService.UpsertDashboardPlantingEstimatesAsync(estimates, CurrentUserId, cancellationToken);
+        await _service.UpsertPlantingEstimatesAsync(estimates, cancellationToken);
         _logger.LogInformation(
             "Dashboard planting estimates upserted [{ErrorCode}] [{ErrorCategory}]: Count={Count}",
             "AUDIT_UPSERT", "DataMutation", estimates.Count);
@@ -72,12 +67,12 @@ public class DashboardPlantingEstimatesController : ControllerBase
     // -------------------------------------------------------------------------
     /// <summary>Gets market share percentages for a trade unit key and year.</summary>
     [HttpGet("marketshares")]
-    [ProducesResponseType(typeof(List<DashboardMarketShare>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(List<DashboardMarketShareResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<List<DashboardMarketShare>>> GetMarketShares([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<List<DashboardMarketShareResponse>>> GetMarketShares([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear, CancellationToken cancellationToken = default)
     {
         ValidateDashboardParams(tradeUnitKey, plantingYear);
-        return Ok(await _dataService.GetDashboardMarketSharesAsync(tradeUnitKey, plantingYear, cancellationToken));
+        return Ok(await _service.GetMarketSharesAsync(tradeUnitKey, plantingYear, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -91,7 +86,7 @@ public class DashboardPlantingEstimatesController : ControllerBase
         {
             throw new ValidationException("shares", "At least one market share must be provided.");
         }
-        await _dataService.UpsertDashboardMarketSharesAsync(shares, CurrentUserId, cancellationToken);
+        await _service.UpsertMarketSharesAsync(shares, cancellationToken);
         _logger.LogInformation(
             "Dashboard market shares upserted [{ErrorCode}] [{ErrorCategory}]: Count={Count}",
             "AUDIT_UPSERT", "DataMutation", shares.Count);
@@ -101,12 +96,12 @@ public class DashboardPlantingEstimatesController : ControllerBase
     // -------------------------------------------------------------------------
     /// <summary>Gets actual harvest rows for a trade unit key and year.</summary>
     [HttpGet("actualharvest")]
-    [ProducesResponseType(typeof(List<DashboardActualHarvest>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(List<DashboardActualHarvestResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<List<DashboardActualHarvest>>> GetActualHarvest([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<List<DashboardActualHarvestResponse>>> GetActualHarvest([FromQuery] string tradeUnitKey, [FromQuery] int plantingYear, CancellationToken cancellationToken = default)
     {
         ValidateDashboardParams(tradeUnitKey, plantingYear);
-        return Ok(await _dataService.GetDashboardActualHarvestAsync(tradeUnitKey, plantingYear, cancellationToken));
+        return Ok(await _service.GetActualHarvestAsync(tradeUnitKey, plantingYear, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -120,7 +115,7 @@ public class DashboardPlantingEstimatesController : ControllerBase
         {
             throw new ValidationException("items", "At least one harvest item must be provided.");
         }
-        await _dataService.UpsertDashboardActualHarvestAsync(items, CurrentUserId, cancellationToken);
+        await _service.UpsertActualHarvestAsync(items, cancellationToken);
         _logger.LogInformation(
             "Dashboard actual harvest upserted [{ErrorCode}] [{ErrorCategory}]: Count={Count}",
             "AUDIT_UPSERT", "DataMutation", items.Count);
@@ -133,7 +128,7 @@ public class DashboardPlantingEstimatesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<ActionResult> DeleteActualHarvest(int id, CancellationToken cancellationToken = default)
     {
-        await _dataService.DeleteDashboardActualHarvestAsync(id, cancellationToken);
+        await _service.DeleteActualHarvestAsync(id, cancellationToken);
         _logger.LogInformation(
             "Dashboard actual harvest deleted [{ErrorCode}] [{ErrorCategory}]: HarvestId={HarvestId}",
             "AUDIT_DELETE", "DataMutation", id);

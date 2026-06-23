@@ -1,9 +1,9 @@
 using System.Text.RegularExpressions;
 using System.Threading.Channels;
-using GrainOriginatorPortal.Api.Data;
+using GrainOriginatorPortal.Infrastructure.Data.Entities;
+using GrainOriginatorPortal.Infrastructure.Interfaces;
 using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Models;
-using Microsoft.EntityFrameworkCore;
 
 namespace GrainOriginatorPortal.Api.Services;
 
@@ -104,16 +104,16 @@ public class UsageTrackingBackgroundService : BackgroundService
         _logger.LogInformation("UsageTrackingBackgroundService stopped");
     }
 
-    private async Task FlushBatchAsync(List<UserActivityRecord> activities, List<UserClickEventRecord> clicks, CancellationToken ct)
+    private async Task FlushBatchAsync(List<UserActivityRecord> activities, List<UserClickEventRecord> clicks, CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IUsageRepository>();
 
-        // Insert activity records with feature codes
-        foreach (var record in activities)
+        // Map incoming records to entities (feature codes derived here in the Api layer).
+        var activityEntities = activities.Select(record =>
         {
             var (featureCode, subFeatureCode) = FeatureNameMapper.MapPathDetailed(record.HttpMethod, record.Path);
-            db.UserActivities.Add(new UserActivity
+            return new UserActivity
             {
                 UserId = record.UserId,
                 HttpMethod = record.HttpMethod,
@@ -123,82 +123,24 @@ public class UsageTrackingBackgroundService : BackgroundService
                 FeatureCode = featureCode,
                 SubFeatureCode = subFeatureCode,
                 Timestamp = record.Timestamp
-            });
-        }
+            };
+        }).ToList();
 
-        // Insert click events
-        foreach (var click in clicks)
+        var clickEntities = clicks.Select(click => new UserClickEvent
         {
-            db.UserClickEvents.Add(new UserClickEvent
-            {
-                UserId = click.UserId,
-                EventType = click.EventType,
-                FeatureCode = click.FeatureCode,
-                SubFeatureCode = click.SubFeatureCode,
-                TargetId = click.TargetId,
-                Timestamp = click.Timestamp
-            });
-        }
+            UserId = click.UserId,
+            EventType = click.EventType,
+            FeatureCode = click.FeatureCode,
+            SubFeatureCode = click.SubFeatureCode,
+            TargetId = click.TargetId,
+            Timestamp = click.Timestamp
+        }).ToList();
 
-        await db.SaveChangesAsync(ct);
+        await repo.AddActivitiesAndClicksAsync(activityEntities, clickEntities, cancellationToken);
 
-        // Update sessions from activity records
-        if (activities.Count > 0)
-            await UpdateSessionsAsync(db, activities, ct);
-    }
-
-    /// <summary>
-    /// For each user in the batch, either extends their most recent open session or creates a new one.
-    /// A session is "open" if its LastActivityTime is within the SessionGap window of the incoming activity.
-    /// The DB is the source of truth — no in-memory cache — so this is correct regardless of process
-    /// restarts, instance count, or deploy swaps.
-    /// </summary>
-    private async Task UpdateSessionsAsync(ApplicationDbContext db, List<UserActivityRecord> batch, CancellationToken ct)
-    {
-        var userLatest = batch
-            .GroupBy(r => r.UserId, StringComparer.OrdinalIgnoreCase)
-            .Select(g => new { UserId = g.Key, LatestTimestamp = g.Max(r => r.Timestamp) })
-            .ToList();
-        if (userLatest.Count == 0) return;
-
-        var userIds = userLatest.Select(x => x.UserId).ToList();
-        // Anyone whose most recent activity sits beyond this cutoff must start a new session.
-        var cutoff = userLatest.Min(x => x.LatestTimestamp) - SessionGap;
-
-        // Fetch candidate open sessions for these users in one query, then pick latest per user in memory
-        // (avoids the GroupBy+First LINQ translation pitfalls that caused the old seed query to fail).
-        var candidates = await db.UserSessions
-            .Where(s => userIds.Contains(s.UserId) && s.LastActivityTime >= cutoff)
-            .ToListAsync(ct);
-
-        var latestOpenByUser = candidates
-            .GroupBy(s => s.UserId, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                g => g.Key,
-                g => g.OrderByDescending(s => s.LastActivityTime).First(),
-                StringComparer.OrdinalIgnoreCase);
-
-        foreach (var entry in userLatest)
-        {
-            if (latestOpenByUser.TryGetValue(entry.UserId, out var openSession)
-                && (entry.LatestTimestamp - openSession.LastActivityTime) < SessionGap)
-            {
-                // Extend the existing session — only update if the new timestamp is newer.
-                if (entry.LatestTimestamp > openSession.LastActivityTime)
-                    openSession.LastActivityTime = entry.LatestTimestamp;
-            }
-            else
-            {
-                db.UserSessions.Add(new UserSession
-                {
-                    UserId = entry.UserId,
-                    LoginTime = entry.LatestTimestamp,
-                    LastActivityTime = entry.LatestTimestamp
-                });
-            }
-        }
-
-        await db.SaveChangesAsync(ct);
+        // Update sessions from the activity rows.
+        if (activityEntities.Count > 0)
+            await repo.ApplyActivitySessionsAsync(activityEntities, SessionGap, cancellationToken);
     }
 }
 

@@ -2,11 +2,11 @@ using System.ComponentModel.DataAnnotations;
 
 namespace GrainOriginatorPortal.Api.Models.Requests;
 
-public class SetBidSheetLocationOrderRequest
+public record SetBidSheetLocationOrderRequest
 {
     [Required, MaxLength(500)]
-    public string TradeUnitKey { get; set; } = string.Empty;
+    public string TradeUnitKey { get; init; } = string.Empty;
 
     [Required]
-    public string LocationOrder { get; set; } = "[]";
+    public string LocationOrder { get; init; } = "[]";
 }

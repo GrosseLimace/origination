@@ -1,5 +1,5 @@
-using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Models.Requests;
+using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Controllers;
@@ -10,21 +10,14 @@ namespace GrainOriginatorPortal.Api.Controllers;
 [Produces("application/json")]
 public class BidSheetController : ControllerBase
 {
-    private readonly IDataService _dataService;
-    private readonly ILogger<BidSheetController> _logger;
+    private readonly IBidSheetService _service;
     private readonly IUserEntitlementService _entitlementService;
 
-    public BidSheetController(IDataService dataService, ILogger<BidSheetController> logger,
-        IUserEntitlementService entitlementService)
+    public BidSheetController(IBidSheetService service, IUserEntitlementService entitlementService)
     {
-        _dataService = dataService;
-        _logger = logger;
+        _service = service;
         _entitlementService = entitlementService;
     }
-
-    private string CurrentUserId => User.FindFirst("preferred_username")?.Value
-        ?? User.FindFirst("name")?.Value
-        ?? throw new InvalidOperationException("User identity claims are missing.");
 
     // -------------------------------------------------------------------------
     // Elevators (from dbo.ElevatorCache)
@@ -32,12 +25,12 @@ public class BidSheetController : ControllerBase
 
     /// <summary>Gets elevators. If tradeUnitCode is omitted, returns all elevators.</summary>
     [HttpGet("elevators")]
-    [ProducesResponseType(typeof(List<ElevatorCache>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<ElevatorCache>>> GetElevators([FromQuery] string? tradeUnitCode = null, CancellationToken ct = default)
+    [ProducesResponseType(typeof(List<ElevatorCacheResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<ElevatorCacheResponse>>> GetElevators([FromQuery] string? tradeUnitCode = null, CancellationToken cancellationToken = default)
     {
         if (!string.IsNullOrEmpty(tradeUnitCode))
-            await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
-        return Ok(await _dataService.GetElevatorsAsync(tradeUnitCode, ct));
+            await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], cancellationToken);
+        return Ok(await _service.GetElevatorsAsync(tradeUnitCode, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -46,76 +39,32 @@ public class BidSheetController : ControllerBase
 
     /// <summary>Gets bid sheet locations. If tradeUnitCode is provided, filters to that TU; otherwise returns all.</summary>
     [HttpGet("locations")]
-    [ProducesResponseType(typeof(List<BidSheetLocation>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<BidSheetLocation>>> GetLocations([FromQuery] string? tradeUnitCode = null, CancellationToken ct = default)
+    [ProducesResponseType(typeof(List<BidSheetLocationResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<BidSheetLocationResponse>>> GetLocations([FromQuery] string? tradeUnitCode = null, CancellationToken cancellationToken = default)
     {
         if (!string.IsNullOrWhiteSpace(tradeUnitCode))
-        {
-            await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
-            return Ok(await _dataService.GetBidSheetLocationsAsync(tradeUnitCode, ct));
-        }
-        return Ok(await _dataService.GetAllBidSheetLocationsAsync(ct));
+            await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], cancellationToken);
+        return Ok(await _service.GetLocationsAsync(tradeUnitCode, cancellationToken));
     }
 
     /// <summary>Creates a new bid sheet location with optional initial bids.</summary>
     [HttpPost("locations")]
-    [ProducesResponseType(typeof(BidSheetLocation), StatusCodes.Status201Created)]
-    public async Task<ActionResult<BidSheetLocation>> CreateLocation([FromBody] CreateBidSheetLocationRequest request, CancellationToken ct = default)
+    [ProducesResponseType(typeof(BidSheetLocationResponse), StatusCodes.Status201Created)]
+    public async Task<ActionResult<BidSheetLocationResponse>> CreateLocation([FromBody] CreateBidSheetLocationRequest request, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync([request.TradeUnitCode], ct);
-
-        var now = DateTime.UtcNow;
-        var location = new BidSheetLocation
-        {
-            Name = request.Name,
-            Address = request.Address,
-            City = request.City,
-            State = request.State,
-            Latitude = request.Latitude,
-            Longitude = request.Longitude,
-            ElevatorCode = request.ElevatorCode,
-            TradeUnitCode = request.TradeUnitCode,
-            GroupName = request.GroupName,
-            IsScoularFacility = request.IsScoularFacility,
-            CreatedBy = CurrentUserId,
-            CreatedAt = now,
-            Bids = request.Bids.Select(b => new BidSheetLocationBid
-            {
-                CommodityCode = b.CommodityCode,
-                CommodityName = b.CommodityName,
-                CommodityCategory = b.CommodityCategory,
-                CropYear = b.CropYear,
-                Month = b.Month,
-                Bid = b.Bid,
-                CreatedBy = CurrentUserId,
-                CreatedAt = now
-            }).ToList()
-        };
-
-        var created = await _dataService.CreateBidSheetLocationAsync(location, ct);
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync([request.TradeUnitCode], cancellationToken);
+        var created = await _service.CreateLocationAsync(request, cancellationToken);
         return Created("", created);
     }
 
     /// <summary>Updates location metadata (name, address, coordinates).</summary>
     [HttpPut("locations/{id:int}")]
-    [ProducesResponseType(typeof(BidSheetLocation), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(BidSheetLocationResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<BidSheetLocation>> UpdateLocation(int id, [FromBody] CreateBidSheetLocationRequest request, CancellationToken ct = default)
+    public async Task<ActionResult<BidSheetLocationResponse>> UpdateLocation(int id, [FromBody] CreateBidSheetLocationRequest request, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync([request.TradeUnitCode], ct);
-        var location = new BidSheetLocation
-        {
-            Name = request.Name,
-            Address = request.Address,
-            City = request.City,
-            State = request.State,
-            Latitude = request.Latitude,
-            Longitude = request.Longitude,
-            IsScoularFacility = request.IsScoularFacility,
-            ModifiedBy = CurrentUserId
-        };
-
-        var updated = await _dataService.UpdateBidSheetLocationAsync(id, location, ct);
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync([request.TradeUnitCode], cancellationToken);
+        var updated = await _service.UpdateLocationAsync(id, request, cancellationToken);
         if (updated == null) return NotFound();
         return Ok(updated);
     }
@@ -123,20 +72,20 @@ public class BidSheetController : ControllerBase
     /// <summary>Deletes a bid sheet location and all its bids.</summary>
     [HttpDelete("locations/{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> DeleteLocation(int id, [FromQuery] string tradeUnitCode, CancellationToken ct = default)
+    public async Task<IActionResult> DeleteLocation(int id, [FromQuery] string tradeUnitCode, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
-        await _dataService.DeleteBidSheetLocationAsync(id, ct);
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], cancellationToken);
+        await _service.DeleteLocationAsync(id, cancellationToken);
         return NoContent();
     }
 
     /// <summary>Deletes all bids for a specific commodity on a location.</summary>
     [HttpDelete("locations/{id:int}/bids/{commodityCode}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> DeleteBids(int id, string commodityCode, [FromQuery] string tradeUnitCode, [FromQuery] int? month = null, CancellationToken ct = default)
+    public async Task<IActionResult> DeleteBids(int id, string commodityCode, [FromQuery] string tradeUnitCode, [FromQuery] int? month = null, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
-        await _dataService.DeleteBidSheetBidsAsync(id, commodityCode, month, ct);
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], cancellationToken);
+        await _service.DeleteBidsAsync(id, commodityCode, month, cancellationToken);
         return NoContent();
     }
 
@@ -147,7 +96,7 @@ public class BidSheetController : ControllerBase
     /// <summary>Bulk upserts bids. Finds or creates locations, then upserts each bid by (location, commodity, cropYear).</summary>
     [HttpPost("bids/bulk")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> BulkUpsertBids([FromBody] List<UpsertBidSheetBidRequest> requests, CancellationToken ct = default)
+    public async Task<IActionResult> BulkUpsertBids([FromBody] List<UpsertBidSheetBidRequest> requests, CancellationToken cancellationToken = default)
     {
         if (requests.Count > 500)
             return BadRequest("Maximum 500 bids per bulk request.");
@@ -156,16 +105,9 @@ public class BidSheetController : ControllerBase
             .Where(r => !string.IsNullOrEmpty(r.TradeUnitCode))
             .Select(r => r.TradeUnitCode!)
             .Distinct();
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync(tradeUnits, ct);
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync(tradeUnits, cancellationToken);
 
-        // Group by trade unit and process each
-        var byTu = requests.GroupBy(r => r.TradeUnitCode ?? string.Empty);
-        foreach (var group in byTu)
-        {
-            if (!string.IsNullOrEmpty(group.Key))
-                await _dataService.BulkUpsertBidSheetBidsAsync(group, group.Key, CurrentUserId, ct);
-        }
-
+        await _service.BulkUpsertBidsAsync(requests, cancellationToken);
         return NoContent();
     }
 
@@ -176,19 +118,19 @@ public class BidSheetController : ControllerBase
     /// <summary>Gets distinct crop years from bids for a trade unit.</summary>
     [HttpGet("cropyears")]
     [ProducesResponseType(typeof(List<int>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<int>>> GetCropYears([FromQuery] string tradeUnitCode, CancellationToken ct = default)
+    public async Task<ActionResult<List<int>>> GetCropYears([FromQuery] string tradeUnitCode, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
-        return Ok(await _dataService.GetBidCropYearsAsync(tradeUnitCode, ct));
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], cancellationToken);
+        return Ok(await _service.GetCropYearsAsync(tradeUnitCode, cancellationToken));
     }
 
     /// <summary>Gets distinct commodity codes from bids for a trade unit.</summary>
     [HttpGet("commodities")]
     [ProducesResponseType(typeof(List<string>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<string>>> GetBidCommodities([FromQuery] string tradeUnitCode, CancellationToken ct = default)
+    public async Task<ActionResult<List<string>>> GetBidCommodities([FromQuery] string tradeUnitCode, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
-        return Ok(await _dataService.GetBidCommoditiesAsync(tradeUnitCode, ct));
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], cancellationToken);
+        return Ok(await _service.GetCommoditiesAsync(tradeUnitCode, cancellationToken));
     }
 
     /// <summary>Parses a composite trade-unit key ("2040,2050") into individual codes for entitlement validation.</summary>
@@ -202,10 +144,10 @@ public class BidSheetController : ControllerBase
     /// <summary>Gets distinct months that have bids for a trade unit and crop year.</summary>
     [HttpGet("bidmonths")]
     [ProducesResponseType(typeof(List<int>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<int>>> GetBidMonths([FromQuery] string tradeUnitCode, [FromQuery] int cropYear, CancellationToken ct = default)
+    public async Task<ActionResult<List<int>>> GetBidMonths([FromQuery] string tradeUnitCode, [FromQuery] int cropYear, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], ct);
-        return Ok(await _dataService.GetBidMonthsAsync(tradeUnitCode, cropYear, ct));
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], cancellationToken);
+        return Ok(await _service.GetBidMonthsAsync(tradeUnitCode, cropYear, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
@@ -214,12 +156,12 @@ public class BidSheetController : ControllerBase
 
     /// <summary>Gets the saved location order for the current user and a trade unit key (may be composite).</summary>
     [HttpGet("location-order")]
-    [ProducesResponseType(typeof(BidSheetLocationOrder), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(BidSheetLocationOrderResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<ActionResult<BidSheetLocationOrder>> GetLocationOrder([FromQuery] string tradeUnitKey, CancellationToken ct = default)
+    public async Task<ActionResult<BidSheetLocationOrderResponse>> GetLocationOrder([FromQuery] string tradeUnitKey, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync(ParseTradeUnitKey(tradeUnitKey), ct);
-        var order = await _dataService.GetBidSheetLocationOrderAsync(CurrentUserId, tradeUnitKey, ct);
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync(ParseTradeUnitKey(tradeUnitKey), cancellationToken);
+        var order = await _service.GetLocationOrderAsync(tradeUnitKey, cancellationToken);
         if (order is null) return NoContent();
         return Ok(order);
     }
@@ -227,10 +169,10 @@ public class BidSheetController : ControllerBase
     /// <summary>Saves the location order for the current user and a trade unit key.</summary>
     [HttpPut("location-order")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> SetLocationOrder([FromBody] SetBidSheetLocationOrderRequest request, CancellationToken ct = default)
+    public async Task<IActionResult> SetLocationOrder([FromBody] SetBidSheetLocationOrderRequest request, CancellationToken cancellationToken = default)
     {
-        await _entitlementService.ValidateTradeUnitsOrThrowAsync(ParseTradeUnitKey(request.TradeUnitKey), ct);
-        await _dataService.SetBidSheetLocationOrderAsync(CurrentUserId, request.TradeUnitKey, request.LocationOrder, ct);
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync(ParseTradeUnitKey(request.TradeUnitKey), cancellationToken);
+        await _service.SetLocationOrderAsync(request.TradeUnitKey, request.LocationOrder, cancellationToken);
         return NoContent();
     }
 
@@ -243,13 +185,13 @@ public class BidSheetController : ControllerBase
 
     /// <summary>Gets the saved bid sheet preferences for the current user and a trade unit key (or global with "__global__").</summary>
     [HttpGet("preference")]
-    [ProducesResponseType(typeof(BidSheetPreference), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(BidSheetPreferenceResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<ActionResult<BidSheetPreference>> GetPreference([FromQuery] string tradeUnitKey, CancellationToken ct = default)
+    public async Task<ActionResult<BidSheetPreferenceResponse>> GetPreference([FromQuery] string tradeUnitKey, CancellationToken cancellationToken = default)
     {
         if (tradeUnitKey != GlobalPreferenceKey)
-            await _entitlementService.ValidateTradeUnitsOrThrowAsync(ParseTradeUnitKey(tradeUnitKey), ct);
-        var pref = await _dataService.GetBidSheetPreferenceAsync(CurrentUserId, tradeUnitKey, ct);
+            await _entitlementService.ValidateTradeUnitsOrThrowAsync(ParseTradeUnitKey(tradeUnitKey), cancellationToken);
+        var pref = await _service.GetPreferenceAsync(tradeUnitKey, cancellationToken);
         if (pref is null) return NoContent();
         return Ok(pref);
     }
@@ -257,11 +199,11 @@ public class BidSheetController : ControllerBase
     /// <summary>Saves the bid sheet preferences for the current user and a trade unit key (or global with "__global__").</summary>
     [HttpPut("preference")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> SetPreference([FromBody] SetBidSheetPreferenceRequest request, CancellationToken ct = default)
+    public async Task<IActionResult> SetPreference([FromBody] SetBidSheetPreferenceRequest request, CancellationToken cancellationToken = default)
     {
         if (request.TradeUnitKey != GlobalPreferenceKey)
-            await _entitlementService.ValidateTradeUnitsOrThrowAsync(ParseTradeUnitKey(request.TradeUnitKey), ct);
-        await _dataService.SetBidSheetPreferenceAsync(CurrentUserId, request.TradeUnitKey, request.CropCode, request.Month, request.CropYear, request.CropOrder, request.HiddenCrops, request.SelectedMonths, request.PrintLayout, ct);
+            await _entitlementService.ValidateTradeUnitsOrThrowAsync(ParseTradeUnitKey(request.TradeUnitKey), cancellationToken);
+        await _service.SetPreferenceAsync(request.TradeUnitKey, request.CropCode, request.Month, request.CropYear, request.CropOrder, request.HiddenCrops, request.SelectedMonths, request.PrintLayout, cancellationToken);
         return NoContent();
     }
 }
