@@ -37,6 +37,7 @@ public class PlantingIntentionsController : ControllerBase
     [ProducesResponseType(typeof(List<PlantingIntentionResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<PlantingIntentionResponse>>> GetByCustomer(int customerId, CancellationToken cancellationToken = default)
     {
+        // Open to any rep — no per-producer object-level authz by design; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
         return Ok(await _service.GetByCustomerAsync(customerId, cancellationToken));
     }
 

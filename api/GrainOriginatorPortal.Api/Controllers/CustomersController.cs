@@ -67,6 +67,8 @@ public class CustomersController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<CustomerResponse>> GetById(long id, CancellationToken cancellationToken = default)
     {
+        // No per-producer object-level authz is intentional (trade units are a UX filter, not an
+        // access boundary); see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
         var customer = await _service.GetByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("Customer", id);
         return Ok(customer);
@@ -79,6 +81,7 @@ public class CustomersController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<CustomerResponse>> GetBySourceId(string sourceId, CancellationToken cancellationToken = default)
     {
+        // No per-producer object-level authz is intentional; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
         var customer = await _service.GetByScoularIdAsync(sourceId, cancellationToken)
             ?? throw new NotFoundException("Customer", sourceId);
         return Ok(customer);
@@ -140,6 +143,8 @@ public class CustomersController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<CustomerResponse>> AssignTradeUnits(long id, [FromBody] AssignTradeUnitsRequest request, CancellationToken cancellationToken = default)
     {
+        // Rep-driven onboarding: assigning trade-unit membership is intentionally open to any rep and
+        // not admin-gated / caller-entitlement-validated. Accepted risk — see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-03).
         var codes = request.TradeUnitCodes ?? new List<string>();
         var result = await _service.AssignTradeUnitsAsync(id, codes, cancellationToken);
 
@@ -170,6 +175,7 @@ public class CustomersController : ControllerBase
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<List<CustomerTradeUnitInfo>>> RemoveDormantTradeUnit(long id, string tradeUnit, CancellationToken cancellationToken = default)
     {
+        // Not admin-gated / caller-entitlement-validated by design. Accepted risk — see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-03).
         var result = await _service.DeactivateDormantTradeUnitAsync(id, tradeUnit, cancellationToken);
 
         switch (result)
