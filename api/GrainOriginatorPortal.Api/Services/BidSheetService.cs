@@ -12,11 +12,26 @@ public class BidSheetService : IBidSheetService
 {
     private readonly IBidSheetRepository _repository;
     private readonly IRequestContextService _requestContext;
+    private readonly IUserEntitlementService _entitlementService;
 
-    public BidSheetService(IBidSheetRepository repository, IRequestContextService requestContext)
+    public BidSheetService(IBidSheetRepository repository, IRequestContextService requestContext, IUserEntitlementService entitlementService)
     {
         _repository = repository;
         _requestContext = requestContext;
+        _entitlementService = entitlementService;
+    }
+
+    /// <summary>Authorizes a mutation against the target location's PERSISTED trade unit (not a
+    /// client-supplied value), closing the IDOR where a caller passes a TU they're entitled to but
+    /// targets a location id in a different TU. Returns false if the location doesn't exist (so the
+    /// caller can surface a 404/no-op); throws ForbiddenException if the caller isn't entitled to
+    /// the row's trade unit.</summary>
+    private async Task<bool> AuthorizeLocationByStoredTradeUnitAsync(int locationId, CancellationToken cancellationToken)
+    {
+        var storedTradeUnit = await _repository.GetLocationTradeUnitCodeAsync(locationId, cancellationToken);
+        if (string.IsNullOrEmpty(storedTradeUnit)) return false;
+        await _entitlementService.ValidateTradeUnitsOrThrowAsync([storedTradeUnit], cancellationToken);
+        return true;
     }
 
     /// <inheritdoc />
@@ -74,6 +89,10 @@ public class BidSheetService : IBidSheetService
     /// <inheritdoc />
     public async Task<BidSheetLocationResponse?> UpdateLocationAsync(int id, CreateBidSheetLocationRequest request, CancellationToken cancellationToken)
     {
+        // Authorize against the location's stored trade unit, not request.TradeUnitCode (AR-05 fix).
+        if (!await AuthorizeLocationByStoredTradeUnitAsync(id, cancellationToken))
+            return null;
+
         var location = new BidSheetLocation
         {
             Name = request.Name,
@@ -91,12 +110,20 @@ public class BidSheetService : IBidSheetService
     }
 
     /// <inheritdoc />
-    public Task DeleteLocationAsync(int id, CancellationToken cancellationToken) =>
-        _repository.DeleteLocationAsync(id, cancellationToken);
+    public async Task DeleteLocationAsync(int id, CancellationToken cancellationToken)
+    {
+        // Authorize against the location's stored trade unit (not a client value); no-op if missing.
+        if (!await AuthorizeLocationByStoredTradeUnitAsync(id, cancellationToken)) return;
+        await _repository.DeleteLocationAsync(id, cancellationToken);
+    }
 
     /// <inheritdoc />
-    public Task DeleteBidsAsync(int locationId, string commodityCode, int? month, CancellationToken cancellationToken) =>
-        _repository.DeleteBidsAsync(locationId, commodityCode, month, cancellationToken);
+    public async Task DeleteBidsAsync(int locationId, string commodityCode, int? month, CancellationToken cancellationToken)
+    {
+        // Authorize against the parent location's stored trade unit (not a client value); no-op if missing.
+        if (!await AuthorizeLocationByStoredTradeUnitAsync(locationId, cancellationToken)) return;
+        await _repository.DeleteBidsAsync(locationId, commodityCode, month, cancellationToken);
+    }
 
     /// <inheritdoc />
     public async Task BulkUpsertBidsAsync(List<UpsertBidSheetBidRequest> requests, CancellationToken cancellationToken)

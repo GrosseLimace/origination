@@ -28,6 +28,8 @@ public class BidSheetController : ControllerBase
     [ProducesResponseType(typeof(List<ElevatorCacheResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<ElevatorCacheResponse>>> GetElevators([FromQuery] string? tradeUnitCode = null, CancellationToken cancellationToken = default)
     {
+        // Reads are intentionally unscoped when tradeUnitCode is omitted (cross-TU visibility is a
+        // feature; only writes are entitlement-gated). Accepted risk — see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-05).
         if (!string.IsNullOrEmpty(tradeUnitCode))
             await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], cancellationToken);
         return Ok(await _service.GetElevatorsAsync(tradeUnitCode, cancellationToken));
@@ -42,6 +44,8 @@ public class BidSheetController : ControllerBase
     [ProducesResponseType(typeof(List<BidSheetLocationResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<BidSheetLocationResponse>>> GetLocations([FromQuery] string? tradeUnitCode = null, CancellationToken cancellationToken = default)
     {
+        // Reads are intentionally unscoped when tradeUnitCode is omitted (cross-TU visibility is a
+        // feature; only writes are entitlement-gated). Accepted risk — see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-05).
         if (!string.IsNullOrWhiteSpace(tradeUnitCode))
             await _entitlementService.ValidateTradeUnitsOrThrowAsync([tradeUnitCode], cancellationToken);
         return Ok(await _service.GetLocationsAsync(tradeUnitCode, cancellationToken));

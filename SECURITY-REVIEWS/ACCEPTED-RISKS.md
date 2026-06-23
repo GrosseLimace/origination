@@ -10,6 +10,9 @@ these patterns; triage against the AR-IDs below before re-opening.
 | AR-01 | Collaborative edit/delete of shared producer data (no per-record ownership check) | Medium | CWE-639 | Accepted | 2026-06-23 | 2027-06-23 |
 | AR-02 | Customer-scoped reads not restricted by trade-unit entitlement (no object-level authz) | High | CWE-639 / CWE-284 | Accepted | 2026-06-23 | 2027-06-23 |
 | AR-03 | Rep-driven trade-unit assignment (CustomerTradeUnit membership mutable by any rep) | High | CWE-284 / CWE-639 | Accepted | 2026-06-23 | 2027-06-23 |
+| AR-04 | ODS onboarding search exposes producer-master PII to any authenticated rep | High | CWE-284 / CWE-200 | Accepted | 2026-06-23 | 2027-06-23 |
+| AR-05 | Bid-sheet location/elevator reads unscoped across trade units (writes are gated) | High | CWE-284 | Accepted | 2026-06-23 | 2027-06-23 |
+| AR-06 | Production SQL hostnames / db names in appsettings.Production.json (no credentials) | Low | CWE-200 | Accepted | 2026-06-23 | Before go-live |
 
 ---
 
@@ -121,5 +124,110 @@ trusted internal population.
 **Re-evaluate if:** onboarding moves to a restricted role, the app is exposed to external/untrusted
 users, or trade-unit membership becomes a hard security boundary. At that point, gate these endpoints
 to an admin/onboarding role and validate requested trade units against the caller's entitlements.
+
+**Accepted by:** Origination engineering — recorded 2026-06-23.
+
+---
+
+## AR-04 — ODS onboarding search exposes producer-master PII
+
+**Finding** (scan 2026-06-23; HIGH; CWE-284 / CWE-200). `GET /api/customers/search-ods` returns
+onboarding candidates from the CTRM producer master (`base.vw_CurrentCustomers`) to any authenticated
+caller with no trade-unit or role scoping. Results include producer contact PII (address, phone,
+email) and a broad term (even a single letter) can enumerate up to 50 not-yet-onboarded producers
+per request, outside the caller's trade units.
+
+### Decision: Accepted
+
+**Rationale.** This endpoint is the **rep onboarding search** (the home-page fallback for the "New
+Customer Trade Units" flow, AR-03). It is *intentionally* unscoped: these producers have no trade
+unit yet, so trade-unit scoping is impossible and a rep must be able to search the whole producer
+master to find someone to onboard. All callers are trusted, authenticated Scoular employees, and the
+data originates from CTRM (the system of record), which staff already access. A `>= 3` character
+minimum and `TOP 50` bound the query; results exclude already-onboarded producers.
+
+**Scope / compensating controls.** Authenticated Scoular employees only (Azure AD JWT); read-only;
+no source-of-record mutation; minimum search length + 50-row cap limit bulk extraction; the data is
+internal producer contact info, not regulated/financial.
+
+**Residual risk.** An authenticated employee could enumerate producer-master contact PII outside
+their trade units. Mitigated by the trusted internal population and the search-length / row caps.
+
+**Re-evaluate if:** the app is exposed to external/untrusted users, or producer contact PII becomes
+regulated. At that point, trim `search-ods` to non-sensitive identification fields (name, ScoularId,
+city/state) and fetch full contact detail only for a producer the rep actually onboards.
+
+**Accepted by:** Origination engineering — recorded 2026-06-23.
+
+---
+
+## AR-05 — Bid-sheet location/elevator reads unscoped across trade units
+
+**Finding** (scan 2026-06-23; HIGH; CWE-284). `GET /api/bidsheet/locations` and
+`GET /api/bidsheet/elevators` become unscoped when the `tradeUnitCode` query parameter is omitted:
+`BidSheetController` only validates entitlements when the parameter is present, and the service then
+returns every location (with its full `Bids` collection) / every elevator across all trade units. Any
+authenticated user can read bid-sheet data outside their assigned trade units by omitting the filter.
+
+### Decision: Accepted
+
+**Rationale.** Cross-trade-unit *visibility* of bid-sheet locations and bids is **intended** — the
+frontend deliberately loads all locations for the map view, and reps benefit from seeing the wider
+bid picture. The authorization boundary that matters for bid sheets is **mutation**, and that is
+enforced: every write path validates the caller's trade-unit entitlement —
+`POST/PUT/DELETE /locations`, `DELETE /locations/{id}/bids/...`, `POST /bids/bulk`, and the
+`cropyears` / `commodities` / `bidmonths` / `location-order` endpoints all call
+`ValidateTradeUnitsOrThrowAsync`. A user can only **edit** trade units they are entitled to; the
+broad read is a deliberate product decision, not financial/PII data.
+
+**Scope / compensating controls.** Authenticated Scoular employees only; the unscoped path is
+**read-only**; all bid-sheet mutations are entitlement-gated; data is internal bid info (no PII).
+
+**Residual risk.** An employee can read bid-sheet locations/bids outside their trade units. Accepted
+as intended visibility.
+
+**Re-evaluate if:** bid pricing becomes competitively sensitive *between* trade units such that a
+read boundary is required. At that point, scope the omitted-parameter path to the caller's allowed
+trade units (derive server-side via `IUserEntitlementService`) instead of returning all.
+
+**Accepted by:** Origination engineering — recorded 2026-06-23.
+
+---
+
+## AR-06 — Production SQL hostnames / database names in source control
+
+**Finding** (scan 2026-06-23; LOW; CWE-200 / OWASP A05:2021 Security Misconfiguration).
+`appsettings.Production.json` (and the equivalent per-env files + `deploy-prod.yml`) commit the
+production Azure SQL server hostname (`azrscosqlp01.database.windows.net`) and database names
+(`ODS`, `Origination`, `Entitlements`) to the repository. This discloses the production
+infrastructure naming convention and SQL endpoints to anyone with repo access.
+
+### Decision: Accepted (deferred to go-live)
+
+**Rationale.** **No credentials are exposed** — every connection string uses
+`Authentication=Active Directory Default` (managed identity), so there is no password, key, or
+connection secret in the file. What remains is non-secret infrastructure metadata (hostname + db
+names). The Azure SQL server already enforces its own authentication and network controls, so
+knowing the endpoint does not by itself grant access. The repository is private to the Scoular
+`IT` org. Moving these to Key Vault has a **hard ops prerequisite** (the `ConnectionStrings--*`
+secrets must exist in each environment's Key Vault *before* the file values are removed, or
+startup breaks), which is appropriately sequenced with the existing go-live TODO already recorded
+inline in the file.
+
+**Scope / compensating controls.** No secrets disclosed (managed-identity auth only); repo is
+private to the `IT` org; Azure SQL enforces AAD auth + firewall/private-endpoint network controls
+independently of endpoint knowledge; Key Vault is already wired as a config provider in
+`Program.cs`, so the migration is a config/ops change, not new code.
+
+**Residual risk.** An actor with repository access learns the production SQL endpoint and database
+names — useful only as reconnaissance, not access. Low blast radius given managed-identity auth and
+network controls.
+
+**Re-evaluate if / before go-live:** before general availability, create
+`ConnectionStrings--ODSConnection`, `--DefaultConnection`, `--OriginationConnection`,
+`--EntitlementsConnection` secrets in each environment's Key Vault and remove the
+`ConnectionStrings` block from the per-env `appsettings.*.json` (they will then resolve from Key
+Vault via the existing provider). This matches the TODO already present in
+`appsettings.Production.json`.
 
 **Accepted by:** Origination engineering — recorded 2026-06-23.
