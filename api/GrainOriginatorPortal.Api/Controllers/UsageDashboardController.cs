@@ -2,9 +2,11 @@ using System.Threading.Channels;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using GrainOriginatorPortal.Api.Data;
 using GrainOriginatorPortal.Api.Middleware;
 using GrainOriginatorPortal.Api.Models;
+using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Controllers;
 
@@ -25,34 +27,55 @@ public class UsageDashboardController : ControllerBase
 {
     private readonly ApplicationDbContext _appDb;
     private readonly OriginationDbContext _odsDb;
+    private readonly IMemoryCache _cache;
     private readonly ILogger<UsageDashboardController> _logger;
 
     public UsageDashboardController(
         ApplicationDbContext appDb,
         OriginationDbContext odsDb,
+        IMemoryCache cache,
         ILogger<UsageDashboardController> logger)
     {
         _appDb = appDb;
         _odsDb = odsDb;
+        _cache = cache;
         _logger = logger;
+    }
+
+    /// <summary>Intersects the snapshot-derived user set with the cached app-access group members
+    /// (members of the per-environment app-access AAD group). Fail-open: when no app-access set is
+    /// cached (filter disabled, or Graph never succeeded), the input is returned unchanged so the
+    /// dashboard shows all entitlements users rather than going blank.</summary>
+    internal static HashSet<string> ApplyAppAccessFilter(HashSet<string> snapshotUsers, IReadOnlySet<string>? appAccessUsers)
+    {
+        if (appAccessUsers is not { Count: > 0 }) return snapshotUsers;
+        return new HashSet<string>(snapshotUsers.Where(appAccessUsers.Contains), StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>Returns a set of UserIds filtered by trade unit codes (or all if none specified).</summary>
     private async Task<HashSet<string>> GetFilteredUserIdsAsync(string? tradeUnitKey, CancellationToken ct)
     {
+        HashSet<string> snapshotUsers;
         if (string.IsNullOrWhiteSpace(tradeUnitKey))
         {
             var all = await _appDb.UserTradeUnitSnapshots.Select(s => s.UserId).Distinct().ToListAsync(ct);
-            return new HashSet<string>(all, StringComparer.OrdinalIgnoreCase);
+            snapshotUsers = new HashSet<string>(all, StringComparer.OrdinalIgnoreCase);
+        }
+        else
+        {
+            var codes = tradeUnitKey.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+            var filtered = await _appDb.UserTradeUnitSnapshots
+                .Where(s => codes.Contains(s.TradeUnitCode))
+                .Select(s => s.UserId)
+                .Distinct()
+                .ToListAsync(ct);
+            snapshotUsers = new HashSet<string>(filtered, StringComparer.OrdinalIgnoreCase);
         }
 
-        var codes = tradeUnitKey.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-        var filtered = await _appDb.UserTradeUnitSnapshots
-            .Where(s => codes.Contains(s.TradeUnitCode))
-            .Select(s => s.UserId)
-            .Distinct()
-            .ToListAsync(ct);
-        return new HashSet<string>(filtered, StringComparer.OrdinalIgnoreCase);
+        // Limit to users who actually have access to this application (members of the per-environment
+        // app-access AAD group, cached hourly from Graph by UsageAggregationBackgroundService).
+        var appAccessUsers = _cache.Get<IReadOnlySet<string>>(UsageAggregationBackgroundService.AppAccessUsersCacheKey);
+        return ApplyAppAccessFilter(snapshotUsers, appAccessUsers);
     }
 
     /// <summary>Returns display name lookup from the snapshot table.</summary>

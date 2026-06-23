@@ -93,6 +93,18 @@ builder.Services.AddAuthorization(options =>
 });
 builder.Services.AddScoped<IUserEntitlementService, UserEntitlementService>();
 
+// Microsoft Graph credential + client used by the Usage Dashboard refresh to resolve the
+// app-access group's members (limits the dashboard to real application users). Same credential
+// selection as the Key Vault block above: system-assigned managed identity on App Service,
+// developer credentials locally. Requires the MI to be granted Graph GroupMember.Read.All +
+// User.Read.All (admin consent); absent that the service fails open (see AppAccessUserService).
+builder.Services.AddSingleton<Azure.Core.TokenCredential>(_ =>
+    !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WEBSITE_SITE_NAME"))
+        ? new ManagedIdentityCredential(ManagedIdentityId.SystemAssigned)
+        : new DefaultAzureCredential(new DefaultAzureCredentialOptions { ExcludeManagedIdentityCredential = true }));
+builder.Services.AddHttpClient<IAppAccessUserService, AppAccessUserService>()
+    .AddStandardResilienceHandler();
+
 // Usage tracking: bounded in-memory channel + background batch writer
 builder.Services.AddSingleton(System.Threading.Channels.Channel.CreateBounded<GrainOriginatorPortal.Api.Middleware.UserActivityRecord>(
     new System.Threading.Channels.BoundedChannelOptions(10_000)
