@@ -1,4 +1,5 @@
 using GrainOriginatorPortal.Api.Data;
+using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Services;
 using Microsoft.EntityFrameworkCore;
 
@@ -28,15 +29,18 @@ public class ProducerDetailsController : ControllerBase
     public async Task<ActionResult<List<ProducerDetails>>> GetAll(CancellationToken cancellationToken = default)
     {
         var details = await _dataService.GetAllProducerDetailsAsync(cancellationToken);
-        if (_entitlementService.EntitlementsAvailable)
-        {
-            var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);
-            var allowedCustomerIds = await _appContext.CustomerTradeUnits
-                .Where(ctu => allowed.Contains(ctu.TradeUnit) && ctu.IsActive)
-                .Select(ctu => ctu.CustomerId)
-                .ToHashSetAsync(cancellationToken);
-            details = details.Where(d => allowedCustomerIds.Contains(d.CustomerId)).ToList();
-        }
+        var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);
+        // Fail closed: if entitlements are unavailable and uncached, refuse rather than returning
+        // data we can't authorize (CWE-285). Mirrors EnforceTradeUnitAccessAttribute.
+        if (!_entitlementService.EntitlementsAvailable)
+            throw new InfrastructureException(
+                "Authorization data is temporarily unavailable. Please retry shortly.",
+                "ENTITLEMENTS_DB_UNAVAILABLE", StatusCodes.Status503ServiceUnavailable);
+        var allowedCustomerIds = await _appContext.CustomerTradeUnits
+            .Where(ctu => allowed.Contains(ctu.TradeUnit) && ctu.IsActive)
+            .Select(ctu => ctu.CustomerId)
+            .ToHashSetAsync(cancellationToken);
+        details = details.Where(d => allowedCustomerIds.Contains(d.CustomerId)).ToList();
         return Ok(details);
     }
 
@@ -60,6 +64,7 @@ public class ProducerDetailsController : ControllerBase
     public async Task<ActionResult<ProducerDetails>> Upsert(long customerId, [FromBody] UpsertProducerDetailsRequest request, CancellationToken cancellationToken = default)
     {
         // Trade units are a UX filter, not an access boundary — any rep may save producer details for any customer.
+        // No per-record ownership check is intentional; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-01).
         var details = await _dataService.UpsertProducerDetailsAsync(
             customerId,
             request.ScoularId,
