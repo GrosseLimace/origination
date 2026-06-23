@@ -253,6 +253,11 @@ public class SqlDataService : IDataService
                 parameters.Add(new SqlParameter("@tradeUnits", csv));
             }
 
+            // SQL fragment that strips common phone punctuation — ( ) - space . — from a column so a
+            // digits-only search fragment matches regardless of how the number is formatted in the DB.
+            static string StripPhone(string col) =>
+                $"REPLACE(REPLACE(REPLACE(REPLACE(REPLACE({col},'(',''),')',''),'-',''),' ',''),'.','')";
+
             // Each search word must match at least one searchable field (AND across words).
             // State uses exact match to avoid false positives on short abbreviations like "CO".
             for (int i = 0; i < searchWords.Count; i++)
@@ -261,11 +266,22 @@ public class SqlDataService : IDataService
                 var word = searchWords[i];
                 parameters.Add(new SqlParameter(paramName, word));
 
+                // Phone match: compare a digits-only version of the word against the punctuation-
+                // stripped phone columns so e.g. "(402) 555-4914" finds a stored "4025554914" (and
+                // vice versa). Only when the word carries enough digits to be a phone fragment —
+                // pure-text words can never match a phone column, so we skip the (non-sargable) REPLACE.
+                var digits = new string(word.Where(char.IsDigit).ToArray());
+                var phoneClause = digits.Length >= 3
+                    ? $@"
+                    OR {StripPhone("c.MerchandisingPhone")} LIKE '%' + @d{i} + '%'
+                    OR {StripPhone("c.ExtendedPrimaryPhone")} LIKE '%' + @d{i} + '%'"
+                    : string.Empty;
+                if (digits.Length >= 3)
+                    parameters.Add(new SqlParameter($"@d{i}", digits));
+
                 whereClauses.Add($@"(
                     c.CustomerName LIKE '%' + {paramName} + '%'
-                    OR c.ScoularId LIKE '%' + {paramName} + '%'
-                    OR c.MerchandisingPhone LIKE '%' + {paramName} + '%'
-                    OR c.ExtendedPrimaryPhone LIKE '%' + {paramName} + '%'
+                    OR c.ScoularId LIKE '%' + {paramName} + '%'{phoneClause}
                     OR c.MerchandisingCity LIKE '%' + {paramName} + '%'
                     OR c.MerchandisingStateProvince = {paramName}
                     OR c.CustomerId IN (SELECT CustomerId FROM dbo.ProducerDetails WHERE PrimaryContact LIKE '%' + {paramName} + '%')
