@@ -26,15 +26,16 @@ public class StoredGrainService : IStoredGrainService
     {
         var grain = await _repository.GetAsync(tradeUnits, cancellationToken);
 
-        // Entitlement scoping: when the Entitlements DB is reachable, narrow to producers in the
-        // caller's allowed trade units (a UX/visibility default — see the controller's prior logic,
-        // now owned by the service so no DbContext leaks into the controller).
-        if (_entitlementService.EntitlementsAvailable)
-        {
-            var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);
-            var allowedCustomerIds = await _customerRepository.GetActiveCustomerIdsInTradeUnitsAsync(allowed, cancellationToken);
-            grain = grain.Where(g => allowedCustomerIds.Contains(g.CustomerId)).ToList();
-        }
+        // Entitlement scoping: narrow to producers in the caller's allowed trade units.
+        var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);
+        // Fail closed: if entitlements are unavailable and uncached, refuse rather than returning
+        // data we can't authorize (CWE-285). Mirrors EnforceTradeUnitAccessAttribute.
+        if (!_entitlementService.EntitlementsAvailable)
+            throw new GrainOriginatorPortal.Api.Exceptions.InfrastructureException(
+                "Authorization data is temporarily unavailable. Please retry shortly.",
+                "ENTITLEMENTS_DB_UNAVAILABLE", StatusCodes.Status503ServiceUnavailable);
+        var allowedCustomerIds = await _customerRepository.GetActiveCustomerIdsInTradeUnitsAsync(allowed, cancellationToken);
+        grain = grain.Where(g => allowedCustomerIds.Contains(g.CustomerId)).ToList();
 
         return grain.Select(g => g.ToResponse()).ToList();
     }
