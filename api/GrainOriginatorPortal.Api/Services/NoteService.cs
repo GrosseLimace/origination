@@ -35,11 +35,14 @@ public class NoteService : INoteService
         var tuList = tradeUnits?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var notes = await _repository.GetAsync(tuList, cancellationToken);
 
-        if (_entitlementService.EntitlementsAvailable)
-        {
-            var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);
-            notes = notes.Where(n => n.TradeUnit == null || allowed.Contains(n.TradeUnit)).ToList();
-        }
+        var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);
+        // Fail closed: if entitlements are unavailable and uncached, refuse rather than returning
+        // data we can't authorize (CWE-285). Mirrors EnforceTradeUnitAccessAttribute.
+        if (!_entitlementService.EntitlementsAvailable)
+            throw new GrainOriginatorPortal.Api.Exceptions.InfrastructureException(
+                "Authorization data is temporarily unavailable. Please retry shortly.",
+                "ENTITLEMENTS_DB_UNAVAILABLE", StatusCodes.Status503ServiceUnavailable);
+        notes = notes.Where(n => n.TradeUnit == null || allowed.Contains(n.TradeUnit)).ToList();
 
         return await MapWithNamesAsync(notes, cancellationToken);
     }

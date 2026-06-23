@@ -79,6 +79,7 @@ public class PlantingIntentionsController : ControllerBase
     public async Task<ActionResult<PlantingIntentionResponse>> Update(int id, [FromBody] UpdatePlantingIntentionRequest request, CancellationToken cancellationToken = default)
     {
         // Trade units are a UX filter, not an access boundary — any rep may edit any planting intention.
+        // No per-record ownership check is intentional; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-01).
         _ = await _service.GetByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("PlantingIntention", id);
         var updated = await _service.UpdateAsync(
