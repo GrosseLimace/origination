@@ -37,6 +37,7 @@ public class NotesController : ControllerBase
     [ProducesResponseType(typeof(List<NoteResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<NoteResponse>>> GetByCustomer(long customerId, CancellationToken cancellationToken = default)
     {
+        // Open to any rep — no per-producer object-level authz by design; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
         return Ok(await _service.GetByCustomerAsync(customerId, cancellationToken));
     }
 
