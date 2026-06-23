@@ -19,7 +19,9 @@ jobs:
           node-version: '24.x'
 
       - name: Install Angular dependencies
-        run: npm ci
+        # --ignore-scripts: block dependency lifecycle (postinstall/prepare) scripts from reading and
+        # exfiltrating NPM_TOKEN during install. Mirrors ci.yml; the Angular build needs no such scripts.
+        run: npm ci --ignore-scripts
         working-directory: client
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

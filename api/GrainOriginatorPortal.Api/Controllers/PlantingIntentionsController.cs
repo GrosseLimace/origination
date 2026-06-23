@@ -33,11 +33,14 @@ public class PlantingIntentionsController : ControllerBase
     {
         var tuList = tradeUnits?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var intentions = await _dataService.GetPlantingIntentionsAsync(tuList, plantingYear, cancellationToken);
-        if (_entitlementService.EntitlementsAvailable)
-        {
-            var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);
-            intentions = intentions.Where(i => string.IsNullOrEmpty(i.TradeUnit) || allowed.Contains(i.TradeUnit)).ToList();
-        }
+        var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);
+        // Fail closed: if entitlements are unavailable and uncached, refuse rather than returning
+        // data we can't authorize (CWE-285). Mirrors EnforceTradeUnitAccessAttribute.
+        if (!_entitlementService.EntitlementsAvailable)
+            throw new InfrastructureException(
+                "Authorization data is temporarily unavailable. Please retry shortly.",
+                "ENTITLEMENTS_DB_UNAVAILABLE", StatusCodes.Status503ServiceUnavailable);
+        intentions = intentions.Where(i => string.IsNullOrEmpty(i.TradeUnit) || allowed.Contains(i.TradeUnit)).ToList();
         return Ok(intentions);
     }
 
@@ -107,6 +110,7 @@ public class PlantingIntentionsController : ControllerBase
     public async Task<ActionResult<PlantingIntention>> Update(int id, [FromBody] UpdatePlantingIntentionRequest request, CancellationToken cancellationToken = default)
     {
         // Trade units are a UX filter, not an access boundary — any rep may edit any planting intention.
+        // No per-record ownership check is intentional; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-01).
         _ = await _dataService.GetPlantingIntentionByIdAsync(id, cancellationToken)
             ?? throw new NotFoundException("PlantingIntention", id);
         var updated = await _dataService.UpdatePlantingIntentionAsync(

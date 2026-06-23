@@ -27,6 +27,11 @@ public class PlantingIntentionsControllerTests
     {
         _dataServiceMock = new Mock<IDataService>();
         _entitlementServiceMock = new Mock<IUserEntitlementService>();
+        // Default to the normal "entitlements available" path so GetAll filters rather than
+        // failing closed (503). An empty allowed set still passes the test records (null TradeUnit).
+        _entitlementServiceMock.Setup(s => s.EntitlementsAvailable).Returns(true);
+        _entitlementServiceMock.Setup(s => s.GetAllowedTradeUnitCodesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HashSet<string>());
         // §8 DEVIATION: the EF in-memory provider is banned for DB tests (automated-testing.md §8) —
         // it doesn't enforce FKs/constraints/SQL semantics. Slated to move onto the real-SQL
         // WebApplicationFactory harness in plan Phase D; only then can the InMemory package be removed.

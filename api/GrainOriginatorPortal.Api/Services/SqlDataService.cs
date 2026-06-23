@@ -294,7 +294,8 @@ public class SqlDataService : IDataService
             .ToList();
 
             await EnrichCustomersWithESignAsync(scoredCustomers, cancellationToken);
-            _logger.LogInformation("Search for '{SearchTerm}' returned {Count} customers from Customer", searchTerm, scoredCustomers.Count);
+            // Do not log the raw search term — it may contain producer name/phone (PII). Log metadata only.
+            _logger.LogInformation("Customer search returned {Count} customers from Customer [{TraceId}]", scoredCustomers.Count, GetTraceId());
             return scoredCustomers;
         }
         catch (SqlException ex) when (ex.Number == 207 || ex.Number == 208)
@@ -311,8 +312,9 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error searching customers for term: {SearchTerm} [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
-                searchTerm, GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
+            // Omit the raw search term (potential PII) from logs — correlate via TraceId instead.
+            _logger.LogError(ex, "Error searching customers [{TraceId}] [{ErrorCode}] [{ErrorCategory}]",
+                GetTraceId(), "INFRASTRUCTURE_DATABASE_ERROR", "Infrastructure");
             throw;
         }
     }
@@ -392,7 +394,8 @@ public class SqlDataService : IDataService
                 .Select(MapOdsRowToCustomer)
                 .ToList();
 
-            _logger.LogInformation("ODS customer search for '{SearchTerm}' returned {Count} onboardable producers", searchTerm, result.Count);
+            // Do not log the raw search term — it may contain producer name/phone (PII). Log metadata only.
+            _logger.LogInformation("ODS customer search returned {Count} onboardable producers [{TraceId}]", result.Count, GetTraceId());
             return result;
         }
         catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
@@ -402,7 +405,8 @@ public class SqlDataService : IDataService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in ODS customer search for term: {SearchTerm} [{TraceId}]", searchTerm, GetTraceId());
+            // Omit the raw search term (potential PII) from logs — correlate via TraceId instead.
+            _logger.LogError(ex, "Error in ODS customer search [{TraceId}]", GetTraceId());
             throw;
         }
     }
