@@ -349,8 +349,11 @@ export class DailyDigestComponent implements OnInit {
   protected saveGroup(): void {
     if (!this.canSubmit() || this.saving()) return;
     // Flush any CC address typed but not yet committed with Enter / the Add button,
-    // so a user who types an address and clicks Save directly doesn't lose it.
+    // so a user who types an address and clicks Save directly doesn't lose it. If that pending
+    // text is an invalid email, addCc() surfaces the error and leaves it in the box — abort the
+    // save rather than silently dropping it.
     this.addCc();
+    if (this.newCcEmail().trim()) return;
     const editingId = this.editingGroupId();
     const request: RecapGroupSaveRequest = {
       name: this.formName().trim(),
@@ -396,9 +399,17 @@ export class DailyDigestComponent implements OnInit {
   // ── CC list actions ─────────────────────────────────────────────────────
   protected addCc(): void {
     const email = this.newCcEmail().trim();
-    if (!email || this.formCcList().includes(email)) return;
-    this.formCcList.update(list => [...list, email]);
-    this.newCcEmail.set('');
+    if (!email) return;
+    if (!this._isValidEmail(email)) {
+      // type="email" only guards typing in the field; the Enter key and the Save flush call
+      // addCc() programmatically, so validate the format here too. Keep the text so the user can fix it.
+      this.toast.error('Enter a valid email address.');
+      return;
+    }
+    if (!this.formCcList().includes(email)) {
+      this.formCcList.update(list => [...list, email]);
+    }
+    this.newCcEmail.set(''); // added or duplicate → clear the input
   }
 
   protected removeCc(email: string): void {
