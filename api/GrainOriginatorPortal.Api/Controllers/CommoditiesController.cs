@@ -1,3 +1,6 @@
+using GrainOriginatorPortal.Api.Models.Responses;
+using GrainOriginatorPortal.Api.Services;
+
 namespace GrainOriginatorPortal.Api.Controllers;
 
 [ApiController]
@@ -6,44 +9,44 @@ namespace GrainOriginatorPortal.Api.Controllers;
 [Produces("application/json")]
 public class CommoditiesController : ControllerBase
 {
-    private readonly IDataService _dataService;
+    private readonly ICommodityService _service;
 
-    public CommoditiesController(IDataService dataService)
+    public CommoditiesController(ICommodityService service)
     {
-        _dataService = dataService;
+        _service = service;
     }
 
     // -------------------------------------------------------------------------
     /// <summary>Gets all active commodities.</summary>
     [HttpGet]
-    [ProducesResponseType(typeof(List<Commodity>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<Commodity>>> GetAll(CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(List<CommodityResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<CommodityResponse>>> GetAll(CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetCommoditiesAsync(cancellationToken));
+        return Ok(await _service.GetAllAsync(cancellationToken));
     }
 
     // -------------------------------------------------------------------------
     /// <summary>Gets the curated commodities flagged for the Planting Intentions crop dropdown.</summary>
     [HttpGet("planting")]
-    [ProducesResponseType(typeof(List<Commodity>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<Commodity>>> GetPlanting(CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(List<CommodityResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<CommodityResponse>>> GetPlanting(CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetPlantingCommoditiesAsync(cancellationToken));
+        return Ok(await _service.GetPlantingAsync(cancellationToken));
     }
 
     /// <summary>Gets commodity conversion factors (lbs per bushel) from ODS.</summary>
     [HttpGet("conversions")]
-    [ProducesResponseType(typeof(List<CommodityConversion>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<CommodityConversion>>> GetConversions(CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(List<CommodityConversionResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<CommodityConversionResponse>>> GetConversions(CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetCommodityConversionsAsync(cancellationToken));
+        return Ok(await _service.GetConversionsAsync(cancellationToken));
     }
 
     /// <summary>Gets harvest delivery windows per commodity.</summary>
     [HttpGet("harvest-windows")]
-    [ProducesResponseType(typeof(List<HarvestWindow>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<HarvestWindow>>> GetHarvestWindows(CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(List<HarvestWindowResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<HarvestWindowResponse>>> GetHarvestWindows(CancellationToken cancellationToken = default)
     {
-        return Ok(await _dataService.GetHarvestWindowsAsync(cancellationToken));
+        return Ok(await _service.GetHarvestWindowsAsync(cancellationToken));
     }
 }

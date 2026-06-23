@@ -686,6 +686,13 @@
         "type": "Transitive",
         "resolved": "9.0.0",
         "contentHash": "U9msthvnH2Fsw7xwAvIhNHOdnIjOQTwOc8Vd0oGOsiRcGMGoBFlUD6qtYawRUoQdKH9ysxesZ9juFElt1Jw/7A=="
+      },
+      "grainoriginatorportal.infrastructure": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Data.SqlClient": "[6.1.4, )",
+          "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.1, )"
+        }
       }
     }
   }

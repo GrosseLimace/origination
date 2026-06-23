@@ -2,33 +2,33 @@ using System.ComponentModel.DataAnnotations;
 
 namespace GrainOriginatorPortal.Api.Models.Requests;
 
-public class CreateBidSheetLocationRequest
+public record CreateBidSheetLocationRequest
 {
     [Required, MaxLength(200)]
-    public string Name { get; set; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
 
     [MaxLength(300)]
-    public string? Address { get; set; }
+    public string? Address { get; init; }
 
     [MaxLength(100)]
-    public string? City { get; set; }
+    public string? City { get; init; }
 
     [MaxLength(10)]
-    public string? State { get; set; }
+    public string? State { get; init; }
 
-    public double? Latitude { get; set; }
-    public double? Longitude { get; set; }
+    public double? Latitude { get; init; }
+    public double? Longitude { get; init; }
 
     [MaxLength(50)]
-    public string? ElevatorCode { get; set; }
+    public string? ElevatorCode { get; init; }
 
     [Required, MaxLength(100)]
-    public string TradeUnitCode { get; set; } = string.Empty;
+    public string TradeUnitCode { get; init; } = string.Empty;
 
     [MaxLength(200)]
-    public string? GroupName { get; set; }
+    public string? GroupName { get; init; }
 
-    public bool IsScoularFacility { get; set; }
+    public bool IsScoularFacility { get; init; }
 
-    public List<UpsertBidSheetBidRequest> Bids { get; set; } = [];
+    public List<UpsertBidSheetBidRequest> Bids { get; init; } = [];
 }

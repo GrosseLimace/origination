@@ -2,18 +2,18 @@ using System.ComponentModel.DataAnnotations;
 
 namespace GrainOriginatorPortal.Api.Models.Requests;
 
-public class SetBidSheetPreferenceRequest
+public record SetBidSheetPreferenceRequest
 {
     [Required, MaxLength(500)]
-    public string TradeUnitKey { get; set; } = string.Empty;
+    public string TradeUnitKey { get; init; } = string.Empty;
 
     [MaxLength(50)]
-    public string? CropCode { get; set; }
+    public string? CropCode { get; init; }
 
-    public int? Month { get; set; }
-    public int? CropYear { get; set; }
-    public string? CropOrder { get; set; }
-    public string? HiddenCrops { get; set; }
-    public string? SelectedMonths { get; set; }
-    public string? PrintLayout { get; set; }
+    public int? Month { get; init; }
+    public int? CropYear { get; init; }
+    public string? CropOrder { get; init; }
+    public string? HiddenCrops { get; init; }
+    public string? SelectedMonths { get; init; }
+    public string? PrintLayout { get; init; }
 }
