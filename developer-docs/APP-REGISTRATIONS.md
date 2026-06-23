@@ -328,37 +328,6 @@ Group membership is managed through **Access Packages** (recommended) or by the 
 
 See [ACCESS-PACKAGES-USER-GUIDE.md](ACCESS-PACKAGES-USER-GUIDE.md) for detailed instructions.
 
-## Managed Identity — Microsoft Graph (Usage Dashboard user filter)
-
-The Usage Dashboard limits its user list to members of the per-environment **app-access group**
-(below). An hourly background job enumerates that group's members via **Microsoft Graph** —
-authenticating as the API App Service's **system-assigned managed identity** — caches them, and the
-dashboard intersects its user list with that cached set. This requires a one-time grant per environment:
-
-- **Graph application permissions:** `GroupMember.Read.All` **and** `User.Read.All` (admin consent), granted to each App Service's managed identity (`app-origination-dev-eus` / `-qa-eus` / `-eus`).
-- **Configured group** (`UsageDashboard:AppAccessGroupObjectId` in `appsettings.<Env>.json`):
-
-  | Env | Group | Object ID |
-  |-----|-------|-----------|
-  | Dev | Origination App Dev Users | `0e4dd29c-b23c-4e11-a2a3-13e1be934c2b` |
-  | QA | Origination App QA Users | `8f0e0182-661e-4396-bda3-9fa43217f258` |
-  | Prod | Origination App Users | `0cb70d50-df9d-4a98-8385-65112e4a7f50` |
-
-**Fail-open:** if the grant is missing, Graph is unreachable, or the group id is blank, the job logs
-a warning and the dashboard shows **all entitlements users** (no filter) — so deploying the code
-before the grant is safe; the filter simply activates once the permission is in place. Grant example:
-
-```powershell
-# Grant the App Service managed identity Graph app permissions (run per environment).
-$mi = Get-MgServicePrincipal -Filter "displayName eq 'app-origination-dev-eus'"
-$graph = Get-MgServicePrincipal -Filter "appId eq '00000003-0000-0000-c000-000000000000'"
-foreach ($perm in 'GroupMember.Read.All','User.Read.All') {
-    $role = $graph.AppRoles | Where-Object { $_.Value -eq $perm }
-    New-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $mi.Id `
-        -PrincipalId $mi.Id -ResourceId $graph.Id -AppRoleId $role.Id
-}
-```
-
 ## Client Secret Management
 
 ### Retrieving the Client Secret
