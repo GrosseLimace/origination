@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Memory;
 using GrainOriginatorPortal.Api.Data;
 using GrainOriginatorPortal.Api.Models;
 
@@ -17,23 +16,15 @@ namespace GrainOriginatorPortal.Api.Services;
 public class UsageAggregationBackgroundService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly IMemoryCache _cache;
     private readonly ILogger<UsageAggregationBackgroundService> _logger;
     private static readonly TimeSpan RunInterval = TimeSpan.FromHours(1);
     private const int RetentionDays = 90;
 
-    /// <summary>Cache key holding the current app-access group members (short-form user ids,
-    /// case-insensitive set). Populated hourly from Graph; read by the Usage Dashboard to limit
-    /// its user list. Absent/empty ⇒ no filter (fail-open).</summary>
-    public const string AppAccessUsersCacheKey = "usage:appAccessUsers";
-
     public UsageAggregationBackgroundService(
         IServiceScopeFactory scopeFactory,
-        IMemoryCache cache,
         ILogger<UsageAggregationBackgroundService> logger)
     {
         _scopeFactory = scopeFactory;
-        _cache = cache;
         _logger = logger;
     }
 
@@ -44,8 +35,7 @@ public class UsageAggregationBackgroundService : BackgroundService
         // Wait 30 seconds on startup to let the app stabilize
         await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
 
-        // Run snapshot + app-access membership refresh immediately on startup
-        await RefreshAppAccessUsersAsync(stoppingToken);
+        // Run snapshot immediately on startup
         await RefreshTradeUnitSnapshotAsync(stoppingToken);
 
         while (!stoppingToken.IsCancellationRequested)
@@ -64,7 +54,6 @@ public class UsageAggregationBackgroundService : BackgroundService
                     await AggregateWeeklyLoginsAsync(weekStart, stoppingToken);
                 }
 
-                await RefreshAppAccessUsersAsync(stoppingToken);
                 await RefreshTradeUnitSnapshotAsync(stoppingToken);
                 await CleanupRetentionAsync(stoppingToken);
 
@@ -309,12 +298,6 @@ public class UsageAggregationBackgroundService : BackgroundService
                 .Select(g => g.First())
                 .ToList();
 
-            // NOTE: the snapshot is intentionally NOT filtered to app-access users — it doubles as the
-            // app-wide UPN→display-name lookup (SqlDataService.ResolveDisplayNamesAsync), which must
-            // resolve every author (e.g. historical note creators), not just current app users. The
-            // Usage Dashboard applies the app-access filter at query time instead (see
-            // RefreshAppAccessUsersAsync + UsageDashboardController).
-
             // Use raw SQL DELETE then a fresh DbContext scope to avoid EF tracking conflicts
             await appDb.Database.ExecuteSqlRawAsync("DELETE FROM dbo.UserTradeUnitSnapshot", ct);
             await appDb.SaveChangesAsync(ct); // flush the delete
@@ -346,43 +329,6 @@ public class UsageAggregationBackgroundService : BackgroundService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to refresh trade unit snapshot");
-        }
-    }
-
-    /// <summary>Refreshes the cached set of app-access group members (short-form user ids) from
-    /// Graph and stores it for the Usage Dashboard to intersect against. Fail-open: when the lookup
-    /// is disabled or fails (null), the existing cached set is left untouched so a transient Graph
-    /// outage doesn't suddenly drop the dashboard's filter mid-day; if nothing was ever cached, the
-    /// dashboard shows all users.</summary>
-    private async Task RefreshAppAccessUsersAsync(CancellationToken ct)
-    {
-        try
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var svc = scope.ServiceProvider.GetRequiredService<IAppAccessUserService>();
-            var appUsers = await svc.GetAppAccessUserShortNamesAsync(ct);
-
-            if (appUsers is { Count: > 0 })
-            {
-                _cache.Set(AppAccessUsersCacheKey, appUsers, new MemoryCacheEntryOptions
-                {
-                    // Longer than the hourly refresh so the set never expires between refreshes;
-                    // a successful cycle always replaces it. Size required (cache has a SizeLimit).
-                    AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(6),
-                    Size = 1
-                });
-                _logger.LogInformation("Cached {Count} app-access users for the Usage Dashboard filter.", appUsers.Count);
-            }
-            else
-            {
-                _logger.LogWarning(
-                    "App-access user set unavailable this cycle — Usage Dashboard keeps the last cached set (or shows all if none). [{ErrorCode}]",
-                    "APP_ACCESS_USERS_UNAVAILABLE");
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to refresh app-access user set");
         }
     }
 
