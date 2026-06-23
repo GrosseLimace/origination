@@ -35,6 +35,7 @@ public class ContractsController : ControllerBase
     [ProducesResponseType(typeof(List<ContractResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<ContractResponse>>> GetByCustomer(long customerId, [FromQuery] string? scoularId = null, CancellationToken cancellationToken = default)
     {
+        // Open to any rep — no per-producer object-level authz by design; see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-02).
         return Ok(await _service.GetByCustomerAsync(customerId, scoularId, cancellationToken));
     }
 

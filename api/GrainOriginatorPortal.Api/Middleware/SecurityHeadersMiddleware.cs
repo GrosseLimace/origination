@@ -7,10 +7,12 @@ namespace GrainOriginatorPortal.Api.Middleware;
 public class SecurityHeadersMiddleware
 {
     private readonly RequestDelegate _next;
+    private readonly IWebHostEnvironment _env;
 
-    public SecurityHeadersMiddleware(RequestDelegate next)
+    public SecurityHeadersMiddleware(RequestDelegate next, IWebHostEnvironment env)
     {
         _next = next;
+        _env = env;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -41,13 +43,17 @@ public class SecurityHeadersMiddleware
             }
             else
             {
+                // localhost origins are only needed for local dev (SPA → API on localhost). Including
+                // them in deployed environments would let injected script reach the victim's local
+                // services / exfiltrate to a local listener (CWE-942), so gate them behind IsDevelopment().
+                var devConnectSrc = _env.IsDevelopment() ? " http://localhost:5000 https://localhost:*" : string.Empty;
                 headers["Content-Security-Policy"] =
                     "default-src 'self'; " +
                     "script-src 'self'; " +
                     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
                     "font-src 'self' https://fonts.gstatic.com data:; " +
                     "img-src 'self' data: blob: https://*.tile.openstreetmap.org; " +
-                    "connect-src 'self' https://login.microsoftonline.com https://*.azurewebsites.net http://localhost:5000 https://localhost:* https://graph.microsoft.com; " +
+                    "connect-src 'self' https://login.microsoftonline.com https://*.azurewebsites.net https://graph.microsoft.com" + devConnectSrc + "; " +
                     "frame-src 'self' https://login.microsoftonline.com; " +
                     "object-src 'none'; " +
                     "base-uri 'self';";
