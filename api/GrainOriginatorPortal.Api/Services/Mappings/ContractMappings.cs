@@ -59,6 +59,7 @@ public static class ContractMappings
         FlatPrice = p.FlatPrice,
         BasisPrice = p.BasisPrice,
         HedgePrice = p.HedgePrice,
+        FreightAdjustment = p.FreightAdjustment,
         PriceDate = p.PriceDate,
         PriceCurrency = p.PriceCurrency,
         TraderInitials = p.TraderInitials,
