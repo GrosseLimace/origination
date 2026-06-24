@@ -14,6 +14,6 @@ public interface IProducerDetailsRepository
     Task<List<ProducerDetails>> GetAllAsync(CancellationToken cancellationToken);
     Task<ProducerDetails> UpsertAsync(long customerId, string? scoularId, string customerName, decimal? totalAcres,
         decimal? binCapacity, string? primaryContact, string? commodities, string? linkedProducerIds,
-        string currentUser, CancellationToken cancellationToken);
+        IReadOnlyList<GrainOnFarmEntry> grainOnFarm, string currentUser, CancellationToken cancellationToken);
     Task DeleteAsync(long customerId, CancellationToken cancellationToken);
 }

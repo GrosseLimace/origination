@@ -162,6 +162,28 @@ describe('ApiService', () => {
     req.flush(null);
   });
 
+  // ── Producer Details (grain on farm) ────────────────────────────────────────
+
+  it('getProducerDetails() calls GET /producerdetails/customer/:id and round-trips grainOnFarm', () => {
+    service.getProducerDetails(42).subscribe(pd => {
+      expect(pd.grainOnFarm?.[0]).toEqual({ commodityGroup: 'Corn', bushelsOnHand: 80000, targetBushels: 100000 });
+    });
+    const req = httpMock.expectOne(`${BASE}/producerdetails/customer/42`);
+    expect(req.request.method).toBe('GET');
+    req.flush({ id: 1, customerId: 42, customerName: 'Smith', grainOnFarm: [{ commodityGroup: 'Corn', bushelsOnHand: 80000, targetBushels: 100000 }] });
+  });
+
+  it('saveProducerDetails() PUTs grainOnFarm in the body', () => {
+    service.saveProducerDetails(42, {
+      customerName: 'Smith',
+      grainOnFarm: [{ commodityGroup: 'Corn', bushelsOnHand: 80000, targetBushels: 100000 }],
+    }).subscribe();
+    const req = httpMock.expectOne(`${BASE}/producerdetails/customer/42`);
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body.grainOnFarm).toEqual([{ commodityGroup: 'Corn', bushelsOnHand: 80000, targetBushels: 100000 }]);
+    req.flush({ id: 1, customerId: 42, customerName: 'Smith' });
+  });
+
   // ── Error handling ─────────────────────────────────────────────────────────
 
   it('propagates HTTP errors as Error objects', () => new Promise<void>((resolve) => {

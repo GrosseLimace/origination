@@ -52,6 +52,17 @@ export class CustomerProfileComponent {
 
   public customer = input.required<Customer>();
   public allCustomers = input<Customer[]>([]);
+
+  // ── Grain on Farm (per-commodity on-hand + target) ──────────────────────
+  showGrainBreakdown = signal(false);
+  /** Grain-on-farm rows with a positive on-hand or target, sorted by on-hand desc. */
+  readonly grainOnFarmRows = computed(() =>
+    (this.customer().grainOnFarm ?? [])
+      .filter(g => (g.bushelsOnHand ?? 0) > 0 || (g.targetBushels ?? 0) > 0)
+      .sort((a, b) => (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0)));
+  /** Total bushels currently on farm across all commodities. */
+  readonly grainOnFarmTotal = computed(() =>
+    this.grainOnFarmRows().reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0));
   public selectedTradeUnits = input<string[]>([]);
   public contracts = input<Contract[]>([]);
   public tickets = input<Ticket[]>([]);
@@ -87,7 +98,7 @@ export class CustomerProfileComponent {
   public onSaveSavedListMembership = output<{ listId: number; add: boolean }[]>();
   public onAddNote = output<string>();
   public onTogglePin = output<Note>();
-  public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean }>();
+  public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number }[] }>();
   public linkedCustomers = input<Customer[]>([]);
   public onSelectLinkedCustomer = output<number>();
   public openContractId = input<number | null>(null);
@@ -444,7 +455,7 @@ export class CustomerProfileComponent {
     this.plantingTable?.openAddDialog();
   }
 
-  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean }): void {
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number }[] }): void {
     this.usageTracking.trackProducerDetailsEdit(data.customerId.toString());
     this.onSaveCustomer.emit(data);
     this.closeEditDialog();

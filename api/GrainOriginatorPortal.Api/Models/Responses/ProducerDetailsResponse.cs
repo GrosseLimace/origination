@@ -17,4 +17,14 @@ public record ProducerDetailsResponse
     public DateTime CreatedAt { get; init; }
     public string? ModifiedBy { get; init; }
     public DateTime? ModifiedAt { get; init; }
+
+    /// <summary>Per-commodity grain-on-farm breakdown (bushels on hand + target).</summary>
+    public IReadOnlyList<GrainOnFarmItemResponse> GrainOnFarm { get; init; } = [];
+}
+
+public record GrainOnFarmItemResponse
+{
+    public string CommodityGroup { get; init; } = string.Empty;
+    public decimal? BushelsOnHand { get; init; }
+    public decimal? TargetBushels { get; init; }
 }

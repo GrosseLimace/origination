@@ -28,6 +28,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<CustomerTradeUnit> CustomerTradeUnits => Set<CustomerTradeUnit>();
     public DbSet<CustomerLink> CustomerLinks => Set<CustomerLink>();
     public DbSet<CustomerCommodity> CustomerCommodities => Set<CustomerCommodity>();
+    public DbSet<ProducerGrainOnFarm> ProducerGrainOnFarm => Set<ProducerGrainOnFarm>();
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
     public DbSet<BidSheetLocation> BidSheetLocations => Set<BidSheetLocation>();
     public DbSet<BidSheetLocationBid> BidSheetLocationBids => Set<BidSheetLocationBid>();
@@ -242,6 +243,8 @@ public class ApplicationDbContext : DbContext
             // (Phase 4b). The column was dropped from dbo.ProducerDetails; the property
             // stays on the DTO for API contract stability.
             entity.Ignore(e => e.Commodities);
+            // GrainOnFarm is composed server-side from dbo.ProducerGrainOnFarm on read / rebuilt on upsert.
+            entity.Ignore(e => e.GrainOnFarm);
             entity.Property(e => e.CreatedBy).HasColumnName("CreatedBy").HasMaxLength(255).IsRequired();
             entity.Property(e => e.CreatedAt).HasColumnName("CreatedAt").HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
@@ -311,6 +314,28 @@ public class ApplicationDbContext : DbContext
                   .HasDatabaseName("UQ_CustomerCommodity_Customer_Commodity");
             // Reverse-lookup index — "which customers grow commodity X?"
             entity.HasIndex(e => e.CommodityId).HasDatabaseName("IX_CustomerCommodity_CommodityId");
+        });
+
+        modelBuilder.Entity<ProducerGrainOnFarm>(entity =>
+        {
+            entity.ToTable("ProducerGrainOnFarm", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id").ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.CustomerId).HasColumnName("CustomerId").IsRequired();
+            entity.Property(e => e.CommodityGroup).HasColumnName("CommodityGroup").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.BushelsOnHand).HasColumnName("BushelsOnHand").HasColumnType("decimal(18,2)").IsRequired(false);
+            entity.Property(e => e.TargetBushels).HasColumnName("TargetBushels").HasColumnType("decimal(18,2)").IsRequired(false);
+
+            entity.HasOne(e => e.Customer)
+                  .WithMany()
+                  .HasForeignKey(e => e.CustomerId)
+                  .OnDelete(DeleteBehavior.NoAction)
+                  .HasConstraintName("FK_ProducerGrainOnFarm_Customer");
+
+            // One row per (customer, commodity group).
+            entity.HasIndex(e => new { e.CustomerId, e.CommodityGroup })
+                  .IsUnique()
+                  .HasDatabaseName("UQ_ProducerGrainOnFarm_Customer_Group");
         });
 
         // -------------------------------------------------------------------------

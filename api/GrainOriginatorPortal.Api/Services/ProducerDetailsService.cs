@@ -1,3 +1,4 @@
+using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services.Mappings;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
@@ -80,10 +81,19 @@ public class ProducerDetailsService : IProducerDetailsService
     /// <inheritdoc />
     public async Task<ProducerDetailsResponse> UpsertAsync(long customerId, string? scoularId, string customerName,
         decimal? totalAcres, decimal? binCapacity, string? primaryContact, string? commodities,
-        string? linkedProducerIds, CancellationToken cancellationToken)
+        string? linkedProducerIds, IReadOnlyList<GrainOnFarmItemRequest>? grainOnFarm, CancellationToken cancellationToken)
     {
+        var grainEntries = (grainOnFarm ?? [])
+            .Select(g => new GrainOnFarmEntry
+            {
+                CommodityGroup = g.CommodityGroup,
+                BushelsOnHand = g.BushelsOnHand,
+                TargetBushels = g.TargetBushels
+            })
+            .ToList();
+
         var saved = await _repository.UpsertAsync(customerId, scoularId, customerName, totalAcres, binCapacity,
-            primaryContact, commodities, linkedProducerIds, _requestContext.GetCurrentUser(), cancellationToken);
+            primaryContact, commodities, linkedProducerIds, grainEntries, _requestContext.GetCurrentUser(), cancellationToken);
 
         var nameMap = await _displayNameLookup.ResolveAsync(
             new[] { saved.CreatedBy, saved.ModifiedBy ?? string.Empty }, cancellationToken);

@@ -18,6 +18,10 @@ public class ProducerDetails
     public string? PrimaryContact { get; set; }
     public string? Commodities { get; set; } // Comma-separated list (e.g. "Corn,Soybeans,Wheat")
     public string? LinkedProducerIds { get; set; } // Comma-separated customer IDs
+
+    // Per-commodity grain-on-farm breakdown. NOT a stored column — composed by the repository from
+    // dbo.ProducerGrainOnFarm on read, and rebuilt from the request on upsert (EF .Ignore()s it).
+    public List<GrainOnFarmEntry> GrainOnFarm { get; set; } = new();
     public string CreatedBy { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public string? ModifiedBy { get; set; }

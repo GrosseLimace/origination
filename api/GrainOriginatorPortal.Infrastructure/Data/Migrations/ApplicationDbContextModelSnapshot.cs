@@ -1187,6 +1187,42 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.ToTable("ProducerDetails", "dbo");
                 });
 
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.ProducerGrainOnFarm", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal?>("BushelsOnHand")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("BushelsOnHand");
+
+                    b.Property<string>("CommodityGroup")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("CommodityGroup");
+
+                    b.Property<long>("CustomerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("CustomerId");
+
+                    b.Property<decimal?>("TargetBushels")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("TargetBushels");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId", "CommodityGroup")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_ProducerGrainOnFarm_Customer_Group");
+
+                    b.ToTable("ProducerGrainOnFarm", "dbo");
+                });
+
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.QueryLibraryItem", b =>
                 {
                     b.Property<int>("Id")
@@ -1783,6 +1819,18 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired()
                         .HasConstraintName("FK_ProducerDetails_Customer_CustomerId");
+
+                    b.Navigation("Customer");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.ProducerGrainOnFarm", b =>
+                {
+                    b.HasOne("GrainOriginatorPortal.Infrastructure.Data.Entities.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired()
+                        .HasConstraintName("FK_ProducerGrainOnFarm_Customer");
 
                     b.Navigation("Customer");
                 });

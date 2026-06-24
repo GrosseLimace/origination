@@ -25,4 +25,21 @@ public record UpsertProducerDetailsRequest
 
     [StringLength(1000)]
     public string? LinkedProducerIds { get; init; }
+
+    /// <summary>Per-commodity grain-on-farm rows (bushels on hand + target). Replaces the customer's
+    /// existing set on save. Rows with an unknown/blank commodity code are ignored server-side.</summary>
+    public IReadOnlyList<GrainOnFarmItemRequest>? GrainOnFarm { get; init; }
+}
+
+public record GrainOnFarmItemRequest
+{
+    [Required]
+    [StringLength(100)]
+    public required string CommodityGroup { get; init; }
+
+    [Range(0, 1_000_000_000)]
+    public decimal? BushelsOnHand { get; init; }
+
+    [Range(0, 1_000_000_000)]
+    public decimal? TargetBushels { get; init; }
 }
