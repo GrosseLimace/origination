@@ -3,6 +3,16 @@
         <!-- Full-screen map -->
         <div #mapEl id="bid-locations-map" style="height: 100%; width: 100%;"></div>
 
+        <!-- Base-layer switch overlay — covers the brief tile load so the map doesn't flash/pop -->
+        @if (mapSwitching()) {
+          <div class="absolute inset-0 z-[1100] flex items-center justify-center bg-white/40 dark:bg-gray-900/40 backdrop-blur-[1px] pointer-events-none">
+            <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/90 dark:bg-gray-800/90 shadow-lg">
+              <div class="inline-block animate-spin rounded-full h-5 w-5 border-2 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green"></div>
+              <span class="text-sm font-medium text-gray-600 dark:text-gray-300">Loading map…</span>
+            </div>
+          </div>
+        }
+
         <!-- Loading overlay (map only, shifts left when panel is open) -->
         @if (isRefreshing()) {
           <div class="absolute top-0 left-0 bottom-0 z-[998] flex items-center justify-center bg-white/60 dark:bg-gray-900/60 backdrop-blur-sm transition-all duration-300"
@@ -92,6 +102,26 @@
                 <path d="M5 12h14"/><path d="M12 5v14"/>
               </svg>
               Add Location
+            </button>
+            <button
+              (click)="toggleMapView()"
+              [title]="mapView() === 'street' ? 'Switch to satellite (realistic) view' : 'Switch to street map'"
+              class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg shadow-lg transition-colors"
+              [ngClass]="mapView() === 'satellite' ? 'text-white bg-scoular-blue hover:bg-scoular-blue-dark' : 'text-white bg-gray-700 hover:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500'"
+            >
+              @if (mapView() === 'street') {
+                <!-- globe → switch to satellite -->
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>
+                </svg>
+                Satellite
+              } @else {
+                <!-- map → switch back to street -->
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/><path d="M15 5.764v15"/><path d="M9 3.236v15"/>
+                </svg>
+                Map
+              }
             </button>
             <button
               (click)="refreshBids()"
