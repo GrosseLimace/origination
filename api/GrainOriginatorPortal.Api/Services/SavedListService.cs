@@ -166,7 +166,8 @@ public class SavedListService : ISavedListService
     {
         await ValidateTradeUnitsAsync(tradeUnits, cancellationToken);
 
-        var list = await _repository.UpdateAsync(listId, _requestContext.GetCurrentUser(), _requestContext.IsAdmin(),
+        var canManageAny = await CanManageTargetAsync(listId, cancellationToken);
+        var list = await _repository.UpdateAsync(listId, _requestContext.GetCurrentUser(), canManageAny,
             name, query, tradeUnits, filters, includedCustomerIds, excludedCustomerIds, cancellationToken);
         if (list == null) return null;
 
@@ -176,8 +177,30 @@ public class SavedListService : ISavedListService
     }
 
     /// <inheritdoc />
-    public Task DeleteAsync(int listId, CancellationToken cancellationToken) =>
-        _repository.DeleteAsync(listId, _requestContext.GetCurrentUser(), _requestContext.IsAdmin(), cancellationToken);
+    public async Task DeleteAsync(int listId, CancellationToken cancellationToken)
+    {
+        var canManageAny = await CanManageTargetAsync(listId, cancellationToken);
+        await _repository.DeleteAsync(listId, _requestContext.GetCurrentUser(), canManageAny, cancellationToken);
+    }
+
+    /// <summary>Whether the caller may manage (edit/delete) the target list as a MANAGER — i.e. the
+    /// admin override. Scoped to the same team-list boundary as the read path: an Admin may manage a
+    /// list only when its trade units overlap the caller's entitled trade units. (Owner/assignee access
+    /// is enforced separately in the repository by CreatedBy/AssignedTo, so this never needs to be true
+    /// for one's own list.) Without this scope, the global Admin role could mutate ANY list by id,
+    /// including lists outside the caller's trade units (broken access control).</summary>
+    private async Task<bool> CanManageTargetAsync(int listId, CancellationToken cancellationToken)
+    {
+        if (!_requestContext.IsAdmin()) return false;
+
+        var target = await _repository.GetByIdAsync(listId, cancellationToken);
+        var listTradeUnits = (target?.TradeUnits ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (listTradeUnits.Length == 0) return false; // a list with no trade units can't be team-scoped
+
+        var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);
+        return listTradeUnits.Any(allowed.Contains);
+    }
 
     /// <summary>Validates the CSV of requested trade units against the caller's entitlements (throws
     /// when one is not allowed). No-op when the request carries no trade units.</summary>
