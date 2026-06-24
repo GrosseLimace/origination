@@ -124,11 +124,14 @@ public class UserEntitlementService : IUserEntitlementService
 
         if (customerTradeUnits.Count == 0)
         {
-            // Customer not found in ODS — allow access (may be a new customer not yet synced)
-            _logger.LogInformation(
-                "Customer {CustomerId} has no trade unit mapping in ODS — allowing access",
-                customerId);
-            return;
+            // Deny by default: a customer with no trade-unit mapping cannot be authorized against the
+            // caller's entitlements, so allowing access here would be a fail-open bypass (CWE-285) for
+            // any not-yet-synced/unmapped customer. Fail closed instead.
+            var requester = _requestContext.GetCurrentUserShortName();
+            _logger.LogWarning(
+                "Customer access denied for user {UserId}. Customer {CustomerId} has no trade unit mapping. [{ErrorCode}]",
+                requester, customerId, "CUSTOMER_NO_TRADE_UNIT_MAPPING");
+            throw new ForbiddenException($"Access denied: you are not authorized to access customer {customerId}.");
         }
 
         var allowed = await GetAllowedTradeUnitCodesAsync(cancellationToken);

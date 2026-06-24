@@ -25,6 +25,10 @@ using GrainOriginatorPortal.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Suppress the "Server: Kestrel" response header so we don't advertise the server
+// technology to clients (avoids unnecessary info disclosure / fingerprinting).
+builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
+
 // =============================================================================
 // KEY VAULT — load secrets into configuration before anything else reads it.
 // On App Service, use ManagedIdentityCredential directly (avoids DefaultAzureCredential
