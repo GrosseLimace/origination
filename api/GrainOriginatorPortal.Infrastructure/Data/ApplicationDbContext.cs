@@ -206,6 +206,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ModifiedAt).HasColumnName("ModifiedAt").IsRequired(false);
             entity.Property(e => e.ModifiedBy).HasColumnName("ModifiedBy").HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true).IsRequired();
+            entity.Property(e => e.AssignedTo).HasColumnName("AssignedTo").HasMaxLength(255).IsRequired(false);
         });
 
         modelBuilder.Entity<ESignEnrollment>(entity =>

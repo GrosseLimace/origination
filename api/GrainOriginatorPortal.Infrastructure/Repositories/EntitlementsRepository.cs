@@ -32,6 +32,16 @@ public class EntitlementsRepository : IEntitlementsRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<List<UserTradeUnitAccess>> GetUsersByTradeUnitsAsync(IReadOnlyCollection<string> tradeUnitCodes, CancellationToken cancellationToken)
+    {
+        if (tradeUnitCodes.Count == 0) return new List<UserTradeUnitAccess>();
+
+        return await _entitlementsContext.UserTradeUnitAccess
+            .AsNoTracking()
+            .Where(u => tradeUnitCodes.Contains(u.TradeUnitCode))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<List<string>> GetTradeUnitCodesForUserAsync(string userId, CancellationToken cancellationToken)
     {
         return await _entitlementsContext.UserTradeUnitAccess

@@ -23,6 +23,13 @@ public interface IRequestContextService
     /// </summary>
     string GetCurrentUserShortName();
 
+    /// <summary>
+    /// True when the current user holds the "Admin" app role — the same role that gates the Usage
+    /// Dashboard. Honors the identity's RoleClaimType, so it works whether the role surfaced as
+    /// "roles" (Microsoft.Identity.Web default) or ClaimTypes.Role.
+    /// </summary>
+    bool IsAdmin();
+
     /// <summary>The correlation id for the current request, falling back to the trace identifier.</summary>
     string GetTraceId();
 }

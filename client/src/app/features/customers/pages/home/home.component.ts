@@ -9,6 +9,7 @@ import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
+import { UserRolesService } from '@core/services/user-roles.service';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity } from '@models';
 import { CustomerListComponent } from '../../components/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customer-profile/customer-profile.component';
@@ -35,7 +36,12 @@ export class HomeComponent {
   private readonly toastService = inject(ToastService);
   private readonly nlqFilterService = inject(NlqFilterService);
   private readonly usageTracking = inject(UsageTrackingService);
+  private readonly userRoles = inject(UserRolesService);
   private readonly destroyRef = inject(DestroyRef);
+
+  /** Manager = holds the "Admin" app role (same gate as the Usage Dashboard). Enables the
+   *  "Team Lists" tab in the Add-to-List dropdown. */
+  readonly isManager = this.userRoles.isAdmin;
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
@@ -79,6 +85,9 @@ export class HomeComponent {
   readonly notes = signal<Note[]>([]);
   readonly storedGrain = signal<StoredGrain[]>([]);
   readonly savedLists = signal<SavedList[]>([]);
+  /** Manager-only: saved lists tied to the selected TU(s) created by other users (overlap-matched
+   *  server-side, enriched locally). Powers the Add-to-List "Team Lists" tab. */
+  readonly teamSavedLists = signal<SavedList[]>([]);
   readonly producerDetailsMap = signal<Map<number, ProducerDetails>>(new Map());
 
   readonly selectedCustomer = signal<Customer | null>(null);
@@ -103,6 +112,10 @@ export class HomeComponent {
       return u.length === set.size && u.every(x => set.has(x));
     });
   });
+  /** Manager-only team lists the producer can be quick-added to. Already TU-scoped (overlap) by the
+   *  server; enriched locally so the checkboxes reflect query-derived membership too. */
+  readonly teamListsForSelectedCustomer = computed<SavedList[]>(() =>
+    this.selectedTradeUnits().length === 0 ? [] : this.teamSavedLists());
   readonly customerContracts = signal<Contract[]>([]);
   readonly customerTickets = signal<Ticket[]>([]);
   readonly customerPricingLines = signal<ContractPricingLine[]>([]);
@@ -199,6 +212,14 @@ export class HomeComponent {
       if (key === this._lastTradeUnitKey) return;
       this._lastTradeUnitKey = key;
       untracked(() => this._onTradeUnitsChanged(tradeUnits));
+    });
+
+    // (Re)load the manager team lists whenever admin status resolves (/api/me) or the TU selection
+    // changes. Guarded inside _loadTeamLists so non-managers / empty selections clear the set.
+    effect(() => {
+      this.isManager();
+      this.selectedTradeUnits();
+      untracked(() => this._loadTeamLists());
     });
 
     this.route.queryParams.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
@@ -521,14 +542,24 @@ export class HomeComponent {
   }
 
   private _enrichSavedLists(forceRefresh = false): void {
-    if (!this.savedLists().length || !this.customers().length) return;
-    // Skip if all lists already have cached customerIds — unless forceRefresh is true
-    // (e.g., when contracts/tickets/stored grain arrive after initial enrichment).
-    if (!forceRefresh) {
-      const needsEnrich = this.savedLists().some(l => !l.customerIds?.length);
-      if (!needsEnrich) return;
+    if (!this.customers().length) return;
+    // Own lists: skip if all already have cached customerIds — unless forceRefresh (e.g. when
+    // contracts/tickets/stored grain arrive after initial enrichment).
+    const ownNeeds = forceRefresh || this.savedLists().some(l => !l.customerIds?.length);
+    if (this.savedLists().length && ownNeeds) {
+      this.savedLists.set(this._enrichLists(this.savedLists(), forceRefresh));
     }
+    // Team lists (manager) follow the same enrichment so their checkboxes reflect query membership.
+    const teamNeeds = forceRefresh || this.teamSavedLists().some(l => !l.customerIds?.length);
+    if (this.teamSavedLists().length && teamNeeds) {
+      this.teamSavedLists.set(this._enrichLists(this.teamSavedLists(), forceRefresh));
+    }
+  }
 
+  /** Resolve each list's NLQ query + filters + included/excluded overrides into a cached
+   *  `customerIds` array, using the page's currently-loaded data. Returns a new array. */
+  private _enrichLists(lists: SavedList[], forceRefresh: boolean): SavedList[] {
+    if (!lists.length || !this.customers().length) return lists;
     const account = this.msalService.instance.getActiveAccount()
       ?? this.msalService.instance.getAllAccounts()[0];
     const context: NlqFilterContext = {
@@ -545,7 +576,7 @@ export class HomeComponent {
       currentUserUsername: account?.username ?? ''
     };
     const queryLibrary = this.appState.queryLibrary();
-    this.savedLists.set(this.savedLists().map(list => {
+    return lists.map(list => {
       if (!forceRefresh && list.customerIds?.length) return list; // Already resolved
       // Resolve "I"/"me"/"my" to the user's name so author-based queries work
       const resolvedQuery = this.nlqFilterService.resolveUserReferences(list.query, account?.name ?? '', account?.username ?? '');
@@ -573,7 +604,21 @@ export class HomeComponent {
         refined.map(c => c.id), list.includedCustomerIds, list.excludedCustomerIds
       );
       return { ...list, customerIds: ids };
-    }));
+    });
+  }
+
+  /** Manager-only: fetch the team lists tied to the selected TU(s) and enrich them. Clears the set
+   *  for non-managers or when no TU is selected. */
+  private _loadTeamLists(): void {
+    const tus = this.selectedTradeUnits();
+    if (!this.isManager() || tus.length === 0) {
+      this.teamSavedLists.set([]);
+      return;
+    }
+    this.apiService.getTeamSavedLists(tus.join(',')).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (data) => this.teamSavedLists.set(this._enrichLists(data ?? [], true)),
+      error: () => { /* supplementary view — leave the prior set in place */ }
+    });
   }
 
   /**
@@ -587,12 +632,25 @@ export class HomeComponent {
     const customer = this.selectedCustomer();
     if (!customer || changes.length === 0) return;
     const cid = customer.id;
-    const originals = this.savedLists(); // snapshot (old object refs) for revert
-
-    const working = [...originals];
+    // A change may target the user's own list OR (for a manager) a team list — snapshot both for
+    // revert and resolve each change against whichever set owns the id.
+    const ownOriginals = this.savedLists();
+    const teamOriginals = this.teamSavedLists();
+    const ownWorking = [...ownOriginals];
+    const teamWorking = [...teamOriginals];
+    let ownChanged = false;
+    let teamChanged = false;
     const updates$ = [];
+
     for (const ch of changes) {
-      const idx = working.findIndex(l => l.id === ch.listId);
+      let working = ownWorking;
+      let idx = ownWorking.findIndex(l => l.id === ch.listId);
+      let isTeam = false;
+      if (idx === -1) {
+        idx = teamWorking.findIndex(l => l.id === ch.listId);
+        working = teamWorking;
+        isTeam = true;
+      }
       if (idx === -1) continue;
       const list = working[idx];
       const included = new Set(list.includedCustomerIds ?? []);
@@ -609,6 +667,7 @@ export class HomeComponent {
       const newExcluded = [...excluded];
       // Drop cached customerIds so _enrichSavedLists rebuilds this list's membership.
       working[idx] = { ...list, includedCustomerIds: newIncluded, excludedCustomerIds: newExcluded, customerIds: undefined };
+      if (isTeam) teamChanged = true; else ownChanged = true;
       updates$.push(this.apiService.updateSavedList(list.id, {
         name: list.name,
         query: list.query,
@@ -621,8 +680,8 @@ export class HomeComponent {
     if (updates$.length === 0) return;
 
     // Optimistic local apply, then persist all changed lists together.
-    this.savedLists.set(working);
-    this.appState.setSavedLists(working);
+    if (ownChanged) { this.savedLists.set(ownWorking); this.appState.setSavedLists(ownWorking); }
+    if (teamChanged) { this.teamSavedLists.set(teamWorking); }
     this._enrichSavedLists(true);
 
     forkJoin(updates$).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -630,8 +689,8 @@ export class HomeComponent {
         updates$.length === 1 ? 'Saved list updated' : `${updates$.length} saved lists updated`
       ),
       error: () => {
-        this.savedLists.set(originals);
-        this.appState.setSavedLists(originals);
+        if (ownChanged) { this.savedLists.set(ownOriginals); this.appState.setSavedLists(ownOriginals); }
+        if (teamChanged) { this.teamSavedLists.set(teamOriginals); }
         this._enrichSavedLists(true);
         this.toastService.error('Failed to save list changes');
       }
