@@ -42,6 +42,32 @@ public class SavedListsController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
+    /// <summary>Manager-only: team members in the requested trade units (for the "assign a list" picker).</summary>
+    [HttpGet("team-members")]
+    [Authorize(Policy = "AdminOnly")]
+    [ProducesResponseType(typeof(List<TeamMemberResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<TeamMemberResponse>>> GetTeamMembers([FromQuery] string? tradeUnits, CancellationToken cancellationToken = default)
+    {
+        return Ok(await _service.GetTeamMembersAsync(tradeUnits, cancellationToken));
+    }
+
+    // -------------------------------------------------------------------------
+    /// <summary>Manager-only: assigns a copy of a built list to one or more team members.</summary>
+    [HttpPost("assign")]
+    [Authorize(Policy = "AdminOnly")]
+    [ProducesResponseType(typeof(List<SavedListResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<List<SavedListResponse>>> Assign([FromBody] AssignSavedListRequest request, CancellationToken cancellationToken = default)
+    {
+        var created = await _service.AssignAsync(request.TargetUserIds, request.Name, request.Query, request.TradeUnits,
+            request.Filters, request.IncludedCustomerIds, request.ExcludedCustomerIds, cancellationToken);
+        _logger.LogInformation(
+            "Saved list assigned [{ErrorCode}] [{ErrorCategory}]: Name={Name}, Targets={TargetCount}, Created={CreatedCount}",
+            "AUDIT_CREATE", "DataMutation", request.Name, request.TargetUserIds.Count, created.Count);
+        return Ok(created);
+    }
+
+    // -------------------------------------------------------------------------
     /// <summary>Creates a new saved customer list.</summary>
     [HttpPost]
     [ProducesResponseType(typeof(SavedListResponse), StatusCodes.Status201Created)]

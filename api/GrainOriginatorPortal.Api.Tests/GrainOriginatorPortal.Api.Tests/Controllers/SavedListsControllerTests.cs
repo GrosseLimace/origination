@@ -1,4 +1,5 @@
 // Microsoft namespaces
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 
@@ -62,6 +63,60 @@ public class SavedListsControllerTests
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var returned = Assert.IsAssignableFrom<List<SavedListResponse>>(ok.Value);
         Assert.Equal("Joe Originator", Assert.Single(returned).CreatedBy);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task GetTeamMembers_ReturnsOkWithMembers()
+    {
+        var members = new List<TeamMemberResponse> { new() { UserId = "sam", DisplayName = "Sam Smith" } };
+        _serviceMock
+            .Setup(s => s.GetTeamMembersAsync("TU1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(members);
+
+        var result = await _sut.GetTeamMembers("TU1");
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var returned = Assert.IsAssignableFrom<List<TeamMemberResponse>>(ok.Value);
+        Assert.Equal("Sam Smith", Assert.Single(returned).DisplayName);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task Assign_ReturnsOkWithCreatedCopies()
+    {
+        var created = new List<SavedListResponse>
+        {
+            new() { Id = 10, Name = "Corn", Query = "corn", AssignedTo = "sam" },
+            new() { Id = 11, Name = "Corn", Query = "corn", AssignedTo = "dana" }
+        };
+        _serviceMock
+            .Setup(s => s.AssignAsync(It.IsAny<IReadOnlyList<string>>(), "Corn", "corn",
+                It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(created);
+        var request = new AssignSavedListRequest { Name = "Corn", Query = "corn", TargetUserIds = new[] { "sam", "dana" } };
+
+        var result = await _sut.Assign(request);
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var returned = Assert.IsAssignableFrom<List<SavedListResponse>>(ok.Value);
+        Assert.Equal(2, returned.Count);
+    }
+
+    // -------------------------------------------------------------------------
+    [Theory]
+    [InlineData(nameof(SavedListsController.GetTeam))]
+    [InlineData(nameof(SavedListsController.GetTeamMembers))]
+    [InlineData(nameof(SavedListsController.Assign))]
+    public void ManagerEndpoints_RequireAdminOnlyPolicy(string methodName)
+    {
+        var method = typeof(SavedListsController).GetMethod(methodName);
+        Assert.NotNull(method);
+        var authorize = (AuthorizeAttribute?)method!
+            .GetCustomAttributes(typeof(AuthorizeAttribute), inherit: true)
+            .FirstOrDefault();
+        Assert.NotNull(authorize);
+        Assert.Equal("AdminOnly", authorize!.Policy);
     }
 
     // -------------------------------------------------------------------------

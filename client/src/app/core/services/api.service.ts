@@ -10,6 +10,7 @@ import {
   Note,
   StoredGrain,
   SavedList,
+  TeamMember,
   Commodity,
   ProducerDetails,
   DashboardPlantingEstimate,
@@ -635,6 +636,24 @@ export class ApiService {
   /** Deletes a saved list by ID */
   deleteSavedList(id: number): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/savedlists/${id}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Manager-only: team members in the given trade unit(s) for the "assign a list" picker. */
+  getTeamMembers(tradeUnits: string): Observable<TeamMember[]> {
+    return this.http.get<TeamMember[]>(`${this.baseUrl}/savedlists/team-members`, { params: { tradeUnits } })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Manager-only: assigns a copy of a built list to one or more team members (one copy each). */
+  assignSavedList(data: { name: string; query: string; tradeUnits?: string; filters?: RefinementFilters; includedCustomerIds?: number[]; excludedCustomerIds?: number[]; targetUserIds: string[] }): Observable<SavedList[]> {
+    const payload = {
+      ...data,
+      filters: data.filters && Object.keys(data.filters).length > 0 ? JSON.stringify(data.filters) : null,
+      includedCustomerIds: data.includedCustomerIds?.length ? JSON.stringify(data.includedCustomerIds) : null,
+      excludedCustomerIds: data.excludedCustomerIds?.length ? JSON.stringify(data.excludedCustomerIds) : null,
+    };
+    return this.http.post<SavedList[]>(`${this.baseUrl}/savedlists/assign`, payload)
       .pipe(catchError(e => this.handleError(e)));
   }
 

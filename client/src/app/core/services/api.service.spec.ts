@@ -174,6 +174,26 @@ describe('ApiService', () => {
     req.flush(raw);
   });
 
+  it('getTeamMembers() calls GET /savedlists/team-members with the tradeUnits param', () => {
+    service.getTeamMembers('TU1,TU2').subscribe();
+    const req = httpMock.expectOne(r => r.url === `${BASE}/savedlists/team-members`);
+    expect(req.request.method).toBe('GET');
+    expect(req.request.params.get('tradeUnits')).toBe('TU1,TU2');
+    req.flush([]);
+  });
+
+  it('assignSavedList() POSTs /savedlists/assign with targets and stringified filters', () => {
+    service.assignSavedList({
+      name: 'Corn', query: 'corn', tradeUnits: 'TU1',
+      filters: { crops: ['Corn'] }, targetUserIds: ['sam', 'dana'],
+    }).subscribe();
+    const req = httpMock.expectOne(`${BASE}/savedlists/assign`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body.targetUserIds).toEqual(['sam', 'dana']);
+    expect(req.request.body.filters).toBe('{"crops":["Corn"]}');
+    req.flush([]);
+  });
+
   // ── Error handling ─────────────────────────────────────────────────────────
 
   it('propagates HTTP errors as Error objects', () => new Promise<void>((resolve) => {

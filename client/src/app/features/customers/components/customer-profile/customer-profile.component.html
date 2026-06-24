@@ -130,8 +130,12 @@
                               class="rounded border-gray-300 text-scoular-green-accessible focus:ring-scoular-green" />
                             <span class="flex flex-col min-w-0">
                               <span class="text-sm text-gray-900 dark:text-white truncate">{{ list.name }}</span>
-                              @if (addToListTab() === 'team' && list.createdBy) {
-                                <span class="text-xs text-scoular-green-accessible dark:text-scoular-green truncate">{{ list.createdBy }}</span>
+                              @if (addToListTab() === 'team') {
+                                @if (list.assignedTo && list.assignedToName) {
+                                  <span class="text-xs text-scoular-green-accessible dark:text-scoular-green truncate">For {{ list.assignedToName }}</span>
+                                } @else if (list.createdBy) {
+                                  <span class="text-xs text-scoular-green-accessible dark:text-scoular-green truncate">{{ list.createdBy }}</span>
+                                }
                               }
                             </span>
                           </label>
