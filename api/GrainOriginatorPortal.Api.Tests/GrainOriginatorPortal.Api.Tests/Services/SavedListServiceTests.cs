@@ -92,4 +92,59 @@ public class SavedListServiceTests
         Assert.Equal("sam", member.UserId);
         Assert.Equal("Sam Smith", member.DisplayName);
     }
+
+    // ── Manager (admin) mutation scope ───────────────────────────────────────
+    // Security: the admin "manage any" bypass on update/delete must be limited to lists whose trade
+    // units overlap the caller's entitled trade units — never a blanket bypass over every list id.
+
+    [Fact]
+    public async Task UpdateAsync_Admin_ListInAllowedTradeUnits_AuthorizesManage()
+    {
+        _requestContext.Setup(r => r.IsAdmin()).Returns(true);
+        _repo.Setup(r => r.GetByIdAsync(5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SavedList { Id = 5, TradeUnits = "TU1", CreatedBy = "other@x.com" });
+
+        await _sut.UpdateAsync(5, "n", "q", "TU1", null, null, null, CancellationToken.None);
+
+        _repo.Verify(r => r.UpdateAsync(5, "mgr@x.com", true, It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_Admin_ListOutsideAllowedTradeUnits_DeniesManage()
+    {
+        _requestContext.Setup(r => r.IsAdmin()).Returns(true);
+        _repo.Setup(r => r.GetByIdAsync(5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SavedList { Id = 5, TradeUnits = "TU9", CreatedBy = "other@x.com" });
+
+        await _sut.UpdateAsync(5, "n", "q", "TU1", null, null, null, CancellationToken.None);
+
+        // canManageAny must be FALSE — the target list (TU9) is outside the caller's allowed {TU1}.
+        _repo.Verify(r => r.UpdateAsync(5, "mgr@x.com", false, It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_NonAdmin_DeniesManage_WithoutLoadingTarget()
+    {
+        _requestContext.Setup(r => r.IsAdmin()).Returns(false);
+
+        await _sut.UpdateAsync(5, "n", "q", "TU1", null, null, null, CancellationToken.None);
+
+        _repo.Verify(r => r.UpdateAsync(5, "mgr@x.com", false, It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
+        _repo.Verify(r => r.GetByIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_Admin_ListOutsideAllowedTradeUnits_DeniesManage()
+    {
+        _requestContext.Setup(r => r.IsAdmin()).Returns(true);
+        _repo.Setup(r => r.GetByIdAsync(5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SavedList { Id = 5, TradeUnits = "TU9" });
+
+        await _sut.DeleteAsync(5, CancellationToken.None);
+
+        _repo.Verify(r => r.DeleteAsync(5, "mgr@x.com", false, It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

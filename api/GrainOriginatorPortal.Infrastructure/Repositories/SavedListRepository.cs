@@ -56,6 +56,10 @@ public class SavedListRepository : ISavedListRepository
         string.Equals(string.IsNullOrEmpty(s.AssignedTo) ? s.CreatedBy : s.AssignedTo,
             callerUserId, StringComparison.OrdinalIgnoreCase);
 
+    public Task<SavedList?> GetByIdAsync(int listId, CancellationToken cancellationToken) =>
+        _appContext.SavedLists.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == listId && s.IsActive, cancellationToken);
+
     public async Task AddAsync(SavedList list, CancellationToken cancellationToken)
     {
         _appContext.SavedLists.Add(list);

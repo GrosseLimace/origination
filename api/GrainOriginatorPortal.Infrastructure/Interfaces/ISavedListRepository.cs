@@ -18,6 +18,10 @@ public interface ISavedListRepository
     /// <paramref name="excludeUser"/> is the caller's full UPN.</summary>
     Task<List<SavedList>> GetByTradeUnitsAsync(IReadOnlyCollection<string> tradeUnits, string excludeUser, CancellationToken cancellationToken);
 
+    /// <summary>The active saved list with the given id (unscoped), or null. Used to authorize a
+    /// manager mutation against the row's actual trade units before updating/deleting it.</summary>
+    Task<SavedList?> GetByIdAsync(int listId, CancellationToken cancellationToken);
+
     /// <summary>Persists a new saved list (built by the caller).</summary>
     Task AddAsync(SavedList list, CancellationToken cancellationToken);
 
