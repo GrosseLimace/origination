@@ -1,4 +1,4 @@
-name: DEV Daily Digest Deploy Logic App
+name: Daily Digest DEV Deploy Logic App
 
 on:
   # Manual-only, matching the app deploy workflows. Trigger from the Actions tab (Run workflow).
