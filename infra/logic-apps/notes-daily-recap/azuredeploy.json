@@ -1,0 +1,1048 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": "origination/infra — exported from logic-origination-notes-daily-recap-dev-eus",
+    "description": "Daily-recap Logic App: summarizes the last 24h of CRM notes per recap group via Azure OpenAI and emails/Teams the recap. All external calls use the workflow system-assigned managed identity (no secrets)."
+  },
+  "parameters": {
+    "logicAppName": {
+      "type": "string",
+      "defaultValue": "logic-origination-notes-daily-recap-dev-eus",
+      "metadata": {
+        "description": "Name of the Logic App workflow resource."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region. Defaults to the target resource group location."
+      }
+    },
+    "environmentTag": {
+      "type": "string",
+      "defaultValue": "Dev",
+      "allowedValues": [
+        "Dev",
+        "QA",
+        "Prod"
+      ],
+      "metadata": {
+        "description": "Value for the Environment resource tag."
+      }
+    },
+    "sqlServerName": {
+      "type": "string",
+      "defaultValue": "azrscosqld01.database.windows.net",
+      "metadata": {
+        "description": "Fully-qualified SQL server name used by the SQL API connection dataset paths."
+      }
+    },
+    "sharedMailbox": {
+      "type": "string",
+      "defaultValue": "dev-OriginationsApp@scoular.com",
+      "metadata": {
+        "description": "Shared mailbox (UPN) that Microsoft Graph sendMail sends recaps as."
+      }
+    },
+    "sqlConnectionName": {
+      "type": "string",
+      "defaultValue": "sql",
+      "metadata": {
+        "description": "Name of the existing Microsoft.Web/connections SQL connection (MSI auth) in the target resource group."
+      }
+    },
+    "aiFoundryEndpoint": {
+      "type": "string",
+      "defaultValue": "https://datacloudeusaz9305643847.openai.azure.com/openai/deployments/D365CRM-CustomerNotesSummary-gpt-4/chat/completions?api-version=2024-08-01-preview",
+      "metadata": {
+        "description": "Azure OpenAI chat-completions endpoint used to summarize notes. Authenticated via managed identity."
+      }
+    }
+  },
+  "variables": {
+    "sqlConnectionId": "[resourceId('Microsoft.Web/connections', parameters('sqlConnectionName'))]",
+    "sqlManagedApiId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', parameters('location'), '/managedApis/sql')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[parameters('logicAppName')]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "tags": {
+        "Application": "Origination",
+        "CreatedBy": "khague",
+        "CreationDate": "2026-01-02",
+        "Environment": "[parameters('environmentTag')]",
+        "IaC": "True",
+        "Team": "Full Stack Development"
+      },
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "actions": {
+            "For_each_Recap_Group": {
+              "actions": {
+                "Condition": {
+                  "actions": {
+                    "Compose_CC": {
+                      "inputs": "@variables('carbonCopy')",
+                      "runAfter": {
+                        "For_Foundry_Response": [
+                          "Succeeded"
+                        ]
+                      },
+                      "type": "Compose"
+                    },
+                    "Compose_Email_Recipients": {
+                      "inputs": "@variables('recipient')",
+                      "runAfter": {
+                        "Compose_CC": [
+                          "Succeeded"
+                        ]
+                      },
+                      "type": "Compose"
+                    },
+                    "Create_HTML_table": {
+                      "inputs": {
+                        "format": "HTML",
+                        "from": "@variables('activities')"
+                      },
+                      "type": "Table"
+                    },
+                    "For_Foundry_Response": {
+                      "actions": {
+                        "Set_Summary_Variable": {
+                          "inputs": {
+                            "name": "summary",
+                            "value": "@item()?['message']?['content']"
+                          },
+                          "type": "SetVariable"
+                        }
+                      },
+                      "foreach": "@body('Parse_JSON_1')?['choices']",
+                      "runAfter": {
+                        "Parse_JSON_1": [
+                          "Succeeded"
+                        ]
+                      },
+                      "type": "Foreach"
+                    },
+                    "HTTP_AI_Foundry": {
+                      "inputs": {
+                        "authentication": {
+                          "audience": "https://cognitiveservices.azure.com",
+                          "type": "ManagedServiceIdentity"
+                        },
+                        "body": {
+                          "max_tokens": 800,
+                          "messages": [
+                            {
+                              "content": [
+                                {
+                                  "text": "You are a sales team manager summarizing CRM customer notes.\n\nSummarize the notes into structured HTML using ONLY the information explicitly stated.\n\nRules:\n- Do NOT make assumptions or infer missing details.\n- Use only exact product names or codes mentioned in the notes.\n- Always return exactly 5 key points.\n- If the notes do not contain meaningful business content, return:\n  <p>No significant customer updates provided.</p>\n- Output must be valid HTML only. Do NOT include markdown or any text outside of HTML tags.\n\nOutput format:\n\n<h2>Top 5 Key Points</h2>\n<ul>\n  <li>Key point 1</li>\n  <li>Key point 2</li>\n  <li>Key point 3</li>\n  <li>Key point 4</li>\n  <li>Key point 5</li>\n</ul>\n\n<h2>Product-Specific Summary</h2>\n\nInstructions for Product Summary:\n- Only include products explicitly mentioned in the notes.\n- Use product names exactly as written (no grouping or generalization).\n- If no products are mentioned, omit the Product-Specific Summary section entirely.\n\nFor each product:\n<h3>Product Name</h3>\n<p>\n- Pricing: include any prices and bold them using <strong> tags (e.g., <strong>$100</strong>)\n- Market context: summarize sentiment or conditions if mentioned\n- Key actions/events: contracts, shipments, or decisions\n @{variables('activities')}</p>",
+                                  "type": "text"
+                                }
+                              ],
+                              "role": "system"
+                            }
+                          ],
+                          "temperature": 0.2,
+                          "top_p": 0.9
+                        },
+                        "headers": {
+                          "Content-Type": "application/json"
+                        },
+                        "method": "POST",
+                        "uri": "[parameters('aiFoundryEndpoint')]"
+                      },
+                      "runAfter": {
+                        "Create_HTML_table": [
+                          "Succeeded"
+                        ]
+                      },
+                      "runtimeConfiguration": {
+                        "contentTransfer": {
+                          "transferMode": "Chunked"
+                        }
+                      },
+                      "type": "Http"
+                    },
+                    "Parse_JSON_1": {
+                      "inputs": {
+                        "content": "@body('HTTP_AI_Foundry')",
+                        "schema": {
+                          "properties": {
+                            "choices": {
+                              "items": {
+                                "properties": {
+                                  "content_filter_results": {
+                                    "properties": {
+                                      "hate": {
+                                        "properties": {
+                                          "filtered": {
+                                            "type": "boolean"
+                                          },
+                                          "severity": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "type": "object"
+                                      },
+                                      "protected_material_code": {
+                                        "properties": {
+                                          "detected": {
+                                            "type": "boolean"
+                                          },
+                                          "filtered": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "type": "object"
+                                      },
+                                      "protected_material_text": {
+                                        "properties": {
+                                          "detected": {
+                                            "type": "boolean"
+                                          },
+                                          "filtered": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "type": "object"
+                                      },
+                                      "self_harm": {
+                                        "properties": {
+                                          "filtered": {
+                                            "type": "boolean"
+                                          },
+                                          "severity": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "type": "object"
+                                      },
+                                      "sexual": {
+                                        "properties": {
+                                          "filtered": {
+                                            "type": "boolean"
+                                          },
+                                          "severity": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "type": "object"
+                                      },
+                                      "violence": {
+                                        "properties": {
+                                          "filtered": {
+                                            "type": "boolean"
+                                          },
+                                          "severity": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "type": "object"
+                                      }
+                                    },
+                                    "type": "object"
+                                  },
+                                  "finish_reason": {
+                                    "type": "string"
+                                  },
+                                  "index": {
+                                    "type": "integer"
+                                  },
+                                  "logprobs": {},
+                                  "message": {
+                                    "properties": {
+                                      "content": {
+                                        "type": "string"
+                                      },
+                                      "role": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "type": "object"
+                                  }
+                                },
+                                "required": [
+                                  "content_filter_results",
+                                  "finish_reason",
+                                  "index",
+                                  "logprobs",
+                                  "message"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
+                            "created": {
+                              "type": "integer"
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "model": {
+                              "type": "string"
+                            },
+                            "object": {
+                              "type": "string"
+                            },
+                            "prompt_filter_results": {
+                              "items": {
+                                "properties": {
+                                  "content_filter_results": {
+                                    "properties": {},
+                                    "type": "object"
+                                  },
+                                  "prompt_index": {
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "prompt_index",
+                                  "content_filter_results"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
+                            "system_fingerprint": {
+                              "type": "string"
+                            },
+                            "usage": {
+                              "properties": {
+                                "completion_tokens": {
+                                  "type": "integer"
+                                },
+                                "prompt_tokens": {
+                                  "type": "integer"
+                                },
+                                "total_tokens": {
+                                  "type": "integer"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "runAfter": {
+                        "HTTP_AI_Foundry": [
+                          "Succeeded"
+                        ]
+                      },
+                      "type": "ParseJson"
+                    },
+                    "Set_emailBody": {
+                      "inputs": {
+                        "name": "emailBody",
+                        "value": "<!DOCTYPE html>\n<html>\n<head>\n<style>\ntable, th, td {\n  border: 1px solid black;\n  border-collapse: collapse;\n}\nth, td {\n  padding: 5px;\n}\n</style>\n</head>\n<body>\n\n<h2>CRM Activities for @{variables('groupName')}</h2>\n\n<h3>@{variables('summary')}</h3>\n\n<br>\n<p><em>Note: The top 5 key points and product-specific summary in this email are generated by AI and may contain inaccuracies. Please verify the information before making any decisions based on it.</em></p>\n<br>\n<h3>Activities List</h3>\n\n<table style=\"width:100%\">\n  <tr>@{body('Create_HTML_table')}</tr>\n</table>\n</body>\n</html>"
+                      },
+                      "runAfter": {
+                        "Compose_Email_Recipients": [
+                          "Succeeded"
+                        ]
+                      },
+                      "type": "SetVariable"
+                    },
+                    "Switch_Delivery_Method": {
+                      "cases": {
+                        "Case_Email": {
+                          "actions": {
+                            "HTTP_Send_Recap_Email": {
+                              "inputs": {
+                                "authentication": {
+                                  "audience": "https://graph.microsoft.com",
+                                  "type": "ManagedServiceIdentity"
+                                },
+                                "body": {
+                                  "message": {
+                                    "body": {
+                                      "content": "@{variables('emailBody')}",
+                                      "contentType": "HTML"
+                                    },
+                                    "ccRecipients": "@outputs('Compose_CC')",
+                                    "subject": "Email Origination App Daily Recap for @{variables('groupName')}",
+                                    "toRecipients": "@outputs('Compose_Email_Recipients')"
+                                  },
+                                  "saveToSentItems": true
+                                },
+                                "method": "POST",
+                                "uri": "https://graph.microsoft.com/v1.0/users/@{parameters('sharedMailbox')}/sendMail"
+                              },
+                              "runtimeConfiguration": {
+                                "contentTransfer": {
+                                  "transferMode": "Chunked"
+                                }
+                              },
+                              "type": "Http"
+                            }
+                          },
+                          "case": "email"
+                        },
+                        "Case_Teams": {
+                          "actions": {
+                            "If_Teams_Channel_Present": {
+                              "actions": {
+                                "HTTP_Send_to_Teams": {
+                                  "inputs": {
+                                    "authentication": {
+                                      "audience": "https://graph.microsoft.com",
+                                      "type": "ManagedServiceIdentity"
+                                    },
+                                    "body": {
+                                      "message": {
+                                        "body": {
+                                          "content": "@{variables('emailBody')}",
+                                          "contentType": "HTML"
+                                        },
+                                        "ccRecipients": "@outputs('Compose_CC')",
+                                        "subject": "Teams Origination App Daily Recap for @{variables('groupName')}",
+                                        "toRecipients": [
+                                          {
+                                            "emailAddress": {
+                                              "address": "@{item()?['TeamsChannelEmail']}"
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "saveToSentItems": true
+                                    },
+                                    "method": "POST",
+                                    "uri": "https://graph.microsoft.com/v1.0/users/@{parameters('sharedMailbox')}/sendMail"
+                                  },
+                                  "runtimeConfiguration": {
+                                    "contentTransfer": {
+                                      "transferMode": "Chunked"
+                                    }
+                                  },
+                                  "type": "Http"
+                                }
+                              },
+                              "else": {
+                                "actions": {}
+                              },
+                              "expression": {
+                                "and": [
+                                  {
+                                    "not": {
+                                      "equals": [
+                                        "@trim(coalesce(item()?['TeamsChannelEmail'], ''))",
+                                        ""
+                                      ]
+                                    }
+                                  }
+                                ]
+                              },
+                              "type": "If"
+                            }
+                          },
+                          "case": "teams"
+                        }
+                      },
+                      "default": {
+                        "actions": {}
+                      },
+                      "expression": "@item()?['DeliveryMethod']",
+                      "runAfter": {
+                        "Set_emailBody": [
+                          "Succeeded"
+                        ]
+                      },
+                      "type": "Switch"
+                    }
+                  },
+                  "else": {
+                    "actions": {}
+                  },
+                  "expression": {
+                    "and": [
+                      {
+                        "greaterOrEquals": [
+                          "@variables('activityCount')",
+                          1
+                        ]
+                      }
+                    ]
+                  },
+                  "runAfter": {
+                    "For_each_groupMember": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "If"
+                },
+                "For_Recap_Group_Member": {
+                  "actions": {
+                    "Switch": {
+                      "cases": {
+                        "Case_person": {
+                          "actions": {
+                            "Append_to_groupMembers_Array_3": {
+                              "inputs": {
+                                "name": "groupMembers",
+                                "value": "@item()?['Email']"
+                              },
+                              "type": "AppendToArrayVariable"
+                            }
+                          },
+                          "case": "person"
+                        },
+                        "Case_trade-unit": {
+                          "actions": {
+                            "For_each_3": {
+                              "actions": {
+                                "Append_to_groupMembers_Array_2": {
+                                  "inputs": {
+                                    "name": "groupMembers",
+                                    "value": "@{item()?['UserId']}@scoular.com"
+                                  },
+                                  "type": "AppendToArrayVariable"
+                                }
+                              },
+                              "foreach": "@body('Get_Trade_Unit_Members')?['value']",
+                              "runAfter": {
+                                "Get_Trade_Unit_Members": [
+                                  "Succeeded"
+                                ]
+                              },
+                              "type": "Foreach"
+                            },
+                            "Get_Trade_Unit_Members": {
+                              "inputs": {
+                                "host": {
+                                  "connection": {
+                                    "name": "@parameters('$connections')['sql']['connectionId']"
+                                  }
+                                },
+                                "method": "get",
+                                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('Entitlements'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[UserTradeUnitAssignments]'))}/items",
+                                "queries": {
+                                  "$filter": "TradeUnitCode eq @{item()?['MemberId']}"
+                                }
+                              },
+                              "type": "ApiConnection"
+                            }
+                          },
+                          "case": "trade-unit"
+                        },
+                        "Case_trade-unit-group": {
+                          "actions": {
+                            "For_each_2": {
+                              "actions": {
+                                "Append_to_groupMembers_Array": {
+                                  "inputs": {
+                                    "name": "groupMembers",
+                                    "value": "@{item()?['UserId']}@scoular.com"
+                                  },
+                                  "type": "AppendToArrayVariable"
+                                }
+                              },
+                              "foreach": "@body('Get_Trade_Unit_Group_Members')?['value']",
+                              "runAfter": {
+                                "Get_Trade_Unit_Group_Members": [
+                                  "Succeeded"
+                                ]
+                              },
+                              "type": "Foreach"
+                            },
+                            "Get_Trade_Unit_Group_Members": {
+                              "inputs": {
+                                "host": {
+                                  "connection": {
+                                    "name": "@parameters('$connections')['sql']['connectionId']"
+                                  }
+                                },
+                                "method": "get",
+                                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('Entitlements'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[UserGroupAssignments]'))}/items",
+                                "queries": {
+                                  "$filter": "GroupId eq @{item()?['MemberId']}"
+                                }
+                              },
+                              "type": "ApiConnection"
+                            }
+                          },
+                          "case": "trade-unit-group"
+                        }
+                      },
+                      "default": {
+                        "actions": {}
+                      },
+                      "expression": "@item()?['MemberType']",
+                      "type": "Switch"
+                    }
+                  },
+                  "foreach": "@body('Get_Recap_Group_Members')?['value']",
+                  "runAfter": {
+                    "Get_Recap_Group_Members": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "Foreach"
+                },
+                "For_each_Recap_Group_CC": {
+                  "actions": {
+                    "Append_to_CC_Array": {
+                      "inputs": {
+                        "name": "carbonCopy",
+                        "value": {
+                          "emailAddress": {
+                            "address": "@item()?['Email']"
+                          }
+                        }
+                      },
+                      "type": "AppendToArrayVariable"
+                    }
+                  },
+                  "foreach": "@union(body('Get_Recap_Group_CC_Emails')?['value'], body('Get_Recap_Group_CC_Emails')?['value'])",
+                  "runAfter": {
+                    "Get_Recap_Group_CC_Emails": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "Foreach"
+                },
+                "For_each_groupMember": {
+                  "actions": {
+                    "Append_to_Recipient_Array": {
+                      "inputs": {
+                        "name": "recipient",
+                        "value": {
+                          "emailAddress": {
+                            "address": "@item()"
+                          }
+                        }
+                      },
+                      "type": "AppendToArrayVariable"
+                    },
+                    "For_each_1": {
+                      "actions": {
+                        "Append_to_Activities_Variable": {
+                          "inputs": {
+                            "name": "activities",
+                            "value": {
+                              "Created": "@{formatDateTime(\n    convertFromUtc(concat(item()?['CreatedAt'],'Z'),'Central Standard Time'),\n    'M/d/yyyy h:mm tt'\n)}",
+                              "Note": "@{item()?['Description']}",
+                              "Owner": "@{body('Get_User')['DisplayName']}",
+                              "Regarding": "@{item()?['CustomerName']}"
+                            }
+                          },
+                          "type": "AppendToArrayVariable"
+                        }
+                      },
+                      "foreach": "@coalesce(outputs('Parse_JSON')?['body']?['ResultSets']?['Table1'], json('[]'))",
+                      "runAfter": {
+                        "Parse_JSON": [
+                          "Succeeded"
+                        ]
+                      },
+                      "type": "Foreach"
+                    },
+                    "Get_Notes": {
+                      "inputs": {
+                        "body": {
+                          "CreatedBy": "@items('For_each_groupMember')"
+                        },
+                        "host": {
+                          "connection": {
+                            "name": "@parameters('$connections')['sql']['connectionId']"
+                          }
+                        },
+                        "method": "post",
+                        "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('Origination'))}/procedures/@{encodeURIComponent(encodeURIComponent('[dbo].[GetRecapNotes]'))}"
+                      },
+                      "runAfter": {
+                        "Get_User": [
+                          "Succeeded"
+                        ]
+                      },
+                      "type": "ApiConnection"
+                    },
+                    "Get_User": {
+                      "inputs": {
+                        "host": {
+                          "connection": {
+                            "name": "@parameters('$connections')['sql']['connectionId']"
+                          }
+                        },
+                        "method": "get",
+                        "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('Entitlements'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[Users]'))}/items/@{encodeURIComponent(encodeURIComponent(first(split(items('For_each_groupMember'),'@'))))}"
+                      },
+                      "runAfter": {
+                        "Append_to_Recipient_Array": [
+                          "Succeeded"
+                        ]
+                      },
+                      "type": "ApiConnection"
+                    },
+                    "Increment_Activity_Count_Variable": {
+                      "inputs": {
+                        "name": "activityCount",
+                        "value": "@length(coalesce(body('Get_Notes')?['ResultSets']?['Table1'], json('[]')))"
+                      },
+                      "runAfter": {
+                        "Get_Notes": [
+                          "Succeeded"
+                        ]
+                      },
+                      "type": "IncrementVariable"
+                    },
+                    "Parse_JSON": {
+                      "inputs": {
+                        "content": "@body('Get_Notes')",
+                        "schema": {
+                          "properties": {
+                            "OutputParameters": {
+                              "properties": {},
+                              "type": "object"
+                            },
+                            "ResultSets": {
+                              "properties": {
+                                "Table1": {
+                                  "items": {
+                                    "properties": {
+                                      "CreatedAt": {
+                                        "type": "string"
+                                      },
+                                      "CreatedBy": {
+                                        "type": "string"
+                                      },
+                                      "CustomerId": {
+                                        "type": "integer"
+                                      },
+                                      "CustomerName": {
+                                        "type": "string"
+                                      },
+                                      "Description": {
+                                        "type": "string"
+                                      },
+                                      "ScoularId": {
+                                        "type": "string"
+                                      },
+                                      "TradeUnit": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "CustomerId",
+                                      "TradeUnit",
+                                      "Description",
+                                      "CreatedBy",
+                                      "CreatedAt",
+                                      "CustomerName",
+                                      "ScoularId"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "runAfter": {
+                        "Increment_Activity_Count_Variable": [
+                          "Succeeded"
+                        ]
+                      },
+                      "type": "ParseJson"
+                    }
+                  },
+                  "foreach": "@union(variables('groupMembers'), variables('groupMembers'))",
+                  "runAfter": {
+                    "For_Recap_Group_Member": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "Foreach"
+                },
+                "Get_Recap_Group_CC_Emails": {
+                  "inputs": {
+                    "host": {
+                      "connection": {
+                        "name": "@parameters('$connections')['sql']['connectionId']"
+                      }
+                    },
+                    "method": "get",
+                    "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('Origination'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[DailyRecapGroupCcEmails]'))}/items",
+                    "queries": {
+                      "$filter": "RecapGroupId eq @{item()?['Id']}"
+                    }
+                  },
+                  "runAfter": {
+                    "Set_Group_Members_Variable": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "ApiConnection"
+                },
+                "Get_Recap_Group_Members": {
+                  "inputs": {
+                    "host": {
+                      "connection": {
+                        "name": "@parameters('$connections')['sql']['connectionId']"
+                      }
+                    },
+                    "method": "get",
+                    "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('Origination'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[DailyRecapGroupMembers]'))}/items",
+                    "queries": {
+                      "$filter": "RecapGroupId eq @{item()?['Id']}"
+                    }
+                  },
+                  "runAfter": {
+                    "For_each_Recap_Group_CC": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "ApiConnection"
+                },
+                "Set_Activity_Count_Variable": {
+                  "inputs": {
+                    "name": "activityCount",
+                    "value": 0
+                  },
+                  "runAfter": {
+                    "Set_Recap_Group_Variable": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "SetVariable"
+                },
+                "Set_Activity_Variable": {
+                  "inputs": {
+                    "name": "activities",
+                    "value": []
+                  },
+                  "runAfter": {
+                    "Set_Group_Name_Variable": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "SetVariable"
+                },
+                "Set_CC_Variable": {
+                  "inputs": {
+                    "name": "carbonCopy",
+                    "value": []
+                  },
+                  "runAfter": {
+                    "Set_Activity_Count_Variable": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "SetVariable"
+                },
+                "Set_Group_Members_Variable": {
+                  "inputs": {
+                    "name": "groupMembers",
+                    "value": []
+                  },
+                  "runAfter": {
+                    "Set_CC_Variable": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "SetVariable"
+                },
+                "Set_Group_Name_Variable": {
+                  "inputs": {
+                    "name": "groupName",
+                    "value": "@item()?['Name']"
+                  },
+                  "type": "SetVariable"
+                },
+                "Set_Recap_Group_Variable": {
+                  "inputs": {
+                    "name": "recapGroup",
+                    "value": []
+                  },
+                  "runAfter": {
+                    "Set_Recipient_Variable": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "SetVariable"
+                },
+                "Set_Recipient_Variable": {
+                  "inputs": {
+                    "name": "recipient",
+                    "value": []
+                  },
+                  "runAfter": {
+                    "Set_Activity_Variable": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "SetVariable"
+                }
+              },
+              "foreach": "@body('Get_Recap_Groups')?['value']",
+              "runAfter": {
+                "Get_Recap_Groups": [
+                  "Succeeded"
+                ]
+              },
+              "runtimeConfiguration": {
+                "concurrency": {
+                  "repetitions": 1
+                }
+              },
+              "type": "Foreach"
+            },
+            "Get_Recap_Groups": {
+              "inputs": {
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['sql']['connectionId']"
+                  }
+                },
+                "method": "get",
+                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('Origination'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[DailyRecapGroups]'))}/items",
+                "queries": {
+                  "$filter": "Enabled eq 1",
+                  "$select": "Id,Name,DeliveryMethod,TeamsChannelEmail,Enabled"
+                }
+              },
+              "runAfter": {
+                "Initialize_variables": [
+                  "Succeeded"
+                ]
+              },
+              "type": "ApiConnection"
+            },
+            "Initialize_variables": {
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "activityCount",
+                    "type": "integer"
+                  },
+                  {
+                    "name": "recipient",
+                    "type": "array"
+                  },
+                  {
+                    "name": "carbonCopy",
+                    "type": "array"
+                  },
+                  {
+                    "name": "recapGroup",
+                    "type": "array"
+                  },
+                  {
+                    "name": "activities",
+                    "type": "array"
+                  },
+                  {
+                    "name": "regarding",
+                    "type": "string"
+                  },
+                  {
+                    "name": "note",
+                    "type": "string"
+                  },
+                  {
+                    "name": "summary",
+                    "type": "string"
+                  },
+                  {
+                    "name": "emailBody",
+                    "type": "string"
+                  },
+                  {
+                    "name": "groupMembers",
+                    "type": "array"
+                  },
+                  {
+                    "name": "groupName",
+                    "type": "string"
+                  }
+                ]
+              },
+              "runAfter": {},
+              "type": "InitializeVariable"
+            }
+          },
+          "contentVersion": "1.0.0.0",
+          "outputs": {},
+          "parameters": {
+            "$connections": {
+              "defaultValue": {},
+              "type": "Object"
+            },
+            "sharedMailbox": {
+              "defaultValue": "dev-OriginationsApp@scoular.com",
+              "type": "String"
+            },
+            "sqlServerName": {
+              "defaultValue": "azrscosqld01.database.windows.net",
+              "type": "String"
+            }
+          },
+          "triggers": {
+            "Recurrence": {
+              "recurrence": {
+                "frequency": "Day",
+                "interval": 1,
+                "schedule": {
+                  "hours": [
+                    18
+                  ],
+                  "minutes": [
+                    0
+                  ]
+                },
+                "timeZone": "Central Standard Time"
+              },
+              "type": "Recurrence"
+            }
+          }
+        },
+        "parameters": {
+          "$connections": {
+            "value": {
+              "sql": {
+                "connectionId": "[variables('sqlConnectionId')]",
+                "connectionName": "[parameters('sqlConnectionName')]",
+                "connectionProperties": {
+                  "authentication": {
+                    "type": "ManagedServiceIdentity"
+                  }
+                },
+                "id": "[variables('sqlManagedApiId')]"
+              }
+            }
+          },
+          "sharedMailbox": {
+            "value": "[parameters('sharedMailbox')]"
+          },
+          "sqlServerName": {
+            "value": "[parameters('sqlServerName')]"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "logicAppResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Logic/workflows', parameters('logicAppName'))]"
+    },
+    "logicAppPrincipalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Logic/workflows', parameters('logicAppName')), '2019-05-01', 'full').identity.principalId]"
+    }
+  }
+}

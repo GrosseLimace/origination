@@ -1,0 +1,563 @@
+<div class="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
+
+  <!-- Page header -->
+  <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+    <div class="min-w-0">
+      <h1 class="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-white">Daily Recap Configuration</h1>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+        Configure automated daily recaps of producer notes.
+      </p>
+    </div>
+    <button type="button" (click)="openCreateDialog()"
+      class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-scoular-green-accessible text-white text-sm font-medium hover:bg-scoular-green focus:outline-none focus:ring-2 focus:ring-scoular-green focus:ring-offset-2 dark:focus:ring-offset-gray-900 transition-colors shrink-0">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 5v14"/><path d="M5 12h14"/>
+      </svg>
+      New Recap Group
+    </button>
+  </div>
+
+  <!-- Loading state -->
+  @if (groupsLoading()) {
+    <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-6 py-14 text-center text-sm text-gray-500 dark:text-gray-400">
+      Loading recap groups…
+    </div>
+  } @else if (groupsError()) {
+    <!-- Error state -->
+    <div class="rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50/60 dark:bg-red-900/20 px-6 py-14 text-center">
+      <h3 class="text-base font-semibold text-red-700 dark:text-red-300">{{ groupsError() }}</h3>
+    </div>
+  } @else if (groups().length === 0) {
+    <!-- Empty state -->
+    <div class="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 px-6 py-14 text-center">
+      <div class="mx-auto w-12 h-12 rounded-full bg-scoular-green/10 dark:bg-scoular-green/20 flex items-center justify-center mb-4">
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green">
+          <rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+        </svg>
+      </div>
+      <h3 class="text-base font-semibold text-gray-900 dark:text-white">No recap groups yet</h3>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-sm mx-auto">
+        Create your first group to choose who receives the daily recap and which trade units feed its content.
+      </p>
+      <button type="button" (click)="openCreateDialog()"
+        class="inline-flex items-center gap-2 mt-5 px-4 py-2 rounded-lg bg-scoular-green-accessible text-white text-sm font-medium hover:bg-scoular-green transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5v14"/><path d="M5 12h14"/>
+        </svg>
+        Create Recap Group
+      </button>
+    </div>
+  } @else {
+
+    <!-- Group grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      @for (group of groups(); track group.id) {
+        <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col"
+          [class.opacity-60]="!group.enabled || !group.isOwner">
+
+          <!-- Card header: title + delivery + actions -->
+          <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between gap-3">
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2 flex-wrap">
+                <h3 class="text-base font-semibold text-gray-900 dark:text-white truncate">{{ group.name }}</h3>
+                @if (!group.enabled) {
+                  <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">Disabled</span>
+                }
+                @if (!group.isOwner) {
+                  <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
+                    title="You're a member of this group — only its creator can edit it">View only</span>
+                }
+              </div>
+              <div class="flex items-center gap-1.5 mt-1 text-xs text-gray-500 dark:text-gray-400">
+                @if (group.deliveryMethod === 'email') {
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0">
+                    <rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+                  </svg>
+                } @else {
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                  </svg>
+                }
+                <span>{{ deliveryLabel(group.deliveryMethod) }}</span>
+                @if (group.deliveryMethod === 'teams' && group.teamsChannelEmail) {
+                  <span class="text-gray-300 dark:text-gray-600">·</span>
+                  <span class="truncate" [title]="group.teamsChannelEmail">{{ group.teamsChannelEmail }}</span>
+                }
+                <span class="text-gray-300 dark:text-gray-600">·</span>
+                <span>{{ group.members.length }} member{{ group.members.length === 1 ? '' : 's' }}</span>
+                @if (group.ccList.length > 0) {
+                  <span class="text-gray-300 dark:text-gray-600">·</span>
+                  <span>{{ group.ccList.length }} CC</span>
+                }
+              </div>
+            </div>
+            @if (group.isOwner) {
+            <div class="flex items-center gap-1 flex-shrink-0">
+              <button type="button" (click)="openEditDialog(group)" title="Edit group"
+                class="p-1.5 rounded-md text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                </svg>
+              </button>
+              <button type="button" (click)="requestDeleteGroup(group)" title="Delete group"
+                class="p-1.5 rounded-md text-gray-400 hover:text-scoular-red hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                </svg>
+              </button>
+            </div>
+            }
+          </div>
+
+          <!-- Card body -->
+          <div class="p-5 space-y-4 flex-1">
+            <!-- Members -->
+            <div>
+              <p class="text-[0.65rem] font-bold uppercase tracking-widest text-gray-400/80 dark:text-gray-500/80 mb-2">Members</p>
+              <div class="flex flex-wrap gap-1.5">
+                @for (member of group.members; track member.id) {
+                  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-600">
+                    @switch (member.type) {
+                      @case ('person') {
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400 dark:text-gray-500">
+                          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                        </svg>
+                      }
+                      @case ('trade-unit') {
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400 dark:text-gray-500">
+                          <rect width="16" height="20" x="4" y="2" rx="2"/><path d="M9 22v-4h6v4"/>
+                        </svg>
+                      }
+                      @case ('trade-unit-group') {
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400 dark:text-gray-500">
+                          <path d="M20 7h-3a2 2 0 0 1-2-2V2"/><path d="M9 18a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h7l4 4v8a2 2 0 0 1-2 2Z"/>
+                        </svg>
+                      }
+                    }
+                    <span class="truncate max-w-[180px]">{{ member.name }}</span>
+                  </span>
+                }
+              </div>
+            </div>
+
+            <!-- CC list -->
+            @if (group.ccList.length > 0) {
+              <div>
+                <p class="text-[0.65rem] font-bold uppercase tracking-widest text-gray-400/80 dark:text-gray-500/80 mb-2">CC List</p>
+                <div class="flex flex-wrap gap-1.5">
+                  @for (email of group.ccList; track email) {
+                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-scoular-green/10 dark:bg-scoular-green/20 text-scoular-green dark:text-scoular-green truncate max-w-[220px]">
+                      {{ email }}
+                    </span>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+
+          <!-- Card footer: enable toggle (owner) or read-only status (member) -->
+          <div class="px-5 py-3 border-t border-gray-100 dark:border-gray-700 bg-gray-50/40 dark:bg-gray-900/20">
+            @if (group.isOwner) {
+              <label [for]="'enabled-' + group.id" class="flex items-center gap-2 cursor-pointer select-none group/toggle">
+                <span class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors"
+                  [class.bg-scoular-green-accessible]="group.enabled"
+                  [class.bg-gray-300]="!group.enabled"
+                  [class.dark:bg-gray-600]="!group.enabled">
+                  <span class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform"
+                    [class.translate-x-5]="group.enabled"
+                    [class.translate-x-1]="!group.enabled"></span>
+                </span>
+                <input type="checkbox" [id]="'enabled-' + group.id" [checked]="group.enabled" (change)="toggleGroupEnabled(group)" class="sr-only" />
+                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Send daily recap</span>
+              </label>
+            } @else {
+              <p class="text-xs text-gray-500 dark:text-gray-400">
+                You're a member of this group — only its creator can edit it.
+                @if (group.createdBy) {
+                  <span class="block mt-0.5">
+                    Created by <span class="font-medium text-gray-700 dark:text-gray-300">{{ group.createdBy }}</span>
+                  </span>
+                }
+              </p>
+            }
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>
+
+<!-- Create / Edit Dialog -->
+<app-dialog [isOpen]="dialogOpen()" size="lg" (close)="closeDialog()">
+  <div class="px-6 py-5 border-b border-gray-200 dark:border-gray-700">
+    <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+      {{ isEditing() ? 'Edit Recap Group' : 'Create Recap Group' }}
+    </h3>
+    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+      Configure a group to receive daily recaps of producer notes.
+    </p>
+  </div>
+
+  <div class="px-6 py-5 space-y-6">
+    <!-- Name + Delivery (two columns at sm+) -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div class="space-y-1.5">
+        <label for="recap-name" class="text-sm font-medium text-gray-700 dark:text-gray-300">Group Name</label>
+        <input
+          id="recap-name"
+          type="text"
+          [ngModel]="formName()"
+          (ngModelChange)="formName.set($event)"
+          placeholder="e.g., Iowa Territory Daily Recap"
+          class="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green/40 focus:border-scoular-green"
+        />
+      </div>
+      <div class="space-y-1.5">
+        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Delivery Method</label>
+        <!-- Custom dropdown — native <select> can't render icons inside <option>. -->
+        <div class="relative" (click)="$event.stopPropagation()">
+          <button type="button" (click)="toggleDeliveryDropdown()"
+            class="w-full flex items-center justify-between gap-2 px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white hover:border-gray-400 dark:hover:border-gray-500 focus:outline-none focus:ring-2 focus:ring-scoular-green/40 focus:border-scoular-green transition-colors">
+            <span class="inline-flex items-center gap-2">
+              @if (formDeliveryMethod() === 'email') {
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-500 dark:text-gray-400">
+                  <rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+                </svg>
+                <span>Email</span>
+              } @else {
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-500 dark:text-gray-400">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+                <span>Microsoft Teams</span>
+              }
+            </span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400 transition-transform"
+              [class.rotate-180]="deliveryDropdownOpen()">
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </button>
+          @if (deliveryDropdownOpen()) {
+            <div class="absolute z-10 mt-1 w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg overflow-hidden">
+              @for (option of deliveryOptions; track option.value) {
+                <button type="button" (click)="selectDelivery(option.value)"
+                  class="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  [class.bg-scoular-green\/10]="formDeliveryMethod() === option.value"
+                  [class.dark:bg-scoular-green\/20]="formDeliveryMethod() === option.value">
+                  @if (option.value === 'email') {
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-500 dark:text-gray-400">
+                      <rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+                    </svg>
+                  } @else {
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-500 dark:text-gray-400">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                  }
+                  <span class="flex-1">{{ option.label }}</span>
+                  @if (formDeliveryMethod() === option.value) {
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                  }
+                </button>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+
+    <!-- Microsoft Teams channel email — only when Teams is the delivery method. Required to save. -->
+    @if (formDeliveryMethod() === 'teams') {
+      <div class="space-y-1.5">
+        <label for="recap-teams-email" class="text-sm font-medium text-gray-700 dark:text-gray-300">
+          Microsoft Teams Channel Email <span class="font-normal text-scoular-red">(required)</span>
+        </label>
+        <input
+          id="recap-teams-email"
+          type="email"
+          [ngModel]="formTeamsEmail()"
+          (ngModelChange)="formTeamsEmail.set($event)"
+          placeholder="channel@scoular.teams.ms"
+          class="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green/40 focus:border-scoular-green"
+        />
+        <p class="text-xs text-gray-400 dark:text-gray-500">The recap will be posted to this Teams channel's email address.</p>
+      </div>
+    }
+
+    <!-- Members -->
+    <div>
+      <div class="flex items-baseline justify-between mb-2">
+        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Members</label>
+        <span class="text-xs text-gray-500 dark:text-gray-400">
+          {{ formMemberCount() }} selected
+        </span>
+      </div>
+
+      <!-- Pill-style tab nav — Usage Dashboard treatment, but the dark-mode track is
+           one shade lighter than the dialog body (gray-800) so it stays visible here. -->
+      <div class="w-full bg-gray-100 dark:bg-gray-700 rounded-full p-0.5 sm:p-1 mb-3 overflow-x-auto">
+        <div class="flex min-w-0">
+          @for (tab of memberPickerTabs(); track tab.id) {
+            <button type="button" (click)="setMemberTab(tab.id)" [class]="memberTabClass(tab.id)">
+              {{ tab.label }}
+            </button>
+          }
+        </div>
+      </div>
+
+      <!-- Search — filters the active tab's list -->
+      <div class="relative mb-3">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+          class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+        </svg>
+        <input
+          type="text"
+          [ngModel]="memberSearch()"
+          (ngModelChange)="memberSearch.set($event)"
+          [placeholder]="memberPickerTab() === 'people' ? 'Search people…' : memberPickerTab() === 'trade-units' ? 'Search trade units…' : 'Search groups…'"
+          class="w-full pl-9 pr-9 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green/40 focus:border-scoular-green"
+        />
+        @if (memberSearch()) {
+          <button type="button" (click)="memberSearch.set('')" title="Clear"
+            class="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-600">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+            </svg>
+          </button>
+        }
+      </div>
+
+      <!-- Results card — content depends on the selected tab -->
+      <div class="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800">
+        <div class="max-h-72 overflow-y-auto">
+            @if (catalogLoading()) {
+              <div class="py-10 text-center text-sm text-gray-500 dark:text-gray-400 italic">Loading directory…</div>
+            }
+            @if (catalogError()) {
+              <div class="m-3 py-3 px-3 rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-300">
+                {{ catalogError() }}
+              </div>
+            }
+
+            <!-- People -->
+            @if (!catalogLoading() && memberPickerTab() === 'people') {
+              @if (availablePeople().length === 0) {
+                <div class="py-10 text-center text-sm text-gray-400 dark:text-gray-500">No people in the directory.</div>
+              } @else if (filteredPeople().length === 0) {
+                <div class="py-10 text-center text-sm text-gray-400 dark:text-gray-500">No people match “{{ memberSearch() }}”.</div>
+              }
+              @for (person of filteredPeople(); track person.id) {
+                @let pState = memberState(person.id, 'person');
+                <div class="flex items-center justify-between px-3 py-2 border-b last:border-b-0 border-gray-100 dark:border-gray-700/50 transition-colors"
+                  [class.bg-scoular-green\/5]="pState !== 'none'"
+                  [class.dark:bg-scoular-green\/10]="pState !== 'none'"
+                  [class.hover:bg-gray-50]="pState === 'none'"
+                  [class.dark:hover:bg-gray-800]="pState === 'none'">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <span class="w-7 h-7 rounded-full bg-scoular-green/10 dark:bg-scoular-green/20 flex items-center justify-center flex-shrink-0">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                      </svg>
+                    </span>
+                    <div class="min-w-0">
+                      <div class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{{ person.name }}</div>
+                      @if (person.email) {
+                        <div class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ person.email }}</div>
+                      }
+                    </div>
+                  </div>
+                  @switch (pState) {
+                    @case ('explicit') {
+                      <button type="button" (click)="removeMember(person.id)"
+                        class="text-xs px-2.5 py-1 rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shrink-0">
+                        Remove
+                      </button>
+                    }
+                    @case ('implied') {
+                      <span class="inline-flex items-center gap-1 text-xs px-2 py-1 text-scoular-green dark:text-scoular-green shrink-0" title="Included via a selected trade unit or group">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        Included
+                      </span>
+                    }
+                    @default {
+                      <button type="button" (click)="addMember(person)"
+                        class="text-xs px-2.5 py-1 rounded-md bg-scoular-green-accessible text-white hover:bg-scoular-green transition-colors shrink-0">
+                        Add
+                      </button>
+                    }
+                  }
+                </div>
+              }
+            }
+
+            <!-- Trade Units -->
+            @if (!catalogLoading() && memberPickerTab() === 'trade-units') {
+              @if (availableTradeUnits().length === 0) {
+                <div class="py-10 text-center text-sm text-gray-400 dark:text-gray-500">No trade units in the directory.</div>
+              } @else if (filteredTradeUnits().length === 0) {
+                <div class="py-10 text-center text-sm text-gray-400 dark:text-gray-500">No trade units match “{{ memberSearch() }}”.</div>
+              }
+              @for (unit of filteredTradeUnits(); track unit.id) {
+                @let tuState = memberState(unit.id, 'trade-unit');
+                <div class="flex items-center justify-between px-3 py-2 border-b last:border-b-0 border-gray-100 dark:border-gray-700/50 transition-colors"
+                  [class.bg-scoular-green\/5]="tuState !== 'none'"
+                  [class.dark:bg-scoular-green\/10]="tuState !== 'none'"
+                  [class.hover:bg-gray-50]="tuState === 'none'"
+                  [class.dark:hover:bg-gray-800]="tuState === 'none'">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <span class="w-7 h-7 rounded-md bg-scoular-yellow/15 dark:bg-scoular-yellow/20 flex items-center justify-center flex-shrink-0">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-yellow">
+                        <rect width="16" height="20" x="4" y="2" rx="2"/><path d="M9 22v-4h6v4"/>
+                      </svg>
+                    </span>
+                    <div class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{{ unit.name }}</div>
+                  </div>
+                  @switch (tuState) {
+                    @case ('explicit') {
+                      <button type="button" (click)="removeMember(unit.id)"
+                        class="text-xs px-2.5 py-1 rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shrink-0">
+                        Remove
+                      </button>
+                    }
+                    @case ('implied') {
+                      <span class="inline-flex items-center gap-1 text-xs px-2 py-1 text-scoular-green dark:text-scoular-green shrink-0" title="Included via a selected group">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        Included
+                      </span>
+                    }
+                    @default {
+                      <button type="button" (click)="addMember(unit)"
+                        class="text-xs px-2.5 py-1 rounded-md bg-scoular-green-accessible text-white hover:bg-scoular-green transition-colors shrink-0">
+                        Add
+                      </button>
+                    }
+                  }
+                </div>
+              }
+            }
+
+            <!-- Trade Unit Groups -->
+            @if (!catalogLoading() && memberPickerTab() === 'groups') {
+              @if (availableTradeUnitGroups().length === 0) {
+                <div class="py-10 text-center text-sm text-gray-400 dark:text-gray-500">No trade-unit groups in the directory.</div>
+              } @else if (filteredTradeUnitGroups().length === 0) {
+                <div class="py-10 text-center text-sm text-gray-400 dark:text-gray-500">No groups match “{{ memberSearch() }}”.</div>
+              }
+              @for (g of filteredTradeUnitGroups(); track g.id) {
+                <div class="flex items-center justify-between px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 border-b last:border-b-0 border-gray-100 dark:border-gray-700/50">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <span class="w-7 h-7 rounded-md bg-scoular-teal/15 dark:bg-scoular-teal/20 flex items-center justify-center flex-shrink-0">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-teal">
+                        <path d="M20 7h-3a2 2 0 0 1-2-2V2"/><path d="M9 18a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h7l4 4v8a2 2 0 0 1-2 2Z"/>
+                      </svg>
+                    </span>
+                    <div class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{{ g.name }}</div>
+                  </div>
+                  @if (isMemberSelected(g.id)) {
+                    <button type="button" (click)="removeMember(g.id)"
+                      class="text-xs px-2.5 py-1 rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shrink-0">
+                      Remove
+                    </button>
+                  } @else {
+                    <button type="button" (click)="addMember(g)"
+                      class="text-xs px-2.5 py-1 rounded-md bg-scoular-green-accessible text-white hover:bg-scoular-green transition-colors shrink-0">
+                      Add
+                    </button>
+                  }
+                </div>
+              }
+            }
+        </div>
+      </div>
+
+      <!-- Selected members preview -->
+      @if (formMembers().length > 0) {
+        <div class="mt-3 flex items-start flex-wrap gap-2">
+          <span class="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400 mt-1.5 shrink-0">Added:</span>
+          <div class="flex flex-wrap gap-1.5">
+            @for (member of formMembers(); track member.id) {
+              <span class="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-full text-xs font-medium bg-scoular-green/10 dark:bg-scoular-green/20 text-scoular-green dark:text-scoular-green border border-scoular-green/30">
+                {{ member.name }}
+                <button type="button" (click)="removeMember(member.id)" title="Remove"
+                  class="ml-0.5 p-0.5 rounded-full hover:bg-scoular-green/20 dark:hover:bg-scoular-green/30 text-scoular-green">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+                  </svg>
+                </button>
+              </span>
+            }
+          </div>
+        </div>
+      }
+    </div>
+
+    <!-- CC list -->
+    <div>
+      <label for="recap-cc" class="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-1.5">CC List <span class="font-normal text-gray-400 dark:text-gray-500">(optional)</span></label>
+      <div class="flex gap-2">
+        <input
+          id="recap-cc"
+          type="email"
+          [ngModel]="newCcEmail()"
+          (ngModelChange)="newCcEmail.set($event)"
+          (keydown)="onCcKeydown($event)"
+          placeholder="email@scoular.com"
+          class="flex-1 px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-scoular-green/40 focus:border-scoular-green"
+        />
+        <button type="button" (click)="addCc()" [disabled]="!newCcEmail().trim()"
+          class="px-3 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+          Add
+        </button>
+      </div>
+      @if (formCcList().length > 0) {
+        <div class="flex flex-wrap gap-1.5 mt-2">
+          @for (email of formCcList(); track email) {
+            <span class="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
+              {{ email }}
+              <button type="button" (click)="removeCc(email)" title="Remove"
+                class="ml-0.5 p-0.5 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500">
+                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+                </svg>
+              </button>
+            </span>
+          }
+        </div>
+      }
+    </div>
+  </div>
+
+  <!-- Footer actions -->
+  <div class="flex items-center justify-end gap-2 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/40 dark:bg-gray-900/20">
+    <button type="button" (click)="closeDialog()"
+      class="px-4 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+      Cancel
+    </button>
+    <button type="button" (click)="saveGroup()" [disabled]="!canSubmit() || saving()"
+      class="px-4 py-2 text-sm font-medium rounded-md bg-scoular-green-accessible text-white hover:bg-scoular-green disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+      {{ saving() ? 'Saving…' : (isEditing() ? 'Update Group' : 'Create Group') }}
+    </button>
+  </div>
+</app-dialog>
+
+<!-- Delete confirmation — matches the app's standard confirm dialog (e.g. Build a List).
+     Anchored to the upper third so the small dialog doesn't read as "low" when centered. -->
+<app-dialog [isOpen]="deleteDialogOpen()" (close)="cancelDeleteGroup()" size="sm" align="top">
+  <app-dialog-header>
+    <app-dialog-title>Delete Recap Group</app-dialog-title>
+    <app-dialog-description>
+      Are you sure you want to delete <span class="font-medium text-gray-700 dark:text-gray-200">{{ pendingDeleteName() }}</span>? This action cannot be undone.
+    </app-dialog-description>
+  </app-dialog-header>
+  <app-dialog-footer>
+    <button type="button" (click)="cancelDeleteGroup()"
+      class="px-4 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+      Cancel
+    </button>
+    <button type="button" (click)="confirmDeleteGroup()"
+      class="px-4 py-2 text-sm font-medium rounded-md bg-scoular-red text-white hover:bg-scoular-red-accessible transition-colors">
+      Delete
+    </button>
+  </app-dialog-footer>
+</app-dialog>

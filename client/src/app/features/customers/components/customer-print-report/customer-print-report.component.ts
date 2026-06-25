@@ -638,6 +638,7 @@ export class CustomerPrintReportComponent {
                           <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Basis</th>
                           <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Hedge</th>
                           <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Flat Price</th>
+                          <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Freight Adj</th>
                           <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Price Date</th>
                           <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Confirm</th>
                         </tr></thead>
@@ -648,6 +649,7 @@ export class CustomerPrintReportComponent {
                             <td style="text-align:center;padding:4px 6px;">${line.basisPrice != null ? this.formatCurrency(line.basisPrice) : '—'}</td>
                             <td style="text-align:center;padding:4px 6px;">${line.hedgePrice != null ? this.formatCurrency(line.hedgePrice) : '—'}</td>
                             <td style="text-align:center;padding:4px 6px;font-weight:600;">${line.flatPrice != null ? this.formatCurrency(line.flatPrice) : '—'}</td>
+                            <td style="text-align:center;padding:4px 6px;">${line.freightAdjustment != null ? this.formatCurrency(line.freightAdjustment) : '—'}</td>
                             <td style="text-align:center;padding:4px 6px;">${line.priceDate ? this.formatDate(line.priceDate) : '—'}</td>
                             <td style="text-align:center;padding:4px 6px;">${this._esc(line.customerConfirmStatus || '—')}</td>
                           </tr>`).join('')}

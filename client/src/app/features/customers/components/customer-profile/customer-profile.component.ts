@@ -94,6 +94,10 @@ export class CustomerProfileComponent {
   public onContractsWideChange = output<boolean>();
   /** Saved lists (already TU-matched + enriched) the current producer can be quick-added to. */
   public savedListsForCustomer = input<SavedList[]>([]);
+  /** Manager-only: team lists (all lists tied to the TU, any creator) for the Add-to-List Team tab. */
+  public teamListsForCustomer = input<SavedList[]>([]);
+  /** True when the current user is a manager — gates the Add-to-List "Team Lists" tab. */
+  public isManager = input(false);
   /** Save staged saved-list membership changes for the current producer; the host persists them. */
   public onSaveSavedListMembership = output<{ listId: number; add: boolean }[]>();
   public onAddNote = output<string>();
@@ -127,9 +131,23 @@ export class CustomerProfileComponent {
   showEditDialog = signal(false);
   showPrintReport = signal(false);
   showAddToListMenu = signal(false); // "Add to List" header dropdown open state
+  /** Which tab the Add-to-List dropdown is showing: the user's own lists or (managers) team lists. */
+  addToListTab = signal<'saved' | 'team'>('saved');
   /** Staged desired membership while the menu is open (listId -> member?). Applied on Save,
    *  discarded on Cancel. Initialized from current membership each time the menu opens. */
   stagedMembership = signal<Map<number, boolean>>(new Map());
+
+  /** Lists shown in the dropdown for the active tab. */
+  readonly activeAddToLists = computed<SavedList[]>(() =>
+    this.addToListTab() === 'team' ? this.teamListsForCustomer() : this.savedListsForCustomer());
+
+  /** All lists the menu can stage changes against — own + (manager) team. Used when seeding the
+   *  staged map and computing the save diff so toggles persist across tab switches. */
+  private allAddToLists(): SavedList[] {
+    return this.isManager()
+      ? [...this.savedListsForCustomer(), ...this.teamListsForCustomer()]
+      : this.savedListsForCustomer();
+  }
   selectedPlantingYear = signal(0); // 0 = auto (newest)
   private _yearUserSelected = false; // true only when user explicitly clicks a year tab
 
@@ -153,8 +171,9 @@ export class CustomerProfileComponent {
   toggleAddToListMenu(): void {
     if (this.showAddToListMenu()) { this.cancelAddToList(); return; }
     const seed = new Map<number, boolean>();
-    for (const l of this.savedListsForCustomer()) seed.set(l.id, this.isInList(l));
+    for (const l of this.allAddToLists()) seed.set(l.id, this.isInList(l));
     this.stagedMembership.set(seed);
+    this.addToListTab.set('saved');
     this.showAddToListMenu.set(true);
   }
 
@@ -165,14 +184,15 @@ export class CustomerProfileComponent {
     this.stagedMembership.set(next);
   }
 
-  /** True when any staged value differs from current membership (enables the Save button). */
+  /** True when any staged value differs from current membership (enables the Save button).
+   *  Spans both own and team lists so a staged change on either tab counts. */
   hasStagedChanges(): boolean {
-    return this.savedListsForCustomer().some(l => this.isStagedMember(l) !== this.isInList(l));
+    return this.allAddToLists().some(l => this.isStagedMember(l) !== this.isInList(l));
   }
 
-  /** Apply staged changes: emit the diff for the host to persist, then close. */
+  /** Apply staged changes across both tabs: emit the diff for the host to persist, then close. */
   saveAddToList(): void {
-    const changes = this.savedListsForCustomer()
+    const changes = this.allAddToLists()
       .filter(l => this.isStagedMember(l) !== this.isInList(l))
       .map(l => ({ listId: l.id, add: this.isStagedMember(l) }));
     if (changes.length > 0) this.onSaveSavedListMembership.emit(changes);
@@ -182,6 +202,7 @@ export class CustomerProfileComponent {
   /** Close the menu and discard staged changes. */
   cancelAddToList(): void {
     this.showAddToListMenu.set(false);
+    this.addToListTab.set('saved');
     this.stagedMembership.set(new Map());
   }
 

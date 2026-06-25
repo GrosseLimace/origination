@@ -13,6 +13,7 @@ public record ContractPricingLineResponse
     public decimal? FlatPrice { get; init; }
     public decimal? BasisPrice { get; init; }
     public decimal? HedgePrice { get; init; }
+    public decimal? FreightAdjustment { get; init; }
     public DateTime? PriceDate { get; init; }
     public string? PriceCurrency { get; init; }
     public string? TraderInitials { get; init; }

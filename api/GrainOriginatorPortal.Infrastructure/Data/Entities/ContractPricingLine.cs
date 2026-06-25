@@ -19,6 +19,11 @@ public class ContractPricingLine
     public decimal? FlatPrice { get; set; }
     public decimal? BasisPrice { get; set; }
     public decimal? HedgePrice { get; set; }
+
+    /// <summary>Freight adjustment for this pricing line. NOT exposed by base.vw_ContractPricing —
+    /// populated by the repository from base.ContractPrice, matched on (SourceContractId, PriceSequence).</summary>
+    public decimal? FreightAdjustment { get; set; }
+
     public DateTime? PriceDate { get; set; }
     public string? PriceCurrency { get; set; }
 

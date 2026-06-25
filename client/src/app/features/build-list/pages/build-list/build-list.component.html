@@ -24,6 +24,20 @@
 
       <p class="text-gray-500 dark:text-gray-400 flex-shrink-0">Search predefined queries to create a custom producer list, then refine and save</p>
 
+      <!-- "Building a list for a team member" banner (member-first assign flow) -->
+      @if (buildingForMembers().length > 0) {
+        <div class="flex-shrink-0 flex items-center gap-3 px-4 py-2.5 rounded-lg bg-scoular-green/10 border border-scoular-green/30">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green-accessible dark:text-scoular-green flex-shrink-0"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
+          <div class="flex-1 min-w-0 text-sm text-gray-700 dark:text-gray-200">
+            Building a list for <span class="font-semibold">{{ buildingForMembersLabel() }}</span> — build it below, then click <span class="font-semibold">Assign</span>.
+          </div>
+          <button type="button" (click)="cancelBuildForMembers()"
+            class="flex-shrink-0 text-xs font-medium text-gray-500 hover:text-scoular-red dark:text-gray-400 bg-transparent border-0 px-2 py-1">
+            Cancel
+          </button>
+        </div>
+      }
+
       <!-- Scrollable content area -->
       <div class="flex-1 min-h-0 overflow-auto pr-4 pb-4 space-y-8">
 
@@ -204,6 +218,16 @@
             }
 
             @if (!showRequestForm()) {
+              @if (isManager() && selectedCategory() === 'Team Lists' && buildingForMembers().length === 0) {
+                <button type="button"
+                  (click)="openBuildForMembersPicker()"
+                  [disabled]="!hasSelectedTradeUnit()"
+                  [title]="!hasSelectedTradeUnit() ? 'Select a trade unit first, then pick the team member(s) to build a list for' : 'Pick the team member(s) to build a list for'"
+                  class="w-full flex items-center justify-center gap-2 px-3 py-2.5 mb-1 text-sm font-medium rounded-lg bg-scoular-green-accessible text-white hover:bg-scoular-green transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
+                  Build a list for a team member
+                </button>
+              }
               @if (librarySavedLists().length === 0 && selectedCategory() === 'Saved Lists') {
                 <div class="text-center py-8 px-4">
                   <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-3 text-gray-300 dark:text-gray-600">
@@ -211,6 +235,20 @@
                   </svg>
                   <p class="text-sm font-medium text-gray-500 dark:text-gray-400">No saved lists yet</p>
                   <p class="text-xs text-gray-400/80 dark:text-gray-500/80 mt-1">Run a query, then use <span class="font-medium text-gray-500 dark:text-gray-400">Save List</span> to keep it here for next time.</p>
+                </div>
+              }
+              @if (isManager() && libraryTeamLists().length === 0 && selectedCategory() === 'Team Lists') {
+                <div class="text-center py-8 px-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-3 text-gray-300 dark:text-gray-600">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                  </svg>
+                @if (!hasSelectedTradeUnit()) {
+                  <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Select a trade unit to see team lists</p>
+                  <p class="text-xs text-gray-400/80 dark:text-gray-500/80 mt-1">Team lists are scoped to the trade unit(s) you select — pick one to see the lists your originators built for it.</p>
+                } @else {
+                  <p class="text-sm font-medium text-gray-500 dark:text-gray-400">No team lists for this trade unit</p>
+                  <p class="text-xs text-gray-400/80 dark:text-gray-500/80 mt-1">Saved lists your originators build for the selected trade unit will appear here.</p>
+                }
                 </div>
               }
               @if (librarySavedLists().length > 0) {
@@ -233,6 +271,75 @@
                             }
                           </div>
                           <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5 line-clamp-1">{{ list.query }}</p>
+                          @if (list.assignedTo && list.createdBy) {
+                            <p class="text-xs text-scoular-green-accessible dark:text-scoular-green mt-0.5 flex items-center gap-1 truncate">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
+                              <span class="truncate">Assigned by {{ list.createdBy }}</span>
+                            </p>
+                          }
+                        </button>
+                        @if (isManager()) {
+                          <button type="button"
+                            (click)="$event.stopPropagation(); openAssignExistingList(list)"
+                            class="text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green bg-transparent border-0 p-0 flex-shrink-0"
+                            title="Assign this list to a team member">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
+                          </button>
+                        }
+                        <button type="button"
+                          (click)="$event.stopPropagation(); deleteList(list.id)"
+                          class="text-scoular-red hover:text-scoular-red-accessible bg-transparent border-0 p-0 flex-shrink-0"
+                          title="Delete this list">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 6h18"/>
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                            <line x1="10" x2="10" y1="11" y2="17"/>
+                            <line x1="14" x2="14" y1="11" y2="17"/>
+                          </svg>
+                        </button>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+              @if (isManager() && libraryTeamLists().length > 0) {
+                <div>
+                  <p class="text-[0.65rem] font-bold uppercase tracking-widest text-gray-400/80 dark:text-gray-500/80 mb-2">Team Lists</p>
+                  <div class="space-y-1">
+                    @for (list of libraryTeamLists(); track list.id) {
+                      <div class="group flex items-center gap-2 px-3 py-2.5 rounded-lg transition-all hover:bg-scoular-green/5 dark:hover:bg-scoular-green/10 hover:border-scoular-green/20 border border-transparent">
+                        <button type="button"
+                          (click)="loadSavedList(list, 'team')"
+                          [disabled]="!coreDataLoaded() || loading() || isProcessing()"
+                          class="flex-1 text-left min-w-0 disabled:opacity-50 disabled:cursor-not-allowed">
+                          <div class="flex items-center gap-2">
+                            <span class="text-sm font-medium text-gray-800 dark:text-gray-200 group-hover:text-scoular-green-accessible dark:group-hover:text-scoular-green transition-colors truncate">{{ list.name }}</span>
+                            @if (list.filters && hasAnyRefinement(list.filters)) {
+                              <span class="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                                Refined
+                              </span>
+                            }
+                          </div>
+                          <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5 line-clamp-1">{{ list.query }}</p>
+                          @if (list.assignedTo && list.assignedToName) {
+                            <p class="text-xs text-scoular-green-accessible dark:text-scoular-green mt-0.5 flex items-center gap-1 truncate">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
+                              <span class="truncate">For {{ list.assignedToName }}</span>
+                            </p>
+                          } @else if (list.createdBy) {
+                            <p class="text-xs text-scoular-green-accessible dark:text-scoular-green mt-0.5 flex items-center gap-1 truncate">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                              <span class="truncate">{{ list.createdBy }}</span>
+                            </p>
+                          }
+                        </button>
+                        <button type="button"
+                          (click)="$event.stopPropagation(); openAssignExistingList(list)"
+                          class="text-gray-400 hover:text-scoular-green-accessible dark:hover:text-scoular-green bg-transparent border-0 p-0 flex-shrink-0"
+                          title="Assign this list to a team member">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
                         </button>
                         <button type="button"
                           (click)="$event.stopPropagation(); deleteList(list.id)"
@@ -272,7 +379,7 @@
               }
             }
 
-            @if (!showRequestForm() && librarySearchText().trim() && filteredLibrary().length === 0 && librarySavedLists().length === 0) {
+            @if (!showRequestForm() && librarySearchText().trim() && filteredLibrary().length === 0 && librarySavedLists().length === 0 && libraryTeamLists().length === 0) {
               <div class="text-center py-6">
                 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-2 text-gray-300 dark:text-gray-600">
                   <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M8 11h6"/>
@@ -429,12 +536,19 @@
                       <span class="ml-1.5 inline-flex items-center justify-center w-4 h-4 text-xs font-bold rounded-full bg-gray-600 dark:bg-gray-400 text-white dark:text-gray-900">{{ memberOverrideCount() }}</span>
                     }
                   </app-button>
-                  <app-button variant="outline" (onClick)="openSaveDialog()" [disabled]="isProcessing()">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2">
-                      <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
-                    </svg>
-                    Save List
-                  </app-button>
+                  @if (buildingForMembers().length > 0) {
+                    <app-button (onClick)="openFinalizeAssign()" [disabled]="isProcessing()">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
+                      Assign to {{ buildingForMembers().length }} member{{ buildingForMembers().length === 1 ? '' : 's' }}
+                    </app-button>
+                  } @else {
+                    <app-button variant="outline" (onClick)="openSaveDialog()" [disabled]="isProcessing()">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2">
+                        <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
+                      </svg>
+                      Save List
+                    </app-button>
+                  }
                 </div>
               }
             </div>
@@ -1358,6 +1472,91 @@
         <app-dialog-footer>
           <app-button variant="outline" (onClick)="closeSaveDialog()">Cancel</app-button>
           <app-button (onClick)="saveList()" [disabled]="!newListName().trim()">{{ activeSavedList() ? 'Update List' : 'Save List' }}</app-button>
+        </app-dialog-footer>
+      </app-dialog>
+
+      <!-- Step 1: pick the member(s) to build a list for (member-first flow) -->
+      <app-dialog [isOpen]="showBuildForDialog()" (close)="closeBuildForDialog()" size="sm">
+        <app-dialog-header>
+          <app-dialog-title>Who is this list for?</app-dialog-title>
+          <app-dialog-description>Pick the team member(s), then build the list — each gets their own copy.</app-dialog-description>
+        </app-dialog-header>
+        <app-dialog-content>
+          <div class="space-y-2">
+            <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Team members</label>
+            @if (teamMembersLoading()) {
+              <p class="text-sm text-gray-400 dark:text-gray-500 py-2">Loading team members…</p>
+            } @else if (teamMembers().length === 0) {
+              <p class="text-sm text-gray-400 dark:text-gray-500 py-2">No team members found for the selected trade unit(s).</p>
+            } @else {
+              <div class="max-h-56 overflow-y-auto space-y-1 border border-gray-200 dark:border-gray-700 rounded-lg p-1">
+                @for (member of teamMembers(); track member.userId) {
+                  <label class="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:bg-scoular-green/5 dark:hover:bg-scoular-green/10">
+                    <input type="checkbox"
+                      [checked]="assignTargetIds().has(member.userId)"
+                      (change)="toggleAssignTarget(member.userId)"
+                      class="rounded border-gray-300 text-scoular-green-accessible focus:ring-scoular-green/40" />
+                    <span class="text-sm text-gray-800 dark:text-gray-200 truncate">{{ member.displayName }}</span>
+                  </label>
+                }
+              </div>
+              <p class="text-xs text-gray-400 dark:text-gray-500">{{ assignTargetIds().size }} selected</p>
+            }
+          </div>
+        </app-dialog-content>
+        <app-dialog-footer>
+          <app-button variant="outline" (onClick)="closeBuildForDialog()">Cancel</app-button>
+          <app-button (onClick)="startBuildingForMembers()" [disabled]="assignTargetIds().size === 0">Start building</app-button>
+        </app-dialog-footer>
+      </app-dialog>
+
+      <!-- Step 3: name + confirm the assignment (manager-only). Members pre-selected from step 1
+           in the build-for flow, or chosen here when assigning an existing list from a row. -->
+      <app-dialog [isOpen]="showAssignDialog()" (close)="closeAssignDialog()" size="sm">
+        <app-dialog-header>
+          <app-dialog-title>Assign list to team member(s)</app-dialog-title>
+          <app-dialog-description>Each selected member gets their own copy in their Saved Lists.</app-dialog-description>
+        </app-dialog-header>
+        <app-dialog-content>
+          <div class="space-y-3">
+            <div class="space-y-2">
+              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">List Name</label>
+              <app-input
+                type="text"
+                [ngModel]="assignListName()"
+                (ngModelChange)="assignListName.set($event)"
+                placeholder="e.g., High Priority Prospects"
+                [maxlength]="100"
+              />
+            </div>
+            <div class="space-y-2">
+              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Team members</label>
+              @if (teamMembersLoading()) {
+                <p class="text-sm text-gray-400 dark:text-gray-500 py-2">Loading team members…</p>
+              } @else if (teamMembers().length === 0) {
+                <p class="text-sm text-gray-400 dark:text-gray-500 py-2">No team members found for the selected trade unit(s).</p>
+              } @else {
+                <div class="max-h-56 overflow-y-auto space-y-1 border border-gray-200 dark:border-gray-700 rounded-lg p-1">
+                  @for (member of teamMembers(); track member.userId) {
+                    <label class="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:bg-scoular-green/5 dark:hover:bg-scoular-green/10">
+                      <input type="checkbox"
+                        [checked]="assignTargetIds().has(member.userId)"
+                        (change)="toggleAssignTarget(member.userId)"
+                        class="rounded border-gray-300 text-scoular-green-accessible focus:ring-scoular-green/40" />
+                      <span class="text-sm text-gray-800 dark:text-gray-200 truncate">{{ member.displayName }}</span>
+                    </label>
+                  }
+                </div>
+                <p class="text-xs text-gray-400 dark:text-gray-500">{{ assignTargetIds().size }} selected</p>
+              }
+            </div>
+          </div>
+        </app-dialog-content>
+        <app-dialog-footer>
+          <app-button variant="outline" (onClick)="closeAssignDialog()">Cancel</app-button>
+          <app-button (onClick)="confirmAssign()" [disabled]="!assignListName().trim() || assignTargetIds().size === 0 || assigning()">
+            {{ assigning() ? 'Assigning…' : 'Assign' }}
+          </app-button>
         </app-dialog-footer>
       </app-dialog>
 

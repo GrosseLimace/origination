@@ -23,6 +23,7 @@ public class OriginationDbContext : DbContext
     public DbSet<Ticket> Tickets => Set<Ticket>();
     public DbSet<TicketQuality> TicketQualities => Set<TicketQuality>();
     public DbSet<ContractPricingLine> ContractPricingLines => Set<ContractPricingLine>();
+    public DbSet<ContractPriceFreightAdjustment> ContractPriceFreightAdjustments => Set<ContractPriceFreightAdjustment>();
     public DbSet<Elevator> Elevators => Set<Elevator>();
     public DbSet<CommodityConversion> CommodityConversions => Set<CommodityConversion>();
 
@@ -274,6 +275,21 @@ public class OriginationDbContext : DbContext
             // Computed properties — ignored by EF (derived from stored columns above)
             entity.Ignore(e => e.PricedQty);
             entity.Ignore(e => e.CashPrice);
+
+            // FreightAdjustment is NOT a column on vw_ContractPricing — it's enriched by the repository
+            // from base.ContractPrice, so EF must not try to SELECT it from the view.
+            entity.Ignore(e => e.FreightAdjustment);
+        });
+
+        // Minimal read-only projection of base.ContractPrice for enriching pricing lines with
+        // FreightAdjustment (the view doesn't expose it). Keyed in the repo on (SourceContractId, PriceSequence).
+        modelBuilder.Entity<ContractPriceFreightAdjustment>(entity =>
+        {
+            entity.HasNoKey();
+            entity.ToView("ContractPrice", schema: "base");
+            entity.Property(e => e.SourceContractId).HasColumnName("SourceContractId");
+            entity.Property(e => e.PriceSequence).HasColumnName("PriceSequence");
+            entity.Property(e => e.FreightAdjustment).HasColumnName("FreightAdjustment").HasColumnType("decimal(18,6)");
         });
 
         // Note and TradeUnit entity configuration moved to ApplicationDbContext

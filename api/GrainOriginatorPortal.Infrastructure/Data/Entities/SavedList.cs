@@ -18,4 +18,10 @@ public class SavedList
     public DateTime? ModifiedAt { get; set; }
     public string? ModifiedBy { get; set; }
     public bool IsActive { get; set; } = true;
+
+    /// <summary>Short UPN (e.g. "CEgr") of the team member this list was assigned to by a manager,
+    /// or null for a normal personal list. An assigned copy keeps <see cref="CreatedBy"/> = the manager
+    /// (true creator, for "Assigned by" attribution); the recipient sees it in their own lists because
+    /// this matches their <c>GetCurrentUserShortName()</c>.</summary>
+    public string? AssignedTo { get; set; }
 }

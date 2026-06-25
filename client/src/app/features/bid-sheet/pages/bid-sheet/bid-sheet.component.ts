@@ -240,6 +240,11 @@ export class BidSheetComponent {
   // --- Panel ---
   showPanel = signal<boolean>(false);
   showLegend = signal<boolean>(true);
+  /** Active base map: 'street' (OpenStreetMap) or 'satellite' (Esri aerial imagery + labels). */
+  mapView = signal<'street' | 'satellite'>('street');
+  /** True while a base-layer switch is loading its tiles — drives a brief loading overlay so the
+   *  map doesn't visibly flash/pop tiles during the toggle. */
+  mapSwitching = signal<boolean>(false);
   showFilters = signal<boolean>(true);
   /** True when the filter bar container is narrow enough that search/clear should wrap to a centered second row. */
   filterBarNarrow = signal<boolean>(false);
@@ -491,6 +496,13 @@ export class BidSheetComponent {
   private _hoveredMarker: { marker: any; resetIcon: any } | null = null;
   // markercluster's MarkerClusterGroup isn't in @types/leaflet — keep loose-typed
   private _clusterGroup: any = null;
+  // Base layers for the street/satellite toggle. _satelliteLayer is a layerGroup
+  // (Esri World Imagery + road/place label overlays) for a hybrid aerial view.
+  private _streetLayer: Leaflet.TileLayer | null = null;
+  private _satelliteLayer: Leaflet.LayerGroup | null = null;
+  // The imagery tile layer inside _satelliteLayer — watched for its 'load' event so we can hide the
+  // switching spinner / drop the old base only once the new tiles are actually painted.
+  private _satelliteImageryLayer: Leaflet.TileLayer | null = null;
   private _isMapInitialized = false;
   private _lastTuSet = '';
   private _searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -2578,6 +2590,38 @@ export class BidSheetComponent {
 
   togglePanel(): void { this.showPanel.set(!this.showPanel()); }
 
+  /** Switches the base map between street (OpenStreetMap) and the realistic aerial view
+   *  (Esri imagery + labels). Markers live in markerPane above the tiles, so they stay put.
+   *  Shows a brief loading overlay and keeps the previous base layer underneath until the new
+   *  tiles finish loading, so the map doesn't flash/pop tiles mid-switch. */
+  toggleMapView(): void {
+    if (!this._map || !this._streetLayer || !this._satelliteLayer || this.mapSwitching()) return;
+
+    const toSatellite = this.mapView() === 'street';
+    const newLayer = toSatellite ? this._satelliteLayer : this._streetLayer;
+    const oldLayer = toSatellite ? this._streetLayer : this._satelliteLayer;
+    // The tile layer whose 'load' tells us the new base has painted (street layer is itself a tile
+    // layer; for satellite it's the imagery layer inside the group).
+    const watch = (toSatellite ? this._satelliteImageryLayer : this._streetLayer) as any;
+
+    this.mapSwitching.set(true);
+    this.mapView.set(toSatellite ? 'satellite' : 'street');
+    newLayer.addTo(this._map); // add on top; old stays underneath so there's no blank gap
+
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      try { this._map?.removeLayer(oldLayer); } catch { /* already gone */ }
+      this.mapSwitching.set(false);
+    };
+
+    // Hide the overlay once the new tiles have loaded; fall back after 2.5s in case 'load' doesn't
+    // fire (e.g. fully cached tiles) so the spinner can never get stuck.
+    if (watch?.once) watch.once('load', finish);
+    setTimeout(finish, 2500);
+  }
+
   refreshBids(): void {
     this.isRefreshing.set(true);
     if (this.editBidsMode()) this.editBidsGridLoading.set(true);
@@ -2668,9 +2712,31 @@ export class BidSheetComponent {
 
     try {
       this._map = L.map(mapElement).setView([38.5, -98.0], 6);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors'
-      }).addTo(this._map);
+
+      // Street view (default) — OpenStreetMap.
+      this._streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 19
+      });
+
+      // Satellite ("realistic") view — Esri World Imagery + transparent road/place label overlays
+      // (hybrid), so reps can recognize a location and still read town/road names when zoomed in.
+      // maxNativeZoom caps tile requests at the provider's real resolution; Leaflet up-scales beyond it.
+      this._satelliteImageryLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Imagery © Esri, Maxar, Earthstar Geographics', maxZoom: 19, maxNativeZoom: 19
+      });
+      this._satelliteLayer = L.layerGroup([
+        this._satelliteImageryLayer,
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+          maxZoom: 19, maxNativeZoom: 19
+        }),
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', {
+          maxZoom: 19, maxNativeZoom: 19
+        })
+      ]);
+
+      // Default to street; toggleMapView() swaps to satellite.
+      this._streetLayer.addTo(this._map);
 
       this._clusterGroup = (L as any).markerClusterGroup({
         maxClusterRadius: 12,
@@ -3043,6 +3109,9 @@ export class BidSheetComponent {
       this._map.remove();
       this._map = null;
       this._clusterGroup = null;
+      this._streetLayer = null;
+      this._satelliteLayer = null;
+      this._satelliteImageryLayer = null;
       this._isMapInitialized = false;
     }
   }

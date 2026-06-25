@@ -10,6 +10,7 @@ import {
   Note,
   StoredGrain,
   SavedList,
+  TeamMember,
   Commodity,
   ProducerDetails,
   DashboardPlantingEstimate,
@@ -117,6 +118,88 @@ export class ApiService {
   /** Fetches trade unit groups assigned to the currently authenticated user from the Entitlements database */
   getUserTradeUnits(): Observable<{ groupName: string; tradeUnitCodes: string[] }[]> {
     return this.http.get<{ groupName: string; tradeUnitCodes: string[] }[]>(`${this.baseUrl}/usertradeunits`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Fetches the full entitlements directory (people / trade units / TU groups) used by the
+   *  Daily Digest Recap Group picker. One call returns all three lists. */
+  getEntitlementsCatalog(): Observable<import('@features/daily-digest/models/entitlements-catalog.model').EntitlementsCatalog> {
+    return this.http.get<import('@features/daily-digest/models/entitlements-catalog.model').EntitlementsCatalog>(`${this.baseUrl}/entitlements/catalog`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Daily Recap Groups (Daily Digest) — creator-owned CRUD. The server uses an
+  // int PK; the frontend model carries id as a string, so map across the boundary.
+  // ---------------------------------------------------------------------------
+
+  /** Shapes a server RecapGroupDto into the frontend RecapGroup (int id -> string). */
+  private mapRecapGroup(
+    dto: import('@features/daily-digest/models/recap-group.model').RecapGroup & { id: number | string; ccList?: string[] },
+  ): import('@features/daily-digest/models/recap-group.model').RecapGroup {
+    return {
+      id: String(dto.id),
+      name: dto.name,
+      deliveryMethod: dto.deliveryMethod,
+      members: dto.members ?? [],
+      ccList: dto.ccList ?? [],
+      teamsChannelEmail: dto.teamsChannelEmail,
+      enabled: dto.enabled,
+      // Created groups come back from create/update without these flags → default to owner.
+      isOwner: dto.isOwner ?? true,
+      createdBy: dto.createdBy ?? '',
+    };
+  }
+
+  /** Builds the API request body from a save request (members -> {type,id,name,email}, ccList -> ccEmails). */
+  private toRecapGroupBody(req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest) {
+    return {
+      name: req.name,
+      deliveryMethod: req.deliveryMethod,
+      teamsChannelEmail: req.deliveryMethod === 'teams' ? req.teamsChannelEmail : undefined,
+      members: req.members.map(m => ({ type: m.type, id: m.id, name: m.name, email: m.email })),
+      ccEmails: req.ccList,
+    };
+  }
+
+  /** Fetches the current user's recap groups. */
+  getRecapGroups(): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup[]> {
+    return this.http.get<any[]>(`${this.baseUrl}/dailyrecapgroups`)
+      .pipe(
+        map(list => list.map(g => this.mapRecapGroup(g))),
+        catchError(e => this.handleError(e)),
+      );
+  }
+
+  /** Creates a new recap group. */
+  createRecapGroup(
+    req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest,
+  ): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup> {
+    return this.http.post<any>(`${this.baseUrl}/dailyrecapgroups`, this.toRecapGroupBody(req))
+      .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
+  }
+
+  /** Updates an existing recap group. */
+  updateRecapGroup(
+    id: string,
+    req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest,
+  ): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup> {
+    return this.http.put<any>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}`, this.toRecapGroupBody(req))
+      .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
+  }
+
+  /** Toggles a recap group's enabled flag. */
+  setRecapGroupEnabled(
+    id: string,
+    enabled: boolean,
+  ): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup> {
+    return this.http.put<any>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}/enabled`, { enabled })
+      .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
+  }
+
+  /** Deletes a recap group (cascade removes members + CC emails). */
+  deleteRecapGroup(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}`)
       .pipe(catchError(e => this.handleError(e)));
   }
 
@@ -590,6 +673,24 @@ export class ApiService {
     );
   }
 
+  /** Manager-only: fetches all saved lists tied to the given trade unit(s) that belong to other
+   *  users, each carrying the creator's display name. Same JSON deserialization as getSavedLists. */
+  getTeamSavedLists(tradeUnits: string): Observable<SavedList[]> {
+    const parseJson = <T>(val: string | null | undefined): T | undefined => {
+      if (!val) return undefined;
+      try { return JSON.parse(val) as T; } catch { return undefined; }
+    };
+    return this.http.get<any[]>(`${this.baseUrl}/savedlists/team`, { params: { tradeUnits } }).pipe(
+      map(lists => lists.map(l => ({
+        ...l,
+        filters: parseJson<RefinementFilters>(l.filters),
+        includedCustomerIds: parseJson<number[]>(l.includedCustomerIds),
+        excludedCustomerIds: parseJson<number[]>(l.excludedCustomerIds),
+      }))),
+      catchError(e => this.handleError(e))
+    );
+  }
+
   /** Creates a new saved list */
   createSavedList(data: { name: string; query: string; tradeUnits?: string; filters?: RefinementFilters; includedCustomerIds?: number[]; excludedCustomerIds?: number[] }): Observable<SavedList> {
     const payload = {
@@ -617,6 +718,24 @@ export class ApiService {
   /** Deletes a saved list by ID */
   deleteSavedList(id: number): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/savedlists/${id}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Manager-only: team members in the given trade unit(s) for the "assign a list" picker. */
+  getTeamMembers(tradeUnits: string): Observable<TeamMember[]> {
+    return this.http.get<TeamMember[]>(`${this.baseUrl}/savedlists/team-members`, { params: { tradeUnits } })
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Manager-only: assigns a copy of a built list to one or more team members (one copy each). */
+  assignSavedList(data: { name: string; query: string; tradeUnits?: string; filters?: RefinementFilters; includedCustomerIds?: number[]; excludedCustomerIds?: number[]; targetUserIds: string[] }): Observable<SavedList[]> {
+    const payload = {
+      ...data,
+      filters: data.filters && Object.keys(data.filters).length > 0 ? JSON.stringify(data.filters) : null,
+      includedCustomerIds: data.includedCustomerIds?.length ? JSON.stringify(data.includedCustomerIds) : null,
+      excludedCustomerIds: data.excludedCustomerIds?.length ? JSON.stringify(data.excludedCustomerIds) : null,
+    };
+    return this.http.post<SavedList[]>(`${this.baseUrl}/savedlists/assign`, payload)
       .pipe(catchError(e => this.handleError(e)));
   }
 

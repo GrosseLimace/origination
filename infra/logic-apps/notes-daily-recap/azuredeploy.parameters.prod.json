@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "logicAppName": { "value": "logic-origination-notes-daily-recap-eus" },
+    "location": { "value": "eastus" },
+    "environmentTag": { "value": "Prod" },
+    "sqlServerName": { "value": "azrscosqlp01.database.windows.net" },
+    "sharedMailbox": { "value": "OriginationsApp@scoular.com" },
+    "sqlConnectionName": { "value": "sql" },
+    // aiFoundryEndpoint: currently the shared data-cloud Azure OpenAI deployment (same as dev/qa).
+    // Expected to move to a dedicated AI resource later; update the URL when it does.
+    "aiFoundryEndpoint": { "value": "https://datacloudeusaz9305643847.openai.azure.com/openai/deployments/D365CRM-CustomerNotesSummary-gpt-4/chat/completions?api-version=2024-08-01-preview" }
+  }
+}

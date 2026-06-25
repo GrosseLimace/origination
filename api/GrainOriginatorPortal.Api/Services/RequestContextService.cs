@@ -36,6 +36,10 @@ public class RequestContextService : IRequestContextService
     }
 
     /// <inheritdoc />
+    public bool IsAdmin() =>
+        _httpContextAccessor.HttpContext?.User?.IsInRole("Admin") ?? false;
+
+    /// <inheritdoc />
     public string GetTraceId() =>
         _httpContextAccessor.HttpContext?.Items[CorrelationIdMiddleware.ItemsKey]?.ToString()
         ?? _httpContextAccessor.HttpContext?.TraceIdentifier

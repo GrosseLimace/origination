@@ -37,6 +37,11 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./features/unshipped-bushels/pages/unshipped-bushels/unshipped-bushels.component').then(m => m.UnshippedBushelsComponent)
   },
+  {
+    path: 'daily-digest',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/daily-digest/pages/daily-digest/daily-digest.component').then(m => m.DailyDigestComponent)
+  },
   environment.usageDashboardEnabled
     ? {
         path: 'usage-dashboard',
