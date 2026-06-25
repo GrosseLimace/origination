@@ -66,8 +66,8 @@ Key Vault integration is required. Do not introduce any — keep all auth on man
 ## Prerequisites (provisioned outside this template)
 
 The **SQL API connection** (`sqlConnectionName`, managed-identity auth) is now created by the template
-itself (`Microsoft.Web/connections`, `parameterValueSet: managedIdentityAuth` — no stored secret), so it
-no longer needs to be made by hand. What still must be granted **outside** the template:
+itself (`Microsoft.Web/connections`, kind `V1`, `parameterValueSet: oauthMI` — managed identity, no stored
+secret), so it no longer needs to be made by hand. What still must be granted **outside** the template:
 
 1. **Managed identity DB grants** — the Logic App's system-assigned identity must be a database user
    in **both** `Origination` and `Entitlements` with:
