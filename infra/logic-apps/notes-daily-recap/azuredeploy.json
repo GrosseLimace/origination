@@ -67,11 +67,12 @@
   },
   "resources": [
     {
-      "comments": "SQL API connection used by the workflow (managed-identity auth, no stored secret). The SQL connector selects MSI via parameterValueSet 'managedIdentityAuth'; server + database are supplied per-action by the V2 dataset paths.",
+      "comments": "SQL API connection used by the workflow (managed-identity auth, no stored secret). kind V1 (Consumption); the SQL connector selects MSI via parameterValueSet 'oauthMI' (matches the working Dev connection). Server + database are supplied per-action by the connector's v2 dataset paths.",
       "type": "Microsoft.Web/connections",
       "apiVersion": "2016-06-01",
       "name": "[parameters('sqlConnectionName')]",
       "location": "[parameters('location')]",
+      "kind": "V1",
       "tags": {
         "Application": "Origination",
         "Environment": "[parameters('environmentTag')]",
@@ -80,7 +81,7 @@
       "properties": {
         "displayName": "[parameters('sqlConnectionName')]",
         "parameterValueSet": {
-          "name": "managedIdentityAuth",
+          "name": "oauthMI",
           "values": {}
         },
         "api": {
