@@ -38,22 +38,23 @@ Key Vault integration is required. Do not introduce any — keep all auth on man
 |------|---------|
 | `azuredeploy.json` | Parameterized ARM template: the `Microsoft.Logic/workflows` resource + system-assigned identity + workflow definition. |
 | `azuredeploy.parameters.dev.json` | Dev parameter values. Config only — **no secrets**. |
-
-To target another environment, copy the parameters file (e.g. `azuredeploy.parameters.qa.json`) and
-adjust the values below.
+| `azuredeploy.parameters.qa.json` | QA parameter values. Config only — **no secrets**. |
 
 ## Parameters
 
-| Parameter | Dev value | Notes |
-|-----------|-----------|-------|
-| `logicAppName` | `logic-origination-notes-daily-recap-dev-eus` | Resource name; follows `logic-origination-…-<env>-eus`. |
-| `location` | `eastus` | |
-| `environmentTag` | `Dev` | `Environment` resource tag (`Dev`/`QA`/`Prod`). |
-| `sqlServerName` | `azrscosqld01.database.windows.net` | FQDN used in SQL connection dataset paths. |
-| `sharedMailbox` | `dev-OriginationsApp@scoular.com` | Graph `sendMail` sender UPN. |
-| `sqlConnectionName` | `sql` | Existing `Microsoft.Web/connections` (MSI) in the target RG. |
-| `aiFoundryEndpoint` | Azure OpenAI chat-completions URL | Per-environment Azure OpenAI deployment. |
-| `teamsChannelEmail` | `8e5da312.scoular.com@amer.teams.ms` | Channel email for `DeliveryMethod = teams`. |
+| Parameter | Dev value | QA value | Notes |
+|-----------|-----------|----------|-------|
+| `logicAppName` | `logic-origination-notes-daily-recap-dev-eus` | `logic-origination-notes-daily-recap-qa-eus` | Resource name; follows `logic-origination-…-<env>-eus`. |
+| `location` | `eastus` | `eastus` | |
+| `environmentTag` | `Dev` | `QA` | `Environment` resource tag (`Dev`/`QA`/`Prod`). |
+| `sqlServerName` | `azrscosqld01.database.windows.net` | `azrscosqlq01.database.windows.net` | QA Origination SQL server (same FQDN the app's QA deploy uses). |
+| `sharedMailbox` | `dev-OriginationsApp@scoular.com` | `qa-OriginationsApp@scoular.com` | Graph `sendMail` sender UPN. |
+| `sqlConnectionName` | `sql` | `sql` | Existing `Microsoft.Web/connections` (MSI) in the target RG. |
+| `aiFoundryEndpoint` | Azure OpenAI chat-completions URL | _same as Dev_ | Shared data-cloud Azure OpenAI. Correct for now; expected to move to a dedicated AI resource later — update the URL when it does. |
+| `teamsChannelEmail` | `8e5da312.scoular.com@amer.teams.ms` | _same as Dev_ | Default/fallback only. The per-group Teams channel address is **entered by users in the app** and used at send time for `DeliveryMethod = teams`. |
+
+> **QA resource group:** `rg-origination-qa-eus` (mirrors `app-origination-qa-eus`). The QA workflow
+> deploys there on the **non-prod** subscription, same OIDC identity as the app's QA deploy.
 
 ## Prerequisites (provisioned outside this template)
 
