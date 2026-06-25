@@ -67,7 +67,7 @@
   },
   "resources": [
     {
-      "comments": "SQL API connection used by the workflow (managed-identity auth, no stored secret). parameterValueType 'Alternative' selects Azure AD / MSI instead of SQL auth; server + database are supplied per-action by the V2 dataset paths.",
+      "comments": "SQL API connection used by the workflow (managed-identity auth, no stored secret). The SQL connector selects MSI via parameterValueSet 'managedIdentityAuth'; server + database are supplied per-action by the V2 dataset paths.",
       "type": "Microsoft.Web/connections",
       "apiVersion": "2016-06-01",
       "name": "[parameters('sqlConnectionName')]",
@@ -80,7 +80,10 @@
       },
       "properties": {
         "displayName": "[parameters('sqlConnectionName')]",
-        "parameterValueType": "Alternative",
+        "parameterValueSet": {
+          "name": "managedIdentityAuth",
+          "values": {}
+        },
         "api": {
           "id": "[variables('sqlManagedApiId')]"
         }
