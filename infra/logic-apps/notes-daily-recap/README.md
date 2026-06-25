@@ -39,26 +39,29 @@ Key Vault integration is required. Do not introduce any — keep all auth on man
 | `azuredeploy.json` | Parameterized ARM template: the `Microsoft.Logic/workflows` resource + system-assigned identity + workflow definition. |
 | `azuredeploy.parameters.dev.json` | Dev parameter values. Config only — **no secrets**. |
 | `azuredeploy.parameters.qa.json` | QA parameter values. Config only — **no secrets**. |
+| `azuredeploy.parameters.prod.json` | Prod parameter values. Config only — **no secrets**. |
 
 ## Parameters
 
-| Parameter | Dev value | QA value | Notes |
-|-----------|-----------|----------|-------|
-| `logicAppName` | `logic-origination-notes-daily-recap-dev-eus` | `logic-origination-notes-daily-recap-qa-eus` | Resource name; follows `logic-origination-…-<env>-eus`. |
-| `location` | `eastus` | `eastus` | |
-| `environmentTag` | `Dev` | `QA` | `Environment` resource tag (`Dev`/`QA`/`Prod`). |
-| `sqlServerName` | `azrscosqld01.database.windows.net` | `azrscosqlq01.database.windows.net` | QA Origination SQL server (same FQDN the app's QA deploy uses). |
-| `sharedMailbox` | `dev-OriginationsApp@scoular.com` | `qa-OriginationsApp@scoular.com` | Graph `sendMail` sender UPN. |
-| `sqlConnectionName` | `sql` | `sql` | Existing `Microsoft.Web/connections` (MSI) in the target RG. |
-| `aiFoundryEndpoint` | Azure OpenAI chat-completions URL | _same as Dev_ | Shared data-cloud Azure OpenAI. Correct for now; expected to move to a dedicated AI resource later — update the URL when it does. |
+| Parameter | Dev value | QA value | Prod value | Notes |
+|-----------|-----------|----------|------------|-------|
+| `logicAppName` | `logic-origination-notes-daily-recap-dev-eus` | `logic-origination-notes-daily-recap-qa-eus` | `logic-origination-notes-daily-recap-eus` | Resource name; non-prod carries the env token, prod has none (mirrors `app-origination-…`). |
+| `location` | `eastus` | `eastus` | `eastus` | |
+| `environmentTag` | `Dev` | `QA` | `Prod` | `Environment` resource tag. |
+| `sqlServerName` | `azrscosqld01.database.windows.net` | `azrscosqlq01.database.windows.net` | `azrscosqlp01.database.windows.net` | Origination SQL server per env (same FQDNs the app deploys use). |
+| `sharedMailbox` | `dev-OriginationsApp@scoular.com` | `qa-OriginationsApp@scoular.com` | `OriginationsApp@scoular.com` | Graph `sendMail` sender UPN. ⚠️ Confirm the prod mailbox UPN. |
+| `sqlConnectionName` | `sql` | `sql` | `sql` | Existing `Microsoft.Web/connections` (MSI) in the target RG. |
+| `aiFoundryEndpoint` | Azure OpenAI chat-completions URL | _same as Dev_ | _same as Dev_ | Shared data-cloud Azure OpenAI. Correct for now; expected to move to a dedicated AI resource later — update the URL when it does. |
 
 > **Teams channel routing:** there is **no** `teamsChannelEmail` parameter. A `teams`-delivery group
 > routes to its **own** `TeamsChannelEmail` — entered in the app, stored on the recap group, and
 > validated as a `*.teams.ms` address on save. The workflow **fails closed**: a group with no channel
 > address sends nothing rather than falling back to a shared channel.
 
-> **QA resource group:** `rg-origination-qa-eus` (mirrors `app-origination-qa-eus`). The QA workflow
-> deploys there on the **non-prod** subscription, same OIDC identity as the app's QA deploy.
+> **Resource groups:** Dev → `rg-origination-dev-eus`, QA → `rg-origination-qa-eus`, Prod →
+> `rg-origination-eus` (each mirrors its `app-origination-…` web app). Dev/QA deploy on the **non-prod**
+> subscription; Prod deploys on the **prod** subscription (`AZURE_SUBSCRIPTION_ID_PROD`), same OIDC
+> identity as the app's prod deploy. ⚠️ Confirm the prod resource group name before the first prod run.
 
 ## Prerequisites (provisioned outside this template)
 
