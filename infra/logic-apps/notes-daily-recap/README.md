@@ -65,16 +65,22 @@ Key Vault integration is required. Do not introduce any — keep all auth on man
 
 ## Prerequisites (provisioned outside this template)
 
-1. **SQL API connection** named per `sqlConnectionName` must already exist in the target resource
-   group, configured for **managed identity** auth. (This template *references* it rather than
-   creating it; the connection's MI must have read access to the Origination + Entitlements DBs.)
-2. **Managed identity role grants** for the Logic App's system-assigned identity:
+The **SQL API connection** (`sqlConnectionName`, managed-identity auth) is now created by the template
+itself (`Microsoft.Web/connections`, `parameterValueType: Alternative` — no stored secret), so it no
+longer needs to be made by hand. What still must be granted **outside** the template:
+
+1. **Managed identity DB grants** — the Logic App's system-assigned identity must be a database user
+   in **both** `Origination` and `Entitlements` with:
+   - `db_datareader` (the table reads: recap groups/members/CC, Users, trade-unit/group assignments, Notes, Customer), and
+   - `EXECUTE` on `dbo.GetRecapNotes` (the notes lookup is a stored proc — `db_datareader` does **not** include execute).
+
+   e.g. `CREATE USER [<logicAppName>] FROM EXTERNAL PROVIDER;` + `ALTER ROLE db_datareader ADD MEMBER [...]` + `GRANT EXECUTE ON dbo.GetRecapNotes TO [...]`. The identity exists only **after** the Logic App's first deploy.
+2. **Managed identity role grants** for the same identity:
    - Azure OpenAI: `Cognitive Services OpenAI User` on the AI resource.
    - Microsoft Graph: `Mail.Send` application permission for the shared mailbox.
-   - SQL: db reader on Origination + Entitlements (via the SQL connection's identity).
 3. The deploying CI identity needs deploy rights on the target resource group (see repo CI/CD docs).
 
-These are coordinated with IT Infrastructure; this template does not provision them.
+These DB/role grants are coordinated with IT Infrastructure; the template does not provision them.
 
 ## Deploy
 
