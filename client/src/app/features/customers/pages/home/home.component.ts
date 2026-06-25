@@ -1550,7 +1550,7 @@ export class HomeComponent {
         this.toastService.success('Planting intention added');
         this._ensureCommodityOnProducerDetails(sel, data.crop);
       },
-      error: () => this.toastService.error('Failed to add planting intention')
+      error: (e: Error) => this.toastService.error(e?.message || 'Failed to add planting intention')
     });
   }
 
@@ -1572,7 +1572,7 @@ export class HomeComponent {
         this.toastService.success('Planting intention updated');
         if (sel) this._ensureCommodityOnProducerDetails(sel, data.crop);
       },
-      error: () => this.toastService.error('Failed to update planting intention')
+      error: (e: Error) => this.toastService.error(e?.message || 'Failed to update planting intention')
     });
   }
 
