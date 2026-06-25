@@ -27,9 +27,15 @@ public record RecapGroupRequest : IValidatableObject
     [EmailList(RequiredDomain = "scoular.com")]
     public List<string> CcEmails { get; init; } = [];
 
-    /// <summary>A "teams" group MUST carry a valid Teams channel address (a <c>*.teams.ms</c> "send to
-    /// channel" email). The Logic App routes to this per-group address and fails closed without it, so
-    /// reject the save here rather than letting a group fall back to a shared channel.</summary>
+    /// <summary>A "teams" group MUST carry a valid Teams channel address that belongs to the Scoular
+    /// tenant. The Logic App routes the recap to this per-group address via Graph sendMail and fails
+    /// closed without it, so reject the save here rather than letting a group fall back to a shared
+    /// channel — or, critically, point at a channel in another Microsoft 365 tenant.
+    ///
+    /// A Teams "send to channel" address has the shape <c>{id}.{tenant-domain}@{region}.teams.ms</c>
+    /// (e.g. <c>8e5da312.scoular.com@amer.teams.ms</c>). The <c>*.teams.ms</c> host is shared across ALL
+    /// tenants, so the tenant is identified by the LOCAL part: requiring it to end in <c>.scoular.com</c>
+    /// keeps the destination inside Scoular and blocks cross-tenant exfiltration.</summary>
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         if (!string.Equals(DeliveryMethod, "teams", StringComparison.OrdinalIgnoreCase))
@@ -43,11 +49,19 @@ public record RecapGroupRequest : IValidatableObject
             yield break;
         }
 
-        // Teams "send to channel" addresses are real emails on a *.teams.ms host.
-        if (!new EmailAddressAttribute().IsValid(channel)
-            || !channel.EndsWith(".teams.ms", StringComparison.OrdinalIgnoreCase))
+        var atIndex = channel.LastIndexOf('@');
+        var localPart = atIndex > 0 ? channel[..atIndex] : string.Empty;
+        var host = atIndex >= 0 ? channel[(atIndex + 1)..] : string.Empty;
+
+        // Valid email + Teams channel host (*.teams.ms) + Scoular-tenant local part (….scoular.com).
+        var isScoularTeamsChannel =
+            new EmailAddressAttribute().IsValid(channel)
+            && host.EndsWith(".teams.ms", StringComparison.OrdinalIgnoreCase)
+            && localPart.EndsWith(".scoular.com", StringComparison.OrdinalIgnoreCase);
+
+        if (!isScoularTeamsChannel)
             yield return new ValidationResult(
-                "TeamsChannelEmail must be a valid Teams channel address (ending in .teams.ms).",
+                "TeamsChannelEmail must be a Scoular Teams channel address (e.g. <id>.scoular.com@<region>.teams.ms).",
                 [nameof(TeamsChannelEmail)]);
     }
 }

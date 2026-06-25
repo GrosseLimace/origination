@@ -229,9 +229,14 @@ export class DailyDigestComponent implements OnInit {
     return this._isValidEmail(value) && value.trim().toLowerCase().endsWith('@scoular.com');
   }
 
-  /** A Teams "send to channel" address is a valid email on a *.teams.ms host (mirrors the API rule). */
+  /** A Scoular Teams "send to channel" address: a valid email on a *.teams.ms host whose local part
+   *  ends in .scoular.com (mirrors the API rule). The *.teams.ms host is shared across all tenants, so
+   *  the local-part domain is what keeps the destination inside Scoular and blocks cross-tenant sends. */
   private _isTeamsChannel(value: string): boolean {
-    return this._isValidEmail(value) && value.trim().toLowerCase().endsWith('.teams.ms');
+    const v = value.trim().toLowerCase();
+    if (!this._isValidEmail(v) || !v.endsWith('.teams.ms')) return false;
+    const at = v.lastIndexOf('@');
+    return at > 0 && v.slice(0, at).endsWith('.scoular.com');
   }
   protected readonly selectedMemberIds = computed(() => new Set(this.formMembers().map(m => m.id)));
 

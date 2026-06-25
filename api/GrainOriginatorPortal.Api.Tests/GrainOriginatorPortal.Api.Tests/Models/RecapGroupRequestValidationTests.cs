@@ -61,11 +61,23 @@ public class RecapGroupRequestValidationTests
     }
 
     [Fact]
-    public void Teams_WithValidChannelAddress_IsAccepted()
+    public void Teams_WithValidScoularChannelAddress_IsAccepted()
     {
         var req = Base() with { DeliveryMethod = "teams", TeamsChannelEmail = "8e5da312.scoular.com@amer.teams.ms" };
 
         Assert.Empty(Validate(req));
+    }
+
+    [Fact]
+    public void Teams_WithForeignTenantChannel_IsRejected()
+    {
+        // Same *.teams.ms host, but the local part is another tenant's domain — must be blocked so a
+        // recap can't be routed to a channel outside the Scoular tenant.
+        var req = Base() with { DeliveryMethod = "teams", TeamsChannelEmail = "abcd1234.contoso.com@amer.teams.ms" };
+
+        var errors = Validate(req);
+
+        Assert.Contains(errors, e => e.MemberNames.Contains(nameof(RecapGroupRequest.TeamsChannelEmail)));
     }
 
     [Fact]
