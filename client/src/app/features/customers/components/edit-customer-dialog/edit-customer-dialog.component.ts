@@ -157,14 +157,20 @@ export class EditCustomerDialogComponent {
   // Numbers are kept as strings for the inputs and parsed on save (mirrors editBinCapacity).
   editGrainOnFarm = signal<{ commodityGroup: string; bushelsOnHand: string; targetBushels: string }[]>([]);
   newGrainGroup = signal(''); // commodity group selected in the "add row" dropdown
+  /** Commodity groups never offered for Grain on Farm (title-cased, matched case-insensitively). */
+  private static readonly HIDDEN_GRAIN_GROUPS = new Set(['other grain']);
+
   /** Distinct commodity groups (Commodity.category — e.g. Corn, Wheat, Soybeans) not yet added,
-   *  for the add dropdown. Sourced from the curated commodity list the dialog already loads. */
+   *  for the add dropdown. Sourced from the curated commodity list the dialog already loads.
+   *  "Other Grain" is excluded — it's not a meaningful on-farm grain category. */
   readonly availableGrainGroups = computed(() => {
     const used = new Set(this.editGrainOnFarm().map(r => r.commodityGroup));
     const groups = new Set<string>();
     for (const c of this.allCommodities()) {
       const g = this._titleCaseGroup(c.category);
-      if (g && !used.has(g)) groups.add(g);
+      if (g && !used.has(g) && !EditCustomerDialogComponent.HIDDEN_GRAIN_GROUPS.has(g.toLowerCase())) {
+        groups.add(g);
+      }
     }
     return [...groups].sort((a, b) => a.localeCompare(b));
   });
@@ -184,6 +190,17 @@ export class EditCustomerDialogComponent {
 
   removeGrainRow(commodityGroup: string): void {
     this.editGrainOnFarm.update(rows => rows.filter(r => r.commodityGroup !== commodityGroup));
+  }
+
+  // ── Collapsible sections (edit dialog) ──────────────────────────────────
+  // Each section header toggles its body so the dialog opens compact and the user
+  // expands only what they need (less scrolling).
+  private readonly _expandedSections = signal<Record<string, boolean>>({
+    tradeUnits: true, farm: true, links: true,
+  });
+  isExpanded(key: string): boolean { return this._expandedSections()[key] ?? false; }
+  toggleSection(key: string): void {
+    this._expandedSections.update(s => ({ ...s, [key]: !s[key] }));
   }
 
   // Producer search
@@ -491,6 +508,14 @@ export class EditCustomerDialogComponent {
     return isNaN(num) ? 0 : num;
   }
 
+  /** Parses a number that may contain a decimal point (e.g. the grain-on-farm target like "5.5").
+   *  Strips everything except digits and a dot, then parses as a float. */
+  private _parseDecimalInput(value: string): number {
+    const cleaned = value.replace(/[^0-9.]/g, '');
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? 0 : num;
+  }
+
   clearCommoditySearch(): void {
     this.newCommodity.set('');
     this.filteredCommodities.set([]);
@@ -648,7 +673,7 @@ export class EditCustomerDialogComponent {
           .map(r => ({
             commodityGroup: r.commodityGroup,
             bushelsOnHand: r.bushelsOnHand.trim() ? this._parseNumericInput(r.bushelsOnHand) : undefined,
-            targetBushels: r.targetBushels.trim() ? this._parseNumericInput(r.targetBushels) : undefined
+            targetBushels: r.targetBushels.trim() ? this._parseDecimalInput(r.targetBushels) : undefined
           }))
       });
       this._initialized = false;

@@ -54,15 +54,11 @@ export class CustomerProfileComponent {
   public allCustomers = input<Customer[]>([]);
 
   // ── Grain on Farm (per-commodity on-hand + target) ──────────────────────
-  showGrainBreakdown = signal(false);
   /** Grain-on-farm rows with a positive on-hand or target, sorted by on-hand desc. */
   readonly grainOnFarmRows = computed(() =>
     (this.customer().grainOnFarm ?? [])
       .filter(g => (g.bushelsOnHand ?? 0) > 0 || (g.targetBushels ?? 0) > 0)
       .sort((a, b) => (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0)));
-  /** Total bushels currently on farm across all commodities. */
-  readonly grainOnFarmTotal = computed(() =>
-    this.grainOnFarmRows().reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0));
   public selectedTradeUnits = input<string[]>([]);
   public contracts = input<Contract[]>([]);
   public tickets = input<Ticket[]>([]);
