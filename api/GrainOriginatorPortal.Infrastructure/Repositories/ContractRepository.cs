@@ -278,11 +278,13 @@ public class ContractRepository : IContractRepository
 
     public async Task<List<ContractPricingLine>> GetPricingLinesAsync(string sourceContractId, CancellationToken cancellationToken)
     {
-        return await _context.ContractPricingLines
+        var lines = await _context.ContractPricingLines
             .AsNoTracking()
             .Where(p => p.ContractId == sourceContractId)
             .OrderBy(p => p.PriceSequence)
             .ToListAsync(cancellationToken);
+        await EnrichFreightAdjustmentAsync(lines, cancellationToken);
+        return lines;
     }
 
     public async Task<List<ContractPricingLine>> GetPricingLinesByCustomerAsync(string scoularId, CancellationToken cancellationToken)
@@ -298,12 +300,56 @@ public class ContractRepository : IContractRepository
         if (sourceContractIds.Count == 0)
             return new List<ContractPricingLine>();
 
-        return await _context.ContractPricingLines
+        var lines = await _context.ContractPricingLines
             .AsNoTracking()
             .Where(p => sourceContractIds.Contains(p.ContractId))
             .OrderBy(p => p.ContractId)
             .ThenBy(p => p.PriceSequence)
             .ToListAsync(cancellationToken);
+        await EnrichFreightAdjustmentAsync(lines, cancellationToken);
+        return lines;
+    }
+
+    /// <summary>Populates <see cref="ContractPricingLine.FreightAdjustment"/> from base.ContractPrice,
+    /// matched on (SourceContractId, PriceSequence). The view supplies the curated rows; this only
+    /// enriches them (left-join semantics — no row is added or dropped), so it stays safe even though
+    /// vw_ContractPricing does not expose FreightAdjustment.</summary>
+    private async Task EnrichFreightAdjustmentAsync(List<ContractPricingLine> lines, CancellationToken cancellationToken)
+    {
+        if (lines.Count == 0) return;
+
+        var contractIds = lines.Select(l => l.ContractId).Distinct().ToList();
+        var freight = await _context.ContractPriceFreightAdjustments
+            .AsNoTracking()
+            .Where(f => f.SourceContractId != null && f.PriceSequence != null
+                && contractIds.Contains(f.SourceContractId) && f.FreightAdjustment != null)
+            .Select(f => new { f.SourceContractId, f.PriceSequence, f.FreightAdjustment })
+            .ToListAsync(cancellationToken);
+        if (freight.Count == 0) return;
+
+        ApplyFreightAdjustments(lines,
+            freight.Select(f => (f.SourceContractId, f.PriceSequence, f.FreightAdjustment)).ToList());
+    }
+
+    /// <summary>Merges freight-adjustment rows (from base.ContractPrice) onto the curated pricing lines
+    /// (from the view), matched on (SourceContractId, PriceSequence). The base column may be CHAR-padded,
+    /// so it is trimmed before matching against the line's already-trimmed ContractId. Pure (no DB) so
+    /// the matching rules are unit-testable.</summary>
+    public static void ApplyFreightAdjustments(
+        List<ContractPricingLine> lines,
+        IReadOnlyList<(string? SourceContractId, int? PriceSequence, decimal? FreightAdjustment)> freight)
+    {
+        if (lines.Count == 0 || freight.Count == 0) return;
+
+        var bySeq = freight
+            .Where(f => f.SourceContractId != null && f.PriceSequence != null && f.FreightAdjustment != null)
+            .GroupBy(f => (Id: f.SourceContractId!.Trim(), Seq: f.PriceSequence!.Value))
+            .ToDictionary(g => g.Key, g => g.First().FreightAdjustment);
+
+        foreach (var line in lines)
+            if (line.PriceSequence != null
+                && bySeq.TryGetValue((line.ContractId, line.PriceSequence.Value), out var fa))
+                line.FreightAdjustment = fa;
     }
 
     /// <summary>

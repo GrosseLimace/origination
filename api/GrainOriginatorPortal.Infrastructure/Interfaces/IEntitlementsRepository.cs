@@ -12,6 +12,10 @@ public interface IEntitlementsRepository
     /// <summary>All trade-unit assignments (the full catalog — code + description), used to build the TU picker.</summary>
     Task<List<UserTradeUnitAccess>> GetAllAsync(CancellationToken cancellationToken);
 
+    /// <summary>Trade-unit assignment rows for every user belonging to any of the given trade-unit codes.
+    /// Used to build the manager's team-member picker. Callers de-dupe by <c>UserId</c>.</summary>
+    Task<List<UserTradeUnitAccess>> GetUsersByTradeUnitsAsync(IReadOnlyCollection<string> tradeUnitCodes, CancellationToken cancellationToken);
+
     /// <summary>Distinct trade-unit codes a user is entitled to (the allowed set for access checks).</summary>
     Task<List<string>> GetTradeUnitCodesForUserAsync(string userId, CancellationToken cancellationToken);
 

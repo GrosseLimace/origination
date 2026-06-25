@@ -11,6 +11,7 @@ export interface ContractPricingLine {
   flatPrice?: number;
   basisPrice?: number;
   hedgePrice?: number;
+  freightAdjustment?: number;
   priceDate?: string;
   priceCurrency?: string;
 

@@ -57,6 +57,9 @@ public class CustomersController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(searchTerm))
             return Ok(new List<CustomerResponse>());
+        // Unscoped by design — these producers have no trade unit yet (the point of onboarding).
+        // Returns producer-master contact PII to authenticated reps; accepted risk, see
+        // SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-04).
         return Ok(await _service.SearchOdsAsync(searchTerm, cancellationToken));
     }
 

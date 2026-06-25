@@ -183,21 +183,36 @@ export class CustomerPrintReportComponent {
   readonly openContracts = computed(() =>
     this.contracts()
       .filter(c => !c.closedDate)
-      .sort((a, b) => (a.commodityDescription ?? '').localeCompare(b.commodityDescription ?? ''))
+      // Mirror the on-page contracts table's default order: soonest delivery first.
+      // Contracts with no delivery start sink to the bottom (Infinity) rather than
+      // floating to the top. This order is preserved within each commodity group.
+      .sort((a, b) => {
+        const aTime = a.deliveryStart ? new Date(a.deliveryStart).getTime() : Infinity;
+        const bTime = b.deliveryStart ? new Date(b.deliveryStart).getTime() : Infinity;
+        return aTime - bTime;
+      })
   );
 
   /** Backwards-compatible alias — legacy name kept so older refs resolve. */
   readonly activeContracts = this.openContracts;
 
-  /** Contracts grouped by commodity for print display */
+  /** Contracts grouped by commodity for print display. Mirrors the contracts table:
+   *  bucket by commodityCode so same-code variants stay together (fall back to
+   *  description/group/'Other'), order the groups alphabetically by that key, and
+   *  preserve the soonest-delivery-first order from openContracts() within each group.
+   *  The header still shows the friendly description label. */
   readonly contractsByCommodity = computed(() => {
-    const map = new Map<string, Contract[]>();
+    const map = new Map<string, { label: string; contracts: Contract[] }>();
     for (const ct of this.openContracts()) {
-      const key = ct.commodityDescription || ct.commodityCode || 'Other';
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(ct);
+      const key = (ct.commodityCode || ct.commodityDescription || ct.commodityGroup || 'Other').trim();
+      const label = ct.commodityDescription || ct.commodityCode || ct.commodityGroup || 'Other';
+      const bucket = map.get(key);
+      if (bucket) bucket.contracts.push(ct);
+      else map.set(key, { label, contracts: [ct] });
     }
-    return Array.from(map.entries()).map(([commodity, contracts]) => ({ commodity, contracts }));
+    return Array.from(map.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([, { label, contracts }]) => ({ commodity: label, contracts }));
   });
 
   /** Planting intentions grouped by crop then sorted by planting year desc */
@@ -465,7 +480,7 @@ export class CustomerPrintReportComponent {
 
   formatDeliveryPeriod(start?: Date | string, end?: Date | string): string {
     if (!start && !end) return '—';
-    const fmt = (d: Date | string) => new Date(d).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    const fmt = (d: Date | string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     if (start && end) return `${fmt(start)} – ${fmt(end)}`;
     if (start) return `From ${fmt(start)}`;
     return `Until ${fmt(end!)}`;
@@ -623,6 +638,7 @@ export class CustomerPrintReportComponent {
                           <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Basis</th>
                           <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Hedge</th>
                           <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Flat Price</th>
+                          <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Freight Adj</th>
                           <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Price Date</th>
                           <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Confirm</th>
                         </tr></thead>
@@ -633,6 +649,7 @@ export class CustomerPrintReportComponent {
                             <td style="text-align:center;padding:4px 6px;">${line.basisPrice != null ? this.formatCurrency(line.basisPrice) : '—'}</td>
                             <td style="text-align:center;padding:4px 6px;">${line.hedgePrice != null ? this.formatCurrency(line.hedgePrice) : '—'}</td>
                             <td style="text-align:center;padding:4px 6px;font-weight:600;">${line.flatPrice != null ? this.formatCurrency(line.flatPrice) : '—'}</td>
+                            <td style="text-align:center;padding:4px 6px;">${line.freightAdjustment != null ? this.formatCurrency(line.freightAdjustment) : '—'}</td>
                             <td style="text-align:center;padding:4px 6px;">${line.priceDate ? this.formatDate(line.priceDate) : '—'}</td>
                             <td style="text-align:center;padding:4px 6px;">${this._esc(line.customerConfirmStatus || '—')}</td>
                           </tr>`).join('')}
@@ -646,7 +663,7 @@ export class CustomerPrintReportComponent {
                     ${contractThead}
                     <tbody>
                       <tr>
-                        <td style="font-weight:500;">${this._esc(ct.contractNumber)}</td>
+                        <td style="font-weight:500;">${this._esc(ct.sourceContractId || ct.contractNumber)}</td>
                         <td>${(ct.quantity ?? 0).toLocaleString()} ${unit}</td>
                         <td>${this._esc(this.getContractPrice(ct))}</td>
                         <td style="font-size:10px;">${this._esc(this.formatDeliveryPeriod(ct.deliveryStart, ct.deliveryEnd))}</td>

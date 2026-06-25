@@ -14,6 +14,9 @@ public interface IBidSheetRepository
     Task<List<ElevatorCache>> GetElevatorsAsync(string? tradeUnitCode, CancellationToken cancellationToken);
     Task<List<BidSheetLocation>> GetLocationsAsync(string tradeUnitCode, CancellationToken cancellationToken);
     Task<List<BidSheetLocation>> GetAllLocationsAsync(CancellationToken cancellationToken);
+    /// <summary>The persisted TradeUnitCode of a location, or null if it doesn't exist. Used to
+    /// authorize mutations against the row's actual trade unit (not a client-supplied value).</summary>
+    Task<string?> GetLocationTradeUnitCodeAsync(int id, CancellationToken cancellationToken);
     Task<BidSheetLocation> CreateLocationAsync(BidSheetLocation location, CancellationToken cancellationToken);
     Task<BidSheetLocation?> UpdateLocationAsync(int id, BidSheetLocation location, CancellationToken cancellationToken);
     Task DeleteLocationAsync(int id, CancellationToken cancellationToken);

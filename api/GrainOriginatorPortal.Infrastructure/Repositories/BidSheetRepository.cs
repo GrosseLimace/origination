@@ -48,6 +48,13 @@ public class BidSheetRepository : IBidSheetRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<string?> GetLocationTradeUnitCodeAsync(int id, CancellationToken cancellationToken) =>
+        await _appContext.BidSheetLocations
+            .AsNoTracking()
+            .Where(l => l.Id == id)
+            .Select(l => l.TradeUnitCode)
+            .FirstOrDefaultAsync(cancellationToken);
+
     public async Task<BidSheetLocation> CreateLocationAsync(BidSheetLocation location, CancellationToken cancellationToken)
     {
         _appContext.BidSheetLocations.Add(location);
