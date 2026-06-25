@@ -20,5 +20,7 @@ public static class SavedListMappings
         ModifiedAt = l.ModifiedAt,
         ModifiedBy = string.IsNullOrEmpty(l.ModifiedBy) ? l.ModifiedBy : DisplayNames.Apply(l.ModifiedBy, nameMap),
         IsActive = l.IsActive,
+        AssignedTo = l.AssignedTo,
+        AssignedToName = string.IsNullOrEmpty(l.AssignedTo) ? l.AssignedTo : DisplayNames.Apply(l.AssignedTo, nameMap),
     };
 }

@@ -212,14 +212,31 @@ export class DailyDigestComponent implements OnInit {
   protected readonly canSubmit = computed(() =>
     !!this.formName().trim()
     && this.formMembers().length > 0
-    // Teams delivery requires a valid channel email so the recap has a destination.
-    && (this.formDeliveryMethod() !== 'teams' || this._isValidEmail(this.formTeamsEmail()))
+    // Teams delivery requires a valid channel address (a *.teams.ms "send to channel" email) so the
+    // recap has a destination — the backend rejects anything else and the workflow fails closed.
+    && (this.formDeliveryMethod() !== 'teams' || this._isTeamsChannel(this.formTeamsEmail()))
   );
 
   /** Minimal email check — there's no shared validator in this feature (CC list relies on
    *  the input's type="email" only). Kept local + simple for the Teams channel email. */
   private _isValidEmail(value: string): boolean {
     return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value.trim());
+  }
+
+  /** CC addresses are confined to @scoular.com so a recap can't be forwarded externally
+   *  (mirrors the API's EmailList domain rule). */
+  private _isScoularEmail(value: string): boolean {
+    return this._isValidEmail(value) && value.trim().toLowerCase().endsWith('@scoular.com');
+  }
+
+  /** A Scoular Teams "send to channel" address: a valid email on a *.teams.ms host whose local part
+   *  ends in .scoular.com (mirrors the API rule). The *.teams.ms host is shared across all tenants, so
+   *  the local-part domain is what keeps the destination inside Scoular and blocks cross-tenant sends. */
+  private _isTeamsChannel(value: string): boolean {
+    const v = value.trim().toLowerCase();
+    if (!this._isValidEmail(v) || !v.endsWith('.teams.ms')) return false;
+    const at = v.lastIndexOf('@');
+    return at > 0 && v.slice(0, at).endsWith('.scoular.com');
   }
   protected readonly selectedMemberIds = computed(() => new Set(this.formMembers().map(m => m.id)));
 
@@ -349,8 +366,11 @@ export class DailyDigestComponent implements OnInit {
   protected saveGroup(): void {
     if (!this.canSubmit() || this.saving()) return;
     // Flush any CC address typed but not yet committed with Enter / the Add button,
-    // so a user who types an address and clicks Save directly doesn't lose it.
+    // so a user who types an address and clicks Save directly doesn't lose it. If that pending
+    // text is an invalid email, addCc() surfaces the error and leaves it in the box — abort the
+    // save rather than silently dropping it.
     this.addCc();
+    if (this.newCcEmail().trim()) return;
     const editingId = this.editingGroupId();
     const request: RecapGroupSaveRequest = {
       name: this.formName().trim(),
@@ -396,9 +416,22 @@ export class DailyDigestComponent implements OnInit {
   // ── CC list actions ─────────────────────────────────────────────────────
   protected addCc(): void {
     const email = this.newCcEmail().trim();
-    if (!email || this.formCcList().includes(email)) return;
-    this.formCcList.update(list => [...list, email]);
-    this.newCcEmail.set('');
+    if (!email) return;
+    if (!this._isValidEmail(email)) {
+      // type="email" only guards typing in the field; the Enter key and the Save flush call
+      // addCc() programmatically, so validate the format here too. Keep the text so the user can fix it.
+      this.toast.error('Enter a valid email address.');
+      return;
+    }
+    if (!this._isScoularEmail(email)) {
+      // CC is limited to @scoular.com — a recap can't be forwarded to an external mailbox.
+      this.toast.error('CC addresses must be @scoular.com.');
+      return;
+    }
+    if (!this.formCcList().includes(email)) {
+      this.formCcList.update(list => [...list, email]);
+    }
+    this.newCcEmail.set(''); // added or duplicate → clear the input
   }
 
   protected removeCc(email: string): void {

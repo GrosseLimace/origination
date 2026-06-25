@@ -16,4 +16,11 @@ public record SavedListResponse
     public DateTime? ModifiedAt { get; init; }
     public string? ModifiedBy { get; init; }
     public bool IsActive { get; init; } = true;
+
+    /// <summary>Short UPN of the member this list was assigned to (null for a personal list).</summary>
+    public string? AssignedTo { get; init; }
+
+    /// <summary>Display name of the assignee, resolved from <see cref="AssignedTo"/> (falls back to the
+    /// raw short UPN when no display name is found).</summary>
+    public string? AssignedToName { get; init; }
 }

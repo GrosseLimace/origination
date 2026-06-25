@@ -69,6 +69,8 @@
             [openTicketCrop]="pendingTicketCrop()"
             [openPlantingYear]="pendingPlantingYear()"
             [savedListsForCustomer]="savedListsForSelectedCustomer()"
+            [teamListsForCustomer]="teamListsForSelectedCustomer()"
+            [isManager]="isManager()"
             (onContractsWideChange)="contractsWide.set($event)"
             (onSaveSavedListMembership)="handleSaveSavedListMembership($event)">
           </app-customer-profile>

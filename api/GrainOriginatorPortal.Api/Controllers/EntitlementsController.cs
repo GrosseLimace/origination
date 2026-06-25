@@ -54,15 +54,16 @@ public class EntitlementsController : ControllerBase
 
         try
         {
-            // Single read of the view, then everything else is in-memory set math —
-            // small data shape (one row per user × TU × group) makes this fast.
-            var rows = await _entitlementsDb.UserTradeUnitAccess
+            // Step 1: read ONLY the caller's own rows (UserId == caller). This drives which TUs and
+            // groups we expand, and bounds the read to a handful of rows regardless of directory size.
+            var callerRows = await _entitlementsDb.UserTradeUnitAccess
                 .AsNoTracking()
+                .Where(r => r.UserId == userId)
+                .Select(r => new { r.TradeUnitCode, r.GroupId })
                 .ToListAsync(ct);
 
             // Caller's own TUs — drives the People filter (must share a TU with caller).
-            var callerTuCodes = rows
-                .Where(r => string.Equals(r.UserId, userId, StringComparison.OrdinalIgnoreCase))
+            var callerTuCodes = callerRows
                 .Select(r => r.TradeUnitCode)
                 .Where(c => !string.IsNullOrWhiteSpace(c))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -73,6 +74,22 @@ public class EntitlementsController : ControllerBase
                 // the org-wide directory.
                 return Ok(new EntitlementsCatalogResponse());
             }
+
+            var callerGroupIds = callerRows
+                .Where(r => r.GroupId.HasValue)
+                .Select(r => r.GroupId!.Value)
+                .ToHashSet();
+
+            // Step 2: read only the rows relevant to the caller — anyone sharing one of the caller's
+            // TUs, plus the caller's own group rows. Filtering in SQL (rather than loading the whole
+            // view and filtering in memory) caps memory to the caller's overlap, removing the
+            // unbounded-materialization / DoS risk if the view grows.
+            var tuFilter = callerTuCodes.ToList();
+            var groupFilter = callerGroupIds.Select(id => (int?)id).ToList();
+            var rows = await _entitlementsDb.UserTradeUnitAccess
+                .AsNoTracking()
+                .Where(r => tuFilter.Contains(r.TradeUnitCode) || groupFilter.Contains(r.GroupId))
+                .ToListAsync(ct);
 
             // People who share ≥1 TU with the caller. Caller is excluded — they
             // shouldn't add themselves as a recipient.
@@ -111,14 +128,8 @@ public class EntitlementsController : ControllerBase
                 .OrderBy(t => t.Code, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            // Groups the caller is a member of. Each group lists its TUs so the
-            // Logic App can expand it the same way the entitlements layer does.
-            var callerGroupIds = rows
-                .Where(r => string.Equals(r.UserId, userId, StringComparison.OrdinalIgnoreCase))
-                .Where(r => r.GroupId.HasValue)
-                .Select(r => r.GroupId!.Value)
-                .ToHashSet();
-
+            // Groups the caller is a member of (callerGroupIds computed above from the caller's rows).
+            // Each group lists its TUs so the Logic App can expand it the same way the entitlements layer does.
             var groups = rows
                 .Where(r => r.GroupId.HasValue && callerGroupIds.Contains(r.GroupId!.Value))
                 .Where(r => !string.IsNullOrWhiteSpace(r.GroupName))

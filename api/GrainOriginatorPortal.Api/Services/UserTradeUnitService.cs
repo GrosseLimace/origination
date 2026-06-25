@@ -1,5 +1,6 @@
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using Microsoft.Data.SqlClient;
 
 namespace GrainOriginatorPortal.Api.Services;
 
@@ -7,18 +8,15 @@ namespace GrainOriginatorPortal.Api.Services;
 public class UserTradeUnitService : IUserTradeUnitService
 {
     private readonly IEntitlementsRepository _entitlements;
-    private readonly ICustomerRepository _customerRepository;
     private readonly IRequestContextService _requestContext;
     private readonly ILogger<UserTradeUnitService> _logger;
 
     public UserTradeUnitService(
         IEntitlementsRepository entitlements,
-        ICustomerRepository customerRepository,
         IRequestContextService requestContext,
         ILogger<UserTradeUnitService> logger)
     {
         _entitlements = entitlements;
-        _customerRepository = customerRepository;
         _requestContext = requestContext;
         _logger = logger;
     }
@@ -45,12 +43,18 @@ public class UserTradeUnitService : IUserTradeUnitService
                 })
                 .ToList();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is SqlException || ex.InnerException is SqlException)
         {
-            _logger.LogWarning(ex, "Entitlements DB unavailable for user {UserId} — falling back to all trade units from dbo.CustomerTradeUnit", userId);
-            var units = await _customerRepository.GetAllActiveTradeUnitCodesAsync(cancellationToken);
-            if (units.Count == 0) return [];
-            return [new UserTradeUnitGroupResponse { GroupName = "All Trade Units", TradeUnitCodes = units }];
+            // Fail closed on an Entitlements DB outage: return no trade units rather than falling
+            // open to ALL trade unit codes (CWE-285). Previously this fell back to every active code
+            // from dbo.CustomerTradeUnit, which leaked the full org trade-unit structure to any user
+            // during a transient outage. Empty is consistent with the cold-outage behavior of
+            // UserEntitlementService.GetAllowedTradeUnitCodesAsync and lets the selector show an
+            // "unavailable" state instead of an unentitled list.
+            _logger.LogError(ex,
+                "Entitlements DB unavailable for user {UserId} — failing closed (no trade units). [{ErrorCode}]",
+                userId, "ENTITLEMENTS_DB_UNAVAILABLE");
+            return [];
         }
     }
 }

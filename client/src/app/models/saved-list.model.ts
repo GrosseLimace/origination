@@ -10,4 +10,13 @@ export interface SavedList {
   excludedCustomerIds?: number[];   // Manually removed customers (persisted to DB as JSON)
   customerIds?: number[];           // Computed client-side, NOT stored in DB
   createdAt: string;
+  createdBy?: string;               // Creator's display name (resolved server-side). Used by the manager "Team Lists" view.
+  assignedTo?: string;              // Short UPN of the member this list was assigned to (null for a personal list).
+  assignedToName?: string;          // Assignee's display name (resolved server-side).
+}
+
+/** A selectable team member for the manager's "assign a list" picker. */
+export interface TeamMember {
+  userId: string;                   // Short UPN (e.g. "CEgr") — the assignment key.
+  displayName: string;              // Azure AD display name shown in the picker.
 }

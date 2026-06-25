@@ -1,3 +1,4 @@
+using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
@@ -55,6 +56,7 @@ public class DailyRecapGroupService : IDailyRecapGroupService
     /// <inheritdoc />
     public async Task<RecapGroupDto> CreateAsync(RecapGroupRequest request, CancellationToken cancellationToken)
     {
+        var members = await BuildValidatedMembersAsync(request, cancellationToken);
         var group = new DailyRecapGroup
         {
             Name = request.Name.Trim(),
@@ -63,7 +65,7 @@ public class DailyRecapGroupService : IDailyRecapGroupService
             Enabled = true,
             CreatedBy = _requestContext.GetCurrentUser(),
             CreatedAt = DateTime.UtcNow,
-            Members = BuildMembers(request),
+            Members = members,
             CcEmails = BuildCcEmails(request),
         };
         await _repository.AddAsync(group, cancellationToken);
@@ -73,13 +75,14 @@ public class DailyRecapGroupService : IDailyRecapGroupService
     /// <inheritdoc />
     public async Task<RecapGroupDto?> UpdateAsync(int groupId, RecapGroupRequest request, CancellationToken cancellationToken)
     {
+        var members = await BuildValidatedMembersAsync(request, cancellationToken);
         var group = await _repository.UpdateAsync(
             groupId,
             _requestContext.GetCurrentUser(),
             request.Name.Trim(),
             request.DeliveryMethod,
             request.DeliveryMethod == "teams" ? request.TeamsChannelEmail?.Trim() : null,
-            BuildMembers(request),
+            members,
             BuildCcEmails(request),
             cancellationToken);
         return group == null ? null : MapRecapGroup(group, isOwner: true);
@@ -98,16 +101,83 @@ public class DailyRecapGroupService : IDailyRecapGroupService
 
     // ── Mapping helpers ─────────────────────────────────────────────────────
 
-    /// <summary>Member email is only kept for person members (trade-unit / group members are
-    /// re-resolved by the Logic App at send time).</summary>
-    private static List<DailyRecapGroupMember> BuildMembers(RecapGroupRequest req) =>
-        req.Members.Select(m => new DailyRecapGroupMember
+    /// <summary>Builds the member rows to persist, enforcing that every member is within the caller's
+    /// entitlement overlap — the same boundary the picker catalog exposes (people must share a trade
+    /// unit with the caller; trade-unit / group members must be ones the caller is entitled to). A
+    /// member outside that overlap is rejected (403) rather than silently dropped. Fails CLOSED: if
+    /// entitlements can't be read we cannot prove scope, so the save is refused.
+    ///
+    /// For person members the recipient <c>Email</c> is DERIVED from the validated id (the
+    /// <c>{id}@scoular.com</c> UPN convention) and never taken from the request body — an untrusted
+    /// address must never reach the Logic App, which uses it both as the note-query key and the send
+    /// target. (trade-unit / group members carry no email; the Logic App re-resolves them at send time.)</summary>
+    private async Task<List<DailyRecapGroupMember>> BuildValidatedMembersAsync(RecapGroupRequest req, CancellationToken cancellationToken)
+    {
+        if (req.Members.Count == 0) return new List<DailyRecapGroupMember>();
+
+        var caller = _requestContext.GetCurrentUserShortName();
+        List<UserTradeUnitAccess> callerRows;
+        try
         {
-            MemberType = m.Type,
-            MemberId = m.Id,
-            MemberName = m.Name,
-            Email = m.Type == "person" ? m.Email : null,
-        }).ToList();
+            callerRows = await _entitlements.GetByUserAsync(caller, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Entitlements unavailable validating recap members for {UserId} — rejecting save", caller);
+            throw new ForbiddenException("Unable to verify recipient entitlements right now. Please try again later.");
+        }
+
+        var allowedTuCodes = callerRows
+            .Select(r => r.TradeUnitCode)
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var allowedGroupIds = callerRows
+            .Where(r => r.GroupId.HasValue)
+            .Select(r => r.GroupId!.Value.ToString())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var allowedPeople = allowedTuCodes.Count == 0
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : (await _entitlements.GetUsersByTradeUnitsAsync(allowedTuCodes.ToList(), cancellationToken))
+                .Select(u => u.UserId)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var members = new List<DailyRecapGroupMember>(req.Members.Count);
+        foreach (var m in req.Members)
+        {
+            switch (m.Type)
+            {
+                case "person":
+                    if (!allowedPeople.Contains(m.Id))
+                        throw new ForbiddenException($"You are not entitled to include '{m.Id}' as a recipient.");
+                    members.Add(new DailyRecapGroupMember
+                    {
+                        MemberType = m.Type,
+                        MemberId = m.Id,
+                        MemberName = m.Name,
+                        Email = $"{m.Id}@scoular.com",
+                    });
+                    break;
+
+                case "trade-unit":
+                    if (!allowedTuCodes.Contains(m.Id))
+                        throw new ForbiddenException($"You are not entitled to trade unit '{m.Id}'.");
+                    members.Add(new DailyRecapGroupMember { MemberType = m.Type, MemberId = m.Id, MemberName = m.Name, Email = null });
+                    break;
+
+                case "trade-unit-group":
+                    if (!allowedGroupIds.Contains(m.Id))
+                        throw new ForbiddenException($"You are not entitled to group '{m.Id}'.");
+                    members.Add(new DailyRecapGroupMember { MemberType = m.Type, MemberId = m.Id, MemberName = m.Name, Email = null });
+                    break;
+
+                default:
+                    // Type is already constrained by [AllowedValues]; defensive guard for completeness.
+                    throw new ValidationException(nameof(req.Members), $"Unknown member type '{m.Type}'.");
+            }
+        }
+        return members;
+    }
 
     private static List<DailyRecapGroupCcEmail> BuildCcEmails(RecapGroupRequest req) =>
         req.CcEmails
