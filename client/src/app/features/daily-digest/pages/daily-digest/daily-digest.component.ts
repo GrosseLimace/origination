@@ -212,14 +212,26 @@ export class DailyDigestComponent implements OnInit {
   protected readonly canSubmit = computed(() =>
     !!this.formName().trim()
     && this.formMembers().length > 0
-    // Teams delivery requires a valid channel email so the recap has a destination.
-    && (this.formDeliveryMethod() !== 'teams' || this._isValidEmail(this.formTeamsEmail()))
+    // Teams delivery requires a valid channel address (a *.teams.ms "send to channel" email) so the
+    // recap has a destination — the backend rejects anything else and the workflow fails closed.
+    && (this.formDeliveryMethod() !== 'teams' || this._isTeamsChannel(this.formTeamsEmail()))
   );
 
   /** Minimal email check — there's no shared validator in this feature (CC list relies on
    *  the input's type="email" only). Kept local + simple for the Teams channel email. */
   private _isValidEmail(value: string): boolean {
     return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value.trim());
+  }
+
+  /** CC addresses are confined to @scoular.com so a recap can't be forwarded externally
+   *  (mirrors the API's EmailList domain rule). */
+  private _isScoularEmail(value: string): boolean {
+    return this._isValidEmail(value) && value.trim().toLowerCase().endsWith('@scoular.com');
+  }
+
+  /** A Teams "send to channel" address is a valid email on a *.teams.ms host (mirrors the API rule). */
+  private _isTeamsChannel(value: string): boolean {
+    return this._isValidEmail(value) && value.trim().toLowerCase().endsWith('.teams.ms');
   }
   protected readonly selectedMemberIds = computed(() => new Set(this.formMembers().map(m => m.id)));
 
@@ -404,6 +416,11 @@ export class DailyDigestComponent implements OnInit {
       // type="email" only guards typing in the field; the Enter key and the Save flush call
       // addCc() programmatically, so validate the format here too. Keep the text so the user can fix it.
       this.toast.error('Enter a valid email address.');
+      return;
+    }
+    if (!this._isScoularEmail(email)) {
+      // CC is limited to @scoular.com — a recap can't be forwarded to an external mailbox.
+      this.toast.error('CC addresses must be @scoular.com.');
       return;
     }
     if (!this.formCcList().includes(email)) {

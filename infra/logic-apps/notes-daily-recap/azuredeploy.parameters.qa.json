@@ -10,9 +10,6 @@
     "sqlConnectionName": { "value": "sql" },
     // aiFoundryEndpoint: currently correct — QA reuses the shared data-cloud Azure OpenAI deployment.
     // This is expected to change later (dedicated/relocated AI resource); update the URL when it does.
-    "aiFoundryEndpoint": { "value": "https://datacloudeusaz9305643847.openai.azure.com/openai/deployments/D365CRM-CustomerNotesSummary-gpt-4/chat/completions?api-version=2024-08-01-preview" },
-    // teamsChannelEmail: default/fallback only. The per-group Teams channel address is entered by users
-    // in the app (stored with the recap group) and used at send time for DeliveryMethod = teams.
-    "teamsChannelEmail": { "value": "8e5da312.scoular.com@amer.teams.ms" }
+    "aiFoundryEndpoint": { "value": "https://datacloudeusaz9305643847.openai.azure.com/openai/deployments/D365CRM-CustomerNotesSummary-gpt-4/chat/completions?api-version=2024-08-01-preview" }
   }
 }

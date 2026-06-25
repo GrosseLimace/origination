@@ -1398,7 +1398,8 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
 
                     b.Property<string>("AssignedTo")
                         .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("AssignedTo");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()

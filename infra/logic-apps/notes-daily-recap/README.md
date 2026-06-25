@@ -51,7 +51,11 @@ Key Vault integration is required. Do not introduce any — keep all auth on man
 | `sharedMailbox` | `dev-OriginationsApp@scoular.com` | `qa-OriginationsApp@scoular.com` | Graph `sendMail` sender UPN. |
 | `sqlConnectionName` | `sql` | `sql` | Existing `Microsoft.Web/connections` (MSI) in the target RG. |
 | `aiFoundryEndpoint` | Azure OpenAI chat-completions URL | _same as Dev_ | Shared data-cloud Azure OpenAI. Correct for now; expected to move to a dedicated AI resource later — update the URL when it does. |
-| `teamsChannelEmail` | `8e5da312.scoular.com@amer.teams.ms` | _same as Dev_ | Default/fallback only. The per-group Teams channel address is **entered by users in the app** and used at send time for `DeliveryMethod = teams`. |
+
+> **Teams channel routing:** there is **no** `teamsChannelEmail` parameter. A `teams`-delivery group
+> routes to its **own** `TeamsChannelEmail` — entered in the app, stored on the recap group, and
+> validated as a `*.teams.ms` address on save. The workflow **fails closed**: a group with no channel
+> address sends nothing rather than falling back to a shared channel.
 
 > **QA resource group:** `rg-origination-qa-eus` (mirrors `app-origination-qa-eus`). The QA workflow
 > deploys there on the **non-prod** subscription, same OIDC identity as the app's QA deploy.
@@ -124,5 +128,6 @@ az resource show \
 
 Take `properties.definition`, drop read-only fields (`evaluatedRecurrence`, `accessEndpoint`,
 `endpointsConfiguration`, `provisioningState`, `version`, timestamps), and re-apply the
-parameterizations (`aiFoundryEndpoint`, `teamsChannelEmail`, `$connections`). Confirm with
+parameterizations (`aiFoundryEndpoint`, `$connections`). Keep the per-group `item()?['TeamsChannelEmail']`
+routing (do **not** reintroduce a `teamsChannelEmail` parameter). Confirm with
 `what-if` that there is no unexpected drift, then open a PR.

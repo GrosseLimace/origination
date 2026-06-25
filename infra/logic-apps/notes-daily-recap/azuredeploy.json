@@ -59,13 +59,6 @@
       "metadata": {
         "description": "Azure OpenAI chat-completions endpoint used to summarize notes. Authenticated via managed identity."
       }
-    },
-    "teamsChannelEmail": {
-      "type": "string",
-      "defaultValue": "8e5da312.scoular.com@amer.teams.ms",
-      "metadata": {
-        "description": "Channel email address used when a recap group DeliveryMethod is \"teams\"."
-      }
     }
   },
   "variables": {
@@ -398,39 +391,59 @@
                         },
                         "Case_Teams": {
                           "actions": {
-                            "HTTP_Send_to_Teams": {
-                              "inputs": {
-                                "authentication": {
-                                  "audience": "https://graph.microsoft.com",
-                                  "type": "ManagedServiceIdentity"
-                                },
-                                "body": {
-                                  "message": {
-                                    "body": {
-                                      "content": "@{variables('emailBody')}",
-                                      "contentType": "HTML"
+                            "If_Teams_Channel_Present": {
+                              "actions": {
+                                "HTTP_Send_to_Teams": {
+                                  "inputs": {
+                                    "authentication": {
+                                      "audience": "https://graph.microsoft.com",
+                                      "type": "ManagedServiceIdentity"
                                     },
-                                    "ccRecipients": "@outputs('Compose_CC')",
-                                    "subject": "Teams Origination App Daily Recap for @{variables('groupName')}",
-                                    "toRecipients": [
-                                      {
-                                        "emailAddress": {
-                                          "address": "[parameters('teamsChannelEmail')]"
-                                        }
-                                      }
-                                    ]
+                                    "body": {
+                                      "message": {
+                                        "body": {
+                                          "content": "@{variables('emailBody')}",
+                                          "contentType": "HTML"
+                                        },
+                                        "ccRecipients": "@outputs('Compose_CC')",
+                                        "subject": "Teams Origination App Daily Recap for @{variables('groupName')}",
+                                        "toRecipients": [
+                                          {
+                                            "emailAddress": {
+                                              "address": "@{item()?['TeamsChannelEmail']}"
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "saveToSentItems": true
+                                    },
+                                    "method": "POST",
+                                    "uri": "https://graph.microsoft.com/v1.0/users/@{parameters('sharedMailbox')}/sendMail"
                                   },
-                                  "saveToSentItems": true
-                                },
-                                "method": "POST",
-                                "uri": "https://graph.microsoft.com/v1.0/users/@{parameters('sharedMailbox')}/sendMail"
-                              },
-                              "runtimeConfiguration": {
-                                "contentTransfer": {
-                                  "transferMode": "Chunked"
+                                  "runtimeConfiguration": {
+                                    "contentTransfer": {
+                                      "transferMode": "Chunked"
+                                    }
+                                  },
+                                  "type": "Http"
                                 }
                               },
-                              "type": "Http"
+                              "else": {
+                                "actions": {}
+                              },
+                              "expression": {
+                                "and": [
+                                  {
+                                    "not": {
+                                      "equals": [
+                                        "@trim(coalesce(item()?['TeamsChannelEmail'], ''))",
+                                        ""
+                                      ]
+                                    }
+                                  }
+                                ]
+                              },
+                              "type": "If"
                             }
                           },
                           "case": "teams"
@@ -637,7 +650,7 @@
                     "Get_Notes": {
                       "inputs": {
                         "body": {
-                          "query": "SELECT\n    n.CustomerId,\n    n.TradeUnit,\n    n.Description,\n    n.CreatedBy,\n    n.CreatedAt,\n    c.CustomerName,\n    c.ScoularId\nFROM dbo.Notes n\nJOIN dbo.Customer c \n    ON n.CustomerId = c.CustomerId\nWHERE n.CreatedAt >= DATEADD(HOUR, -24, GETDATE()) and CreatedBy = '@{items('For_each_groupMember')}';"
+                          "CreatedBy": "@items('For_each_groupMember')"
                         },
                         "host": {
                           "connection": {
@@ -645,7 +658,7 @@
                           }
                         },
                         "method": "post",
-                        "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('Origination'))}/query/sql"
+                        "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('Origination'))}/procedures/@{encodeURIComponent(encodeURIComponent('[dbo].[GetRecapNotes]'))}"
                       },
                       "runAfter": {
                         "Get_User": [
@@ -674,7 +687,7 @@
                     "Increment_Activity_Count_Variable": {
                       "inputs": {
                         "name": "activityCount",
-                        "value": "@length(coalesce(body('Get_Notes')?['resultsets']?['Table1'], json('[]')))"
+                        "value": "@length(coalesce(body('Get_Notes')?['ResultSets']?['Table1'], json('[]')))"
                       },
                       "runAfter": {
                         "Get_Notes": [
