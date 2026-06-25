@@ -1,4 +1,4 @@
-name: Deploy Logic App (Notes Daily Recap) to DEV
+name: DEV Daily Digest Deploy Logic App
 
 on:
   # Manual-only, matching the app deploy workflows. Trigger from the Actions tab (Run workflow).
@@ -53,23 +53,14 @@ jobs:
 
       # Preview the change set. Always run so the deploy step has a diff to compare against, and so
       # a manual "what-if" run is useful on its own.
+      #
+      # NOTE: call az directly rather than via azure/cli@v2 — that action runs az inside a Linux
+      # container and fails on our Windows self-hosted runners ("Please use Linux-based OS as a runner").
+      # azure/login above leaves the CLI authenticated for the rest of the job, and the runner has az
+      # installed. The @-prefixed parameters path is quoted so PowerShell treats it as a literal string.
       - name: What-if (preview)
-        uses: azure/cli@v2
-        with:
-          azcliversion: latest
-          inlineScript: |
-            az deployment group what-if \
-              -g "$RESOURCE_GROUP" \
-              --template-file "$TEMPLATE" \
-              --parameters @"$PARAMETERS"
+        run: az deployment group what-if -g "${{ env.RESOURCE_GROUP }}" --template-file "${{ env.TEMPLATE }}" --parameters "@${{ env.PARAMETERS }}"
 
       - name: Deploy
         if: ${{ inputs.mode == 'create' }}
-        uses: azure/cli@v2
-        with:
-          azcliversion: latest
-          inlineScript: |
-            az deployment group create \
-              -g "$RESOURCE_GROUP" \
-              --template-file "$TEMPLATE" \
-              --parameters @"$PARAMETERS"
+        run: az deployment group create -g "${{ env.RESOURCE_GROUP }}" --template-file "${{ env.TEMPLATE }}" --parameters "@${{ env.PARAMETERS }}"
