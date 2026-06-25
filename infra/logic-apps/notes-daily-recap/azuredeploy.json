@@ -72,7 +72,6 @@
       "apiVersion": "2016-06-01",
       "name": "[parameters('sqlConnectionName')]",
       "location": "[parameters('location')]",
-      "kind": "V2",
       "tags": {
         "Application": "Origination",
         "Environment": "[parameters('environmentTag')]",
