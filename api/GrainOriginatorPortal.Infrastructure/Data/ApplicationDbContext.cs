@@ -44,6 +44,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<UserTradeUnitSnapshot> UserTradeUnitSnapshots => Set<UserTradeUnitSnapshot>();
     public DbSet<QueryLibraryItem> QueryLibrary => Set<QueryLibraryItem>();
     public DbSet<QuerySearchLog> QuerySearchLogs => Set<QuerySearchLog>();
+    public DbSet<DailyRecapGroup> DailyRecapGroups => Set<DailyRecapGroup>();
+    public DbSet<DailyRecapGroupMember> DailyRecapGroupMembers => Set<DailyRecapGroupMember>();
+    public DbSet<DailyRecapGroupCcEmail> DailyRecapGroupCcEmails => Set<DailyRecapGroupCcEmail>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -668,6 +671,47 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
             entity.Property(e => e.SearchText).HasMaxLength(500).IsRequired();
             entity.Property(e => e.Timestamp).HasPrecision(3).HasDefaultValueSql("SYSUTCDATETIME()").IsRequired();
+        });
+
+        modelBuilder.Entity<DailyRecapGroup>(entity =>
+        {
+            entity.ToTable("DailyRecapGroups", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.DeliveryMethod).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.TeamsChannelEmail).HasMaxLength(256).IsRequired(false);
+            entity.Property(e => e.Enabled).HasDefaultValue(true).IsRequired();
+            entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.Property(e => e.ModifiedBy).HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.ModifiedAt).IsRequired(false);
+            entity.HasIndex(e => e.CreatedBy).HasDatabaseName("IX_DailyRecapGroups_CreatedBy");
+            entity.HasMany(e => e.Members).WithOne(m => m.Group).HasForeignKey(m => m.RecapGroupId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasMany(e => e.CcEmails).WithOne(c => c.Group).HasForeignKey(c => c.RecapGroupId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<DailyRecapGroupMember>(entity =>
+        {
+            entity.ToTable("DailyRecapGroupMembers", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.RecapGroupId).IsRequired();
+            entity.Property(e => e.MemberType).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.MemberId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.MemberName).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.Email).HasMaxLength(256).IsRequired(false);
+            entity.HasIndex(e => e.RecapGroupId).HasDatabaseName("IX_DailyRecapGroupMembers_RecapGroupId");
+        });
+
+        modelBuilder.Entity<DailyRecapGroupCcEmail>(entity =>
+        {
+            entity.ToTable("DailyRecapGroupCcEmails", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.RecapGroupId).IsRequired();
+            entity.Property(e => e.Email).HasMaxLength(256).IsRequired();
+            entity.HasIndex(e => e.RecapGroupId).HasDatabaseName("IX_DailyRecapGroupCcEmails_RecapGroupId");
         });
     }
 }

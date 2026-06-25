@@ -257,3 +257,15 @@ Automated deployments via GitHub Actions on `scoular.ghe.com/IT/origination`. Se
 | Dev | `app-origination-dev-eus` |
 | QA | `app-origination-qa-eus` |
 | Production | `app-origination-eus` |
+
+## Infrastructure as Code
+
+Azure resources are provisioned by IT Infrastructure (see `AZURE-INFRASTRUCTURE.md`). Resources that
+the app team owns directly are version-controlled under [`infra/`](infra/):
+
+| Resource | Location | Deploy |
+|----------|----------|--------|
+| Notes Daily Recap Logic App | [`infra/logic-apps/notes-daily-recap/`](infra/logic-apps/notes-daily-recap/) | `.github/workflows/deploy-logic-app-notes-daily-recap-dev.yml` (manual) |
+
+Logic Apps are stored as parameterized ARM templates and authenticate to Azure (SQL, Microsoft
+Graph, Azure OpenAI) via system-assigned managed identity — no secrets in the repo.

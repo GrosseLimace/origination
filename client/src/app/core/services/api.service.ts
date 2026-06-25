@@ -121,6 +121,88 @@ export class ApiService {
       .pipe(catchError(e => this.handleError(e)));
   }
 
+  /** Fetches the full entitlements directory (people / trade units / TU groups) used by the
+   *  Daily Digest Recap Group picker. One call returns all three lists. */
+  getEntitlementsCatalog(): Observable<import('@features/daily-digest/models/entitlements-catalog.model').EntitlementsCatalog> {
+    return this.http.get<import('@features/daily-digest/models/entitlements-catalog.model').EntitlementsCatalog>(`${this.baseUrl}/entitlements/catalog`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Daily Recap Groups (Daily Digest) — creator-owned CRUD. The server uses an
+  // int PK; the frontend model carries id as a string, so map across the boundary.
+  // ---------------------------------------------------------------------------
+
+  /** Shapes a server RecapGroupDto into the frontend RecapGroup (int id -> string). */
+  private mapRecapGroup(
+    dto: import('@features/daily-digest/models/recap-group.model').RecapGroup & { id: number | string; ccList?: string[] },
+  ): import('@features/daily-digest/models/recap-group.model').RecapGroup {
+    return {
+      id: String(dto.id),
+      name: dto.name,
+      deliveryMethod: dto.deliveryMethod,
+      members: dto.members ?? [],
+      ccList: dto.ccList ?? [],
+      teamsChannelEmail: dto.teamsChannelEmail,
+      enabled: dto.enabled,
+      // Created groups come back from create/update without these flags → default to owner.
+      isOwner: dto.isOwner ?? true,
+      createdBy: dto.createdBy ?? '',
+    };
+  }
+
+  /** Builds the API request body from a save request (members -> {type,id,name,email}, ccList -> ccEmails). */
+  private toRecapGroupBody(req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest) {
+    return {
+      name: req.name,
+      deliveryMethod: req.deliveryMethod,
+      teamsChannelEmail: req.deliveryMethod === 'teams' ? req.teamsChannelEmail : undefined,
+      members: req.members.map(m => ({ type: m.type, id: m.id, name: m.name, email: m.email })),
+      ccEmails: req.ccList,
+    };
+  }
+
+  /** Fetches the current user's recap groups. */
+  getRecapGroups(): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup[]> {
+    return this.http.get<any[]>(`${this.baseUrl}/dailyrecapgroups`)
+      .pipe(
+        map(list => list.map(g => this.mapRecapGroup(g))),
+        catchError(e => this.handleError(e)),
+      );
+  }
+
+  /** Creates a new recap group. */
+  createRecapGroup(
+    req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest,
+  ): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup> {
+    return this.http.post<any>(`${this.baseUrl}/dailyrecapgroups`, this.toRecapGroupBody(req))
+      .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
+  }
+
+  /** Updates an existing recap group. */
+  updateRecapGroup(
+    id: string,
+    req: import('@features/daily-digest/models/recap-group.model').RecapGroupSaveRequest,
+  ): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup> {
+    return this.http.put<any>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}`, this.toRecapGroupBody(req))
+      .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
+  }
+
+  /** Toggles a recap group's enabled flag. */
+  setRecapGroupEnabled(
+    id: string,
+    enabled: boolean,
+  ): Observable<import('@features/daily-digest/models/recap-group.model').RecapGroup> {
+    return this.http.put<any>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}/enabled`, { enabled })
+      .pipe(map(g => this.mapRecapGroup(g)), catchError(e => this.handleError(e)));
+  }
+
+  /** Deletes a recap group (cascade removes members + CC emails). */
+  deleteRecapGroup(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/dailyrecapgroups/${Number(id)}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
   /** Searches the ODS customer master for producers not yet in our tables (onboarding fallback). */
   searchOdsCustomers(searchTerm: string): Observable<Customer[]> {
     const params = new HttpParams().set('searchTerm', searchTerm);

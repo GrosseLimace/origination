@@ -229,6 +229,7 @@ builder.Services.AddScoped<ITradeUnitService, TradeUnitService>();
 // Singleton so the Nominatim rate-limiter + last-call timestamp are shared across requests.
 builder.Services.AddSingleton<IGeocodeService, GeocodeService>();
 builder.Services.AddScoped<IUsageDashboardService, UsageDashboardService>();
+builder.Services.AddScoped<IDailyRecapGroupService, DailyRecapGroupService>();
 
 // Configure CORS — allowed origins come from configuration so they can be overridden
 // per environment via Azure App Service settings without code changes.
