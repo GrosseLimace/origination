@@ -50,7 +50,7 @@ Key Vault integration is required. Do not introduce any — keep all auth on man
 | `environmentTag` | `Dev` | `QA` | `Prod` | `Environment` resource tag. |
 | `sqlServerName` | `azrscosqld01.database.windows.net` | `azrscosqlq01.database.windows.net` | `azrscosqlp01.database.windows.net` | Origination SQL server per env (same FQDNs the app deploys use). |
 | `sharedMailbox` | `dev-OriginationsApp@scoular.com` | `qa-OriginationsApp@scoular.com` | `OriginationsApp@scoular.com` | Graph `sendMail` sender UPN. ⚠️ Confirm the prod mailbox UPN. |
-| `sqlConnectionName` | `sql` | `sql` | `sql` | Existing `Microsoft.Web/connections` (MSI) in the target RG. |
+| `sqlConnectionName` | `sql` | `sqlrecap` | `sql` | `Microsoft.Web/connections` (MSI) name, created by the template. QA uses `sqlrecap` to avoid an orphaned V2 `sql` connection left by a failed deploy (no delete rights); revert to `sql` once that orphan is cleaned up. |
 | `aiFoundryEndpoint` | Azure OpenAI chat-completions URL | _same as Dev_ | _same as Dev_ | Shared data-cloud Azure OpenAI. Correct for now; expected to move to a dedicated AI resource later — update the URL when it does. |
 
 > **Teams channel routing:** there is **no** `teamsChannelEmail` parameter. A `teams`-delivery group
