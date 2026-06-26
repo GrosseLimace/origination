@@ -99,7 +99,7 @@ If your workflow runs Entity Framework Core migrations, there are two parts: the
           dotnet tool restore
           dotnet ef database update --project src/Application.Api
         env:
-          ConnectionStrings__DefaultConnection: "Server=azrscosqld01.database.windows.net;Database=Origination;Authentication=Active Directory Default;TrustServerCertificate=True"
+          ConnectionStrings__DefaultConnection: "Server=azrscosqld01.database.windows.net;Database=Origination;Authentication=Active Directory Default;Encrypt=True;TrustServerCertificate=False"
 ```
 
 > **Important: `Active Directory Default` and self-hosted runners**
@@ -116,41 +116,6 @@ If your workflow runs Entity Framework Core migrations, there are two parts: the
 >
 > To fix this, your EF Core project must include a **design-time factory** that excludes managed
 > identity from the credential chain. See the next section.
-
-#### This repo: split project/startup-project flags (post-restructure)
-
-Since the structural refactor (`rebuild_CodeRestructure`), the `DbContext`s and `Migrations/` live in
-**`GrainOriginatorPortal.Infrastructure`** while the host (and the design-time factory's DI/host wiring)
-lives in **`GrainOriginatorPortal.Api`**. Every `dotnet ef` command therefore needs **both** the migrations
-project (`-p`) and the startup project (`-s`), plus `--context` because the solution has three `DbContext`s
-(`ApplicationDbContext`, `OriginationDbContext`, `EntitlementsDbContext` — only `ApplicationDbContext` owns
-app-table migrations):
-
-```bash
-# List migrations (verify the design-time factory resolves)
-dotnet ef migrations list \
-  -p api/GrainOriginatorPortal.Infrastructure \
-  -s api/GrainOriginatorPortal.Api \
-  --context ApplicationDbContext
-
-# Add a migration
-dotnet ef migrations add <Name> \
-  -p api/GrainOriginatorPortal.Infrastructure \
-  -s api/GrainOriginatorPortal.Api \
-  --context ApplicationDbContext
-
-# Apply (also what the CI step runs — substitute `database update`)
-dotnet ef database update \
-  -p api/GrainOriginatorPortal.Infrastructure \
-  -s api/GrainOriginatorPortal.Api \
-  --context ApplicationDbContext
-```
-
-Migration files are namespaced `GrainOriginatorPortal.Api.Migrations.ApplicationDb` (a pre-restructure
-label) but physically reside in the Infrastructure project — EF tracks migrations by class name, not
-namespace, so this is cosmetic and safe to leave. The design-time factory eagerly acquires an Azure AD
-token, so `az login` (or the CI service principal) must be active even for read-only commands like
-`migrations list`.
 
 #### Design-time factory (required for CI/CD migrations)
 
@@ -262,6 +227,12 @@ on:
 jobs:
   build:
     runs-on: self-hosted
+    # packages: read is required for `npm ci` to install @it/* packages (an
+    # explicit permissions: block drops every unlisted scope to none). Harmless
+    # for .NET-only apps. See "npm Registry Authentication" below.
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@v5
 
@@ -488,13 +459,23 @@ If your application consumes `@it` scoped npm packages (e.g., `@it/design-system
 
 ### Setup
 
-1. **Commit an `.npmrc`** to your Angular/frontend project directory with scope routing:
+1. **Add `packages: read` to the `permissions:` block** of the job that runs `npm ci`:
+
+```yaml
+    permissions:
+      contents: read
+      packages: read   # required — without it, npm ci gets 401/403 from the registry
+```
+
+> **This is the step that's easy to miss.** A workflow with *any* explicit `permissions:` block drops every unlisted scope to `none`. So a job declaring only `id-token: write` + `contents: read` has `packages: none`, and the per-run `GITHUB_TOKEN` is rejected by the registry — even though both repos are in the IT org and the package is internal. If your build and deploy run in the **same** job, that job needs `packages: read` too.
+
+2. **Commit an `.npmrc`** to your Angular/frontend project directory with scope routing:
 
 ```ini
 @it:registry=https://npm.scoular.ghe.com/
 ```
 
-2. **Configure `setup-node` with the GHE registry** and pass `GITHUB_TOKEN` via `NODE_AUTH_TOKEN`:
+3. **Configure `setup-node` with the GHE registry** and pass `GITHUB_TOKEN` via `NODE_AUTH_TOKEN`:
 
 ```yaml
     - name: Setup Node.js
@@ -513,9 +494,9 @@ If your application consumes `@it` scoped npm packages (e.g., `@it/design-system
 
 The `registry-url` and `scope` parameters tell `setup-node` to create an `.npmrc` with auth for the `@it` scope. Only `@it/*` packages route to the GHE registry — all other packages resolve from the public npm registry as usual. The `GITHUB_TOKEN` is auto-generated per workflow run — no PAT creation, rotation, or repo secrets required.
 
-> **Requirement**: Both the consuming repo and the npm package source must be in the **IT** organization on `scoular.ghe.com`. For cross-org scenarios, use a classic PAT stored as a repository secret.
+> **Requirements**: (1) the job has `packages: read` (step 1 above); (2) both the consuming repo and the npm package source are in the **IT** organization on `scoular.ghe.com`; and (3) the `@it` package is **internal** or **public** visibility (the default for IT packages). When all three hold, the per-run `GITHUB_TOKEN` can install the package with **no per-repo access grant and no PAT** — this is validated in production (e.g. the SIMS repo). A per-repo grant via the package's *Manage Actions access* is only needed for **private**-visibility packages; cross-org consumers need a classic PAT stored as a repository secret.
 
-For full details on the GHE npm registry (publishing, consuming, troubleshooting), see the [npm Packages Guide](style-guides/npm-packages-guide.md).
+For full details on the GHE npm registry (publishing, consuming, troubleshooting), see the [npm Packages Guide](style-guides/npm-packages.md).
 
 ---
 
@@ -609,4 +590,4 @@ If this application has an external SPA, it deploys to Azure Static Web App via 
 
 ---
 
-*Document version: 1.9 | 2026-04-20*
+*Document version: 1.12 | 2026-06-15*

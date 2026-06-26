@@ -406,6 +406,18 @@ See `GITHUB-ACTIONS-CICD.md` for the full CI/CD developer guide.
 
 Starting with template v2.14, each API app registration defines multiple app roles instead of a single `Origination.Application` role. App roles control what appears in the `roles` claim of JWT access tokens.
 
+### This App's Roles
+
+The roles below are generated from Origination's `appRoles` configuration (`app-config.json`). This reflects this app's actual roles — including any relabeled or app-specific roles:
+
+This app uses the **convention-based default roles** (no custom `appRoles` declared in `app-config.json`):
+
+| Role Value | Display Name | Member Type | Description |
+|------------|--------------|-------------|-------------|
+| `Admin` | Admin | User | Full administrative access |
+| `User` | User | User | Standard user access |
+| `Origination.Application` | Origination Application | Application | Service-to-service (daemon) access |
+
 ### Convention-Based Defaults
 
 If no custom `appRoles` array is defined in `app-config.json`, the following three roles are created automatically:
@@ -434,18 +446,9 @@ When `appRoles` is provided, only the listed roles are created (plus `Originatio
 
 ### Group-to-Role Assignment
 
-Each Entra ID group is assigned to a specific app role on the API Enterprise Application. The role is determined by:
+Each Entra ID group is assigned to a specific app role on the API Enterprise Application via the `appRole` field on its `appGroups[]` entry in `app-config.json`. The assigned role is what determines the value in the JWT `roles` claim.
 
-1. **Explicit override**: The `appRole` property on the group's entry in `entraGroups` config
-2. **Naming convention** (default): Groups with "Admin" or "Production Support" in the name are assigned the **Admin** role; all others are assigned the **User** role
-
-| Group | Assigned Role | Reason |
-|-------|--------------|--------|
-| Azure - Origination App - Developer Admins | Admin | Name contains "Admin" |
-| Azure - Origination App - Production Support | Admin | Name contains "Production Support" |
-| Origination App Dev Users | User | Default |
-| Origination App QA Users | User | Default |
-| Origination App Users | User | Default |
+For the per-environment list of **which group carries which role** for Origination — generated from this app's own configuration — see the **Application Access Groups** and **App Roles at a Glance** sections in [ENTRA-ID-GROUPS-GUIDE.md](ENTRA-ID-GROUPS-GUIDE.md).
 
 ### JWT `roles` Claim
 
@@ -512,4 +515,4 @@ If you get "Forbidden" when accessing the Key Vault secret, ensure you are a mem
 
 ---
 
-*Document version: 1.5 | 2026-04-21*
+*Document version: 1.7 | 2026-06-21*
