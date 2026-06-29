@@ -91,20 +91,49 @@ public class EnforceTradeUnitAccessAttribute : Attribute, IFilterFactory
                 }
             }
 
-            // Pattern 3: [FromBody] request objects with TradeUnitKey property (Dashboard POST/PUT)
+            // Pattern 3: [FromBody] request object(s) carrying a TradeUnitKey — either a single DTO OR a
+            // COLLECTION of DTOs. The dashboard upserts post List<T> (estimates / market shares / actual
+            // harvest), so the key must be validated on EACH element. Reflecting only the top-level arg's
+            // TradeUnitKey would miss list bodies entirely (a List<T> has no such property), letting a
+            // caller persist rows for trade units they aren't entitled to (CWE-639).
             foreach (var arg in context.ActionArguments.Values)
             {
                 if (arg is null) continue;
-
-                var prop = arg.GetType().GetProperty("TradeUnitKey");
-                if (prop?.GetValue(arg) is string bodyKey && !string.IsNullOrWhiteSpace(bodyKey))
+                var bodyCodes = ExtractTradeUnitKeys(arg);
+                if (bodyCodes.Count > 0)
                 {
-                    var codes = bodyKey.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                    await _entitlementService.ValidateTradeUnitsOrThrowAsync(codes, context.HttpContext.RequestAborted);
+                    await _entitlementService.ValidateTradeUnitsOrThrowAsync(bodyCodes, context.HttpContext.RequestAborted);
                 }
             }
 
             await next();
+        }
+
+        /// <summary>Collects the (comma-split) TradeUnitKey values carried by a [FromBody] argument —
+        /// from a single DTO or from every element of a collection body. Returns empty for strings
+        /// (handled by the tradeUnits / tradeUnitKey patterns above) and for objects without the property.</summary>
+        private static List<string> ExtractTradeUnitKeys(object arg)
+        {
+            var codes = new List<string>();
+            void AddFrom(object? item)
+            {
+                if (item is null) return;
+                if (item.GetType().GetProperty("TradeUnitKey")?.GetValue(item) is string key && !string.IsNullOrWhiteSpace(key))
+                {
+                    codes.AddRange(key.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+                }
+            }
+
+            if (arg is string) return codes;                       // a tradeUnitKey string is handled above
+            if (arg is System.Collections.IEnumerable seq)
+            {
+                foreach (var item in seq) AddFrom(item);
+            }
+            else
+            {
+                AddFrom(arg);
+            }
+            return codes;
         }
     }
 }

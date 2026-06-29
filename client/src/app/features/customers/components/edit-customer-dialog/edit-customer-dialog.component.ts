@@ -59,6 +59,11 @@ export class EditCustomerDialogComponent {
   // load can never wipe manual assignments by reconciling to an empty set.
   currentTradeUnits = signal<{ tradeUnit: string; isManual: boolean; hasOpenActivity: boolean; isActive: boolean }[]>([]);
   tuListLoaded = signal(false);
+  // Membership-fetch state (distinct from isLoadingTradeUnits, which tracks the add-search catalog).
+  // Surfaces a transient load failure as an explicit Error+Retry instead of a silent blank that
+  // reads as "no trade units".
+  isLoadingCurrentTradeUnits = signal(false);
+  currentTradeUnitsError = signal<string | null>(null);
   private _originalManualTuCodes: string[] = [];
 
   // Locked TUs the user removed this session because the producer is dormant in them. Staged
@@ -252,25 +257,13 @@ export class EditCustomerDialogComponent {
             error: () => { this.isLoadingTradeUnits.set(false); }
           });
         }
+        this.currentTradeUnitsError.set(null);
         // A not-yet-onboarded candidate isn't in dbo.Customer, so it has no memberships — skip
         // the fetch and treat the list as loaded+empty.
         if (customer.isOnboardCandidate) {
           this.tuListLoaded.set(true);
         } else {
-          this.apiService.getCustomerTradeUnits(customer.id).subscribe({
-            next: (tus) => {
-              this.currentTradeUnits.set(tus);
-              // Only ACTIVE manual memberships prefill the editable set — removed ones (isActive=false)
-              // are offered as re-addable suggestions instead, not pre-selected.
-              const manualCodes = tus.filter(t => t.isManual && t.isActive).map(t => t.tradeUnit);
-              this.selectedTuCodes.set(manualCodes);
-              this._originalManualTuCodes = [...manualCodes];
-              this.tuListLoaded.set(true);
-            },
-            // Leave tuListLoaded false on error — canReconcileTradeUnits then stays false so a
-            // failed load can't wipe the producer's manual assignments on save.
-            error: () => { this.tuListLoaded.set(false); }
-          });
+          this._loadCurrentTradeUnits(customer.id);
         }
 
         this._initialized = true;
@@ -304,6 +297,41 @@ export class EditCustomerDialogComponent {
     this.showSuggestions.set(false);
     this.newProducerSearch.set('');
     this.showProducerSuggestions.set(false);
+  }
+
+  /** Loads this producer's current trade-unit memberships. On error, surfaces the failure
+   *  (error signal + toast) and leaves tuListLoaded false so a failed load can't reconcile the
+   *  producer's manual assignments to empty on Save. Used on open and by retry. */
+  private _loadCurrentTradeUnits(customerId: number): void {
+    this.isLoadingCurrentTradeUnits.set(true);
+    this.currentTradeUnitsError.set(null);
+    this.apiService.getCustomerTradeUnits(customerId).subscribe({
+      next: (tus) => {
+        this.currentTradeUnits.set(tus);
+        // Only ACTIVE manual memberships prefill the editable set — removed ones (isActive=false)
+        // are offered as re-addable suggestions instead, not pre-selected.
+        const manualCodes = tus.filter(t => t.isManual && t.isActive).map(t => t.tradeUnit);
+        this.selectedTuCodes.set(manualCodes);
+        this._originalManualTuCodes = [...manualCodes];
+        this.tuListLoaded.set(true);
+        this.isLoadingCurrentTradeUnits.set(false);
+      },
+      // Leave tuListLoaded false on error — canReconcileTradeUnits then stays false so a
+      // failed load can't wipe the producer's manual assignments on save.
+      error: (e: Error) => {
+        this.tuListLoaded.set(false);
+        this.isLoadingCurrentTradeUnits.set(false);
+        this.currentTradeUnitsError.set(e?.message || 'Couldn\'t load trade units.');
+        this.toast.error(e?.message || 'Couldn\'t load this producer\'s trade units.');
+      }
+    });
+  }
+
+  /** Retry the membership load after a transient failure (from the inline Retry button). */
+  retryLoadCurrentTradeUnits(): void {
+    const customer = this.customer();
+    if (!customer || customer.isOnboardCandidate) return;
+    this._loadCurrentTradeUnits(customer.id);
   }
 
   // ── Trade-unit assignment actions ───────────────────────────────────────
