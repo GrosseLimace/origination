@@ -3,6 +3,7 @@ using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services.Mappings;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Infrastructure.Interfaces;
+using Microsoft.Extensions.Logging;
 
 namespace GrainOriginatorPortal.Api.Services;
 
@@ -14,19 +15,22 @@ public class PlantingIntentionService : IPlantingIntentionService
     private readonly IUserEntitlementService _entitlementService;
     private readonly IDisplayNameLookupRepository _displayNameLookup;
     private readonly IRequestContextService _requestContext;
+    private readonly ILogger<PlantingIntentionService> _logger;
 
     public PlantingIntentionService(
         IPlantingIntentionRepository repository,
         ICustomerRepository customerRepository,
         IUserEntitlementService entitlementService,
         IDisplayNameLookupRepository displayNameLookup,
-        IRequestContextService requestContext)
+        IRequestContextService requestContext,
+        ILogger<PlantingIntentionService> logger)
     {
         _repository = repository;
         _customerRepository = customerRepository;
         _entitlementService = entitlementService;
         _displayNameLookup = displayNameLookup;
         _requestContext = requestContext;
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -81,11 +85,31 @@ public class PlantingIntentionService : IPlantingIntentionService
         var resolvedTradeUnit = customerTU ?? tradeUnit;
 
         if (string.IsNullOrWhiteSpace(resolvedTradeUnit))
+        {
+            // Capture the actual cause of a "save fails the first time" report: records whether the
+            // server-derived trade unit was missing and what (if anything) the client supplied.
+            _logger.LogWarning(
+                "Planting intention create rejected — no trade unit. CustomerId={CustomerId}, CustomerFound={CustomerFound}, ServerTradeUnitResolved={ServerTuResolved}, ClientTradeUnit={ClientTradeUnit}, Crop={Crop}",
+                customerId, customer is not null, customerTU is not null, tradeUnit ?? "(none)", crop);
             throw new ValidationException("tradeUnit",
                 "Trade unit could not be determined for this customer. Please select a trade unit and try again.");
+        }
 
-        var intention = await _repository.AddAsync(customerId, resolvedName, resolvedCode, resolvedTradeUnit,
-            crop, category, type, description, acres, plantingYear, _requestContext.GetCurrentUser(), cancellationToken);
+        PlantingIntention intention;
+        try
+        {
+            intention = await _repository.AddAsync(customerId, resolvedName, resolvedCode, resolvedTradeUnit,
+                crop, category, type, description, acres, plantingYear, _requestContext.GetCurrentUser(), cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Capture transient/persistence failures (the other candidate behind the retry-succeeds
+            // symptom) with full context, then rethrow so the API still surfaces the error.
+            _logger.LogError(ex,
+                "Planting intention persistence failed. CustomerId={CustomerId}, TradeUnit={TradeUnit}, Crop={Crop}, PlantingYear={PlantingYear}",
+                customerId, resolvedTradeUnit, crop, plantingYear);
+            throw;
+        }
 
         var nameMap = await _displayNameLookup.ResolveAsync(new[] { intention.CreatedBy }, cancellationToken);
         return intention.ToResponse(nameMap);
