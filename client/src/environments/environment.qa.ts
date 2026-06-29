@@ -3,6 +3,7 @@ export const environment = {
   envName: 'QA',
   bidSheetEnabled: true,
   usageDashboardEnabled: true,
+  dailyDigestEnabled: true,
   apiBaseUrl: '/api',
   msalConfig: {
     auth: {
