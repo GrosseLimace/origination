@@ -91,12 +91,12 @@ public class EntitlementsController : ControllerBase
                 .Where(r => tuFilter.Contains(r.TradeUnitCode) || groupFilter.Contains(r.GroupId))
                 .ToListAsync(ct);
 
-            // People who share ≥1 TU with the caller. Caller is excluded — they
-            // shouldn't add themselves as a recipient.
+            // People who share ≥1 TU with the caller. The caller is INCLUDED so they can add
+            // themselves as a recipient of a recap group (they're in their own trade units, so the
+            // recap-group member validation already permits self).
             var people = rows
                 .Where(r => callerTuCodes.Contains(r.TradeUnitCode))
                 .Where(r => !string.IsNullOrWhiteSpace(r.UserId))
-                .Where(r => !string.Equals(r.UserId, userId, StringComparison.OrdinalIgnoreCase))
                 .GroupBy(r => r.UserId, StringComparer.OrdinalIgnoreCase)
                 .Select(g => new EntitlementPerson
                 {
