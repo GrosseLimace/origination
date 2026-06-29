@@ -8,6 +8,7 @@ import { InputComponent } from '@shared/components/input/input.component';
 import { SelectComponent } from '@shared/components/select/select.component';
 import { Customer, PlantingIntention, Commodity } from '@models';
 import { ApiService } from '@core/services/api.service';
+import { ToastService } from '@core/services/toast.service';
 
 type SortColumn = 'crop' | 'acres' | 'plantingYear' | 'createdAt';
 type SortDirection = 'none' | 'asc' | 'desc';
@@ -42,6 +43,7 @@ type PlantingRow = PlantingIntention;
 export class PlantingIntentionsTableComponent {
   private apiService = inject(ApiService);
   private destroyRef = inject(DestroyRef);
+  private toast = inject(ToastService);
 
   public isLoading = input(false);
   public plantingIntentions = input<PlantingIntention[]>([]);
@@ -290,7 +292,12 @@ export class PlantingIntentionsTableComponent {
           this.allCommodities = commodities;
           this.isLoadingCommodities = false;
         },
-        error: () => { this.isLoadingCommodities = false; }
+        // Log so a failed full-list load (which breaks crop name/category resolution) is captured
+        // rather than silently swallowed. Retried on the next dialog open.
+        error: (e: Error) => {
+          this.isLoadingCommodities = false;
+          console.error('[PlantingIntentions] Failed to load commodity list', e);
+        }
       });
     }
     // Curated subset — drives the crop-search suggestions. Loaded independently of the full list and
@@ -304,7 +311,14 @@ export class PlantingIntentionsTableComponent {
           this.plantingCommodities = commodities;
           this.isLoadingPlantingCommodities = false;
         },
-        error: () => { this.isLoadingPlantingCommodities = false; }
+        // Surface the failure: when the curated list doesn't load, the crop search silently falls
+        // back to the full ~250-commodity list. Warn the user (and log) so this is visible instead
+        // of looking like the filter "isn't working". Retried on the next dialog open.
+        error: (e: Error) => {
+          this.isLoadingPlantingCommodities = false;
+          console.error('[PlantingIntentions] Failed to load curated planting crop list', e);
+          this.toast.warning('Couldn\'t load the planting crop list — showing all commodities. Reopen to retry.');
+        }
       });
     }
   }
