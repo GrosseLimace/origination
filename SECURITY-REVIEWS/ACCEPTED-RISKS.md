@@ -25,6 +25,7 @@ authenticated user may modify or delete any record by enumerating its ID:
 - `NotesController` — `PUT /api/notes/{id}`, `PUT /api/notes/{id}/toggle-pin`, `DELETE /api/notes/{id}`
 - `PlantingIntentionsController` — `PUT /api/plantingintentions/{id}`, `DELETE /api/plantingintentions/{id}`
 - `ProducerDetailsController` — `PUT/DELETE /api/producerdetails/customer/{customerId}`
+- `DashboardPlantingEstimatesController` — `DELETE /api/dashboardplantingestimates/actualharvest/{id}` (added per Codex scan 2026-06-29). The controller's `[EnforceTradeUnitAccess]` filter validates the trade-unit-keyed reads and upserts, but the delete-by-id route carries no trade-unit parameter to check. Actual-harvest rows are shared dashboard data of the same nature as the records above, so this delete is **intentionally left matching the shared-record delete model** rather than made stricter than every other delete in the app.
 
 ### Decision: Accepted
 
