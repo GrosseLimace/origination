@@ -81,9 +81,10 @@ public class NotesController : ControllerBase
             if (callerTuCodes.Count == 0)
                 return Ok(response);
 
-            // People who share at least one of the caller's trade units (excluding the caller).
+            // People who share at least one of the caller's trade units. The caller is INCLUDED so
+            // they can @-mention themselves in a note (they're in their own trade units).
             var peopleRows = await _entitlementsDb.UserTradeUnitAccess
-                .Where(u => callerTuCodes.Contains(u.TradeUnitCode) && u.UserId != userId)
+                .Where(u => callerTuCodes.Contains(u.TradeUnitCode))
                 .Select(u => new { u.UserId, u.DisplayName })
                 .Distinct()
                 .ToListAsync(cancellationToken);
