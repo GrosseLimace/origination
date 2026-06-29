@@ -22,6 +22,8 @@ public static class StoredGrainMappings
         StorageDays = g.StorageDays,
         ChargedFromDate = g.ChargedFromDate,
         ChargedThruDate = g.ChargedThruDate,
+        LocationCity = g.LocationCity,
+        LocationState = g.LocationState,
         Bushels = g.Bushels,
         DateReceived = g.DateReceived,
     };
