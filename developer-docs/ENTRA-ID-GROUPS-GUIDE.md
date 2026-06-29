@@ -2,106 +2,60 @@
 
 ## Overview
 
-Origination uses Entra ID security groups to control access across three categories: **Admin groups** grant Azure infrastructure permissions + application access. **User groups** grant application access only. **SQL groups** grant database role memberships.
+Origination uses Entra ID security groups to control access across two broad categories: **Application access groups** grant access to the app (and, for admin groups, Azure infrastructure permissions); **SQL groups** grant database role memberships.
+
+This guide is **generated from Origination's own configuration** (`appGroups[]` in `app-config.json`), so it shows exactly the groups this app has — including any app-specific groups — and the application role each one carries. As the app's groups change, this document stays correct automatically.
 
 Developers typically have two accounts:
 - **Admin account** (`admin-jdoe@scoular.com`) — infrastructure management
 - **User account** (`jdoe@scoular.com`) — application use and testing
 
-## Groups at a Glance
+## How Groups Are Managed
 
-| Group | Object ID | Environments | Purpose | App Role | Access Package |
-|-------|-----------|-------------|---------|----------|----------------|
-| Azure - Origination App - Developer Admins | `83f44135-230c-4b28-a633-009e57088080` | Dev, QA | Azure RBAC + app access (admin accounts) | Admin | Developer Access |
-| Azure - Origination App - Production Support | `5a0d1b24-2451-42a9-a709-a1e945068db8` | Prod | Azure RBAC + app access (admin accounts) | Admin | Production Support |
-| Origination App Dev Users | `0e4dd29c-b23c-4e11-a2a3-13e1be934c2b` | Dev | App access only (user accounts) | User | Developer Access |
-| Origination App QA Users | `8f0e0182-661e-4396-bda3-9fa43217f258` | QA | App access only (user accounts) | User | Developer Access |
-| Origination App Users | `0cb70d50-df9d-4a98-8385-65112e4a7f50` | Prod | App access only (user accounts) | User | Production Support |
-| `azrscosqld01-Origination-db_datareader` | `bb60e7f4-944c-411a-bce0-b6c96ac1877d` | Dev | SQL db_datareader | Developer Access |
-| `azrscosqld01-Origination-db_datawriter` | `fe5f0af0-dcbe-4ad5-89a7-35dbcf08aea5` | Dev | SQL db_datawriter | Developer Access |
-| `azrscosqld01-Origination-db_ddladmin` | `8dfbea12-7c93-4251-a493-b369efc7972c` | Dev | SQL db_ddladmin | Developer Access |
-| `azrscosqld01-Origination-db_owner` | `af3388d7-28be-4455-b667-c5b3e20e12a4` | Dev | SQL db_owner | Infrastructure-managed |
-| `azrscosqld01-Origination-execute_sprocs` | `0818f668-a394-43c0-96e4-7c2c4797e06d` | Dev | SQL execute_sprocs | Developer Access |
-| `azrscosqlq01-Origination-db_datareader` | `6db5faf3-c14e-4a33-b8cb-db4b5041fc47` | QA | SQL db_datareader | Developer Access |
-| `azrscosqlq01-Origination-db_datawriter` | `c097b10d-7340-4d2c-b621-43859c5ca7d7` | QA | SQL db_datawriter | Developer Access |
-| `azrscosqlq01-Origination-db_ddladmin` | `0c39fd28-f2f7-4344-8730-371ce0c11234` | QA | SQL db_ddladmin | Developer Access |
-| `azrscosqlq01-Origination-db_owner` | `0dd08142-1835-4598-9651-84963f279747` | QA | SQL db_owner | Infrastructure-managed |
-| `azrscosqlq01-Origination-execute_sprocs` | `aa6e8521-08d1-498e-a013-211f00b03265` | QA | SQL execute_sprocs | Developer Access |
-| `azrscosqlp01-Origination-db_datareader` | `6fe18a94-b8fd-4f61-ab75-ce4a731dc318` | Prod | SQL db_datareader | Production Support |
-| `azrscosqlp01-Origination-db_datawriter` | `018b91be-66ea-4ea5-9271-43c1ec59455a` | Prod | SQL db_datawriter | Production Support |
-| `azrscosqlp01-Origination-db_ddladmin` | `1c7602db-da3f-4256-9938-75236b8f3ee7` | Prod | SQL db_ddladmin | Production Support |
-| `azrscosqlp01-Origination-db_owner` | `f1f866a5-fb00-406c-942d-47f746066a2d` | Prod | SQL db_owner | Infrastructure-managed |
-| `azrscosqlp01-Origination-execute_sprocs` | `2bf7735a-d6eb-4ecf-a1e7-c558bb40a682` | Prod | SQL execute_sprocs | Production Support |
+Each group's **Managed As** column tells you how its membership and ownership are handled:
 
-## Admin Groups
+- **`igManaged`** — Identity Governance owns membership and ownership conferral (the Developer Admins / Production Support admin groups). You join these by requesting the relevant access package.
+- **`appManaged`** — the infrastructure template ensures the group exists and holds its app role; group **owners** add/remove members directly via [Groups I Own](https://myaccount.microsoft.com/groups/groups-i-own). Owners are conferred through the access package.
+- **`external`** — a shared or dynamic group not owned by this app (e.g. an org-wide licensing group). Referenced only — its membership is managed elsewhere.
 
-Admin groups provide Azure RBAC roles on the app's infrastructure resources, plus Enterprise Application assignment for app access. The Developer Access package is available to both admin and regular developer accounts.
+## App Roles at a Glance
 
-### Azure - Origination App - Developer Admins
+The application role each group carries appears in the app's JWT `roles` claim. This summary shows which group(s) hold each role per environment:
 
-**Object ID:** `83f44135-230c-4b28-a633-009e57088080`
-**Environments:** Dev, QA
-**Granted via:** Origination - Developer Access package
+| App Role | Dev | QA | Prod |
+|----------|-----|----|----|
+| `Admin` | Azure - Origination App - Developer Admins<br>Origination App Dev Super Users | Azure - Origination App - Developer Admins<br>Origination App QA Super Users | Azure - Origination App - Production Support<br>Origination App Super Users |
+| `User` | Origination App Dev Users | Origination App QA Users | Origination App Users |
 
-**Azure RBAC roles:**
-| Role | Scope | What It Allows |
-|------|-------|----------------|
-| VSCode App Service Browser | Subscription (nonprod) | Browse App Services in VSCode Azure extension |
-| Reader | Resource Group | View all resources, deployment history, metrics |
-| Website Contributor | App Service | Deploy code, start/stop/restart, view logs, Kudu console |
-| Key Vault Secrets Officer | Key Vault | Create, read, update, delete secrets |
+## Application Access Groups
 
-**Enterprise App assignment:** Assigned to both API and SPA Enterprise Applications. Allows authentication and full application use.
+The following groups are defined for Origination, grouped by environment. Each row shows the group, the **app role** it carries (the `value` in the `roles` claim, with its display label), what that grants, how the group is managed, and how to get added.
 
-**Additional:** Members of this group are set as **Owners** of the Dev Users and QA Users groups, allowing them to directly add/remove application users via [Groups I Own](https://myaccount.microsoft.com/groups/groups-i-own).
+Each group is assigned to **both** the API and the SPA Enterprise Application for its environment. The SPA is the sign-in gate (`Assignment required` enabled); the API carries the app role. A group assigned only to the API would be authorized for its role but unable to sign in.
 
-### Azure - Origination App - Production Support
+### Dev
 
-**Object ID:** `5a0d1b24-2451-42a9-a709-a1e945068db8`
-**Environments:** Prod
-**Granted via:** Origination - Production Support package
+| Group | App Role | What It Grants | Managed As | How to Get Added |
+|-------|----------|----------------|------------|------------------|
+| Azure - Origination App - Developer Admins | `Admin` | Full administrative access (Azure RBAC + in-app admin) | igManaged | Origination - Developer Azure Access access package |
+| Origination App Dev Users | `User` | Standard application access | appManaged | Managed by group owner (via Groups I Own) |
+| Origination App Dev Super Users | `Admin` | Full administrative access (Azure RBAC + in-app admin) | appManaged | Managed by group owner (via Groups I Own) |
 
-**Azure RBAC roles:**
-| Role | Scope | What It Allows |
-|------|-------|----------------|
-| VSCode App Service Browser | Subscription (prod) | Browse App Services in VSCode Azure extension |
-| Reader | Resource Group | View all resources, deployment history, metrics |
-| Website Contributor | App Service | Deploy code, start/stop/restart, view logs, Kudu console |
-| Key Vault Secrets Officer | Key Vault | Create, read, update, delete secrets |
+### QA
 
-**Enterprise App assignment:** Assigned to both production API and SPA Enterprise Applications.
+| Group | App Role | What It Grants | Managed As | How to Get Added |
+|-------|----------|----------------|------------|------------------|
+| Azure - Origination App - Developer Admins | `Admin` | Full administrative access (Azure RBAC + in-app admin) | igManaged | Origination - Developer Azure Access access package |
+| Origination App QA Users | `User` | Standard application access | appManaged | Managed by group owner (via Groups I Own) |
+| Origination App QA Super Users | `Admin` | Full administrative access (Azure RBAC + in-app admin) | appManaged | Managed by group owner (via Groups I Own) |
 
-## User Groups
+### Prod
 
-User groups provide **application access only** — no Azure infrastructure permissions. These groups are assigned to the API and SPA Enterprise Applications so members can authenticate.
-
-The API Enterprise Application has "Assignment required" enabled, meaning only members of assigned groups can obtain tokens.
-
-### Origination App Dev Users
-
-**Object ID:** `0e4dd29c-b23c-4e11-a2a3-13e1be934c2b`
-**Environment:** Dev
-**Granted via:** Origination - Developer Access package
-**Managed by:** Developer Admins (group owners) via [Groups I Own](https://myaccount.microsoft.com/groups/groups-i-own)
-
-Use this group for developer user accounts and testers who need to use the Dev application.
-
-### Origination App QA Users
-
-**Object ID:** `8f0e0182-661e-4396-bda3-9fa43217f258`
-**Environment:** QA
-**Granted via:** Origination - Developer Access package
-**Managed by:** Developer Admins (group owners) via [Groups I Own](https://myaccount.microsoft.com/groups/groups-i-own)
-
-Use this group for QA testers and developer user accounts who need to use the QA application.
-
-### Origination App Users
-
-**Object ID:** `0cb70d50-df9d-4a98-8385-65112e4a7f50`
-**Environment:** Prod
-**Granted via:** Origination - Production Support package
-
-Use this group for end users and authorized personnel who need production application access.
+| Group | App Role | What It Grants | Managed As | How to Get Added |
+|-------|----------|----------------|------------|------------------|
+| Azure - Origination App - Production Support | `Admin` | Full administrative access (Azure RBAC + in-app admin) | igManaged | Origination - Azure Production Support access package |
+| Origination App Users | `User` | Standard application access | appManaged | Managed by group owner (via Groups I Own) |
+| Origination App Super Users | `Admin` | Full administrative access (Azure RBAC + in-app admin) | appManaged | Managed by group owner (via Groups I Own) |
 
 ## SQL Permission Groups
 
@@ -142,50 +96,50 @@ The CI/CD workflow identity (GitHub Actions) is added to `db_datareader`, `db_da
 | `azrscosqlp01-Origination-execute_sprocs` | `2bf7735a-d6eb-4ecf-a1e7-c558bb40a682` | execute_sprocs | Execute stored procedures | Production Support |
 
 
+## SQL Groups at a Glance
+
+| Group Name | Object ID | Environment | SQL Role | Access Package |
+|------------|-----------|-------------|----------|----------------|
+| `azrscosqld01-Origination-db_datareader` | `bb60e7f4-944c-411a-bce0-b6c96ac1877d` | Dev | SQL db_datareader | Developer Access |
+| `azrscosqld01-Origination-db_datawriter` | `fe5f0af0-dcbe-4ad5-89a7-35dbcf08aea5` | Dev | SQL db_datawriter | Developer Access |
+| `azrscosqld01-Origination-db_ddladmin` | `8dfbea12-7c93-4251-a493-b369efc7972c` | Dev | SQL db_ddladmin | Developer Access |
+| `azrscosqld01-Origination-db_owner` | `af3388d7-28be-4455-b667-c5b3e20e12a4` | Dev | SQL db_owner | Infrastructure-managed |
+| `azrscosqld01-Origination-execute_sprocs` | `0818f668-a394-43c0-96e4-7c2c4797e06d` | Dev | SQL execute_sprocs | Developer Access |
+| `azrscosqlq01-Origination-db_datareader` | `6db5faf3-c14e-4a33-b8cb-db4b5041fc47` | QA | SQL db_datareader | Developer Access |
+| `azrscosqlq01-Origination-db_datawriter` | `c097b10d-7340-4d2c-b621-43859c5ca7d7` | QA | SQL db_datawriter | Developer Access |
+| `azrscosqlq01-Origination-db_ddladmin` | `0c39fd28-f2f7-4344-8730-371ce0c11234` | QA | SQL db_ddladmin | Developer Access |
+| `azrscosqlq01-Origination-db_owner` | `0dd08142-1835-4598-9651-84963f279747` | QA | SQL db_owner | Infrastructure-managed |
+| `azrscosqlq01-Origination-execute_sprocs` | `aa6e8521-08d1-498e-a013-211f00b03265` | QA | SQL execute_sprocs | Developer Access |
+| `azrscosqlp01-Origination-db_datareader` | `6fe18a94-b8fd-4f61-ab75-ce4a731dc318` | Prod | SQL db_datareader | Production Support |
+| `azrscosqlp01-Origination-db_datawriter` | `018b91be-66ea-4ea5-9271-43c1ec59455a` | Prod | SQL db_datawriter | Production Support |
+| `azrscosqlp01-Origination-db_ddladmin` | `1c7602db-da3f-4256-9938-75236b8f3ee7` | Prod | SQL db_ddladmin | Production Support |
+| `azrscosqlp01-Origination-db_owner` | `f1f866a5-fb00-406c-942d-47f746066a2d` | Prod | SQL db_owner | Infrastructure-managed |
+| `azrscosqlp01-Origination-execute_sprocs` | `2bf7735a-d6eb-4ecf-a1e7-c558bb40a682` | Prod | SQL execute_sprocs | Production Support |
+
 ## How Groups Map to Enterprise Applications
 
-Each environment has two app registrations (API and SPA) with corresponding Enterprise Applications. All groups for that environment are assigned to both Enterprise Apps:
+Each environment has two app registrations (API and SPA) with corresponding Enterprise Applications. All application access groups for that environment are assigned to **both** Enterprise Apps:
 
-| Environment | API Enterprise App | SPA Enterprise App | Assigned Groups |
-|-------------|-------------------|--------------------|----|
-| Dev | Origination API - Dev | Origination - Dev | Developer Admins, Dev Users |
-| QA | Origination API - QA | Origination - QA | Developer Admins, QA Users |
-| Prod | Origination API | Origination | Production Support, Prod Users |
+- **API Enterprise App** (`Origination API[ - Env]`) — hidden from My Apps; carries the app roles. The group's role assignment here determines the JWT `roles` claim.
+- **SPA Enterprise App** (`Origination[ - Env]`) — visible in My Apps; `Assignment required` enabled. This is the sign-in gate.
 
-Each group is assigned to a specific app role based on convention or explicit configuration. See [Group-to-Role Assignment](#group-to-role-assignment) below.
+See the **Application Access Groups** tables above for the per-environment, per-group role assignments.
 
 ## Group-to-Role Assignment
 
-Each Entra ID group is assigned to an app role on the API Enterprise Application. The assigned role determines the value in the JWT `roles` claim.
+Each Entra ID group is assigned to an app role on the API Enterprise Application via the `appRole` field on its `appGroups[]` entry in `app-config.json`. The assigned role determines the value in the JWT `roles` claim.
 
-**Convention (default):**
-- Groups with **"Admin"** or **"Production Support"** in the name are assigned the **Admin** role
-- All other groups are assigned the **User** role
-
-**Override:** Set the `appRole` property on a group's entry in the `entraGroups` section of `app-config.json` to assign a different role:
-
-```json
-{
-  "entraGroups": {
-    "devUsers": {
-      "displayName": "Origination App Dev Users",
-      "appRole": "Reviewer"
-    }
-  }
-}
-```
-
-When no `appRole` is specified, the naming convention applies automatically.
+When a group is added, removed, or re-roled, edit `appGroups[]` and re-run the reconcile/validation tooling — the group set above and the role labels in [APP-REGISTRATIONS.md](APP-REGISTRATIONS.md) are both sourced from config.
 
 ## Troubleshooting
 
 **"I can't deploy code to Dev"**
 - Use your **admin account**, not your user account
-- Verify your admin account is in **Developer Admins** group
+- Verify your admin account is in the **Developer Admins** group
 - Wait 15-30 minutes after being added to a group (Entra ID sync delay)
 
 **"I can't access the application"**
-- Verify you're in the correct User group for the environment
+- Verify you're in one of the access groups for the environment (see the tables above)
 - Sign out and back in to refresh your token
 - Check you're accessing the correct URL: `https://origination-dev.scoular.com` (Dev), `https://origination-qa.scoular.com` (QA), `https://origination.scoular.com` (Prod)
 
@@ -198,9 +152,9 @@ When no `appRole` is specified, the naming convention applies automatically.
 ## Related Documentation
 
 - **[ACCESS-PACKAGES-USER-GUIDE.md](ACCESS-PACKAGES-USER-GUIDE.md)** — How to request access via My Access portal
-- **[APP-REGISTRATIONS.md](APP-REGISTRATIONS.md)** — App registration details and client IDs
+- **[APP-REGISTRATIONS.md](APP-REGISTRATIONS.md)** — App registration details, client IDs, and app roles
 - **[START-HERE.md](START-HERE.md)** — Infrastructure overview and getting started
 
 ---
 
-*Document version: 1.2 | 2026-04-30*
+*Document version: 2.0 | 2026-06-21*
