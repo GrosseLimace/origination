@@ -65,6 +65,13 @@ export interface RefinementFilters {
   drylandOnly?: boolean;
   doubleCropOnly?: boolean;
   plantingAcresOver?: number | null;
+  // Grain on farm (producer profile: bushels on hand + $/bu target price). Crop-scoped when
+  // `crops` is also set (the "Grain on Farm" dimension in the crop-aware filter).
+  grainOnFarmBushelsOver?: number | null;
+  hasGrainTarget?: boolean;
+  noGrainTarget?: boolean;
+  grainTargetOver?: number | null;
+  grainTargetUnder?: number | null;
   // Dynamic
   crops?: string[];
   states?: string[];

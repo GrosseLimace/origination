@@ -249,6 +249,10 @@ export class BuildListComponent {
       r.storageReceivableOver != null && r.storageReceivableOver > 0,
       r.plantingYear != null, r.irrigatedOnly, r.drylandOnly, r.doubleCropOnly,
       r.plantingAcresOver != null && r.plantingAcresOver > 0,
+      r.grainOnFarmBushelsOver != null && r.grainOnFarmBushelsOver > 0,
+      r.hasGrainTarget, r.noGrainTarget,
+      r.grainTargetOver != null && r.grainTargetOver > 0,
+      r.grainTargetUnder != null && r.grainTargetUnder > 0,
       r.crops && r.crops.length > 0, r.states && r.states.length > 0
     ].filter(Boolean).length;
   });
@@ -478,6 +482,35 @@ export class BuildListComponent {
       list = list.filter(c => !c.binCapacity || c.binCapacity === 0);
     }
 
+    // Grain on farm (bushels on hand + $/bu target). Crop-scoped when crops are selected, so
+    // "corn on farm over 10,000" / "corn target over $5" act on the producer's corn rows only.
+    if (r.grainOnFarmBushelsOver != null || r.hasGrainTarget || r.noGrainTarget
+        || r.grainTargetOver != null || r.grainTargetUnder != null) {
+      const grainRowsFor = (c: Customer) => {
+        const rows = c.grainOnFarm ?? [];
+        return selectedCrops.size > 0
+          ? rows.filter(g => !!g.commodityGroup && this._matchesCropFilter(g.commodityGroup, selectedCrops))
+          : rows;
+      };
+      if (r.grainOnFarmBushelsOver != null && r.grainOnFarmBushelsOver > 0) {
+        list = list.filter(c => grainRowsFor(c).reduce((s, g) => s + (g.bushelsOnHand ?? 0), 0) > r.grainOnFarmBushelsOver!);
+      }
+      if (r.hasGrainTarget) {
+        list = list.filter(c => grainRowsFor(c).some(g => (g.targetBushels ?? 0) > 0));
+      }
+      if (r.noGrainTarget) {
+        // Has grain on farm but no target price set — the actionable "needs a target" list.
+        list = list.filter(c => grainRowsFor(c).some(g => (g.bushelsOnHand ?? 0) > 0)
+          && !grainRowsFor(c).some(g => (g.targetBushels ?? 0) > 0));
+      }
+      if (r.grainTargetOver != null && r.grainTargetOver > 0) {
+        list = list.filter(c => grainRowsFor(c).some(g => (g.targetBushels ?? 0) >= r.grainTargetOver!));
+      }
+      if (r.grainTargetUnder != null && r.grainTargetUnder > 0) {
+        list = list.filter(c => grainRowsFor(c).some(g => (g.targetBushels ?? 0) > 0 && (g.targetBushels ?? 0) <= r.grainTargetUnder!));
+      }
+    }
+
     // Customer info
     if (r.hasPrimaryContact) {
       list = list.filter(c => !!c.primaryContact?.trim());
@@ -663,6 +696,9 @@ export class BuildListComponent {
         || r.hasActiveContracts || r.hasUnsignedContracts || r.hasUnpricedContracts
         || r.hasOverdueContracts || r.contractsExpiringThisMonth || r.multipleCommoditiesContracted
         || (r.contractQuantityOver != null && r.contractQuantityOver > 0);
+      const isGrainOnFarm = category === 'Grain on Farm'
+        || r.grainOnFarmBushelsOver != null || r.hasGrainTarget || r.noGrainTarget
+        || r.grainTargetOver != null || r.grainTargetUnder != null;
 
       if (isStorage) {
         const storageByCustomer = new Map<number, StoredGrain[]>();
@@ -705,6 +741,11 @@ export class BuildListComponent {
             this._matchesCropFilter(ct.commodityGroup || '', selectedCrops)
           );
         });
+      } else if (isGrainOnFarm) {
+        // Scope crop matching to the producer's grain-on-farm rows (with bushels on hand).
+        list = list.filter(c => (c.grainOnFarm ?? []).some(g =>
+          !!g.commodityGroup && this._matchesCropFilter(g.commodityGroup, selectedCrops) && (g.bushelsOnHand ?? 0) > 0
+        ));
       } else {
         list = list.filter(c => (c.commodities ?? []).some(crop => selectedCrops.has(crop.trim().toLowerCase())));
       }
@@ -886,6 +927,7 @@ export class BuildListComponent {
     cross_planting_no_contract: 'Planting, no contracts',
     cross_delivery_no_contract: 'Delivered, no contracts',
     note_contains: 'Notes containing',
+    grain_on_farm: 'Grain on farm', grain_target: 'Target price',
   };
 
   readonly matchedPatternLabels = computed(() =>
@@ -1447,6 +1489,7 @@ export class BuildListComponent {
   });
   readonly showStorageFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Storage');
   readonly showPlantingFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Planting');
+  readonly showGrainOnFarmFilters = computed(() => !this.isResolvingSavedListCategory() && this.effectiveLibraryCategory() === 'Grain on Farm');
   readonly showGeneralFilters = computed(() => {
     if (this.isResolvingSavedListCategory()) return false;
     const cat = this.effectiveLibraryCategory();
@@ -1740,6 +1783,9 @@ export class BuildListComponent {
           binCapacity: pd.binCapacity ?? customer.binCapacity,
           primaryContact: pd.primaryContact ?? customer.primaryContact,
           commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
+          // Per-commodity grain-on-farm (bushels on hand + $/bu target) — carried onto the customer
+          // so the NLQ engine can filter "grain on farm" / "target" prompts client-side.
+          grainOnFarm: pd.grainOnFarm ?? customer.grainOnFarm,
           linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
         };
       }
@@ -2516,6 +2562,10 @@ export class BuildListComponent {
       (filters.storageReceivableOver != null && filters.storageReceivableOver > 0) ||
       filters.plantingYear != null || filters.irrigatedOnly || filters.drylandOnly || filters.doubleCropOnly ||
       (filters.plantingAcresOver != null && filters.plantingAcresOver > 0) ||
+      (filters.grainOnFarmBushelsOver != null && filters.grainOnFarmBushelsOver > 0) ||
+      filters.hasGrainTarget || filters.noGrainTarget ||
+      (filters.grainTargetOver != null && filters.grainTargetOver > 0) ||
+      (filters.grainTargetUnder != null && filters.grainTargetUnder > 0) ||
       (filters.crops && filters.crops.length > 0) ||
       (filters.states && filters.states.length > 0)
     );
