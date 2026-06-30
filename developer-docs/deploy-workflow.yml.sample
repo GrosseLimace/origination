@@ -30,6 +30,15 @@ on:
 jobs:
   build:
     runs-on: self-hosted
+    # packages: read lets this run's GITHUB_TOKEN install @it/* packages from
+    # npm.scoular.ghe.com (e.g. @it/design-system). An explicit permissions:
+    # block sets every unlisted scope to none, so this line is REQUIRED for
+    # `npm ci` to authenticate — even though both repos are in the IT org and
+    # the package is internal. Harmless for .NET-only apps that don't consume
+    # @it packages. See "npm Registry Authentication" in GITHUB-ACTIONS-CICD.md.
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@v5
 

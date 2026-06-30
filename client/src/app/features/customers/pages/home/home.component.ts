@@ -1543,7 +1543,13 @@ export class HomeComponent {
 
   addPlantingIntention(data: {crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}): void {
     const sel = this.selectedCustomer();
-    if (!sel) return;
+    // Make a premature add (before a producer is selected/loaded) visible instead of a silent
+    // no-op that reads as "the save did nothing / took two clicks".
+    if (!sel) {
+      console.warn('[PlantingIntentions] Add attempted with no producer selected — ignoring.');
+      this.toastService.error('Select a producer before adding a planting intention.');
+      return;
+    }
     this.apiService.createPlantingIntention({
       customerId: sel.id, customerName: sel.name, customerCode: sel.scoularId || '',
       tradeUnit: data.tradeUnit, crop: data.crop, category: data.category, type: data.type,
@@ -1559,7 +1565,7 @@ export class HomeComponent {
         this.toastService.success('Planting intention added');
         this._ensureCommodityOnProducerDetails(sel, data.crop);
       },
-      error: () => this.toastService.error('Failed to add planting intention')
+      error: (e: Error) => this.toastService.error(e?.message || 'Failed to add planting intention')
     });
   }
 
@@ -1581,7 +1587,7 @@ export class HomeComponent {
         this.toastService.success('Planting intention updated');
         if (sel) this._ensureCommodityOnProducerDetails(sel, data.crop);
       },
-      error: () => this.toastService.error('Failed to update planting intention')
+      error: (e: Error) => this.toastService.error(e?.message || 'Failed to update planting intention')
     });
   }
 

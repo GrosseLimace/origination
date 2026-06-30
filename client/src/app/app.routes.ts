@@ -37,11 +37,15 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./features/unshipped-bushels/pages/unshipped-bushels/unshipped-bushels.component').then(m => m.UnshippedBushelsComponent)
   },
-  {
-    path: 'daily-digest',
-    canActivate: [authGuard],
-    loadComponent: () => import('./features/daily-digest/pages/daily-digest/daily-digest.component').then(m => m.DailyDigestComponent)
-  },
+  // Daily Digest is gated by environment.dailyDigestEnabled (OFF in prod until launch).
+  // When disabled, /daily-digest redirects home so the page can't be reached by URL.
+  environment.dailyDigestEnabled
+    ? {
+        path: 'daily-digest',
+        canActivate: [authGuard],
+        loadComponent: () => import('./features/daily-digest/pages/daily-digest/daily-digest.component').then(m => m.DailyDigestComponent)
+      }
+    : { path: 'daily-digest', redirectTo: '' },
   environment.usageDashboardEnabled
     ? {
         path: 'usage-dashboard',

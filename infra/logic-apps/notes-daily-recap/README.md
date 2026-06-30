@@ -50,7 +50,7 @@ Key Vault integration is required. Do not introduce any — keep all auth on man
 | `environmentTag` | `Dev` | `QA` | `Prod` | `Environment` resource tag. |
 | `sqlServerName` | `azrscosqld01.database.windows.net` | `azrscosqlq01.database.windows.net` | `azrscosqlp01.database.windows.net` | Origination SQL server per env (same FQDNs the app deploys use). |
 | `sharedMailbox` | `dev-OriginationsApp@scoular.com` | `qa-OriginationsApp@scoular.com` | `OriginationsApp@scoular.com` | Graph `sendMail` sender UPN. ⚠️ Confirm the prod mailbox UPN. |
-| `sqlConnectionName` | `sql` | `sql` | `sql` | Existing `Microsoft.Web/connections` (MSI) in the target RG. |
+| `sqlConnectionName` | `sql` | `sqlrecap` | `sql` | `Microsoft.Web/connections` (MSI) name, created by the template. QA uses `sqlrecap` to avoid an orphaned V2 `sql` connection left by a failed deploy (no delete rights); revert to `sql` once that orphan is cleaned up. |
 | `aiFoundryEndpoint` | Azure OpenAI chat-completions URL | _same as Dev_ | _same as Dev_ | Shared data-cloud Azure OpenAI. Correct for now; expected to move to a dedicated AI resource later — update the URL when it does. |
 
 > **Teams channel routing:** there is **no** `teamsChannelEmail` parameter. A `teams`-delivery group
@@ -65,16 +65,22 @@ Key Vault integration is required. Do not introduce any — keep all auth on man
 
 ## Prerequisites (provisioned outside this template)
 
-1. **SQL API connection** named per `sqlConnectionName` must already exist in the target resource
-   group, configured for **managed identity** auth. (This template *references* it rather than
-   creating it; the connection's MI must have read access to the Origination + Entitlements DBs.)
-2. **Managed identity role grants** for the Logic App's system-assigned identity:
+The **SQL API connection** (`sqlConnectionName`, managed-identity auth) is now created by the template
+itself (`Microsoft.Web/connections`, kind `V1`, `parameterValueSet: oauthMI` — managed identity, no stored
+secret), so it no longer needs to be made by hand. What still must be granted **outside** the template:
+
+1. **Managed identity DB grants** — the Logic App's system-assigned identity must be a database user
+   in **both** `Origination` and `Entitlements` with:
+   - `db_datareader` (the table reads: recap groups/members/CC, Users, trade-unit/group assignments, Notes, Customer), and
+   - `EXECUTE` on `dbo.GetRecapNotes` (the notes lookup is a stored proc — `db_datareader` does **not** include execute).
+
+   e.g. `CREATE USER [<logicAppName>] FROM EXTERNAL PROVIDER;` + `ALTER ROLE db_datareader ADD MEMBER [...]` + `GRANT EXECUTE ON dbo.GetRecapNotes TO [...]`. The identity exists only **after** the Logic App's first deploy.
+2. **Managed identity role grants** for the same identity:
    - Azure OpenAI: `Cognitive Services OpenAI User` on the AI resource.
    - Microsoft Graph: `Mail.Send` application permission for the shared mailbox.
-   - SQL: db reader on Origination + Entitlements (via the SQL connection's identity).
 3. The deploying CI identity needs deploy rights on the target resource group (see repo CI/CD docs).
 
-These are coordinated with IT Infrastructure; this template does not provision them.
+These DB/role grants are coordinated with IT Infrastructure; the template does not provision them.
 
 ## Deploy
 
