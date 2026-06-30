@@ -206,4 +206,25 @@ describe('ApiService', () => {
     const req = httpMock.expectOne(`${BASE}/customers`);
     req.flush('Server error', { status: 500, statusText: 'Internal Server Error' });
   }));
+
+  it('surfaces the field-level validation detail over the generic top-level message', () => new Promise<void>((resolve) => {
+    service.createBidSheetLocation({ name: 'Dup', tradeUnitCode: 'TU1', bids: [] }).subscribe({
+      error: (err: Error) => {
+        // Should show the specific detail, not "One or more fields failed validation."
+        expect(err.message).toBe('A location named "Dup" already exists in this trade unit. Use a different name.');
+        resolve();
+      }
+    });
+    const req = httpMock.expectOne(`${BASE}/bidsheet/locations`);
+    req.flush(
+      {
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'One or more fields failed validation.',
+          details: [{ field: 'name', message: 'A location named "Dup" already exists in this trade unit. Use a different name.' }]
+        }
+      },
+      { status: 400, statusText: 'Bad Request' }
+    );
+  }));
 });

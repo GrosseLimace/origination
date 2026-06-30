@@ -17,6 +17,9 @@ public interface IBidSheetRepository
     /// <summary>The persisted TradeUnitCode of a location, or null if it doesn't exist. Used to
     /// authorize mutations against the row's actual trade unit (not a client-supplied value).</summary>
     Task<string?> GetLocationTradeUnitCodeAsync(int id, CancellationToken cancellationToken);
+    /// <summary>True if a location with this name already exists in the trade unit (matches the
+    /// unique (Name, TradeUnitCode) index). Lets the service surface a friendly duplicate-name error.</summary>
+    Task<bool> LocationNameExistsAsync(string name, string tradeUnitCode, CancellationToken cancellationToken);
     Task<BidSheetLocation> CreateLocationAsync(BidSheetLocation location, CancellationToken cancellationToken);
     Task<BidSheetLocation?> UpdateLocationAsync(int id, BidSheetLocation location, CancellationToken cancellationToken);
     Task DeleteLocationAsync(int id, CancellationToken cancellationToken);
