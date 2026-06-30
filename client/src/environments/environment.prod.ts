@@ -3,10 +3,12 @@ export const environment = {
   envName: 'production',
   bidSheetEnabled: true,
   usageDashboardEnabled: true,
-  // Daily Digest (recap groups): OFF in PROD until the feature launches. Gates the
-  // /daily-digest route + the "Daily Recap" nav link. Flip to true (and deploy the
-  // Logic App + apply the recap migrations) when launching.
-  dailyDigestEnabled: false,
+  // Daily Digest (recap groups): ON in PROD. Surfaces the /daily-digest route + the
+  // "Daily Recap" nav link. NOTE: enabling the UI is only half of launch — the prod
+  // Notes Daily Recap Logic App must also be deployed (it's what actually sends the
+  // recaps), and the recap migrations (CreateDailyRecapGroups, AddGetRecapNotesProc)
+  // must be applied to the prod DB. Merge this branch as part of that launch.
+  dailyDigestEnabled: true,
   apiBaseUrl: '/api',
   msalConfig: {
     auth: {
