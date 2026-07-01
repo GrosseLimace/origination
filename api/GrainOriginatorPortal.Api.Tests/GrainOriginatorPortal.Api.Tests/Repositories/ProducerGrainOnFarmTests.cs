@@ -40,7 +40,7 @@ public class ProducerGrainOnFarmTests
         using var db = NewContext();
         var repo = Repo(db);
 
-        await repo.UpsertAsync(100, "S1", "Smith Farm", null, null, null, null, null,
+        await repo.UpsertAsync(100, "S1", "Smith Farm", null, null, null, null, null, null,
             new[] { Entry("Corn", 80_000, 100_000), Entry("Soybeans", 40_000, 50_000) }, "tuser", CancellationToken.None);
 
         var pd = await repo.GetAsync(100, CancellationToken.None);
@@ -58,10 +58,10 @@ public class ProducerGrainOnFarmTests
         using var db = NewContext();
         var repo = Repo(db);
 
-        await repo.UpsertAsync(100, "S1", "Smith", null, null, null, null, null,
+        await repo.UpsertAsync(100, "S1", "Smith", null, null, null, null, null, null,
             new[] { Entry("Corn", 80_000, 100_000), Entry("Soybeans", 40_000, null) }, "tuser", CancellationToken.None);
         // Re-save with only corn → soybeans row should be gone.
-        await repo.UpsertAsync(100, "S1", "Smith", null, null, null, null, null,
+        await repo.UpsertAsync(100, "S1", "Smith", null, null, null, null, null, null,
             new[] { Entry("Corn", 90_000, 110_000) }, "tuser", CancellationToken.None);
 
         var pd = await repo.GetAsync(100, CancellationToken.None);
@@ -77,7 +77,7 @@ public class ProducerGrainOnFarmTests
         using var db = NewContext();
         var repo = Repo(db);
 
-        await repo.UpsertAsync(100, "S1", "Smith", null, null, null, null, null,
+        await repo.UpsertAsync(100, "S1", "Smith", null, null, null, null, null, null,
             new[] { Entry("Corn", 10, 20), Entry("  ", 99, 99) }, "tuser", CancellationToken.None);
 
         var pd = await repo.GetAsync(100, CancellationToken.None);
@@ -92,9 +92,9 @@ public class ProducerGrainOnFarmTests
         using var db = NewContext();
         var repo = Repo(db);
 
-        await repo.UpsertAsync(100, "S1", "Smith", null, null, null, null, null,
+        await repo.UpsertAsync(100, "S1", "Smith", null, null, null, null, null, null,
             new[] { Entry("Corn", 10, 20) }, "tuser", CancellationToken.None);
-        await repo.UpsertAsync(100, "S1", "Smith", null, null, null, null, null,
+        await repo.UpsertAsync(100, "S1", "Smith", null, null, null, null, null, null,
             Array.Empty<GrainOnFarmEntry>(), "tuser", CancellationToken.None);
 
         var pd = await repo.GetAsync(100, CancellationToken.None);

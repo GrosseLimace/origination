@@ -1297,6 +1297,11 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("nvarchar(255)")
                         .HasColumnName("PrimaryContact");
 
+                    b.Property<string>("PrimaryPhone")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("PrimaryPhone");
+
                     b.Property<decimal?>("TotalAcres")
                         .HasColumnType("decimal(18,2)")
                         .HasColumnName("TotalAcres");

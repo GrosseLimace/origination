@@ -13,7 +13,7 @@ public interface IProducerDetailsRepository
     Task<ProducerDetails?> GetAsync(long customerId, CancellationToken cancellationToken);
     Task<List<ProducerDetails>> GetAllAsync(CancellationToken cancellationToken);
     Task<ProducerDetails> UpsertAsync(long customerId, string? scoularId, string customerName, decimal? totalAcres,
-        decimal? binCapacity, string? primaryContact, string? commodities, string? linkedProducerIds,
+        decimal? binCapacity, string? primaryContact, string? primaryPhone, string? commodities, string? linkedProducerIds,
         IReadOnlyList<GrainOnFarmEntry> grainOnFarm, string currentUser, CancellationToken cancellationToken);
     Task DeleteAsync(long customerId, CancellationToken cancellationToken);
 }

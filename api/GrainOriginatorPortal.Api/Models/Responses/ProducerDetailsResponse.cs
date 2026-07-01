@@ -11,6 +11,7 @@ public record ProducerDetailsResponse
     public decimal? TotalAcres { get; init; }
     public decimal? BinCapacity { get; init; }
     public string? PrimaryContact { get; init; }
+    public string? PrimaryPhone { get; init; }
     public string? Commodities { get; init; }
     public string? LinkedProducerIds { get; init; }
     public string CreatedBy { get; init; } = string.Empty;
