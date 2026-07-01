@@ -97,7 +97,7 @@
                         </svg>
                       </span>
                     </app-table-head>
-                    <app-table-head><span class="flex items-center justify-center">Commodity</span></app-table-head>
+                    <app-table-head><span class="flex items-center justify-center">Location</span></app-table-head>
                     <app-table-head [sortable]="true" (click)="handleSort('netBu')">
                       <span class="flex items-center justify-center gap-1">Net Bu
                         <svg class="w-3.5 h-3.5" [class]="getSortIconClass('netBu')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -149,7 +149,7 @@
                   @for (grain of sortedReceipts(group.receipts); track grain.id) {
                     <app-table-row>
                       <app-table-cell class="text-center">{{ grain.receiptNumber }}</app-table-cell>
-                      <app-table-cell class="text-center">{{ grain.crop }}</app-table-cell>
+                      <app-table-cell class="text-center">{{ grain.locationCity ? (grain.locationState ? grain.locationCity + ', ' + grain.locationState : grain.locationCity) : '—' }}</app-table-cell>
                       <app-table-cell class="text-center">{{ grain.quantity | number }}</app-table-cell>
                       <app-table-cell class="text-center">{{ grain.chargedFromDate | date:'M/d/yy' }} – {{ grain.chargedThruDate | date:'M/d/yy' }}</app-table-cell>
                       <app-table-cell class="text-center" >{{ grain.storageDays | number:'1.0-1' }}</app-table-cell>
