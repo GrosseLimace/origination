@@ -1327,7 +1327,11 @@
                             </svg>
                             <span class="text-xs text-gray-400 truncate">{{ getFormattedLocation(customer) }}</span>
                             <span class="text-gray-300 dark:text-gray-600 shrink-0">•</span>
-                            <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ grainOnFarmBu(customer) | number }} bu on farm</span>
+                            @if (showGrainOnFarmFilters()) {
+                              <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ grainOnFarmBu(customer) | number }} bu on farm</span>
+                            } @else {
+                              <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ customer.totalAcres | number }} acres</span>
+                            }
                           </div>
                           @if (linkedInfo) {
                             <button type="button" (click)="$event.stopPropagation(); toggleLinkedExpand(customer.id)"
@@ -1446,7 +1450,11 @@
                                   </svg>
                                   <span class="text-xs text-gray-400 truncate">{{ getFormattedLocation(linked) }}</span>
                                   <span class="text-gray-300 dark:text-gray-600 shrink-0">•</span>
-                                  <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ grainOnFarmBu(linked) | number }} bu on farm</span>
+                                  @if (showGrainOnFarmFilters()) {
+                                    <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ grainOnFarmBu(linked) | number }} bu on farm</span>
+                                  } @else {
+                                    <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ linked.totalAcres | number }} acres</span>
+                                  }
                                 </div>
                               </div>
                             </div>
