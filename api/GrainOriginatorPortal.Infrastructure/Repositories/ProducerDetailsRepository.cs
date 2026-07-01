@@ -34,6 +34,8 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
         // Commodities (CSV of commodity codes) is composed from dbo.CustomerCommodity
         // — the CSV column was dropped in Phase 4b.
         pd.Commodities = await GetCommodityCodesCsvAsync(customerId, cancellationToken);
+        // Per-commodity grain-on-farm breakdown composed from dbo.ProducerGrainOnFarm.
+        pd.GrainOnFarm = await GetGrainOnFarmAsync(customerId, cancellationToken);
         return pd;
     }
 
@@ -71,6 +73,21 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
             .GroupBy(x => x.CustomerId)
             .ToDictionary(g => g.Key, g => g.Select(x => x.Code).ToList());
 
+        // Same batching pattern for ProducerGrainOnFarm → per-group on-hand/target rows.
+        var grainRows = await _appContext.ProducerGrainOnFarm.AsNoTracking()
+            .Where(g => customerIds.Contains(g.CustomerId))
+            .Select(g => new { g.CustomerId, g.CommodityGroup, g.BushelsOnHand, g.TargetBushels, g.Grade })
+            .ToListAsync(cancellationToken);
+        var grainByCustomer = grainRows
+            .GroupBy(x => x.CustomerId)
+            .ToDictionary(g => g.Key, g => g.Select(x => new GrainOnFarmEntry
+            {
+                CommodityGroup = x.CommodityGroup,
+                BushelsOnHand = x.BushelsOnHand,
+                TargetBushels = x.TargetBushels,
+                Grade = x.Grade
+            }).ToList());
+
         foreach (var p in all)
         {
             p.CustomerName = p.Customer?.Name ?? string.Empty;
@@ -81,13 +98,14 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
             p.Commodities = commoditiesByCustomer.TryGetValue(p.CustomerId, out var codes) && codes.Count > 0
                 ? string.Join(",", codes)
                 : null;
+            p.GrainOnFarm = grainByCustomer.TryGetValue(p.CustomerId, out var grain) ? grain : new();
         }
         return all;
     }
 
     public async Task<ProducerDetails> UpsertAsync(long customerId, string? scoularId, string customerName, decimal? totalAcres,
         decimal? binCapacity, string? primaryContact, string? commodities, string? linkedProducerIds,
-        string currentUser, CancellationToken cancellationToken)
+        IReadOnlyList<GrainOnFarmEntry> grainOnFarm, string currentUser, CancellationToken cancellationToken)
     {
         var existing = await _appContext.ProducerDetails.FirstOrDefaultAsync(pd => pd.CustomerId == customerId, cancellationToken);
 
@@ -188,7 +206,36 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
             }
         }
 
+        // Same rebuild pattern for dbo.ProducerGrainOnFarm — replace the customer's per-group
+        // grain-on-farm set. Dedupe by group (last write wins); skip blank groups.
+        var oldGrain = await _appContext.ProducerGrainOnFarm
+            .Where(g => g.CustomerId == customerId)
+            .ToListAsync(cancellationToken);
+        if (oldGrain.Count > 0)
+        {
+            _appContext.ProducerGrainOnFarm.RemoveRange(oldGrain);
+        }
+        var grainItems = grainOnFarm
+            .Where(g => !string.IsNullOrWhiteSpace(g.CommodityGroup))
+            .GroupBy(g => g.CommodityGroup.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.Last())
+            .ToList();
+        foreach (var item in grainItems)
+        {
+            _appContext.ProducerGrainOnFarm.Add(new ProducerGrainOnFarm
+            {
+                CustomerId = customerId,
+                CommodityGroup = item.CommodityGroup.Trim(),
+                BushelsOnHand = item.BushelsOnHand,
+                TargetBushels = item.TargetBushels,
+                Grade = string.IsNullOrWhiteSpace(item.Grade) ? null : item.Grade.Trim()
+            });
+        }
+
         await _appContext.SaveChangesAsync(cancellationToken);
+        // Reflect the persisted grain-on-farm set (with commodity names) back on the returned entity
+        // so the upsert response carries the breakdown.
+        saved.GrainOnFarm = await GetGrainOnFarmAsync(customerId, cancellationToken);
         _logger.LogInformation("Upserted ProducerDetails for customer {CustomerId}", customerId);
         return saved;
     }
@@ -239,5 +286,20 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
             .Where(code => !string.IsNullOrEmpty(code))
             .ToListAsync(cancellationToken);
         return codes.Count == 0 ? null : string.Join(",", codes);
+    }
+
+    /// <summary>Composes the per-group grain-on-farm rows for a customer from dbo.ProducerGrainOnFarm.</summary>
+    private async Task<List<GrainOnFarmEntry>> GetGrainOnFarmAsync(long customerId, CancellationToken cancellationToken)
+    {
+        return await _appContext.ProducerGrainOnFarm.AsNoTracking()
+            .Where(g => g.CustomerId == customerId)
+            .Select(g => new GrainOnFarmEntry
+            {
+                CommodityGroup = g.CommodityGroup,
+                BushelsOnHand = g.BushelsOnHand,
+                TargetBushels = g.TargetBushels,
+                Grade = g.Grade
+            })
+            .ToListAsync(cancellationToken);
     }
 }

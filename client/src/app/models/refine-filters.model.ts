@@ -65,6 +65,16 @@ export interface RefinementFilters {
   drylandOnly?: boolean;
   doubleCropOnly?: boolean;
   plantingAcresOver?: number | null;
+  // Grain on farm (producer profile: bushels on hand + $/bu target price). Crop-scoped when
+  // `crops` is also set (the "Grain on Farm" dimension in the crop-aware filter).
+  grainOnFarmBushelsOver?: number | null;
+  hasGrainTarget?: boolean;
+  noGrainTarget?: boolean;
+  grainTargetOver?: number | null;
+  grainTargetUnder?: number | null;
+  hasGrade?: boolean;        // has a free-text grade entered on a grain-on-farm row
+  gradeOver?: number | null; // grade's parsed number at/above this (e.g. "4.4%" -> 4.4)
+  gradeUnder?: number | null;// grade's parsed number at/below this
   // Dynamic
   crops?: string[];
   states?: string[];

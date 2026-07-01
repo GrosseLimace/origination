@@ -1,4 +1,5 @@
 import { Coordinates } from './coordinates.model';
+import { GrainOnFarmItem } from './producer-details.model';
 
 export interface Customer {
   id: number;             // Maps to bigint in C# API
@@ -32,6 +33,7 @@ export interface Customer {
 
   // CustomerDetails fields (populated from app DB / ProducerDetails table)
   binCapacity?: number;       // Bushels - bin storage capacity
+  grainOnFarm?: GrainOnFarmItem[]; // Per-commodity bushels on hand + target
   commodities?: string[];     // e.g. ['Corn', 'Soybeans', 'Wheat']
   primaryContact?: string;    // User-entered primary contact name
 

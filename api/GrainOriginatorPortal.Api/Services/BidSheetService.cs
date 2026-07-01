@@ -1,3 +1,4 @@
+using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services.Mappings;
@@ -53,6 +54,12 @@ public class BidSheetService : IBidSheetService
     /// <inheritdoc />
     public async Task<BidSheetLocationResponse> CreateLocationAsync(CreateBidSheetLocationRequest request, CancellationToken cancellationToken)
     {
+        // Friendly guard for the unique (Name, TradeUnitCode) index: surface a clear validation
+        // message (→ 400) instead of a generic 500 when the name is already taken in this trade unit.
+        if (await _repository.LocationNameExistsAsync(request.Name, request.TradeUnitCode, cancellationToken))
+            throw new ValidationException("name",
+                $"A location named \"{request.Name.Trim()}\" already exists in this trade unit. Use a different name.");
+
         var user = _requestContext.GetCurrentUser();
         var now = DateTime.UtcNow;
         var location = new BidSheetLocation
