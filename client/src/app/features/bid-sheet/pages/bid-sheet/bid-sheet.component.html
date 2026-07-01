@@ -564,183 +564,37 @@
                   </div>
                 </div>
 
-                <!-- Name + Elevator Code -->
-                <div class="grid grid-cols-3 gap-3">
-                  <div class="col-span-2">
-                    <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Location Name <span class="text-scoular-red">*</span></label>
-                    <input type="text" [ngModel]="newLocationName()" (ngModelChange)="newLocationName.set($event)" placeholder="e.g. Kansas West" class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
-                  </div>
-                  <div>
-                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Elevator Code</label>
-                    <input type="text" [ngModel]="newLocationElevatorCode()" (ngModelChange)="newLocationElevatorCode.set($event)" placeholder="Optional" class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
-                  </div>
-                </div>
-
-                <!-- Scoular facility toggle -->
+                <!-- Name + Scoular star (tap the star to mark/unmark as a Scoular facility) -->
                 <div>
-                  <button
-                    type="button"
-                    (click)="newLocationIsScoular.set(!newLocationIsScoular())"
-                    [class.bg-scoular-yellow]="newLocationIsScoular()"
-                    [class.text-gray-900]="newLocationIsScoular()"
-                    [class.bg-gray-100]="!newLocationIsScoular()"
-                    [class.dark:bg-gray-700]="!newLocationIsScoular()"
-                    [class.text-gray-700]="!newLocationIsScoular()"
-                    [class.dark:text-gray-300]="!newLocationIsScoular()"
-                    class="w-full text-sm font-medium rounded-lg px-3 py-2 flex items-center justify-center gap-2 border border-gray-300 dark:border-gray-600 hover:opacity-90 transition-colors">
-                    <span class="text-base">{{ newLocationIsScoular() ? '★' : '☆' }}</span>
-                    <span>{{ newLocationIsScoular() ? 'Scoular Facility' : 'Mark as Scoular Facility' }}</span>
-                  </button>
-                </div>
-
-                <!-- Address -->
-                <div>
-                  <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Address</label>
-                  <input type="text" [ngModel]="newLocationAddress()" (ngModelChange)="newLocationAddress.set($event)" placeholder="Optional" class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
-                </div>
-
-                <!-- City + State -->
-                <div class="grid grid-cols-3 gap-3">
-                  <div class="col-span-2">
-                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">City</label>
-                    <input type="text" [ngModel]="newLocationCity()" (ngModelChange)="newLocationCity.set($event)" placeholder="Optional" class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
-                  </div>
-                  <div>
-                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">State</label>
-                    <input type="text" [ngModel]="newLocationState()" (ngModelChange)="newLocationState.set($event)" placeholder="e.g. KS" maxlength="2" class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
-                  </div>
-                </div>
-
-                <!-- Crops & Bids — hidden when launched from Edit Bids screen -->
-                @if (addLocationOrigin() !== 'editBids') {
-                <div>
-                  <!-- Label, entry-mode toggle, and Add Crop all on one line. Year (default) enters
-                       yearly bids; Month enters monthly bids — same prior/next "add" mechanic in both. -->
-                  <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
-                    <label class="text-xs font-medium text-gray-700 dark:text-gray-300 shrink-0">Crops & Bids <span class="text-scoular-red">*</span></label>
-                    <div class="flex items-center gap-1.5">
-                      <span class="text-xs text-gray-500 dark:text-gray-400">Enter bids by</span>
-                      <div class="inline-flex rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden">
-                        <button type="button" (click)="setLocationPeriodMode('year')"
-                          class="px-3 py-1 text-xs font-medium transition-colors"
-                          [ngClass]="newLocationPeriodMode() === 'year' ? 'bg-scoular-green-accessible text-white' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'">Year</button>
-                        <button type="button" (click)="setLocationPeriodMode('month')"
-                          class="px-3 py-1 text-xs font-medium border-l border-gray-300 dark:border-gray-600 transition-colors"
-                          [ngClass]="newLocationPeriodMode() === 'month' ? 'bg-scoular-green-accessible text-white' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'">Month</button>
-                      </div>
-                    </div>
-                    <button (click)="addCropRow()" type="button" class="text-xs text-scoular-green-accessible hover:text-scoular-green font-medium flex items-center gap-1 shrink-0">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                      Add Crop
+                  <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Location Name <span class="text-scoular-red">*</span></label>
+                  <div class="flex items-center gap-2">
+                    <input type="text" [ngModel]="newLocationName()" (ngModelChange)="newLocationName.set($event)" placeholder="e.g. Kansas West" class="flex-1 min-w-0 text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
+                    <button
+                      type="button"
+                      (click)="newLocationIsScoular.set(!newLocationIsScoular())"
+                      [attr.aria-pressed]="newLocationIsScoular()"
+                      [title]="newLocationIsScoular() ? 'Scoular facility — click to unmark' : 'Mark as Scoular facility'"
+                      [class.bg-scoular-yellow]="newLocationIsScoular()"
+                      [class.text-gray-900]="newLocationIsScoular()"
+                      [class.bg-gray-100]="!newLocationIsScoular()"
+                      [class.dark:bg-gray-700]="!newLocationIsScoular()"
+                      [class.text-gray-400]="!newLocationIsScoular()"
+                      class="shrink-0 w-10 h-[38px] flex items-center justify-center rounded-lg border border-gray-300 dark:border-gray-600 hover:opacity-90 transition-colors">
+                      <span class="text-lg leading-none">{{ newLocationIsScoular() ? '★' : '☆' }}</span>
                     </button>
                   </div>
-                  @for (crop of newLocationCrops(); track crop.commodityCode; let rowIndex = $index) {
-                    <div class="mb-2 border border-gray-200 dark:border-gray-700 rounded-lg p-2 space-y-2">
-                      <!-- Crop search / selected -->
-                      <div class="flex items-center gap-2">
-                        <div class="flex-1 relative">
-                          @if (crop.commodityCode) {
-                            <div class="flex items-center w-full text-sm text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-2.5 py-1.5">
-                              <span class="flex-1 truncate">{{ (crop.searchQuery || crop.commodityCode) }}</span>
-                              <button type="button" (click)="clearCropSelection(rowIndex)" class="ml-1 text-gray-400 hover:text-scoular-red transition-colors shrink-0">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-                              </button>
-                            </div>
-                          } @else {
-                            <input
-                              type="text"
-                              [ngModel]="crop.searchQuery"
-                              (ngModelChange)="onCropSearchInput(rowIndex, $event)"
-                              (focus)="crop.searchQuery ? onCropSearchInput(rowIndex, crop.searchQuery) : null"
-                              (blur)="hideCropDropdownDelayed()"
-                              placeholder="Search by Code or Name"
-                              class="w-full text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"
-                            />
-                          }
-                          @if (cropDropdownIndex() === rowIndex && filteredCommodities(crop.searchQuery).length > 0) {
-                            <div class="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-64 overflow-y-auto">
-                              @for (c of filteredCommodities(crop.searchQuery); track c.code) {
-                                <button
-                                  type="button"
-                                  class="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white transition-colors"
-                                  (mousedown)="selectCommodity(rowIndex, c)"
-                                >
-                                  <span class="font-medium">{{ c.name }}</span>
-                                </button>
-                              }
-                            </div>
-                          }
-                        </div>
-                        @if (newLocationCrops().length > 1) {
-                          <button (click)="removeCropRow(rowIndex)" type="button" class="text-gray-400 hover:text-scoular-red p-1 shrink-0">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                          </button>
-                        }
-                      </div>
-                      <!-- Bids: Current period always shown; Prior/Next optional via "+ Add". Labels
-                           follow the Year/Month entry mode (e.g. "Current Year (2026)" vs "Current Month (Jun 26)"). -->
-                      <div class="space-y-2">
-                        @if (crop.showPrior) {
-                          <div>
-                            <div class="flex items-center justify-between mb-1">
-                              <div class="text-xs text-gray-500 dark:text-gray-400 font-medium">{{ slotLabel('Prior', crop) }}</div>
-                              <button (click)="removePriorYear(rowIndex)" type="button" class="text-gray-400 hover:text-scoular-red shrink-0" [title]="'Remove ' + (newLocationPeriodMode() === 'month' ? 'prior month' : 'prior year')">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                              </button>
-                            </div>
-                            <input type="text" [ngModel]="crop.priorBid" (ngModelChange)="updateCropPriorBid(rowIndex, $event)" placeholder="Bid" class="w-full font-mono text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
-                          </div>
-                        }
-                        <div>
-                          <div class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">{{ slotLabel('Current', crop) }}</div>
-                          <input type="text" [ngModel]="crop.currentBid" (ngModelChange)="updateCropCurrentBid(rowIndex, $event)" placeholder="Bid" class="w-full font-mono text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
-                        </div>
-                        @if (crop.showNext) {
-                          <div>
-                            <div class="flex items-center justify-between mb-1">
-                              <div class="text-xs text-gray-500 dark:text-gray-400 font-medium">{{ slotLabel('Next', crop) }}</div>
-                              <button (click)="removeNextYear(rowIndex)" type="button" class="text-gray-400 hover:text-scoular-red shrink-0" [title]="'Remove ' + (newLocationPeriodMode() === 'month' ? 'next month' : 'next year')">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                              </button>
-                            </div>
-                            <input type="text" [ngModel]="crop.nextBid" (ngModelChange)="updateCropNextBid(rowIndex, $event)" placeholder="Bid" class="w-full font-mono text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent placeholder-gray-400"/>
-                          </div>
-                        }
-                        @if (!crop.showPrior || !crop.showNext) {
-                          @if (yearMenuIndex() === rowIndex) {
-                            <!-- Inline prior/next picker — flows in the form so it never gets clipped by the
-                                 scroll container, and there's no floating backdrop to dismiss it early. -->
-                            <div class="flex items-center gap-2 flex-wrap pt-0.5">
-                              <span class="text-xs font-medium text-gray-500 dark:text-gray-400">Add:</span>
-                              @if (!crop.showPrior) {
-                                <button type="button" (click)="addPriorYear(rowIndex)" class="px-2 py-1 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">{{ slotLabel('Prior', crop) }}</button>
-                              }
-                              @if (!crop.showNext) {
-                                <button type="button" (click)="addNextYear(rowIndex)" class="px-2 py-1 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">{{ slotLabel('Next', crop) }}</button>
-                              }
-                              <button type="button" (click)="yearMenuIndex.set(null)" title="Cancel" class="text-gray-400 hover:text-scoular-red shrink-0 p-0.5">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                              </button>
-                            </div>
-                          } @else {
-                            <button (click)="toggleYearMenu(rowIndex)" type="button" class="text-xs text-scoular-green-accessible hover:text-scoular-green font-medium flex items-center gap-1">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                              {{ newLocationPeriodMode() === 'month' ? 'Add month' : 'Add year' }}
-                            </button>
-                          }
-                        }
-                      </div>
-                    </div>
-                  }
+                  <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Tap the ☆ to mark this as a Scoular facility.</p>
                 </div>
-                } <!-- end @if addLocationOrigin !== editBids -->
+
+                <!-- Bids are entered next, in the full Edit Bids grid (opened on save). -->
+                <p class="text-xs text-gray-500 dark:text-gray-400">Pick the point, name it, then continue to enter bids in the grid.</p>
 
               </div>
 
               <!-- Footer -->
               <div class="shrink-0 px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2 bg-white dark:bg-gray-900 rounded-b-xl">
                 <button (click)="cancelAddLocation()" class="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Cancel</button>
-                <button (click)="confirmAddLocation()" [disabled]="!canSaveLocation() || addLocationSaving()" class="px-3 py-1.5 text-sm font-medium text-white rounded-lg transition-colors" [ngClass]="(canSaveLocation() && !addLocationSaving()) ? 'bg-scoular-green-accessible hover:bg-scoular-green' : 'bg-gray-300 dark:bg-gray-600 cursor-not-allowed'">{{ addLocationSaving() ? 'Saving…' : 'Save Location' }}</button>
+                <button (click)="confirmAddLocation()" [disabled]="!canSaveLocation() || addLocationSaving()" class="px-3 py-1.5 text-sm font-medium text-white rounded-lg transition-colors" [ngClass]="(canSaveLocation() && !addLocationSaving()) ? 'bg-scoular-green-accessible hover:bg-scoular-green' : 'bg-gray-300 dark:bg-gray-600 cursor-not-allowed'">{{ addLocationSaving() ? 'Saving…' : 'Continue to Bids' }}</button>
               </div>
             </div>
           }
@@ -990,11 +844,15 @@
                           [ngClass]="scoularLocationNames().has(row.name)
                             ? 'bg-green-50 dark:bg-green-900/30'
                             : 'bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/40'">
+                        <!-- Sticky frozen column MUST be opaque so horizontally-scrolled bid cells
+                             don't show through. The Scoular/elevator highlights use opaque hexes that
+                             match how their translucent tints (green-900/30, scoular-green/10|20)
+                             rendered over the table background — same look, but no bleed-through. -->
                         <td class="sticky left-0 z-10 px-4 py-3 border-r border-gray-200 dark:border-gray-700"
                             [ngClass]="scoularLocationNames().has(row.name)
-                              ? 'bg-green-50 dark:bg-green-900/30'
+                              ? 'bg-green-50 dark:bg-[#122a29]'
                               : (row.type === 'elevator'
-                                ? 'bg-scoular-green/10 dark:bg-scoular-green/20'
+                                ? 'bg-[#e6f6f1] dark:bg-[#0e3435]'
                                 : 'bg-white dark:bg-gray-900')">
                           <div class="flex items-center gap-2">
                             <span cdkDragHandle class="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400 flex-shrink-0">

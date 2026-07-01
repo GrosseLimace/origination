@@ -45,6 +45,7 @@ export class EditCustomerDialogComponent {
     eSignEnabled: boolean;
     tradeUnitCodes: string[];        // Desired ACTIVE manual TU set — reconciled on "Save Changes".
     reconcileTradeUnits: boolean;    // Only reconcile when it's safe + meaningful (see canReconcileTradeUnits).
+    grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[];
   }>();
 
   // ── Trade-unit assignment / management ──────────────────────────────────
@@ -157,6 +158,56 @@ export class EditCustomerDialogComponent {
   filteredCommodities = signal<Commodity[]>([]);
   showSuggestions = signal(false);
 
+  // ── Grain on Farm (per commodity GROUP: on-hand + target) ───────────────
+  // Numbers are kept as strings for the inputs and parsed on save (mirrors editBinCapacity).
+  editGrainOnFarm = signal<{ commodityGroup: string; bushelsOnHand: string; targetBushels: string; grade: string }[]>([]);
+  newGrainGroup = signal(''); // commodity group selected in the "add row" dropdown
+  /** Commodity groups never offered for Grain on Farm (title-cased, matched case-insensitively). */
+  private static readonly HIDDEN_GRAIN_GROUPS = new Set(['other grain']);
+
+  /** Distinct commodity groups (Commodity.category — e.g. Corn, Wheat, Soybeans) not yet added,
+   *  for the add dropdown. Sourced from the curated commodity list the dialog already loads.
+   *  "Other Grain" is excluded — it's not a meaningful on-farm grain category. */
+  readonly availableGrainGroups = computed(() => {
+    const used = new Set(this.editGrainOnFarm().map(r => r.commodityGroup));
+    const groups = new Set<string>();
+    for (const c of this.allCommodities()) {
+      const g = this._titleCaseGroup(c.category);
+      if (g && !used.has(g) && !EditCustomerDialogComponent.HIDDEN_GRAIN_GROUPS.has(g.toLowerCase())) {
+        groups.add(g);
+      }
+    }
+    return [...groups].sort((a, b) => a.localeCompare(b));
+  });
+
+  /** Normalizes a group label to title case so the data's ALL-CAPS categories
+   *  ("CORN", "FEED & FERT INGREDIENTS") read as "Corn", "Feed & Fert Ingredients". */
+  private _titleCaseGroup(value: string | undefined): string {
+    return (value || '').trim().toLowerCase().replace(/\b\w/g, ch => ch.toUpperCase());
+  }
+
+  addGrainRow(): void {
+    const group = this.newGrainGroup().trim();
+    if (!group || this.editGrainOnFarm().some(r => r.commodityGroup === group)) return;
+    this.editGrainOnFarm.update(rows => [...rows, { commodityGroup: group, bushelsOnHand: '', targetBushels: '', grade: '' }]);
+    this.newGrainGroup.set('');
+  }
+
+  removeGrainRow(commodityGroup: string): void {
+    this.editGrainOnFarm.update(rows => rows.filter(r => r.commodityGroup !== commodityGroup));
+  }
+
+  // ── Collapsible sections (edit dialog) ──────────────────────────────────
+  // Each section header toggles its body so the dialog opens compact and the user
+  // expands only what they need (less scrolling).
+  private readonly _expandedSections = signal<Record<string, boolean>>({
+    tradeUnits: true, farm: true, links: true,
+  });
+  isExpanded(key: string): boolean { return this._expandedSections()[key] ?? false; }
+  toggleSection(key: string): void {
+    this._expandedSections.update(s => ({ ...s, [key]: !s[key] }));
+  }
+
   // Producer search
   // _allProducersForSearch caches the full cross-trade-unit list (only loaded when no trade units selected)
   private _allProducersForSearch: Customer[] = [];
@@ -168,6 +219,7 @@ export class EditCustomerDialogComponent {
   private _originalAcres: number = 0;
   private _originalBinCapacity: number = 0;
   private _originalCommodities: string[] = [];
+  private _originalGrainOnFarm: string = '[]'; // serialized snapshot for change detection
   private _originalLinkedProducerIds: string[] = [];
   private _originalESignEnabled = false;
   private _originalPrimaryContact = '';
@@ -226,11 +278,19 @@ export class EditCustomerDialogComponent {
         this.removedIncomingIds.set([]);
         this.editESignEnabled.set(customer.eSignEnabled);
         this.editPrimaryContact.set(customer.primaryContact || '');
+        this.editGrainOnFarm.set((customer.grainOnFarm || []).map(g => ({
+          commodityGroup: g.commodityGroup,
+          bushelsOnHand: g.bushelsOnHand != null ? String(g.bushelsOnHand) : '',
+          targetBushels: g.targetBushels != null ? String(g.targetBushels) : '',
+          grade: g.grade ?? ''
+        })));
+        this.newGrainGroup.set('');
 
         // Store original values
         this._originalAcres = customer.totalAcres || 0;
         this._originalBinCapacity = customer.binCapacity || 0;
         this._originalCommodities = [...this.editCommodities()];
+        this._originalGrainOnFarm = this._serializeGrain();
         this._originalLinkedProducerIds = [...(customer.linkedProducerIds || [])];
         this._originalESignEnabled = customer.eSignEnabled;
         this._originalPrimaryContact = customer.primaryContact || '';
@@ -289,6 +349,8 @@ export class EditCustomerDialogComponent {
     this.editAcres = '';
     this.editBinCapacity = '';
     this.editCommodities.set([]);
+    this.editGrainOnFarm.set([]);
+    this.newGrainGroup.set('');
     this.editPrimaryContact.set('');
     this.editLinkedProducerIds.set([]);
     this.removedIncomingIds.set([]);
@@ -374,10 +436,20 @@ export class EditCustomerDialogComponent {
     return this._parseNumericInput(this.editAcres) !== this._originalAcres
       || this._parseNumericInput(this.editBinCapacity) !== this._originalBinCapacity
       || commoditiesChanged
+      || this._serializeGrain() !== this._originalGrainOnFarm
       || this.editESignEnabled() !== this._originalESignEnabled
       || this.editPrimaryContact() !== this._originalPrimaryContact
       || linkedProducerIdsChanged
       || this.removedIncomingIds().length > 0;
+  }
+
+  /** Stable serialization of the grain-on-farm rows for change detection (order-independent). */
+  private _serializeGrain(): string {
+    return JSON.stringify(
+      this.editGrainOnFarm()
+        .map(r => ({ g: r.commodityGroup, h: r.bushelsOnHand.trim(), t: r.targetBushels.trim(), gr: r.grade.trim() }))
+        .sort((a, b) => a.g.localeCompare(b.g))
+    );
   }
 
   addCommodity(): void {
@@ -462,6 +534,14 @@ export class EditCustomerDialogComponent {
   private _parseNumericInput(value: string): number {
     const digits = value.replace(/[^0-9]/g, '');
     const num = parseInt(digits, 10);
+    return isNaN(num) ? 0 : num;
+  }
+
+  /** Parses a number that may contain a decimal point (e.g. the grain-on-farm target like "5.5").
+   *  Strips everything except digits and a dot, then parses as a float. */
+  private _parseDecimalInput(value: string): number {
+    const cleaned = value.replace(/[^0-9.]/g, '');
+    const num = parseFloat(cleaned);
     return isNaN(num) ? 0 : num;
   }
 
@@ -569,6 +649,13 @@ export class EditCustomerDialogComponent {
     this.editAcres = String(this._originalAcres || 0);
     this.editBinCapacity = String(this._originalBinCapacity || 0);
     this.editCommodities.set([...this._originalCommodities]);
+    this.editGrainOnFarm.set((this.customer()?.grainOnFarm || []).map(g => ({
+      commodityGroup: g.commodityGroup,
+      bushelsOnHand: g.bushelsOnHand != null ? String(g.bushelsOnHand) : '',
+      targetBushels: g.targetBushels != null ? String(g.targetBushels) : '',
+      grade: g.grade ?? ''
+    })));
+    this.newGrainGroup.set('');
     this.editLinkedProducerIds.set([...this._originalLinkedProducerIds]);
     this.removedIncomingIds.set([]);
     this.editESignEnabled.set(this._originalESignEnabled);
@@ -610,7 +697,15 @@ export class EditCustomerDialogComponent {
         removedIncomingIds: this.removedIncomingIds(),
         eSignEnabled: this.editESignEnabled(),
         tradeUnitCodes: this.selectedTuCodes(),
-        reconcileTradeUnits: this.canReconcileTradeUnits()
+        reconcileTradeUnits: this.canReconcileTradeUnits(),
+        grainOnFarm: this.editGrainOnFarm()
+          .filter(r => r.commodityGroup)
+          .map(r => ({
+            commodityGroup: r.commodityGroup,
+            bushelsOnHand: r.bushelsOnHand.trim() ? this._parseNumericInput(r.bushelsOnHand) : undefined,
+            targetBushels: r.targetBushels.trim() ? this._parseDecimalInput(r.targetBushels) : undefined,
+            grade: r.grade.trim() || undefined
+          }))
       });
       this._initialized = false;
       this.close.emit();

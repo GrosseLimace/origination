@@ -3,6 +3,7 @@ export const environment = {
   envName: 'Local',
   bidSheetEnabled: true,
   usageDashboardEnabled: true,
+  dailyDigestEnabled: true,
   apiBaseUrl: 'http://localhost:5000/api',
   msalConfig: {
     auth: {

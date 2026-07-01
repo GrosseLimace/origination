@@ -53,34 +53,6 @@ interface BidSheetPanelItem {
 /** Width threshold (px) below which the filter bar wraps the search/clear group to a centered second row. */
 const FILTER_BAR_WRAP_WIDTH = 1050;
 
-/**
- * A crop row in the Add Location form. Carries both the year-mode slots (prior/current/next
- * *year*, month 0) and the month-mode slots (prior/current/next *month*, with the calendar
- * year that month falls in). The form-level `newLocationPeriodMode` decides which set is shown
- * and persisted; the bid value + show flags are shared between modes.
- */
-interface AddLocationCropRow {
-  commodityCode: string;
-  searchQuery: string;
-  showDropdown: boolean;
-  currentBid: string;
-  priorBid: string;
-  showPrior: boolean;
-  nextBid: string;
-  showNext: boolean;
-  // Year mode
-  currentYear: number;
-  priorYear: number;
-  nextYear: number;
-  // Month mode (1-12 + the calendar year that month belongs to, rolling at Jan/Dec)
-  currentMonth: number;
-  currentMonthYear: number;
-  priorMonth: number;
-  priorMonthYear: number;
-  nextMonth: number;
-  nextMonthYear: number;
-}
-
 @Component({
   selector: 'app-bid-sheet',
   standalone: true,
@@ -378,26 +350,10 @@ export class BidSheetComponent {
   addLocationOrigin = signal<'editBids' | null>(null); // where the add-location flow was launched from
   showAddLocationForm = signal<boolean>(false);    // form popup is open
   newLocationName = signal<string>('');
-  newLocationElevatorCode = signal<string>('');
-  newLocationAddress = signal<string>('');
-  newLocationCity = signal<string>('');
-  newLocationState = signal<string>('');
   newLocationLat = signal<number | null>(null);
   newLocationLng = signal<number | null>(null);
   newLocationTu = signal<string>('');
   newLocationIsScoular = signal<boolean>(false);
-  // Each crop row always shows a Current Year bid; Prior (current-1) and Next (current+1)
-  // are optional, toggled on via the "+ Add year" menu and removable. Only the shown years
-  // with a value get persisted.
-  newLocationCrops = signal<AddLocationCropRow[]>([]);
-  // Add Location entry mode: 'year' (default) enters yearly bids (current year + optional
-  // prior/next year, month 0); 'month' enters monthly bids (current month + optional
-  // prior/next month). Same prior/next "add" mechanic in both modes.
-  newLocationPeriodMode = signal<'year' | 'month'>('year');
-  /** Row index whose "+ Add year" / "+ Add month" menu is open, or null. */
-  yearMenuIndex = signal<number | null>(null);
-  readonly addLocationYears: number[] = (() => { const y = new Date().getFullYear(); return [y - 1, y]; })();
-  // (commodityCode stores the category value, e.g. "CORN", "WHEAT")
   private _addLocationPin: Leaflet.Marker | null = null;
 
   // TUs available for selection when adding a location.
@@ -450,39 +406,6 @@ export class BidSheetComponent {
       .map(({ code, name }) => ({ code, name }));
   }
 
-  selectCommodity(index: number, item: { code: string; name: string }): void {
-    this.newLocationCrops.update(rows => rows.map((r, i) =>
-      i === index ? { ...r, commodityCode: item.code, searchQuery: item.name, showDropdown: false } : r
-    ));
-    this.cropDropdownIndex.set(-1);
-  }
-
-  onCropSearchInput(index: number, value: string): void {
-    this.newLocationCrops.update(rows => rows.map((r, i) =>
-      i === index ? { ...r, searchQuery: value, commodityCode: '', showDropdown: true } : r
-    ));
-    this.cropDropdownIndex.set(index);
-    // Auto-scroll the form container so the dropdown is visible
-    setTimeout(() => {
-      const container = document.querySelector('.add-location-scroll');
-      if (container) container.scrollTop = container.scrollHeight;
-    }, 50);
-  }
-
-  cropDropdownIndex = signal<number>(-1);
-
-  hideCropDropdownDelayed(): void {
-    setTimeout(() => {
-      const idx = this.cropDropdownIndex();
-      if (idx >= 0) {
-        const rows = this.newLocationCrops();
-        if (rows[idx] && !rows[idx].commodityCode) {
-          this.newLocationCrops.update(r => r.map((row, i) => i === idx ? { ...row, searchQuery: '' } : row));
-        }
-      }
-      this.cropDropdownIndex.set(-1);
-    }, 200);
-  }
 
   // --- Refresh timer ---
   lastRefreshed = signal<Date>(new Date());
@@ -625,10 +548,16 @@ export class BidSheetComponent {
         const currentYear = new Date().getFullYear();
         if (cropYears.length === 0) cropYears = [currentYear];
         this.cropYears.set(cropYears);
-        this.yearOffset.set(0);
         if (!cropYears.includes(this.selectedYear())) {
           this.selectedYear.set(cropYears.includes(currentYear) ? currentYear : cropYears[cropYears.length - 1]);
         }
+        // Anchor the old/new comparison window to the SELECTED year so the panel's "prior" column is
+        // always selectedYear-1 — not the second-latest year. Previously this reset yearOffset to 0
+        // (= latest two years); when the selected year wasn't the latest (e.g. 2026 with 2027 bids
+        // present), the "prior" column collided with the selected year and both showed the same year
+        // with the same bid after a refresh/Done.
+        const selIdx = cropYears.indexOf(this.selectedYear());
+        this.yearOffset.set(selIdx >= 0 ? selIdx - (cropYears.length - 1) : 0);
 
         this.isLoading.set(false);
         this.filterBids();
@@ -1231,8 +1160,7 @@ export class BidSheetComponent {
     const tus = this.addLocationTus();
     this.newLocationTu.set(tus.length === 1 ? tus[0] : '');
 
-    // Open the form
-    this.newLocationCrops.set([this._makeCropRow()]);
+    // Open the form (just name + Scoular star; bids are entered later in the grid)
     this.showAddLocationForm.set(true);
   }
 
@@ -1240,120 +1168,10 @@ export class BidSheetComponent {
     const name = this.newLocationName().trim();
     const tu = this.newLocationTu();
     const hasCoords = this.newLocationLat() !== null;
-    if (this.addLocationOrigin() === 'editBids') {
-      return !!name && !!tu && hasCoords;
-    }
-    // A crop counts as long as it has a commodity and at least ONE bid in a shown year.
-    const crops = this.newLocationCrops().filter(c => c.commodityCode.trim() && this._cropHasBid(c));
-    return !!name && !!tu && crops.length > 0 && hasCoords;
+    // Bids are entered afterward in the Edit Bids grid, so creating a location only needs a
+    // name, a trade unit, and the coordinates picked on the map.
+    return !!name && !!tu && hasCoords;
   });
-
-  /** True when a crop row has a bid in any currently-shown year (current always; prior/next if toggled on). */
-  private _cropHasBid(c: AddLocationCropRow): boolean {
-    return !!c.currentBid.trim() || (c.showPrior && !!c.priorBid.trim()) || (c.showNext && !!c.nextBid.trim());
-  }
-
-  /** Builds a fresh crop row: Current Year shown, Prior/Next available via the menu. */
-  private _makeCropRow(): AddLocationCropRow {
-    const now = new Date();
-    // "Current" crop year defaults to the actual calendar year (Prior = -1, Next = +1) — NOT the
-    // latest year present in the data, which can run ahead (e.g. 2027 bids already entered).
-    const current = now.getFullYear();
-    const curMonth = now.getMonth() + 1;      // 1-12
-    const curMonthYear = now.getFullYear();
-    // Prior/next month roll the calendar year at the Jan/Dec boundaries.
-    const priorMonth = curMonth === 1 ? 12 : curMonth - 1;
-    const priorMonthYear = curMonth === 1 ? curMonthYear - 1 : curMonthYear;
-    const nextMonth = curMonth === 12 ? 1 : curMonth + 1;
-    const nextMonthYear = curMonth === 12 ? curMonthYear + 1 : curMonthYear;
-    return {
-      commodityCode: '', searchQuery: '', showDropdown: false,
-      currentBid: '', priorBid: '', showPrior: false, nextBid: '', showNext: false,
-      currentYear: current, priorYear: current - 1, nextYear: current + 1,
-      currentMonth: curMonth, currentMonthYear: curMonthYear,
-      priorMonth, priorMonthYear,
-      nextMonth, nextMonthYear,
-    };
-  }
-
-  /**
-   * Switches the Add Location entry mode. Because a Year slot and a Month slot mean different
-   * things, switching clears the entered bids and collapses the optional prior/next slots so
-   * each value is re-entered under the new mode (prevents a "2025" bid silently becoming "May").
-   */
-  setLocationPeriodMode(mode: 'year' | 'month'): void {
-    if (this.newLocationPeriodMode() === mode) return;
-    this.newLocationPeriodMode.set(mode);
-    this.yearMenuIndex.set(null);
-    this.newLocationCrops.update(rows => rows.map(r => ({
-      ...r, currentBid: '', priorBid: '', nextBid: '', showPrior: false, showNext: false,
-    })));
-  }
-
-  /** Label for a bid slot, e.g. "Current Year (2026)" or "Current Month (Jun 26)". */
-  slotLabel(kind: 'Prior' | 'Current' | 'Next', crop: AddLocationCropRow): string {
-    if (this.newLocationPeriodMode() === 'month') {
-      const [m, y] = kind === 'Prior' ? [crop.priorMonth, crop.priorMonthYear]
-        : kind === 'Next' ? [crop.nextMonth, crop.nextMonthYear]
-        : [crop.currentMonth, crop.currentMonthYear];
-      return `${kind} Month (${this.formatMonthYear(m, y)})`;
-    }
-    const y = kind === 'Prior' ? crop.priorYear : kind === 'Next' ? crop.nextYear : crop.currentYear;
-    return `${kind} Year (${y})`;
-  }
-
-  clearCropSelection(index: number): void {
-    this.newLocationCrops.update(rows => rows.map((r, i) =>
-      i === index ? { ...r, commodityCode: '', searchQuery: '', showDropdown: false } : r
-    ));
-  }
-
-  addCropRow(): void {
-    this.newLocationCrops.update(rows => [...rows, this._makeCropRow()]);
-  }
-
-  removeCropRow(index: number): void {
-    this.newLocationCrops.update(rows => rows.filter((_, i) => i !== index));
-  }
-
-  updateCropCurrentBid(index: number, value: string): void {
-    this.newLocationCrops.update(rows => rows.map((r, i) => i === index ? { ...r, currentBid: value } : r));
-  }
-
-  updateCropPriorBid(index: number, value: string): void {
-    this.newLocationCrops.update(rows => rows.map((r, i) => i === index ? { ...r, priorBid: value } : r));
-  }
-
-  updateCropNextBid(index: number, value: string): void {
-    this.newLocationCrops.update(rows => rows.map((r, i) => i === index ? { ...r, nextBid: value } : r));
-  }
-
-  /** Toggles the "+ Add year" menu for a crop row. */
-  toggleYearMenu(index: number): void {
-    this.yearMenuIndex.update(cur => cur === index ? null : index);
-  }
-
-  /** Reveals the Prior Year bid input for a crop row. */
-  addPriorYear(index: number): void {
-    this.newLocationCrops.update(rows => rows.map((r, i) => i === index ? { ...r, showPrior: true } : r));
-    this.yearMenuIndex.set(null);
-  }
-
-  /** Reveals the Next Year bid input for a crop row. */
-  addNextYear(index: number): void {
-    this.newLocationCrops.update(rows => rows.map((r, i) => i === index ? { ...r, showNext: true } : r));
-    this.yearMenuIndex.set(null);
-  }
-
-  /** Hides + clears the Prior Year bid for a crop row. */
-  removePriorYear(index: number): void {
-    this.newLocationCrops.update(rows => rows.map((r, i) => i === index ? { ...r, showPrior: false, priorBid: '' } : r));
-  }
-
-  /** Hides + clears the Next Year bid for a crop row. */
-  removeNextYear(index: number): void {
-    this.newLocationCrops.update(rows => rows.map((r, i) => i === index ? { ...r, showNext: false, nextBid: '' } : r));
-  }
 
   confirmAddLocation(): void {
     if (this.addLocationSaving()) return; // guard against a double-click firing two creates
@@ -1362,79 +1180,47 @@ export class BidSheetComponent {
     const tu = this.newLocationTu();
     const lat = this.newLocationLat();
     const lng = this.newLocationLng();
-    const fromEditBids = this.addLocationOrigin() === 'editBids';
 
     if (!name) { this.toastService.error('Enter a location name'); return; }
     if (!tu) { this.toastService.error('Select a trade unit'); return; }
 
-    const crops = fromEditBids
-      ? []
-      : this.newLocationCrops().filter(c => c.commodityCode.trim() && this._cropHasBid(c));
-
-    if (!fromEditBids && crops.length === 0) { this.toastService.error('Add at least one crop with a bid'); return; }
-
-    // Build bids payload — one record per shown year that actually has a bid (current always;
-    // prior/next only when toggled on). Skip empty years instead of persisting a blank bid.
-    const commodityLookup = new Map(this.allCommodities().map(c => [c.code, c]));
-    const bids = crops.flatMap(crop => {
-      const code = crop.commodityCode.trim();
-      const commodity = commodityLookup.get(code);
-      const commodityName = commodity?.name ?? code;
-      const commodityCategory = commodity?.category ?? undefined;
-      const out: Array<{ commodityCode: string; commodityName: string; commodityCategory?: string; cropYear: number; bid: string; month: number }> = [];
-      const isMonth = this.newLocationPeriodMode() === 'month';
-      if (crop.showPrior && crop.priorBid.trim()) out.push({ commodityCode: code, commodityName, commodityCategory, cropYear: isMonth ? crop.priorMonthYear : crop.priorYear, bid: crop.priorBid.trim(), month: isMonth ? crop.priorMonth : 0 });
-      if (crop.currentBid.trim()) out.push({ commodityCode: code, commodityName, commodityCategory, cropYear: isMonth ? crop.currentMonthYear : crop.currentYear, bid: crop.currentBid.trim(), month: isMonth ? crop.currentMonth : 0 });
-      if (crop.showNext && crop.nextBid.trim()) out.push({ commodityCode: code, commodityName, commodityCategory, cropYear: isMonth ? crop.nextMonthYear : crop.nextYear, bid: crop.nextBid.trim(), month: isMonth ? crop.nextMonth : 0 });
-      return out;
-    });
-
     this.addLocationSaving.set(true);
+    // Create the location with NO bids — bids are entered next in the Edit Bids grid.
     this.apiService.createBidSheetLocation({
       name,
-      elevatorCode: this.newLocationElevatorCode().trim() || undefined,
-      address: this.newLocationAddress().trim() || undefined,
-      city: this.newLocationCity().trim() || undefined,
-      state: this.newLocationState().trim() || undefined,
       latitude: lat ?? undefined,
       longitude: lng ?? undefined,
       tradeUnitCode: tu,
       groupName: this._getGroupNameForTu(tu) || undefined,
       isScoularFacility: this.newLocationIsScoular(),
-      bids
+      bids: []
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (saved) => {
         this.addLocationSaving.set(false);
-        // Immediately update local state so UI reflects the new location
+        // Optimistically add the new location so the grid can open instantly without a network wait.
         this.bidLocations.update(locs => [saved, ...locs]);
         this.allMapLocations.update(locs => [saved, ...locs]);
-        for (const b of saved.bids ?? []) {
-          if (!this.crops().includes(b.commodityCode)) {
-            this.crops.update(arr => [...arr, b.commodityCode].sort());
-          }
-          if (!this.cropYears().includes(b.cropYear)) {
-            this.cropYears.update(yrs => [...yrs, b.cropYear].sort((a, b) => a - b));
-          }
-        }
-        if (!this.selectedCrop() && this.crops().length > 0) {
-          this.selectedCrop.set(this.crops()[0]);
-        }
         this.toastService.success(`Added ${name}`);
         this.exitAddLocationMode();
 
-        // Reload all data so panel, map, and edit grid are fully in sync
+        // Open the Edit Bids grid IMMEDIATELY from in-memory data — _buildEditGrid includes
+        // bidLocations with no bids yet, so the new location shows as an empty row to fill in
+        // (existing locations' bids are already loaded). No round-trip before the screen appears.
+        // Pass saved.name only as the grid's focus target — do NOT set panelSelectedLocation, or
+        // the side panel would open in single-location DETAIL mode (for the new location) after the
+        // grid closes, instead of the full list.
+        this.filterBids();
+        this._refreshMapMarkers();
+        this.openEditBids(saved.name);
+
+        // Sync map/panel with the server in the background. Pass NO onLoaded callback: the grid is
+        // already open and built from in-memory data, and an onLoaded callback would flip
+        // editBidsGridLoading on (see _loadBidData) and show a grid spinner that the success path
+        // doesn't clear. The load's own success path already runs filterBids() + _refreshMapMarkers().
         this._loadAllMapLocations();
         const tus = this.activeTradeUnits();
         if (tus.length > 0) {
-          this._loadBidData(tus, () => {
-            this.filterBids();
-            this._refreshMapMarkers();
-            if (fromEditBids) { this.openEditBids(); }
-          }, 'refresh');
-        } else {
-          this.filterBids();
-          this._refreshMapMarkers();
-          if (fromEditBids) { this.openEditBids(); }
+          this._loadBidData(tus, undefined, 'refresh');
         }
       },
       error: (err) => {
@@ -1461,9 +1247,11 @@ export class BidSheetComponent {
   // Edit Bids
   // =========================================================================
 
-  openEditBids(): void {
+  openEditBids(focusLocationName?: string): void {
     const year = this.selectedYear();
-    const focusLocation = this.panelSelectedLocation();
+    // Focus target for the grid: an explicit name (e.g. a just-added location) or, by default, the
+    // panel's selected location. Passing it as an argument avoids forcing the panel into detail mode.
+    const focusLocation = focusLocationName ?? this.panelSelectedLocation();
     // Sync year with the panel; keep persisted month selection if it exists, otherwise use panel's month
     this.editBidsYear.set(year);
     if (this.editBidsMonths().length === 1 && this.editBidsMonths()[0] === 0 && this.selectedMonth() > 0) {
@@ -2326,17 +2114,10 @@ export class BidSheetComponent {
 
   private _resetAddForm(): void {
     this.newLocationName.set('');
-    this.newLocationElevatorCode.set('');
-    this.newLocationAddress.set('');
-    this.newLocationCity.set('');
-    this.newLocationState.set('');
     this.newLocationLat.set(null);
     this.newLocationLng.set(null);
     this.newLocationTu.set('');
     this.newLocationIsScoular.set(false);
-    this.newLocationCrops.set([]);
-    this.yearMenuIndex.set(null);
-    this.newLocationPeriodMode.set('year');
   }
 
   // =========================================================================

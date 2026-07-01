@@ -21,5 +21,12 @@ public static class ProducerDetailsMappings
         CreatedAt = p.CreatedAt,
         ModifiedBy = string.IsNullOrEmpty(p.ModifiedBy) ? p.ModifiedBy : DisplayNames.Apply(p.ModifiedBy, nameMap),
         ModifiedAt = p.ModifiedAt,
+        GrainOnFarm = p.GrainOnFarm.Select(g => new GrainOnFarmItemResponse
+        {
+            CommodityGroup = g.CommodityGroup,
+            BushelsOnHand = g.BushelsOnHand,
+            TargetBushels = g.TargetBushels,
+            Grade = g.Grade,
+        }).ToList(),
     };
 }

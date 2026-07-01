@@ -3,6 +3,10 @@ export const environment = {
   envName: 'production',
   bidSheetEnabled: true,
   usageDashboardEnabled: true,
+  // Daily Digest (recap groups): OFF in PROD until the feature launches. Gates the
+  // /daily-digest route + the "Daily Recap" nav link. Flip to true (and deploy the
+  // Logic App + apply the recap migrations) when launching.
+  dailyDigestEnabled: false,
   apiBaseUrl: '/api',
   msalConfig: {
     auth: {

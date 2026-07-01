@@ -50,6 +50,8 @@ export class HeaderComponent {
 
   readonly envName = environment.envName;
   readonly bidSheetEnabled = environment.bidSheetEnabled;
+  // Daily Digest (recap groups) — OFF in prod until launch (see environment.dailyDigestEnabled).
+  readonly dailyDigestEnabled = environment.dailyDigestEnabled;
   // Gate the Usage Dashboard nav button to users with the `Admin` app role.
   // The check is purely against the `Admin` role claim on the user's JWT — never
   // against group membership directly. Each environment has its own Super Users
