@@ -75,10 +75,10 @@ export class CustomerProfileComponent {
   public allCustomers = input<Customer[]>([]);
 
   // ── Grain on Farm (per-commodity on-hand + target) ──────────────────────
-  /** Grain-on-farm rows with a positive on-hand or target, sorted by on-hand desc. */
+  /** Grain-on-farm rows with a positive on-hand or target, or a grade entered — sorted by on-hand desc. */
   readonly grainOnFarmRows = computed(() =>
     (this.customer().grainOnFarm ?? [])
-      .filter(g => (g.bushelsOnHand ?? 0) > 0 || (g.targetBushels ?? 0) > 0)
+      .filter(g => (g.bushelsOnHand ?? 0) > 0 || (g.targetBushels ?? 0) > 0 || !!(g.grade ?? '').trim())
       .sort((a, b) => (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0)));
   /** Total bushels currently on the farm (sum of per-commodity on-hand). */
   readonly grainOnFarmTotal = computed(() =>
@@ -137,7 +137,7 @@ export class CustomerProfileComponent {
   public onSaveSavedListMembership = output<{ listId: number; add: boolean }[]>();
   public onAddNote = output<string>();
   public onTogglePin = output<Note>();
-  public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number }[] }>();
+  public onSaveCustomer = output<{ customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }>();
   public linkedCustomers = input<Customer[]>([]);
   public onSelectLinkedCustomer = output<number>();
   public openContractId = input<number | null>(null);
@@ -512,7 +512,7 @@ export class CustomerProfileComponent {
     this.plantingTable?.openAddDialog();
   }
 
-  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number }[] }): void {
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
     this.usageTracking.trackProducerDetailsEdit(data.customerId.toString());
     this.onSaveCustomer.emit(data);
     this.closeEditDialog();

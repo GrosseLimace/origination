@@ -72,6 +72,9 @@ export interface RefinementFilters {
   noGrainTarget?: boolean;
   grainTargetOver?: number | null;
   grainTargetUnder?: number | null;
+  hasGrade?: boolean;        // has a free-text grade entered on a grain-on-farm row
+  gradeOver?: number | null; // grade's parsed number at/above this (e.g. "4.4%" -> 4.4)
+  gradeUnder?: number | null;// grade's parsed number at/below this
   // Dynamic
   crops?: string[];
   states?: string[];

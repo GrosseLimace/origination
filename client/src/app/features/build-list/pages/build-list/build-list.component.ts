@@ -250,9 +250,10 @@ export class BuildListComponent {
       r.plantingYear != null, r.irrigatedOnly, r.drylandOnly, r.doubleCropOnly,
       r.plantingAcresOver != null && r.plantingAcresOver > 0,
       r.grainOnFarmBushelsOver != null && r.grainOnFarmBushelsOver > 0,
-      r.hasGrainTarget, r.noGrainTarget,
+      r.hasGrainTarget, r.noGrainTarget, r.hasGrade,
       r.grainTargetOver != null && r.grainTargetOver > 0,
       r.grainTargetUnder != null && r.grainTargetUnder > 0,
+      r.gradeOver != null, r.gradeUnder != null,
       r.crops && r.crops.length > 0, r.states && r.states.length > 0
     ].filter(Boolean).length;
   });
@@ -485,13 +486,28 @@ export class BuildListComponent {
     // Grain on farm (bushels on hand + $/bu target). Crop-scoped when crops are selected, so
     // "corn on farm over 10,000" / "corn target over $5" act on the producer's corn rows only.
     if (r.grainOnFarmBushelsOver != null || r.hasGrainTarget || r.noGrainTarget
-        || r.grainTargetOver != null || r.grainTargetUnder != null) {
+        || r.grainTargetOver != null || r.grainTargetUnder != null || r.hasGrade
+        || r.gradeOver != null || r.gradeUnder != null) {
       const grainRowsFor = (c: Customer) => {
         const rows = c.grainOnFarm ?? [];
         return selectedCrops.size > 0
           ? rows.filter(g => !!g.commodityGroup && this._matchesCropFilter(g.commodityGroup, selectedCrops))
           : rows;
       };
+      // Grade is free text — pull the first number out ("4.4%" -> 4.4, "TW 58" -> 58) for over/under.
+      const gradeNum = (grade?: string): number | null => {
+        const m = (grade ?? '').match(/-?\d+(?:\.\d+)?/);
+        return m ? parseFloat(m[0]) : null;
+      };
+      if (r.hasGrade) {
+        list = list.filter(c => grainRowsFor(c).some(g => !!(g.grade ?? '').trim()));
+      }
+      if (r.gradeOver != null) {
+        list = list.filter(c => grainRowsFor(c).some(g => { const n = gradeNum(g.grade); return n != null && n >= r.gradeOver!; }));
+      }
+      if (r.gradeUnder != null) {
+        list = list.filter(c => grainRowsFor(c).some(g => { const n = gradeNum(g.grade); return n != null && n <= r.gradeUnder!; }));
+      }
       if (r.grainOnFarmBushelsOver != null && r.grainOnFarmBushelsOver > 0) {
         list = list.filter(c => grainRowsFor(c).reduce((s, g) => s + (g.bushelsOnHand ?? 0), 0) > r.grainOnFarmBushelsOver!);
       }
@@ -698,7 +714,8 @@ export class BuildListComponent {
         || (r.contractQuantityOver != null && r.contractQuantityOver > 0);
       const isGrainOnFarm = category === 'Grain on Farm'
         || r.grainOnFarmBushelsOver != null || r.hasGrainTarget || r.noGrainTarget
-        || r.grainTargetOver != null || r.grainTargetUnder != null;
+        || r.grainTargetOver != null || r.grainTargetUnder != null || r.hasGrade
+        || r.gradeOver != null || r.gradeUnder != null;
 
       if (isStorage) {
         const storageByCustomer = new Map<number, StoredGrain[]>();
@@ -823,13 +840,25 @@ export class BuildListComponent {
   });
 
   readonly availableCrops = computed(() => {
-    const crops = new Set<string>();
+    // Show the crop GROUP (Corn, Wheat, Soybeans) rather than the raw commodity codes (YC, HRWW)
+    // the producers actually carry — that's the vocabulary users pick by. Map code/name → category
+    // via the Commodities lookup; fall back to the raw value when a code isn't in the table.
+    const groupByKey = new Map<string, string>();
+    for (const cm of this.appState.commodities()) {
+      const group = (cm.category || cm.name || '').trim();
+      if (!group) continue;
+      if (cm.code) groupByKey.set(cm.code.trim().toLowerCase(), group);
+      if (cm.name) groupByKey.set(cm.name.trim().toLowerCase(), group);
+    }
+    const groups = new Set<string>();
     for (const c of this.filteredCustomers()) {
       for (const crop of (c.commodities ?? [])) {
-        if (crop.trim()) crops.add(crop.trim());
+        const key = crop.trim().toLowerCase();
+        if (!key) continue;
+        groups.add(groupByKey.get(key) ?? crop.trim());
       }
     }
-    return [...crops].sort();
+    return [...groups].sort();
   });
 
   readonly availableStates = computed(() => {
@@ -927,7 +956,7 @@ export class BuildListComponent {
     cross_planting_no_contract: 'Planting, no contracts',
     cross_delivery_no_contract: 'Delivered, no contracts',
     note_contains: 'Notes containing',
-    grain_on_farm: 'Grain on farm', grain_target: 'Target price',
+    grain_on_farm: 'Grain on farm', grain_target: 'Target price', grain_grade: 'Grade',
   };
 
   readonly matchedPatternLabels = computed(() =>
@@ -2563,9 +2592,10 @@ export class BuildListComponent {
       filters.plantingYear != null || filters.irrigatedOnly || filters.drylandOnly || filters.doubleCropOnly ||
       (filters.plantingAcresOver != null && filters.plantingAcresOver > 0) ||
       (filters.grainOnFarmBushelsOver != null && filters.grainOnFarmBushelsOver > 0) ||
-      filters.hasGrainTarget || filters.noGrainTarget ||
+      filters.hasGrainTarget || filters.noGrainTarget || filters.hasGrade ||
       (filters.grainTargetOver != null && filters.grainTargetOver > 0) ||
       (filters.grainTargetUnder != null && filters.grainTargetUnder > 0) ||
+      filters.gradeOver != null || filters.gradeUnder != null ||
       (filters.crops && filters.crops.length > 0) ||
       (filters.states && filters.states.length > 0)
     );
@@ -2996,5 +3026,10 @@ export class BuildListComponent {
 
   getCustomerCrops(customerId: number): string[] {
     return this.cropsByCustomer().get(customerId) ?? [];
+  }
+
+  /** Total bushels currently on the farm for a producer (sum of per-commodity grain-on-farm). */
+  grainOnFarmBu(customer: Customer): number {
+    return (customer.grainOnFarm ?? []).reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0);
   }
 }

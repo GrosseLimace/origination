@@ -1324,6 +1324,11 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("CustomerId");
 
+                    b.Property<string>("Grade")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("Grade");
+
                     b.Property<decimal?>("TargetBushels")
                         .HasColumnType("decimal(18,2)")
                         .HasColumnName("TargetBushels");

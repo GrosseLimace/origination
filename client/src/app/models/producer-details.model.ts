@@ -20,4 +20,5 @@ export interface GrainOnFarmItem {
   commodityGroup: string;   // e.g. "Corn", "Wheat", "Soybeans"
   bushelsOnHand?: number;
   targetBushels?: number;
+  grade?: string;           // free-text grade / quality note (e.g. "4.4%", "TW 58")
 }

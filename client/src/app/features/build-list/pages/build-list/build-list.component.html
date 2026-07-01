@@ -1066,6 +1066,31 @@
                           class="w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
                       </div>
                     </div>
+
+                    <!-- Grade (free text — over/under compares the first number in the grade) -->
+                    <div class="space-y-2.5">
+                      <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Grade</p>
+                      <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                        <input type="checkbox" [ngModel]="pendingRefinements().hasGrade" (ngModelChange)="pendingRefinements.update(r => ({...r, hasGrade: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                        Has a grade
+                      </label>
+                      <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <span class="shrink-0">Grade over</span>
+                        <input type="number" step="0.1"
+                          [ngModel]="pendingRefinements().gradeOver || ''"
+                          (ngModelChange)="pendingRefinements.update(r => ({...r, gradeOver: $event ? +$event : null}))"
+                          placeholder="4.0"
+                          class="w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
+                      </div>
+                      <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <span class="shrink-0">Grade under</span>
+                        <input type="number" step="0.1"
+                          [ngModel]="pendingRefinements().gradeUnder || ''"
+                          (ngModelChange)="pendingRefinements.update(r => ({...r, gradeUnder: $event ? +$event : null}))"
+                          placeholder="6.0"
+                          class="w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
+                      </div>
+                    </div>
                   </div>
                 }
 
@@ -1302,7 +1327,7 @@
                             </svg>
                             <span class="text-xs text-gray-400 truncate">{{ getFormattedLocation(customer) }}</span>
                             <span class="text-gray-300 dark:text-gray-600 shrink-0">•</span>
-                            <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ customer.totalAcres | number }} acres</span>
+                            <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ grainOnFarmBu(customer) | number }} bu on farm</span>
                           </div>
                           @if (linkedInfo) {
                             <button type="button" (click)="$event.stopPropagation(); toggleLinkedExpand(customer.id)"
@@ -1421,7 +1446,7 @@
                                   </svg>
                                   <span class="text-xs text-gray-400 truncate">{{ getFormattedLocation(linked) }}</span>
                                   <span class="text-gray-300 dark:text-gray-600 shrink-0">•</span>
-                                  <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ linked.totalAcres | number }} acres</span>
+                                  <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ grainOnFarmBu(linked) | number }} bu on farm</span>
                                 </div>
                               </div>
                             </div>

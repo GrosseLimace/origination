@@ -130,7 +130,8 @@ export class NlqFilterService {
    *  pull in producers whose NOTES mention "grain"/"farm", adding producers with no grain on hand. */
   queryInvolvesGrainOnFarm(query: string): boolean {
     const q = query.toLowerCase();
-    return /\bgrain\s+on\s+(?:the\s+)?farm\b/.test(q) || /\bon\s+(?:the\s+)?farm\b/.test(q) || q.includes('target');
+    return /\bgrain\s+on\s+(?:the\s+)?farm\b/.test(q) || /\bon\s+(?:the\s+)?farm\b/.test(q) || q.includes('target')
+      || (/\bgrade\b/.test(q) && !this.queryInvolvesTickets(q) && !/grade\s*(?:#?\s*)?(?:\d|one|two|three)/.test(q));
   }
 
   /** Returns true if the query involves contract-related patterns that require contracts data.
@@ -564,7 +565,8 @@ export class NlqFilterService {
     // Grain on farm (bushels on hand + $/bu target price), read off the customer object.
     // Crop-scoped when filters.crops is set. Mirrors build-list's grain refine block.
     if (filters.grainOnFarmBushelsOver != null || filters.hasGrainTarget || filters.noGrainTarget
-        || filters.grainTargetOver != null || filters.grainTargetUnder != null) {
+        || filters.grainTargetOver != null || filters.grainTargetUnder != null || filters.hasGrade
+        || filters.gradeOver != null || filters.gradeUnder != null) {
       const cropSet = (filters.crops ?? []).map(c => c.trim().toLowerCase());
       const grainRowsFor = (c: Customer) => {
         const rows = c.grainOnFarm ?? [];
@@ -574,6 +576,20 @@ export class NlqFilterService {
           return cropSet.some(crop => v.includes(crop) || crop.includes(v));
         });
       };
+      // Grade is free text — pull the first number out of it ("4.4%" -> 4.4, "TW 58" -> 58) for over/under.
+      const gradeNum = (grade?: string): number | null => {
+        const m = (grade ?? '').match(/-?\d+(?:\.\d+)?/);
+        return m ? parseFloat(m[0]) : null;
+      };
+      if (filters.hasGrade) {
+        list = list.filter(c => grainRowsFor(c).some(g => !!(g.grade ?? '').trim()));
+      }
+      if (filters.gradeOver != null) {
+        list = list.filter(c => grainRowsFor(c).some(g => { const n = gradeNum(g.grade); return n != null && n >= filters.gradeOver!; }));
+      }
+      if (filters.gradeUnder != null) {
+        list = list.filter(c => grainRowsFor(c).some(g => { const n = gradeNum(g.grade); return n != null && n <= filters.gradeUnder!; }));
+      }
       if (filters.grainOnFarmBushelsOver != null && filters.grainOnFarmBushelsOver > 0) {
         list = list.filter(c => grainRowsFor(c).reduce((s, g) => s + (g.bushelsOnHand ?? 0), 0) > filters.grainOnFarmBushelsOver!);
       }
@@ -622,7 +638,8 @@ export class NlqFilterService {
         || (filters.contractQuantityOver != null && filters.contractQuantityOver > 0);
       const isGrainOnFarm = cat === 'Grain on Farm'
         || filters.grainOnFarmBushelsOver != null || filters.hasGrainTarget || filters.noGrainTarget
-        || filters.grainTargetOver != null || filters.grainTargetUnder != null;
+        || filters.grainTargetOver != null || filters.grainTargetUnder != null || filters.hasGrade
+        || filters.gradeOver != null || filters.gradeUnder != null;
 
       if (isStorage && dimensionContext?.storedGrain) {
         const byCust = new Map<number, StoredGrain[]>();
@@ -919,6 +936,8 @@ export class NlqFilterService {
       matched.push('grain_on_farm');
     }
     if (/\btarget\b/.test(lowerQuery)) matched.push('grain_target');
+    if (/\bgrade\b/.test(lowerQuery) && !this.queryInvolvesTickets(lowerQuery)
+        && !/grade\s*(?:#?\s*)?(?:\d|one|two|three)/.test(lowerQuery)) matched.push('grain_grade');
     if (lowerQuery.includes('esign') || lowerQuery.includes('e-sign') ||
         lowerQuery.includes('electronic sign')) {
       matched.push(lowerQuery.includes('not') || lowerQuery.includes('no ') || lowerQuery.includes('without')
@@ -1531,7 +1550,11 @@ export class NlqFilterService {
       || /\b(?:bu|bushels?)\s+on\s+(?:the\s+)?farm\b/.test(lowerQuery)
       || /\bon\s+(?:the\s+)?farm\b/.test(lowerQuery);
     const grainTargetContext = /\btarget\b/.test(lowerQuery);
-    const isGrainOnFarmQuery = grainOnFarmContext || grainTargetContext;
+    // "grade" as a free-text grain-quality note — but NOT ticket grade ("grade 2", "sample grade").
+    const grainGradeContext = /\bgrade\b/.test(lowerQuery)
+      && !this.queryInvolvesTickets(lowerQuery)
+      && !/grade\s*(?:#?\s*)?(?:\d|one|two|three)/.test(lowerQuery);
+    const isGrainOnFarmQuery = grainOnFarmContext || grainTargetContext || grainGradeContext;
     if (isGrainOnFarmQuery) {
       // Scope only by an explicit, whole-word crop name (commodityGroup is a group name like
       // "Corn"/"Soybeans"). detectCropInQuery's substring match would mis-fire on dynamic
@@ -1546,6 +1569,7 @@ export class NlqFilterService {
       const maxTarget = (c: Customer) => rowsFor(c).reduce((m, g) => Math.max(m, g.targetBushels ?? 0), 0);
       const hasGrain = (c: Customer) => rowsFor(c).some(g => (g.bushelsOnHand ?? 0) > 0);
       const hasTarget = (c: Customer) => rowsFor(c).some(g => (g.targetBushels ?? 0) > 0);
+      const hasGrade = (c: Customer) => rowsFor(c).some(g => !!(g.grade ?? '').trim());
 
       // Target price thresholds — "target over $5.50", "target price above 6", "target under 4.25".
       const targetOver = lowerQuery.match(/target\s*(?:price)?\s*(?:of\s*)?(?:over|above|more than|greater than|exceeding|at least)\s*\$?\s*([\d,]+(?:\.\d+)?)/);
@@ -1584,6 +1608,11 @@ export class NlqFilterService {
           // Plain "grain on farm" / "corn on farm" → producers who have any (scoped) grain on farm.
           result = result.filter(c => hasGrain(c));
         }
+      }
+
+      // Grade presence — "has a grade", "producers with a grain grade".
+      if (grainGradeContext) {
+        result = result.filter(c => hasGrade(c));
       }
     }
 

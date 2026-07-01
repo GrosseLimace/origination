@@ -26,6 +26,7 @@ public static class ProducerDetailsMappings
             CommodityGroup = g.CommodityGroup,
             BushelsOnHand = g.BushelsOnHand,
             TargetBushels = g.TargetBushels,
+            Grade = g.Grade,
         }).ToList(),
     };
 }

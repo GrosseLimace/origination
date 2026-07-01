@@ -1221,7 +1221,7 @@ export class HomeComponent {
    *  onboarding candidate that PUT inserts them into dbo.Customer, which the ProducerDetails
    *  save then depends on (FK). Existing customers with no TU change skip straight to the
    *  details save, unchanged. */
-  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number }[] }): void {
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
     // Only call the trade-unit reconcile when the dialog flagged it safe + meaningful
     // (onboarding a candidate, or the manual TU set actually changed). A pure details edit
     // skips it entirely, and a failed TU-load never reconciles (so manual TUs can't be wiped).
@@ -1244,7 +1244,7 @@ export class HomeComponent {
     }
   }
 
-  private _saveProducerDetailsAndLinks(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number }[] }): void {
+  private _saveProducerDetailsAndLinks(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
     const customers = this.customers();
     const sel = this.selectedCustomer();
     const customer = customers.find(c => c.id === data.customerId)

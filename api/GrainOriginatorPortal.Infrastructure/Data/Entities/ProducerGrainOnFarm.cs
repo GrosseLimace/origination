@@ -15,6 +15,8 @@ public class ProducerGrainOnFarm
     public string CommodityGroup { get; set; } = string.Empty;
     public decimal? BushelsOnHand { get; set; }
     public decimal? TargetBushels { get; set; }
+    /// <summary>Free-text grade / quality note (e.g. "4.4%", "TW 58"). Not necessarily numeric.</summary>
+    public string? Grade { get; set; }
 
     [JsonIgnore]
     public Customer? Customer { get; set; }
@@ -27,4 +29,5 @@ public class GrainOnFarmEntry
     public string CommodityGroup { get; set; } = string.Empty;
     public decimal? BushelsOnHand { get; set; }
     public decimal? TargetBushels { get; set; }
+    public string? Grade { get; set; }
 }

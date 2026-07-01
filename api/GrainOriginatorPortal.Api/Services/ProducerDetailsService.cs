@@ -88,7 +88,8 @@ public class ProducerDetailsService : IProducerDetailsService
             {
                 CommodityGroup = g.CommodityGroup,
                 BushelsOnHand = g.BushelsOnHand,
-                TargetBushels = g.TargetBushels
+                TargetBushels = g.TargetBushels,
+                Grade = g.Grade
             })
             .ToList();
 

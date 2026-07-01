@@ -329,6 +329,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.CommodityGroup).HasColumnName("CommodityGroup").HasMaxLength(100).IsRequired();
             entity.Property(e => e.BushelsOnHand).HasColumnName("BushelsOnHand").HasColumnType("decimal(18,2)").IsRequired(false);
             entity.Property(e => e.TargetBushels).HasColumnName("TargetBushels").HasColumnType("decimal(18,2)").IsRequired(false);
+            entity.Property(e => e.Grade).HasColumnName("Grade").HasMaxLength(100).IsRequired(false);
 
             entity.HasOne(e => e.Customer)
                   .WithMany()

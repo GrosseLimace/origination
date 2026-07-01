@@ -7,7 +7,7 @@ import { Customer } from '@models';
 function customer(
   id: number,
   name: string,
-  grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number }[]
+  grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[]
 ): Customer {
   return {
     id, name, farm: '', location: '', phone: '', email: '',
@@ -23,8 +23,8 @@ describe('NlqFilterService — grain on farm + target', () => {
   let svc: NlqFilterService;
   beforeEach(() => { svc = new NlqFilterService(); });
 
-  // Alpha: corn 80k @ $5.50 | Bravo: wheat 20k, no target | Charlie: soybeans 5k @ $12.25 | Delta: none
-  const alpha = customer(1, 'Alpha Farms', [{ commodityGroup: 'Corn', bushelsOnHand: 80000, targetBushels: 5.5 }]);
+  // Alpha: corn 80k @ $5.50, grade "4.4%" | Bravo: wheat 20k, no target | Charlie: soybeans 5k @ $12.25 | Delta: none
+  const alpha = customer(1, 'Alpha Farms', [{ commodityGroup: 'Corn', bushelsOnHand: 80000, targetBushels: 5.5, grade: '4.4%' }]);
   const bravo = customer(2, 'Bravo Farms', [{ commodityGroup: 'Wheat', bushelsOnHand: 20000 }]);
   const charlie = customer(3, 'Charlie Farms', [{ commodityGroup: 'Soybeans', bushelsOnHand: 5000, targetBushels: 12.25 }]);
   const delta = customer(4, 'Delta Farms', []);
@@ -34,6 +34,16 @@ describe('NlqFilterService — grain on farm + target', () => {
 
   it('"grain on farm" → producers with any bushels on hand', () => {
     expect(ids('producers with grain on farm')).toEqual([1, 2, 3]);
+  });
+
+  it('"producers with a grain grade" → only producers with a grade entered', () => {
+    expect(ids('producers with a grain grade')).toEqual([1]); // only alpha has a grade
+  });
+
+  it('ticket grade ("grade 2") does not trigger the grain-grade filter', () => {
+    // Should not narrow to grain-grade producers; grain-grade context is excluded for ticket grade.
+    const r = svc.parseAndFilter('producers with grade 2 tickets', ctx(all));
+    expect(r.matchedPatterns).not.toContain('grain_grade');
   });
 
   it('does not merge in note-keyword matches (a producer whose note says "grain" but has none stays out)', () => {
@@ -104,7 +114,7 @@ describe('NlqFilterService — grain-on-farm refinement filters', () => {
   let svc: NlqFilterService;
   beforeEach(() => { svc = new NlqFilterService(); });
 
-  const alpha = customer(1, 'Alpha Farms', [{ commodityGroup: 'Corn', bushelsOnHand: 80000, targetBushels: 5.5 }]);
+  const alpha = customer(1, 'Alpha Farms', [{ commodityGroup: 'Corn', bushelsOnHand: 80000, targetBushels: 5.5, grade: '4.4%' }]);
   const bravo = customer(2, 'Bravo Farms', [{ commodityGroup: 'Wheat', bushelsOnHand: 20000 }]);
   const charlie = customer(3, 'Charlie Farms', [{ commodityGroup: 'Soybeans', bushelsOnHand: 5000, targetBushels: 12.25 }]);
   const delta = customer(4, 'Delta Farms', []);
@@ -115,6 +125,16 @@ describe('NlqFilterService — grain-on-farm refinement filters', () => {
 
   it('grainOnFarmBushelsOver filters by total bushels on hand', () => {
     expect(refine({ grainOnFarmBushelsOver: 50000 })).toEqual([1]);
+  });
+
+  it('hasGrade keeps producers with a grade entered', () => {
+    expect(refine({ hasGrade: true })).toEqual([1]); // only alpha has a grade
+  });
+
+  it('gradeOver / gradeUnder compare the number parsed from the free-text grade', () => {
+    expect(refine({ gradeOver: 4 })).toEqual([1]);  // alpha "4.4%" -> 4.4 >= 4
+    expect(refine({ gradeOver: 5 })).toEqual([]);   // 4.4 < 5
+    expect(refine({ gradeUnder: 5 })).toEqual([1]); // 4.4 <= 5
   });
 
   it('hasGrainTarget keeps producers with a target set', () => {

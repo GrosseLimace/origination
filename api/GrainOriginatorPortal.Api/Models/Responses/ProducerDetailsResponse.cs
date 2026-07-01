@@ -27,4 +27,5 @@ public record GrainOnFarmItemResponse
     public string CommodityGroup { get; init; } = string.Empty;
     public decimal? BushelsOnHand { get; init; }
     public decimal? TargetBushels { get; init; }
+    public string? Grade { get; init; }
 }

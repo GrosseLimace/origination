@@ -42,4 +42,8 @@ public record GrainOnFarmItemRequest
 
     [Range(0, 1_000_000_000)]
     public decimal? TargetBushels { get; init; }
+
+    /// <summary>Free-text grade / quality note (e.g. "4.4%", "TW 58"). Not necessarily numeric.</summary>
+    [StringLength(100)]
+    public string? Grade { get; init; }
 }

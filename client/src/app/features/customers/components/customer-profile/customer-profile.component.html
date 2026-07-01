@@ -271,15 +271,20 @@
                   @if (showGrainOnFarm() && grainOnFarmRows().length > 0) {
                     <!-- Invisible 3-column grid: chip | on-hand (bu) | target ($). No box/headers; columns
                          line up across rows, w-fit keeps it tight under the line. -->
-                    <div class="mt-1 ml-[21px] grid grid-cols-[auto_auto_auto] items-center gap-x-3 gap-y-1 w-fit text-xs">
+                    <!-- Per-row flex (not a shared grid): absent grade/target take no space, so the
+                         target sits right after the bushels when there's no grade. -->
+                    <div class="mt-1 ml-[21px] flex flex-col gap-y-1 w-fit text-xs">
                       @for (g of grainOnFarmRows(); track g.commodityGroup) {
-                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium" [ngClass]="grainChipClass(g.commodityGroup)">{{ g.commodityGroup }}</span>
-                        <span class="text-sm tabular-nums text-right text-gray-600 dark:text-gray-400 cursor-help" title="On hand">{{ (g.bushelsOnHand || 0) | number }} bu</span>
-                        @if ((g.targetBushels || 0) > 0) {
-                          <span class="text-sm tabular-nums text-right font-medium text-scoular-green-accessible dark:text-scoular-green cursor-help" title="Target">{{ g.targetBushels | currency:'USD':'symbol':'1.2-2' }}</span>
-                        } @else {
-                          <span class="text-sm text-right text-gray-300 dark:text-gray-600 cursor-help" title="No target set">&mdash;</span>
-                        }
+                        <div class="flex items-center gap-x-3">
+                          <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium" [ngClass]="grainChipClass(g.commodityGroup)">{{ g.commodityGroup }}</span>
+                          <span class="text-sm tabular-nums text-gray-600 dark:text-gray-400 cursor-help" title="On hand">{{ (g.bushelsOnHand || 0) | number }} bu</span>
+                          @if (g.grade?.trim()) {
+                            <span class="text-sm text-gray-600 dark:text-gray-400 cursor-help" title="Grade">{{ g.grade }}</span>
+                          }
+                          @if ((g.targetBushels || 0) > 0) {
+                            <span class="text-sm tabular-nums font-medium text-scoular-green-accessible dark:text-scoular-green cursor-help" title="Target">{{ g.targetBushels | currency:'USD':'symbol':'1.2-2' }}</span>
+                          }
+                        </div>
                       }
                     </div>
                   }
