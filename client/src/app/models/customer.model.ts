@@ -36,6 +36,7 @@ export interface Customer {
   grainOnFarm?: GrainOnFarmItem[]; // Per-commodity bushels on hand + target
   commodities?: string[];     // e.g. ['Corn', 'Soybeans', 'Wheat']
   primaryContact?: string;    // User-entered primary contact name
+  primaryPhone?: string;      // User-entered primary phone (override for the pulled-in phone)
 
   // Onboarding: true when a user manually added this producer (assigned trade units)
   // rather than the nightly sync. Used to distinguish ODS search candidates and to

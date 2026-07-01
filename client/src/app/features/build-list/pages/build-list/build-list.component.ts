@@ -1811,6 +1811,7 @@ export class BuildListComponent {
           totalAcres: pd.totalAcres ?? customer.totalAcres,
           binCapacity: pd.binCapacity ?? customer.binCapacity,
           primaryContact: pd.primaryContact ?? customer.primaryContact,
+          primaryPhone: pd.primaryPhone ?? customer.primaryPhone,
           commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
           // Per-commodity grain-on-farm (bushels on hand + $/bu target) — carried onto the customer
           // so the NLQ engine can filter "grain on farm" / "target" prompts client-side.

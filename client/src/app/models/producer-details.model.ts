@@ -6,6 +6,7 @@ export interface ProducerDetails {
   totalAcres?: number;
   binCapacity?: number;
   primaryContact?: string;
+  primaryPhone?: string; // user-entered override for the pulled-in phone number
   commodities?: string; // Comma-separated list (e.g. "Corn,Soybeans,Wheat")
   linkedProducerIds?: string; // Comma-separated customer IDs
   grainOnFarm?: GrainOnFarmItem[]; // Per-commodity bushels on hand + target

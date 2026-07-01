@@ -15,6 +15,7 @@ public static class ProducerDetailsMappings
         TotalAcres = p.TotalAcres,
         BinCapacity = p.BinCapacity,
         PrimaryContact = p.PrimaryContact,
+        PrimaryPhone = p.PrimaryPhone,
         Commodities = p.Commodities,
         LinkedProducerIds = p.LinkedProducerIds,
         CreatedBy = DisplayNames.Apply(p.CreatedBy, nameMap),
