@@ -162,6 +162,28 @@ describe('ApiService', () => {
     req.flush(null);
   });
 
+  // ── Producer Details (grain on farm) ────────────────────────────────────────
+
+  it('getProducerDetails() calls GET /producerdetails/customer/:id and round-trips grainOnFarm', () => {
+    service.getProducerDetails(42).subscribe(pd => {
+      expect(pd.grainOnFarm?.[0]).toEqual({ commodityGroup: 'Corn', bushelsOnHand: 80000, targetBushels: 100000 });
+    });
+    const req = httpMock.expectOne(`${BASE}/producerdetails/customer/42`);
+    expect(req.request.method).toBe('GET');
+    req.flush({ id: 1, customerId: 42, customerName: 'Smith', grainOnFarm: [{ commodityGroup: 'Corn', bushelsOnHand: 80000, targetBushels: 100000 }] });
+  });
+
+  it('saveProducerDetails() PUTs grainOnFarm in the body', () => {
+    service.saveProducerDetails(42, {
+      customerName: 'Smith',
+      grainOnFarm: [{ commodityGroup: 'Corn', bushelsOnHand: 80000, targetBushels: 100000 }],
+    }).subscribe();
+    const req = httpMock.expectOne(`${BASE}/producerdetails/customer/42`);
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body.grainOnFarm).toEqual([{ commodityGroup: 'Corn', bushelsOnHand: 80000, targetBushels: 100000 }]);
+    req.flush({ id: 1, customerId: 42, customerName: 'Smith' });
+  });
+
   it('getTeamSavedLists() calls GET /savedlists/team with the tradeUnits param and parses filters', () => {
     const raw = [{ id: 7, name: "Joe's List", query: 'wheat', createdBy: 'Joe Originator', filters: '{"crops":["Wheat"]}' }];
     service.getTeamSavedLists('TU1,TU2').subscribe(lists => {
@@ -205,5 +227,26 @@ describe('ApiService', () => {
     });
     const req = httpMock.expectOne(`${BASE}/customers`);
     req.flush('Server error', { status: 500, statusText: 'Internal Server Error' });
+  }));
+
+  it('surfaces the field-level validation detail over the generic top-level message', () => new Promise<void>((resolve) => {
+    service.createBidSheetLocation({ name: 'Dup', tradeUnitCode: 'TU1', bids: [] }).subscribe({
+      error: (err: Error) => {
+        // Should show the specific detail, not "One or more fields failed validation."
+        expect(err.message).toBe('A location named "Dup" already exists in this trade unit. Use a different name.');
+        resolve();
+      }
+    });
+    const req = httpMock.expectOne(`${BASE}/bidsheet/locations`);
+    req.flush(
+      {
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'One or more fields failed validation.',
+          details: [{ field: 'name', message: 'A location named "Dup" already exists in this trade unit. Use a different name.' }]
+        }
+      },
+      { status: 400, statusText: 'Bad Request' }
+    );
   }));
 });

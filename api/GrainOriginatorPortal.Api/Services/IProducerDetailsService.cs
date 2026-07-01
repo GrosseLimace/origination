@@ -1,3 +1,4 @@
+using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Models.Responses;
 
 namespace GrainOriginatorPortal.Api.Services;
@@ -13,7 +14,7 @@ public interface IProducerDetailsService
 
     Task<ProducerDetailsResponse> UpsertAsync(long customerId, string? scoularId, string customerName,
         decimal? totalAcres, decimal? binCapacity, string? primaryContact, string? commodities,
-        string? linkedProducerIds, CancellationToken cancellationToken);
+        string? linkedProducerIds, IReadOnlyList<GrainOnFarmItemRequest>? grainOnFarm, CancellationToken cancellationToken);
 
     Task DeleteAsync(long customerId, CancellationToken cancellationToken);
 }

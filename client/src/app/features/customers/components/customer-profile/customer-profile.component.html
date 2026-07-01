@@ -245,6 +245,50 @@
                   </svg>
                   <span>{{ (customer().binCapacity || 0) | number }} bu capacity</span>
                 </div>
+                <!-- Grain on Farm — total bushels on hand; click to expand the per-commodity
+                     on-hand / target breakdown. Values are entered in the Edit Producer dialog.
+                     Toggle + breakdown live in one wrapper so the wrapper is a single row in the
+                     space-y-2 rhythm — a full 8px gap to Commodities below — while the breakdown is
+                     tucked close (mt-1) under the total line above. -->
+                <div>
+                  <div class="flex w-fit items-center gap-2 -ml-1 px-1 py-0.5 rounded-md text-gray-600 dark:text-gray-400 transition-colors"
+                       [class.cursor-pointer]="grainOnFarmRows().length > 0"
+                       [class.select-none]="grainOnFarmRows().length > 0"
+                       [class.hover:bg-gray-100]="grainOnFarmRows().length > 0"
+                       [class.dark:hover:bg-gray-800]="grainOnFarmRows().length > 0"
+                       (click)="toggleGrainOnFarm()"
+                       [title]="grainOnFarmRows().length > 0 ? (showGrainOnFarm() ? 'Hide breakdown' : 'Show breakdown') : ''">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>
+                      <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/>
+                      <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>
+                    </svg>
+                    <span>{{ grainOnFarmTotal() | number }} bu on farm</span>
+                    @if (grainOnFarmRows().length > 0) {
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" class="shrink-0 text-gray-400 transition-transform" [class.rotate-90]="showGrainOnFarm()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                    }
+                  </div>
+                  @if (showGrainOnFarm() && grainOnFarmRows().length > 0) {
+                    <!-- Invisible 3-column grid: chip | on-hand (bu) | target ($). No box/headers; columns
+                         line up across rows, w-fit keeps it tight under the line. -->
+                    <!-- Per-row flex (not a shared grid): absent grade/target take no space, so the
+                         target sits right after the bushels when there's no grade. -->
+                    <div class="mt-1 ml-[21px] flex flex-col gap-y-1 w-fit text-xs">
+                      @for (g of grainOnFarmRows(); track g.commodityGroup) {
+                        <div class="flex items-center gap-x-3">
+                          <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium" [ngClass]="grainChipClass(g.commodityGroup)">{{ g.commodityGroup }}</span>
+                          <span class="text-sm tabular-nums text-gray-600 dark:text-gray-400 cursor-help" title="On hand">{{ (g.bushelsOnHand || 0) | number }} bu</span>
+                          @if (g.grade?.trim()) {
+                            <span class="text-sm text-gray-600 dark:text-gray-400 cursor-help" title="Grade">{{ g.grade }}</span>
+                          }
+                          @if ((g.targetBushels || 0) > 0) {
+                            <span class="text-sm tabular-nums font-medium text-scoular-green-accessible dark:text-scoular-green cursor-help" title="Target">{{ g.targetBushels | currency:'USD':'symbol':'1.2-2' }}</span>
+                          }
+                        </div>
+                      }
+                    </div>
+                  }
+                </div>
                 <div class="flex items-start gap-2 text-gray-600 dark:text-gray-400">
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" class="shrink-0 mt-0.5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M2 22 16 8"/>

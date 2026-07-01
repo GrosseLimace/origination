@@ -1021,6 +1021,79 @@
                   </div>
                 }
 
+                <!-- Grain on Farm filters -->
+                @if (showGrainOnFarmFilters()) {
+                  <div class="flex flex-wrap gap-x-4 sm:gap-x-10 gap-y-4 sm:gap-y-5">
+                    <!-- Grain on Farm -->
+                    <div class="space-y-2.5">
+                      <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Grain on Farm</p>
+                      <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <span class="shrink-0">Bushels on farm over</span>
+                        <input type="number" min="1"
+                          [ngModel]="pendingRefinements().grainOnFarmBushelsOver || ''"
+                          (ngModelChange)="pendingRefinements.update(r => ({...r, grainOnFarmBushelsOver: $event ? +$event : null}))"
+                          placeholder="bu"
+                          class="w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
+                        <span>bu</span>
+                      </div>
+                      <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                        <input type="checkbox" [ngModel]="pendingRefinements().hasGrainTarget" (ngModelChange)="pendingRefinements.update(r => ({...r, hasGrainTarget: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                        Has a target price
+                      </label>
+                      <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                        <input type="checkbox" [ngModel]="pendingRefinements().noGrainTarget" (ngModelChange)="pendingRefinements.update(r => ({...r, noGrainTarget: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                        No target set
+                      </label>
+                    </div>
+
+                    <!-- Target Price -->
+                    <div class="space-y-2.5">
+                      <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Target Price ($/bu)</p>
+                      <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <span class="shrink-0">Target over $</span>
+                        <input type="number" min="0" step="0.01"
+                          [ngModel]="pendingRefinements().grainTargetOver || ''"
+                          (ngModelChange)="pendingRefinements.update(r => ({...r, grainTargetOver: $event ? +$event : null}))"
+                          placeholder="5.50"
+                          class="w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
+                      </div>
+                      <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <span class="shrink-0">Target under $</span>
+                        <input type="number" min="0" step="0.01"
+                          [ngModel]="pendingRefinements().grainTargetUnder || ''"
+                          (ngModelChange)="pendingRefinements.update(r => ({...r, grainTargetUnder: $event ? +$event : null}))"
+                          placeholder="6.00"
+                          class="w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
+                      </div>
+                    </div>
+
+                    <!-- Grade (free text — over/under compares the first number in the grade) -->
+                    <div class="space-y-2.5">
+                      <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Grade</p>
+                      <label class="flex items-center gap-2.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                        <input type="checkbox" [ngModel]="pendingRefinements().hasGrade" (ngModelChange)="pendingRefinements.update(r => ({...r, hasGrade: $event}))" class="rounded border-gray-300 dark:border-gray-600 text-scoular-green-accessible focus:ring-scoular-green">
+                        Has a grade
+                      </label>
+                      <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <span class="shrink-0">Grade over</span>
+                        <input type="number" step="0.1"
+                          [ngModel]="pendingRefinements().gradeOver || ''"
+                          (ngModelChange)="pendingRefinements.update(r => ({...r, gradeOver: $event ? +$event : null}))"
+                          placeholder="4.0"
+                          class="w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
+                      </div>
+                      <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <span class="shrink-0">Grade under</span>
+                        <input type="number" step="0.1"
+                          [ngModel]="pendingRefinements().gradeUnder || ''"
+                          (ngModelChange)="pendingRefinements.update(r => ({...r, gradeUnder: $event ? +$event : null}))"
+                          placeholder="6.0"
+                          class="w-24 px-2 py-0.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-scoular-green">
+                      </div>
+                    </div>
+                  </div>
+                }
+
                 <!-- Crops -->
                 @if (crops.length > 0) {
                   <div class="space-y-2.5 pt-1 border-t border-gray-200 dark:border-gray-700">
@@ -1254,7 +1327,11 @@
                             </svg>
                             <span class="text-xs text-gray-400 truncate">{{ getFormattedLocation(customer) }}</span>
                             <span class="text-gray-300 dark:text-gray-600 shrink-0">•</span>
-                            <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ customer.totalAcres | number }} acres</span>
+                            @if (showGrainOnFarmFilters()) {
+                              <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ grainOnFarmBu(customer) | number }} bu on farm</span>
+                            } @else {
+                              <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ customer.totalAcres | number }} acres</span>
+                            }
                           </div>
                           @if (linkedInfo) {
                             <button type="button" (click)="$event.stopPropagation(); toggleLinkedExpand(customer.id)"
@@ -1373,7 +1450,11 @@
                                   </svg>
                                   <span class="text-xs text-gray-400 truncate">{{ getFormattedLocation(linked) }}</span>
                                   <span class="text-gray-300 dark:text-gray-600 shrink-0">•</span>
-                                  <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ linked.totalAcres | number }} acres</span>
+                                  @if (showGrainOnFarmFilters()) {
+                                    <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ grainOnFarmBu(linked) | number }} bu on farm</span>
+                                  } @else {
+                                    <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ linked.totalAcres | number }} acres</span>
+                                  }
                                 </div>
                               </div>
                             </div>
