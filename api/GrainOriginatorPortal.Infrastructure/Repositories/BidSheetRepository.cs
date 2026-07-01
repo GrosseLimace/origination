@@ -55,6 +55,15 @@ public class BidSheetRepository : IBidSheetRepository
             .Select(l => l.TradeUnitCode)
             .FirstOrDefaultAsync(cancellationToken);
 
+    public Task<bool> LocationNameExistsAsync(string name, string tradeUnitCode, CancellationToken cancellationToken)
+    {
+        var trimmed = name.Trim();
+        // String equality translates to SQL '=' under the column's (case-insensitive) collation,
+        // matching the UQ_BidSheetLocations_Name_TradeUnit unique index.
+        return _appContext.BidSheetLocations
+            .AnyAsync(l => l.TradeUnitCode == tradeUnitCode && l.Name == trimmed, cancellationToken);
+    }
+
     public async Task<BidSheetLocation> CreateLocationAsync(BidSheetLocation location, CancellationToken cancellationToken)
     {
         _appContext.BidSheetLocations.Add(location);

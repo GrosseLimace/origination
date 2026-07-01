@@ -82,8 +82,12 @@ export class ApiService {
         this.toastService.error(message);
       }
       // Surface the server's real message (falling back through the common shapes) + status, so
-      // callers can show something useful instead of a generic "Server error".
-      const serverMsg = error.error?.error?.message ?? error.error?.message ?? error.message;
+      // callers can show something useful instead of a generic "Server error". For validation
+      // errors, prefer the first field-level detail (e.g. "A location named X already exists in
+      // this trade unit") over the generic top-level "One or more fields failed validation." text.
+      const errObj = (error.error as { error?: { message?: string; details?: Array<{ message?: string }> } } | null)?.error;
+      const detailMsg = errObj?.details?.find(d => !!d?.message)?.message;
+      const serverMsg = detailMsg ?? errObj?.message ?? (error.error as { message?: string } | null)?.message ?? error.message;
       const wrapped = new Error(serverMsg || 'Server error');
       (wrapped as Error & { status?: number }).status = error.status;
       return throwError(() => wrapped);
