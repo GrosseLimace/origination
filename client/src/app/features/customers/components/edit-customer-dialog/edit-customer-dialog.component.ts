@@ -40,6 +40,7 @@ export class EditCustomerDialogComponent {
     binCapacity: number;
     commodities: string[];
     primaryContact: string;
+    primaryPhone: string;
     linkedProducerIds: string[];
     removedIncomingIds: string[];
     eSignEnabled: boolean;
@@ -151,6 +152,7 @@ export class EditCustomerDialogComponent {
   removedIncomingIds = signal<string[]>([]); // incoming links removed locally, saved on Save Changes
   editESignEnabled = signal(false);
   editPrimaryContact = signal('');
+  editPrimaryPhone = signal('');
   newCommodity = signal('');
 
   // Commodity lookup
@@ -197,6 +199,20 @@ export class EditCustomerDialogComponent {
     this.editGrainOnFarm.update(rows => rows.filter(r => r.commodityGroup !== commodityGroup));
   }
 
+  /** Progressive US phone mask → "(XXX) XXX-XXXX" (matches getFormattedPhone on the profile).
+   *  Strips non-digits, caps at 10, and formats what's entered so far. Stored formatted. */
+  formatPhoneNumber(value: string): string {
+    const d = (value ?? '').replace(/\D/g, '').slice(0, 10);
+    if (d.length === 0) return '';
+    if (d.length <= 3) return `(${d}`;
+    if (d.length <= 6) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
+    return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  }
+
+  onPrimaryPhoneInput(value: string): void {
+    this.editPrimaryPhone.set(this.formatPhoneNumber(value));
+  }
+
   // ── Collapsible sections (edit dialog) ──────────────────────────────────
   // Each section header toggles its body so the dialog opens compact and the user
   // expands only what they need (less scrolling).
@@ -223,6 +239,7 @@ export class EditCustomerDialogComponent {
   private _originalLinkedProducerIds: string[] = [];
   private _originalESignEnabled = false;
   private _originalPrimaryContact = '';
+  private _originalPrimaryPhone = '';
 
   private _initialized = false;
   isLoadingCommodities = signal(false);
@@ -278,6 +295,7 @@ export class EditCustomerDialogComponent {
         this.removedIncomingIds.set([]);
         this.editESignEnabled.set(customer.eSignEnabled);
         this.editPrimaryContact.set(customer.primaryContact || '');
+        this.editPrimaryPhone.set(customer.primaryPhone || '');
         this.editGrainOnFarm.set((customer.grainOnFarm || []).map(g => ({
           commodityGroup: g.commodityGroup,
           bushelsOnHand: g.bushelsOnHand != null ? String(g.bushelsOnHand) : '',
@@ -294,6 +312,7 @@ export class EditCustomerDialogComponent {
         this._originalLinkedProducerIds = [...(customer.linkedProducerIds || [])];
         this._originalESignEnabled = customer.eSignEnabled;
         this._originalPrimaryContact = customer.primaryContact || '';
+        this._originalPrimaryPhone = customer.primaryPhone || '';
 
         // If no trade units and the cache still isn't loaded (edge case: first open before effect
         // on selectedTradeUnits fired), kick off the load now.
@@ -352,6 +371,7 @@ export class EditCustomerDialogComponent {
     this.editGrainOnFarm.set([]);
     this.newGrainGroup.set('');
     this.editPrimaryContact.set('');
+    this.editPrimaryPhone.set('');
     this.editLinkedProducerIds.set([]);
     this.removedIncomingIds.set([]);
     this.editESignEnabled.set(false);
@@ -439,6 +459,7 @@ export class EditCustomerDialogComponent {
       || this._serializeGrain() !== this._originalGrainOnFarm
       || this.editESignEnabled() !== this._originalESignEnabled
       || this.editPrimaryContact() !== this._originalPrimaryContact
+      || this.editPrimaryPhone() !== this._originalPrimaryPhone
       || linkedProducerIdsChanged
       || this.removedIncomingIds().length > 0;
   }
@@ -660,6 +681,7 @@ export class EditCustomerDialogComponent {
     this.removedIncomingIds.set([]);
     this.editESignEnabled.set(this._originalESignEnabled);
     this.editPrimaryContact.set(this._originalPrimaryContact);
+    this.editPrimaryPhone.set(this._originalPrimaryPhone);
     this.newCommodity.set('');
     this.filteredCommodities.set([]);
     this.showSuggestions.set(false);
@@ -693,6 +715,7 @@ export class EditCustomerDialogComponent {
         binCapacity: this._parseNumericInput(this.editBinCapacity),
         commodities: this.editCommodities().filter(c => !this.isTicketCommodity(c)),
         primaryContact: this.editPrimaryContact().slice(0, 200),
+        primaryPhone: this.editPrimaryPhone().slice(0, 50),
         linkedProducerIds: this.editLinkedProducerIds(),
         removedIncomingIds: this.removedIncomingIds(),
         eSignEnabled: this.editESignEnabled(),

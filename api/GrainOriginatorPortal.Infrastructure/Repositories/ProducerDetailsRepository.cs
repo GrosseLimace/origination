@@ -104,7 +104,7 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
     }
 
     public async Task<ProducerDetails> UpsertAsync(long customerId, string? scoularId, string customerName, decimal? totalAcres,
-        decimal? binCapacity, string? primaryContact, string? commodities, string? linkedProducerIds,
+        decimal? binCapacity, string? primaryContact, string? primaryPhone, string? commodities, string? linkedProducerIds,
         IReadOnlyList<GrainOnFarmEntry> grainOnFarm, string currentUser, CancellationToken cancellationToken)
     {
         var existing = await _appContext.ProducerDetails.FirstOrDefaultAsync(pd => pd.CustomerId == customerId, cancellationToken);
@@ -120,6 +120,7 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
             existing.TotalAcres = totalAcres;
             existing.BinCapacity = binCapacity;
             existing.PrimaryContact = primaryContact;
+            existing.PrimaryPhone = primaryPhone;
             existing.Commodities = commodities;
             existing.LinkedProducerIds = linkedProducerIds;  // in-memory only; persisted via CustomerLink rebuild below
             existing.ModifiedBy = currentUser;
@@ -136,6 +137,7 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
                 TotalAcres = totalAcres,
                 BinCapacity = binCapacity,
                 PrimaryContact = primaryContact,
+                PrimaryPhone = primaryPhone,
                 Commodities = commodities,
                 LinkedProducerIds = linkedProducerIds,
                 CreatedBy = currentUser,

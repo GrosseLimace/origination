@@ -20,6 +20,11 @@ public record UpsertProducerDetailsRequest
     [StringLength(200)]
     public string? PrimaryContact { get; init; }
 
+    /// <summary>User-entered phone for the primary contact — a manual override kept alongside the
+    /// pulled-in ODS phone (does not replace it).</summary>
+    [StringLength(50)]
+    public string? PrimaryPhone { get; init; }
+
     [StringLength(500)]
     public string? Commodities { get; init; }
 
