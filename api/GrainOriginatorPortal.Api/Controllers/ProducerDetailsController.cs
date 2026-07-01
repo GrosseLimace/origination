@@ -55,6 +55,7 @@ public class ProducerDetailsController : ControllerBase
             request.PrimaryContact,
             request.Commodities,
             request.LinkedProducerIds,
+            request.GrainOnFarm,
             cancellationToken
         );
         return Ok(details);
