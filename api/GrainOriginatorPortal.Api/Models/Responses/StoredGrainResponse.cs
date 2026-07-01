@@ -20,6 +20,8 @@ public record StoredGrainResponse
     public decimal StorageDays { get; init; }
     public DateTime? ChargedFromDate { get; init; }
     public DateTime? ChargedThruDate { get; init; }
+    public string LocationCity { get; init; } = string.Empty;
+    public string LocationState { get; init; } = string.Empty;
     public decimal Bushels { get; init; }
     public DateTime DateReceived { get; init; }
 }

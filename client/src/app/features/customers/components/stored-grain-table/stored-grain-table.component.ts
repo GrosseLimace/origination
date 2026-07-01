@@ -92,10 +92,12 @@ export class StoredGrainTableComponent {
         result.push(group);
         continue;
       }
-      // Filter to receipts matching ticket # or date
+      // Filter to receipts matching ticket #, date, or facility location (city/state)
       const matchedReceipts = group.receipts.filter(r =>
         r.receiptNumber.toLowerCase().includes(term) ||
-        this._formatDate(r.storageStartDate).includes(term)
+        this._formatDate(r.storageStartDate).includes(term) ||
+        (r.locationCity?.toLowerCase().includes(term) ?? false) ||
+        (r.locationState?.toLowerCase().includes(term) ?? false)
       );
       if (matchedReceipts.length > 0) {
         result.push({
