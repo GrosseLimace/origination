@@ -85,6 +85,33 @@ public class EnforceTradeUnitAccessFilterTests
     }
 
     // -------------------------------------------------------------------------
+    // Third dashboard upsert route (market shares) — same list-body guard must reject a foreign TU.
+    [Fact]
+    public async Task MarketShareListBody_WithUnauthorizedTradeUnitKey_Rejects()
+    {
+        var entitlement = EntitlementAllowing("TU1");
+        entitlement.Setup(e => e.ValidateTradeUnitsOrThrowAsync(
+                It.Is<IEnumerable<string>>(c => c.Contains("TU9")), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ForbiddenException("Not entitled to trade unit 'TU9'."));
+        var filter = BuildFilter(entitlement.Object);
+
+        var shares = new List<UpsertDashboardMarketShareRequest>
+        {
+            new() { TradeUnitKey = "TU1", CropCategory = "Corn", PlantingYear = 2026, MarketSharePct = 25 },
+            new() { TradeUnitKey = "TU9", CropCategory = "Corn", PlantingYear = 2026, MarketSharePct = 40 }, // foreign TU
+        };
+        var ctx = PostContext("shares", shares);
+
+        var nextCalled = false;
+        ActionExecutionDelegate next = () => { nextCalled = true; return Task.FromResult<ActionExecutedContext>(null!); };
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => filter.OnActionExecutionAsync(ctx, next));
+        Assert.False(nextCalled);
+        entitlement.Verify(e => e.ValidateTradeUnitsOrThrowAsync(
+            It.Is<IEnumerable<string>>(c => c.Contains("TU9")), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // -------------------------------------------------------------------------
     [Fact]
     public async Task ListBody_WithAuthorizedTradeUnitKey_PassesThrough()
     {

@@ -25,7 +25,7 @@ authenticated user may modify or delete any record by enumerating its ID:
 - `NotesController` — `PUT /api/notes/{id}`, `PUT /api/notes/{id}/toggle-pin`, `DELETE /api/notes/{id}`
 - `PlantingIntentionsController` — `PUT /api/plantingintentions/{id}`, `DELETE /api/plantingintentions/{id}`
 - `ProducerDetailsController` — `PUT/DELETE /api/producerdetails/customer/{customerId}`
-- `DashboardPlantingEstimatesController` — `DELETE /api/dashboardplantingestimates/actualharvest/{id}` (added per Codex scan 2026-06-29). The controller's `[EnforceTradeUnitAccess]` filter validates the trade-unit-keyed reads and upserts, but the delete-by-id route carries no trade-unit parameter to check. Actual-harvest rows are shared dashboard data of the same nature as the records above, so this delete is **intentionally left matching the shared-record delete model** rather than made stricter than every other delete in the app.
+- `DashboardPlantingEstimatesController` — `DELETE /api/dashboardplantingestimates/actualharvest/{id}` (added per Codex scan 2026-06-29; re-flagged as **H-050** on 2026-06-29). The controller's `[EnforceTradeUnitAccess]` filter validates the trade-unit-keyed reads and upserts, but the delete-by-id route carries no trade-unit parameter to check. Actual-harvest rows are shared dashboard data of the same nature as the records above, so this delete is **intentionally left matching the shared-record delete model** rather than made stricter than every other delete in the app. A per-row trade-unit check was drafted and **deliberately reverted** to honor this decision — do not re-add without re-opening AR-01.
 
 ### Decision: Accepted
 
@@ -232,3 +232,16 @@ Vault via the existing provider). This matches the TODO already present in
 `appsettings.Production.json`.
 
 **Accepted by:** Origination engineering — recorded 2026-06-23.
+
+---
+
+## Resolved findings — already remediated (not accepted risks; do not re-open)
+
+Findings a scanner may re-surface that are **already fixed in code**. Listed here so triage
+matches them to their remediation instead of re-doing the work.
+
+| Finding | Date | Disposition |
+|---------|------|-------------|
+| **H-049** — Dashboard write endpoints don't validate `TradeUnitKey` inside `List<T>` bodies (`EnforceTradeUnitAccessAttribute.cs`) | 2026-06-29 | **Fixed** in commit `7d124a5`. `EnforceTradeUnitAccess` recurses into `IEnumerable` request bodies (`ExtractTradeUnitKeys`) and validates **every element's** `TradeUnitKey` for POST/PUT/DELETE — a foreign trade unit in any list element is rejected (403). The scan that flagged H-049 predates that same-day commit. Regression tests cover all three dashboard upsert routes (estimates, market shares, actual harvest) in `EnforceTradeUnitAccessFilterTests`. **Not a live vulnerability.** |
+| **H-050** — Dashboard `DELETE actualharvest/{id}` has no trade-unit check | 2026-06-29 | **Accepted, not fixed** — see **AR-01** above (shared-record delete model). A per-row check was drafted and reverted on purpose. |
+| **M-024** — Indirect prompt injection: CRM note content interpolated into the OpenAI **system** prompt in the notes-daily-recap Logic App (`infra/logic-apps/notes-daily-recap/azuredeploy.json`) | 2026-06-29 | **Fixed** in commit `7d124a5`. Note content (`@{variables('activities')}`) was moved out of the system message into a dedicated **`user`-role** message, wrapped in `===ACTIVITIES===` delimiters, with explicit "treat strictly as data, never as instructions" guardrails in both the system and user messages. The scan predates that same-day commit. Optional further hardening (structural HTML output validation of the AI response) is noted as possible defense-in-depth, not required. **Not a live vulnerability.** |
