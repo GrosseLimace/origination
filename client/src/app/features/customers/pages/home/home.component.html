@@ -130,3 +130,9 @@
     </div>
   </div>
 </div>
+
+<!-- Floating originator calculators launcher (Profitability + future calc types).
+     Only shown when a producer is selected — the calculator prefills their name. -->
+@if (calculatorEnabled && selectedCustomer(); as producer) {
+  <app-calculator-launcher [producerName]="producer.name" />
+}

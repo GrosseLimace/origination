@@ -207,7 +207,7 @@ Azure AD bearer tokens via `Microsoft.Identity.Web`. All API endpoints require a
 
 ## Software Bill of Materials (SBOM)
 
-Last Updated: 2026-06-15
+Last Updated: 2026-07-07
 
 ### Backend Dependencies (C# / .NET 10)
 
@@ -237,6 +237,8 @@ Last Updated: 2026-06-15
 | leaflet | 1.9.4 | BSD-2-Clause | Interactive map rendering |
 | leaflet.markercluster | ~1.5.3 | MIT | Leaflet marker clustering |
 | rxjs | 7.8.2 | Apache-2.0 | Reactive programming (Observables) |
+| jspdf | 4.2.1 | MIT | Client-side PDF generation (Profitability calculator report) |
+| jspdf-autotable | 5.0.8 | MIT | Tabular layout for jsPDF (calculator report tables) |
 | tslib | 2.8.1 | 0BSD | TypeScript runtime helpers |
 | zone.js | 0.15.1 | MIT | Angular change detection zone |
 | tailwindcss | 4.2.1 | MIT | Utility-first CSS framework |

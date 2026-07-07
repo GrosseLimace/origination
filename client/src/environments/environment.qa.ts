@@ -4,6 +4,7 @@ export const environment = {
   bidSheetEnabled: true,
   usageDashboardEnabled: true,
   dailyDigestEnabled: true,
+  calculatorEnabled: true,
   apiBaseUrl: '/api',
   msalConfig: {
     auth: {
