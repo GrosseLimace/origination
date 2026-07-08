@@ -1,10 +1,10 @@
 import { Component, inject, signal, computed, input, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { CurrencyPipe } from '@angular/common';
 
 import { InputComponent } from '@shared/components/input/input.component';
 import { SelectComponent } from '@shared/components/select/select.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
+import { AccountingCurrencyPipe } from '@shared/pipes/accounting-currency.pipe';
 import { ToastService } from '@core/services/toast.service';
 
 import { GRAIN_COMMODITIES, GrainCommodity, ProfitabilityInputs, ProfitabilityResult } from '../models/calculator.model';
@@ -51,7 +51,7 @@ function blankCrop(): CropForm {
 @Component({
   selector: 'app-profitability-calculator',
   standalone: true,
-  imports: [FormsModule, CurrencyPipe, InputComponent, SelectComponent, ButtonComponent],
+  imports: [FormsModule, AccountingCurrencyPipe, InputComponent, SelectComponent, ButtonComponent],
   templateUrl: './profitability-calculator.component.html',
 })
 export class ProfitabilityCalculatorComponent implements OnInit {
@@ -101,6 +101,16 @@ export class ProfitabilityCalculatorComponent implements OnInit {
     this.crops.update(list =>
       list.map((crop, i) => (i === index ? { ...crop, [key]: value } : crop)),
     );
+  }
+
+  /** On blur, rewrite a leading-minus entry to accounting parentheses so everything reads the
+   *  same on screen and in the PDF: "-40" → "(40)". Positives/blanks are left untouched. */
+  normalizeField(index: number, key: CropNumericKey): void {
+    const raw = (this.crops()[index]?.[key] ?? '').trim();
+    const rest = raw.slice(1).trim();
+    if (raw.startsWith('-') && rest) {
+      this.setField(index, key, `(${rest})`);
+    }
   }
 
   addCrop(): void {
@@ -158,9 +168,13 @@ export class ProfitabilityCalculatorComponent implements OnInit {
       .filter(key => this.num(form[key]) === 0);
   }
 
-  /** Parse a possibly-formatted numeric string to a number; blank/invalid → 0. */
+  /** Parse a possibly-formatted numeric string to a number; blank/invalid → 0.
+   *  Accepts accounting notation: parentheses mean negative, e.g. "(40)" === "-40". */
   private num(value: string): number {
-    const parsed = parseFloat((value ?? '').replace(/[^0-9.]/g, ''));
-    return isNaN(parsed) ? 0 : parsed;
+    const raw = (value ?? '').trim();
+    const parenNegative = /^\(.*\)$/.test(raw);
+    const parsed = parseFloat(raw.replace(/[^0-9.-]/g, ''));
+    if (isNaN(parsed)) return 0;
+    return parenNegative ? -Math.abs(parsed) : parsed;
   }
 }

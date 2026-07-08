@@ -20,7 +20,7 @@
         <!-- Farm name -->
         <div class="scoular-form-group">
           <label class="scoular-form-label">Farm Name</label>
-          <app-input placeholder="Enter farm name"
+          <app-input placeholder="Enter farm name" [clearable]="true"
             [ngModel]="view.form.farmName"
             (ngModelChange)="setField(i, 'farmName', $event)" />
         </div>
@@ -40,33 +40,37 @@
         <!-- Required numeric fields -->
         <div class="scoular-form-group">
           <label class="scoular-form-label">Total Acres <span class="text-scoular-red-accessible">*</span></label>
-          <app-input type="text" inputmode="decimal" placeholder="0"
+          <app-input type="text" inputmode="decimal" placeholder="0" [clearable]="true"
             [class]="isMissing(i, 'totalAcres') ? 'error' : ''"
             [ngModel]="view.form.totalAcres"
-            (ngModelChange)="setField(i, 'totalAcres', $event)" />
+            (ngModelChange)="setField(i, 'totalAcres', $event)"
+            (focusout)="normalizeField(i, 'totalAcres')" />
         </div>
         <div class="scoular-form-group">
           <label class="scoular-form-label">Expected Yield per Acre (bu) <span class="text-scoular-red-accessible">*</span></label>
-          <app-input type="text" inputmode="decimal" placeholder="0"
+          <app-input type="text" inputmode="decimal" placeholder="0" [clearable]="true"
             [class]="isMissing(i, 'yieldPerAcre') ? 'error' : ''"
             [ngModel]="view.form.yieldPerAcre"
-            (ngModelChange)="setField(i, 'yieldPerAcre', $event)" />
+            (ngModelChange)="setField(i, 'yieldPerAcre', $event)"
+            (focusout)="normalizeField(i, 'yieldPerAcre')" />
         </div>
         <div class="scoular-form-group">
           <label class="scoular-form-label">Expected Sale Price per Bushel ($) <span class="text-scoular-red-accessible">*</span></label>
-          <app-input type="text" inputmode="decimal" placeholder="0.00"
+          <app-input type="text" inputmode="decimal" placeholder="0.00" [clearable]="true"
             [class]="isMissing(i, 'pricePerBushel') ? 'error' : ''"
             [ngModel]="view.form.pricePerBushel"
-            (ngModelChange)="setField(i, 'pricePerBushel', $event)" />
+            (ngModelChange)="setField(i, 'pricePerBushel', $event)"
+            (focusout)="normalizeField(i, 'pricePerBushel')" />
         </div>
 
         <!-- Cost fields -->
         @for (field of costFields; track field.key) {
           <div class="scoular-form-group">
             <label class="scoular-form-label">{{ field.label }}</label>
-            <app-input type="text" inputmode="decimal" placeholder="0"
+            <app-input type="text" inputmode="decimal" placeholder="0" [clearable]="true"
               [ngModel]="view.form[field.key]"
-              (ngModelChange)="setField(i, field.key, $event)" />
+              (ngModelChange)="setField(i, field.key, $event)"
+              (focusout)="normalizeField(i, field.key)" />
           </div>
         }
         </div>
@@ -83,23 +87,23 @@
           <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-2">Summary</p>
           <dl class="space-y-1 text-sm">
             <div class="flex justify-between"><dt class="text-gray-600 dark:text-gray-400">Total Revenue</dt>
-              <dd class="text-gray-900 dark:text-white">{{ view.result.totalRevenue | currency:'USD':'symbol':'1.2-2' }}</dd></div>
+              <dd class="text-gray-900 dark:text-white">{{ view.result.totalRevenue | accountingCurrency }}</dd></div>
             <div class="flex justify-between"><dt class="text-gray-600 dark:text-gray-400">Total Variable Cost</dt>
-              <dd class="text-gray-900 dark:text-white">{{ view.result.totalVariableCost | currency:'USD':'symbol':'1.2-2' }}</dd></div>
+              <dd class="text-gray-900 dark:text-white">{{ view.result.totalVariableCost | accountingCurrency }}</dd></div>
             <div class="flex justify-between"><dt class="text-gray-600 dark:text-gray-400">Total Fixed Cost</dt>
-              <dd class="text-gray-900 dark:text-white">{{ view.result.totalFixedCost | currency:'USD':'symbol':'1.2-2' }}</dd></div>
+              <dd class="text-gray-900 dark:text-white">{{ view.result.totalFixedCost | accountingCurrency }}</dd></div>
             <div class="flex justify-between"><dt class="text-gray-600 dark:text-gray-400">Total Cost</dt>
-              <dd class="text-gray-900 dark:text-white">{{ view.result.totalCost | currency:'USD':'symbol':'1.2-2' }}</dd></div>
+              <dd class="text-gray-900 dark:text-white">{{ view.result.totalCost | accountingCurrency }}</dd></div>
             <div class="flex justify-between"><dt class="text-gray-600 dark:text-gray-400">Cost per Acre</dt>
-              <dd class="text-gray-900 dark:text-white">{{ view.result.costPerAcre | currency:'USD':'symbol':'1.2-2' }}</dd></div>
+              <dd class="text-gray-900 dark:text-white">{{ view.result.costPerAcre | accountingCurrency }}</dd></div>
             <div class="flex justify-between"><dt class="text-gray-600 dark:text-gray-400">Breakeven $/Bushel</dt>
-              <dd class="text-gray-900 dark:text-white">{{ view.result.breakevenPerBushel | currency:'USD':'symbol':'1.2-4' }}</dd></div>
+              <dd class="text-gray-900 dark:text-white">{{ view.result.breakevenPerBushel | accountingCurrency:4 }}</dd></div>
           </dl>
           <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex justify-between items-baseline">
             <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">Profit</span>
             <span class="text-lg font-bold"
               [class]="view.result.profit >= 0 ? 'text-scoular-green-accessible dark:text-scoular-green' : 'text-scoular-red-accessible dark:text-scoular-red'">
-              {{ view.result.profit | currency:'USD':'symbol':'1.2-2' }}
+              {{ view.result.profit | accountingCurrency }}
             </span>
           </div>
         </div>

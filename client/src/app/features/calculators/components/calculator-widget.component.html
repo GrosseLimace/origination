@@ -1,7 +1,10 @@
 <div
   cdkDrag
-  class="fixed top-[15vh] left-[calc(50vw_-_13rem)] z-[60] flex flex-col w-[26rem] min-w-[20rem] max-w-[92vw] h-[70vh] min-h-[16rem] max-h-[92vh] overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl"
+  class="fixed top-[10vh] left-[calc(50vw_-_13rem)] z-[60] flex flex-col w-[26rem] min-w-[20rem] max-w-[92vw] min-h-[16rem] max-h-[85vh] overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl"
   [class.resize]="!minimized()"
+  [class.ring-2]="minimized()"
+  [class.ring-scoular-green-accessible]="minimized()"
+  [style.width]="panelWidth()"
   [style.height]="minimized() ? 'auto' : null"
   [style.minHeight]="minimized() ? '0' : null">
 
@@ -39,6 +42,12 @@
     @switch (type()) {
       @case ('profitability') {
         <app-profitability-calculator [producerName]="producerName()" />
+      }
+      @case ('check') {
+        <app-check-calculator [producerName]="producerName()" (columnCount)="onColumnCount($event)" />
+      }
+      @case ('cancelRoll') {
+        <app-cancel-roll-calculator [producerName]="producerName()" (columnCount)="onColumnCount($event)" />
       }
     }
   </div>

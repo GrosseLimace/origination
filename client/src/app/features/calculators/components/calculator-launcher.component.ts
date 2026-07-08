@@ -1,4 +1,4 @@
-import { Component, input, signal } from '@angular/core';
+import { Component, ElementRef, HostListener, inject, input, signal } from '@angular/core';
 
 import { CALCULATOR_TYPES, CalculatorType } from '../models/calculator.model';
 import { CalculatorWidgetComponent } from './calculator-widget.component';
@@ -18,12 +18,28 @@ export class CalculatorLauncherComponent {
   /** Selected producer's name — prefilled into the calculator's Farm Name field. */
   readonly producerName = input<string>('');
 
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+
   readonly types = CALCULATOR_TYPES;
   readonly pickerOpen = signal(false);
   readonly activeType = signal<CalculatorType | null>(null);
 
   togglePicker(): void {
     this.pickerOpen.update(v => !v);
+  }
+
+  /** Close the type picker when clicking anywhere outside the launcher (FAB + popover). */
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: MouseEvent): void {
+    if (this.pickerOpen() && !this.host.nativeElement.contains(event.target as Node)) {
+      this.pickerOpen.set(false);
+    }
+  }
+
+  /** Escape also dismisses the open picker. */
+  @HostListener('document:keydown.escape')
+  onEscape(): void {
+    this.pickerOpen.set(false);
   }
 
   select(type: CalculatorType): void {
