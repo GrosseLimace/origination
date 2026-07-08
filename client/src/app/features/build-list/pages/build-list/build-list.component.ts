@@ -12,7 +12,7 @@ import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { UserRolesService } from '@core/services/user-roles.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, TeamMember, ProducerDetails, RefinementFilters, QueryLibraryItem } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, TeamMember, ProducerDetails, RefinementFilters, QueryLibraryItem, GrainOnFarmItem } from '@models';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '@shared/components/card/card.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
@@ -856,6 +856,20 @@ export class BuildListComponent {
         const key = crop.trim().toLowerCase();
         if (!key) continue;
         groups.add(groupByKey.get(key) ?? crop.trim());
+      }
+    }
+    // On Grain on Farm lists the relevant crops are what producers hold on the farm, which
+    // may not appear in c.commodities (a producer can have grain on farm with no ticket or
+    // contract for that crop — e.g. Canola). Union in each grain-on-farm commodity group that
+    // has bushels on hand so it's offered as a refine option, mirroring the isGrainOnFarm crop
+    // filter (matches g.commodityGroup where bushelsOnHand > 0).
+    if (this.showGrainOnFarmFilters()) {
+      for (const c of this.filteredCustomers()) {
+        for (const g of (c.grainOnFarm ?? [])) {
+          const grp = (g.commodityGroup || '').trim();
+          if (!grp || (g.bushelsOnHand ?? 0) <= 0) continue;
+          groups.add(groupByKey.get(grp.toLowerCase()) ?? grp);
+        }
       }
     }
     return [...groups].sort();
@@ -1811,6 +1825,7 @@ export class BuildListComponent {
           totalAcres: pd.totalAcres ?? customer.totalAcres,
           binCapacity: pd.binCapacity ?? customer.binCapacity,
           primaryContact: pd.primaryContact ?? customer.primaryContact,
+          primaryPhone: pd.primaryPhone ?? customer.primaryPhone,
           commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
           // Per-commodity grain-on-farm (bushels on hand + $/bu target) — carried onto the customer
           // so the NLQ engine can filter "grain on farm" / "target" prompts client-side.
@@ -3031,5 +3046,15 @@ export class BuildListComponent {
   /** Total bushels currently on the farm for a producer (sum of per-commodity grain-on-farm). */
   grainOnFarmBu(customer: Customer): number {
     return (customer.grainOnFarm ?? []).reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0);
+  }
+
+  /**
+   * Per-crop grain-on-farm rows that actually have bushels on hand, largest first — used to
+   * render the per-commodity chips beneath the "bu on farm" total in Grain on Farm results.
+   */
+  grainOnFarmBreakdown(customer: Customer): GrainOnFarmItem[] {
+    return (customer.grainOnFarm ?? [])
+      .filter(g => !!g.commodityGroup && (g.bushelsOnHand ?? 0) > 0)
+      .sort((a, b) => (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0));
   }
 }

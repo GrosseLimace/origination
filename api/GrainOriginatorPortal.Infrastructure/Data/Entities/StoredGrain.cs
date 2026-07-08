@@ -22,6 +22,8 @@ public class StoredGrain
     public decimal StorageDays { get; set; }         // STORAGE_DAYS — days in storage from CTRM
     public DateTime? ChargedFromDate { get; set; }   // CHARGED_FROM_DATE
     public DateTime? ChargedThruDate { get; set; }   // CHARGED_THRU_DATE
+    public string LocationCity { get; set; } = string.Empty;  // vw_GNP003.Location_City (by LOCATION_CODE)
+    public string LocationState { get; set; } = string.Empty; // vw_GNP003.Location_State (by LOCATION_CODE)
 
     [NotMapped]
     public decimal Bushels => Quantity;

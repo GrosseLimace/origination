@@ -16,6 +16,7 @@ public class ProducerDetails
     public decimal? TotalAcres { get; set; }
     public decimal? BinCapacity { get; set; }
     public string? PrimaryContact { get; set; }
+    public string? PrimaryPhone { get; set; } // user-entered override for the pulled-in phone number
     public string? Commodities { get; set; } // Comma-separated list (e.g. "Corn,Soybeans,Wheat")
     public string? LinkedProducerIds { get; set; } // Comma-separated customer IDs
 

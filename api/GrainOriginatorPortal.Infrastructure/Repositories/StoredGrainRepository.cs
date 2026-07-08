@@ -63,8 +63,27 @@ public class StoredGrainRepository : IStoredGrainRepository
             ISNULL(sg.RECEIVABLE_AMOUNT, 0) AS ReceivableAmount,
             ISNULL(sg.STORAGE_DAYS, 0) AS StorageDays,
             sg.CHARGED_FROM_DATE AS ChargedFromDate,
-            sg.CHARGED_THRU_DATE AS ChargedThruDate
+            sg.CHARGED_THRU_DATE AS ChargedThruDate,
+            -- Human-readable facility location. LOCATION_CODE maps 1:1 to ctrm.vw_GNP003.Location_Code
+            -- (verified: full coverage, unique key), the same location master the ticket fallback uses.
+            --
+            -- IMPORTANT — this is the DIVISION/LOCATION, not the physical elevator, and it can differ
+            -- from the "Location" shown for the SAME ticket on the Unapplied Tickets screen:
+            --   * A storage receipt only records LOCATION_CODE (a division/location, e.g. 1340 = HANCOCK).
+            --     That is the ONLY location field on vw_GNTA39D1 — there is no elevator code here.
+            --   * The ticket record carries the actual ElevatorCode (e.g. EMERSO = EMERSON), which the
+            --     ticket screen resolves via ctrm.vw_GNP026 (elevator master). EMERSO rolls up under
+            --     division 1340, so the ticket shows the elevator (Emerson) while storage shows the
+            --     division it belongs to (Hancock). Both are correct, just at different granularity.
+            -- So for any division with >1 elevator, Storage will show the division and Tickets the
+            -- elevator. To make them agree we'd have to join each receipt to its matching ticket
+            -- (same number) and borrow the ticket's elevator — deliberately NOT done here. See the
+            -- ticket-side lookup in TicketRepository.PopulateElevatorLocations (vw_GNP026 + vw_GNP003).
+            ISNULL(LTRIM(RTRIM(loc.Location_City)), '') AS LocationCity,
+            ISNULL(LTRIM(RTRIM(loc.Location_State)), '') AS LocationState
         FROM LatestReceipts sg
+        LEFT JOIN ctrm.vw_GNP003 loc
+               ON LTRIM(RTRIM(loc.Location_Code)) = LTRIM(RTRIM(sg.LOCATION_CODE))
         WHERE sg.rn = 1
         """;
 

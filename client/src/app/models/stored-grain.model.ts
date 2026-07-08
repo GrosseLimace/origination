@@ -13,6 +13,8 @@ export interface StoredGrain {
   storageDays: number;        // STORAGE_DAYS — days in storage from CTRM (decimal)
   chargedFromDate: Date | null;
   chargedThruDate: Date | null;
+  locationCity: string;       // vw_GNP003.Location_City (facility city, by LOCATION_CODE)
+  locationState: string;      // vw_GNP003.Location_State
   bushels: number;
   dateReceived: Date;
 }

@@ -53,6 +53,7 @@ public class ProducerDetailsController : ControllerBase
             request.TotalAcres,
             request.BinCapacity,
             request.PrimaryContact,
+            request.PrimaryPhone,
             request.Commodities,
             request.LinkedProducerIds,
             request.GrainOnFarm,

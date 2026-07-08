@@ -581,6 +581,12 @@ public class TicketRepository : ITicketRepository
         return tickets;
     }
 
+    // Resolves each ticket's City/State from its physical ElevatorCode via vw_GNP026 (elevator
+    // master), falling back to OrganizationCode → vw_GNP003 when there's no elevator code.
+    // NOTE: this is the ELEVATOR-level location (e.g. EMERSO = EMERSON). The Storage screen shows
+    // the DIVISION-level location for the same receipt (LOCATION_CODE → vw_GNP003, e.g. 1340 =
+    // HANCOCK) because a storage receipt carries no elevator code — so the two screens can legitimately
+    // show different cities for the same ticket number. See StoredGrainRepository.StoredGrainSql.
     private async Task PopulateElevatorLocations(List<Ticket> tickets, CancellationToken cancellationToken)
     {
         var elevatorCodes = tickets

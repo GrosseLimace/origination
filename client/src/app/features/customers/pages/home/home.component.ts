@@ -467,6 +467,7 @@ export class HomeComponent {
           binCapacity: pd.binCapacity ?? customer.binCapacity,
           grainOnFarm: pd.grainOnFarm ?? customer.grainOnFarm,
           primaryContact: pd.primaryContact ?? customer.primaryContact,
+          primaryPhone: pd.primaryPhone ?? customer.primaryPhone,
           commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : customer.commodities,
           linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : customer.linkedProducerIds
         };
@@ -794,6 +795,7 @@ export class HomeComponent {
               binCapacity: details.binCapacity ?? sel.binCapacity,
               grainOnFarm: details.grainOnFarm ?? sel.grainOnFarm,
               primaryContact: details.primaryContact ?? sel.primaryContact,
+              primaryPhone: details.primaryPhone ?? sel.primaryPhone,
               commodities: details.commodities ? details.commodities.split(',').map(c => c.trim()) : sel.commodities,
               linkedProducerIds: details.linkedProducerIds ? details.linkedProducerIds.split(',').filter(Boolean) : sel.linkedProducerIds
             };
@@ -867,6 +869,7 @@ export class HomeComponent {
       binCapacity: pd.binCapacity ?? fetched.binCapacity,
       grainOnFarm: pd.grainOnFarm ?? fetched.grainOnFarm,
       primaryContact: pd.primaryContact ?? fetched.primaryContact,
+      primaryPhone: pd.primaryPhone ?? fetched.primaryPhone,
       commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : fetched.commodities,
       linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : fetched.linkedProducerIds
     };
@@ -985,6 +988,7 @@ export class HomeComponent {
       totalAcres: existingPd?.totalAcres ?? null,
       binCapacity: existingPd?.binCapacity ?? null,
       primaryContact: primaryContact,
+      primaryPhone: existingPd?.primaryPhone ?? null,  // preserve — this save only propagates the contact
       commodities: existingPd?.commodities ?? null,
       linkedProducerIds: existingPd?.linkedProducerIds ?? ((linkedCustomer.linkedProducerIds || []).join(',') || null),
       grainOnFarm: existingPd?.grainOnFarm ?? []  // preserve — this save isn't editing grain on farm
@@ -1195,6 +1199,7 @@ export class HomeComponent {
       totalAcres: existingPd?.totalAcres ?? null,
       binCapacity: existingPd?.binCapacity ?? null,
       primaryContact: existingPd?.primaryContact ?? null,
+      primaryPhone: existingPd?.primaryPhone ?? null,
       commodities: merged.join(','),
       linkedProducerIds: existingPd?.linkedProducerIds ?? null,
       grainOnFarm: existingPd?.grainOnFarm ?? []  // preserve — this save isn't editing grain on farm
@@ -1221,7 +1226,7 @@ export class HomeComponent {
    *  onboarding candidate that PUT inserts them into dbo.Customer, which the ProducerDetails
    *  save then depends on (FK). Existing customers with no TU change skip straight to the
    *  details save, unchanged. */
-  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
+  handleSaveCustomer(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; tradeUnitCodes: string[]; reconcileTradeUnits: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
     // Only call the trade-unit reconcile when the dialog flagged it safe + meaningful
     // (onboarding a candidate, or the manual TU set actually changed). A pure details edit
     // skips it entirely, and a failed TU-load never reconciles (so manual TUs can't be wiped).
@@ -1244,7 +1249,7 @@ export class HomeComponent {
     }
   }
 
-  private _saveProducerDetailsAndLinks(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
+  private _saveProducerDetailsAndLinks(data: { customerId: number; acres: number; binCapacity: number; commodities: string[]; primaryContact: string; primaryPhone: string; linkedProducerIds: string[]; removedIncomingIds: string[]; eSignEnabled: boolean; grainOnFarm: { commodityGroup: string; bushelsOnHand?: number; targetBushels?: number; grade?: string }[] }): void {
     const customers = this.customers();
     const sel = this.selectedCustomer();
     const customer = customers.find(c => c.id === data.customerId)
@@ -1262,6 +1267,7 @@ export class HomeComponent {
       grainOnFarm: data.grainOnFarm,
       commodities: allCommodities,
       primaryContact: data.primaryContact,
+      primaryPhone: data.primaryPhone,
       linkedProducerIds: data.linkedProducerIds,
       eSignEnabled: data.eSignEnabled
     };
@@ -1274,6 +1280,7 @@ export class HomeComponent {
       totalAcres: data.acres || null,
       binCapacity: data.binCapacity || null,
       primaryContact: data.primaryContact || null,
+      primaryPhone: data.primaryPhone || null,
       commodities: savedCommodities,
       linkedProducerIds: savedLinkedIds,
       grainOnFarm: data.grainOnFarm
@@ -1282,7 +1289,7 @@ export class HomeComponent {
     const existingPd = this.producerDetailsMap().get(data.customerId);
     if (existingPd) {
       const map = new Map(this.producerDetailsMap());
-      map.set(data.customerId, { ...existingPd, totalAcres: data.acres || undefined, binCapacity: data.binCapacity || undefined, primaryContact: data.primaryContact || undefined, commodities: savedCommodities ?? undefined, linkedProducerIds: savedLinkedIds ?? undefined, grainOnFarm: data.grainOnFarm });
+      map.set(data.customerId, { ...existingPd, totalAcres: data.acres || undefined, binCapacity: data.binCapacity || undefined, primaryContact: data.primaryContact || undefined, primaryPhone: data.primaryPhone || undefined, commodities: savedCommodities ?? undefined, linkedProducerIds: savedLinkedIds ?? undefined, grainOnFarm: data.grainOnFarm });
       this.producerDetailsMap.set(map);
     }
 
@@ -1319,6 +1326,7 @@ export class HomeComponent {
         totalAcres: existingPd?.totalAcres ?? null,
         binCapacity: existingPd?.binCapacity ?? null,
         primaryContact: existingPd?.primaryContact ?? null,
+      primaryPhone: existingPd?.primaryPhone ?? null,
         commodities: existingPd?.commodities ?? null,
         linkedProducerIds: updatedLinkedIds.length > 0 ? updatedLinkedIds.join(',') : null,
         grainOnFarm: existingPd?.grainOnFarm ?? []  // preserve — this save isn't editing grain on farm
@@ -1497,6 +1505,7 @@ export class HomeComponent {
               binCapacity: pd.binCapacity ?? fetched.binCapacity,
               grainOnFarm: pd.grainOnFarm ?? fetched.grainOnFarm,
               primaryContact: pd.primaryContact ?? fetched.primaryContact,
+      primaryPhone: pd.primaryPhone ?? fetched.primaryPhone,
               commodities: pd.commodities ? pd.commodities.split(',').map(c => c.trim()) : fetched.commodities,
               linkedProducerIds: pd.linkedProducerIds ? pd.linkedProducerIds.split(',').filter(Boolean) : fetched.linkedProducerIds
             };
@@ -1611,6 +1620,7 @@ export class HomeComponent {
       totalAcres: customer.totalAcres ?? null,
       binCapacity: customer.binCapacity ?? null,
       primaryContact: customer.primaryContact ?? null,
+      primaryPhone: customer.primaryPhone ?? null,
       commodities: updated.join(','),
       linkedProducerIds: (customer.linkedProducerIds ?? []).join(','),
       grainOnFarm: customer.grainOnFarm ?? []  // preserve — this save isn't editing grain on farm

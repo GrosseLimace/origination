@@ -1333,6 +1333,15 @@
                               <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ customer.totalAcres | number }} acres</span>
                             }
                           </div>
+                          @if (showGrainOnFarmFilters() && grainOnFarmBreakdown(customer).length) {
+                            <div class="flex flex-wrap items-center gap-1 mt-1.5">
+                              @for (g of grainOnFarmBreakdown(customer); track g.commodityGroup) {
+                                <span class="inline-flex items-center gap-1 rounded-md bg-scoular-green/10 dark:bg-scoular-green-accessible/20 px-1.5 py-0.5 text-xs font-medium text-scoular-green-accessible dark:text-scoular-green">
+                                  {{ g.commodityGroup }} {{ g.bushelsOnHand | number }}
+                                </span>
+                              }
+                            </div>
+                          }
                           @if (linkedInfo) {
                             <button type="button" (click)="$event.stopPropagation(); toggleLinkedExpand(customer.id)"
                                     class="mt-1.5 inline-flex items-center gap-1 text-xs text-scoular-green-accessible dark:text-scoular-green hover:underline cursor-pointer focus:outline-none">
@@ -1456,6 +1465,15 @@
                                     <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ linked.totalAcres | number }} acres</span>
                                   }
                                 </div>
+                                @if (showGrainOnFarmFilters() && grainOnFarmBreakdown(linked).length) {
+                                  <div class="flex flex-wrap items-center gap-1 mt-1.5">
+                                    @for (g of grainOnFarmBreakdown(linked); track g.commodityGroup) {
+                                      <span class="inline-flex items-center gap-1 rounded-md bg-scoular-green/10 dark:bg-scoular-green-accessible/20 px-1.5 py-0.5 text-xs font-medium text-scoular-green-accessible dark:text-scoular-green">
+                                        {{ g.commodityGroup }} {{ g.bushelsOnHand | number }}
+                                      </span>
+                                    }
+                                  </div>
+                                }
                               </div>
                             </div>
 
