@@ -712,8 +712,8 @@
       },
       "Microsoft.OpenApi": {
         "type": "Transitive",
-        "resolved": "2.0.0",
-        "contentHash": "GGYLfzV/G/ct80OZ45JxnWP7NvMX1BCugn/lX7TH5o0lcVaviavsLMTxmFV2AybXWjbi3h6FF1vgZiTK6PXndw=="
+        "resolved": "2.7.5",
+        "contentHash": "0FA67RSnRM4tcBKqiqVu/HPdZ9+QOKbmeRjxRUGTCjPU4C0bmUhd97Dso7Yild5P7nOV6GxJ2xrK0Kv/O9xp0w=="
       },
       "Microsoft.SqlServer.Server": {
         "type": "Transitive",
@@ -868,7 +868,8 @@
           "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.1, )",
           "Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore": "[10.0.3, )",
           "Microsoft.Extensions.Http.Resilience": "[10.3.0, )",
-          "Microsoft.Identity.Web": "[3.8.4, )"
+          "Microsoft.Identity.Web": "[3.8.4, )",
+          "Microsoft.OpenApi": "[2.7.5, )"
         }
       },
       "grainoriginatorportal.infrastructure": {
