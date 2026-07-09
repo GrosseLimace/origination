@@ -80,83 +80,120 @@
           @if (showContracts() && openContracts().length > 0) {
             <div style="margin-bottom: 24px;">
               <div [style.color]="accentColor()" style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px;">Contracts</div>
-              @for (group of contractsByCommodity(); track group.commodity) {
-                <div style="margin-bottom: 16px;">
-                  <div style="font-size: 11px; font-weight: 700; color: #374151; padding: 6px 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px 6px 0 0;">{{ group.commodity }}</div>
-                  <div style="border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px; padding: 8px;">
-                    @for (ct of group.contracts; track ct.id) {
-                      <div style="margin-bottom: 8px; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden;">
-                        <table style="width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed;">
-                          <colgroup>
-                            <col style="width: 20%;" />
-                            <col style="width: 20%;" />
-                            <col style="width: 16%;" />
-                            <col style="width: 24%;" />
-                            <col style="width: 20%;" />
-                          </colgroup>
+              @for (group of contractsByCommodity(); track group.commodity; let first = $first) {
+                <div style="margin-bottom: 14px;">
+                  <!-- Commodity band: name on the left, total contracted bushels on the right -->
+                  <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; font-weight: 700; color: #374151; padding: 6px 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px 8px 0 0;">
+                    <span>{{ group.commodity }}</span>
+                    <span style="color: #6b7280;">Total: {{ group.totalQuantity.toLocaleString() }} {{ group.unit }}</span>
+                  </div>
+
+                  @if (showPricingLines()) {
+                    <!-- Pricing shown: each contract + its pricing lines grouped in a card. Column header shown once, under the first commodity. -->
+                    <div style="border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px; padding: 6px;">
+                      @if (first) {
+                        <table style="width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; margin-bottom: 6px;">
+                          <colgroup><col style="width: 20%;" /><col style="width: 20%;" /><col style="width: 16%;" /><col style="width: 24%;" /><col style="width: 20%;" /></colgroup>
                           <thead>
                             <tr [style.background]="accentLight()">
-                              <th style="text-align: center; padding: 8px 10px; font-weight: 600; color: #374151;">Contract #</th>
-                              <th style="text-align: center; padding: 8px 10px; font-weight: 600; color: #374151;">Quantity</th>
-                              <th style="text-align: center; padding: 8px 10px; font-weight: 600; color: #374151;">Price</th>
-                              <th style="text-align: center; padding: 8px 10px; font-weight: 600; color: #374151;">Delivery Window</th>
-                              <th style="text-align: center; padding: 8px 10px; font-weight: 600; color: #374151;">Status</th>
+                              <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151;">Contract #</th>
+                              <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151;">Quantity</th>
+                              <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151;">Price</th>
+                              <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151;">Delivery Window</th>
+                              <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151;">Status</th>
                             </tr>
                           </thead>
-                          <tbody>
-                            <tr>
-                              <td style="padding: 8px 10px; text-align: center; font-weight: 500;">{{ ct.sourceContractId || ct.contractNumber }}</td>
-                              <td style="padding: 8px 10px; text-align: center;">{{ ct.quantity.toLocaleString() }} {{ ct.unit }}</td>
-                              <td style="padding: 8px 10px; text-align: center;">{{ getContractPrice(ct) }}</td>
-                              <td style="padding: 8px 10px; text-align: center; font-size: 10px;">{{ formatDeliveryPeriod(ct.deliveryStart, ct.deliveryEnd) }}</td>
-                              <td style="padding: 8px 10px; text-align: center;">
-                                <span [style.background]="getStatusStyles(getCalculatedStatus(ct)).bg"
-                                      [style.color]="getStatusStyles(getCalculatedStatus(ct)).color"
-                                      style="display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 9px; font-weight: 600;">
-                                  {{ getCalculatedStatus(ct) }}
-                                </span>
-                              </td>
-                            </tr>
-                            @if (showPricingLines() && getPricingLinesForContract(ct).length > 0) {
-                              <tr style="background: #f9fafb;">
-                                <td colspan="5" style="padding: 8px 10px 10px 10px;">
-                                  <div style="font-size: 10px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Pricing Lines ({{ getPricingLinesForContract(ct).length }})</div>
-                                  <table style="width: 100%; border-collapse: collapse; font-size: 10px; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 4px;">
-                                    <thead>
-                                      <tr style="background: #f3f4f6;">
-                                        <th style="text-align: center; padding: 4px 6px; font-weight: 600; color: #6b7280;">Seq</th>
-                                        <th style="text-align: center; padding: 4px 6px; font-weight: 600; color: #6b7280;">Quantity</th>
-                                        <th style="text-align: center; padding: 4px 6px; font-weight: 600; color: #6b7280;">Hedge</th>
-                                        <th style="text-align: center; padding: 4px 6px; font-weight: 600; color: #6b7280;">Basis</th>
-                                        <th style="text-align: center; padding: 4px 6px; font-weight: 600; color: #6b7280;">Freight Adj</th>
-                                        <th style="text-align: center; padding: 4px 6px; font-weight: 600; color: #6b7280;">Flat Price</th>
-                                        <th style="text-align: center; padding: 4px 6px; font-weight: 600; color: #6b7280;">Price Date</th>
-                                        <th style="text-align: center; padding: 4px 6px; font-weight: 600; color: #6b7280;">Confirm</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      @for (line of getPricingLinesForContract(ct); track line.priceSequence) {
-                                        <tr>
-                                          <td style="text-align: center; padding: 4px 6px; color: #6b7280;">{{ line.priceSequence }}</td>
-                                          <td style="text-align: center; padding: 4px 6px;">{{ (line.priceQuantity ?? 0) | number:'1.0-0' }} {{ ct.unit }}</td>
-                                          <td style="text-align: center; padding: 4px 6px;">{{ line.hedgePrice != null ? (line.hedgePrice | currency:'USD':'symbol':'1.2-4') : '—' }}</td>
-                                          <td style="text-align: center; padding: 4px 6px;">{{ line.basisPrice != null ? (line.basisPrice | currency:'USD':'symbol':'1.2-4') : '—' }}</td>
-                                          <td style="text-align: center; padding: 4px 6px;">{{ line.freightAdjustment != null ? (line.freightAdjustment | currency:'USD':'symbol':'1.2-4') : '—' }}</td>
-                                          <td style="text-align: center; padding: 4px 6px; font-weight: 600;">{{ line.flatPrice != null ? (line.flatPrice | currency:'USD':'symbol':'1.2-4') : '—' }}</td>
-                                          <td style="text-align: center; padding: 4px 6px;">{{ line.priceDate ? (line.priceDate | date:'M/d/yy') : '—' }}</td>
-                                          <td style="text-align: center; padding: 4px 6px;">{{ line.customerConfirmStatus || '—' }}</td>
-                                        </tr>
-                                      }
-                                    </tbody>
-                                  </table>
+                        </table>
+                      }
+                      @for (ct of group.contracts; track ct.id) {
+                        <div style="border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; margin-top: 6px; page-break-inside: avoid;">
+                          <table style="width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed;">
+                            <colgroup><col style="width: 20%;" /><col style="width: 20%;" /><col style="width: 16%;" /><col style="width: 24%;" /><col style="width: 20%;" /></colgroup>
+                            <tbody>
+                              <tr>
+                                <td style="padding: 4px 8px; text-align: center; font-weight: 500;">{{ ct.sourceContractId || ct.contractNumber }}</td>
+                                <td style="padding: 4px 8px; text-align: center;">{{ ct.quantity.toLocaleString() }} {{ ct.unit }}</td>
+                                <td style="padding: 4px 8px; text-align: center;">{{ getContractPrice(ct) }}</td>
+                                <td style="padding: 4px 8px; text-align: center; font-size: 10px;">{{ formatDeliveryPeriod(ct.deliveryStart, ct.deliveryEnd) }}</td>
+                                <td style="padding: 4px 8px; text-align: center;">
+                                  <span [style.background]="getStatusStyles(getCalculatedStatus(ct)).bg"
+                                        [style.color]="getStatusStyles(getCalculatedStatus(ct)).color"
+                                        style="display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 9px; font-weight: 600;">
+                                    {{ getCalculatedStatus(ct) }}
+                                  </span>
                                 </td>
                               </tr>
-                            }
-                          </tbody>
-                        </table>
-                      </div>
-                    }
-                  </div>
+                            </tbody>
+                          </table>
+                          @if (getPricingLinesForContract(ct).length > 0) {
+                            <div style="padding: 6px 8px 8px 8px; background: #f9fafb; border-top: 1px solid #f3f4f6;">
+                              <table style="width: 100%; border-collapse: collapse; font-size: 10px; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 4px;">
+                                <thead>
+                                  <tr style="background: #f3f4f6;">
+                                    <th style="text-align: center; padding: 4px 6px; font-weight: 600; color: #6b7280;">Seq</th>
+                                    <th style="text-align: center; padding: 4px 6px; font-weight: 600; color: #6b7280;">Quantity</th>
+                                    <th style="text-align: center; padding: 4px 6px; font-weight: 600; color: #6b7280;">Hedge</th>
+                                    <th style="text-align: center; padding: 4px 6px; font-weight: 600; color: #6b7280;">Basis</th>
+                                    <th style="text-align: center; padding: 4px 6px; font-weight: 600; color: #6b7280;">Freight Adj</th>
+                                    <th style="text-align: center; padding: 4px 6px; font-weight: 600; color: #6b7280;">Flat Price</th>
+                                    <th style="text-align: center; padding: 4px 6px; font-weight: 600; color: #6b7280;">Price Date</th>
+                                    <th style="text-align: center; padding: 4px 6px; font-weight: 600; color: #6b7280;">Confirm</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  @for (line of getPricingLinesForContract(ct); track line.priceSequence) {
+                                    <tr>
+                                      <td style="text-align: center; padding: 4px 6px; color: #6b7280;">{{ line.priceSequence }}</td>
+                                      <td style="text-align: center; padding: 4px 6px;">{{ (line.priceQuantity ?? 0) | number:'1.0-0' }} {{ ct.unit }}</td>
+                                      <td style="text-align: center; padding: 4px 6px;">{{ line.hedgePrice != null ? (line.hedgePrice | currency:'USD':'symbol':'1.2-4') : '—' }}</td>
+                                      <td style="text-align: center; padding: 4px 6px;">{{ line.basisPrice != null ? (line.basisPrice | currency:'USD':'symbol':'1.2-4') : '—' }}</td>
+                                      <td style="text-align: center; padding: 4px 6px;">{{ line.freightAdjustment != null ? (line.freightAdjustment | currency:'USD':'symbol':'1.2-4') : '—' }}</td>
+                                      <td style="text-align: center; padding: 4px 6px; font-weight: 600;">{{ line.flatPrice != null ? (line.flatPrice | currency:'USD':'symbol':'1.2-4') : '—' }}</td>
+                                      <td style="text-align: center; padding: 4px 6px;">{{ line.priceDate ? (line.priceDate | date:'M/d/yy') : '—' }}</td>
+                                      <td style="text-align: center; padding: 4px 6px;">{{ line.customerConfirmStatus || '—' }}</td>
+                                    </tr>
+                                  }
+                                </tbody>
+                              </table>
+                            </div>
+                          }
+                        </div>
+                      }
+                    </div>
+                  } @else {
+                    <!-- Pricing hidden: flat, tight single table with gridlines -->
+                    <table style="width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+                      <colgroup><col style="width: 20%;" /><col style="width: 20%;" /><col style="width: 16%;" /><col style="width: 24%;" /><col style="width: 20%;" /></colgroup>
+                      @if (first) {
+                        <thead>
+                          <tr [style.background]="accentLight()">
+                            <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Contract #</th>
+                            <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Quantity</th>
+                            <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Price</th>
+                            <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Delivery Window</th>
+                            <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Status</th>
+                          </tr>
+                        </thead>
+                      }
+                      <tbody>
+                        @for (ct of group.contracts; track ct.id) {
+                          <tr>
+                            <td style="padding: 4px 8px; text-align: center; font-weight: 500; border: 1px solid #e5e7eb;">{{ ct.sourceContractId || ct.contractNumber }}</td>
+                            <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ ct.quantity.toLocaleString() }} {{ ct.unit }}</td>
+                            <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ getContractPrice(ct) }}</td>
+                            <td style="padding: 4px 8px; text-align: center; font-size: 10px; border: 1px solid #e5e7eb;">{{ formatDeliveryPeriod(ct.deliveryStart, ct.deliveryEnd) }}</td>
+                            <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">
+                              <span [style.background]="getStatusStyles(getCalculatedStatus(ct)).bg"
+                                    [style.color]="getStatusStyles(getCalculatedStatus(ct)).color"
+                                    style="display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 9px; font-weight: 600;">
+                                {{ getCalculatedStatus(ct) }}
+                              </span>
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  }
                 </div>
               }
             </div>
@@ -170,28 +207,28 @@
                 <table style="width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed;">
                   <thead>
                     <tr [style.background]="accentLight()">
-                      <th style="text-align: center; padding: 8px 12px; font-weight: 600; color: #374151;">Crop</th>
-                      <th style="text-align: center; padding: 8px 12px; font-weight: 600; color: #374151;"># Tickets</th>
-                      <th style="text-align: center; padding: 8px 12px; font-weight: 600; color: #374151;">Total Net</th>
-                      <th style="text-align: center; padding: 8px 12px; font-weight: 600; color: #374151;">Avg Date</th>
-                      <th style="text-align: center; padding: 8px 12px; font-weight: 600; color: #374151;">Avg Moisture</th>
-                      <th style="text-align: center; padding: 8px 12px; font-weight: 600; color: #374151;">Avg Test Wt</th>
+                      <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Crop</th>
+                      <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;"># Tickets</th>
+                      <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Total Net</th>
+                      <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Avg Date</th>
+                      <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Avg Moisture</th>
+                      <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Avg Test Wt</th>
                       @if (anyTicketWheat()) {
-                        <th style="text-align: center; padding: 8px 12px; font-weight: 600; color: #374151;">Avg Protein</th>
+                        <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Avg Protein</th>
                       }
                     </tr>
                   </thead>
                   <tbody>
-                    @for (g of ticketsByCommodity(); track g.productCode; let i = $index) {
-                      <tr [style.border-top]="i > 0 ? '1px solid #f3f4f6' : 'none'">
-                        <td style="padding: 8px 12px; text-align: center; font-weight: 500;">{{ g.productCode }}</td>
-                        <td style="padding: 8px 12px; text-align: center;">{{ g.ticketCount }}</td>
-                        <td style="padding: 8px 12px; text-align: center;">{{ g.totalBushels != null ? (g.totalBushels | number:'1.0-0') + ' bu' : (g.totalNetWeight | number:'1.0-0') + ' lbs' }}</td>
-                        <td style="padding: 8px 12px; text-align: center;">{{ g.avgDate ? formatDate(g.avgDate) : '—' }}</td>
-                        <td style="padding: 8px 12px; text-align: center;">{{ g.avgMoisture != null ? (g.avgMoisture | number:'1.1-1') + '%' : '—' }}</td>
-                        <td style="padding: 8px 12px; text-align: center;">{{ g.avgTestWeight != null ? (g.avgTestWeight | number:'1.1-1') : '—' }}</td>
+                    @for (g of ticketsByCommodity(); track g.productCode) {
+                      <tr>
+                        <td style="padding: 4px 8px; text-align: center; font-weight: 500; border: 1px solid #e5e7eb;">{{ g.productCode }}</td>
+                        <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ g.ticketCount }}</td>
+                        <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ g.totalBushels != null ? (g.totalBushels | number:'1.0-0') + ' bu' : (g.totalNetWeight | number:'1.0-0') + ' lbs' }}</td>
+                        <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ g.avgDate ? formatDate(g.avgDate) : '—' }}</td>
+                        <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ g.avgMoisture != null ? (g.avgMoisture | number:'1.1-1') + '%' : '—' }}</td>
+                        <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ g.avgTestWeight != null ? (g.avgTestWeight | number:'1.1-1') : '—' }}</td>
                         @if (anyTicketWheat()) {
-                          <td style="padding: 8px 12px; text-align: center;">{{ g.avgProtein != null ? (g.avgProtein | number:'1.1-1') + '%' : '—' }}</td>
+                          <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ g.avgProtein != null ? (g.avgProtein | number:'1.1-1') + '%' : '—' }}</td>
                         }
                       </tr>
                     }
@@ -205,29 +242,34 @@
           @if (showPlanting() && plantingIntentions().length > 0) {
             <div style="margin-bottom: 24px;">
               <div [style.color]="accentColor()" style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px;">Planting Intentions</div>
-              @for (group of plantingByCrop(); track group.crop) {
-                <div style="margin-bottom: 16px;">
-                  <div style="font-size: 11px; font-weight: 700; color: #374151; padding: 6px 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px 6px 0 0;">{{ group.crop }}</div>
-                  <div style="border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px; overflow: hidden;">
-                    <table style="width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed;">
+              @for (group of plantingByCrop(); track group.crop; let first = $first) {
+                <div style="margin-bottom: 12px;">
+                  <!-- Crop band: name on the left, total acres on the right -->
+                  <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; font-weight: 700; color: #374151; padding: 6px 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px 8px 0 0;">
+                    <span>{{ group.crop }}</span>
+                    <span style="color: #6b7280;">Total: {{ group.totalAcres.toLocaleString() }} acres</span>
+                  </div>
+                  <table style="width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+                    <colgroup><col style="width: 40%;" /><col style="width: 30%;" /><col style="width: 30%;" /></colgroup>
+                    @if (first) {
                       <thead>
                         <tr [style.background]="accentLight()">
-                          <th style="text-align: center; padding: 8px 12px; font-weight: 600; color: #374151;">Type</th>
-                          <th style="text-align: center; padding: 8px 12px; font-weight: 600; color: #374151;">Acres</th>
-                          <th style="text-align: center; padding: 8px 12px; font-weight: 600; color: #374151;">Crop Year</th>
+                          <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Type</th>
+                          <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Acres</th>
+                          <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Crop Year</th>
                         </tr>
                       </thead>
-                      <tbody>
-                        @for (pi of group.intentions; track pi.id; let i = $index) {
-                          <tr [style.border-top]="i > 0 ? '1px solid #f3f4f6' : 'none'">
-                            <td style="padding: 8px 12px; text-align: center; font-weight: 500;">{{ pi.type || '—' }}</td>
-                            <td style="padding: 8px 12px; text-align: center;">{{ pi.acres.toLocaleString() }}</td>
-                            <td style="padding: 8px 12px; text-align: center;">{{ pi.plantingYear }}</td>
-                          </tr>
-                        }
-                      </tbody>
-                    </table>
-                  </div>
+                    }
+                    <tbody>
+                      @for (pi of group.intentions; track pi.id) {
+                        <tr>
+                          <td style="padding: 4px 8px; text-align: center; font-weight: 500; border: 1px solid #e5e7eb;">{{ pi.type || '—' }}</td>
+                          <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ pi.acres.toLocaleString() }}</td>
+                          <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ pi.plantingYear }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
                 </div>
               }
             </div>
@@ -241,21 +283,21 @@
                 <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
                   <thead>
                     <tr [style.background]="accentLight()">
-                      <th style="text-align: center; padding: 8px 12px; font-weight: 600; color: #374151;">Crop</th>
-                      <th style="text-align: center; padding: 8px 12px; font-weight: 600; color: #374151;">Quantity</th>
-                      <th style="text-align: center; padding: 8px 12px; font-weight: 600; color: #374151;">Storage Since</th>
-                      <th style="text-align: center; padding: 8px 12px; font-weight: 600; color: #374151;">Storage Days</th>
-                      <th style="text-align: center; padding: 8px 12px; font-weight: 600; color: #374151;">Accumulated Cost</th>
+                      <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Crop</th>
+                      <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Quantity</th>
+                      <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Storage Since</th>
+                      <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Storage Days</th>
+                      <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Accumulated Cost</th>
                     </tr>
                   </thead>
                   <tbody>
-                    @for (g of storageGroups(); track g.crop; let i = $index) {
-                      <tr [style.border-top]="i > 0 ? '1px solid #f3f4f6' : 'none'">
-                        <td style="padding: 8px 12px; text-align: center; font-weight: 500;">{{ g.crop }}</td>
-                        <td style="padding: 8px 12px; text-align: center;">{{ g.totalBushels.toLocaleString() }} bu</td>
-                        <td style="padding: 8px 12px; text-align: center;">{{ formatDate(g.earliestDate) }}</td>
-                        <td style="padding: 8px 12px; text-align: center;">{{ g.totalDays }}</td>
-                        <td style="padding: 8px 12px; text-align: center;">{{ formatCurrency(g.totalCost) }}</td>
+                    @for (g of storageGroups(); track g.crop) {
+                      <tr>
+                        <td style="padding: 4px 8px; text-align: center; font-weight: 500; border: 1px solid #e5e7eb;">{{ g.crop }}</td>
+                        <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ g.totalBushels.toLocaleString() }} bu</td>
+                        <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ formatDate(g.earliestDate) }}</td>
+                        <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ g.totalDays }}</td>
+                        <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ formatCurrency(g.totalCost) }}</td>
                       </tr>
                     }
                   </tbody>
