@@ -137,7 +137,9 @@ public class UsageDashboardController : ControllerBase
             EventType = request.EventType,
             FeatureCode = request.FeatureCode,
             SubFeatureCode = request.SubFeatureCode,
-            TargetId = request.TargetId,
+            // Redact contact PII (emails / phone numbers) from free-text TargetIds before this
+            // crosses into long-lived telemetry storage and the admin usage dashboard. See M-028.
+            TargetId = TelemetrySanitizer.Redact(request.TargetId, request.SubFeatureCode),
             Timestamp = DateTime.UtcNow
         });
 
