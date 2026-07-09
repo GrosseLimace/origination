@@ -102,6 +102,21 @@ describe('NlqFilterService — grain on farm + target', () => {
     expect(ordered).toEqual([1, 2, 3]); // alpha 80k > bravo 20k > charlie 5k; delta (0) excluded
   });
 
+  it('bare "Top by grain on farm" (no count) still ranks by bushels on hand (desc)', () => {
+    // Regression: the prompt card's label runs without an explicit count; it must still sort,
+    // not fall through unranked (which let a smaller total sit above a larger one).
+    const ordered = svc.parseAndFilter('Top by grain on farm', ctx(all)).customers.map(c => c.id);
+    expect(ordered).toEqual([1, 2, 3]);
+  });
+
+  it('isRankingQuery flags top/bottom/largest prompts (so callers preserve ranked order)', () => {
+    expect(svc.isRankingQuery('Top by grain on farm')).toBe(true);
+    expect(svc.isRankingQuery('top 10 by contract value')).toBe(true);
+    expect(svc.isRankingQuery('largest producers')).toBe(true);
+    expect(svc.isRankingQuery('bottom 5 by acres')).toBe(true);
+    expect(svc.isRankingQuery('producers with grain on farm')).toBe(false);
+  });
+
   it('recognizes the prompt (matchedPatterns includes grain_on_farm / grain_target)', () => {
     const r = svc.parseAndFilter('grain on farm over 50k', ctx(all));
     expect(r.matchedPatterns).toContain('grain_on_farm');

@@ -39,4 +39,40 @@ public class SecurityHeadersCspTests
         Assert.Contains("http://localhost:5000", csp);
         Assert.Contains("https://localhost:*", csp);
     }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Csp_NeverContainsAzureWildcard(bool isDevelopment)
+    {
+        // M-025: the *.azurewebsites.net wildcard allowed exfiltration to any Azure site. It must
+        // be gone in every environment, whether or not specific connect hosts are configured.
+        var csp = SecurityHeadersMiddleware.BuildSpaContentSecurityPolicy(
+            isDevelopment, new[] { "https://app-origination-eus.azurewebsites.net" });
+
+        Assert.DoesNotContain("*.azurewebsites.net", csp);
+    }
+
+    [Fact]
+    public void Csp_IncludesConfiguredConnectHost_InConnectSrc()
+    {
+        var host = "https://app-origination-eus.azurewebsites.net";
+        var csp = SecurityHeadersMiddleware.BuildSpaContentSecurityPolicy(isDevelopment: false, new[] { host });
+
+        var connectSrc = csp.Split(';').Single(d => d.TrimStart().StartsWith("connect-src"));
+        Assert.Contains(host, connectSrc);
+        Assert.Contains("'self'", connectSrc);
+    }
+
+    [Fact]
+    public void Csp_WithNoConfiguredHosts_ConnectSrcHasOnlySelfAndMicrosoft()
+    {
+        // Empty host list (e.g. base config / local) → no third-party API host beyond Microsoft login/graph.
+        var csp = SecurityHeadersMiddleware.BuildSpaContentSecurityPolicy(isDevelopment: false);
+
+        var connectSrc = csp.Split(';').Single(d => d.TrimStart().StartsWith("connect-src"));
+        Assert.DoesNotContain("azurewebsites.net", connectSrc);
+        Assert.Contains("https://login.microsoftonline.com", connectSrc);
+        Assert.Contains("https://graph.microsoft.com", connectSrc);
+    }
 }

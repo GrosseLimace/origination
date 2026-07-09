@@ -134,6 +134,19 @@ export class NlqFilterService {
       || (/\bgrade\b/.test(q) && !this.queryInvolvesTickets(q) && !/grade\s*(?:#?\s*)?(?:\d|one|two|three)/.test(q));
   }
 
+  /** Returns true if the query is a ranking query (top/bottom/largest/biggest/smallest).
+   *  Callers use this to PRESERVE the NLQ's ranked order instead of re-sorting alphabetically —
+   *  for a "Top by …" prompt the order is the whole point. Mirrors applyRankingFilters' gate,
+   *  including a bare "top … by …" with no explicit count. */
+  isRankingQuery(query: string): boolean {
+    const q = query.toLowerCase();
+    const topMatch = /top\s*\d+/.test(q);
+    const bottomMatch = /(?:bottom|smallest)\s*\d+/.test(q);
+    const bareTop = /\btop\b/.test(q) && /\bby\b/.test(q);
+    return topMatch || bottomMatch || bareTop
+      || q.includes('largest') || q.includes('biggest') || q.includes('smallest');
+  }
+
   /** Returns true if the query involves contract-related patterns that require contracts data.
    *  Used by the saved-list customer-list path to wait for contracts before running NLQ —
    *  without it, a "with active contracts" query that ran before contracts loaded would
@@ -2986,11 +2999,19 @@ export class NlqFilterService {
   ): Customer[] {
     const topMatch = lowerQuery.match(/top\s*(\d+)/);
     const bottomMatch = lowerQuery.match(/(?:bottom|smallest)\s*(\d+)/);
-    const isTop = !!topMatch || lowerQuery.includes('largest') || lowerQuery.includes('biggest');
+    // A bare "top … by …" (no count) is still a ranking — e.g. the "Top by grain on farm"
+    // prompt. Without this it fell through unsorted, so a smaller total could sit above a larger.
+    const bareTop = /\btop\b/.test(lowerQuery) && /\bby\b/.test(lowerQuery) && !topMatch;
+    const isTop = !!topMatch || bareTop || lowerQuery.includes('largest') || lowerQuery.includes('biggest');
     const isBottom = !!bottomMatch || (lowerQuery.includes('smallest') && !topMatch);
 
     if (!isTop && !isBottom) return result;
-    const n = topMatch ? parseInt(topMatch[1]) : (bottomMatch ? parseInt(bottomMatch[1]) : 10);
+    // Explicit count wins; a bare "top … by …" defaults to 25 (matches the "Top 25 …" prompts);
+    // other countless rankings (largest/biggest) keep the historical default of 10.
+    const n = topMatch ? parseInt(topMatch[1])
+      : bottomMatch ? parseInt(bottomMatch[1])
+      : bareTop ? 25
+      : 10;
 
     // Determine sort criteria from query
     if (lowerQuery.includes('by open balance') || lowerQuery.includes('open balance') && lowerQuery.includes('top')) {

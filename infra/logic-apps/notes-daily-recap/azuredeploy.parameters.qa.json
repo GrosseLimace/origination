@@ -10,8 +10,8 @@
     // Named "sqlrecap" (not "sql") to sidestep an orphaned V2 "sql" connection left in the QA RG by an
     // earlier failed deploy that we lack rights to delete. Creates a fresh V1 connection under this name.
     "sqlConnectionName": { "value": "sqlrecap" },
-    // aiFoundryEndpoint: currently correct — QA reuses the shared data-cloud Azure OpenAI deployment.
-    // This is expected to change later (dedicated/relocated AI resource); update the URL when it does.
-    "aiFoundryEndpoint": { "value": "https://datacloudeusaz9305643847.openai.azure.com/openai/deployments/D365CRM-CustomerNotesSummary-gpt-4/chat/completions?api-version=2024-08-01-preview" }
+    // aiFoundryEndpoint: QA's own Azure AI Foundry resource (gpt-5.1). Mirrors the per-env naming
+    // sco-aif-origination-<env>-eus. ⚠️ Confirm this resource + deployment exist before deploying QA.
+    "aiFoundryEndpoint": { "value": "https://sco-aif-origination-qa-eus.cognitiveservices.azure.com/openai/deployments/gpt-5.1/chat/completions?api-version=2025-01-01-preview" }
   }
 }
