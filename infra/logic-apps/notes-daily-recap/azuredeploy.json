@@ -55,7 +55,7 @@
     },
     "aiFoundryEndpoint": {
       "type": "string",
-      "defaultValue": "https://datacloudeusaz9305643847.openai.azure.com/openai/deployments/D365CRM-CustomerNotesSummary-gpt-4/chat/completions?api-version=2024-08-01-preview",
+      "defaultValue": "https://sco-aif-origination-dev-eus.cognitiveservices.azure.com/openai/deployments/gpt-5.1/chat/completions?api-version=2025-01-01-preview",
       "metadata": {
         "description": "Azure OpenAI chat-completions endpoint used to summarize notes. Authenticated via managed identity."
       }
@@ -167,7 +167,7 @@
                           "type": "ManagedServiceIdentity"
                         },
                         "body": {
-                          "max_tokens": 800,
+                          "max_completion_tokens": 800,
                           "messages": [
                             {
                               "content": [
@@ -188,6 +188,7 @@
                               "role": "user"
                             }
                           ],
+                          "model": "gpt-5.1",
                           "temperature": 0.2,
                           "top_p": 0.9
                         },
@@ -350,7 +351,10 @@
                               "type": "array"
                             },
                             "system_fingerprint": {
-                              "type": "string"
+                              "type": [
+                                "string",
+                                "null"
+                              ]
                             },
                             "usage": {
                               "properties": {
