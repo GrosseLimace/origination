@@ -123,6 +123,8 @@ export class CustomerPrintReportComponent {
     }
     for (const line of this.pricingLines()) {
       if (!line.contractId) continue;
+      // Sequence 0 is a placeholder/summary row — don't surface it on the printed report.
+      if (line.priceSequence === 0) continue;
       if (!map.has(line.contractId)) map.set(line.contractId, []);
       map.get(line.contractId)!.push(line);
     }
