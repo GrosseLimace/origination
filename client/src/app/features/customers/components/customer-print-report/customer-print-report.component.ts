@@ -123,8 +123,6 @@ export class CustomerPrintReportComponent {
     }
     for (const line of this.pricingLines()) {
       if (!line.contractId) continue;
-      // Sequence 0 is a placeholder/summary row — don't surface it on the printed report.
-      if (line.priceSequence === 0) continue;
       if (!map.has(line.contractId)) map.set(line.contractId, []);
       map.get(line.contractId)!.push(line);
     }
@@ -162,7 +160,9 @@ export class CustomerPrintReportComponent {
 
   getPricingLinesForContract(contract: Contract): ContractPricingLine[] {
     const key = contract.sourceContractId;
-    return key ? (this.pricingLinesMap().get(key) ?? []) : [];
+    // Sequence 0 is a placeholder/summary row (it carries the flat price used by getPricingInfo,
+    // but shouldn't be listed as its own pricing line) — keep it in the map, hide it from display.
+    return key ? (this.pricingLinesMap().get(key) ?? []).filter(l => l.priceSequence !== 0) : [];
   }
 
   /** Pricing lines that belong to the contracts shown in this report (openContracts).
