@@ -27,7 +27,7 @@ write time, matching `NoteRepository.cs`).
 | `SelectionMethod` | `string` | no | String enum, exactly one of `clu`, `parcel`, `drawn` (matches lcfs-poc `SelectionMethod` in `src/config.ts`). Max length 10. Validate at the API layer; store as plain text. |
 | `GeometryJson` | `string` | no | GeoJSON `Polygon` or `MultiPolygon` **geometry object** (not a Feature) serialized as text. Unbounded text column. |
 | `CalcAcres` | `decimal?` | yes | Vendor/geodesic calculated acreage. Precision guidance: `decimal(12,2)` semantics; see SQLite notes below. |
-| `ExternalRef` | `string` | no | Dedup key — see derivation section. Max length 80 (longest form is `clu:` + 64 hex chars = 68). |
+| `ExternalRef` | `string` | no | Dedup key — see derivation section. Max length 80 (the longest form is `drawn:` + 64 hex chars = 70; `clu:` + native MVT id and `parcel:` + parcel_id are both much shorter). |
 | `CdlYear` | `string?` | yes | CDL vintage actually used, e.g. `"2024"` (the AOI query falls back to `"2023"` — lcfs-poc `aoi-query.ts`). Max length 4. |
 | `CdlSnapshotJson` | `string?` | yes | Serialized crop-breakdown array — shape below. Unbounded text. |
 | `CreatedBy` | `string` | no | Same convention as `Note.CreatedBy` (populated from `IRequestContextService.GetCurrentUser()` at the service layer, as `NoteService.CreateAsync` does). |
@@ -63,52 +63,87 @@ fluent configuration):
 ## ExternalRef derivation (dedup key)
 
 The whole point of `ExternalRef` is: *the same physical field tagged twice for the same customer
-must collide*. Derivation is per selection method. The geometry-reconstruction and
-winding-normalization building blocks are ported from lcfs-poc; **the hashing step itself is new
-work** — lcfs-poc stops at logging an attestation record to the console (`src/attestation.ts`)
-and computes no hash. Do not go hunting in lcfs-poc for a hash function; there isn't one.
-
-**Computed client-side** (the browser is the only place that has the reconstruction context — the
-loaded vector tiles) and sent in the POST body. The server treats it as an opaque dedup key. That
-trust is acceptable for the POC posture (same trust level as the geometry itself).
+must collide*. Derivation is per selection method.
 
 | Method | `ExternalRef` value |
 |---|---|
-| `clu` | `clu:` + SHA-256 hex of the canonical serialization of the **reconstructed, winding-normalized, coordinate-rounded full-field geometry** |
+| `clu` | `clu:` + the vendor tile's **native MVT feature id**, verbatim — see below |
 | `parcel` | `parcel:` + the vendor's `parcel_id` tile property, verbatim |
 | `drawn` | `drawn:` + SHA-256 hex of the canonical serialization of the winding-normalized, coordinate-rounded drawn geometry |
 
-Prefixes keep the three identity domains from ever colliding with each other.
+Prefixes keep the three identity domains from ever colliding with each other. Only `drawn` uses a
+hash — the geometry-reconstruction and winding-normalization building blocks for it are ported
+from lcfs-poc; **the hashing step itself is new work** (lcfs-poc stops at logging an attestation
+record to the console, `src/attestation.ts`, and computes no hash — don't go hunting for one
+there). `clu` and `parcel` both key off a real vendor identifier now (see below) and are computed
+client-side and sent in the POST body; the server treats `ExternalRef` as an opaque dedup key
+regardless of method.
 
-### Why CLU must hash the *reconstructed* geometry
+### CLU identity: native MVT feature id (superseding the original calcacres/hash approach)
 
-Verified against lcfs-poc source, this is the critical subtlety:
+**This section reflects a live-API verification finding that changed the original design.** The
+original approach (and lcfs-poc, which this POC ports from) assumed CLU features carry no usable
+id and fell back to hashing a reconstructed geometry. That assumption was re-tested directly
+against the live tile endpoint and found to be **wrong in the specific way that matters**: CLU
+tile features do carry a real, stable identifier — just not the one `point-lookup`/`promoteId`
+expose.
 
-- The vendor's CLU features have **no usable id**. Point-lookup returns `id: "unknown"` for every
-  CLU feature (a real API limitation, confirmed across many test points — see the long comment in
-  `lcfs-poc/src/api/point-lookup.ts` lines 32–59). The fetched style's `promoteId: "id"` on the
-  `clu` source points at a property that doesn't exist, which makes MapLibre assign
-  `feature.id = undefined` to every CLU feature (see `lcfs-poc/src/map/landmapmagic.ts`
-  `fixSourcePromoteId`). There is no stable vendor identity to use.
-- CLU vector tiles **clip each field to its tile**. A field spanning a tile boundary arrives as
-  several disjoint fragments. Hashing whichever fragment you happened to click produces a
-  different hash depending on viewport/tile context → dedup silently breaks. **Never hash a raw
-  tile-clipped fragment.**
-- Real identity comes from `calcacres`: every fragment of the same physical field carries an
-  identical `properties.calcacres` value. The reconstruction algorithm (lcfs-poc
-  `reconstructFullCluGeometry`, `src/main.ts` lines 289–324, restated fully in
-  `03-frontend-map-component.md`) collects all loaded fragments sharing the clicked feature's
-  `calcacres` via `querySourceFeatures` (no extra API tokens), pools their vertices, takes the
-  convex hull (`convexHull` in `src/geo.ts`), and sanity-checks `hullAcres >= calcacres * 0.95`
-  before accepting the hull; otherwise it falls back to the single fragment.
-- For hashing, prefer the **authoritative CLU geometry returned by the AOI query response**
-  (matched back to the clicked field by `calcacres`, exactly as lcfs-poc `confirmSelection` does
-  at `main.ts` lines 198–206) — that geometry is viewport-independent, which is even better for
-  dedup stability than the hull. The hull is the fallback when the AOI response has no matching
-  CLU feature geometry.
+**How this was verified**: a throwaway Node script (using `@mapbox/vector-tile` + `pbf`, already
+present in `lcfs-poc/node_modules`) fetched a live CLU tile plus its 4 neighbors
+(`https://api.landmapmagic.com/v1/tiles/clu/{z}/{x}/{y}.mvt`, z=14, central Iowa) and decoded them
+directly, comparing each feature's **native MVT `id`** (the tile's own protobuf feature id — what
+LandMapMagic's own docs describe as the "Unique internal feature identifier") against `calcacres`
+across tile boundaries. Findings:
 
-### Canonical serialization before hashing
+- **The native tile `id` is stable across adjacent tiles.** 27 distinct ids appeared identically
+  in 2–3 neighboring tiles for the same physical field (matching `calcacres` every time in each
+  case) — e.g. id `4224846143` (292.24 ac) appeared in the center, west, and north tiles.
+- **`calcacres`-matching is unreliable as a grouping/identity key.** Two genuinely different
+  fields collided on rounded acreage: ids `4224846483` and `4224844728` are two distinct fields in
+  the *same tile*, both rounding to `calcacres = 0.43`. A worse cluster: `calcacres = 0.30` had 6
+  different native ids across two tiles sharing that rounded value. Small slivers collide on
+  acreage easily — `calcacres` alone was never a safe identity key, only a safe-*enough*
+  reconstruction-grouping key in lcfs-poc's narrower demo use.
 
+**Why this is treated as durable, not just a today snapshot**: LandMapMagic's CLU data is sourced
+from the FSA's last public release (2008) and is not expected to change (confirmed by Karl). The
+native id's cross-tile stability is therefore not a today-only observation — it should hold for
+the life of this POC and well beyond, since the underlying dataset itself is static.
+
+**What this means for identity**:
+
+- `ExternalRef` for a CLU tag is `clu:` + the native MVT `id` of the clicked feature (as a string),
+  taken directly from the tile — not from point-lookup (whose `id` is always the literal string
+  `"unknown"`, a separate, still-true API limitation — see
+  `lcfs-poc/src/api/point-lookup.ts` lines 32–59 — point-lookup's id field remains useless; the
+  native id comes from the vector tile feature itself, i.e. `tileFeature.id` in MapLibre, or
+  equivalently `feature.id` from `querySourceFeatures`).
+- The vendor style's `promoteId: "id"` on the `clu` source is still broken for the reason
+  originally found (it points at a *properties* key named `id` that doesn't exist — see
+  `03-frontend-map-component.md` gotcha G1) — **but that finding is about promoteId's broken
+  properties-key lookup, not about the native id itself being absent.** Once `promoteId` is
+  stripped (already the settled fix), MapLibre falls back to the tile's real native feature id,
+  which is exactly the stable identifier this section relies on. No change to G1's fix is needed;
+  this section just explains *why* dropping promoteId is not merely "restores hover" but also
+  "restores real identity."
+- **Tile-fragment grouping for full-field reconstruction now groups by native `id`, not
+  `calcacres`.** The reconstruction problem itself is unchanged and still required — a single
+  physical field is still split into multiple tile-clipped fragments at tile boundaries, and the
+  fragments must still be pooled and hulled to get correct geometry/acreage. Only the grouping key
+  changes: `querySourceFeatures('clu', { sourceLayer: 'clu', filter: ['==', ['id'], nativeId] })`
+  (filtering on the feature id itself, via MapLibre's `['id']` expression, rather than
+  `['==', ['get', 'calcacres'], calcacres]`). This is strictly more precise than the acreage-match
+  approach and, per the verification above, reliable. Full restated algorithm in
+  `03-frontend-map-component.md`.
+- For the *stored* geometry (as opposed to identity), still prefer the **authoritative CLU
+  geometry returned by the AOI query response** when present (matched back to the clicked field —
+  now by native id, previously described as matched by `calcacres`; see
+  `03-frontend-map-component.md`), falling back to the reconstructed hull when the AOI response
+  has no matching CLU feature geometry.
+
+### Canonical serialization before hashing (drawn tier only)
+
+Applies only to the `drawn:` `ExternalRef` form now (CLU no longer hashes anything — see above).
 To make the hash deterministic:
 
 1. Normalize winding per RFC 7946 (exterior CCW, holes CW) — port `normalizeWinding` from
@@ -120,7 +155,8 @@ To make the hash deterministic:
 4. SHA-256 via the browser's `crypto.subtle.digest` (available on `localhost` secure context),
    hex-encoded lowercase.
 
-Document string example: `clu:9f2ac9...64-hex-chars...`.
+Document string examples: `drawn:9f2ac9...64-hex-chars...` (hashed) and `clu:4224846143`
+(native MVT id, no hashing).
 
 ## CdlSnapshotJson shape
 

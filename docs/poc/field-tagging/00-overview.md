@@ -59,9 +59,14 @@ specs; they do not reopen them.
 1. **Data model**: new `CustomerFieldTag` entity (see `01-data-model.md`), soft-deleted, audited
    to the same column conventions as `Note` / `PlantingIntention`, with a unique filtered index on
    `(CustomerId, ExternalRef) WHERE IsDeleted = 0`.
-2. **ExternalRef dedup key**: CLU = SHA-256 of the *reconstructed, winding-normalized,
-   coordinate-rounded* full-field geometry (never a raw tile-clipped fragment); Parcel = the
-   vendor's stable `parcel_id`; Drawn = SHA-256 of the normalized drawn geometry.
+2. **ExternalRef dedup key**: CLU = the vendor tile's **native MVT feature id** (`clu:` + id,
+   confirmed stable across adjacent tiles by live-tile verification — see `01-data-model.md`);
+   Parcel = the vendor's stable `parcel_id`; Drawn = SHA-256 of the normalized, winding-corrected,
+   coordinate-rounded drawn geometry (hashing is used only for Drawn now — CLU no longer hashes a
+   reconstructed geometry). Tile-fragment reconstruction (pooling a field's tile-clipped fragments
+   into one full-field polygon) is still required for correct CLU geometry/acreage — it now groups
+   fragments by native id rather than by rounded `calcacres`, which live verification found to
+   collide across genuinely distinct small fields.
 3. **Persistence**: separate `FieldTagDbContext` on **local SQLite** with `EnsureCreated()`,
    config-gated on `FieldTags:LocalStorePath`. No EF migration ever runs against the shared dev
    Azure SQL DB for this feature.
@@ -104,6 +109,13 @@ specs; they do not reopen them.
 14. **Two-way hover-highlight** between list and map keyed on `CustomerFieldTag.Id` (injected as
     `properties.tagId`, source added with `promoteId: 'tagId'`), state owned by a single parent
     component. Row **click** (not hover) flies/fits the camera to that field.
+15. **Mixed-selection-method rendering**: a customer's tagged fields render with a distinct
+    color/pattern per `SelectionMethod` (CLU/Parcel/Drawn) on the map, keyed off a `sourceMethod`
+    property promoted into each tagged-fields feature, plus a small map legend; the list's source
+    badge uses the identical color/pattern key so map and list read consistently together (see
+    `03-frontend-map-component.md` → "Rendering by selection method" and
+    `04-frontend-list-and-hover-sync.md`). No schema change — `CustomerFieldTag` already stores
+    `SelectionMethod` per row; this was a rendering gap only.
 
 ## Document map
 
@@ -138,8 +150,9 @@ These are **deliberate omissions**, not oversights. Revisit only if the POC prov
 
 ## Known deviations discovered during grounding
 
-Two places where the repo's actual code refines the original design sketch (both incorporated
-into the specs, flagged here so nobody trips on them):
+Three places where verification against real systems (repo code, or in one case a live vendor API
+probe) refined the original design sketch — all incorporated into the specs, flagged here so
+nobody trips on them:
 
 1. **`CustomerId` is `long`, not `int`.** `Customer.Id` is `long` (bigint in ODS), and every
    application entity that references it (`Note`, `PlantingIntention`, `ProducerDetails`) uses
@@ -151,3 +164,17 @@ into the specs, flagged here so nobody trips on them):
    `ProducerDetailsController.cs`). The settled customer-scoped route
    `/api/customers/{customerId}/field-tags` is kept, implemented as an explicit route attribute on
    a new dedicated controller — see `02-backend-api.md` for the reasoning.
+3. **CLU tile features do carry a stable, precise identity — the original "no usable CLU id"
+   framing was too broad.** It's true that LandMapMagic's point-lookup endpoint always returns
+   `"unknown"` for CLU `id`, and that the vendor style's `promoteId: "id"` is broken. But a
+   from-scratch live decode of real CLU vector tiles (script using `@mapbox/vector-tile` + `pbf`)
+   showed the tile's own native MVT feature id is real, present, and stable across adjacent
+   tiles for the same physical field — confirmed for 27 distinct fields at z=14 in central Iowa.
+   This changed the settled `ExternalRef`/reconstruction design for CLU from "hash a reconstructed
+   geometry" to "use the native id directly" (both `01-data-model.md` and
+   `03-frontend-map-component.md` were revised accordingly). It also surfaced that the
+   *replacement* grouping key the original design leaned on, `calcacres`, collides across
+   genuinely distinct fields within a single tile — so `calcacres` was demoted from an identity
+   key to a same-tile sanity/narrowing cross-check only. Karl confirmed LandMapMagic's CLU data is
+   the FSA's 2008 public release and expected to stay static, so the native id's stability is
+   treated as durable for the POC's lifetime, not a today-only snapshot.

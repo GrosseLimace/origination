@@ -8,6 +8,7 @@
 - [Map bootstrap (both modes)](#map-bootstrap-both-modes)
 - [Sources and layers — complete inventory and add order](#sources-and-layers--complete-inventory-and-add-order)
 - [Review mode](#review-mode)
+- [Rendering by selection method (CLU / Parcel / Drawn)](#rendering-by-selection-method-clu--parcel--drawn)
 - [Select mode](#select-mode)
 - [The confirm flow (one AOI query per confirm)](#the-confirm-flow-one-aoi-query-per-confirm)
 - [CLU tile-seam reconstruction algorithm (restated precisely)](#clu-tile-seam-reconstruction-algorithm-restated-precisely)
@@ -94,9 +95,9 @@ Order matters (later layers paint on top). Full inventory:
 | # | Id | Kind | Source | Mode | Notes |
 |---|---|---|---|---|---|
 | 1 | `azure-imagery` | raster layer | `azure-imagery` (raster) | both | Basemap, part of the initial style |
-| 2 | `tagged-fields` | **app-owned GeoJSON source** | — | both | FeatureCollection built from `tags` input; `promoteId: 'tagId'` |
-| 3 | `tagged-fields-fill` | fill layer | `tagged-fields` | both | Semi-transparent fill; hover paint expression on `feature-state.hover` |
-| 4 | `tagged-fields-outline` | line layer | `tagged-fields` | both | Solid outline; heavier width when hovered |
+| 2 | `tagged-fields` | **app-owned GeoJSON source** | — | both | FeatureCollection built from `tags` input; `promoteId: 'tagId'`; each feature's properties carry both `tagId` and `sourceMethod` (= the tag's `SelectionMethod`) — see [Rendering by selection method](#rendering-by-selection-method-clu--parcel--drawn) |
+| 3 | `tagged-fields-fill` | fill layer | `tagged-fields` | both | Fill color/opacity keyed on a `match` expression over `sourceMethod`, composed with the existing `feature-state.hover` boost |
+| 4 | `tagged-fields-outline` | line layer | `tagged-fields` | both | Outline color keyed on the same `sourceMethod` `match`; heavier width when hovered |
 | 5 | `customer-pin` | marker | — | both | `maplibregl.Marker` at `customer.coordinates` (a Marker, not a layer — simplest) |
 | 6 | `clu` | vendor vector source | — | select | From `/v1/styles` merge; **strip its broken `promoteId`** (gotcha G1) |
 | 7 | `parcels` | vendor vector source | — | select | promoteId `parcel_id` works — leave as-is |
@@ -124,16 +125,63 @@ Default mode. **Zero LandMapMagic network calls** — assert this in a test by s
 `fetch`/HttpClient if practical; it's a hard guarantee, not a hope.
 
 1. Build a GeoJSON FeatureCollection from the `tags` input: one Feature per tag,
-   `geometry = JSON.parse(tag.geometryJson)`, `properties: { tagId: tag.id }`. Add as source
+   `geometry = JSON.parse(tag.geometryJson)`,
+   `properties: { tagId: tag.id, sourceMethod: tag.selectionMethod }`. Add as source
    `tagged-fields` with **`promoteId: 'tagId'`** so `feature.id === tag.id` and
    `setFeatureState({ source: 'tagged-fields', id }, { hover })` works deterministically. Unlike
    the vendor's broken CLU promoteId, this one is fully under app control — the property is
-   always present.
+   always present. `sourceMethod` is what drives the per-method styling in
+   [Rendering by selection method](#rendering-by-selection-method-clu--parcel--drawn) below.
 2. Rebuild via `source.setData(...)` whenever the `tags` input changes (an `effect()` on the
    input signal), including after each confirmed POST in select mode.
-3. Paint: fill layer opacity keyed on `['boolean', ['feature-state', 'hover'], false]` (e.g. 0.15
-   base / 0.35 hovered) and outline width similarly (2 / 4) — the same `case`-expression pattern
-   the lcfs-poc synthetic selected layers use (`landmapmagic.ts` lines 173–202).
+3. Paint: outline/fill color keyed on a `match` expression over `properties.sourceMethod` (see
+   next section), with opacity/width additionally boosted by
+   `['boolean', ['feature-state', 'hover'], false]` (e.g. base fill-opacity 0.15 / hovered 0.35,
+   base outline-width 2 / hovered 4) — the same `case`-expression pattern the lcfs-poc synthetic
+   selected layers use (`landmapmagic.ts` lines 173–202), nested inside the `match` on method
+   exactly as that file nests `case` inside per-layer paint properties.
+
+## Rendering by selection method (CLU / Parcel / Drawn)
+
+**Gap closed**: a customer can freely mix selection methods — e.g. 3 CLU-tagged fields, 1
+parcel-tagged field (because the CLU boundary was bad there), 2 hand-drawn polygons — as
+independent `CustomerFieldTag` rows (no schema change needed; each row already carries its own
+`SelectionMethod` — see `01-data-model.md`). Rendering every tagged field identically regardless
+of method would defeat the point of offering Parcel/Drawn as escape hatches: an originator
+reviewing a producer's fields needs to tell at a glance which method produced which polygon,
+especially to spot "this one was hand-drawn because the CLU boundary here was bad."
+
+**Fix**: both `tagged-fields-fill` and `tagged-fields-outline` key their color off a `match`
+expression on `properties.sourceMethod`, for example (exact hex values are a design-system
+choice, not fixed here — pick from the app's existing Tailwind palette used elsewhere in the
+Customer Profile, e.g. the amber/green/blue chip colors already in
+`customer-profile.component.ts`'s `GRAIN_CHIP_BY_CROP`/`GRAIN_CHIP_PALETTE`):
+
+| `sourceMethod` | Suggested treatment |
+|---|---|
+| `clu` | Solid outline, one distinct color (e.g. green) |
+| `parcel` | Solid outline, a second distinct color (e.g. blue) |
+| `drawn` | Dashed outline (`line-dasharray`) in a third distinct color (e.g. amber) — the dash pattern gives a second visual channel beyond color alone, which also helps colorblind users distinguish drawn fields without relying on hue |
+
+Expression shape (paint property, described not coded): a `match` on `['get', 'sourceMethod']`
+with three cases (`clu`, `parcel`, `drawn`) plus a fallback, and the hover boost applied as an
+outer `case`/multiplication on top of whichever base value the `match` selects — i.e. the same
+nested-expression composition pattern already used for hover+selected in
+`lcfs-poc/src/map/landmapmagic.ts` (a `case` wrapping a value that itself varies), just with an
+added `match` layer underneath.
+
+**Legend**: add a small fixed-position legend overlay on the map (both modes; it's cheap and
+always relevant in review mode too) listing the three method/color/pattern pairs above. A simple
+absolutely-positioned panel in the component's template, matching the app's existing card styling
+(`rounded-xl border ... bg-white dark:bg-gray-800 shadow-sm` — the classes used throughout
+`customer-profile.component.html`), not a MapLibre-native control.
+
+**Consistency with the list**: the list's source badge (`04-frontend-list-and-hover-sync.md`,
+`FieldTagListComponent` row spec) must use the **same** color/pattern key as this legend — pass
+the same three-method → color/pattern mapping to both (e.g. a small shared constant, colocated
+with the map component or in a shared feature-level file, imported by both the map component and
+the list component) so a user can correlate a list row to its map polygon by color without
+re-learning the mapping per surface.
 4. Address pin: `maplibregl.Marker` at `[customer.coordinates.lng, customer.coordinates.lat]`.
    If `coordinates` is absent (nullable on the model), skip the pin and fall back to fitting tags
    only; with neither tags nor coordinates, show a CONUS-level default.
@@ -204,12 +252,16 @@ Port of `handleFieldClick` + `confirmSelection` (`lcfs-poc/src/main.ts` lines 11
    another tier" hint.
 
 **Pre-POST duplicate check (CLU/parcel only):** before firing the AOI query, derive the candidate
-`externalRef` (parcel: immediately from `parcel_id`; CLU: requires the reconstructed/authoritative
-geometry, so run the dup check *after* the AOI response for CLU — or pre-check the hull hash and
-re-check the final hash post-AOI; the simple correct order is: parcel pre-check before AOI, CLU
-check after AOI before POST). Compare against the `externalRef`s of the currently loaded `tags`
-input. On match: emit `duplicateAttempted`, skip the POST, keep the picker open. Drawn fields
-skip the client check entirely (hash of a hand-drawn polygon is unique in practice).
+`externalRef`. Both CLU and parcel can now be checked **immediately on click**, before the AOI
+query fires — CLU identity is the clicked tile feature's native MVT id (`clu:` + `tileFeature.id`,
+available the instant the feature is clicked, no vendor round-trip required — see
+`01-data-model.md`), and parcel identity is `parcel:` + `parcel_id` (already immediate). This is
+simpler than the original design, which had to defer the CLU dup check until after the AOI
+response because identity depended on a reconstructed/hashed geometry. Compare the candidate
+against the `externalRef`s of the currently loaded `tags` input. On match: emit
+`duplicateAttempted`, skip the AOI query and the POST entirely (saves the 10-token AOI call too,
+not just the write), keep the picker open. Drawn fields skip the client check entirely (hash of a
+hand-drawn polygon is unique in practice).
 
 **Confirm (CLU/parcel) — costs 10 tokens, exactly one AOI query:**
 
@@ -226,11 +278,18 @@ skip the client check entirely (hash of a hand-drawn polygon is unique in practi
      lines 99–102). Snake_case here = a silent no-geometry failure that looks like it works.
    - CDL year fallback: try `cdl:{cdlYear}` (2024), on failure retry `cdl:{cdlFallbackYear}`
      (2023) — `aoiQuery` wrapper, `aoi-query.ts` lines 81–88.
-3. Match the response's CLU feature back to the clicked field **by `calcacres`, not index 0** —
-   the reconstructed AOI can clip neighboring fields at its edges and the response order is not
+3. Match the response's CLU feature back to the clicked field, **not `features[0]`** — the
+   reconstructed AOI can clip neighboring fields at its edges and the response order is not
    guaranteed (real bug lcfs-poc hit: a 15 ac neighbor sliver reported on a 158 ac field —
-   `main.ts` lines 193–204). Use the matched feature's geometry as the authoritative stored
-   geometry when present; else keep the source geometry.
+   `main.ts` lines 193–204). The AOI response's CLU features don't carry the native MVT id (it's
+   a vector-tile-only concept), so match by `calcacres` as lcfs-poc did — this remains a
+   reasonable match key for this one step specifically, because at this point the pool of
+   candidate features is already narrowed to whatever the just-submitted AOI intersects (a
+   handful of features, not a whole tile), which is a much smaller collision surface than the
+   tile-wide `calcacres` collisions the live-tile verification found (see
+   `01-data-model.md` — those were same-tile collisions among many small slivers). Use the
+   matched feature's geometry as the authoritative stored geometry when present; else keep the
+   source geometry.
 4. Acreage precedence: response feature `calcacres`/`acres` → popup (point-lookup) acreage →
    geodesic `geometryAcres` of the stored geometry, rounded to 1 decimal (`main.ts` line 215).
 5. Compute `externalRef` (per `01-data-model.md`), build the draft
@@ -250,13 +309,30 @@ winding-normalized drawn polygon itself.
 
 ## CLU tile-seam reconstruction algorithm (restated precisely)
 
-Port of `reconstructFullCluGeometry` (`lcfs-poc/src/main.ts` lines 289–324) + `convexHull`
-(`lcfs-poc/src/geo.ts` lines 89–112). Implement exactly:
+**Verification note (live-API, superseding the original `calcacres`-grouping design)**: a
+throwaway Node script decoding live CLU tiles directly (`@mapbox/vector-tile` + `pbf`, already in
+`lcfs-poc/node_modules`) confirmed that CLU tile features carry a real, stable **native MVT
+feature id** that matches across adjacent tiles for the same physical field (27 confirmed cases
+at z=14 in central Iowa), and that grouping fragments by rounded `calcacres` instead is unsafe —
+two distinct fields in the same tile collided at `calcacres = 0.43`, and one rounded value
+(`0.30`) covered 6 different native ids across two tiles. Full verification details and the
+"why this is treated as durable, not just a snapshot" reasoning (LandMapMagic's CLU layer is
+sourced from the FSA's 2008 public release, confirmed static by Karl) are in `01-data-model.md`
+→ "CLU identity: native MVT feature id." **The reconstruction problem itself is unchanged** — a
+field spanning a tile boundary still arrives as multiple disjoint fragments that must be pooled
+and hulled to recover correct geometry/acreage — only the **grouping key** changes, from
+`calcacres` to the native id. Port of `reconstructFullCluGeometry`
+(`lcfs-poc/src/main.ts` lines 289–324) + `convexHull` (`lcfs-poc/src/geo.ts` lines 89–112), with
+that one change. Implement exactly:
 
-1. Read `calcacres` (number) from the clicked tile feature's properties. If absent/non-number →
-   return null (caller falls back to single fragment).
-2. `map.querySourceFeatures('clu', { sourceLayer: 'clu', filter: ['==', ['get', 'calcacres'], calcacres] })`.
-   This sees only tiles already fetched for the current viewport — **zero extra vendor tokens**.
+1. Read the clicked tile feature's **native id** (`tileFeature.id` in MapLibre — reliable once
+   the broken `promoteId` is stripped from the `clu` source, gotcha G1). If null/undefined →
+   return null (caller falls back to single fragment; this should be rare/never in practice once
+   G1's fix is applied).
+2. `map.querySourceFeatures('clu', { sourceLayer: 'clu', filter: ['==', ['id'], nativeId] })` —
+   filtering on the feature id itself via MapLibre's `['id']` expression, not
+   `['==', ['get', 'calcacres'], calcacres]`. This still sees only tiles already fetched for the
+   current viewport — **zero extra vendor tokens**.
 3. Pool every vertex of every returned Polygon/MultiPolygon ring (exterior and holes; holes'
    points can't hurt a convex hull). Fewer than 3 points → return null.
 4. Convex hull via Andrew's monotone chain, treating `[lng, lat]` as planar — fine at field scale
@@ -265,24 +341,49 @@ Port of `reconstructFullCluGeometry` (`lcfs-poc/src/main.ts` lines 289–324) + 
    a cross-product `<= 0` pop condition, concatenate dropping each half's last point.
 5. Close the ring (`[...hull, hull[0]]`) into a GeoJSON Polygon.
 6. **Sanity check**: compute geodesic acres of the hull (spherical-excess `geometryAcres`, port
-   from `geo.ts`). If `hullAcres < calcacres * 0.95` → return null. Rationale (lcfs-poc comment,
-   lines 313–317): a convex hull of a concave true boundary can only overshoot, never
-   meaningfully undershoot — a hull *smaller* than `calcacres` means the field never actually
-   crossed a seam here (one fragment found) or something went wrong; the single-fragment fallback
-   is safer.
-7. Return the hull Polygon; caller uses it as the AOI (and hash fallback per `01-data-model.md`).
+   from `geo.ts`) against the feature's own `calcacres` property (still a useful cross-check
+   value, just no longer the grouping key). If `hullAcres < calcacres * 0.95` → return null.
+   Rationale (lcfs-poc comment, lines 313–317): a convex hull of a concave true boundary can only
+   overshoot, never meaningfully undershoot — a hull *smaller* than `calcacres` suggests something
+   went wrong (e.g. an unrelated fragment slipped into the id filter, which shouldn't happen given
+   native-id precision, but the sanity check costs nothing to keep as a backstop); the
+   single-fragment fallback is safer.
+7. Return the hull Polygon; caller uses it as the AOI. **`ExternalRef` no longer falls back to a
+   hash of this hull** — CLU identity is now the native id directly (`01-data-model.md`); the hull
+   is used for the *stored geometry*/AOI request only, superseded by the AOI response's
+   authoritative geometry when present (previous section, step 3).
 
 Known accepted limitation: for strongly concave fields the hull overshoots the true boundary; the
-AOI-response authoritative geometry (matched by `calcacres`) corrects the *stored* geometry in
-those cases. Fields whose `calcacres` collides with a different nearby field's identical
-`calcacres` are theoretically mis-merged — astronomically unlikely at float precision and
-viewport scale; accepted for the POC (same acceptance lcfs-poc made).
+AOI-response authoritative geometry corrects the *stored* geometry in those cases (matched by
+`calcacres` at that later, already-narrowed step — see previous section). Grouping fragments by
+native id, unlike the old `calcacres` grouping, is not subject to the same-tile acreage-collision
+problem the live verification found — that was precisely the failure mode this change fixes.
+
+### Multiselect: a simpler pattern the native id enables
+
+Because the native id is a real, precise, stable per-feature key (not a today-only convenience),
+a simpler client-side multiselect pattern than "reconstruct-and-confirm one field at a time" is
+now natural: a `Map<nativeId, boolean>` (or `Set<nativeId>`) of "selected" CLU/parcel features,
+toggled on each click, with the fill/outline restyled by set membership (a `case` expression
+testing `['in', ['id'], ['literal', [...selectedIds]]]`, or per-feature `feature-state.selected`
+toggling as lcfs-poc already does — either works now that the id is trustworthy). This is worth
+considering as a UX refinement over strict one-at-a-time click→confirm→POST, but it does **not**
+change the settled persistence behavior: **confirm still persists immediately per field, and the
+picker still stays open for the next selection** (`00-overview.md` decision #10). Multiselect, if
+implemented, would only change how the *selection* step feels (toggle several map features, then
+a single "Confirm N fields" action fires one AOI query + one POST per field, or a batched AOI
+query per field's own AOI — LandMapMagic's AOI endpoint takes one `aoi` geometry per call, so
+"batched" here means firing them in sequence, not a real batch API) — it does not introduce a
+staged/batch commit that could be lost on navigate-away. Treat this as an optional interaction
+polish, not a required change to the confirm-flow contract described above; the one-at-a-time
+description in [The confirm flow](#the-confirm-flow-one-aoi-query-per-confirm) remains the
+baseline to implement first.
 
 ## Gotcha ledger (every one verified in lcfs-poc source)
 
 | # | Gotcha | Fix | Source |
 |---|---|---|---|
-| G1 | Vendor `clu` source declares `promoteId: "id"` but CLU features have no `id` property → MapLibre sets every feature's id to `undefined` (it does NOT fall back to the native MVT id) → hover/select silently dead on CLU only | Strip `promoteId` from the `clu` source before `addSource` (parcels' `promoteId: "parcel_id"` is real — leave it) | `landmapmagic.ts` `fixSourcePromoteId`, lines 119–139 |
+| G1 | Vendor `clu` source declares `promoteId: "id"` but CLU features have no `properties.id` → MapLibre sets `feature.id = undefined` for every CLU feature (it does NOT fall back to the native MVT id while `promoteId` is set) → hover/select silently dead on CLU only | Strip `promoteId` from the `clu` source before `addSource` (parcels' `promoteId: "parcel_id"` is real — leave it). Once stripped, MapLibre falls back to the tile's real native feature id — which live-tile verification confirmed is stable across adjacent tiles for the same field, making this fix also the basis for CLU identity/dedup, not just hover (see `01-data-model.md`) | `landmapmagic.ts` `fixSourcePromoteId`, lines 119–139 |
 | G2 | Vendor style's `glyphs` host (`fonts.openmaptiles.org`) returns HTML with 200 OK → MapLibre feeds it to the PBF parser → "Unimplemented type: 4" AND, because glyph parse rejects the whole worker tile parse, **every layer** from that tile renders zero features (blank, unclickable CLU) | `map.setGlyphs('https://orangemug.github.io/font-glyphs/glyphs/{fontstack}/{range}.pbf')` before adding vendor layers | `landmapmagic.ts` lines 53–75 |
 | G3 | The static glyph mirror can't serve comma-joined font fallback stacks → symbol layers 404 | Collapse each symbol layer's `text-font` array to its first entry during merge | `landmapmagic.ts` `simplifyTextFont`, lines 141–155 |
 | G4 | Vendor style paints `feature-state.hover` but never references `selected` → `setFeatureState({selected:true})` is a visual no-op | Add synthetic `*-selected-outline` line layers whose width/opacity are `case` expressions on `feature-state.selected` | `landmapmagic.ts` lines 41–51, 173–202 |
@@ -291,9 +392,10 @@ viewport scale; accepted for the POC (same acceptance lcfs-poc made).
 | G7 | mapbox-gl-draw targets Mapbox CSS class prefixes | Patch `MapboxDraw.constants.classes.CONTROL_BASE/PREFIX/GROUP` to `maplibregl-ctrl*` before constructing | `draw.ts` lines 6–11 |
 | G8 | AOI `include_geometry` (snake_case, per vendor docs) silently returns null geometry | Send camelCase `includeGeometry: true` | `aoi-query.ts` lines 99–102 |
 | G9 | AOI rejects `parcels` as a layer | Parcel/drawn AOI queries send only the `cdl:<year>` layer | `point-lookup.ts` lines 50–55 |
-| G10 | AOI response feature order not guaranteed; reconstructed AOI overlaps neighbors | Match response CLU feature by `calcacres`, never `features[0]` | `main.ts` lines 193–204 |
-| G11 | Point-lookup CLU `id` is always the literal string `"unknown"` | Never use it as identity; identity = geometry hash (`01-data-model.md`) | `point-lookup.ts` lines 42–47 |
+| G10 | AOI response feature order not guaranteed; reconstructed AOI overlaps neighbors | Match response CLU feature by `calcacres` (safe at this narrowed step — see reconstruction section), never `features[0]` | `main.ts` lines 193–204 |
+| G11 | Point-lookup CLU `id` is always the literal string `"unknown"` | Never use point-lookup's `id` as identity; use the vector-tile feature's **native MVT id** instead (`tileFeature.id`), confirmed stable across tiles — `01-data-model.md` | `point-lookup.ts` lines 42–47 |
 | G12 | CLU tiles only exist at zoom ≥ 12 | Synthetic CLU layers get `minzoom: 12`; select mode enters at zoom 15 | `config.ts` comment; `landmapmagic.ts` |
+| G13 | Rounded `calcacres` collides across genuinely distinct fields — confirmed via live tile decode (two fields in one tile both rounding to 0.43 ac; six distinct ids sharing 0.30 ac across two tiles) | Never use `calcacres` as a per-field identity/grouping key across a whole tile/viewport; use it only as a same-physical-field grouping hint *after* narrowing to a small AOI-response candidate set (step 3 of the confirm flow), or as a sanity cross-check, not identity | Live verification, see `01-data-model.md` "CLU identity: native MVT feature id" |
 
 ## Vendor service layer files
 

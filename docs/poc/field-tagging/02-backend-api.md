@@ -218,7 +218,7 @@ Enforced in the service (throwing the repo's `ValidationException` for field-lev
 | `selectionMethod` ∈ {`clu`,`parcel`,`drawn`} | 400, field `selectionMethod` |
 | `geometryJson` parses as JSON and its `type` is `Polygon` or `MultiPolygon` | 400, field `geometryJson` |
 | `geometryJson` length ≤ 1 MB | 400 (sanity cap — reconstructed hulls and parcel polygons are a few KB) |
-| `externalRef` non-empty, ≤ 80 chars, matches `^(clu|drawn):[0-9a-f]{64}$` or `^parcel:.+$` | 400, field `externalRef` |
+| `externalRef` non-empty, ≤ 80 chars, matches `^drawn:[0-9a-f]{64}$`, `^clu:[0-9]+$` (native MVT feature id — see `01-data-model.md`), or `^parcel:.+$` | 400, field `externalRef` |
 | `calcAcres` null or > 0 and < 1,000,000 | 400, field `calcAcres` |
 | `cdlYear` null or 4-digit year | 400, field `cdlYear` |
 | `cdlSnapshotJson` null or ≤ 256 KB and parses as a JSON array | 400, field `cdlSnapshotJson` |

@@ -132,7 +132,7 @@ Each row renders:
 | Element | Source | Notes |
 |---|---|---|
 | Auto-generated label | derived | `"{source} field · {acres} ac · captured {date}"`, e.g. "CLU field · 132.4 ac · captured 2026-07-11". Source word: CLU / Parcel / Drawn. Acres to 1 decimal; omit segment when `calcAcres` null. Date = `createdAt` rendered in the user's local timezone (stored UTC). **Not** user-editable — see Deferred below. |
-| Source badge | `selectionMethod` | Reuse the shared `BadgeComponent` (`client/src/app/shared/components/badge/`) with per-method color |
+| Source badge | `selectionMethod` | Reuse the shared `BadgeComponent` (`client/src/app/shared/components/badge/`) with per-method color. **Must use the same color/pattern key as the map's per-method styling and legend** (`03-frontend-map-component.md` → "Rendering by selection method") — colocate the three-method → color/pattern mapping in one shared constant imported by both this list component and the map component, so a user can match a list row to its map polygon by color without a second mapping to learn |
 | Acres | `calcAcres` | |
 | CDL year + top crop | `cdlYear`, `cdlSnapshotJson` | Top crop = max `intersectionAcres` entry, e.g. "2024 · Corn". Hide when snapshot null (drawn fields whose CDL enrichment failed) |
 | Expand affordance | `cdlSnapshotJson` | Chevron toggling the full breakdown table: Crop (code) / acres / % of AOI — same columns lcfs-poc's sidebar table renders (`ui/sidebar.ts` lines 37–56). Follow the profile's existing expand pattern (grain-on-farm chevron toggle in `customer-profile.component.html` lines 263–300) |
