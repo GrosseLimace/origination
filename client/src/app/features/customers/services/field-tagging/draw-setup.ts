@@ -18,6 +18,13 @@ export interface DrawController {
   activate(): void;
   /** Leave draw mode and clear any drawn features. */
   deactivate(): void;
+  /**
+   * Clear the just-confirmed drawn polygon and re-arm draw mode so the user can immediately draw
+   * the next field, without a double-rendered plugin polygon lingering alongside the newly saved
+   * tag. Identical behavior to `activate()` today (deleteAll + changeMode('draw_polygon')) but
+   * named for the confirm-path call site's intent — re-run after each `draw.create` is handled.
+   */
+  rearm(): void;
 }
 
 // G6: mapbox-gl-draw's built-in theme uses bare-array `line-dasharray` branches inside a `case`
@@ -88,6 +95,10 @@ export function setupDraw(
 
   return {
     activate() {
+      draw.deleteAll();
+      draw.changeMode('draw_polygon');
+    },
+    rearm() {
       draw.deleteAll();
       draw.changeMode('draw_polygon');
     },

@@ -31,6 +31,7 @@ import {
   pickPolygonGeometry,
   round1,
   drawnExternalRef,
+  normalizeWinding,
 } from '../../services/field-tagging/geo';
 
 /**
@@ -564,7 +565,7 @@ export class FieldTagMapComponent {
     this.activePopup = this.showFieldPopup(
       e.lngLat,
       { fieldId: String(nativeId), acreage },
-      () => void this.confirmSelection(method, externalRef, acreage, lookupField, tileFeature),
+      (resetButton) => void this.confirmSelection(method, externalRef, acreage, lookupField, tileFeature, resetButton),
       () => this.setVendorSelected(null),
     );
   }
@@ -575,6 +576,7 @@ export class FieldTagMapComponent {
     popupAcreage: number | null,
     lookupField: LookupField | undefined,
     tileFeature: maplibregl.MapGeoJSONFeature,
+    resetButton: () => void,
   ): Promise<void> {
     // A field spanning a tile boundary arrives as several disjoint fragments sharing a native id;
     // reconstruct the full field from every matching fragment already loaded in the viewport
@@ -587,12 +589,14 @@ export class FieldTagMapComponent {
 
     if (!sourceGeometry) {
       this.selectError.emit('Could not resolve a polygon geometry for the clicked feature.');
+      resetButton();
       return;
     }
 
     const landMapMagicKey = this.mapConfig().landMapMagicKey;
     if (!landMapMagicKey) {
       this.selectError.emit('LandMapMagic key is not configured.');
+      resetButton();
       return;
     }
     const cdlYear = this.mapConfig().cdlYear;
@@ -640,6 +644,12 @@ export class FieldTagMapComponent {
     } catch (err) {
       console.error('[field-tag-map] AOI Query failed:', err);
       this.selectError.emit('AOI Query failed — could not capture field geometry/crop history.');
+      // Re-enable the Confirm button and restore its label rather than leaving the popup stuck
+      // at "Capturing…" — the user can retry directly from the popup (re-running only the 10-token
+      // AOI call, no extra point-lookup) instead of having to close the popup and re-click the map.
+      // The vendor `selected` feature-state is intentionally left lit so the retry targets the same
+      // clicked feature.
+      resetButton();
     }
   }
 
@@ -688,7 +698,10 @@ export class FieldTagMapComponent {
   // ── Tier 4: draw your own boundary ───────────────────────────────────────
 
   private async onPolygonDrawn(feature: Feature<Polygon>): Promise<void> {
-    const geometry = feature.geometry;
+    // Store the winding-normalized geometry (RFC 7946) rather than the raw drawn ring — the AOI
+    // request and the ExternalRef hash already normalize independently; the persisted artifact
+    // must match.
+    const geometry = normalizeWinding(feature.geometry) as Polygon;
     const acreage = round1(geometryAcres(geometry));
     const externalRef = await drawnExternalRef(geometry);
 
@@ -722,6 +735,11 @@ export class FieldTagMapComponent {
     };
 
     this.fieldConfirmed.emit(draft);
+
+    // Clear the mapbox-gl-draw plugin's rendered polygon and re-arm draw mode so the cyan drawn
+    // shape doesn't linger/double-render alongside the newly saved amber dashed tag, and so the
+    // user can draw the next field without re-clicking "Tier 4 — Draw your own".
+    this.drawController?.rearm();
   }
 
   // ── Popup (manual DOM — never setHTML with vendor-supplied strings) ─────
@@ -729,7 +747,7 @@ export class FieldTagMapComponent {
   private showFieldPopup(
     lngLat: maplibregl.LngLatLike,
     info: { fieldId: string; acreage: number | null },
-    onConfirm: () => void,
+    onConfirm: (resetButton: () => void) => void,
     onNotRight: () => void,
   ): maplibregl.Popup {
     const map = this.map!;
@@ -758,10 +776,14 @@ export class FieldTagMapComponent {
 
     const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '260px' }).setLngLat(lngLat).setDOMContent(container).addTo(map);
 
+    const confirmBtnDefaultText = confirmBtn.textContent ?? 'Confirm this field';
     confirmBtn.addEventListener('click', () => {
       confirmBtn.disabled = true;
       confirmBtn.textContent = 'Capturing…';
-      onConfirm();
+      onConfirm(() => {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = confirmBtnDefaultText;
+      });
     });
     notRight.addEventListener('click', (ev) => {
       ev.preventDefault();
