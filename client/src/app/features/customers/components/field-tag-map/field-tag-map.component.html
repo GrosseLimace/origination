@@ -1,0 +1,68 @@
+<div class="relative w-full h-full min-h-[320px]">
+  <div #mapContainer class="absolute inset-0"></div>
+
+  <!-- Tier selector — select mode only (Tier 1 CLU, Tier 2 Parcel, Tier 4 Draw; Tier 3 omitted). -->
+  @if (isSelectMode()) {
+    <div class="absolute top-3 right-3 z-10 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-2 w-64">
+      <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5 px-1">
+        Add field
+      </div>
+      <div class="flex flex-col gap-1">
+        <button
+          type="button"
+          class="text-left rounded-md px-2 py-1.5 text-sm"
+          [class.bg-green-100]="currentTier() === 'clu'"
+          [class.dark:bg-green-900]="currentTier() === 'clu'"
+          [class.text-gray-700]="currentTier() !== 'clu'"
+          [class.dark:text-gray-300]="currentTier() !== 'clu'"
+          (click)="onTierChange('clu')">
+          Tier 1 — CLU field boundaries
+        </button>
+        <button
+          type="button"
+          class="text-left rounded-md px-2 py-1.5 text-sm"
+          [class.bg-blue-100]="currentTier() === 'parcel'"
+          [class.dark:bg-blue-900]="currentTier() === 'parcel'"
+          [class.text-gray-700]="currentTier() !== 'parcel'"
+          [class.dark:text-gray-300]="currentTier() !== 'parcel'"
+          (click)="onTierChange('parcel')">
+          Tier 2 — Parcel boundaries
+        </button>
+        <button
+          type="button"
+          class="text-left rounded-md px-2 py-1.5 text-sm"
+          [class.bg-amber-100]="currentTier() === 'draw'"
+          [class.dark:bg-amber-900]="currentTier() === 'draw'"
+          [class.text-gray-700]="currentTier() !== 'draw'"
+          [class.dark:text-gray-300]="currentTier() !== 'draw'"
+          (click)="onTierChange('draw')">
+          Tier 4 — Draw your own
+        </button>
+      </div>
+      @if (tierHint()) {
+        <div class="mt-2 px-1 text-xs text-gray-500 dark:text-gray-400">{{ tierHint() }}</div>
+      }
+    </div>
+  }
+
+  <!-- Legend — both modes. Same color/pattern key the list's source badge uses (field-tag-style.ts). -->
+  <div class="absolute bottom-3 right-3 z-10 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm px-3 py-2">
+    <div class="flex items-center gap-3 text-xs text-gray-600 dark:text-gray-300">
+      <div class="flex items-center gap-1.5">
+        <span class="inline-block w-3 h-3 rounded-sm" [style.background-color]="methodStyle.clu.color"></span>
+        {{ methodStyle.clu.label }}
+      </div>
+      <div class="flex items-center gap-1.5">
+        <span class="inline-block w-3 h-3 rounded-sm" [style.background-color]="methodStyle.parcel.color"></span>
+        {{ methodStyle.parcel.label }}
+      </div>
+      <div class="flex items-center gap-1.5">
+        <span
+          class="inline-block w-3 h-3 rounded-sm border-2 border-dashed"
+          [style.border-color]="methodStyle.drawn.color"
+          style="background-color: transparent;"></span>
+        {{ methodStyle.drawn.label }}
+      </div>
+    </div>
+  </div>
+</div>

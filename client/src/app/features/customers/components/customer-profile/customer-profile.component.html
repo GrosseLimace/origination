@@ -483,6 +483,16 @@
             @case ('storage') {
               <app-stored-grain-table [storedGrain]="storedGrain()" [customer]="customer()" [isLoading]="isLoadingStoredGrain()"></app-stored-grain-table>
             }
+            @case ('fields') {
+              @if (fieldTagConfig(); as config) {
+                <app-customer-fields
+                  [customer]="customer()"
+                  [tags]="fieldTags()"
+                  [mapConfig]="config"
+                  (tagsChange)="fieldTags.set($event)"
+                ></app-customer-fields>
+              }
+            }
           }
         </div>
       </div>

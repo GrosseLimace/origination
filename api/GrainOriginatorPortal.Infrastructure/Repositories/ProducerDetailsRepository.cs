@@ -242,6 +242,43 @@ public class ProducerDetailsRepository : IProducerDetailsRepository
         return saved;
     }
 
+    /// <inheritdoc />
+    public async Task<ProducerDetails> UpdateTotalAcresAsync(long customerId, decimal totalAcres, string currentUser, CancellationToken cancellationToken)
+    {
+        var existing = await _appContext.ProducerDetails.FirstOrDefaultAsync(pd => pd.CustomerId == customerId, cancellationToken);
+
+        ProducerDetails saved;
+        if (existing != null)
+        {
+            existing.TotalAcres = totalAcres;
+            existing.ModifiedBy = currentUser;
+            existing.ModifiedAt = DateTime.UtcNow;
+            saved = existing;
+        }
+        else
+        {
+            var customer = await _appContext.Customers.AsNoTracking()
+                .Where(c => c.Id == customerId)
+                .Select(c => new { CustomerName = c.Name, c.ScoularId })
+                .FirstOrDefaultAsync(cancellationToken);
+
+            saved = new ProducerDetails
+            {
+                CustomerId = customerId,
+                ScoularId = customer?.ScoularId,
+                CustomerName = customer?.CustomerName ?? string.Empty,
+                TotalAcres = totalAcres,
+                CreatedBy = currentUser,
+                CreatedAt = DateTime.UtcNow
+            };
+            _appContext.ProducerDetails.Add(saved);
+        }
+
+        await _appContext.SaveChangesAsync(cancellationToken);
+        _logger.LogInformation("Updated TotalAcres for customer {CustomerId} to {TotalAcres} (field-tagging POC)", customerId, totalAcres);
+        return saved;
+    }
+
     public async Task DeleteAsync(long customerId, CancellationToken cancellationToken)
     {
         var existing = await _appContext.ProducerDetails.FirstOrDefaultAsync(pd => pd.CustomerId == customerId, cancellationToken);

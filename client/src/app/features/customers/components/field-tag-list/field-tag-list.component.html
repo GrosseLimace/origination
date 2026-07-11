@@ -1,0 +1,72 @@
+<div class="h-full overflow-y-auto flex flex-col gap-2 p-1">
+  @for (tag of tags(); track tag.id) {
+    <div
+      class="rounded-xl border bg-white dark:bg-gray-800 shadow-sm p-3 cursor-pointer transition-colors border-gray-200 dark:border-gray-700"
+      [class.border-scoular-green-accessible]="hoveredTagId() === tag.id"
+      [class.dark:border-scoular-green]="hoveredTagId() === tag.id"
+      [class.bg-scoular-green]="hoveredTagId() === tag.id"
+      [class.bg-opacity-5]="hoveredTagId() === tag.id"
+      [attr.data-tag-row]="tag.id"
+      (mouseenter)="rowHover.emit(tag.id)"
+      (mouseleave)="rowHover.emit(null)"
+      (click)="onRowClick(tag.id)"
+    >
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2 flex-wrap">
+            <app-badge [class]="methodStyle[tag.selectionMethod].badgeClass">{{ methodStyle[tag.selectionMethod].label }}</app-badge>
+            @if (hasCdlData(tag)) {
+              <span class="text-xs text-gray-500 dark:text-gray-400">{{ cdlSummary(tag) }}</span>
+            }
+          </div>
+          <div class="mt-1 text-sm text-gray-700 dark:text-gray-300 truncate">{{ labelFor(tag) }}</div>
+        </div>
+        <div class="flex items-center gap-1 shrink-0">
+          @if (hasCdlData(tag)) {
+            <button
+              type="button"
+              class="p-1 rounded-md text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+              [title]="isExpanded(tag.id) ? 'Hide breakdown' : 'Show breakdown'"
+              (click)="onToggleExpand($event, tag.id)"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="transition-transform" [class.rotate-90]="isExpanded(tag.id)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+            </button>
+          }
+          <button
+            type="button"
+            class="p-1 rounded-md text-gray-400 hover:text-scoular-red hover:bg-scoular-red/10"
+            title="Delete field"
+            (click)="onDelete($event, tag.id)"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6l-.867 12.142A2 2 0 0116.138 20H7.862a2 2 0 01-1.995-1.858L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+          </button>
+        </div>
+      </div>
+
+      @if (isExpanded(tag.id) && hasCdlData(tag)) {
+        <div class="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="text-gray-400 dark:text-gray-500">
+                <th class="text-left font-medium pb-1">Crop</th>
+                <th class="text-right font-medium pb-1">Acres</th>
+                <th class="text-right font-medium pb-1">% of AOI</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of breakdown(tag); track row.code) {
+                <tr class="text-gray-600 dark:text-gray-300">
+                  <td class="py-0.5">{{ row.crop }} ({{ row.code }})</td>
+                  <td class="py-0.5 text-right tabular-nums">{{ row.intersectionAcres | number:'1.0-1' }}</td>
+                  <td class="py-0.5 text-right tabular-nums">{{ row.percentOfAoi != null ? (row.percentOfAoi | number:'1.0-1') + '%' : '—' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </div>
+  } @empty {
+    <div class="text-sm text-gray-500 dark:text-gray-400 p-4 text-center">No fields to show.</div>
+  }
+</div>

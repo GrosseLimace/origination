@@ -35,3 +35,6 @@ client/coverage/
 # Local IDE / tooling config
 .vscode/
 .claude/
+
+# Field-tagging POC — local SQLite store (docs/poc/field-tagging), never committed.
+api/GrainOriginatorPortal.Api/.local/

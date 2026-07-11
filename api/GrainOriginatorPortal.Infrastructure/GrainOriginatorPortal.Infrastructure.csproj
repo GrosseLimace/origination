@@ -13,6 +13,13 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.1" />
+    <!-- POC-only (docs/poc/field-tagging), branch-only dependency: local SQLite store for
+         FieldTagDbContext. Version pinned to match EntityFrameworkCore.SqlServer above so no EF
+         Core version skew is introduced. Not part of the permanent SBOM — see 00-overview.md. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.1" />
+    <!-- Pin transitive SQLitePCLRaw.lib.e_sqlite3 to clear NU1903 (GHSA-2m69-gcr7-jv3q). The
+         version EFCore.Sqlite 10.0.1 pulls (2.1.11) is flagged; 3.53.3 carries the fix. -->
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
     <!-- Pin transitive System.Security.Cryptography.Xml to clear NU1903 (GHSA-37gx-xxp4-5rgx,
          GHSA-w3x6-4m5h-cxqf — EncryptedXml DoS). Patched in the .NET 10 line at 10.0.6+; using the
          latest 10.0.9 to match the net10 TFM. -->

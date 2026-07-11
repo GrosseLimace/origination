@@ -83,8 +83,8 @@ Do **not** update the README SBOM tables on the POC branch (deferred deliberatel
 Standard repo run flow (README):
 
 1. API: `cd api/GrainOriginatorPortal.Api && dotnet run` (http://localhost:5000). First run with
-   the feature configured creates the SQLite file via `EnsureCreated()` — check the log line the
-   implementer should add ("Field tags POC store initialized at …") and that
+   the feature configured creates the SQLite file via `EnsureCreated()` — check the log line
+   ("Field-tagging POC store ready at {LocalStorePath}", `Program.cs`) and that
    `.local/fieldtags.db` appeared.
 2. Client: `cd client && npm install && npm start` (http://localhost:4200).
 3. Sign in as usual (MSAL). Open any producer's Customer Profile.

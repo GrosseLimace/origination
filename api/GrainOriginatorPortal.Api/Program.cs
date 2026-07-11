@@ -199,6 +199,11 @@ builder.Services.AddHttpContextAccessor();
 // DefaultAzureCredential; retry logic handles transient Azure SQL failures.
 builder.Services.AddInfrastructure(builder.Configuration, builder.Environment.IsDevelopment());
 
+// Field-tagging POC (docs/poc/field-tagging) — dormant unless FieldTags:LocalStorePath is
+// configured. Kept as a separate, removable extension rather than folded into AddInfrastructure
+// so the whole POC unplugs by deleting this line + FieldTagsPocDependencyInjection.cs.
+builder.Services.AddFieldTagsPoc(builder.Configuration, builder.Environment.ContentRootPath);
+
 // =============================================================================
 // SERVICE REGISTRATION
 // Controllers depend on per-domain Api services; those depend on Infrastructure
@@ -230,6 +235,8 @@ builder.Services.AddScoped<ITradeUnitService, TradeUnitService>();
 builder.Services.AddSingleton<IGeocodeService, GeocodeService>();
 builder.Services.AddScoped<IUsageDashboardService, UsageDashboardService>();
 builder.Services.AddScoped<IDailyRecapGroupService, DailyRecapGroupService>();
+// Field-tagging POC — tolerates IFieldTagRepository not being registered (feature dormant).
+builder.Services.AddScoped<IFieldTagService, FieldTagService>();
 
 // Configure CORS — allowed origins come from configuration so they can be overridden
 // per environment via Azure App Service settings without code changes.
@@ -322,6 +329,20 @@ builder.Services.AddHealthChecks()
     .AddDbContextCheck<ApplicationDbContext>("application_db", tags: ["ready"]);
 
 var app = builder.Build();
+
+// =============================================================================
+// Field-tagging POC — create the local SQLite schema via EnsureCreated() (not a migration) when
+// the feature is configured. Guarded behind the same FieldTags:LocalStorePath check that gates
+// DI registration in AddFieldTagsPoc, so this is a no-op (and FieldTagDbContext resolves to
+// nothing) when the POC is dormant. See docs/poc/field-tagging/01-data-model.md.
+// =============================================================================
+if (!string.IsNullOrWhiteSpace(app.Configuration["FieldTags:LocalStorePath"]))
+{
+    using var fieldTagsScope = app.Services.CreateScope();
+    var fieldTagDb = fieldTagsScope.ServiceProvider.GetRequiredService<GrainOriginatorPortal.Infrastructure.Data.FieldTagDbContext>();
+    fieldTagDb.Database.EnsureCreated();
+    app.Logger.LogInformation("Field-tagging POC store ready at {LocalStorePath}", app.Configuration["FieldTags:LocalStorePath"]);
+}
 
 // =============================================================================
 // Development: Warm up all three DB connections in parallel at startup.

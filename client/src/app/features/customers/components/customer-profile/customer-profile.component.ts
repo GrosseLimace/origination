@@ -13,9 +13,10 @@ import { AIGrowthForecastComponent } from '../ai-growth-forecast/ai-growth-forec
 import { ActivitySummaryComponent } from '../activity-summary/activity-summary.component';
 import { EditCustomerDialogComponent } from '../edit-customer-dialog/edit-customer-dialog.component';
 import { CustomerPrintReportComponent } from '../customer-print-report/customer-print-report.component';
+import { CustomerFieldsComponent } from '../customer-fields/customer-fields.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList, CustomerFieldTag, FieldTagMapConfig } from '@models';
 
 // Per-commodity chip colors for the Grain-on-Farm breakdown — distinct per crop (not all amber),
 // styled like the commodity tags. Common crops are fixed; anything else gets a stable color from
@@ -53,7 +54,8 @@ const GRAIN_CHIP_PALETTE: string[] = [
     AIGrowthForecastComponent,
     ActivitySummaryComponent,
     EditCustomerDialogComponent,
-    CustomerPrintReportComponent
+    CustomerPrintReportComponent,
+    CustomerFieldsComponent
   ],
   templateUrl: './customer-profile.component.html'
 })
@@ -70,6 +72,16 @@ export class CustomerProfileComponent {
    * the pacing card and producer-insights so we don't hit the endpoint twice.
    */
   readonly historicalContracts = signal<Contract[]>([]);
+
+  /**
+   * Field Tagging POC — "Fields (N)" tab. `fieldTagConfig` gates the whole feature: fetched once
+   * per session (ApiService dedupes it), and the tab only appears in `_tabs` when `enabled` is
+   * true. `fieldTags` is fetched once per customer, same pattern as `historicalContracts` above —
+   * the profile owns this fetch (not CustomerFieldsComponent) so the pill count is correct before
+   * the tab is ever opened. See docs/poc/field-tagging/04-frontend-list-and-hover-sync.md.
+   */
+  readonly fieldTagConfig = signal<FieldTagMapConfig | null>(null);
+  readonly fieldTags = signal<CustomerFieldTag[]>([]);
 
   public customer = input.required<Customer>();
   public allCustomers = input<Customer[]>([]);
@@ -320,6 +332,32 @@ export class CustomerProfileComponent {
         .subscribe(contracts => this.historicalContracts.set(contracts));
     });
 
+    // Field Tagging POC config — fetched once per session (ApiService dedupes by key). The
+    // "Fields (N)" tab only appears once this resolves `enabled: true`; when disabled or on error
+    // the tab entry is simply never appended to _tabs (see the tabs-building effect below). Kept
+    // as an effect (with no reactive signal reads, so it runs exactly once) rather than a bare
+    // constructor-body call so it's deferred like every other side effect here instead of running
+    // synchronously during component construction.
+    effect(() => {
+      this.apiService.getFieldTagConfig()
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: config => this.fieldTagConfig.set(config),
+          error: () => this.fieldTagConfig.set(null),
+        });
+    });
+
+    // Field tags — fetched once per customer, same shape as historicalContracts above, but only
+    // once the feature is confirmed enabled (no point hitting the endpoint for a dormant feature).
+    effect(() => {
+      const id = this.customer()?.id;
+      const enabled = this.fieldTagConfig()?.enabled === true;
+      if (id == null || !enabled) { this.fieldTags.set([]); return; }
+      this.apiService.getFieldTags(id)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(tags => this.fieldTags.set(tags));
+    });
+
     // Effect: auto-select the best planting year when data changes.
     // Kept as an effect (not computed) because it writes to selectedPlantingYear.
     effect(() => {
@@ -358,6 +396,12 @@ export class CustomerProfileComponent {
         { id: 'planting', label: 'Planting', shortLabel: 'Plan', count: this.plantingIntentions().length },
         { id: 'storage', label: 'Storage', shortLabel: 'Stor', count: new Set(this.storedGrain().map(g => g.crop || 'Unknown')).size }
       ];
+
+      // Field Tagging POC — config-gated tab; when disabled the entry is simply never appended
+      // and the whole feature disappears from the UI (00-overview.md decision #13).
+      if (this.fieldTagConfig()?.enabled === true) {
+        this._tabs.push({ id: 'fields', label: 'Fields', shortLabel: 'Flds', count: this.fieldTags().length });
+      }
     });
 
     effect(() => {

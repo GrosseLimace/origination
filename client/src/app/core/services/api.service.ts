@@ -36,7 +36,11 @@ import {
   ActivityBreakdown,
   UnderusedFeature,
   UserUsageDetail,
-  QueryLibraryItem
+  QueryLibraryItem,
+  CustomerFieldTag,
+  FieldTagDraft,
+  ApplyCalculatedAcresResponse,
+  FieldTagMapConfig
 } from '@models';
 import { environment } from '@env/environment';
 import { ToastService } from '@core/services/toast.service';
@@ -949,5 +953,45 @@ export class ApiService {
       `${this.baseUrl}/usage-dashboard/users/${encodeURIComponent(userId)}/detail`,
       { params: this.usageParams(from, to, tradeUnitKey) }
     ).pipe(catchError(e => this.handleError(e)));
+  }
+
+  // ==========================================================================
+  // Field Tagging POC (see docs/poc/field-tagging/) — client-direct vendor
+  // calls happen in FieldTagMapComponent; this service only owns CRUD against
+  // the local-SQLite-backed CustomerFieldTag store + the runtime map-config
+  // endpoint. Feature is dormant unless the config endpoint reports enabled.
+  // ==========================================================================
+
+  /** Fetches all active field tags for a customer. Empty array when the feature is dormant. */
+  getFieldTags(customerId: number): Observable<CustomerFieldTag[]> {
+    return this.http.get<CustomerFieldTag[]>(`${this.baseUrl}/customers/${customerId}/field-tags`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Creates (persists) one field tag. 409 FIELD_TAG_DUPLICATE if the externalRef already exists. */
+  createFieldTag(customerId: number, draft: FieldTagDraft): Observable<CustomerFieldTag> {
+    return this.http.post<CustomerFieldTag>(`${this.baseUrl}/customers/${customerId}/field-tags`, draft)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Soft-deletes a field tag. */
+  deleteFieldTag(customerId: number, tagId: number): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/customers/${customerId}/field-tags/${tagId}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Overwrites ProducerDetails.TotalAcres with the sum of CalcAcres across all active tags. */
+  applyCalculatedAcres(customerId: number): Observable<ApplyCalculatedAcresResponse> {
+    return this.http.post<ApplyCalculatedAcresResponse>(
+      `${this.baseUrl}/customers/${customerId}/field-tags/apply-calculated-acres`, {}
+    ).pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Runtime map config (Azure Maps / LandMapMagic keys, CDL year) — fetched once per session. */
+  getFieldTagConfig(): Observable<FieldTagMapConfig> {
+    return this._dedupe('field-tag-config',
+      this.http.get<FieldTagMapConfig>(`${this.baseUrl}/field-tag-config`)
+        .pipe(catchError(e => this.handleError(e)))
+    );
   }
 }

@@ -20,3 +20,4 @@ export * from './commodity-conversion.model';
 export * from './harvest-window.model';
 export * from './usage-dashboard.model';
 export * from './query-library.model';
+export * from './field-tag.model';
