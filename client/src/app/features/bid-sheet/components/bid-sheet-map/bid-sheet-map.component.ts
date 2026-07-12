@@ -581,7 +581,11 @@ export class BidSheetMapComponent {
     const cdlYear = this.cdlYear();
     const cdlFallbackYear = this.cdlFallbackYear();
     if (!cdlYear || !cdlFallbackYear) {
-      const info = this.buildFieldContextResult(method, acreage, null, null, null);
+      // Parcel-owner enrichment is independent of the CDL-year config the AOI query needs below —
+      // don't drop it here too (it previously silently went missing whenever cdlYear/cdlFallbackYear
+      // weren't configured at all, same class of bug as the AOI-failure branch below).
+      const parcels = this.findOverlappingParcels(lat, lng);
+      const info = this.buildFieldContextResult(method, acreage, null, null, null, parcels);
       this.fieldContextResolved.emit(info);
       return { info, lookupResults };
     }
@@ -601,7 +605,10 @@ export class BidSheetMapComponent {
       return { info, lookupResults };
     } catch (err) {
       console.error('[bid-sheet-map] AOI Query failed for field-context lookup:', err);
-      const info = this.buildFieldContextResult(method, acreage, null, null, null);
+      // Parcel-owner enrichment doesn't depend on the AOI query that just failed — still attempt it
+      // rather than silently dropping it (same rationale as the cdlYear-missing branch above).
+      const parcels = this.findOverlappingParcels(lat, lng);
+      const info = this.buildFieldContextResult(method, acreage, null, null, null, parcels);
       this.fieldContextResolved.emit(info);
       return { info, lookupResults };
     }
@@ -646,6 +653,17 @@ export class BidSheetMapComponent {
    * CLU/Parcel toggle is off OR explicitly set to 'clu'. Only an explicit Parcel tier selection
    * switches both the acreage figure and the highlighted shape to the parcel. No popup/highlight at
    * all if the requested tier's layer has no result at this point (nothing to show or highlight).
+   *
+   * CLU and Parcel data come from DIFFERENT sources here, and that's deliberate, not an oversight:
+   * confirmed LIVE against the real vendor API (`GET /v1/data/point?...`) that its response's
+   * `layers` object NEVER contains a `parcels` key at all — only `clu` — for any coordinate, at any
+   * zoom (matches `lmm-point-lookup.ts`'s own long-standing doc comment on `pointLookup`, which this
+   * verified is still accurate today). Sourcing parcel acreage/identity from `lookupResults` (as an
+   * earlier version of this method did) therefore ALWAYS failed for the parcel tier, unconditionally
+   * — not a zoom or tile-loading issue. Parcel data instead comes from `info.parcels[0]`
+   * (`findOverlappingParcels`'s client-side geometry match, already computed unconditionally inside
+   * `runFieldContextLookup`), which conveniently already carries the exact matched feature `id` too
+   * — no need to separately re-query/re-match geometry for the highlight in that case.
    */
   private showFieldContextPinPopup(
     lat: number,
@@ -661,35 +679,40 @@ export class BidSheetMapComponent {
     this.fieldContextPopup = null;
 
     const tier: 'clu' | 'parcel' = this.showFieldContext() === 'parcel' ? 'parcel' : 'clu';
-    const layerName: 'clu' | 'parcels' = tier === 'clu' ? 'clu' : 'parcels';
-    const lookupField = lookupResults.find((f) => f.layer === layerName) ?? null;
-    if (!lookupField) return;
+    const source: 'clu' | 'parcels' = tier === 'clu' ? 'clu' : 'parcels';
 
-    const source = layerName; // 'clu' | 'parcels' — matches the vendor source id 1:1 (see below).
-
-    // Deliberately a GEOGRAPHIC point-in-polygon match against already-loaded SOURCE features
-    // (`querySourceFeatures` + `pointInPolygon`), the exact technique `findOverlappingParcels`
-    // already uses successfully for parcels — NOT a pixel-based `queryRenderedFeatures` at the
-    // single screen pixel the pin projects to. That was the original (buggy) approach here, and it
-    // reliably failed for parcels specifically: cadastral parcel polygons are far smaller/finer-
-    // grained than CLU field polygons, so a bid location's recorded lat/lng is much more likely to
-    // land in a gap or right on a tile-seam/rendering-precision edge relative to a narrow parcel
-    // boundary than relative to a large CLU field boundary — which is exactly the "CLU highlight
-    // always works, parcel highlight never does" asymmetry that was reported. Testing the real
-    // polygon geometry directly in lat/lng space sidesteps screen-pixel and tile-clipping precision
-    // entirely. Confirmed live against the vendor's actual style (`GET /v1/styles?...`): both
-    // `clu-outline` and `parcels-fill` declare `source-layer` equal to their source id ('clu'/
-    // 'parcels'), so `source` doubles as the sourceLayer name here, same as `findOverlappingParcels`.
+    let acreage: number | null;
     let featureId: string | number | null = null;
-    if (map.getSource(source)) {
-      const point: Position = [lng, lat];
-      const fragments = map.querySourceFeatures(source, { sourceLayer: source });
-      for (const f of fragments) {
-        if (f.id == null) continue;
-        const geom = pickPolygonGeometry(f.geometry as Geometry);
-        if (geom && pointInPolygon(point, geom)) {
-          featureId = f.id;
-          break;
+
+    if (tier === 'parcel') {
+      const match = info?.parcels[0] ?? null;
+      if (!match) return;
+      acreage = match.acreage;
+      featureId = match.id;
+    } else {
+      const lookupField = lookupResults.find((f) => f.layer === 'clu') ?? null;
+      if (!lookupField) return;
+      acreage = lookupField.acreage;
+
+      // Deliberately a GEOGRAPHIC point-in-polygon match against already-loaded SOURCE features
+      // (`querySourceFeatures` + `pointInPolygon`), the exact technique `findOverlappingParcels`
+      // already uses for parcels — NOT a pixel-based `queryRenderedFeatures` at the single screen
+      // pixel the pin projects to (an earlier version of this method used that and it was
+      // precision-sensitive/unreliable, particularly for smaller shapes). Testing the real polygon
+      // geometry directly in lat/lng space sidesteps screen-pixel and tile-clipping precision
+      // entirely. Confirmed live against the vendor's actual style (`GET /v1/styles?...`): CLU's
+      // `source-layer` equals its source id ('clu'), so `source` doubles as the sourceLayer name
+      // here, same as `findOverlappingParcels` does for 'parcels'.
+      if (map.getSource(source)) {
+        const point: Position = [lng, lat];
+        const fragments = map.querySourceFeatures(source, { sourceLayer: source });
+        for (const f of fragments) {
+          if (f.id == null) continue;
+          const geom = pickPolygonGeometry(f.geometry as Geometry);
+          if (geom && pointInPolygon(point, geom)) {
+            featureId = f.id;
+            break;
+          }
         }
       }
     }
@@ -703,7 +726,7 @@ export class BidSheetMapComponent {
     const popup = this.showInfoPopup(
       [lng, lat],
       {
-        acreage: lookupField.acreage,
+        acreage,
         county: info?.county ?? null,
         state: info?.state ?? null,
         topCrop: info?.topCrop ?? null,
