@@ -27,7 +27,7 @@ import { setupDraw, type DrawController } from '../../services/field-tagging/dra
 import {
   geometryAcres,
   toAoiFeature,
-  convexHull,
+  unionGeometries,
   pickPolygonGeometry,
   round1,
   drawnExternalRef,
@@ -692,10 +692,11 @@ export class FieldTagMapComponent {
       // all reporting calcacres=292.24, with individual feature_acres of ~116.53/~180.04/etc.
       // summing to ~296.57 — i.e. the true total, not the single tract attribute). So: collect
       // EVERY response feature within a tight calcacres tolerance of the clicked fragment (not
-      // just the single closest one) and merge ALL of their geometries — the same hull-merge this
-      // component already does for client-loaded tile fragments (reconstructFullFieldGeometry).
+      // just the single closest one) and merge ALL of their geometries via real polygon union —
+      // the same union-merge this component already does for client-loaded tile fragments
+      // (reconstructFullFieldGeometry).
       const clickedCalcacres = this.toNumber((tileFeature.properties as Record<string, unknown> | undefined)?.['calcacres']);
-      let matchedGeometry: Polygon | null = null;
+      let matchedGeometry: Polygon | MultiPolygon | null = null;
       let matchedAcres: number | null = null;
       if (method === 'clu' && clickedCalcacres != null) {
         const matches = result.features.filter((f) => {
@@ -704,7 +705,7 @@ export class FieldTagMapComponent {
           return candidateAcres != null && Math.abs(candidateAcres - clickedCalcacres) <= CLU_CALCACRES_TOLERANCE;
         });
         if (matches.length > 0) {
-          matchedGeometry = this.hullMergeGeometries(matches.map((f) => f.geometry));
+          matchedGeometry = this.unionMergeGeometries(matches.map((f) => f.geometry));
           if (matchedGeometry) {
             // Acreage from the MERGED polygon itself, not the raw tract-level calcacres attribute
             // (confirmed to drift a bit from true summed area — 292.24 vs ~296.57 in the example
@@ -712,8 +713,9 @@ export class FieldTagMapComponent {
             // acreage self-consistent with the persisted geometry — exactly how the drawn and
             // parcel tiers already compute calcAcres — so a later re-measurement of the saved
             // polygon (e.g. in a report, or by a person eyeballing the shape) always agrees with
-            // the stored number, even where a convex hull of concave fragments slightly overshoots
-            // the vendor's own summed feature_acres.
+            // the stored number. A real union should track the vendor's own summed feature_acres
+            // closely (up to floating-point precision), unlike the old convex-hull merge, which
+            // could overshoot it for concave fields.
             matchedAcres = round1(geometryAcres(matchedGeometry));
           }
         }
@@ -767,12 +769,12 @@ export class FieldTagMapComponent {
    * querySourceFeatures, which only sees tiles MapLibre has already fetched for the current
    * viewport — zero extra vendor tokens, but also means reconstruction can still undershoot if the
    * field extends beyond currently-loaded tiles; the sanity check below guards against persisting
-   * a bad hull in that case.
+   * a geometry missing whole fragments in that case.
    */
   private reconstructFullFieldGeometry(
     tileFeature: maplibregl.MapGeoJSONFeature,
     method: 'clu' | 'parcel',
-  ): Polygon | null {
+  ): Polygon | MultiPolygon | null {
     const map = this.map;
     if (!map) return null;
 
@@ -795,43 +797,43 @@ export class FieldTagMapComponent {
     }
 
     const fragments = map.querySourceFeatures(sourceId, { sourceLayer, filter });
-    const polygon = this.hullMergeGeometries(fragments.map((f) => f.geometry as Geometry));
+    const polygon = this.unionMergeGeometries(fragments.map((f) => f.geometry as Geometry));
     if (!polygon) return null;
-    const hullAcres = geometryAcres(polygon);
+    const mergedAcres = geometryAcres(polygon);
 
-    // A convex hull of a concave true boundary can only overshoot, never meaningfully undershoot —
-    // a hull smaller than the tile's own acreage attribute suggests something went wrong (e.g. the
-    // field extends beyond currently-loaded tiles); the single-fragment fallback is safer. This
-    // property is a same-tile sanity cross-check only, never the grouping key (G13).
+    // The merged polygon is a real union of every currently-loaded fragment, so its area is exactly
+    // the true area of what's present — no more, no less. A union meaningfully smaller than the
+    // tile's own acreage attribute means fragments are missing (the field extends beyond
+    // currently-loaded tiles), not that the merge geometry itself is wrong; the single-fragment
+    // fallback is safer in that case. This property is a same-tile sanity cross-check only, never
+    // the grouping key (G13).
     const sanityAcres = this.toNumber(tileProps[sanityAcresProp]);
-    if (sanityAcres != null && hullAcres < sanityAcres * 0.95) return null;
+    if (sanityAcres != null && mergedAcres < sanityAcres * 0.95) return null;
 
     return polygon;
   }
 
   /**
-   * Pool ring points from every geometry in `geoms`, take their convex hull, and rebuild a single
-   * `Polygon`. Shared merge step behind BOTH fragment-grouping paths in this component:
+   * Union every matching fragment geometry in `geoms` into a single true (possibly concave)
+   * boundary via `unionGeometries` (real polygon union — see geo.ts). Shared merge step behind
+   * BOTH fragment-grouping paths in this component:
    * `reconstructFullFieldGeometry` (client tile-loaded fragments, grouped by native id/parcel_id)
    * and the AOI-response fragment merge in `confirmSelection` (grouped by matching calcacres,
-   * G10/G13) — both are fundamentally "collect same-field fragments and hull-merge them", just
+   * G10/G13) — both are fundamentally "collect same-field fragments and union-merge them", just
    * sourced differently (already-loaded MVT tiles vs. one AOI response). Returns null if fewer
-   * than 3 usable points/hull vertices are available.
+   * than one usable fragment geometry is available, or the union produces no output. May return a
+   * `MultiPolygon` in the rare case where fragments don't perfectly touch due to floating-point
+   * seams — see `unionGeometries` in geo.ts.
    */
-  private hullMergeGeometries(geoms: (Geometry | null | undefined)[]): Polygon | null {
-    const points: Position[] = [];
+  private unionMergeGeometries(geoms: (Geometry | null | undefined)[]): Polygon | MultiPolygon | null {
+    const polys: (Polygon | MultiPolygon)[] = [];
     for (const geom of geoms) {
       const poly = pickPolygonGeometry(geom);
-      if (!poly) continue;
-      const rings = poly.type === 'Polygon' ? poly.coordinates : poly.coordinates.flat();
-      for (const ring of rings) points.push(...ring);
+      if (poly) polys.push(poly);
     }
-    if (points.length < 3) return null;
+    if (polys.length === 0) return null;
 
-    const hull = convexHull(points);
-    if (hull.length < 3) return null;
-
-    return { type: 'Polygon', coordinates: [[...hull, hull[0]]] };
+    return unionGeometries(polys);
   }
 
   // ── Tier 4: draw your own boundary ───────────────────────────────────────

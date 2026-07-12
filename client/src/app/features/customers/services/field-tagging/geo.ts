@@ -3,6 +3,7 @@
 // (new — see docs/poc/field-tagging/01-data-model.md "Canonical serialization before hashing").
 
 import type { Feature, Polygon, MultiPolygon, Position, Geometry } from 'geojson';
+import { union as polygonClippingUnion } from 'polygon-clipping';
 
 const EARTH_RADIUS_M = 6378137;
 const SQ_METERS_PER_ACRE = 4046.8564224;
@@ -83,7 +84,7 @@ const METERS_PER_DEGREE_LAT = 111320;
  * Expand a geometry's bounding box by `marginMeters` in every direction and return it as a
  * rectangular Polygon. Used to widen the AOI query submitted for CLU selections: the vendor's
  * AOI endpoint only returns features that geographically intersect the SUBMITTED polygon, and
- * `sourceGeometry` can be as small as a single tile-clipped fragment (when client-side hull
+ * `sourceGeometry` can be as small as a single tile-clipped fragment (when client-side union
  * reconstruction — `reconstructFullFieldGeometry` — fails or the field's sibling fragments
  * aren't loaded in adjacent tiles yet). A sibling fragment sitting just across a tile boundary
  * may not geometrically touch that small fragment at all, so submitting it as-is can make the
@@ -91,8 +92,8 @@ const METERS_PER_DEGREE_LAT = 111320;
  * same-calcacres fragments (see the G10/G13 notes in field-tag-map.component.ts). Padding by a
  * few hundred meters reliably reaches into a neighboring MVT tile without making the query
  * absurdly large. Longitude margin is latitude-corrected (degrees-per-meter shrinks toward the
- * poles); this is a planar approximation, which is fine at field scale (same tradeoff as
- * `convexHull` above).
+ * poles); this is a planar approximation, which is fine at field scale (same tradeoff accepted
+ * by `unionGeometries` below).
  */
 export function paddedBoundingBoxPolygon(geometry: Polygon | MultiPolygon, marginMeters: number): Polygon {
   const polys: Position[][][] = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
@@ -132,40 +133,54 @@ export function paddedBoundingBoxPolygon(geometry: Polygon | MultiPolygon, margi
   };
 }
 
+// polygon-clipping represents rings/polygons/multipolygons as plain nested number-pair arrays
+// (no GeoJSON `type` wrapper), so [lng, lat] Positions round-trip losslessly through it — these
+// aliases just name the shapes for the conversion helpers below.
+type PcRing = [number, number][];
+type PcPolygon = PcRing[];
+type PcMultiPolygon = PcPolygon[];
+
+function toPcGeom(geometry: Polygon | MultiPolygon): PcPolygon | PcMultiPolygon {
+  const toRing = (ring: Position[]): PcRing => ring.map((p) => [p[0], p[1]] as [number, number]);
+  const toPoly = (rings: Position[][]): PcPolygon => rings.map(toRing);
+  return geometry.type === 'Polygon' ? toPoly(geometry.coordinates) : geometry.coordinates.map(toPoly);
+}
+
+function fromPcMultiPolygon(multiPolygon: PcMultiPolygon): Polygon | MultiPolygon | null {
+  if (multiPolygon.length === 0) return null;
+  const toRings = (poly: PcPolygon): Position[][] => poly.map((ring) => ring.map((p) => [p[0], p[1]] as Position));
+  if (multiPolygon.length === 1) return { type: 'Polygon', coordinates: toRings(multiPolygon[0]) };
+  return { type: 'MultiPolygon', coordinates: multiPolygon.map(toRings) };
+}
+
 /**
- * Andrew's monotone chain convex hull. Treats [lng, lat] as planar, which is
- * fine at field scale (a few hundred meters — geodesic distortion is
- * negligible). Used to reconstruct a full CLU field boundary from several
- * tile-clipped fragments grouped by native MVT id (see the map component's
- * reconstructFullCluGeometry): MVT tiles clip each feature to the tile it
- * belongs to, so a field that spans a tile boundary comes back as multiple
- * disjoint fragments sharing the same native id. The hull of their pooled
- * vertices approximates the true field boundary well for the convex/near-convex
- * shapes typical of agricultural CLU fields.
+ * Reconstruct a full field boundary from several tile-clipped fragments by computing their real
+ * polygon UNION (Martinez clipping via `polygon-clipping`), not a convex hull. Used to merge:
+ * (1) client-loaded MVT tile fragments sharing the same native id (see the map component's
+ * `reconstructFullFieldGeometry`) — MVT tiles clip each feature to the tile it belongs to, so a
+ * field spanning a tile boundary comes back as multiple disjoint fragments; and (2) LandMapMagic
+ * AOI-response rows sharing the same tract-level `calcacres` (see `confirmSelection`'s AOI-fragment
+ * merge) — the vendor tiles its own response the same way.
+ *
+ * A convex hull of the pooled fragment vertices is only an approximation — it inflates any
+ * concave feature of the true boundary (an L-shape, a boundary following a creek/road, a terraced
+ * edge, etc.) into a straight line across the gap. Since these fragments are literally pieces of
+ * one original polygon cut along straight tile/AOI-boundary lines, union is the exact geometric
+ * inverse of that clipping: it reconstructs the true (possibly concave) shape exactly, up to
+ * floating-point precision, rather than merely bounding it.
+ *
+ * Fragments that are adjacent-but-not-perfectly-touching (floating-point seams) can legitimately
+ * union into more than one polygon, so this returns `Polygon | MultiPolygon` — callers already
+ * handle both (see `CustomerFieldTag.geometryJson` / `pickPolygonGeometry`). Winding is normalized
+ * to RFC 7946 before returning. Returns `null` if there are no usable input geometries or the
+ * union produces no output.
  */
-export function convexHull(points: Position[]): Position[] {
-  const pts = [...new Map(points.map((p) => [`${p[0]},${p[1]}`, p])).values()].sort(
-    (a, b) => a[0] - b[0] || a[1] - b[1],
-  );
-  if (pts.length < 3) return pts;
-
-  const cross = (o: Position, a: Position, b: Position): number =>
-    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-
-  const buildHalf = (points: Position[]): Position[] => {
-    const hull: Position[] = [];
-    for (const p of points) {
-      while (hull.length >= 2 && cross(hull[hull.length - 2], hull[hull.length - 1], p) <= 0) {
-        hull.pop();
-      }
-      hull.push(p);
-    }
-    return hull;
-  };
-
-  const lower = buildHalf(pts);
-  const upper = buildHalf([...pts].reverse());
-  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+export function unionGeometries(geoms: (Polygon | MultiPolygon)[]): Polygon | MultiPolygon | null {
+  if (geoms.length === 0) return null;
+  const [first, ...rest] = geoms.map(toPcGeom);
+  const merged = polygonClippingUnion(first, ...rest);
+  const result = fromPcMultiPolygon(merged);
+  return result ? normalizeWinding(result) : null;
 }
 
 /**
