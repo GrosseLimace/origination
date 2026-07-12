@@ -1,3 +1,16 @@
+/**
+ * Response from `GET /api/map-config` — runtime map configuration for any MapLibre/Azure Maps
+ * consumer that isn't field-tagging-specific (currently: Bid Sheet). Each key is gated
+ * independently by the API (unlike `FieldTagMapConfig`'s all-or-nothing `enabled` gate), so
+ * `azureMapsKey` and `landMapMagicKey` can be non-null independently of one another.
+ */
+export interface MapConfig {
+  azureMapsKey: string | null;
+  landMapMagicKey: string | null;
+  cdlYear: string;
+  cdlFallbackYear: string;
+}
+
 export interface BidSheetLocationBid {
   id: number;
   locationId: number;

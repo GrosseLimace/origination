@@ -20,9 +20,9 @@ import {
   mergeLandMapMagicLayers,
   setLayerGroupVisibility,
   type LmmLayerIds,
-} from '../../services/field-tagging/lmm-styles.service';
-import { pointLookup, type LookupField } from '../../services/field-tagging/lmm-point-lookup';
-import { aoiQuery } from '../../services/field-tagging/lmm-aoi-query';
+} from '../../../../shared/services/land-map-magic/lmm-styles.service';
+import { pointLookup, type LookupField } from '../../../../shared/services/land-map-magic/lmm-point-lookup';
+import { aoiQuery } from '../../../../shared/services/land-map-magic/lmm-aoi-query';
 import { setupDraw, type DrawController } from '../../services/field-tagging/draw-setup';
 import {
   geometryAcres,
@@ -35,7 +35,7 @@ import {
   paddedBoundingBoxPolygon,
   pointInPolygon,
   polygonsIntersect,
-} from '../../services/field-tagging/geo';
+} from '../../../../shared/services/land-map-magic/geo';
 
 /**
  * FieldTagMapComponent — MapLibre GL map for the Field Tagging POC.

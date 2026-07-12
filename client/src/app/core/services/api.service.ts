@@ -40,7 +40,8 @@ import {
   CustomerFieldTag,
   FieldTagDraft,
   ApplyCalculatedAcresResponse,
-  FieldTagMapConfig
+  FieldTagMapConfig,
+  MapConfig
 } from '@models';
 import { environment } from '@env/environment';
 import { ToastService } from '@core/services/toast.service';
@@ -1000,6 +1001,15 @@ export class ApiService {
   getFieldTagConfig(): Observable<FieldTagMapConfig> {
     return this._dedupe('field-tag-config',
       this.http.get<FieldTagMapConfig>(`${this.baseUrl}/field-tag-config`)
+        .pipe(catchError(e => this.handleError(e)))
+    );
+  }
+
+  /** Runtime map config for non-field-tagging map consumers (currently: Bid Sheet). Each key
+   * (Azure Maps, LandMapMagic) is gated independently by the API — see `MapConfig`. */
+  getMapConfig(): Observable<MapConfig> {
+    return this._dedupe('map-config',
+      this.http.get<MapConfig>(`${this.baseUrl}/map-config`)
         .pipe(catchError(e => this.handleError(e)))
     );
   }
