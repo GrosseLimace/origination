@@ -54,6 +54,16 @@ const CLU_SELECTED_LAYER_ID = 'clu-selected-outline';
 const PARCELS_SELECTED_LAYER_ID = 'parcels-selected-outline';
 
 /**
+ * A dedicated always-on highlight layer for the popup's parcel/owner list (hover a row -> light up
+ * that parcel's boundary on the map), driven by its own `popupHighlight` feature-state — separate
+ * from `hover`/`selected` (which are tier-gated: e.g. wireVendorLayerInteractions only wires those
+ * while `currentTier() === 'parcel'`). Deliberately NOT included in `LmmLayerIds.parcels` (the
+ * group `setLayerGroupVisibility` toggles per tier) so it stays visible/renderable while browsing
+ * CLU or drawing, when the vendor's own parcels-fill/outline/labels are hidden.
+ */
+const PARCELS_POPUP_HIGHLIGHT_LAYER_ID = 'parcels-popup-highlight';
+
+/**
  * G2: LandMapMagic's fetched style declares `glyphs: "https://fonts.openmaptiles.org/{fontstack}/{range}.pbf"`.
  * That host returns a 200 OK HTML landing page for every {fontstack}/{range} request. MapLibre
  * doesn't check content-type; it feeds those bytes straight into its PBF glyph parser, which
@@ -255,6 +265,27 @@ function addSyntheticLayers(map: maplibregl.Map): void {
         'line-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 1, 0],
       },
       minzoom: 14,
+    });
+  }
+
+  if (!map.getLayer(PARCELS_POPUP_HIGHLIGHT_LAYER_ID)) {
+    map.addLayer({
+      id: PARCELS_POPUP_HIGHLIGHT_LAYER_ID,
+      type: 'line',
+      source: LMM_PARCELS_SOURCE,
+      'source-layer': 'parcels',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        // Orange — distinct from the blue 'selected' outline used by the parcel-tier click flow.
+        'line-color': '#f97316',
+        'line-width': ['case', ['boolean', ['feature-state', 'popupHighlight'], false], 4, 0],
+        'line-opacity': ['case', ['boolean', ['feature-state', 'popupHighlight'], false], 1, 0],
+      },
+      // Lower than parcels-fill/outline's own minzoom:14 — this must be able to render at
+      // whatever zoom the CLU tier or draw tier popup is shown, independent of the vendor's own
+      // parcels layers' zoom floor (this layer is never in the tier-visibility group, so it isn't
+      // hidden by tier switching, but it still needs its OWN permissive zoom range).
+      minzoom: 12,
     });
   }
 }

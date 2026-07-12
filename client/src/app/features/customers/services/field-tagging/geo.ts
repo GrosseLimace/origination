@@ -241,3 +241,59 @@ export function pickPolygonGeometry(geometry: Geometry | undefined | null): Poly
 export function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
+
+/** Even-odd ray-casting containment test for a single ring. */
+function ringContainsPoint(ring: Position[], point: Position): boolean {
+  const [x, y] = point;
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    const intersect = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * Point-in-polygon test (even-odd ray casting), respecting holes — a point inside the exterior
+ * ring but also inside any interior (hole) ring is NOT contained. Used to test whether a CLU-tier
+ * map click falls within an already-loaded parcel fragment (see field-tag-map.component.ts's
+ * `findOverlappingParcels`) — the vendor's Point Lookup endpoint never actually returns parcel
+ * data (confirmed live — see lmm-point-lookup.ts), so parcel/owner lookups for a click must be
+ * done against already-loaded MVT tile geometry client-side instead.
+ */
+export function pointInPolygon(point: Position, geometry: Polygon | MultiPolygon): boolean {
+  const polys: Position[][][] = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
+  for (const rings of polys) {
+    if (rings.length === 0) continue;
+    if (!ringContainsPoint(rings[0], point)) continue;
+    let inHole = false;
+    for (let i = 1; i < rings.length; i++) {
+      if (ringContainsPoint(rings[i], point)) {
+        inHole = true;
+        break;
+      }
+    }
+    if (!inHole) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether two polygon geometries share any area, via real polygon intersection (`polygon-clipping`
+ * — same library `unionGeometries` already uses). Used to find every already-loaded parcel
+ * fragment overlapping a hand-drawn (Tier 4) polygon: the vendor's AOI endpoint flatly rejects
+ * "parcels" as a layer (confirmed live: 400 "Invalid layers requested: parcels. Available layers:
+ * states, counties, plss, townships, sections, clu, cdl, ssurgo"), so there is no vendor-API path
+ * to "list every parcel under this polygon" — client-side geometric intersection against whatever
+ * parcel tiles are already loaded is the only feasible mechanism.
+ */
+export function polygonsIntersect(a: Polygon | MultiPolygon, b: Polygon | MultiPolygon): boolean {
+  try {
+    const result = polygonClipping.intersection(toPcGeom(a) as never, toPcGeom(b) as never);
+    return result.length > 0;
+  } catch {
+    return false;
+  }
+}

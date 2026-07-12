@@ -33,6 +33,8 @@ import {
   drawnExternalRef,
   normalizeWinding,
   paddedBoundingBoxPolygon,
+  pointInPolygon,
+  polygonsIntersect,
 } from '../../services/field-tagging/geo';
 
 /**
@@ -53,6 +55,19 @@ interface FeatureStateRef {
   source: string;
   sourceLayer?: string;
   id: string | number;
+}
+
+/**
+ * One already-loaded parcel fragment-group overlapping a click point or a drawn polygon — see
+ * `findOverlappingParcels`. `id` is the parcels source's own promoted feature id (real `parcel_id`,
+ * confirmed working — unlike CLU's broken promoteId, G1), reused directly for feature-state
+ * lookups (hover-highlight, selection) without any extra type conversion.
+ */
+interface ParcelOwnerMatch {
+  id: string | number;
+  parcelId: string;
+  owner: string | null;
+  acreage: number | null;
 }
 
 const AZURE_SOURCE_ID = 'azure-imagery';
@@ -161,6 +176,8 @@ export class FieldTagMapComponent {
   /** Vendor-layer (CLU/parcel) hover/selected refs — distinct from the app's own tagged-fields hover state. */
   private hoveredVendorFeature: FeatureStateRef | null = null;
   private selectedVendorFeature: FeatureStateRef | null = null;
+  /** Currently popup-hover-highlighted parcel (see `parcels-popup-highlight` in lmm-styles.service.ts). */
+  private popupHighlightedParcel: FeatureStateRef | null = null;
   /** Last tagId we set `hover` feature-state for on the `tagged-fields` source. */
   private currentTaggedHoverId: number | null = null;
   private resizeObserver: ResizeObserver | null = null;
@@ -257,9 +274,15 @@ export class FieldTagMapComponent {
       this.drawController?.activate();
     } else {
       this.drawController?.deactivate();
-      setLayerGroupVisibility(map, this.lmmLayers.clu, tier === 'clu');
-      setLayerGroupVisibility(map, this.lmmLayers.parcels, tier === 'parcel');
     }
+
+    // Parcels stay visible for BOTH the parcel tier itself and while drawing (Tier 4) — seeing
+    // parcel boundaries/owner labels while hand-drawing helps the originator see which parcels
+    // their polygon spans as they draw. This is purely visual: wireVendorLayerInteractions already
+    // gates parcel click/hover-to-select on `currentTier() === 'parcel'`, so clicks in draw mode
+    // still go only to the draw controller, never the parcel click-to-select handler.
+    setLayerGroupVisibility(map, this.lmmLayers.clu, tier === 'clu');
+    setLayerGroupVisibility(map, this.lmmLayers.parcels, tier === 'parcel' || tier === 'draw');
   }
 
   /** Address-search submit handler (template-bound). */
@@ -647,6 +670,60 @@ export class FieldTagMapComponent {
     if (ref) map.setFeatureState(ref, { selected: true });
   }
 
+  /**
+   * Hover a parcel/owner row in a popup's owner list -> highlight that parcel's boundary via the
+   * always-on `parcels-popup-highlight` layer (see lmm-styles.service.ts) — independent of the
+   * current tier, so this works while browsing CLU or drawing, not just the parcel tier itself.
+   */
+  private setPopupHighlight(ref: FeatureStateRef | null): void {
+    const map = this.map;
+    if (!map) return;
+    if (this.popupHighlightedParcel) map.setFeatureState(this.popupHighlightedParcel, { popupHighlight: false });
+    this.popupHighlightedParcel = ref;
+    if (ref) map.setFeatureState(ref, { popupHighlight: true });
+  }
+
+  /**
+   * Find every already-loaded "parcels" MVT fragment-group (grouped/reconstructed by the source's
+   * own promoted `parcel_id`, same tile-seam technique as `reconstructFullFieldGeometry`) whose
+   * geometry contains `target` (a click point) or intersects it (a hand-drawn polygon). This is a
+   * PURELY CLIENT-SIDE spatial query against whatever parcel tiles MapLibre has already fetched —
+   * there is no vendor-API equivalent: the AOI endpoint flatly rejects "parcels" as a layer
+   * (confirmed live, see `polygonsIntersect` in geo.ts), and Point Lookup never actually returns
+   * parcel data either (confirmed live, see lmm-point-lookup.ts). Accuracy is therefore bounded by
+   * which parcel tiles are currently loaded — panning/zooming over the area of interest first (the
+   * parcels layers stay visible during both the parcel tier AND draw mode specifically so the
+   * originator can see this for themselves) improves coverage, but this can still under-report
+   * parcels whose tiles haven't loaded yet. "Even the same owner across multiple parcels" is
+   * handled naturally: matches are grouped by parcel id, never deduplicated by owner name.
+   */
+  private findOverlappingParcels(target: { point: Position } | { polygon: Polygon | MultiPolygon }): ParcelOwnerMatch[] {
+    const map = this.map;
+    if (!map || !map.getSource('parcels')) return [];
+
+    const fragments = map.querySourceFeatures('parcels', { sourceLayer: 'parcels' });
+    const byId = new Map<string | number, { id: string | number; geoms: Geometry[]; owner: string | null; acreage: number | null }>();
+    for (const f of fragments) {
+      if (f.id == null) continue;
+      const props = (f.properties ?? {}) as Record<string, unknown>;
+      const entry = byId.get(f.id) ?? { id: f.id, geoms: [], owner: null, acreage: null };
+      entry.geoms.push(f.geometry as Geometry);
+      if (entry.owner == null) entry.owner = this.toDisplayString(props['owner']);
+      if (entry.acreage == null) entry.acreage = this.toNumber(props['acreage_calc']);
+      byId.set(f.id, entry);
+    }
+
+    const matches: ParcelOwnerMatch[] = [];
+    for (const entry of byId.values()) {
+      const merged = this.unionMergeGeometries(entry.geoms);
+      if (!merged) continue;
+      const hit = 'point' in target ? pointInPolygon(target.point, merged) : polygonsIntersect(target.polygon, merged);
+      if (!hit) continue;
+      matches.push({ id: entry.id, parcelId: String(entry.id), owner: entry.owner, acreage: entry.acreage });
+    }
+    return matches;
+  }
+
   // ── The confirm flow (one AOI query per click, reused — never re-queried on Confirm) ────
 
   private async handleFieldClick(
@@ -823,15 +900,32 @@ export class FieldTagMapComponent {
         cdlSnapshotJson: JSON.stringify(result.cropBreakdown),
       };
 
-      // Owner is a real parcel TILE property (confirmed live: `{ robust_id, parcel_id, owner,
-      // acreage_calc }`) — CLU tiles carry no ownership field at all, so this is parcel-tier only.
-      const owner = method === 'parcel' ? this.toDisplayString(tileProps['owner']) : null;
+      // Owner comes from the "parcels" MVT source (client-side spatial match against whatever
+      // parcel tiles are already loaded), never from CLU tiles (which carry no ownership field at
+      // all) or the vendor API (Point Lookup never returns parcel data; AOI rejects "parcels" as a
+      // layer entirely — see findOverlappingParcels). Works the same way for both tiers: for a
+      // parcel-tier click this trivially rediscovers the exact clicked parcel (its tile is
+      // definitely loaded, since that's what was clicked); for a CLU click it may find zero, one,
+      // or (rarely) more than one overlapping parcel.
+      const clickPoint: Position = [(lngLat as maplibregl.LngLat).lng, (lngLat as maplibregl.LngLat).lat];
+      let parcelMatches = this.findOverlappingParcels({ point: clickPoint });
+      if (method === 'parcel' && tileFeature.id != null && !parcelMatches.some((m) => m.id === tileFeature.id)) {
+        parcelMatches = [
+          {
+            id: tileFeature.id,
+            parcelId: String(tileFeature.id),
+            owner: this.toDisplayString(tileProps['owner']),
+            acreage: this.toNumber(tileProps['acreage_calc']),
+          },
+          ...parcelMatches,
+        ];
+      }
       const topCrop = this.topCrop(result.cropBreakdown);
 
       this.activePopup?.remove();
       this.activePopup = this.showFieldPopup(
         lngLat,
-        { fieldId: String(nativeId), acreage: calcAcres, county: result.county, state: result.state, owner, topCrop },
+        { fieldId: String(nativeId), acreage: calcAcres, county: result.county, state: result.state, parcels: parcelMatches, topCrop },
         () => this.commitFieldConfirmed(draft),
       );
       // Stay in select mode — commitFieldConfirmed (on Confirm click) POSTs via the parent, which
@@ -946,6 +1040,23 @@ export class FieldTagMapComponent {
     const acreage = round1(geometryAcres(geometry));
     const externalRef = await drawnExternalRef(geometry);
 
+    const bounds = new maplibregl.LngLatBounds();
+    for (const pos of this.iterateCoordinates(geometry)) bounds.extend(pos as [number, number]);
+    const anchor = bounds.getCenter();
+
+    // Popup-gated, like the CLU/parcel click flow — the draw controller's cyan overlay stays on
+    // the map until the user actually confirms or discards (see showDrawConfirmPopup); it no
+    // longer auto-creates the field the instant the polygon is finished.
+    this.activePopup?.remove();
+    this.activePopup = this.showLoadingPopup(anchor);
+
+    // A drawn polygon can span multiple parcels — that's the whole reason Tier 4 exists, to
+    // capture a field that doesn't line up with any single CLU/parcel boundary. Find every
+    // already-loaded parcel overlapping it client-side (generalized from findOverlappingParcels'
+    // point test to its polygon-intersection test) — there is no vendor-API equivalent (AOI
+    // rejects "parcels" as a layer entirely, G9).
+    const parcelMatches = this.findOverlappingParcels({ polygon: geometry });
+
     const landMapMagicKey = this.mapConfig().landMapMagicKey;
     const cdlYear = this.mapConfig().cdlYear;
     const cdlFallbackYear = this.mapConfig().cdlFallbackYear;
@@ -954,15 +1065,21 @@ export class FieldTagMapComponent {
     // unique in practice (01-data-model.md).
     let cropBreakdown: CropBreakdownEntry[] = [];
     let resolvedCdlYear: string | null = null;
+    let county: string | null = null;
+    let state: string | null = null;
     if (landMapMagicKey) {
       try {
-        // CDL enrichment only — never "clu"/"parcels" for a drawn AOI (G9). Tolerate failure:
-        // the tag still confirms with an empty breakdown and a null cdlYear.
+        // CDL + states/counties enrichment only — never "clu"/"parcels" for a drawn AOI (G9).
+        // Tolerate failure: the popup still offers to confirm with an empty crop breakdown and no
+        // county/state, matching this tier's existing resilience (a vendor hiccup here has never
+        // blocked persisting a drawn field, only degraded its enrichment).
         const result = await aoiQuery(toAoiFeature(geometry), false, landMapMagicKey, cdlYear, cdlFallbackYear);
         cropBreakdown = result.cropBreakdown;
         resolvedCdlYear = result.cdlYear;
+        county = result.county;
+        state = result.state;
       } catch (err) {
-        console.warn('[field-tag-map] CDL enrichment for drawn polygon failed (tag still confirmed):', err);
+        console.warn('[field-tag-map] CDL enrichment for drawn polygon failed (still offering to confirm):', err);
       }
     }
 
@@ -974,13 +1091,19 @@ export class FieldTagMapComponent {
       cdlYear: resolvedCdlYear,
       cdlSnapshotJson: JSON.stringify(cropBreakdown),
     };
+    const topCrop = this.topCrop(cropBreakdown);
 
-    this.fieldConfirmed.emit(draft);
-
-    // Clear the mapbox-gl-draw plugin's rendered polygon and re-arm draw mode so the cyan drawn
-    // shape doesn't linger/double-render alongside the newly saved amber dashed tag, and so the
-    // user can draw the next field without re-clicking "Tier 4 — Draw your own".
-    this.drawController?.rearm();
+    this.activePopup?.remove();
+    this.activePopup = this.showDrawConfirmPopup(
+      anchor,
+      { acreage, county, state, parcels: parcelMatches, topCrop },
+      () => {
+        this.fieldConfirmed.emit(draft);
+        this.activePopup?.remove();
+        this.activePopup = null;
+      },
+      () => this.drawController?.rearm(),
+    );
   }
 
   // ── Popups (manual DOM — never setHTML with vendor-supplied strings) ────
@@ -996,6 +1119,64 @@ export class FieldTagMapComponent {
     const container = document.createElement('div');
     container.className = `text-sm text-gray-900 ${minWidthClass}`;
     return container;
+  }
+
+  private appendRow(rows: HTMLElement, label: string, value: string): void {
+    const row = document.createElement('div');
+    row.className = 'flex items-baseline gap-1.5';
+    const labelEl = document.createElement('span');
+    labelEl.className = 'text-gray-500 text-xs uppercase tracking-wide shrink-0';
+    labelEl.textContent = label;
+    const valueEl = document.createElement('span');
+    valueEl.className = 'text-gray-900 font-medium';
+    valueEl.textContent = value;
+    row.append(labelEl, valueEl);
+    rows.append(row);
+  }
+
+  /**
+   * Owner/parcel list section, shared by the click-based and draw-based confirm popups. Each
+   * parcel is its OWN row — never deduplicated by owner name, so a polygon spanning two parcels
+   * owned by the same person still shows two rows (per the explicit requirement that same-owner
+   * multi-parcel spans still count as "multiple owners" for display purposes). Hovering a row
+   * highlights that parcel's boundary via `setPopupHighlight` (the always-on
+   * `parcels-popup-highlight` layer), regardless of the current tier.
+   */
+  private appendParcelsSection(container: HTMLElement, parcels: ParcelOwnerMatch[]): void {
+    const section = document.createElement('div');
+    section.className = 'mb-3';
+
+    const heading = document.createElement('div');
+    heading.className = 'text-gray-500 text-xs uppercase tracking-wide mb-1';
+    heading.textContent =
+      parcels.length === 0
+        ? 'Owner'
+        : parcels.length === 1
+          ? 'Owner'
+          : `Owners — ${parcels.length} parcels`;
+    section.append(heading);
+
+    if (parcels.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'text-gray-500 italic';
+      empty.textContent = 'Not available in currently loaded map data';
+      section.append(empty);
+      container.append(section);
+      return;
+    }
+
+    const list = document.createElement('div');
+    list.className = 'space-y-0.5 max-h-32 overflow-y-auto';
+    for (const p of parcels) {
+      const row = document.createElement('div');
+      row.className = 'text-gray-900 font-medium rounded px-1 -mx-1 py-0.5 hover:bg-orange-50 cursor-default';
+      row.textContent = p.owner ?? `Parcel ${p.parcelId} (owner unavailable)`;
+      row.addEventListener('mouseenter', () => this.setPopupHighlight({ source: 'parcels', sourceLayer: 'parcels', id: p.id }));
+      row.addEventListener('mouseleave', () => this.setPopupHighlight(null));
+      list.append(row);
+    }
+    section.append(list);
+    container.append(section);
   }
 
   /** Shown immediately on click while point-lookup + the AOI retrieval are in flight. */
@@ -1025,7 +1206,7 @@ export class FieldTagMapComponent {
       acreage: number | null;
       county: string | null;
       state: string | null;
-      owner: string | null;
+      parcels: ParcelOwnerMatch[];
       topCrop: { name: string; pct: number } | null;
     },
     onConfirm: () => void,
@@ -1040,30 +1221,16 @@ export class FieldTagMapComponent {
 
     const rows = document.createElement('div');
     rows.className = 'space-y-1 mb-3';
-    const addRow = (label: string, value: string): void => {
-      const row = document.createElement('div');
-      row.className = 'flex items-baseline gap-1.5';
-      const labelEl = document.createElement('span');
-      labelEl.className = 'text-gray-500 text-xs uppercase tracking-wide shrink-0';
-      labelEl.textContent = label;
-      const valueEl = document.createElement('span');
-      valueEl.className = 'text-gray-900 font-medium';
-      valueEl.textContent = value;
-      row.append(labelEl, valueEl);
-      rows.append(row);
-    };
-
-    addRow('Acres', info.acreage != null ? info.acreage.toFixed(1) : 'Unavailable');
+    this.appendRow(rows, 'Acres', info.acreage != null ? info.acreage.toFixed(1) : 'Unavailable');
     if (info.county || info.state) {
-      addRow('Location', [info.county, info.state].filter((v): v is string => !!v).join(', '));
-    }
-    if (info.owner) {
-      addRow('Owner', info.owner);
+      this.appendRow(rows, 'Location', [info.county, info.state].filter((v): v is string => !!v).join(', '));
     }
     if (info.topCrop) {
-      addRow('Top crop', `${info.topCrop.name} (${Math.round(info.topCrop.pct)}%)`);
+      this.appendRow(rows, 'Top crop', `${info.topCrop.name} (${Math.round(info.topCrop.pct)}%)`);
     }
     container.append(rows);
+
+    this.appendParcelsSection(container, info.parcels);
 
     const confirmBtn = document.createElement('button');
     confirmBtn.type = 'button';
@@ -1077,12 +1244,93 @@ export class FieldTagMapComponent {
     // mode via exitSelectMode, not here — wiring cleanup to the popup's 'close' event would also
     // fire on our OWN programmatic .remove() calls when swapping popups for a newly clicked
     // feature, which would wipe out that feature's just-set selection out from under it).
-    const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '280px' }).setLngLat(lngLat).setDOMContent(container).addTo(map);
+    const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '300px' }).setLngLat(lngLat).setDOMContent(container).addTo(map);
 
     confirmBtn.addEventListener('click', () => {
       confirmBtn.disabled = true;
       confirmBtn.textContent = 'Saving…';
       onConfirm();
+    });
+    popup.on('close', () => this.setPopupHighlight(null));
+
+    return popup;
+  }
+
+  /**
+   * Draw-tier (Tier 4) confirm popup — unlike the click-based popup above, a discarded hand-drawn
+   * polygon leaves a real half-formed overlay on the map (mapbox-gl-draw's own rendered shape), so
+   * this DOES need an explicit Discard action (not just the native "X") to clear it; the click-
+   * based flow doesn't need this since dismissing it just leaves a harmless highlight outline.
+   */
+  private showDrawConfirmPopup(
+    lngLat: maplibregl.LngLatLike,
+    info: {
+      acreage: number;
+      county: string | null;
+      state: string | null;
+      parcels: ParcelOwnerMatch[];
+      topCrop: { name: string; pct: number } | null;
+    },
+    onConfirm: () => void,
+    onDiscard: () => void,
+  ): maplibregl.Popup {
+    const map = this.map!;
+    const container = this.popupContainer();
+
+    const idEl = document.createElement('div');
+    idEl.className = 'font-semibold text-base text-gray-900 mb-1.5';
+    idEl.textContent = 'Drawn field';
+    container.append(idEl);
+
+    const rows = document.createElement('div');
+    rows.className = 'space-y-1 mb-3';
+    this.appendRow(rows, 'Acres', info.acreage.toFixed(1));
+    if (info.county || info.state) {
+      this.appendRow(rows, 'Location', [info.county, info.state].filter((v): v is string => !!v).join(', '));
+    }
+    if (info.topCrop) {
+      this.appendRow(rows, 'Top crop', `${info.topCrop.name} (${Math.round(info.topCrop.pct)}%)`);
+    }
+    container.append(rows);
+
+    this.appendParcelsSection(container, info.parcels);
+
+    const buttonRow = document.createElement('div');
+    buttonRow.className = 'flex gap-2';
+
+    const discardBtn = document.createElement('button');
+    discardBtn.type = 'button';
+    discardBtn.className =
+      'flex-1 rounded-md border border-gray-300 bg-white text-gray-700 px-3 py-1.5 text-sm font-medium hover:bg-gray-50';
+    discardBtn.textContent = 'Discard';
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.type = 'button';
+    confirmBtn.className = 'flex-1 rounded-md bg-green-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-green-700';
+    confirmBtn.textContent = 'Confirm this field';
+
+    buttonRow.append(discardBtn, confirmBtn);
+    container.append(buttonRow);
+
+    const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '300px' }).setLngLat(lngLat).setDOMContent(container).addTo(map);
+
+    confirmBtn.addEventListener('click', () => {
+      discardBtn.disabled = true;
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'Saving…';
+      onConfirm();
+    });
+    discardBtn.addEventListener('click', () => popup.remove());
+    // Wired to 'close' rather than the buttons individually: fires no matter HOW the popup closes
+    // — Discard, the native "X", or Confirm's own `.remove()` call — so cleanup (clearing the
+    // popup-highlight + re-arming the draw controller) always happens exactly once, in one place.
+    // Re-arming after a SUCCESSFUL confirm is exactly the old rearm-after-confirm behavior; after
+    // Discard/X it clears the half-drawn polygon so the user isn't stranded with an uncommittable
+    // shape (unlike the click-based popup, a drawn polygon is a real overlay left on the map, so
+    // this popup — unlike that one — DOES need every dismiss path to clean it up).
+    popup.on('close', () => {
+      this.setPopupHighlight(null);
+      onDiscard();
     });
 
     return popup;

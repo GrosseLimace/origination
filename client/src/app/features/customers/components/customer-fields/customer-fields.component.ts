@@ -60,12 +60,28 @@ export class CustomerFieldsComponent {
     return coords ? { ...c, coordinates: coords } : c;
   });
 
+  /** Tracks the last customer id we've reacted to, so the producer-switch effect below only fires
+   *  actual switches — not every re-run caused by unrelated signal reads inside it (e.g. re-running
+   *  after coordinates resolve for the SAME producer must not re-trigger the mode reset). */
+  private _lastCustomerId: number | null = null;
+
   constructor() {
     // Re-resolve whenever the displayed customer changes (e.g. navigating Customer Profile
     // between producers without a full component re-create).
     effect(() => {
       const customer = this.customer();
       this._resolvedCoords.set(null);
+
+      // Switching producers must cancel any in-progress "Add fields" (select mode) UI — a
+      // half-drawn polygon, an open confirm popup, or a picked tier all belong to the PREVIOUS
+      // producer and must never carry over onto the newly displayed one. Guarded on the customer's
+      // id actually changing (not just a reference change) since this effect also re-runs for
+      // other reasons (e.g. this same producer's `coordinates` getting patched in later).
+      if (this._lastCustomerId !== customer.id) {
+        this._lastCustomerId = customer.id;
+        this.mode.set('review');
+      }
+
       if (customer.coordinates) return;
       this._geocodeCustomerAddress(customer);
     });
