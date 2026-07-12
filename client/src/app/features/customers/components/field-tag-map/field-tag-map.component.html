@@ -67,6 +67,61 @@
     </button>
   </div>
 
+  <!-- CDL crop-data overlay — both modes. Independent, orthogonal reference layer (on/off regardless
+       of tier or basemap). Top-left, below the MapLibre NavigationControl zoom buttons; distinct
+       corner from the address search (top-center), tier selector (top-right), method legend
+       (bottom-right) and basemap toggle (bottom-left). Only shown when a LandMapMagic key is
+       configured (the CDL tiles require it). The legend expands below the controls only while on. -->
+  @if (mapConfig().landMapMagicKey) {
+    <div class="absolute top-20 left-2 z-10 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-2 w-44">
+      <label class="flex items-center gap-2 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          class="h-3.5 w-3.5 rounded border-gray-300 text-scoular-green focus:ring-scoular-green"
+          [checked]="showCdl()"
+          (change)="toggleCdl()" />
+        <span class="text-xs font-medium text-gray-700 dark:text-gray-200">Crop layer (CDL)</span>
+      </label>
+      @if (showCdl()) {
+        <div class="mt-2 space-y-2">
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] text-gray-500 dark:text-gray-400 w-12 shrink-0">Opacity</span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              class="flex-1 min-w-0 accent-scoular-green"
+              [value]="cdlOpacityPct()"
+              (input)="setCdlOpacityPct(+$any($event.target).value)" />
+            <span class="text-[11px] text-gray-500 dark:text-gray-400 w-8 text-right tabular-nums">{{ cdlOpacityPct() }}%</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] text-gray-500 dark:text-gray-400 w-12 shrink-0">Year</span>
+            <select
+              class="flex-1 min-w-0 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs text-gray-700 dark:text-gray-200 px-1 py-0.5"
+              [value]="cdlOverlayYear()"
+              (change)="setCdlOverlayYear($any($event.target).value)">
+              @for (y of cdlOverlayYears; track y) {
+                <option [value]="y">{{ y }}</option>
+              }
+            </select>
+          </div>
+          <div class="pt-1 border-t border-gray-100 dark:border-gray-700 max-h-32 overflow-y-auto">
+            <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">Crop types</div>
+            <div class="flex flex-col gap-0.5">
+              @for (item of cdlLegend; track item.label) {
+                <div class="flex items-center gap-1.5 text-[11px] text-gray-600 dark:text-gray-300">
+                  <span class="inline-block w-3 h-3 rounded-sm shrink-0" [style.background-color]="item.color"></span>
+                  {{ item.label }}
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+      }
+    </div>
+  }
+
   <!-- Tier selector — select mode only (Tier 1 CLU, Tier 2 Parcel, Tier 4 Draw; Tier 3 omitted). -->
   @if (isSelectMode()) {
     <div class="absolute top-3 right-3 z-10 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-2 w-64">

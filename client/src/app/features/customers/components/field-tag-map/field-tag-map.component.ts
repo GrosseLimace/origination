@@ -33,9 +33,31 @@ import {
   drawnExternalRef,
   normalizeWinding,
   paddedBoundingBoxPolygon,
-  pointInPolygon,
-  polygonsIntersect,
 } from '../../../../shared/services/land-map-magic/geo';
+import {
+  type BasemapStyle,
+  type AzureBasemapIds,
+  buildAzureBasemapStyle,
+  applyBasemapVisibility,
+} from '../../../../shared/services/land-map-magic/maplibre-basemap';
+import {
+  createPopupContainer,
+  appendInfoRow,
+  showLoadingPopup,
+  toNumber,
+  toDisplayString,
+  topCrop as pickTopCrop,
+} from '../../../../shared/services/land-map-magic/lmm-popup';
+import { findOverlappingParcels, type ParcelOwnerMatch } from '../../../../shared/services/land-map-magic/lmm-parcel-lookup';
+import {
+  addCdlOverlay,
+  removeCdlOverlay,
+  setCdlOpacity,
+  setCdlYear,
+  CDL_LEGEND,
+  CDL_OVERLAY_YEARS,
+  DEFAULT_CDL_OPACITY_PCT,
+} from '../../../../shared/services/land-map-magic/cdl-overlay';
 
 /**
  * FieldTagMapComponent — MapLibre GL map for the Field Tagging POC.
@@ -57,49 +79,15 @@ interface FeatureStateRef {
   id: string | number;
 }
 
-/**
- * One already-loaded parcel fragment-group overlapping a click point or a drawn polygon — see
- * `findOverlappingParcels`. `id` is the parcels source's own promoted feature id (real `parcel_id`,
- * confirmed working — unlike CLU's broken promoteId, G1), reused directly for feature-state
- * lookups (hover-highlight, selection) without any extra type conversion.
- */
-interface ParcelOwnerMatch {
-  id: string | number;
-  parcelId: string;
-  owner: string | null;
-  acreage: number | null;
-}
-
-const AZURE_SOURCE_ID = 'azure-imagery';
 const TAGGED_SOURCE_ID = 'tagged-fields';
 const TAGGED_FILL_LAYER_ID = 'tagged-fields-fill';
 const TAGGED_OUTLINE_LAYER_ID = 'tagged-fields-outline';
 const TAGGED_OUTLINE_DASHED_LAYER_ID = 'tagged-fields-outline-dashed';
 
-// Basemap layers — all three still added up-front in initMap()'s initial style, at the bottom of
-// the layer stack, and switched only via setLayoutProperty visibility toggles (never
-// map.setStyle(), which would wipe the tagged-fields source and merged vendor CLU/parcel layers).
-// The UI toggle itself only exposes two user-facing choices (Map / Satellite) — the former plain
-// "Satellite" (imagery-only, no overlay) option was removed as redundant with the richer
-// imagery+overlay combination, which now carries the "Satellite" label instead of its old "Hybrid"
-// one. Internal ids/constants below intentionally keep their "hybrid" naming (imagery + the
-// transparent roads/labels/boundaries overlay is still exactly what those internals model) — only
-// the user-facing label changed, so this comment and the setBasemap() cases still say "hybrid"
-// where that's what's actually being toggled. Verified live against atlas.microsoft.com/map/tile:
-// microsoft.imagery and microsoft.base.road are opaque raster PNGs; microsoft.base.hybrid.road is a
-// transparent raster PNG suitable for stacking over imagery; microsoft.base.hybrid is a VECTOR
-// tileset and is NOT used here.
-const STREET_SOURCE_ID = 'azure-street';
-const HYBRID_OVERLAY_SOURCE_ID = 'azure-hybrid-overlay';
-const IMAGERY_LAYER_ID = AZURE_SOURCE_ID; // matches existing pattern where layer id == source id
-const STREET_LAYER_ID = 'azure-street';
-const HYBRID_OVERLAY_LAYER_ID = 'azure-hybrid-overlay';
-const AZURE_IMAGERY_TILESET = 'microsoft.imagery';
-const AZURE_STREET_TILESET = 'microsoft.base.road';
-const AZURE_HYBRID_TILESET = 'microsoft.base.hybrid.road';
-// 'satellite' renders the SAME imagery+hybrid-overlay combination the old 'hybrid' choice did —
-// only the label changed, not the underlying tileset/layer mechanics (see setBasemap()).
-type BasemapStyle = 'street' | 'satellite';
+// Basemap plumbing (the three-tileset Azure style, the tile-URL helper, and the visibility toggle)
+// now lives in the shared maplibre-basemap.ts — see buildAzureBasemapStyle/applyBasemapVisibility.
+// This component keeps its historical `azure-*` source/layer id prefix (passed to the builder).
+const BASEMAP_ID_PREFIX = 'azure-';
 
 const DEFAULT_CENTER: [number, number] = [-98.5795, 39.8283]; // CONUS geographic center
 const DEFAULT_ZOOM = 4;
@@ -175,7 +163,16 @@ export class FieldTagMapComponent {
   readonly basemapStyle = signal<BasemapStyle>('street'); // Map is the default view
   readonly addressSearchText = signal('');
 
+  // ── CDL crop-data overlay (independent, orthogonal reference layer — not tied to tier/basemap) ──
+  readonly showCdl = signal(false);
+  readonly cdlOpacityPct = signal(DEFAULT_CDL_OPACITY_PCT);
+  /** Selected overlay year — defaulted to the backend-configured CDL year once the map has loaded. */
+  readonly cdlOverlayYear = signal<string>('');
+  readonly cdlLegend = CDL_LEGEND;
+  readonly cdlOverlayYears = CDL_OVERLAY_YEARS;
+
   private map: maplibregl.Map | null = null;
+  private basemapIds!: AzureBasemapIds;
   private readonly loaded = signal(false);
   private customerMarker: maplibregl.Marker | null = null;
   private lmmLayers: LmmLayerIds = { clu: [], parcels: [], cluFill: [], parcelFill: [] };
@@ -306,24 +303,50 @@ export class FieldTagMapComponent {
    */
   setBasemap(style: BasemapStyle): void {
     this.basemapStyle.set(style);
+    if (this.map) applyBasemapVisibility(this.map, style, this.basemapIds);
+  }
+
+  // ── CDL crop-data overlay (template-bound) ──────────────────────────────
+  //
+  // A translucent USDA Cropland Data Layer raster, purely informational (no hit-testing/popups).
+  // Independent of the tier selector and basemap toggle — can be on/off regardless of either. The
+  // overlay sits directly above the basemap and below the tagged-fields + vendor CLU/parcel layers
+  // (see cdl-overlay.ts's z-placement logic), so field/parcel boundaries stay visible on top.
+
+  private get basemapLayerIds(): string[] {
+    return [this.basemapIds.street, this.basemapIds.imagery, this.basemapIds.hybridOverlay];
+  }
+
+  private cdlOptions() {
+    return {
+      landMapMagicKey: this.mapConfig().landMapMagicKey ?? '',
+      year: this.cdlOverlayYear() || this.mapConfig().cdlYear,
+      opacityPct: this.cdlOpacityPct(),
+      basemapLayerIds: this.basemapLayerIds,
+    };
+  }
+
+  toggleCdl(): void {
+    const on = !this.showCdl();
+    this.showCdl.set(on);
     const map = this.map;
-    if (!map || !map.getLayer(IMAGERY_LAYER_ID)) return; // guard until style loaded, matching other methods' pattern
-    map.setLayoutProperty(STREET_LAYER_ID, 'visibility', style === 'street' ? 'visible' : 'none');
-    // 'satellite' = imagery + the transparent hybrid roads/labels/boundaries overlay, exactly what
-    // the old 'hybrid' choice rendered — both layers toggle together.
-    map.setLayoutProperty(IMAGERY_LAYER_ID, 'visibility', style === 'satellite' ? 'visible' : 'none');
-    map.setLayoutProperty(HYBRID_OVERLAY_LAYER_ID, 'visibility', style === 'satellite' ? 'visible' : 'none');
+    if (!map || !this.mapConfig().landMapMagicKey) return;
+    if (on) addCdlOverlay(map, this.cdlOptions());
+    else removeCdlOverlay(map);
+  }
+
+  setCdlOpacityPct(pct: number): void {
+    this.cdlOpacityPct.set(pct);
+    if (this.map) setCdlOpacity(this.map, pct);
+  }
+
+  setCdlOverlayYear(year: string): void {
+    this.cdlOverlayYear.set(year);
+    const map = this.map;
+    if (map && this.showCdl() && this.mapConfig().landMapMagicKey) setCdlYear(map, this.cdlOptions());
   }
 
   // ── Map bootstrap ─────────────────────────────────────────────────────────
-
-  private azureTileUrl(tilesetId: string): string {
-    const key = this.mapConfig().azureMapsKey ?? '';
-    return (
-      `https://atlas.microsoft.com/map/tile?api-version=2.0&tilesetId=${tilesetId}` +
-      `&zoom={z}&x={x}&y={y}&subscription-key=${key}`
-    );
-  }
 
   private initMap(): void {
     const container = this.mapContainerRef.nativeElement;
@@ -332,38 +355,17 @@ export class FieldTagMapComponent {
     const center: [number, number] = coords ? [coords.lng, coords.lat] : DEFAULT_CENTER;
     const zoom = coords ? REVIEW_ZOOM_NO_TAGS : DEFAULT_ZOOM;
 
+    const basemap = buildAzureBasemapStyle(this.mapConfig().azureMapsKey ?? '', BASEMAP_ID_PREFIX);
+    this.basemapIds = basemap.ids;
+
     this.map = new maplibregl.Map({
       container,
       center,
       zoom,
       style: {
         version: 8,
-        sources: {
-          [STREET_SOURCE_ID]: {
-            type: 'raster',
-            tiles: [this.azureTileUrl(AZURE_STREET_TILESET)],
-            tileSize: 256,
-            attribution: '© Microsoft — Azure Maps',
-          },
-          [AZURE_SOURCE_ID]: {
-            type: 'raster',
-            tiles: [this.azureTileUrl(AZURE_IMAGERY_TILESET)],
-            tileSize: 256,
-            attribution: '© Microsoft — Azure Maps',
-          },
-          [HYBRID_OVERLAY_SOURCE_ID]: {
-            type: 'raster',
-            tiles: [this.azureTileUrl(AZURE_HYBRID_TILESET)],
-            tileSize: 256,
-            attribution: '© Microsoft — Azure Maps',
-          },
-        },
-        layers: [
-          // Street (Map) is the default view — see basemapStyle's initial value above.
-          { id: STREET_LAYER_ID, type: 'raster', source: STREET_SOURCE_ID },
-          { id: IMAGERY_LAYER_ID, type: 'raster', source: AZURE_SOURCE_ID, layout: { visibility: 'none' } },
-          { id: HYBRID_OVERLAY_LAYER_ID, type: 'raster', source: HYBRID_OVERLAY_SOURCE_ID, layout: { visibility: 'none' } },
-        ],
+        sources: basemap.sources,
+        layers: basemap.layers,
       },
     });
 
@@ -429,6 +431,9 @@ export class FieldTagMapComponent {
     this.wireTaggedFieldsHover();
     this.addOrUpdateCustomerMarker();
     this.fitReviewBounds();
+
+    // Default the CDL overlay year to the backend-configured year (inputs are resolved by now).
+    if (!this.cdlOverlayYear()) this.cdlOverlayYear.set(this.mapConfig().cdlYear);
 
     this.loaded.set(true);
   }
@@ -695,46 +700,10 @@ export class FieldTagMapComponent {
     if (ref) map.setFeatureState(ref, { popupHighlight: true });
   }
 
-  /**
-   * Find every already-loaded "parcels" MVT fragment-group (grouped/reconstructed by the source's
-   * own promoted `parcel_id`, same tile-seam technique as `reconstructFullFieldGeometry`) whose
-   * geometry contains `target` (a click point) or intersects it (a hand-drawn polygon). This is a
-   * PURELY CLIENT-SIDE spatial query against whatever parcel tiles MapLibre has already fetched —
-   * there is no vendor-API equivalent: the AOI endpoint flatly rejects "parcels" as a layer
-   * (confirmed live, see `polygonsIntersect` in geo.ts), and Point Lookup never actually returns
-   * parcel data either (confirmed live, see lmm-point-lookup.ts). Accuracy is therefore bounded by
-   * which parcel tiles are currently loaded — panning/zooming over the area of interest first (the
-   * parcels layers stay visible during both the parcel tier AND draw mode specifically so the
-   * originator can see this for themselves) improves coverage, but this can still under-report
-   * parcels whose tiles haven't loaded yet. "Even the same owner across multiple parcels" is
-   * handled naturally: matches are grouped by parcel id, never deduplicated by owner name.
-   */
-  private findOverlappingParcels(target: { point: Position } | { polygon: Polygon | MultiPolygon }): ParcelOwnerMatch[] {
-    const map = this.map;
-    if (!map || !map.getSource('parcels')) return [];
-
-    const fragments = map.querySourceFeatures('parcels', { sourceLayer: 'parcels' });
-    const byId = new Map<string | number, { id: string | number; geoms: Geometry[]; owner: string | null; acreage: number | null }>();
-    for (const f of fragments) {
-      if (f.id == null) continue;
-      const props = (f.properties ?? {}) as Record<string, unknown>;
-      const entry = byId.get(f.id) ?? { id: f.id, geoms: [], owner: null, acreage: null };
-      entry.geoms.push(f.geometry as Geometry);
-      if (entry.owner == null) entry.owner = this.toDisplayString(props['owner']);
-      if (entry.acreage == null) entry.acreage = this.toNumber(props['acreage_calc']);
-      byId.set(f.id, entry);
-    }
-
-    const matches: ParcelOwnerMatch[] = [];
-    for (const entry of byId.values()) {
-      const merged = this.unionMergeGeometries(entry.geoms);
-      if (!merged) continue;
-      const hit = 'point' in target ? pointInPolygon(target.point, merged) : polygonsIntersect(target.polygon, merged);
-      if (!hit) continue;
-      matches.push({ id: entry.id, parcelId: String(entry.id), owner: entry.owner, acreage: entry.acreage });
-    }
-    return matches;
-  }
+  // `findOverlappingParcels` (client-side parcel-owner lookup) now lives in the shared
+  // lmm-parcel-lookup.ts — this component's original union-merge implementation became the shared
+  // version. `unionMergeGeometries` below is still used locally by the field-tagging-only tile-seam
+  // reconstruction + AOI-fragment merge paths.
 
   // ── The confirm flow (one AOI query per click, reused — never re-queried on Confirm) ────
 
@@ -779,7 +748,7 @@ export class FieldTagMapComponent {
     // so the popup can be enriched with retrieved details (city/state, owner, top crop) the
     // originator can use to verify they've found the right producer's field before committing.
     this.activePopup?.remove();
-    this.activePopup = this.showLoadingPopup(e.lngLat);
+    this.activePopup = showLoadingPopup(this.map!,e.lngLat);
 
     await this.resolveAndShowFieldDetails(e.lngLat, tileFeature, tileProps, method, externalRef, nativeId, landMapMagicKey);
   }
@@ -810,7 +779,7 @@ export class FieldTagMapComponent {
     }
 
     const popupAcreage =
-      lookupField?.acreage ?? this.toNumber(lookupLayer === 'parcels' ? tileProps['acreage_calc'] : tileProps['calcacres']);
+      lookupField?.acreage ?? toNumber(lookupLayer === 'parcels' ? tileProps['acreage_calc'] : tileProps['calcacres']);
 
     // A field spanning a tile boundary arrives as several disjoint fragments sharing a native id
     // (CLU: tile feature id; parcel: `parcel_id`); reconstruct the full field from every matching
@@ -869,13 +838,13 @@ export class FieldTagMapComponent {
       // just the single closest one) and merge ALL of their geometries via real polygon union —
       // the same union-merge this component already does for client-loaded tile fragments
       // (reconstructFullFieldGeometry).
-      const clickedCalcacres = this.toNumber(tileProps['calcacres']);
+      const clickedCalcacres = toNumber(tileProps['calcacres']);
       let matchedGeometry: Polygon | MultiPolygon | null = null;
       let matchedAcres: number | null = null;
       if (method === 'clu' && clickedCalcacres != null) {
         const matches = result.features.filter((f) => {
           const props = f.properties as Record<string, unknown> | undefined;
-          const candidateAcres = this.toNumber(props?.['calcacres'] ?? props?.['acres']);
+          const candidateAcres = toNumber(props?.['calcacres'] ?? props?.['acres']);
           return candidateAcres != null && Math.abs(candidateAcres - clickedCalcacres) <= CLU_CALCACRES_TOLERANCE;
         });
         if (matches.length > 0) {
@@ -920,19 +889,19 @@ export class FieldTagMapComponent {
       // definitely loaded, since that's what was clicked); for a CLU click it may find zero, one,
       // or (rarely) more than one overlapping parcel.
       const clickPoint: Position = [(lngLat as maplibregl.LngLat).lng, (lngLat as maplibregl.LngLat).lat];
-      let parcelMatches = this.findOverlappingParcels({ point: clickPoint });
+      let parcelMatches = findOverlappingParcels(this.map!,{ point: clickPoint });
       if (method === 'parcel' && tileFeature.id != null && !parcelMatches.some((m) => m.id === tileFeature.id)) {
         parcelMatches = [
           {
             id: tileFeature.id,
             parcelId: String(tileFeature.id),
-            owner: this.toDisplayString(tileProps['owner']),
-            acreage: this.toNumber(tileProps['acreage_calc']),
+            owner: toDisplayString(tileProps['owner']),
+            acreage: toNumber(tileProps['acreage_calc']),
           },
           ...parcelMatches,
         ];
       }
-      const topCrop = this.topCrop(result.cropBreakdown);
+      const topCrop = pickTopCrop(result.cropBreakdown);
 
       this.activePopup?.remove();
       this.activePopup = this.showFieldPopup(
@@ -1013,7 +982,7 @@ export class FieldTagMapComponent {
     // currently-loaded tiles), not that the merge geometry itself is wrong; the single-fragment
     // fallback is safer in that case. This property is a same-tile sanity cross-check only, never
     // the grouping key (G13).
-    const sanityAcres = this.toNumber(tileProps[sanityAcresProp]);
+    const sanityAcres = toNumber(tileProps[sanityAcresProp]);
     if (sanityAcres != null && mergedAcres < sanityAcres * 0.95) return null;
 
     return polygon;
@@ -1060,14 +1029,14 @@ export class FieldTagMapComponent {
     // the map until the user actually confirms or discards (see showDrawConfirmPopup); it no
     // longer auto-creates the field the instant the polygon is finished.
     this.activePopup?.remove();
-    this.activePopup = this.showLoadingPopup(anchor);
+    this.activePopup = showLoadingPopup(this.map!,anchor);
 
     // A drawn polygon can span multiple parcels — that's the whole reason Tier 4 exists, to
     // capture a field that doesn't line up with any single CLU/parcel boundary. Find every
     // already-loaded parcel overlapping it client-side (generalized from findOverlappingParcels'
     // point test to its polygon-intersection test) — there is no vendor-API equivalent (AOI
     // rejects "parcels" as a layer entirely, G9).
-    const parcelMatches = this.findOverlappingParcels({ polygon: geometry });
+    const parcelMatches = findOverlappingParcels(this.map!,{ polygon: geometry });
 
     const landMapMagicKey = this.mapConfig().landMapMagicKey;
     const cdlYear = this.mapConfig().cdlYear;
@@ -1103,7 +1072,7 @@ export class FieldTagMapComponent {
       cdlYear: resolvedCdlYear,
       cdlSnapshotJson: JSON.stringify(cropBreakdown),
     };
-    const topCrop = this.topCrop(cropBreakdown);
+    const topCrop = pickTopCrop(cropBreakdown);
 
     this.activePopup?.remove();
     this.activePopup = this.showDrawConfirmPopup(
@@ -1125,26 +1094,10 @@ export class FieldTagMapComponent {
   // `.maplibregl-popup*` class). Popup content below therefore uses fixed, non-dark-mode-
   // conditional colors chosen for contrast against that guaranteed-white box — the previous
   // `dark:text-gray-100`/`dark:text-gray-300` classes rendered near-white text on that same white
-  // background whenever the app was in dark mode, which is what made the popup unreadable.
-
-  private popupContainer(minWidthClass = 'min-w-[200px]'): HTMLDivElement {
-    const container = document.createElement('div');
-    container.className = `text-sm text-gray-900 ${minWidthClass}`;
-    return container;
-  }
-
-  private appendRow(rows: HTMLElement, label: string, value: string): void {
-    const row = document.createElement('div');
-    row.className = 'flex items-baseline gap-1.5';
-    const labelEl = document.createElement('span');
-    labelEl.className = 'text-gray-500 text-xs uppercase tracking-wide shrink-0';
-    labelEl.textContent = label;
-    const valueEl = document.createElement('span');
-    valueEl.className = 'text-gray-900 font-medium';
-    valueEl.textContent = value;
-    row.append(labelEl, valueEl);
-    rows.append(row);
-  }
+  // background whenever the app was in dark mode, which is what made the popup unreadable. The
+  // low-level container/row/loading-popup builders + toNumber/toDisplayString/topCrop helpers now
+  // live in the shared lmm-popup.ts (createPopupContainer/appendInfoRow/showLoadingPopup); the
+  // confirm-flow-specific popups below (with their Confirm buttons) stay here.
 
   /**
    * Owner/parcel list section, shared by the click-based and draw-based confirm popups. Each
@@ -1191,22 +1144,6 @@ export class FieldTagMapComponent {
     container.append(section);
   }
 
-  /** Shown immediately on click while point-lookup + the AOI retrieval are in flight. */
-  private showLoadingPopup(lngLat: maplibregl.LngLatLike): maplibregl.Popup {
-    const map = this.map!;
-    const container = this.popupContainer('min-w-[180px]');
-    container.classList.add('flex', 'items-center', 'gap-2', 'py-0.5');
-
-    const spinner = document.createElement('span');
-    spinner.className = 'inline-block w-3.5 h-3.5 shrink-0 rounded-full border-2 border-gray-300 border-t-gray-600 animate-spin';
-    const label = document.createElement('span');
-    label.className = 'text-gray-700';
-    label.textContent = 'Loading field details…';
-    container.append(spinner, label);
-
-    return new maplibregl.Popup({ closeButton: true, maxWidth: '240px' }).setLngLat(lngLat).setDOMContent(container).addTo(map);
-  }
-
   /**
    * Shown once point-lookup + the single AOI retrieval have both resolved. Confirm just emits the
    * already-built draft (no vendor call happens on click — see commitFieldConfirmed).
@@ -1224,7 +1161,7 @@ export class FieldTagMapComponent {
     onConfirm: () => void,
   ): maplibregl.Popup {
     const map = this.map!;
-    const container = this.popupContainer();
+    const container = createPopupContainer();
 
     const idEl = document.createElement('div');
     idEl.className = 'font-semibold text-base text-gray-900 mb-1.5';
@@ -1233,12 +1170,12 @@ export class FieldTagMapComponent {
 
     const rows = document.createElement('div');
     rows.className = 'space-y-1 mb-3';
-    this.appendRow(rows, 'Acres', info.acreage != null ? info.acreage.toFixed(1) : 'Unavailable');
+    appendInfoRow(rows, 'Acres', info.acreage != null ? info.acreage.toFixed(1) : 'Unavailable');
     if (info.county || info.state) {
-      this.appendRow(rows, 'Location', [info.county, info.state].filter((v): v is string => !!v).join(', '));
+      appendInfoRow(rows, 'Location', [info.county, info.state].filter((v): v is string => !!v).join(', '));
     }
     if (info.topCrop) {
-      this.appendRow(rows, 'Top crop', `${info.topCrop.name} (${Math.round(info.topCrop.pct)}%)`);
+      appendInfoRow(rows, 'Top crop', `${info.topCrop.name} (${Math.round(info.topCrop.pct)}%)`);
     }
     container.append(rows);
 
@@ -1286,7 +1223,7 @@ export class FieldTagMapComponent {
     onDiscard: () => void,
   ): maplibregl.Popup {
     const map = this.map!;
-    const container = this.popupContainer();
+    const container = createPopupContainer();
 
     const idEl = document.createElement('div');
     idEl.className = 'font-semibold text-base text-gray-900 mb-1.5';
@@ -1295,12 +1232,12 @@ export class FieldTagMapComponent {
 
     const rows = document.createElement('div');
     rows.className = 'space-y-1 mb-3';
-    this.appendRow(rows, 'Acres', info.acreage.toFixed(1));
+    appendInfoRow(rows, 'Acres', info.acreage.toFixed(1));
     if (info.county || info.state) {
-      this.appendRow(rows, 'Location', [info.county, info.state].filter((v): v is string => !!v).join(', '));
+      appendInfoRow(rows, 'Location', [info.county, info.state].filter((v): v is string => !!v).join(', '));
     }
     if (info.topCrop) {
-      this.appendRow(rows, 'Top crop', `${info.topCrop.name} (${Math.round(info.topCrop.pct)}%)`);
+      appendInfoRow(rows, 'Top crop', `${info.topCrop.name} (${Math.round(info.topCrop.pct)}%)`);
     }
     container.append(rows);
 
@@ -1342,7 +1279,7 @@ export class FieldTagMapComponent {
     onCancel: () => void,
   ): maplibregl.Popup {
     const map = this.map!;
-    const container = this.popupContainer('min-w-[180px]');
+    const container = createPopupContainer('min-w-[180px]');
 
     const msgEl = document.createElement('div');
     msgEl.className = 'text-red-700 mb-2';
@@ -1366,30 +1303,5 @@ export class FieldTagMapComponent {
     popup.on('close', onCancel);
 
     return popup;
-  }
-
-  // ── helpers ───────────────────────────────────────────────────────────────
-
-  private toNumber(value: unknown): number | null {
-    const n = Number(value);
-    return value != null && Number.isFinite(n) ? n : null;
-  }
-
-  private toDisplayString(value: unknown): string | null {
-    if (value == null) return null;
-    const s = String(value).trim();
-    return s.length > 0 ? s : null;
-  }
-
-  /** Highest-percentage CDL crop in a breakdown, or null if none carry a usable percentage. */
-  private topCrop(
-    breakdown: ReadonlyArray<{ crop: string; percentOfAoi: number | null }>,
-  ): { name: string; pct: number } | null {
-    let best: { crop: string; percentOfAoi: number } | null = null;
-    for (const entry of breakdown) {
-      if (entry.percentOfAoi == null) continue;
-      if (!best || entry.percentOfAoi > best.percentOfAoi) best = { crop: entry.crop, percentOfAoi: entry.percentOfAoi };
-    }
-    return best ? { name: best.crop, pct: best.percentOfAoi } : null;
   }
 }

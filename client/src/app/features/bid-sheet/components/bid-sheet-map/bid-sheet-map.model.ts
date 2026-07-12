@@ -29,19 +29,11 @@ export interface BidSheetMapRenderModel {
   groups: BidSheetMapRenderGroup[];
 }
 
-/**
- * One already-loaded "parcels" MVT fragment overlapping a JIT field-context lookup point or a
- * click-to-inspect popup — same shape as field-tag-map.component.ts's private `ParcelOwnerMatch`,
- * lifted here so both the JIT lookup path and the read-only popup path in `BidSheetMapComponent`
- * can share it (this component has no confirm/persist flow, so there's no draft type to attach it
- * to — it's purely display data).
- */
-export interface ParcelOwnerMatch {
-  id: string | number;
-  parcelId: string;
-  owner: string | null;
-  acreage: number | null;
-}
+// `ParcelOwnerMatch` now lives in the shared land-map-magic/lmm-parcel-lookup.ts (both map
+// components + this model consume the one definition). Re-exported here so existing importers of
+// it from this model keep working unchanged.
+export type { ParcelOwnerMatch } from '../../../../shared/services/land-map-magic/lmm-parcel-lookup';
+import type { ParcelOwnerMatch } from '../../../../shared/services/land-map-magic/lmm-parcel-lookup';
 
 /**
  * Read-only, display-only result of a JIT LandMapMagic field-context lookup — see

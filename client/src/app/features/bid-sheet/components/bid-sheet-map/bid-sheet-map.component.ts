@@ -15,7 +15,7 @@ import { CommonModule } from '@angular/common';
 import maplibregl from 'maplibre-gl';
 import type { Geometry, Polygon, Position } from 'geojson';
 import { BidSheetLocation } from '@models';
-import { BidSheetMapRenderModel, BidSheetMapRenderGroup, FieldContextInfo, ParcelOwnerMatch } from './bid-sheet-map.model';
+import { BidSheetMapRenderModel, BidSheetMapRenderGroup, FieldContextInfo } from './bid-sheet-map.model';
 import {
   mergeLandMapMagicLayers,
   captureLayerOpacity,
@@ -26,6 +26,30 @@ import {
 import { pointLookup, type LookupField } from '../../../../shared/services/land-map-magic/lmm-point-lookup';
 import { aoiQuery } from '../../../../shared/services/land-map-magic/lmm-aoi-query';
 import { pickPolygonGeometry, toAoiFeature, paddedBoundingBoxPolygon, pointInPolygon } from '../../../../shared/services/land-map-magic/geo';
+import {
+  type BasemapStyle,
+  type AzureBasemapIds,
+  buildAzureBasemapStyle,
+  applyBasemapVisibility,
+} from '../../../../shared/services/land-map-magic/maplibre-basemap';
+import {
+  createPopupContainer,
+  appendInfoRow,
+  showLoadingPopup,
+  toNumber,
+  toDisplayString,
+  topCrop as pickTopCrop,
+} from '../../../../shared/services/land-map-magic/lmm-popup';
+import { findOverlappingParcels, type ParcelOwnerMatch } from '../../../../shared/services/land-map-magic/lmm-parcel-lookup';
+import {
+  addCdlOverlay,
+  removeCdlOverlay,
+  setCdlOpacity,
+  setCdlYear,
+  CDL_LEGEND,
+  CDL_OVERLAY_YEARS,
+  DEFAULT_CDL_OPACITY_PCT,
+} from '../../../../shared/services/land-map-magic/cdl-overlay';
 
 /**
  * BidSheetMapComponent — MapLibre GL rendering path for the Bid Sheet map.
@@ -40,27 +64,10 @@ import { pickPolygonGeometry, toAoiFeature, paddedBoundingBoxPolygon, pointInPol
  * prefetch-on-viewport/hover, never a background warm-up.
  */
 
-// Basemap layers — all three still added up-front in the initial style and switched only via
-// setLayoutProperty visibility toggles (never map.setStyle(), which would wipe any later-merged
-// LandMapMagic layers). Same tileset ids already proven in field-tag-map.component.ts. The UI
-// toggle itself only exposes two user-facing choices (Map / Satellite) — the former plain
-// "Satellite" (imagery-only, no overlay) option was removed as redundant with the richer
-// imagery+overlay combination, which now carries the "Satellite" label instead of its old "Hybrid"
-// one. Internal ids/constants below intentionally keep their "hybrid" naming (imagery + the
-// transparent roads/labels/boundaries overlay is still exactly what those internals model) — only
-// the user-facing label changed.
-const STREET_SOURCE_ID = 'bs-azure-street';
-const IMAGERY_SOURCE_ID = 'bs-azure-imagery';
-const HYBRID_OVERLAY_SOURCE_ID = 'bs-azure-hybrid-overlay';
-const STREET_LAYER_ID = STREET_SOURCE_ID;
-const IMAGERY_LAYER_ID = IMAGERY_SOURCE_ID;
-const HYBRID_OVERLAY_LAYER_ID = HYBRID_OVERLAY_SOURCE_ID;
-const AZURE_IMAGERY_TILESET = 'microsoft.imagery';
-const AZURE_STREET_TILESET = 'microsoft.base.road';
-const AZURE_HYBRID_TILESET = 'microsoft.base.hybrid.road';
-// 'satellite' renders the SAME imagery+hybrid-overlay combination the old 'hybrid' choice did —
-// only the label changed, not the underlying tileset/layer mechanics (see setBasemap()).
-type BasemapStyle = 'street' | 'satellite';
+// Basemap plumbing (the three-tileset Azure style, the tile-URL helper, and the visibility toggle)
+// now lives in the shared maplibre-basemap.ts — see buildAzureBasemapStyle/applyBasemapVisibility.
+// This component keeps its historical `bs-azure-*` source/layer id prefix (passed to the builder).
+const BASEMAP_ID_PREFIX = 'bs-azure-';
 
 // Matches today's Leaflet default view (`setView([38.5, -98.0], 6)`) — note MapLibre is lng-first.
 const DEFAULT_CENTER: [number, number] = [-98.0, 38.5];
@@ -201,7 +208,16 @@ export class BidSheetMapComponent {
   /** Geocoded address-search input box text (template-bound). */
   readonly addressSearchText = signal('');
 
+  // ── CDL crop-data overlay (independent, orthogonal reference layer — not tied to tier/basemap) ──
+  readonly showCdl = signal(false);
+  readonly cdlOpacityPct = signal(DEFAULT_CDL_OPACITY_PCT);
+  /** Selected overlay year — defaulted to the backend-configured CDL year once the map has loaded. */
+  readonly cdlOverlayYear = signal<string>('');
+  readonly cdlLegend = CDL_LEGEND;
+  readonly cdlOverlayYears = CDL_OVERLAY_YEARS;
+
   private map: maplibregl.Map | null = null;
+  private basemapIds!: AzureBasemapIds;
   private readonly loaded = signal(false);
   private resizeObserver: ResizeObserver | null = null;
   private renderedMarkers: RenderedMarker[] = [];
@@ -334,17 +350,13 @@ export class BidSheetMapComponent {
   /** Basemap toggle (template-bound). Visibility-only — never map.setStyle(). */
   setBasemap(style: BasemapStyle): void {
     const map = this.map;
-    if (!map || !map.getLayer(STREET_LAYER_ID) || this.switching()) return;
+    if (!map || !map.getLayer(this.basemapIds.street) || this.switching()) return;
     if (style === this.basemapStyle()) return;
 
     this.basemapStyle.set(style);
     this.switching.set(true);
 
-    map.setLayoutProperty(STREET_LAYER_ID, 'visibility', style === 'street' ? 'visible' : 'none');
-    // 'satellite' = imagery + the transparent hybrid roads/labels/boundaries overlay, exactly what
-    // the old 'hybrid' choice rendered — both layers toggle together.
-    map.setLayoutProperty(IMAGERY_LAYER_ID, 'visibility', style === 'satellite' ? 'visible' : 'none');
-    map.setLayoutProperty(HYBRID_OVERLAY_LAYER_ID, 'visibility', style === 'satellite' ? 'visible' : 'none');
+    applyBasemapVisibility(map, style, this.basemapIds);
 
     let settled = false;
     const finish = () => {
@@ -354,6 +366,46 @@ export class BidSheetMapComponent {
     };
     map.once('idle', finish);
     setTimeout(finish, BASEMAP_SWITCH_FALLBACK_MS);
+  }
+
+  // ── CDL crop-data overlay (template-bound) ──────────────────────────────
+  //
+  // A translucent USDA Cropland Data Layer raster, purely informational (no hit-testing/popups).
+  // Independent of the CLU/Parcel view toggle and the basemap toggle. Sits directly above the
+  // basemap and below the vendor CLU/parcel layers + the DOM bid-location markers (which, being DOM
+  // markers rather than style layers, always paint above the canvas) — see cdl-overlay.ts.
+
+  private get basemapLayerIds(): string[] {
+    return [this.basemapIds.street, this.basemapIds.imagery, this.basemapIds.hybridOverlay];
+  }
+
+  private cdlOptions() {
+    return {
+      landMapMagicKey: this.landMapMagicKey() ?? '',
+      year: this.cdlOverlayYear() || this.cdlYear() || '',
+      opacityPct: this.cdlOpacityPct(),
+      basemapLayerIds: this.basemapLayerIds,
+    };
+  }
+
+  toggleCdl(): void {
+    const on = !this.showCdl();
+    this.showCdl.set(on);
+    const map = this.map;
+    if (!map || !this.landMapMagicKey()) return;
+    if (on) addCdlOverlay(map, this.cdlOptions());
+    else removeCdlOverlay(map);
+  }
+
+  setCdlOpacityPct(pct: number): void {
+    this.cdlOpacityPct.set(pct);
+    if (this.map) setCdlOpacity(this.map, pct);
+  }
+
+  setCdlOverlayYear(year: string): void {
+    this.cdlOverlayYear.set(year);
+    const map = this.map;
+    if (map && this.showCdl() && this.landMapMagicKey()) setCdlYear(map, this.cdlOptions());
   }
 
   // ── CLU/Parcel optional view toggle (template-bound) ─────────────────────
@@ -493,7 +545,7 @@ export class BidSheetMapComponent {
     this.fieldInspectPerformed.emit();
 
     this.activePopup?.remove();
-    this.activePopup = this.showLoadingPopup(e.lngLat);
+    this.activePopup = showLoadingPopup(this.map!,e.lngLat);
 
     const tileProps = (tileFeature.properties ?? {}) as Record<string, unknown>;
     const lookupLayer = method === 'clu' ? 'clu' : 'parcels';
@@ -507,7 +559,7 @@ export class BidSheetMapComponent {
     }
 
     const acreage =
-      lookupField?.acreage ?? this.toNumber(lookupLayer === 'parcels' ? tileProps['acreage_calc'] : tileProps['calcacres']);
+      lookupField?.acreage ?? toNumber(lookupLayer === 'parcels' ? tileProps['acreage_calc'] : tileProps['calcacres']);
     // Clicking a PARCEL shape directly already has the owner right on the clicked tile feature's own
     // properties. Clicking a CLU shape does NOT (CLU tiles carry no owner property at all — that's
     // cadastral/parcel data, a different dataset) — this used to just show `null` there, unconditionally,
@@ -517,8 +569,8 @@ export class BidSheetMapComponent {
     // owner too instead of always showing nothing.
     const owner =
       method === 'parcel'
-        ? this.toDisplayString(tileProps['owner'])
-        : (this.findOverlappingParcels(e.lngLat.lat, e.lngLat.lng)[0]?.owner ?? null);
+        ? toDisplayString(tileProps['owner'])
+        : (findOverlappingParcels(this.map!, { point: [e.lngLat.lng, e.lngLat.lat] })[0]?.owner ?? null);
 
     const sourceGeometry =
       pickPolygonGeometry(lookupField?.feature.geometry as Geometry | undefined) ??
@@ -536,7 +588,7 @@ export class BidSheetMapComponent {
     try {
       const aoiGeometry = method === 'clu' ? paddedBoundingBoxPolygon(sourceGeometry, CLU_AOI_PADDING_METERS) : sourceGeometry;
       const result = await aoiQuery(toAoiFeature(aoiGeometry), method === 'clu', key, cdlYear, cdlFallbackYear);
-      const topCrop = this.topCrop(result.cropBreakdown);
+      const topCrop = pickTopCrop(result.cropBreakdown);
       this.activePopup?.remove();
       this.activePopup = this.showInfoPopup(e.lngLat, {
         acreage,
@@ -623,7 +675,7 @@ export class BidSheetMapComponent {
       // don't drop it here too (it previously silently went missing whenever cdlYear/cdlFallbackYear
       // weren't configured at all, same class of bug as the AOI-failure branch below).
       await tilesReady;
-      const parcels = this.findOverlappingParcels(lat, lng);
+      const parcels = findOverlappingParcels(this.map!, { point: [lng, lat] });
       const info = this.buildFieldContextResult(method, acreage, null, null, null, parcels);
       this.fieldContextResolved.emit(info);
       return { info, lookupResults };
@@ -637,9 +689,9 @@ export class BidSheetMapComponent {
       const pointPolygon: Polygon = { type: 'Polygon', coordinates: [[[lng, lat], [lng, lat], [lng, lat], [lng, lat]]] };
       const aoiGeometry = paddedBoundingBoxPolygon(pointPolygon, JIT_LOOKUP_AOI_PADDING_METERS);
       const result = await aoiQuery(toAoiFeature(aoiGeometry), method === 'clu', key, cdlYear, cdlFallbackYear);
-      const topCrop = this.topCrop(result.cropBreakdown);
+      const topCrop = pickTopCrop(result.cropBreakdown);
       await tilesReady;
-      const parcels = this.findOverlappingParcels(lat, lng);
+      const parcels = findOverlappingParcels(this.map!, { point: [lng, lat] });
       const info = this.buildFieldContextResult(method, acreage, result.county, result.state, topCrop?.name ?? null, parcels);
       this.fieldContextResolved.emit(info);
       return { info, lookupResults };
@@ -648,7 +700,7 @@ export class BidSheetMapComponent {
       // Parcel-owner enrichment doesn't depend on the AOI query that just failed — still attempt it
       // rather than silently dropping it (same rationale as the cdlYear-missing branch above).
       await tilesReady;
-      const parcels = this.findOverlappingParcels(lat, lng);
+      const parcels = findOverlappingParcels(this.map!, { point: [lng, lat] });
       const info = this.buildFieldContextResult(method, acreage, null, null, null, parcels);
       this.fieldContextResolved.emit(info);
       return { info, lookupResults };
@@ -847,70 +899,13 @@ export class BidSheetMapComponent {
     return { method, acreage, county, state, topCrop, parcels };
   }
 
-  /**
-   * Client-side spatial match against whatever "parcels" MVT tiles are already loaded (the vendor
-   * API has no owner-lookup endpoint — see field-tag-map.component.ts's `findOverlappingParcels`
-   * for the full rationale). Returns `[]` if the parcels source was never merged (e.g. the toggle
-   * has never been switched on this session) — this is a best-effort enrichment, not a blocking
-   * requirement of the JIT lookup.
-   */
-  private findOverlappingParcels(lat: number, lng: number): ParcelOwnerMatch[] {
-    const map = this.map;
-    if (!map || !map.getSource('parcels')) return [];
-    const point: Position = [lng, lat];
-    const fragments = map.querySourceFeatures('parcels', { sourceLayer: 'parcels' });
-    const seen = new Set<string | number>();
-    const matches: ParcelOwnerMatch[] = [];
-    for (const f of fragments) {
-      if (f.id == null || seen.has(f.id)) continue;
-      const geom = pickPolygonGeometry(f.geometry as Geometry);
-      if (!geom || !pointInPolygon(point, geom)) continue;
-      seen.add(f.id);
-      const props = (f.properties ?? {}) as Record<string, unknown>;
-      matches.push({
-        id: f.id,
-        parcelId: String(f.id),
-        owner: this.toDisplayString(props['owner']),
-        acreage: this.toNumber(props['acreage_calc']),
-      });
-    }
-    return matches;
-  }
+  // `findOverlappingParcels` (client-side parcel-owner lookup), the popup container/row/loading
+  // builders, and the toNumber/toDisplayString/topCrop helpers now live in the shared
+  // lmm-parcel-lookup.ts + lmm-popup.ts. `showInfoPopup` below (this component's read-only
+  // click-to-inspect / pin-select popup) stays here.
 
-  // ── Read-only popups (see field-tag-map.component.ts's popup module comment for the dark-mode-
-  //    safe styling rationale — .maplibregl-popup-content is always a plain white box) ──────────
-
-  private popupContainer(minWidthClass = 'min-w-[200px]'): HTMLDivElement {
-    const container = document.createElement('div');
-    container.className = `text-sm text-gray-900 ${minWidthClass}`;
-    return container;
-  }
-
-  private appendPopupRow(rows: HTMLElement, label: string, value: string): void {
-    const row = document.createElement('div');
-    row.className = 'flex items-baseline gap-1.5';
-    const labelEl = document.createElement('span');
-    labelEl.className = 'text-gray-500 text-xs uppercase tracking-wide shrink-0';
-    labelEl.textContent = label;
-    const valueEl = document.createElement('span');
-    valueEl.className = 'text-gray-900 font-medium';
-    valueEl.textContent = value;
-    row.append(labelEl, valueEl);
-    rows.append(row);
-  }
-
-  private showLoadingPopup(lngLat: maplibregl.LngLatLike): maplibregl.Popup {
-    const map = this.map!;
-    const container = this.popupContainer('min-w-[180px]');
-    container.classList.add('flex', 'items-center', 'gap-2', 'py-0.5');
-    const spinner = document.createElement('span');
-    spinner.className = 'inline-block w-3.5 h-3.5 shrink-0 rounded-full border-2 border-gray-300 border-t-gray-600 animate-spin';
-    const label = document.createElement('span');
-    label.className = 'text-gray-700';
-    label.textContent = 'Loading field details…';
-    container.append(spinner, label);
-    return new maplibregl.Popup({ closeButton: true, maxWidth: '240px' }).setLngLat(lngLat).setDOMContent(container).addTo(map);
-  }
+  // ── Read-only popups (see lmm-popup.ts's module comment for the dark-mode-safe styling
+  //    rationale — .maplibregl-popup-content is always a plain white box) ──────────
 
   /** Terminal read-only popup — no "Confirm this field" button, no persistence, just reference info.
    *  `title` is optional (only `showFieldContextPinPopup` passes one, to label which tier — CLU vs.
@@ -939,7 +934,7 @@ export class BidSheetMapComponent {
     popupOptions?: { positionAboveMarker?: boolean },
   ): maplibregl.Popup {
     const map = this.map!;
-    const container = this.popupContainer();
+    const container = createPopupContainer();
 
     if (info.title) {
       const titleEl = document.createElement('div');
@@ -956,12 +951,12 @@ export class BidSheetMapComponent {
     } else {
       const rows = document.createElement('div');
       rows.className = 'space-y-1';
-      this.appendPopupRow(rows, 'Acres', info.acreage != null ? info.acreage.toFixed(1) : 'Unavailable');
+      appendInfoRow(rows, 'Acres', info.acreage != null ? info.acreage.toFixed(1) : 'Unavailable');
       if (info.county || info.state) {
-        this.appendPopupRow(rows, 'Location', [info.county, info.state].filter((v): v is string => !!v).join(', '));
+        appendInfoRow(rows, 'Location', [info.county, info.state].filter((v): v is string => !!v).join(', '));
       }
-      if (info.topCrop) this.appendPopupRow(rows, 'Top crop', info.topCrop);
-      if (info.owner) this.appendPopupRow(rows, 'Owner', info.owner);
+      if (info.topCrop) appendInfoRow(rows, 'Top crop', info.topCrop);
+      if (info.owner) appendInfoRow(rows, 'Owner', info.owner);
       container.append(rows);
     }
 
@@ -983,41 +978,13 @@ export class BidSheetMapComponent {
     return popup;
   }
 
-  // ── helpers ───────────────────────────────────────────────────────────────
-
-  private toNumber(value: unknown): number | null {
-    const n = Number(value);
-    return value != null && Number.isFinite(n) ? n : null;
-  }
-
-  private toDisplayString(value: unknown): string | null {
-    if (value == null) return null;
-    const s = String(value).trim();
-    return s.length > 0 ? s : null;
-  }
-
-  /** Highest-percentage CDL crop in a breakdown, or null if none carry a usable percentage. */
-  private topCrop(breakdown: ReadonlyArray<{ crop: string; percentOfAoi: number | null }>): { name: string; pct: number } | null {
-    let best: { crop: string; percentOfAoi: number } | null = null;
-    for (const entry of breakdown) {
-      if (entry.percentOfAoi == null) continue;
-      if (!best || entry.percentOfAoi > best.percentOfAoi) best = { crop: entry.crop, percentOfAoi: entry.percentOfAoi };
-    }
-    return best ? { name: best.crop, pct: best.percentOfAoi } : null;
-  }
-
   // ── Map bootstrap ─────────────────────────────────────────────────────────
-
-  private azureTileUrl(tilesetId: string): string {
-    const key = this.azureMapsKey() ?? '';
-    return (
-      `https://atlas.microsoft.com/map/tile?api-version=2.0&tilesetId=${tilesetId}` +
-      `&zoom={z}&x={x}&y={y}&subscription-key=${key}`
-    );
-  }
 
   private initMap(): void {
     const container = this.mapContainerRef.nativeElement;
+
+    const basemap = buildAzureBasemapStyle(this.azureMapsKey() ?? '', BASEMAP_ID_PREFIX);
+    this.basemapIds = basemap.ids;
 
     this.map = new maplibregl.Map({
       container,
@@ -1035,33 +1002,8 @@ export class BidSheetMapComponent {
       attributionControl: false,
       style: {
         version: 8,
-        sources: {
-          [STREET_SOURCE_ID]: {
-            type: 'raster',
-            tiles: [this.azureTileUrl(AZURE_STREET_TILESET)],
-            tileSize: 256,
-            attribution: '© Microsoft — Azure Maps',
-          },
-          [IMAGERY_SOURCE_ID]: {
-            type: 'raster',
-            tiles: [this.azureTileUrl(AZURE_IMAGERY_TILESET)],
-            tileSize: 256,
-            attribution: '© Microsoft — Azure Maps',
-          },
-          [HYBRID_OVERLAY_SOURCE_ID]: {
-            type: 'raster',
-            tiles: [this.azureTileUrl(AZURE_HYBRID_TILESET)],
-            tileSize: 256,
-            attribution: '© Microsoft — Azure Maps',
-          },
-        },
-        layers: [
-          // Street is the default view (layout visibility omitted = visible), matching today's
-          // OSM-street default — see docs/poc/bid-sheet-map/00-overview.md settled decision 2.
-          { id: STREET_LAYER_ID, type: 'raster', source: STREET_SOURCE_ID },
-          { id: IMAGERY_LAYER_ID, type: 'raster', source: IMAGERY_SOURCE_ID, layout: { visibility: 'none' } },
-          { id: HYBRID_OVERLAY_LAYER_ID, type: 'raster', source: HYBRID_OVERLAY_SOURCE_ID, layout: { visibility: 'none' } },
-        ],
+        sources: basemap.sources,
+        layers: basemap.layers,
       },
     });
 
@@ -1092,6 +1034,9 @@ export class BidSheetMapComponent {
     });
 
     this.map.on('load', () => {
+      // Default the CDL overlay year to the backend-configured year (inputs are resolved by now),
+      // falling back to the standard default year if the config didn't supply one.
+      if (!this.cdlOverlayYear()) this.cdlOverlayYear.set(this.cdlYear() || '2024');
       this.loaded.set(true);
     });
   }
