@@ -498,7 +498,17 @@ export class BidSheetMapComponent {
 
     const acreage =
       lookupField?.acreage ?? this.toNumber(lookupLayer === 'parcels' ? tileProps['acreage_calc'] : tileProps['calcacres']);
-    const owner = method === 'parcel' ? this.toDisplayString(tileProps['owner']) : null;
+    // Clicking a PARCEL shape directly already has the owner right on the clicked tile feature's own
+    // properties. Clicking a CLU shape does NOT (CLU tiles carry no owner property at all — that's
+    // cadastral/parcel data, a different dataset) — this used to just show `null` there, unconditionally,
+    // regardless of anything else, even though a parcel (with an owner) usually exists at that same
+    // point. Fall back to the same client-side parcels geometry match `findOverlappingParcels` already
+    // uses for the pin-select JIT lookup, so clicking a CLU shape surfaces the underlying parcel's
+    // owner too instead of always showing nothing.
+    const owner =
+      method === 'parcel'
+        ? this.toDisplayString(tileProps['owner'])
+        : (this.findOverlappingParcels(e.lngLat.lat, e.lngLat.lng)[0]?.owner ?? null);
 
     const sourceGeometry =
       pickPolygonGeometry(lookupField?.feature.geometry as Geometry | undefined) ??
