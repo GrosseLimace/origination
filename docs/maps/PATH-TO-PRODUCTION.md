@@ -161,6 +161,13 @@ here rather than silently left as an oversight.
    separate, ad-hoc code path that was never touched by the `GeocodeService` swap, now inconsistent
    with the rest of the app. Low-traffic admin-only tool, but worth a decision on whether to update
    it for consistency or leave it as a deliberately separate utility.
+5. **"Use calculated acres" doesn't refresh the Farm Details summary tile.** Pressing the button
+   correctly writes the new total to `ProducerDetails.TotalAcres` on the backend, but the Customer
+   Profile page's top summary tile (the "Farm Details" card showing acres/capacity/grain-on-farm)
+   reads from state that isn't invalidated/re-fetched after the write — so the originator sees the
+   old number in that tile until a manual page refresh, even though the Fields tab itself and the
+   underlying record are correct. Needs the acres-update flow to also refresh (or optimistically
+   update) whatever signal/query backs that summary tile.
 
 ## Enhancements (revisit only once the above is done)
 
