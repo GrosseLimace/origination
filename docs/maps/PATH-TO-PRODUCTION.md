@@ -20,6 +20,7 @@ with a rough **must-do-before-shipping** vs. **enhancement** signal.
   - [Testing](#testing)
   - [Security / compliance review + change management](#security--compliance-review--change-management)
   - [SBOM and dependency baselining](#sbom-and-dependency-baselining)
+- [Open questions (tracked, awaiting a decision)](#open-questions-tracked-awaiting-a-decision)
 - [Enhancements (revisit only once the above is done)](#enhancements-revisit-only-once-the-above-is-done)
 - [Traceability: where each item came from](#traceability-where-each-item-came-from)
 
@@ -138,6 +139,28 @@ the v4.7.1 pin (v5 exists; the pin exists to match the validated reference — r
 style-merge/glyph/promoteId behaviors on any major upgrade). A new external service
 (**LandMapMagic**) should also get an entry in the integrations/security-model docs under
 `docs/application-context/`.
+
+## Open questions (tracked, awaiting a decision)
+
+Real gaps surfaced during a final review pass of the POC. None are research problems, but each
+needs an explicit decision (or just a "yes, do it") before this is considered closed out — tracked
+here rather than silently left as an oversight.
+
+1. **`GeocodeService` and `MapConfigController` have zero automated test coverage.** The
+   Nominatim → Azure Maps geocoding swap (see Testing above) is a real behavior change affecting
+   the whole app, not just this POC's own features — worth regression tests while the change is
+   fresh, not just left to `FieldTagServiceTests`' coverage of the field-tag service layer alone.
+2. **Zero frontend unit tests exist for any of the new Angular pieces** — `FieldTagMapComponent`,
+   `BidSheetMapComponent`, `CustomerFieldsComponent`, or the shared `land-map-magic/` services. All
+   86 passing `vitest` tests in this repo predate this work.
+3. **Deselecting an already-selected Bid Sheet pin doesn't close its field-context popup/highlight.**
+   Clicking the pin again (or the popup's own "×", or clicking elsewhere on the map) does close it —
+   just not the specific "click the same pin to toggle it off" path. Small, but never got an
+   explicit yes/no on whether it's worth fixing.
+4. **`DiagnosticsController`'s admin geocoding-backfill tool still calls Nominatim directly** — a
+   separate, ad-hoc code path that was never touched by the `GeocodeService` swap, now inconsistent
+   with the rest of the app. Low-traffic admin-only tool, but worth a decision on whether to update
+   it for consistency or leave it as a deliberately separate utility.
 
 ## Enhancements (revisit only once the above is done)
 
