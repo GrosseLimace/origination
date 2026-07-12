@@ -53,13 +53,13 @@ import {
 
 /**
  * BidSheetMapComponent — MapLibre GL rendering path for the Bid Sheet map.
- * See docs/poc/bid-sheet-map/03-frontend-components.md for the full design this ports from
+ * See docs/maps/bid-sheet/03-frontend-components.md for the full design this ports from
  * `field-tag-map.component.ts` (basemap init/lifecycle pattern, CLU/Parcel vendor-layer merge,
  * click-to-inspect popup mechanics, JIT point-lookup/AOI-query call sites) and from
  * `bid-sheet.component.ts`'s existing (still-present) Leaflet path (marker rendering/camera logic).
  *
  * CLU/Parcel here is READ-ONLY reference context — no "Confirm this field" button, no persistence
- * path, and (per docs/poc/bid-sheet-map/00-overview.md settled decision 5) no AOI/point-lookup call
+ * path, and (per docs/maps/bid-sheet/00-overview.md settled decision 5) no AOI/point-lookup call
  * ever fires for a pin that hasn't been explicitly clicked/selected: never batch, never
  * prefetch-on-viewport/hover, never a background warm-up.
  */

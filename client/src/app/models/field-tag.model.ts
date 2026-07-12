@@ -1,5 +1,5 @@
 /**
- * Field Tagging POC models — see docs/poc/field-tagging/01-data-model.md and
+ * Field Tagging POC models — see docs/maps/field-tagging/01-data-model.md and
  * 02-backend-api.md for the authoritative shapes these mirror.
  */
 

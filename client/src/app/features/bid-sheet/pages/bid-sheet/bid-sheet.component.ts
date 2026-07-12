@@ -222,7 +222,7 @@ export class BidSheetComponent {
    *  map doesn't visibly flash/pop tiles during the toggle. Leaflet-path-only. */
   mapSwitching = signal<boolean>(false);
 
-  // --- Map engine A/B toggle (docs/poc/bid-sheet-map/) ---
+  // --- Map engine A/B toggle (docs/maps/bid-sheet/) ---
   /** MapLibre is the default in every environment, including prod, from day one; Leaflet stays
    *  fully available behind this runtime toggle for direct comparison — see 00-overview.md
    *  settled decision 10. */
@@ -267,7 +267,7 @@ export class BidSheetComponent {
     }
   }
 
-  // --- Geocoded address search (MapLibre path only, docs/poc/bid-sheet-map/) ---
+  // --- Geocoded address search (MapLibre path only, docs/maps/bid-sheet/) ---
   // Additive to the existing pin-NAME filter box (`searchQuery` above) — that box keeps filtering
   // visible bid-location pins by name exactly as today; this is a separate "jump the camera to an
   // arbitrary address" command, wired to `BidSheetMapComponent`'s (addressSearch) output the same
@@ -297,7 +297,7 @@ export class BidSheetComponent {
       });
   }
 
-  // --- Fullscreen/maximize (docs/poc/bid-sheet-map/, ported from customer-fields.component.ts) ---
+  // --- Fullscreen/maximize (docs/maps/bid-sheet/, ported from customer-fields.component.ts) ---
   // CSS fixed-overlay, not the native Fullscreen API — same rationale as customer-fields.component.ts:
   // ToastContainerComponent is mounted at the app root as a sibling of the whole feature tree, so
   // native requestFullscreen() would hide toasts this page depends on (save/refresh errors, "no
@@ -384,7 +384,7 @@ export class BidSheetComponent {
     this.mapZoom.set(zoom);
   }
 
-  // --- CLU/Parcel JIT field-context lookup (docs/poc/bid-sheet-map/, read-only, never persisted) ---
+  // --- CLU/Parcel JIT field-context lookup (docs/maps/bid-sheet/, read-only, never persisted) ---
   /** Result of the most recent JIT lookup — displayed only in the Add Location form's "Field
    *  context" section; discarded whenever the form closes/cancels (see exitAddLocationMode). */
   readonly fieldContextInfo = signal<FieldContextInfo | null>(null);
@@ -2719,7 +2719,7 @@ export class BidSheetComponent {
   // =========================================================================
 
   /**
-   * Pure view-model consumed identically by BOTH map engines (docs/poc/bid-sheet-map/
+   * Pure view-model consumed identically by BOTH map engines (docs/maps/bid-sheet/
    * 03-frontend-components.md — "Component split"). Extracted from what used to be
    * `_refreshMapMarkers`'s own mixed bid-status-computation-plus-drawing pass: the
    * `statusColors` table, zoom/search/TU/crop filtering rules, and per-group pin-kind/color

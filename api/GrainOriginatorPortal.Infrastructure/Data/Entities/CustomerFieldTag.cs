@@ -4,7 +4,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Entities;
 /// A tagged field boundary (USDA CLU / tax parcel / hand-drawn polygon) attached to a Customer
 /// (producer) record. POC-only: stored in the separate <see cref="FieldTagDbContext"/> backed by
 /// a local SQLite file, never in the shared Origination Azure SQL database — see
-/// docs/poc/field-tagging/01-data-model.md.
+/// docs/maps/field-tagging/01-data-model.md.
 ///
 /// No Customer navigation property / no FK constraint: this table lives in a different database
 /// than dbo.Customer, so a nav/Include() is impossible. The service layer resolves customer

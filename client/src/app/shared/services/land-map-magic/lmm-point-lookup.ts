@@ -1,6 +1,6 @@
 // Port of lcfs-poc/src/api/point-lookup.ts. Uses plain `fetch` deliberately (not Angular
 // HttpClient) so the app's auth interceptor never attaches a bearer token to a vendor host — see
-// docs/poc/field-tagging/03-frontend-map-component.md "Vendor service layer files".
+// docs/maps/field-tagging/03-frontend-map-component.md "Vendor service layer files".
 
 import type { Feature } from 'geojson';
 

@@ -3,7 +3,7 @@ namespace GrainOriginatorPortal.Api.Models.Responses;
 /// <summary>
 /// Runtime map configuration handed to the SPA so the LandMapMagic/Azure Maps keys never live in
 /// a committed Angular file. Keys come from user-secrets (local) / Key Vault (deployed) via the
-/// FieldTags:* config section — see docs/poc/field-tagging/02-backend-api.md.
+/// FieldTags:* config section — see docs/maps/field-tagging/02-backend-api.md.
 /// </summary>
 public record FieldTagConfigResponse
 {

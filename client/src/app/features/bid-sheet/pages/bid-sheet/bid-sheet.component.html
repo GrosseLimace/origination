@@ -1,6 +1,6 @@
     <div [class]="rootClass()" style="min-height: 400px;">
 
-        <!-- Full-screen map — engine A/B toggle (docs/poc/bid-sheet-map/). MapLibre is the default
+        <!-- Full-screen map — engine A/B toggle (docs/maps/bid-sheet/). MapLibre is the default
              in every environment; Leaflet stays fully available side-by-side for comparison. BOTH
              engines are permanently mounted (never a structural @if/@else) — only their CSS
              visibility toggles with mapEngine(). This is deliberate: a structural @if/@else fully
@@ -203,7 +203,7 @@
               }
             </button>
             }
-            <!-- Leaflet/MapLibre A/B comparison toggle (docs/poc/bid-sheet-map/) — a permanent
+            <!-- Leaflet/MapLibre A/B comparison toggle (docs/maps/bid-sheet/) — a permanent
                  comparison tool, not scaffolding scheduled for deletion. -->
             <button
               (click)="toggleMapEngine()"
@@ -239,7 +239,7 @@
               </svg>
               Bids
             </button>
-            <!-- Fullscreen/maximize toggle (docs/poc/bid-sheet-map/), ported from
+            <!-- Fullscreen/maximize toggle (docs/maps/bid-sheet/), ported from
                  customer-fields.component.ts's isMaximized/rootClass pattern. -->
             <button
               (click)="toggleMaximize()"
@@ -680,7 +680,7 @@
                 </div>
 
                 <!-- Field context (read-only CLU/Parcel lookup — never added to the save payload;
-                     see docs/poc/bid-sheet-map/03-frontend-components.md). Hidden entirely when no
+                     see docs/maps/bid-sheet/03-frontend-components.md). Hidden entirely when no
                      LandMapMagic key is configured. -->
                 @if (mapConfig()?.landMapMagicKey) {
                   <div>

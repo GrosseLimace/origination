@@ -14,7 +14,7 @@ import { FieldTagListComponent } from '../field-tag-list/field-tag-list.componen
 
 /**
  * CustomerFieldsComponent — parent composition for the Field Tagging POC's "Fields (N)" tab.
- * See docs/poc/field-tagging/04-frontend-list-and-hover-sync.md → "Parent: CustomerFieldsComponent".
+ * See docs/maps/field-tagging/04-frontend-list-and-hover-sync.md → "Parent: CustomerFieldsComponent".
  *
  * Owns the single source of truth for hover sync (`hoveredTagId`), the review/select mode toggle,
  * and the click-to-fly command signal — passed down to both `FieldTagMapComponent` and

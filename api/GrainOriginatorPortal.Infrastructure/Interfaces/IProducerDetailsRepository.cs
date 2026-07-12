@@ -23,7 +23,7 @@ public interface IProducerDetailsRepository
     /// CustomerName/ScoularId from dbo.Customer. Deliberately does NOT reuse UpsertAsync's full
     /// signature — that path rebuilds CustomerLink/CustomerCommodity/ProducerGrainOnFarm from
     /// caller-supplied CSVs, which would wipe those out here since the acres action never has them.
-    /// See docs/poc/field-tagging/02-backend-api.md.
+    /// See docs/maps/field-tagging/02-backend-api.md.
     /// </summary>
     Task<ProducerDetails> UpdateTotalAcresAsync(long customerId, decimal totalAcres, string currentUser, CancellationToken cancellationToken);
 }

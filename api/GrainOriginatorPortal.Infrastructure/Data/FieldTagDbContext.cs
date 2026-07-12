@@ -7,7 +7,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data;
 /// POC-only DbContext for the field-tagging feature, backed by a local SQLite file — deliberately
 /// isolated from ApplicationDbContext / the shared dev Azure SQL database. Schema is created via
 /// <c>Database.EnsureCreated()</c> at startup (see FieldTagsPocDependencyInjection), never via an
-/// EF migration. Config-gated on FieldTags:LocalStorePath — see docs/poc/field-tagging/01-data-model.md.
+/// EF migration. Config-gated on FieldTags:LocalStorePath — see docs/maps/field-tagging/01-data-model.md.
 /// </summary>
 public class FieldTagDbContext : DbContext
 {

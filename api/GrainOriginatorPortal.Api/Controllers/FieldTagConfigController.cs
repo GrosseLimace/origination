@@ -5,7 +5,7 @@ namespace GrainOriginatorPortal.Api.Controllers;
 /// never live in a committed Angular file (client/src/environments/*.ts are all committed — org
 /// policy forbids secrets there). Keys come from dotnet user-secrets locally / Key Vault when
 /// deployed, via the FieldTags:* config section. Still client-direct: this endpoint changes where
-/// the key is stored, not who calls the vendor. See docs/poc/field-tagging/02-backend-api.md.
+/// the key is stored, not who calls the vendor. See docs/maps/field-tagging/02-backend-api.md.
 /// </summary>
 [ApiController]
 [Route("api/field-tag-config")]

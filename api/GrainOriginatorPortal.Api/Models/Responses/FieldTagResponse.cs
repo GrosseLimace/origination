@@ -1,6 +1,6 @@
 namespace GrainOriginatorPortal.Api.Models.Responses;
 
-/// <summary>Wire shape for a customer field tag. Entity-shaped, per docs/poc/field-tagging/02-backend-api.md.</summary>
+/// <summary>Wire shape for a customer field tag. Entity-shaped, per docs/maps/field-tagging/02-backend-api.md.</summary>
 public record FieldTagResponse
 {
     public int Id { get; init; }

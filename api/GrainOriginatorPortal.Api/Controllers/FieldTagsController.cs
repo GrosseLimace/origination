@@ -8,7 +8,7 @@ namespace GrainOriginatorPortal.Api.Controllers;
 /// view the Customer Profile can see/edit field tags, the same posture as Notes/ProducerDetails;
 /// see SECURITY-REVIEWS/ACCEPTED-RISKS.md (AR-01/AR-02). Deviates from [Route("api/[controller]")]
 /// deliberately — every operation here is intrinsically customer-scoped (the dedup index and the
-/// acres action are both per-customer) — see docs/poc/field-tagging/02-backend-api.md.
+/// acres action are both per-customer) — see docs/maps/field-tagging/02-backend-api.md.
 /// </summary>
 [ApiController]
 [Route("api/customers/{customerId:long}/field-tags")]

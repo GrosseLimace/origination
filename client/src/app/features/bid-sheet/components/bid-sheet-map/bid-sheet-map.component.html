@@ -96,7 +96,7 @@
 
   <!-- CLU/Parcel optional view toggle — hidden entirely when no LandMapMagic key is configured.
        Two buttons only (no "draw" tier, no tier-hint copy — see
-       docs/poc/bid-sheet-map/03-frontend-components.md). Clicking the active tier turns it back off. -->
+       docs/maps/bid-sheet/03-frontend-components.md). Clicking the active tier turns it back off. -->
   @if (landMapMagicKey()) {
     <div class="absolute top-3 z-[1000] flex items-center gap-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg p-1 transition-all duration-300"
          [style.right]="panelWidthPx() ? (panelWidthPx() + 12) + 'px' : '12px'">

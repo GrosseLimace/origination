@@ -1,7 +1,7 @@
 // Shared color/pattern key for rendering a CustomerFieldTag by its SelectionMethod — imported by
 // both FieldTagMapComponent (map fill/outline paint + legend) and the future FieldTagListComponent
 // (row source badge), so a user can correlate a list row to its map polygon by color without
-// re-learning the mapping per surface. See docs/poc/field-tagging/03-frontend-map-component.md
+// re-learning the mapping per surface. See docs/maps/field-tagging/03-frontend-map-component.md
 // "Rendering by selection method (CLU / Parcel / Drawn)".
 
 import type { SelectionMethod } from '@models';

@@ -199,7 +199,7 @@ builder.Services.AddHttpContextAccessor();
 // DefaultAzureCredential; retry logic handles transient Azure SQL failures.
 builder.Services.AddInfrastructure(builder.Configuration, builder.Environment.IsDevelopment());
 
-// Field-tagging POC (docs/poc/field-tagging) — dormant unless FieldTags:LocalStorePath is
+// Field-tagging POC (docs/maps/field-tagging) — dormant unless FieldTags:LocalStorePath is
 // configured. Kept as a separate, removable extension rather than folded into AddInfrastructure
 // so the whole POC unplugs by deleting this line + FieldTagsPocDependencyInjection.cs.
 builder.Services.AddFieldTagsPoc(builder.Configuration, builder.Environment.ContentRootPath);
@@ -336,7 +336,7 @@ var app = builder.Build();
 // Field-tagging POC — create the local SQLite schema via EnsureCreated() (not a migration) when
 // the feature is configured. Guarded behind the same FieldTags:LocalStorePath check that gates
 // DI registration in AddFieldTagsPoc, so this is a no-op (and FieldTagDbContext resolves to
-// nothing) when the POC is dormant. See docs/poc/field-tagging/01-data-model.md.
+// nothing) when the POC is dormant. See docs/maps/field-tagging/01-data-model.md.
 // =============================================================================
 if (!string.IsNullOrWhiteSpace(app.Configuration["FieldTags:LocalStorePath"]))
 {

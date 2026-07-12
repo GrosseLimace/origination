@@ -4,7 +4,7 @@ using GrainOriginatorPortal.Api.Models.Responses;
 namespace GrainOriginatorPortal.Api.Services;
 
 /// <summary>
-/// Field-tagging POC (see docs/poc/field-tagging). Tolerates the feature being unconfigured
+/// Field-tagging POC (see docs/maps/field-tagging). Tolerates the feature being unconfigured
 /// (no FieldTags:LocalStorePath): reads degrade to empty results, mutations throw a
 /// FIELD_TAGS_DISABLED BusinessException.
 /// </summary>

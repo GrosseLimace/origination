@@ -966,7 +966,7 @@ export class ApiService {
   }
 
   // ==========================================================================
-  // Field Tagging POC (see docs/poc/field-tagging/) — client-direct vendor
+  // Field Tagging POC (see docs/maps/field-tagging/) — client-direct vendor
   // calls happen in FieldTagMapComponent; this service only owns CRUD against
   // the local-SQLite-backed CustomerFieldTag store + the runtime map-config
   // endpoint. Feature is dormant unless the config endpoint reports enabled.

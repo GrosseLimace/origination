@@ -78,7 +78,7 @@ export class CustomerProfileComponent {
    * per session (ApiService dedupes it), and the tab only appears in `_tabs` when `enabled` is
    * true. `fieldTags` is fetched once per customer, same pattern as `historicalContracts` above —
    * the profile owns this fetch (not CustomerFieldsComponent) so the pill count is correct before
-   * the tab is ever opened. See docs/poc/field-tagging/04-frontend-list-and-hover-sync.md.
+   * the tab is ever opened. See docs/maps/field-tagging/04-frontend-list-and-hover-sync.md.
    */
   readonly fieldTagConfig = signal<FieldTagMapConfig | null>(null);
   readonly fieldTags = signal<CustomerFieldTag[]>([]);

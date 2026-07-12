@@ -61,7 +61,7 @@ import {
 
 /**
  * FieldTagMapComponent — MapLibre GL map for the Field Tagging POC.
- * See docs/poc/field-tagging/03-frontend-map-component.md for the full design this ports (that
+ * See docs/maps/field-tagging/03-frontend-map-component.md for the full design this ports (that
  * doc, in turn, ports lcfs-poc's proven MapLibre + LandMapMagic integration). Every gotcha (G1-G13)
  * referenced in comments below is documented there and verified against the real vendor API.
  *

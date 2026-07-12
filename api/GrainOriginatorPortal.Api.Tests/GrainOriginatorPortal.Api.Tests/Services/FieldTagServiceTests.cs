@@ -14,7 +14,7 @@ namespace GrainOriginatorPortal.Api.Tests.Services;
 
 /// <summary>
 /// Unit tests for <see cref="FieldTagService"/>, the POC field-tagging service (see
-/// docs/poc/field-tagging/02-backend-api.md). Covers request validation (SelectionMethod,
+/// docs/maps/field-tagging/02-backend-api.md). Covers request validation (SelectionMethod,
 /// ExternalRef pattern matching per selection method), duplicate-ExternalRef 409 detection,
 /// apply-calculated-acres summation/rounding/zero-tags 409, and the "dormant feature" path when
 /// <see cref="IFieldTagRepository"/> is not registered in the container (config-gated, per

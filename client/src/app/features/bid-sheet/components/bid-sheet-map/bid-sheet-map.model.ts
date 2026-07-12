@@ -1,6 +1,6 @@
 /**
  * View-model consumed identically by BOTH the Leaflet and MapLibre Bid Sheet map rendering paths
- * (see docs/poc/bid-sheet-map/03-frontend-components.md — "Component split"). Built by
+ * (see docs/maps/bid-sheet/03-frontend-components.md — "Component split"). Built by
  * `BidSheetComponent.mapRenderModel`, a pure function of the parent's existing bid/status/filter
  * signals. Neither rendering path may recompute bid-status/color logic itself — both only draw
  * from this shape, which is the mechanism behind the doc's compatibility guarantee that the two
@@ -37,7 +37,7 @@ import type { ParcelOwnerMatch } from '../../../../shared/services/land-map-magi
 
 /**
  * Read-only, display-only result of a JIT LandMapMagic field-context lookup — see
- * docs/poc/bid-sheet-map/03-frontend-components.md "JIT field-context lookup on pin-drop/pin-select".
+ * docs/maps/bid-sheet/03-frontend-components.md "JIT field-context lookup on pin-drop/pin-select".
  * Never persisted; `method: null` means neither a CLU nor a parcel field was found at the queried
  * point (still a completed lookup, not a failure — see `BidSheetMapComponent.runFieldContextLookup`).
  */

@@ -13,7 +13,7 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.1" />
-    <!-- POC-only (docs/poc/field-tagging), branch-only dependency: local SQLite store for
+    <!-- POC-only (docs/maps/field-tagging), branch-only dependency: local SQLite store for
          FieldTagDbContext. Version pinned to match EntityFrameworkCore.SqlServer above so no EF
          Core version skew is introduced. Not part of the permanent SBOM — see 00-overview.md. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.1" />

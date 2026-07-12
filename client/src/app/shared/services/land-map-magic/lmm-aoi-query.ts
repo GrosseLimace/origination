@@ -82,7 +82,7 @@ export interface AoiQueryResult {
    * layer — confirmed live: `layers.counties.features[0].name`. Null if the vendor returned no
    * match. There is no vendor "city" layer (the confirmed valid AOI layer catalog is `states,
    * counties, plss, townships, sections, clu, cdl, ssurgo` — see
-   * docs/poc/field-tagging/03-frontend-map-component.md), so county is the closest available
+   * docs/maps/field-tagging/03-frontend-map-component.md), so county is the closest available
    * admin-boundary granularity and is labeled as "County", never mislabeled as "City".
    */
   county: string | null;

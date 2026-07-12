@@ -19,7 +19,7 @@ export interface LmmLayerIds {
 
 // --- Confirmed against a live GET /v1/styles?target=maplibre&layers=clu,parcels response. ---
 // LMM's docs describe these ids as stable; hardcoding avoids brittle substring classification of
-// layer names (docs/poc/field-tagging/03-frontend-map-component.md, "Sources and layers").
+// layer names (docs/maps/field-tagging/03-frontend-map-component.md, "Sources and layers").
 
 /** Source ids as returned by LandMapMagic. Note: parcels, not "parcel" (singular). */
 const LMM_CLU_SOURCE = 'clu';

@@ -3,7 +3,7 @@ export const environment = {
   envName: 'production',
   bidSheetEnabled: true,
   // MapLibre is the default map engine everywhere, including prod, from day one (see
-  // docs/poc/bid-sheet-map/00-overview.md, settled decision 10). Leaflet remains fully
+  // docs/maps/bid-sheet/00-overview.md, settled decision 10). Leaflet remains fully
   // available behind the runtime mapEngine toggle for direct A/B comparison.
   bidSheetMapLibreDefault: true,
   usageDashboardEnabled: true,

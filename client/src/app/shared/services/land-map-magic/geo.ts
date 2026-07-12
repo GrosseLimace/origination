@@ -1,6 +1,6 @@
 // Small geodesic helpers — verbatim port of lcfs-poc/src/geo.ts (avoids pulling in turf for a
 // POC), plus a canonical-serialize + SHA-256 helper for the `drawn` ExternalRef derivation
-// (new — see docs/poc/field-tagging/01-data-model.md "Canonical serialization before hashing").
+// (new — see docs/maps/field-tagging/01-data-model.md "Canonical serialization before hashing").
 
 import type { Feature, Polygon, MultiPolygon, Position, Geometry } from 'geojson';
 // `polygon-clipping`'s ESM build only provides a default export (an object with
@@ -190,7 +190,7 @@ export function unionGeometries(geoms: (Polygon | MultiPolygon)[]): Polygon | Mu
  * Round every coordinate in a geometry to 6 decimal places (~0.11 m — well
  * below any meaningful boundary difference, well above float jitter). Step 2
  * of the drawn-tier ExternalRef canonicalization
- * (docs/poc/field-tagging/01-data-model.md).
+ * (docs/maps/field-tagging/01-data-model.md).
  */
 function roundCoordinates(geometry: Polygon | MultiPolygon): Polygon | MultiPolygon {
   const round = (p: Position): Position => [Math.round(p[0] * 1e6) / 1e6, Math.round(p[1] * 1e6) / 1e6];

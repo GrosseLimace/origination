@@ -6,7 +6,7 @@ import { FIELD_TAG_METHOD_STYLE } from '../../field-tag-style';
 
 /**
  * FieldTagListComponent — the ~1/3-width list pane in the Field Tagging POC's "Fields (N)" tab.
- * See docs/poc/field-tagging/04-frontend-list-and-hover-sync.md → "FieldTagListComponent".
+ * See docs/maps/field-tagging/04-frontend-list-and-hover-sync.md → "FieldTagListComponent".
  *
  * Purely presentational: all persistence and hover-state ownership live in the parent
  * (`CustomerFieldsComponent`). Hover flows both ways through the parent's single `hoveredTagId`

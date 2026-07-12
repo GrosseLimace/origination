@@ -10,7 +10,7 @@ namespace GrainOriginatorPortal.Infrastructure;
 /// <summary>
 /// POC-only DI wiring for the field-tagging feature. Deliberately kept out of
 /// <see cref="DependencyInjection.AddInfrastructure"/> so the whole POC unplugs by deleting this
-/// file and its call site in Program.cs — see docs/poc/field-tagging/01-data-model.md.
+/// file and its call site in Program.cs — see docs/maps/field-tagging/01-data-model.md.
 /// </summary>
 public static class FieldTagsPocDependencyInjection
 {

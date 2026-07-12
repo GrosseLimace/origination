@@ -5,7 +5,7 @@ namespace GrainOriginatorPortal.Api.Models.Responses;
 /// field-tagging-specific (currently: Bid Sheet). Unlike FieldTagConfigResponse, each key is
 /// independently nullable — the basemap must work even if LandMapMagic isn't configured, and the
 /// CLU/Parcel toggle should hide itself on a missing vendor key without affecting the basemap. See
-/// docs/poc/bid-sheet-map/02-backend-api.md.
+/// docs/maps/bid-sheet/02-backend-api.md.
 /// </summary>
 public record MapConfigResponse
 {
