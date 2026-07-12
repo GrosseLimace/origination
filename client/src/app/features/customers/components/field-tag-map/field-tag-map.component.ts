@@ -32,6 +32,7 @@ import {
   round1,
   drawnExternalRef,
   normalizeWinding,
+  paddedBoundingBoxPolygon,
 } from '../../services/field-tagging/geo';
 
 /**
@@ -64,6 +65,20 @@ const DEFAULT_CENTER: [number, number] = [-98.5795, 39.8283]; // CONUS geographi
 const DEFAULT_ZOOM = 4;
 const REVIEW_ZOOM_NO_TAGS = 13;
 const SELECT_MODE_ZOOM = 15; // G12: CLU tiles only render at zoom >= 12; 15 lands comfortably inside range
+
+// G10/G13: the AOI endpoint only returns features that geographically intersect the SUBMITTED
+// polygon. `sourceGeometry` can be a single small tile-clipped fragment, so pad its bounding box
+// before querying to reliably reach sibling fragments sitting in an adjacent MVT tile (CLU tier
+// only — see confirmSelection). This is a generous-but-cheap margin, not a precise figure.
+const CLU_AOI_PADDING_METERS = 400;
+
+// G10/G13 (confirmed against the live vendor API): calcacres is a TRACT-level attribute shared
+// verbatim by every tile-clipped fragment of the same physical field/FSA tract record — genuine
+// same-tract fragments matched essentially exactly (to the hundredth of an acre) in a live sample
+// of 87 AOI-response features / 20 fragment-groups, with zero false-positive collisions between
+// distinct fields at this precision. Kept tight (not the old 0.5ac-or-1% band) specifically to
+// avoid grouping genuinely distinct nearby fields that happen to share a rounded acreage.
+const CLU_CALCACRES_TOLERANCE = 0.02;
 
 const TIER_HINTS: Record<Tier, string> = {
   clu: '',
@@ -655,48 +670,62 @@ export class FieldTagMapComponent {
     try {
       // Exactly one AOI query per confirm. G9: parcel/drawn tiers never send "parcels" as a
       // layer — the live API rejects it; only CLU tier adds "clu" alongside "cdl:<year>".
-      const result = await aoiQuery(toAoiFeature(sourceGeometry), method === 'clu', landMapMagicKey, cdlYear, cdlFallbackYear);
+      //
+      // CLU tier submits a PADDED bounding box, not sourceGeometry verbatim: the AOI endpoint
+      // only returns features that geographically intersect the submitted polygon, and
+      // sourceGeometry can be as small as a single tile-clipped fragment (when
+      // reconstructFullFieldGeometry — which only sees currently-loaded tiles — comes up empty).
+      // A sibling fragment sitting in the next tile over may not even touch that small shape, so
+      // without padding it might never come back in the response at all (G10/G13). Parcel/drawn
+      // don't need this: parcel never AOI-matches by geometry (G9), and drawn submits the whole
+      // hand-drawn polygon already.
+      const aoiGeometry = method === 'clu' ? paddedBoundingBoxPolygon(sourceGeometry, CLU_AOI_PADDING_METERS) : sourceGeometry;
+      const result = await aoiQuery(toAoiFeature(aoiGeometry), method === 'clu', landMapMagicKey, cdlYear, cdlFallbackYear);
 
-      // G10: match the response's CLU feature back to the clicked field by calcacres — never
-      // features[0] (the reconstructed AOI can clip neighbors and response order isn't guaranteed).
-      // Tolerant comparison, not strict `===`: clickedCalcacres (tile-server attribute) and the
-      // AOI response's calcacres/acres (a separately-computed vendor value) can differ by rounding
-      // for the SAME field, which previously caused strict equality to silently miss the correct
-      // match and fall back to the (possibly tile-clipped) sourceGeometry. Tolerance is the larger
-      // of a fixed 0.5-acre floor (covers small fields where 1% is too tight) and 1% of the
-      // clicked acreage (covers large fields where rounding drift exceeds 0.5 ac in absolute
-      // terms). When multiple candidates fall within tolerance, prefer the closest.
+      // G10/G13 (confirmed against the live vendor API — see field-tag-map.component.ts module
+      // comment / PR description for the verification data): the AOI response does NOT return one
+      // authoritative, un-clipped polygon per physical field. Each row in `layers.clu.features` can
+      // ITSELF still be a tile-clipped fragment — the vendor tiles its own response the same way
+      // MVT tiles do. `calcacres` is a TRACT-level attribute inherited by every fragment of the
+      // same field/FSA tract record, so multiple response rows legitimately share the exact same
+      // calcacres while each covers only part of the true field (confirmed live: e.g. 4 fragments
+      // all reporting calcacres=292.24, with individual feature_acres of ~116.53/~180.04/etc.
+      // summing to ~296.57 — i.e. the true total, not the single tract attribute). So: collect
+      // EVERY response feature within a tight calcacres tolerance of the clicked fragment (not
+      // just the single closest one) and merge ALL of their geometries — the same hull-merge this
+      // component already does for client-loaded tile fragments (reconstructFullFieldGeometry).
       const clickedCalcacres = this.toNumber((tileFeature.properties as Record<string, unknown> | undefined)?.['calcacres']);
-      let responseFeature: (typeof result.features)[number] | undefined;
+      let matchedGeometry: Polygon | null = null;
+      let matchedAcres: number | null = null;
       if (method === 'clu' && clickedCalcacres != null) {
-        const tolerance = Math.max(0.5, clickedCalcacres * 0.01);
-        let bestDiff = Infinity;
-        for (const f of result.features) {
+        const matches = result.features.filter((f) => {
           const props = f.properties as Record<string, unknown> | undefined;
           const candidateAcres = this.toNumber(props?.['calcacres'] ?? props?.['acres']);
-          if (candidateAcres == null) continue;
-          const diff = Math.abs(candidateAcres - clickedCalcacres);
-          if (diff <= tolerance && diff < bestDiff) {
-            bestDiff = diff;
-            responseFeature = f;
+          return candidateAcres != null && Math.abs(candidateAcres - clickedCalcacres) <= CLU_CALCACRES_TOLERANCE;
+        });
+        if (matches.length > 0) {
+          matchedGeometry = this.hullMergeGeometries(matches.map((f) => f.geometry));
+          if (matchedGeometry) {
+            // Acreage from the MERGED polygon itself, not the raw tract-level calcacres attribute
+            // (confirmed to drift a bit from true summed area — 292.24 vs ~296.57 in the example
+            // above) and not a sum of feature_acres either: geometryAcres() keeps the persisted
+            // acreage self-consistent with the persisted geometry — exactly how the drawn and
+            // parcel tiers already compute calcAcres — so a later re-measurement of the saved
+            // polygon (e.g. in a report, or by a person eyeballing the shape) always agrees with
+            // the stored number, even where a convex hull of concave fragments slightly overshoots
+            // the vendor's own summed feature_acres.
+            matchedAcres = round1(geometryAcres(matchedGeometry));
           }
         }
       }
 
-      // The vendor's own AOI-response geometry is authoritative and not limited by which tiles
-      // MapLibre happened to have loaded client-side (unlike the querySourceFeatures-based hull
-      // above) — so prefer it over the client reconstruction whenever a confident match exists.
-      // Parcel has no equivalent: the live API rejects "parcels" as an AOI layer (G9), so
-      // client-side reconstruction (reconstructFullFieldGeometry) is the ceiling for parcel
-      // geometry accuracy — there is no vendor-authoritative fallback to correct an undershoot.
-      const matchedGeometry = responseFeature ? pickPolygonGeometry(responseFeature.geometry) : null;
+      // Parcel has no vendor-authoritative fallback at all: the live API rejects "parcels" as an
+      // AOI layer (G9), so client-side reconstruction (reconstructFullFieldGeometry) is the
+      // ceiling for parcel geometry accuracy. If NO CLU fragments matched (e.g. calcacres missing,
+      // or the vendor genuinely returned nothing overlapping even the padded AOI), fall back to
+      // sourceGeometry — the pre-existing behavior — rather than regressing the no-match case.
       const geometry: Polygon | MultiPolygon = matchedGeometry ?? sourceGeometry;
-
-      const responseAcres = this.toNumber(
-        (responseFeature?.properties as Record<string, unknown> | undefined)?.['calcacres'] ??
-          (responseFeature?.properties as Record<string, unknown> | undefined)?.['acres'],
-      );
-      const calcAcres = responseAcres ?? popupAcreage ?? round1(geometryAcres(geometry));
+      const calcAcres = matchedAcres ?? popupAcreage ?? round1(geometryAcres(geometry));
 
       const draft: FieldTagDraft = {
         selectionMethod: method,
@@ -766,20 +795,8 @@ export class FieldTagMapComponent {
     }
 
     const fragments = map.querySourceFeatures(sourceId, { sourceLayer, filter });
-
-    const points: Position[] = [];
-    for (const frag of fragments) {
-      const geom = pickPolygonGeometry(frag.geometry as Geometry);
-      if (!geom) continue;
-      const rings = geom.type === 'Polygon' ? geom.coordinates : geom.coordinates.flat();
-      for (const ring of rings) points.push(...ring);
-    }
-    if (points.length < 3) return null;
-
-    const hull = convexHull(points);
-    if (hull.length < 3) return null;
-
-    const polygon: Polygon = { type: 'Polygon', coordinates: [[...hull, hull[0]]] };
+    const polygon = this.hullMergeGeometries(fragments.map((f) => f.geometry as Geometry));
+    if (!polygon) return null;
     const hullAcres = geometryAcres(polygon);
 
     // A convex hull of a concave true boundary can only overshoot, never meaningfully undershoot —
@@ -790,6 +807,31 @@ export class FieldTagMapComponent {
     if (sanityAcres != null && hullAcres < sanityAcres * 0.95) return null;
 
     return polygon;
+  }
+
+  /**
+   * Pool ring points from every geometry in `geoms`, take their convex hull, and rebuild a single
+   * `Polygon`. Shared merge step behind BOTH fragment-grouping paths in this component:
+   * `reconstructFullFieldGeometry` (client tile-loaded fragments, grouped by native id/parcel_id)
+   * and the AOI-response fragment merge in `confirmSelection` (grouped by matching calcacres,
+   * G10/G13) — both are fundamentally "collect same-field fragments and hull-merge them", just
+   * sourced differently (already-loaded MVT tiles vs. one AOI response). Returns null if fewer
+   * than 3 usable points/hull vertices are available.
+   */
+  private hullMergeGeometries(geoms: (Geometry | null | undefined)[]): Polygon | null {
+    const points: Position[] = [];
+    for (const geom of geoms) {
+      const poly = pickPolygonGeometry(geom);
+      if (!poly) continue;
+      const rings = poly.type === 'Polygon' ? poly.coordinates : poly.coordinates.flat();
+      for (const ring of rings) points.push(...ring);
+    }
+    if (points.length < 3) return null;
+
+    const hull = convexHull(points);
+    if (hull.length < 3) return null;
+
+    return { type: 'Polygon', coordinates: [[...hull, hull[0]]] };
   }
 
   // ── Tier 4: draw your own boundary ───────────────────────────────────────

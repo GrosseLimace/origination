@@ -77,6 +77,61 @@ export function toAoiFeature(geometry: Polygon | MultiPolygon): Feature {
   };
 }
 
+const METERS_PER_DEGREE_LAT = 111320;
+
+/**
+ * Expand a geometry's bounding box by `marginMeters` in every direction and return it as a
+ * rectangular Polygon. Used to widen the AOI query submitted for CLU selections: the vendor's
+ * AOI endpoint only returns features that geographically intersect the SUBMITTED polygon, and
+ * `sourceGeometry` can be as small as a single tile-clipped fragment (when client-side hull
+ * reconstruction — `reconstructFullFieldGeometry` — fails or the field's sibling fragments
+ * aren't loaded in adjacent tiles yet). A sibling fragment sitting just across a tile boundary
+ * may not geometrically touch that small fragment at all, so submitting it as-is can make the
+ * AOI response miss siblings entirely — before `confirmSelection` even gets a chance to group
+ * same-calcacres fragments (see the G10/G13 notes in field-tag-map.component.ts). Padding by a
+ * few hundred meters reliably reaches into a neighboring MVT tile without making the query
+ * absurdly large. Longitude margin is latitude-corrected (degrees-per-meter shrinks toward the
+ * poles); this is a planar approximation, which is fine at field scale (same tradeoff as
+ * `convexHull` above).
+ */
+export function paddedBoundingBoxPolygon(geometry: Polygon | MultiPolygon, marginMeters: number): Polygon {
+  const polys: Position[][][] = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
+  let minLng = Infinity;
+  let minLat = Infinity;
+  let maxLng = -Infinity;
+  let maxLat = -Infinity;
+  for (const rings of polys) {
+    for (const ring of rings) {
+      for (const [lng, lat] of ring) {
+        if (lng < minLng) minLng = lng;
+        if (lng > maxLng) maxLng = lng;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+      }
+    }
+  }
+
+  const centerLat = (minLat + maxLat) / 2;
+  const latMargin = marginMeters / METERS_PER_DEGREE_LAT;
+  const lngMargin = marginMeters / (METERS_PER_DEGREE_LAT * Math.cos(rad(centerLat)));
+
+  const lo: Position = [minLng - lngMargin, minLat - latMargin];
+  const hi: Position = [maxLng + lngMargin, maxLat + latMargin];
+
+  return {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [lo[0], lo[1]],
+        [hi[0], lo[1]],
+        [hi[0], hi[1]],
+        [lo[0], hi[1]],
+        [lo[0], lo[1]],
+      ],
+    ],
+  };
+}
+
 /**
  * Andrew's monotone chain convex hull. Treats [lng, lat] as planar, which is
  * fine at field scale (a few hundred meters — geodesic distortion is
