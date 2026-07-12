@@ -10,6 +10,7 @@ import {
   afterNextRender,
   inject,
   signal,
+  untracked,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import maplibregl from 'maplibre-gl';
@@ -119,6 +120,15 @@ export class BidSheetMapComponent {
   readonly flyToLocation = input<{ lat: number; lng: number; nonce: number } | null>(null);
   /** True while the parent's address-search geocode call is in flight — drives the search button's spinner. */
   readonly searchPending = input<boolean>(false);
+  /**
+   * JIT field-context lookup command for the pin-select trigger — nonce'd, mirrors `flyTo`. Fired by
+   * the PARENT (never computed in here) because the parent owns `selectedLocationName` and is the
+   * only place that can tell a click that *newly selects* a pin apart from one that deselects it or
+   * repeat-clicks an already-selected pin (see `03-frontend-components.md`'s two-trigger JIT design
+   * and the fix for the "over-fires on deselect/repeat click" bug). This component still gates the
+   * actual lookup on its own `showFieldContext` toggle, since that state lives here, not the parent.
+   */
+  readonly fieldContextLookupCmd = input<{ lat: number; lng: number; nonce: number } | null>(null);
 
   readonly azureMapsKey = input.required<string>();
   /** Vendor config — null hides the CLU/Parcel toggle entirely (see 00-overview.md decision 7). */
@@ -134,6 +144,18 @@ export class BidSheetMapComponent {
    *  from hover/render/viewport. `null` means the lookup completed but found neither a CLU nor a
    *  parcel field at that point (not a failure). See `runFieldContextLookup`. */
   readonly fieldContextResolved = output<FieldContextInfo | null>();
+  /**
+   * Fired once per actual click-to-inspect vendor round trip (the CLU/Parcel view toggle's
+   * click-on-polygon popup — `showReadOnlyFieldPopup`), so the parent can track that vendor usage
+   * too. Deliberately a SEPARATE, lightweight output from `fieldContextResolved` rather than routed
+   * through it: `fieldContextResolved` also drives the Add Location form's "Field context" section
+   * state (`fieldContextInfo`/`fieldContextLoading` in the parent) — reusing it here would overwrite
+   * that unrelated form state every time the user merely clicks a parcel to inspect it while
+   * browsing, whether or not Add Location is even open. Tracked by the parent under a sibling usage
+   * label, `'field-context-inspect'`, distinct from the JIT flow's `'field-context-lookup'` — see
+   * `onFieldInspectPerformed` in `bid-sheet.component.ts`.
+   */
+  readonly fieldInspectPerformed = output<void>();
   /**
    * Geocoded address-search box submit — additive to the parent's pin-name filter search (which
    * keeps filtering visible bid-location pins by name, unchanged). The parent resolves this query
@@ -227,6 +249,19 @@ export class BidSheetMapComponent {
         duration: 600,
         padding: { top: 0, bottom: 0, left: 0, right: this.panelWidthPx() },
       });
+    });
+
+    // fieldContextLookupCmd (pin-select JIT trigger, commanded by the parent) -> runFieldContextLookup.
+    // The parent only sets this when a click actually transitions a pin TO selected (never on
+    // deselection or a repeat click on an already-selected pin — see 03-frontend-components.md and
+    // the fix for the "over-fires on deselect/repeat click" bug). This component still gates on its
+    // own showFieldContext toggle, since that state isn't known to the parent — read via `untracked`
+    // so flipping the toggle alone (with no new selection) never re-fires this effect off a stale cmd.
+    effect(() => {
+      const cmd = this.fieldContextLookupCmd();
+      if (cmd == null) return;
+      if (untracked(() => this.showFieldContext()) === 'off') return;
+      void this.runFieldContextLookup(cmd.lat, cmd.lng);
     });
   }
 
@@ -348,6 +383,12 @@ export class BidSheetMapComponent {
     if (!tileFeature) return;
     const key = this.landMapMagicKey();
     if (!key) return;
+
+    // Every click past this point performs at least one vendor call (pointLookup below, and
+    // usually a follow-on AOI query) — emit once per click so the parent can track this vendor usage
+    // too (see `fieldInspectPerformed`'s doc comment for why this is a separate output/action label
+    // from the pin-drop/pin-select JIT flow's `fieldContextResolved`/`'field-context-lookup'`).
+    this.fieldInspectPerformed.emit();
 
     this.activePopup?.remove();
     this.activePopup = this.showLoadingPopup(e.lngLat);
@@ -787,13 +828,13 @@ export class BidSheetMapComponent {
       const name = g.names[0];
       const loc = this.locations().find((l) => l.name === name);
       if (!loc) return;
+      // JIT field-context lookup, trigger 2 of 2 (00-overview.md decision 5), no longer fires from
+      // here: this component doesn't know whether the parent's `selectedLocationName` toggle will
+      // treat this click as a NEW selection or a deselection/repeat-click on an already-selected pin
+      // (only the parent knows that, since it owns the selection state). The parent now decides and
+      // commands the lookup back down via `fieldContextLookupCmd` — see that effect in the
+      // constructor. This still gates on the CLU/Parcel toggle, just in that effect instead of here.
       this.locationSelected.emit(loc);
-      // JIT field-context lookup, trigger 2 of 2 (00-overview.md decision 5) — only while the
-      // CLU/Parcel toggle is on, and gated on the pin actually becoming "selected" (this click
-      // handler), never on hover or on the pin merely being rendered/visible.
-      if (this.showFieldContext() !== 'off' && loc.latitude != null && loc.longitude != null) {
-        void this.runFieldContextLookup(loc.latitude, loc.longitude);
-      }
     });
 
     // Expanded (panel-open) groups are already the expanded card — no hover-swap needed.

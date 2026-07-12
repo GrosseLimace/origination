@@ -308,17 +308,43 @@ export class BidSheetComponent {
     if (this.isMaximized()) this.isMaximized.set(false);
   }
 
+  /**
+   * Nonce'd command telling the MapLibre path's JIT field-context lookup (pin-select trigger) to
+   * fire for a specific point — see `onMapLocationSelected` below. Only ever set when this parent
+   * (which owns `selectedLocationName`) determines a click actually transitioned a pin TO selected;
+   * never set on a deselecting click or a repeat click on an already-selected pin. Fixes the
+   * "over-fires on pin deselection and repeat clicks" bug: the child previously fired its lookup
+   * unconditionally on every marker click, with no way to know the resulting selection state, since
+   * that state lives here, not in the child.
+   */
+  readonly fieldContextLookupCmd = signal<{ lat: number; lng: number; nonce: number } | null>(null);
+  private _fieldContextLookupNonce = 0;
+
   /** Click handler wired to the MapLibre path's (locationSelected) output — same selection logic
    *  the Leaflet path's marker click handlers call directly. */
   onMapLocationSelected(loc: BidSheetLocation): void {
+    // Computed BEFORE `_selectMapLocation` mutates `selectedLocationName`, so this reflects the true
+    // before/after transition: true only when the click is actually selecting a previously-unselected
+    // pin (not deselecting the currently-selected one, and not a repeat click on it).
+    const isNewSelection = this.selectedLocationName() !== loc.name;
     this._selectMapLocation(loc);
-    // Remembered only so `onFieldContextResolved` can label the usage-tracking event with the
-    // point that was actually looked up — the child gates whether a lookup fires at all (only
-    // while its CLU/Parcel toggle is on) on the same click, so this never mislabels an unrelated
-    // lookup.
-    if (loc.latitude != null && loc.longitude != null) {
+
+    if (isNewSelection && loc.latitude != null && loc.longitude != null) {
+      // Remembered only so `onFieldContextResolved` can label the usage-tracking event with the
+      // point that was actually looked up — the child gates whether a lookup fires at all (only
+      // while its CLU/Parcel toggle is on) on the same command, so this never mislabels an unrelated
+      // lookup.
       this._lastFieldContextCoordKey = `${loc.latitude.toFixed(5)},${loc.longitude.toFixed(5)}`;
+      this.fieldContextLookupCmd.set({ lat: loc.latitude, lng: loc.longitude, nonce: ++this._fieldContextLookupNonce });
     }
+  }
+
+  /** Handler wired to the MapLibre path's (fieldInspectPerformed) output — the CLU/Parcel view
+   *  toggle's click-to-inspect popup, a separate vendor round trip from the pin-drop/pin-select JIT
+   *  flow above. Tracked under a sibling action label so the usage dashboard can distinguish casual
+   *  click-to-inspect exploration from the two-trigger-gated JIT lookup (00-overview.md decision 6). */
+  onFieldInspectPerformed(): void {
+    this.usageTracking.postClickEvent('interaction', 'bidsheet', 'field-context-inspect');
   }
 
   /** Click handler wired to the MapLibre path's (mapClicked) output — same add-location flow the

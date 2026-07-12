@@ -14,27 +14,49 @@
              own ResizeObserver (see bid-sheet-map.component.ts) catches the display:none -> visible
              transition and calls map.resize(), and Leaflet's instance is never torn down so there's
              nothing for its base layer to desync from. -->
-        <app-bid-sheet-map
-          [locations]="allMapLocations()"
-          [renderModel]="mapRenderModel()"
-          [addLocationMode]="addLocationMode()"
-          [panelWidthPx]="mapPanelWidthPx()"
-          [flyTo]="mapFlyToCmd()"
-          [fitAll]="mapFitAllCmd()"
-          [flyToLocation]="flyToLocationCmd()"
-          [searchPending]="isSearchingAddress()"
-          [azureMapsKey]="mapConfig()?.azureMapsKey ?? ''"
-          [landMapMagicKey]="mapConfig()?.landMapMagicKey ?? null"
-          [cdlYear]="mapConfig()?.cdlYear ?? null"
-          [cdlFallbackYear]="mapConfig()?.cdlFallbackYear ?? null"
-          (locationSelected)="onMapLocationSelected($event)"
-          (mapClicked)="onMapClicked($event)"
-          (zoomChanged)="onMapZoomChanged($event)"
-          (fieldContextResolved)="onFieldContextResolved($event)"
-          (addressSearch)="onAddressSearch($event)"
-          style="position:absolute; inset:0;"
-          [style.display]="mapEngine() === 'maplibre' ? 'block' : 'none'"
-        />
+        <!-- Gated on mapConfig() resolving (async GET /api/map-config in the parent constructor),
+             NOT on mapEngine() — mapConfig only ever transitions null -> value ONCE per page load
+             and never flips back, so this @if does not reintroduce the destroy/recreate hazard
+             described above (that hazard was specifically about structurally gating on mapEngine(),
+             which toggles back and forth at runtime). Before this gate, the component was
+             constructed on the very first render with azureMapsKey === '' (mapConfig() hadn't
+             resolved yet), and afterNextRender()'s initMap() baked that empty key into the Azure
+             tile URLs once, permanently — Azure then 401s every tile forever since nothing ever
+             rebuilds the tile sources. Gating construction itself on the resolved config fixes this
+             at the source: the child is never constructed until a real config exists. -->
+        @if (mapConfig(); as cfg) {
+          @if (cfg.azureMapsKey) {
+            <app-bid-sheet-map
+              [locations]="allMapLocations()"
+              [renderModel]="mapRenderModel()"
+              [addLocationMode]="addLocationMode()"
+              [panelWidthPx]="mapPanelWidthPx()"
+              [flyTo]="mapFlyToCmd()"
+              [fitAll]="mapFitAllCmd()"
+              [flyToLocation]="flyToLocationCmd()"
+              [searchPending]="isSearchingAddress()"
+              [azureMapsKey]="cfg.azureMapsKey"
+              [landMapMagicKey]="cfg.landMapMagicKey"
+              [cdlYear]="cfg.cdlYear"
+              [cdlFallbackYear]="cfg.cdlFallbackYear"
+              [fieldContextLookupCmd]="fieldContextLookupCmd()"
+              (locationSelected)="onMapLocationSelected($event)"
+              (mapClicked)="onMapClicked($event)"
+              (zoomChanged)="onMapZoomChanged($event)"
+              (fieldContextResolved)="onFieldContextResolved($event)"
+              (fieldInspectPerformed)="onFieldInspectPerformed()"
+              (addressSearch)="onAddressSearch($event)"
+              style="position:absolute; inset:0;"
+              [style.display]="mapEngine() === 'maplibre' ? 'block' : 'none'"
+            />
+          } @else if (mapEngine() === 'maplibre') {
+            <!-- mapConfig() resolved but carries no Azure Maps key — per 02-backend-api.md, surface
+                 an explicit error state rather than silently mounting a basemap doomed to 401 forever. -->
+            <div class="absolute inset-0 flex items-center justify-center bg-gray-50 dark:bg-gray-900 text-sm text-gray-500 dark:text-gray-400">
+              Map unavailable — Azure Maps key not configured.
+            </div>
+          }
+        }
         <div #mapEl id="bid-locations-map" style="position:absolute; inset:0;"
              [style.display]="mapEngine() === 'leaflet' ? 'block' : 'none'"></div>
 
