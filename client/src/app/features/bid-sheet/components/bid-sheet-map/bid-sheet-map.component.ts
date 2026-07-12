@@ -40,9 +40,15 @@ import { pickPolygonGeometry, toAoiFeature, paddedBoundingBoxPolygon, pointInPol
  * prefetch-on-viewport/hover, never a background warm-up.
  */
 
-// Basemap layers — all three added up-front in the initial style and switched only via
+// Basemap layers — all three still added up-front in the initial style and switched only via
 // setLayoutProperty visibility toggles (never map.setStyle(), which would wipe any later-merged
-// LandMapMagic layers). Same tileset ids already proven in field-tag-map.component.ts.
+// LandMapMagic layers). Same tileset ids already proven in field-tag-map.component.ts. The UI
+// toggle itself only exposes two user-facing choices (Map / Satellite) — the former plain
+// "Satellite" (imagery-only, no overlay) option was removed as redundant with the richer
+// imagery+overlay combination, which now carries the "Satellite" label instead of its old "Hybrid"
+// one. Internal ids/constants below intentionally keep their "hybrid" naming (imagery + the
+// transparent roads/labels/boundaries overlay is still exactly what those internals model) — only
+// the user-facing label changed.
 const STREET_SOURCE_ID = 'bs-azure-street';
 const IMAGERY_SOURCE_ID = 'bs-azure-imagery';
 const HYBRID_OVERLAY_SOURCE_ID = 'bs-azure-hybrid-overlay';
@@ -52,7 +58,9 @@ const HYBRID_OVERLAY_LAYER_ID = HYBRID_OVERLAY_SOURCE_ID;
 const AZURE_IMAGERY_TILESET = 'microsoft.imagery';
 const AZURE_STREET_TILESET = 'microsoft.base.road';
 const AZURE_HYBRID_TILESET = 'microsoft.base.hybrid.road';
-type BasemapStyle = 'street' | 'imagery' | 'hybrid';
+// 'satellite' renders the SAME imagery+hybrid-overlay combination the old 'hybrid' choice did —
+// only the label changed, not the underlying tileset/layer mechanics (see setBasemap()).
+type BasemapStyle = 'street' | 'satellite';
 
 // Matches today's Leaflet default view (`setView([38.5, -98.0], 6)`) — note MapLibre is lng-first.
 const DEFAULT_CENTER: [number, number] = [-98.0, 38.5];
@@ -333,8 +341,10 @@ export class BidSheetMapComponent {
     this.switching.set(true);
 
     map.setLayoutProperty(STREET_LAYER_ID, 'visibility', style === 'street' ? 'visible' : 'none');
-    map.setLayoutProperty(IMAGERY_LAYER_ID, 'visibility', style === 'street' ? 'none' : 'visible');
-    map.setLayoutProperty(HYBRID_OVERLAY_LAYER_ID, 'visibility', style === 'hybrid' ? 'visible' : 'none');
+    // 'satellite' = imagery + the transparent hybrid roads/labels/boundaries overlay, exactly what
+    // the old 'hybrid' choice rendered — both layers toggle together.
+    map.setLayoutProperty(IMAGERY_LAYER_ID, 'visibility', style === 'satellite' ? 'visible' : 'none');
+    map.setLayoutProperty(HYBRID_OVERLAY_LAYER_ID, 'visibility', style === 'satellite' ? 'visible' : 'none');
 
     let settled = false;
     const finish = () => {

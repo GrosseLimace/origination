@@ -19,24 +19,15 @@
     </div>
   }
 
-  <!-- Basemap toggle — three-way (Satellite/Map/Hybrid), reused verbatim from
-       field-tag-map.component.html's basemap button row. Stacked directly ABOVE the parent's
-       bottom-left action row (Add Location / engine toggle / Refresh) rather than sharing that row
-       at a fixed horizontal offset — the parent's row width varies (fewer buttons in MapLibre mode
-       than Leaflet mode, and either way the text can reflow), so a shared row with a hardcoded
-       left offset collided with those buttons. Stacking vertically is offset-width-independent. -->
+  <!-- Basemap toggle — two-way (Map/Satellite), reused verbatim from
+       field-tag-map.component.html's basemap button row. Satellite = imagery + roads/labels/
+       boundaries overlay (formerly labeled "Hybrid"; the old imagery-only "Satellite" option was
+       removed as redundant). Stacked directly ABOVE the parent's bottom-left action row (Add
+       Location / engine toggle / Refresh) rather than sharing that row at a fixed horizontal
+       offset — the parent's row width varies (fewer buttons in MapLibre mode than Leaflet mode,
+       and either way the text can reflow), so a shared row with a hardcoded left offset collided
+       with those buttons. Stacking vertically is offset-width-independent. -->
   <div class="absolute bottom-16 left-4 z-[1000] flex items-center gap-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg p-1">
-    <button
-      type="button"
-      class="rounded-md px-2 py-1 text-xs font-medium"
-      [class.bg-gray-200]="basemapStyle() === 'imagery'"
-      [class.dark:bg-gray-600]="basemapStyle() === 'imagery'"
-      [class.text-gray-700]="basemapStyle() !== 'imagery'"
-      [class.dark:text-gray-300]="basemapStyle() !== 'imagery'"
-      title="Satellite imagery"
-      (click)="setBasemap('imagery')">
-      Satellite
-    </button>
     <button
       type="button"
       class="rounded-md px-2 py-1 text-xs font-medium"
@@ -51,13 +42,13 @@
     <button
       type="button"
       class="rounded-md px-2 py-1 text-xs font-medium"
-      [class.bg-gray-200]="basemapStyle() === 'hybrid'"
-      [class.dark:bg-gray-600]="basemapStyle() === 'hybrid'"
-      [class.text-gray-700]="basemapStyle() !== 'hybrid'"
-      [class.dark:text-gray-300]="basemapStyle() !== 'hybrid'"
+      [class.bg-gray-200]="basemapStyle() === 'satellite'"
+      [class.dark:bg-gray-600]="basemapStyle() === 'satellite'"
+      [class.text-gray-700]="basemapStyle() !== 'satellite'"
+      [class.dark:text-gray-300]="basemapStyle() !== 'satellite'"
       title="Satellite with roads and labels"
-      (click)="setBasemap('hybrid')">
-      Hybrid
+      (click)="setBasemap('satellite')">
+      Satellite
     </button>
   </div>
 

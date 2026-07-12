@@ -39,19 +39,10 @@
     </button>
   </form>
 
-  <!-- Basemap toggle — both modes. Bottom-left, above the MapLibre ScaleControl. -->
+  <!-- Basemap toggle — both modes. Bottom-left, above the MapLibre ScaleControl. Two choices: Map
+       (street) and Satellite (imagery + roads/labels/boundaries overlay — formerly labeled
+       "Hybrid"; the old imagery-only "Satellite" option was removed as redundant). -->
   <div class="absolute bottom-8 left-2 z-10 flex items-center gap-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-1">
-    <button
-      type="button"
-      class="rounded-md px-2 py-1 text-xs font-medium"
-      [class.bg-gray-200]="basemapStyle() === 'imagery'"
-      [class.dark:bg-gray-600]="basemapStyle() === 'imagery'"
-      [class.text-gray-700]="basemapStyle() !== 'imagery'"
-      [class.dark:text-gray-300]="basemapStyle() !== 'imagery'"
-      title="Satellite imagery"
-      (click)="setBasemap('imagery')">
-      Satellite
-    </button>
     <button
       type="button"
       class="rounded-md px-2 py-1 text-xs font-medium"
@@ -66,13 +57,13 @@
     <button
       type="button"
       class="rounded-md px-2 py-1 text-xs font-medium"
-      [class.bg-gray-200]="basemapStyle() === 'hybrid'"
-      [class.dark:bg-gray-600]="basemapStyle() === 'hybrid'"
-      [class.text-gray-700]="basemapStyle() !== 'hybrid'"
-      [class.dark:text-gray-300]="basemapStyle() !== 'hybrid'"
+      [class.bg-gray-200]="basemapStyle() === 'satellite'"
+      [class.dark:bg-gray-600]="basemapStyle() === 'satellite'"
+      [class.text-gray-700]="basemapStyle() !== 'satellite'"
+      [class.dark:text-gray-300]="basemapStyle() !== 'satellite'"
       title="Satellite with roads and labels"
-      (click)="setBasemap('hybrid')">
-      Hybrid
+      (click)="setBasemap('satellite')">
+      Satellite
     </button>
   </div>
 

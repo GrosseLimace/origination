@@ -76,12 +76,19 @@ const TAGGED_FILL_LAYER_ID = 'tagged-fields-fill';
 const TAGGED_OUTLINE_LAYER_ID = 'tagged-fields-outline';
 const TAGGED_OUTLINE_DASHED_LAYER_ID = 'tagged-fields-outline-dashed';
 
-// Basemap layers — all three added up-front in initMap()'s initial style, at the bottom of the
-// layer stack, and switched only via setLayoutProperty visibility toggles (never map.setStyle(),
-// which would wipe the tagged-fields source and merged vendor CLU/parcel layers). Verified live
-// against atlas.microsoft.com/map/tile: microsoft.imagery and microsoft.base.road are opaque raster
-// PNGs; microsoft.base.hybrid.road is a transparent raster PNG suitable for stacking over imagery;
-// microsoft.base.hybrid is a VECTOR tileset and is NOT used here.
+// Basemap layers — all three still added up-front in initMap()'s initial style, at the bottom of
+// the layer stack, and switched only via setLayoutProperty visibility toggles (never
+// map.setStyle(), which would wipe the tagged-fields source and merged vendor CLU/parcel layers).
+// The UI toggle itself only exposes two user-facing choices (Map / Satellite) — the former plain
+// "Satellite" (imagery-only, no overlay) option was removed as redundant with the richer
+// imagery+overlay combination, which now carries the "Satellite" label instead of its old "Hybrid"
+// one. Internal ids/constants below intentionally keep their "hybrid" naming (imagery + the
+// transparent roads/labels/boundaries overlay is still exactly what those internals model) — only
+// the user-facing label changed, so this comment and the setBasemap() cases still say "hybrid"
+// where that's what's actually being toggled. Verified live against atlas.microsoft.com/map/tile:
+// microsoft.imagery and microsoft.base.road are opaque raster PNGs; microsoft.base.hybrid.road is a
+// transparent raster PNG suitable for stacking over imagery; microsoft.base.hybrid is a VECTOR
+// tileset and is NOT used here.
 const STREET_SOURCE_ID = 'azure-street';
 const HYBRID_OVERLAY_SOURCE_ID = 'azure-hybrid-overlay';
 const IMAGERY_LAYER_ID = AZURE_SOURCE_ID; // matches existing pattern where layer id == source id
@@ -90,7 +97,9 @@ const HYBRID_OVERLAY_LAYER_ID = 'azure-hybrid-overlay';
 const AZURE_IMAGERY_TILESET = 'microsoft.imagery';
 const AZURE_STREET_TILESET = 'microsoft.base.road';
 const AZURE_HYBRID_TILESET = 'microsoft.base.hybrid.road';
-type BasemapStyle = 'imagery' | 'street' | 'hybrid';
+// 'satellite' renders the SAME imagery+hybrid-overlay combination the old 'hybrid' choice did —
+// only the label changed, not the underlying tileset/layer mechanics (see setBasemap()).
+type BasemapStyle = 'street' | 'satellite';
 
 const DEFAULT_CENTER: [number, number] = [-98.5795, 39.8283]; // CONUS geographic center
 const DEFAULT_ZOOM = 4;
@@ -163,7 +172,7 @@ export class FieldTagMapComponent {
   readonly tierHint = signal<string>('');
   readonly methodStyle = FIELD_TAG_METHOD_STYLE;
   readonly isSelectMode = signal(false);
-  readonly basemapStyle = signal<BasemapStyle>('imagery'); // preserves current default view
+  readonly basemapStyle = signal<BasemapStyle>('street'); // Map is the default view
   readonly addressSearchText = signal('');
 
   private map: maplibregl.Map | null = null;
@@ -300,8 +309,10 @@ export class FieldTagMapComponent {
     const map = this.map;
     if (!map || !map.getLayer(IMAGERY_LAYER_ID)) return; // guard until style loaded, matching other methods' pattern
     map.setLayoutProperty(STREET_LAYER_ID, 'visibility', style === 'street' ? 'visible' : 'none');
-    map.setLayoutProperty(IMAGERY_LAYER_ID, 'visibility', style === 'street' ? 'none' : 'visible');
-    map.setLayoutProperty(HYBRID_OVERLAY_LAYER_ID, 'visibility', style === 'hybrid' ? 'visible' : 'none');
+    // 'satellite' = imagery + the transparent hybrid roads/labels/boundaries overlay, exactly what
+    // the old 'hybrid' choice rendered — both layers toggle together.
+    map.setLayoutProperty(IMAGERY_LAYER_ID, 'visibility', style === 'satellite' ? 'visible' : 'none');
+    map.setLayoutProperty(HYBRID_OVERLAY_LAYER_ID, 'visibility', style === 'satellite' ? 'visible' : 'none');
   }
 
   // ── Map bootstrap ─────────────────────────────────────────────────────────
@@ -348,8 +359,9 @@ export class FieldTagMapComponent {
           },
         },
         layers: [
-          { id: STREET_LAYER_ID, type: 'raster', source: STREET_SOURCE_ID, layout: { visibility: 'none' } },
-          { id: IMAGERY_LAYER_ID, type: 'raster', source: AZURE_SOURCE_ID },
+          // Street (Map) is the default view — see basemapStyle's initial value above.
+          { id: STREET_LAYER_ID, type: 'raster', source: STREET_SOURCE_ID },
+          { id: IMAGERY_LAYER_ID, type: 'raster', source: AZURE_SOURCE_ID, layout: { visibility: 'none' } },
           { id: HYBRID_OVERLAY_LAYER_ID, type: 'raster', source: HYBRID_OVERLAY_SOURCE_ID, layout: { visibility: 'none' } },
         ],
       },
