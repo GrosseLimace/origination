@@ -6,6 +6,7 @@ import { Customer } from '@models';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
 import { AppStateService } from '@core/services/app-state.service';
 import { environment } from '@env/environment';
+import { expandStateAbbrev, resolveCustomerAddress, geocodeCacheKey } from '@shared/utils/geocode-address';
 import * as L from 'leaflet';
 
 // Fix Leaflet default marker icon paths when bundled via npm
@@ -55,27 +56,6 @@ export class CustomerMapComponent {
   // Use shared cache from AppStateService so geocoded coords persist across navigation
   private get _geocodeCache(): Map<string, { lat: number; lng: number }> {
     return this.appState.mapGeocodeCache;
-  }
-
-  /** Maps state abbreviations to their full names for Nominatim geocoding requests. */
-  private readonly _stateAbbrevToFull: { [abbr: string]: string } = {
-    'al': 'Alabama', 'ak': 'Alaska', 'az': 'Arizona', 'ar': 'Arkansas', 'ca': 'California',
-    'co': 'Colorado', 'ct': 'Connecticut', 'de': 'Delaware', 'fl': 'Florida', 'ga': 'Georgia',
-    'hi': 'Hawaii', 'id': 'Idaho', 'il': 'Illinois', 'in': 'Indiana', 'ia': 'Iowa',
-    'ks': 'Kansas', 'ky': 'Kentucky', 'la': 'Louisiana', 'me': 'Maine', 'md': 'Maryland',
-    'ma': 'Massachusetts', 'mi': 'Michigan', 'mn': 'Minnesota', 'ms': 'Mississippi',
-    'mo': 'Missouri', 'mt': 'Montana', 'ne': 'Nebraska', 'nv': 'Nevada', 'nh': 'New Hampshire',
-    'nj': 'New Jersey', 'nm': 'New Mexico', 'ny': 'New York', 'nc': 'North Carolina',
-    'nd': 'North Dakota', 'oh': 'Ohio', 'ok': 'Oklahoma', 'or': 'Oregon', 'pa': 'Pennsylvania',
-    'ri': 'Rhode Island', 'sc': 'South Carolina', 'sd': 'South Dakota', 'tn': 'Tennessee',
-    'tx': 'Texas', 'ut': 'Utah', 'vt': 'Vermont', 'va': 'Virginia', 'wa': 'Washington',
-    'wv': 'West Virginia', 'wi': 'Wisconsin', 'wy': 'Wyoming', 'dc': 'District of Columbia'
-  };
-
-  /** Expands a state abbreviation to its full name; returns value unchanged if already full. */
-  private _expandState(state: string): string {
-    const lower = state.toLowerCase().trim();
-    return this._stateAbbrevToFull[lower] ?? state;
   }
 
   private _stateInfo: { [key: string]: StateInfo } = {
@@ -266,34 +246,6 @@ export class CustomerMapComponent {
     this._initializeMarkersWithGeocoding();
   }
 
-  /**
-   * Resolves the best address for a customer using Extended fields with Merchandising fallback.
-   */
-  private _resolveAddress(customer: Customer): { street: string; city: string; state: string; zip: string; county: string } {
-    const street = customer.extendedAddressLine1
-      || customer.extendedAddressLine2
-      || customer.extendedAddressLine3
-      || customer.extendedAddressLine4
-      || customer.addressLine1
-      || '';
-    const city = customer.extendedCity || customer.location || '';
-    const state = customer.extendedStateProvince || customer.stateProvince || '';
-    const zip = customer.extendedPostalCode || customer.postalCode || '';
-    const county = customer.extendedCountry || '';
-    return { street, city, state, zip, county };
-  }
-
-  /**
-   * Builds a geocode cache key from resolved address parts.
-   * Includes street when available for street-level precision; falls back to city+state+zip.
-   */
-  private _geocodeCacheKey(addr: { street: string; city: string; state: string; zip: string }): string {
-    const parts = [addr.street, addr.city, addr.state, addr.zip]
-      .map(p => p.toLowerCase().trim())
-      .filter(Boolean);
-    return parts.join(',');
-  }
-
   private async _initializeMarkersWithGeocoding(): Promise<void> {
     const markerMap = new Map<number, any>(); // customerId → leaflet marker
     const customerCoords = new Map<number, { lat: number; lng: number }>(); // tracks latest coords per customer
@@ -301,8 +253,8 @@ export class CustomerMapComponent {
     // ── Phase 1: Collect initial coords (cached or state-based fallback) ──
     for (const customer of this.customers()) {
       if (!this._map) return;
-      const addr = this._resolveAddress(customer);
-      const cacheKey = this._geocodeCacheKey(addr);
+      const addr = resolveCustomerAddress(customer);
+      const cacheKey = geocodeCacheKey(addr);
       const coords = this._geocodeCache.has(cacheKey)
         ? this._geocodeCache.get(cacheKey)!
         : this._getCoordinatesForCustomer(customer);
@@ -327,9 +279,9 @@ export class CustomerMapComponent {
     // ── Phase 2: Geocode unique addresses in the background, update markers ──
     const addressGroups = new Map<string, { addr: { street: string; city: string; state: string; zip: string }; customerIds: number[] }>();
     for (const customer of this.customers()) {
-      const addr = this._resolveAddress(customer);
+      const addr = resolveCustomerAddress(customer);
       if (!addr.city && !addr.state && !addr.zip) continue;
-      const key = this._geocodeCacheKey(addr);
+      const key = geocodeCacheKey(addr);
       if (!addressGroups.has(key)) addressGroups.set(key, { addr, customerIds: [] });
       addressGroups.get(key)!.customerIds.push(customer.id);
     }
@@ -350,7 +302,7 @@ export class CustomerMapComponent {
         key,
         street: addr.street || undefined,
         city: addr.city,
-        state: this._expandState(addr.state),
+        state: expandStateAbbrev(addr.state),
         zip: addr.zip
       }));
 
@@ -432,7 +384,7 @@ export class CustomerMapComponent {
   }
 
   private _buildMarker(customer: Customer, coords: { lat: number; lng: number }): any {
-    const addr = this._resolveAddress(customer);
+    const addr = resolveCustomerAddress(customer);
     const locationParts = this._escapeHtml([addr.city, addr.state].filter(Boolean).join(', '));
     const contactLine = this._escapeHtml(customer.phone
       ? customer.phone
@@ -515,12 +467,12 @@ export class CustomerMapComponent {
   }
 
   private _getCoordinatesForCustomer(customer: Customer): { lat: number; lng: number } {
-    const addr = this._resolveAddress(customer);
+    const addr = resolveCustomerAddress(customer);
     const stateStr = addr.state.toLowerCase().trim();
 
     // Try the state as-is first, then try the expanded full name (handles both "sc" and "south carolina")
     const info = this._stateInfo[stateStr]
-      ?? this._stateInfo[this._expandState(stateStr).toLowerCase()];
+      ?? this._stateInfo[expandStateAbbrev(stateStr).toLowerCase()];
 
     if (info) {
       const hash = this._hashCode(customer.id);

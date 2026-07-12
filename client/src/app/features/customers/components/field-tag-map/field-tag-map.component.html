@@ -1,5 +1,13 @@
 <div class="relative w-full h-full min-h-[320px]">
-  <div #mapContainer class="absolute inset-0"></div>
+  <!--
+    `absolute!` (position: absolute !important) is deliberate: MapLibre adds the `.maplibregl-map`
+    class to this container at runtime, and maplibre-gl's own stylesheet rule
+    `.maplibregl-map { position: relative }` has equal specificity to Tailwind's `absolute` utility
+    and wins on cascade order — silently demoting this container to position:relative. That defeats
+    `inset-0`, so the container collapses to height:0 and clips its (correctly-rendered) canvas via
+    maplibre's `overflow: hidden`, leaving a blank map. The `!important` guarantees absolute-fill.
+  -->
+  <div #mapContainer class="absolute! inset-0"></div>
 
   <!-- Tier selector — select mode only (Tier 1 CLU, Tier 2 Parcel, Tier 4 Draw; Tier 3 omitted). -->
   @if (isSelectMode()) {

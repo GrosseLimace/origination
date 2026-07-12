@@ -1,10 +1,12 @@
-import { Component, ChangeDetectionStrategy, DestroyRef, computed, inject, input, output, signal } from '@angular/core';
+import { Component, ChangeDetectionStrategy, DestroyRef, computed, effect, inject, input, output, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { ApiService } from '@core/services/api.service';
+import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { Customer, CustomerFieldTag, FieldTagDraft, FieldTagMapConfig } from '@models';
+import { expandStateAbbrev, geocodeCacheKey, resolveCustomerAddress } from '@shared/utils/geocode-address';
 import { FieldTagMapComponent } from '../field-tag-map/field-tag-map.component';
 import { FieldTagListComponent } from '../field-tag-list/field-tag-list.component';
 
@@ -26,6 +28,7 @@ import { FieldTagListComponent } from '../field-tag-list/field-tag-list.componen
 })
 export class CustomerFieldsComponent {
   private readonly apiService = inject(ApiService);
+  private readonly appState = inject(AppStateService);
   private readonly toastService = inject(ToastService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -34,6 +37,74 @@ export class CustomerFieldsComponent {
   readonly tags = input<CustomerFieldTag[]>([]);
   readonly mapConfig = input.required<FieldTagMapConfig>();
   readonly tagsChange = output<CustomerFieldTag[]>();
+
+  // ── On-demand geocoding for the map's initial center ─────────────────────
+  // `Customer.coordinates` is only ever populated by the Build List map's geocoding flow
+  // (CustomerMapComponent), never when a customer is reached via Customer Profile — so without
+  // this, the Fields tab map always falls back to its blank, zoomed-out CONUS default view.
+  // Resolves the address the same way the Build List map does and checks/writes the SAME shared
+  // `AppStateService.mapGeocodeCache`, so an address geocoded from either screen benefits the other.
+  private readonly _resolvedCoords = signal<{ lat: number; lng: number } | null>(null);
+  private _geocodeRequestSeq = 0;
+
+  /** The customer passed down to the map: `customer()` as-is when it already carries coordinates
+   *  (or once this component has resolved some), otherwise the same object with resolved
+   *  coordinates merged in so `FieldTagMapComponent` can center on it without needing its own
+   *  geocoding logic. */
+  readonly customerForMap = computed<Customer>(() => {
+    const c = this.customer();
+    if (c.coordinates) return c;
+    const coords = this._resolvedCoords();
+    return coords ? { ...c, coordinates: coords } : c;
+  });
+
+  constructor() {
+    // Re-resolve whenever the displayed customer changes (e.g. navigating Customer Profile
+    // between producers without a full component re-create).
+    effect(() => {
+      const customer = this.customer();
+      this._resolvedCoords.set(null);
+      if (customer.coordinates) return;
+      this._geocodeCustomerAddress(customer);
+    });
+  }
+
+  /** Resolves `customer`'s address to lat/lng for the map's initial center, cache-first. Silently
+   *  no-ops (map keeps its default view) when the customer has no usable address or the geocode
+   *  call fails — this must never surface an error to the user. */
+  private _geocodeCustomerAddress(customer: Customer): void {
+    const seq = ++this._geocodeRequestSeq;
+    const addr = resolveCustomerAddress(customer);
+    if (!addr.city && !addr.state && !addr.zip) return;
+
+    const key = geocodeCacheKey(addr);
+    const cached = this.appState.mapGeocodeCache.get(key);
+    if (cached) {
+      this._resolvedCoords.set(cached);
+      return;
+    }
+
+    this.apiService.geocodeSingle({
+      key,
+      street: addr.street || undefined,
+      city: addr.city,
+      state: expandStateAbbrev(addr.state),
+      zip: addr.zip,
+    })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (result) => {
+          if (seq !== this._geocodeRequestSeq) return; // stale — customer() changed mid-flight
+          if (result.lat == null || result.lng == null) return;
+          const coords = { lat: result.lat, lng: result.lng };
+          this.appState.setGeocodeCache(key, coords);
+          this._resolvedCoords.set(coords);
+        },
+        // ApiService.geocodeSingle already swallows HTTP errors into a null-coords result, so
+        // this is just a defensive backstop — the map's own default-view fallback still applies.
+        error: () => { /* no-op: map falls back to its default view */ },
+      });
+  }
 
   // ── Owned state — single source of truth for hover sync (see class doc) ──
   readonly hoveredTagId = signal<number | null>(null);

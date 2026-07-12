@@ -58,6 +58,7 @@ const AZURE_SOURCE_ID = 'azure-imagery';
 const TAGGED_SOURCE_ID = 'tagged-fields';
 const TAGGED_FILL_LAYER_ID = 'tagged-fields-fill';
 const TAGGED_OUTLINE_LAYER_ID = 'tagged-fields-outline';
+const TAGGED_OUTLINE_DASHED_LAYER_ID = 'tagged-fields-outline-dashed';
 
 const DEFAULT_CENTER: [number, number] = [-98.5795, 39.8283]; // CONUS geographic center
 const DEFAULT_ZOOM = 4;
@@ -121,12 +122,41 @@ export class FieldTagMapComponent {
   /** Last tagId we set `hover` feature-state for on the `tagged-fields` source. */
   private currentTaggedHoverId: number | null = null;
   private resizeObserver: ResizeObserver | null = null;
+  /** Tracks whether `customer().coordinates` has ever been non-null, so the one-time "coordinates
+   *  just resolved" recenter (below) fires exactly once — not on every subsequent `customer()`
+   *  reference change once coordinates are already known. */
+  private _hadCustomerCoords = false;
 
   constructor() {
     afterNextRender(() => this.initMap());
     this.destroyRef.onDestroy(() => {
       this.resizeObserver?.disconnect();
       this.map?.remove();
+    });
+
+    // customer().coordinates -> marker + one-time recenter. The parent (CustomerFieldsComponent)
+    // resolves coordinates asynchronously (on-demand geocode call) and they typically arrive
+    // AFTER initMap()/onMapLoad() have already run with the CONUS default view — this effect is
+    // what actually moves the camera once they land. Guarded so later `customer()` reference
+    // changes (once coordinates are already known) don't keep yanking the camera back.
+    effect(() => {
+      const coords = this.customer().coordinates;
+      if (!this.loaded()) return;
+      this.addOrUpdateCustomerMarker();
+      if (coords && !this._hadCustomerCoords) {
+        this._hadCustomerCoords = true;
+        // Recenter regardless of which mode we're in when coordinates land — if the user has
+        // already switched to select mode before the async geocode call resolves (e.g. clicking
+        // "Add field" immediately), the map must still move off its CONUS default; it doesn't
+        // get a second chance once `_hadCustomerCoords` flips true.
+        if (this.mode() === 'review') {
+          this.fitReviewBounds();
+        } else {
+          this.map?.flyTo({ center: [coords.lng, coords.lat], zoom: SELECT_MODE_ZOOM });
+        }
+      } else if (coords) {
+        this._hadCustomerCoords = true;
+      }
     });
 
     // tags -> setData + review-mode refit. Guarded on "map loaded"; because effects re-run
@@ -243,17 +273,33 @@ export class FieldTagMapComponent {
       },
     });
 
+    // `line-dasharray` is not a data-driven property in the MapLibre/Mapbox style spec — it
+    // cannot key off ['get', 'sourceMethod'] the way color/width can. The standard workaround
+    // is to split into two layers filtered by the property instead, each with its own literal
+    // dasharray. Drawn fields get a dashed outline as a second visual channel beyond color
+    // (helps colorblind users distinguish drawn fields without relying on hue).
     map.addLayer({
       id: TAGGED_OUTLINE_LAYER_ID,
       type: 'line',
       source: TAGGED_SOURCE_ID,
+      filter: ['!=', ['get', 'sourceMethod'], 'drawn'],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': this.methodColorExpression(),
         'line-width': ['case', ['boolean', ['feature-state', 'hover'], false], 4, 2],
-        // Drawn fields get a dashed outline as a second visual channel beyond color (helps
-        // colorblind users distinguish drawn fields without relying on hue).
-        'line-dasharray': ['match', ['get', 'sourceMethod'], 'drawn', ['literal', [2, 2]], ['literal', [1, 0]]],
+      },
+    });
+
+    map.addLayer({
+      id: TAGGED_OUTLINE_DASHED_LAYER_ID,
+      type: 'line',
+      source: TAGGED_SOURCE_ID,
+      filter: ['==', ['get', 'sourceMethod'], 'drawn'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': this.methodColorExpression(),
+        'line-width': ['case', ['boolean', ['feature-state', 'hover'], false], 4, 2],
+        'line-dasharray': [2, 2],
       },
     });
 

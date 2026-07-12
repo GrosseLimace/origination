@@ -879,6 +879,15 @@ export class ApiService {
       .pipe(catchError(() => of([])));
   }
 
+  /** Geocodes a single structured address via backend proxy (POST /geocode/single). Used for
+   *  on-demand geocoding (e.g. Customer Profile's Fields tab map, which — unlike the Build List
+   *  map — only ever needs one address at a time). Resolves to `{ lat: null, lng: null }` on
+   *  failure rather than erroring, so callers can fall back to a default view. */
+  geocodeSingle(request: { key: string; street?: string; city?: string; state?: string; zip?: string }): Observable<{ key: string; lat: number | null; lng: number | null }> {
+    return this.http.post<{ key: string; lat: number | null; lng: number | null }>(`${this.baseUrl}/geocode/single`, request)
+      .pipe(catchError(() => of({ key: request.key, lat: null, lng: null })));
+  }
+
   // =========================================================================
   // Usage Dashboard
   // =========================================================================
