@@ -200,6 +200,15 @@ export class BidSheetMapComponent {
    *  state (see 03-frontend-components.md and the fix for "owner data missing while CLU active"). */
   private vendorLayersMerged = false;
   private activePopup: maplibregl.Popup | null = null;
+  /** The popup shown by `showFieldContextPinPopup` on a bid-sheet pin SELECT (distinct from
+   *  `activePopup`, which is the CLU/Parcel click-to-inspect popup — the two can never coexist in
+   *  practice today, but keeping them separate avoids one flow's close accidentally clobbering the
+   *  other's popup reference). */
+  private fieldContextPopup: maplibregl.Popup | null = null;
+  /** The CLU/parcel feature currently highlighted (feature-state `selected: true`) by
+   *  `showFieldContextPinPopup`, so `clearFieldContextHighlight` can turn it back off — either when
+   *  a new pin is selected, the popup is closed, or the CLU/Parcel toggle changes tier. */
+  private selectedFieldHighlight: { source: string; sourceLayer: string; id: string | number } | null = null;
 
   constructor() {
     afterNextRender(() => this.initMap());
@@ -207,6 +216,7 @@ export class BidSheetMapComponent {
       if (this.zoomDebounceTimer) clearTimeout(this.zoomDebounceTimer);
       this.resizeObserver?.disconnect();
       this.activePopup?.remove();
+      this.fieldContextPopup?.remove();
       this.map?.remove();
     });
 
@@ -276,7 +286,7 @@ export class BidSheetMapComponent {
     effect(() => {
       const cmd = this.fieldContextLookupCmd();
       if (cmd == null) return;
-      void this.runFieldContextLookup(cmd.lat, cmd.lng);
+      void this.handlePinSelectFieldContext(cmd.lat, cmd.lng);
     });
   }
 
@@ -322,6 +332,12 @@ export class BidSheetMapComponent {
     this.showFieldContext.set(next);
     this.activePopup?.remove();
     this.activePopup = null;
+    // A pin-select popup/highlight from BEFORE this toggle change reflects the OLD tier rule (CLU
+    // vs. parcel) — close it rather than leave a highlight on-screen that no longer matches what
+    // the acreage-source rule would now pick for that same point.
+    this.fieldContextPopup?.remove();
+    this.fieldContextPopup = null;
+    this.clearFieldContextHighlight();
 
     const map = this.map;
     if (!map || !this.loaded()) return;
@@ -478,10 +494,19 @@ export class BidSheetMapComponent {
    * the lookup succeeds, finds nothing, or fails outright (a failed round trip still "fired" for
    * usage-tracking purposes — see the parent's `onFieldContextResolved`). No-ops entirely (no emit
    * at all) when `landMapMagicKey` isn't configured, so no vendor call is even attempted.
+   *
+   * Also RETURNS the built `info` and the raw `pointLookup` results — the pin-SELECT call site
+   * (`handlePinSelectFieldContext` below) needs the raw per-layer results too, since the on-map
+   * popup/highlight it shows picks CLU vs. parcel by the CURRENT CLU/Parcel toggle tier, which can
+   * differ from `method` here (this function's `method` always prefers CLU when both exist,
+   * independent of the toggle — that's the Add Location form's existing, unchanged behavior).
    */
-  private async runFieldContextLookup(lat: number, lng: number): Promise<void> {
+  private async runFieldContextLookup(
+    lat: number,
+    lng: number,
+  ): Promise<{ info: FieldContextInfo | null; lookupResults: LookupField[] }> {
     const key = this.landMapMagicKey();
-    if (!key) return;
+    if (!key) return { info: null, lookupResults: [] };
 
     // Lazily merge the vendor style/sources on the very FIRST JIT lookup of the session, even if
     // the CLU/Parcel toggle has never been touched at all — parcel-owner enrichment below
@@ -496,9 +521,10 @@ export class BidSheetMapComponent {
 
     let method: 'clu' | 'parcel' | null = null;
     let acreage: number | null = null;
+    let lookupResults: LookupField[] = [];
     try {
-      const results = await pointLookup(lat, lng, key);
-      const lookupField = results.find((f) => f.layer === 'clu') ?? results.find((f) => f.layer === 'parcels') ?? null;
+      lookupResults = await pointLookup(lat, lng, key);
+      const lookupField = lookupResults.find((f) => f.layer === 'clu') ?? lookupResults.find((f) => f.layer === 'parcels') ?? null;
       if (lookupField) {
         method = lookupField.layer === 'clu' ? 'clu' : 'parcel';
         acreage = lookupField.acreage;
@@ -510,8 +536,9 @@ export class BidSheetMapComponent {
     const cdlYear = this.cdlYear();
     const cdlFallbackYear = this.cdlFallbackYear();
     if (!cdlYear || !cdlFallbackYear) {
-      this.fieldContextResolved.emit(this.buildFieldContextResult(method, acreage, null, null, null));
-      return;
+      const info = this.buildFieldContextResult(method, acreage, null, null, null);
+      this.fieldContextResolved.emit(info);
+      return { info, lookupResults };
     }
 
     try {
@@ -524,10 +551,100 @@ export class BidSheetMapComponent {
       const result = await aoiQuery(toAoiFeature(aoiGeometry), method === 'clu', key, cdlYear, cdlFallbackYear);
       const topCrop = this.topCrop(result.cropBreakdown);
       const parcels = this.findOverlappingParcels(lat, lng);
-      this.fieldContextResolved.emit(this.buildFieldContextResult(method, acreage, result.county, result.state, topCrop?.name ?? null, parcels));
+      const info = this.buildFieldContextResult(method, acreage, result.county, result.state, topCrop?.name ?? null, parcels);
+      this.fieldContextResolved.emit(info);
+      return { info, lookupResults };
     } catch (err) {
       console.error('[bid-sheet-map] AOI Query failed for field-context lookup:', err);
-      this.fieldContextResolved.emit(this.buildFieldContextResult(method, acreage, null, null, null));
+      const info = this.buildFieldContextResult(method, acreage, null, null, null);
+      this.fieldContextResolved.emit(info);
+      return { info, lookupResults };
+    }
+  }
+
+  /**
+   * Pin-SELECT-only wrapper (never called for pin-drop) around `runFieldContextLookup` that ALSO
+   * shows an on-map popup + highlights the matching CLU/parcel shape, so the user can see WHERE the
+   * displayed acreage came from — see `showFieldContextPinPopup` for the tier rule (CLU is the
+   * default whenever the toggle is off or set to 'clu'; only an explicit Parcel tier switches both
+   * the acreage figure and the highlight to the parcel).
+   */
+  private async handlePinSelectFieldContext(lat: number, lng: number): Promise<void> {
+    const { info, lookupResults } = await this.runFieldContextLookup(lat, lng);
+    this.showFieldContextPinPopup(lat, lng, info, lookupResults);
+  }
+
+  /**
+   * Shows a read-only info popup (acreage/county/state/top-crop/owner) at a SELECTED bid-sheet
+   * pin's coordinates, and highlights the CLU or parcel shape the acreage came from via the same
+   * feature-state `selected` mechanism `wireVendorLayerInteractions`'s click-to-inspect flow uses
+   * (`CLU_SELECTED_LAYER_ID`/`PARCELS_SELECTED_LAYER_ID` in lmm-styles.service.ts — both layers stay
+   * `layout.visibility: 'visible'` and paint their outline purely off this feature-state, so the
+   * highlight renders regardless of which tier's PAINT opacity is currently toggled on/off).
+   *
+   * Tier rule (product decision): CLU is the DEFAULT acreage/highlight source whenever the
+   * CLU/Parcel toggle is off OR explicitly set to 'clu'. Only an explicit Parcel tier selection
+   * switches both the acreage figure and the highlighted shape to the parcel. No popup/highlight at
+   * all if the requested tier's layer has no result at this point (nothing to show or highlight).
+   */
+  private showFieldContextPinPopup(
+    lat: number,
+    lng: number,
+    info: FieldContextInfo | null,
+    lookupResults: LookupField[],
+  ): void {
+    const map = this.map;
+    if (!map) return;
+
+    this.clearFieldContextHighlight();
+    this.fieldContextPopup?.remove();
+    this.fieldContextPopup = null;
+
+    const tier: 'clu' | 'parcel' = this.showFieldContext() === 'parcel' ? 'parcel' : 'clu';
+    const layerName: 'clu' | 'parcels' = tier === 'clu' ? 'clu' : 'parcels';
+    const lookupField = lookupResults.find((f) => f.layer === layerName) ?? null;
+    if (!lookupField) return;
+
+    const hitLayerId = tier === 'clu' ? this.lmmLayers.cluFill[0] : this.lmmLayers.parcelFill[0];
+    const source = tier === 'clu' ? 'clu' : 'parcels';
+
+    let featureId: string | number | null = null;
+    if (hitLayerId && map.getLayer(hitLayerId)) {
+      // Same "already-loaded tiles only" caveat as `findOverlappingParcels` — if the relevant tile
+      // hasn't downloaded yet at this point/zoom, this simply finds nothing and no highlight shows.
+      const rendered = map.queryRenderedFeatures(map.project([lng, lat]), { layers: [hitLayerId] });
+      const hit = rendered.find((f) => f.id != null);
+      if (hit?.id != null) featureId = hit.id;
+    }
+
+    if (featureId != null) {
+      map.setFeatureState({ source, sourceLayer: source, id: featureId }, { selected: true });
+      this.selectedFieldHighlight = { source, sourceLayer: source, id: featureId };
+    }
+
+    const owner = info?.parcels[0]?.owner ?? null;
+    const popup = this.showInfoPopup([lng, lat], {
+      acreage: lookupField.acreage,
+      county: info?.county ?? null,
+      state: info?.state ?? null,
+      topCrop: info?.topCrop ?? null,
+      owner,
+      title: tier === 'clu' ? 'CLU Field' : 'Parcel',
+    });
+    // The popup's own "x" close button (and clicking elsewhere on the map, MapLibre's default
+    // closeOnClick behavior) both fire this 'close' event — either way, the highlight should not
+    // outlive the popup that explains it.
+    popup.on('close', () => this.clearFieldContextHighlight());
+    this.fieldContextPopup = popup;
+  }
+
+  /** Clears whichever CLU/parcel feature-state highlight `showFieldContextPinPopup` last set, if any. */
+  private clearFieldContextHighlight(): void {
+    const highlight = this.selectedFieldHighlight;
+    this.selectedFieldHighlight = null;
+    if (!highlight || !this.map) return;
+    if (this.map.getSource(highlight.source)) {
+      this.map.setFeatureState({ source: highlight.source, sourceLayer: highlight.sourceLayer, id: highlight.id }, { selected: false });
     }
   }
 
@@ -610,13 +727,31 @@ export class BidSheetMapComponent {
     return new maplibregl.Popup({ closeButton: true, maxWidth: '240px' }).setLngLat(lngLat).setDOMContent(container).addTo(map);
   }
 
-  /** Terminal read-only popup — no "Confirm this field" button, no persistence, just reference info. */
+  /** Terminal read-only popup — no "Confirm this field" button, no persistence, just reference info.
+   *  `title` is optional (only `showFieldContextPinPopup` passes one, to label which tier — CLU vs.
+   *  Parcel — the shown acreage/highlight came from; `showReadOnlyFieldPopup`'s click-to-inspect
+   *  flow leaves it undefined, unchanged from before). */
   private showInfoPopup(
     lngLat: maplibregl.LngLatLike,
-    info: { acreage: number | null; county: string | null; state: string | null; topCrop: string | null; owner: string | null; error?: boolean },
+    info: {
+      acreage: number | null;
+      county: string | null;
+      state: string | null;
+      topCrop: string | null;
+      owner: string | null;
+      title?: string;
+      error?: boolean;
+    },
   ): maplibregl.Popup {
     const map = this.map!;
     const container = this.popupContainer();
+
+    if (info.title) {
+      const titleEl = document.createElement('div');
+      titleEl.className = 'text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1.5';
+      titleEl.textContent = info.title;
+      container.append(titleEl);
+    }
 
     if (info.error) {
       const msg = document.createElement('div');
