@@ -1257,10 +1257,9 @@ export class FieldTagMapComponent {
   }
 
   /**
-   * Draw-tier (Tier 4) confirm popup — unlike the click-based popup above, a discarded hand-drawn
-   * polygon leaves a real half-formed overlay on the map (mapbox-gl-draw's own rendered shape), so
-   * this DOES need an explicit Discard action (not just the native "X") to clear it; the click-
-   * based flow doesn't need this since dismissing it just leaves a harmless highlight outline.
+   * Draw-tier (Tier 4) confirm popup — a discarded hand-drawn polygon leaves a real half-formed
+   * overlay on the map (mapbox-gl-draw's own rendered shape), so the native "X" close button is
+   * the discard affordance: closing the popup any way clears it (see the 'close' handler below).
    */
   private showDrawConfirmPopup(
     lngLat: maplibregl.LngLatLike,
@@ -1295,37 +1294,24 @@ export class FieldTagMapComponent {
 
     this.appendParcelsSection(container, info.parcels);
 
-    const buttonRow = document.createElement('div');
-    buttonRow.className = 'flex gap-2';
-
-    const discardBtn = document.createElement('button');
-    discardBtn.type = 'button';
-    discardBtn.className =
-      'flex-1 rounded-md border border-gray-300 bg-white text-gray-700 px-3 py-1.5 text-sm font-medium hover:bg-gray-50';
-    discardBtn.textContent = 'Discard';
-
     const confirmBtn = document.createElement('button');
     confirmBtn.type = 'button';
-    confirmBtn.className = 'flex-1 rounded-md bg-green-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-green-700';
+    confirmBtn.className = 'w-full rounded-md bg-green-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-green-700';
     confirmBtn.textContent = 'Confirm this field';
-
-    buttonRow.append(discardBtn, confirmBtn);
-    container.append(buttonRow);
+    container.append(confirmBtn);
 
     const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '300px' }).setLngLat(lngLat).setDOMContent(container).addTo(map);
 
     confirmBtn.addEventListener('click', () => {
-      discardBtn.disabled = true;
       confirmBtn.disabled = true;
       confirmBtn.textContent = 'Saving…';
       onConfirm();
     });
-    discardBtn.addEventListener('click', () => popup.remove());
-    // Wired to 'close' rather than the buttons individually: fires no matter HOW the popup closes
-    // — Discard, the native "X", or Confirm's own `.remove()` call — so cleanup (clearing the
-    // popup-highlight + re-arming the draw controller) always happens exactly once, in one place.
-    // Re-arming after a SUCCESSFUL confirm is exactly the old rearm-after-confirm behavior; after
-    // Discard/X it clears the half-drawn polygon so the user isn't stranded with an uncommittable
+    // Wired to 'close' rather than the button: fires no matter HOW the popup closes — the native
+    // "X", or Confirm's own `.remove()` call — so cleanup (clearing the popup-highlight +
+    // re-arming the draw controller) always happens exactly once, in one place. Re-arming after a
+    // SUCCESSFUL confirm is exactly the old rearm-after-confirm behavior; after the "X" it clears
+    // the half-drawn polygon so the user isn't stranded with an uncommittable
     // shape (unlike the click-based popup, a drawn polygon is a real overlay left on the map, so
     // this popup — unlike that one — DOES need every dismiss path to clean it up).
     popup.on('close', () => {
