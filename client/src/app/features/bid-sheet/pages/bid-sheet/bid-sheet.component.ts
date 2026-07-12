@@ -246,6 +246,25 @@ export class BidSheetComponent {
 
   toggleMapEngine(): void {
     this.mapEngine.set(this.mapEngine() === 'maplibre' ? 'leaflet' : 'maplibre');
+    // Re-arm the Leaflet container-ready poll on every switch INTO leaflet. _initializeMapWhenReady()
+    // is only ever kicked off once, from the single afterNextRender() call in the constructor (see
+    // that call site's comment — Leaflet's map instance is created once for the page's lifetime, not
+    // recreated on toggle). Its retry loop is capped at 30 attempts (~6s) — a bound that was safe
+    // under the OLD effect()-per-toggle design, where every switch to 'leaflet' re-ran this method
+    // and got a fresh budget. Now that it only runs once at page load, if #mapEl is still
+    // display:none 6+ seconds after load (the default: MapLibre is the initial engine in every
+    // environment, so #mapEl starts hidden and only becomes visible once the user toggles), the
+    // retry loop exhausts and gives up for good — permanently blank Leaflet no matter how many times
+    // the user toggles afterward, since nothing else ever calls this again. That's the exact
+    // "sometimes" reported: it only fails once the user takes longer than ~6s to first try Leaflet,
+    // which in real usage (filtering, browsing bids first) is the common case, not the rare one.
+    // Resetting the counter and re-invoking here gives the container-ready poll a fresh budget
+    // starting from the moment it's actually asked to become visible; _initializeMapWhenReady()
+    // itself no-ops immediately if the map is already initialized.
+    if (this.mapEngine() === 'leaflet' && !this._isMapInitialized) {
+      this._mapRetries = 0;
+      this._initializeMapWhenReady();
+    }
   }
 
   // --- Geocoded address search (MapLibre path only, docs/poc/bid-sheet-map/) ---
