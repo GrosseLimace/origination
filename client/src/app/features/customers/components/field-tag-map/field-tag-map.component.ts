@@ -624,10 +624,14 @@ export class FieldTagMapComponent {
     tileFeature: maplibregl.MapGeoJSONFeature,
     resetButton: () => void,
   ): Promise<void> {
-    // A field spanning a tile boundary arrives as several disjoint fragments sharing a native id;
-    // reconstruct the full field from every matching fragment already loaded in the viewport
-    // before falling back to the single clicked fragment (CLU tile-seam reconstruction algorithm).
-    const reconstructed = method === 'clu' ? this.reconstructFullCluGeometry(tileFeature) : null;
+    // A field spanning a tile boundary arrives as several disjoint fragments sharing a native id
+    // (CLU: tile feature id; parcel: `parcel_id`); reconstruct the full field from every matching
+    // fragment already loaded in the viewport before falling back to the single clicked fragment
+    // (tile-seam reconstruction algorithm — see reconstructFullFieldGeometry below). Applies to
+    // BOTH tiers: parcel tiles carry a real, stable `parcel_id` just like CLU carries a stable
+    // native id, so the same grouping approach works — parcel previously had no reconstruction at
+    // all and always persisted a clipped fragment for multi-tile parcels.
+    const reconstructed = this.reconstructFullFieldGeometry(tileFeature, method);
     const sourceGeometry =
       reconstructed ??
       pickPolygonGeometry(lookupField?.feature.geometry as Geometry | undefined) ??
@@ -655,14 +659,36 @@ export class FieldTagMapComponent {
 
       // G10: match the response's CLU feature back to the clicked field by calcacres — never
       // features[0] (the reconstructed AOI can clip neighbors and response order isn't guaranteed).
+      // Tolerant comparison, not strict `===`: clickedCalcacres (tile-server attribute) and the
+      // AOI response's calcacres/acres (a separately-computed vendor value) can differ by rounding
+      // for the SAME field, which previously caused strict equality to silently miss the correct
+      // match and fall back to the (possibly tile-clipped) sourceGeometry. Tolerance is the larger
+      // of a fixed 0.5-acre floor (covers small fields where 1% is too tight) and 1% of the
+      // clicked acreage (covers large fields where rounding drift exceeds 0.5 ac in absolute
+      // terms). When multiple candidates fall within tolerance, prefer the closest.
       const clickedCalcacres = this.toNumber((tileFeature.properties as Record<string, unknown> | undefined)?.['calcacres']);
-      const responseFeature =
-        method === 'clu' && clickedCalcacres != null
-          ? result.features.find(
-              (f) => this.toNumber((f.properties as Record<string, unknown> | undefined)?.['calcacres']) === clickedCalcacres,
-            )
-          : undefined;
+      let responseFeature: (typeof result.features)[number] | undefined;
+      if (method === 'clu' && clickedCalcacres != null) {
+        const tolerance = Math.max(0.5, clickedCalcacres * 0.01);
+        let bestDiff = Infinity;
+        for (const f of result.features) {
+          const props = f.properties as Record<string, unknown> | undefined;
+          const candidateAcres = this.toNumber(props?.['calcacres'] ?? props?.['acres']);
+          if (candidateAcres == null) continue;
+          const diff = Math.abs(candidateAcres - clickedCalcacres);
+          if (diff <= tolerance && diff < bestDiff) {
+            bestDiff = diff;
+            responseFeature = f;
+          }
+        }
+      }
 
+      // The vendor's own AOI-response geometry is authoritative and not limited by which tiles
+      // MapLibre happened to have loaded client-side (unlike the querySourceFeatures-based hull
+      // above) — so prefer it over the client reconstruction whenever a confident match exists.
+      // Parcel has no equivalent: the live API rejects "parcels" as an AOI layer (G9), so
+      // client-side reconstruction (reconstructFullFieldGeometry) is the ceiling for parcel
+      // geometry accuracy — there is no vendor-authoritative fallback to correct an undershoot.
       const matchedGeometry = responseFeature ? pickPolygonGeometry(responseFeature.geometry) : null;
       const geometry: Polygon | MultiPolygon = matchedGeometry ?? sourceGeometry;
 
@@ -700,22 +726,46 @@ export class FieldTagMapComponent {
   }
 
   /**
-   * Reconstruct a tile-boundary-spanning CLU field from every already-loaded tile fragment
-   * sharing the clicked feature's NATIVE id (not calcacres — live-tile verification found
-   * calcacres collides across genuinely distinct fields within a tile; see G13 and
-   * 01-data-model.md "CLU identity: native MVT feature id"). Uses querySourceFeatures, which only
-   * sees tiles MapLibre has already fetched for the current viewport — zero extra vendor tokens.
+   * Reconstruct a tile-boundary-spanning CLU or parcel field from every already-loaded tile
+   * fragment sharing the clicked feature's native identity — CLU: the tile feature's NATIVE id
+   * (not calcacres — live-tile verification found calcacres collides across genuinely distinct
+   * fields within a tile; see G13 and 01-data-model.md "CLU identity: native MVT feature id");
+   * parcel: the tile's `parcel_id` property, which is real and stable the same way (unlike CLU's
+   * tile-local `id`, which required the G1 promoteId strip before it was trustworthy). Generalized
+   * from the CLU-only `reconstructFullCluGeometry` — parcel previously had no reconstruction (and
+   * no AOI-based correction, since the live API rejects "parcels" as an AOI layer, G9) so a
+   * multi-tile parcel selection always persisted a clipped tile fragment. Uses
+   * querySourceFeatures, which only sees tiles MapLibre has already fetched for the current
+   * viewport — zero extra vendor tokens, but also means reconstruction can still undershoot if the
+   * field extends beyond currently-loaded tiles; the sanity check below guards against persisting
+   * a bad hull in that case.
    */
-  private reconstructFullCluGeometry(tileFeature: maplibregl.MapGeoJSONFeature): Polygon | null {
+  private reconstructFullFieldGeometry(
+    tileFeature: maplibregl.MapGeoJSONFeature,
+    method: 'clu' | 'parcel',
+  ): Polygon | null {
     const map = this.map;
     if (!map) return null;
-    const nativeId = tileFeature.id;
-    if (nativeId == null) return null;
 
-    const fragments = map.querySourceFeatures('clu', {
-      sourceLayer: 'clu',
-      filter: ['==', ['id'], nativeId],
-    });
+    const tileProps = (tileFeature.properties ?? {}) as Record<string, unknown>;
+    const sourceId = method === 'clu' ? 'clu' : 'parcels';
+    const sourceLayer = method === 'clu' ? 'clu' : 'parcels';
+    // Sanity-check acreage property differs per tier: CLU's is `calcacres`, parcel's real tile
+    // attribute is `acreage_calc` (not `calcacres` — that's a CLU-only property).
+    const sanityAcresProp = method === 'clu' ? 'calcacres' : 'acreage_calc';
+
+    let filter: maplibregl.FilterSpecification;
+    if (method === 'clu') {
+      const nativeId = tileFeature.id;
+      if (nativeId == null) return null;
+      filter = ['==', ['id'], nativeId];
+    } else {
+      const parcelId = tileProps['parcel_id'];
+      if (parcelId == null) return null;
+      filter = ['==', ['get', 'parcel_id'], parcelId as string | number];
+    }
+
+    const fragments = map.querySourceFeatures(sourceId, { sourceLayer, filter });
 
     const points: Position[] = [];
     for (const frag of fragments) {
@@ -733,10 +783,11 @@ export class FieldTagMapComponent {
     const hullAcres = geometryAcres(polygon);
 
     // A convex hull of a concave true boundary can only overshoot, never meaningfully undershoot —
-    // a hull smaller than calcacres suggests something went wrong; the single-fragment fallback is
-    // safer. calcacres here is a same-tile sanity cross-check only, never the grouping key (G13).
-    const calcacres = this.toNumber((tileFeature.properties as Record<string, unknown> | undefined)?.['calcacres']);
-    if (calcacres != null && hullAcres < calcacres * 0.95) return null;
+    // a hull smaller than the tile's own acreage attribute suggests something went wrong (e.g. the
+    // field extends beyond currently-loaded tiles); the single-fragment fallback is safer. This
+    // property is a same-tile sanity cross-check only, never the grouping key (G13).
+    const sanityAcres = this.toNumber(tileProps[sanityAcresProp]);
+    if (sanityAcres != null && hullAcres < sanityAcres * 0.95) return null;
 
     return polygon;
   }
