@@ -44,6 +44,23 @@ body {
   @apply bg-gray-900 text-white;
 }
 
+/* MapLibre popup close button ("×") — always fixed-color, never `color: inherit`. MapLibre's own
+ * CSS (maplibre-gl.css) never sets a `color` on `.maplibregl-popup-close-button`, so Tailwind
+ * preflight's `button { color: inherit }` takes over and the glyph inherits all the way up to
+ * `body`'s color — white in dark mode. The popup's own `.maplibregl-popup-content` box is ALWAYS a
+ * plain white background regardless of app theme (never overridden for dark mode), so white-on-
+ * white made the close button completely invisible. Force a fixed dark color + explicit size so it
+ * reads reliably against that guaranteed-white background in both app themes. */
+.maplibregl-popup-close-button {
+  color: #374151;
+  font-size: 18px;
+  line-height: 1;
+  padding: 4px 6px;
+}
+.maplibregl-popup-close-button:hover {
+  color: #111827;
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { @apply bg-gray-100; }
