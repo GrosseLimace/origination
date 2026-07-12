@@ -362,6 +362,27 @@ export class FieldTagMapComponent {
       container,
       center,
       zoom,
+      // Forced compact (never the library default of "auto below 640px" CONTAINER width) — mirrors
+      // bid-sheet-map.component.ts's identical fix/rationale. The unforced default renders a full,
+      // un-bounded-height text strip above that width threshold, which is free to wrap onto a second,
+      // much taller line (a longer attribution string, a larger browser zoom, a narrower map pane,
+      // etc.) — that unpredictable height is exactly what let the bottom-right method legend below
+      // silently overlap/cut off the attribution strip in the originally reported bug ("© Mic..." cut
+      // off underneath the legend): a fixed CSS clearance value can't reliably clear an unbounded
+      // height. Forcing compact makes the control's footprint a small, CONSTANT ~24px icon + 10px
+      // margin (~34px total) at every viewport size, so the legend can reserve a fixed, reliable
+      // clearance above it instead.
+      //
+      // Azure Maps' own attribution requirement (confirmed against Microsoft's docs —
+      // https://learn.microsoft.com/en-us/azure/azure-maps/how-to-show-attribution — "you're required
+      // to display the appropriate data provider copyright attribution on the map... in the lower
+      // right-hand corner"; Azure Maps terms of use additionally require displaying "in a conspicuous
+      // manner" and never obscuring/removing a provider's attribution) does not forbid a collapsed,
+      // click/hover-to-expand control — MapLibre's compact control always renders a small, permanently
+      // visible "i" icon in that same corner (never fully hidden), which still satisfies "conspicuous"
+      // and "lower right-hand corner" while bounding the footprint. This is also industry-standard
+      // practice (Mapbox/MapLibre's own default narrow-viewport behavior).
+      attributionControl: false,
       style: {
         version: 8,
         sources: basemap.sources,
@@ -371,6 +392,16 @@ export class FieldTagMapComponent {
 
     this.map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
     this.map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }), 'bottom-left');
+    // compact: true — see the attributionControl: false comment above. Concatenates every active
+    // source's own `attribution` string (Azure basemap's "© Microsoft — Azure Maps" — see
+    // maplibre-basemap.ts's AZURE_ATTRIBUTION — plus the CDL overlay's "USDA NASS Cropland Data
+    // Layer" when toggled on, plus whatever attribution string LandMapMagic's own vendor style JSON
+    // embeds on its `clu`/`parcels` sources, if any — mergeLandMapMagicLayers copies vendor source
+    // objects through verbatim in lmm-styles.service.ts, so a vendor-supplied `attribution` field
+    // survives into this control automatically without any extra plumbing here) into one string
+    // behind the icon, so both Microsoft's and any vendor-declared credit stay visible together
+    // rather than one silently dropping the other.
+    this.map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
 
     this.resizeObserver = new ResizeObserver(() => this.map?.resize());
     this.resizeObserver.observe(container);

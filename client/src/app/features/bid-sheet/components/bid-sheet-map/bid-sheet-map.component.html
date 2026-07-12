@@ -26,8 +26,12 @@
        Location / engine toggle / Refresh) rather than sharing that row at a fixed horizontal
        offset — the parent's row width varies (fewer buttons in MapLibre mode than Leaflet mode,
        and either way the text can reflow), so a shared row with a hardcoded left offset collided
-       with those buttons. Stacking vertically is offset-width-independent. -->
-  <div class="absolute bottom-16 left-4 z-[1000] flex items-center gap-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg p-1">
+       with those buttons. Stacking vertically is offset-width-independent.
+       bottom-24 (96px), not bottom-16 (64px) — the parent's action row (bid-sheet.component.html)
+       was bumped from bottom-4 to bottom-10 to clear this component's newly-added ScaleControl (see
+       initMap() in the .ts file), so this toggle needs to move up correspondingly to stay clear of
+       the action row's new, higher position. -->
+  <div class="absolute bottom-24 left-4 z-[1000] flex items-center gap-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg p-1">
     <button
       type="button"
       class="rounded-md px-2 py-1 text-xs font-medium"

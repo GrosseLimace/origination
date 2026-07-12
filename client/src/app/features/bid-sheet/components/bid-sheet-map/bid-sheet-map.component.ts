@@ -1008,6 +1008,16 @@ export class BidSheetMapComponent {
     });
 
     this.map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
+    // ScaleControl, bottom-left — matches field-tag-map.component.ts's identical control/options
+    // (unit: 'imperial'). Previously omitted here (a flagged, unintentional divergence from
+    // field-tag-map — both maps should give the user the same "how big is this on the ground"
+    // reference regardless of which page they're on). Renders at the map's very bottom-left edge
+    // (~10px control margin + a ~16px scale bar, ~26px total) — this component's own basemap toggle
+    // sits well above that, at `bottom-16` (64px, see bid-sheet-map.component.html), and the parent's
+    // bottom-left action row (Add Location / engine toggle / Refresh, bid-sheet.component.html) sits
+    // lower still — see that file for its own clearance from this control. No repositioning needed
+    // for either.
+    this.map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }), 'bottom-left');
     // compact: true (not the library default of "auto below 640px") — see the attributionControl:
     // false comment above for why a forced-constant footprint matters here.
     this.map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');

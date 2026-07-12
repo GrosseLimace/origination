@@ -161,8 +161,17 @@
             }
           </div>
 
-          <!-- Floating action buttons (bottom-left) -->
-          <div class="absolute bottom-4 left-4 z-[1000] flex items-center gap-2">
+          <!-- Floating action buttons (bottom-left). bottom-10 (40px), not bottom-4 (16px) — the
+               MapLibre engine's own map (bid-sheet-map.component.ts) now adds a ScaleControl at
+               'bottom-left' (matching field-tag-map.component.ts's identical control, added to bring
+               both maps to parity), which occupies roughly the map's bottom ~26-30px (control margin
+               + scale bar). bottom-4 sat directly inside that band — a real collision, not just
+               visual closeness — so this row is bumped up to bottom-10 for a clean ~10px gap above
+               the scale control. Harmless for the Leaflet engine path too (Leaflet has no scale
+               control competing for this space; the row is simply a little higher). The map's own
+               basemap toggle (bid-sheet-map.component.html) is bumped correspondingly to stay clear
+               of THIS row's new position — see that file's comment. -->
+          <div class="absolute bottom-10 left-4 z-[1000] flex items-center gap-2">
             <button
               (click)="enterAddLocationMode()"
               class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-scoular-green-accessible hover:bg-scoular-green rounded-lg shadow-lg transition-colors"

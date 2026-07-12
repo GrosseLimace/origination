@@ -39,10 +39,16 @@
     </button>
   </form>
 
-  <!-- Basemap toggle — both modes. Bottom-left, above the MapLibre ScaleControl. Two choices: Map
-       (street) and Satellite (imagery + roads/labels/boundaries overlay — formerly labeled
-       "Hybrid"; the old imagery-only "Satellite" option was removed as redundant). -->
-  <div class="absolute bottom-8 left-2 z-10 flex items-center gap-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-1">
+  <!-- Basemap toggle — both modes. Bottom-left, stacked ABOVE the MapLibre ScaleControl (also
+       bottom-left) with clean vertical separation. bottom-12 (48px), not bottom-8 (32px) — the
+       ScaleControl's bar + its own ~10px control margin only occupies roughly the bottom ~26px of
+       the map, so bottom-8 (32px) left only a ~6px gap: enough to visually read as "confusingly
+       close to/overlapping" the scale readout (the originally reported bug), not clean separation.
+       bottom-12 leaves a genuine ~20px gap above it regardless of scale-bar text length ("1000 ft"
+       vs. a longer/shorter unit string). Two choices: Map (street) and Satellite (imagery +
+       roads/labels/boundaries overlay — formerly labeled "Hybrid"; the old imagery-only "Satellite"
+       option was removed as redundant). -->
+  <div class="absolute bottom-12 left-2 z-10 flex items-center gap-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-1">
     <button
       type="button"
       class="rounded-md px-2 py-1 text-xs font-medium"
@@ -166,8 +172,15 @@
     </div>
   }
 
-  <!-- Legend — both modes. Same color/pattern key the list's source badge uses (field-tag-style.ts). -->
-  <div class="absolute bottom-3 right-3 z-10 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm px-3 py-2">
+  <!-- Legend — both modes. Same color/pattern key the list's source badge uses (field-tag-style.ts).
+       bottom-12 (48px), not bottom-3 (12px) — mirrors bid-sheet.component.html's identical KEY-legend
+       fix (commit 53958e4): the MapLibre AttributionControl added in field-tag-map.component.ts's
+       initMap() is now forced `compact: true`, giving it a constant ~34px footprint (~24px icon +
+       10px margin) from the map's bottom edge at every viewport size. bottom-12 clears that with a
+       small buffer regardless of viewport width — bottom-3 (12px) sat almost directly on top of it,
+       which is what let the legend box visually cut off the attribution strip ("© Mic...") in the
+       originally reported bug. -->
+  <div class="absolute bottom-12 right-3 z-10 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm px-3 py-2">
     <div class="flex items-center gap-3 text-xs text-gray-600 dark:text-gray-300">
       <div class="flex items-center gap-1.5">
         <span class="inline-block w-3 h-3 rounded-sm" [style.background-color]="methodStyle.clu.color"></span>
