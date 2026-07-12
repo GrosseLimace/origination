@@ -91,6 +91,13 @@ const JIT_LOOKUP_AOI_PADDING_METERS = 200;
 const CLU_MIN_SELECTABLE_ZOOM = 12;
 const PARCELS_MIN_SELECTABLE_ZOOM = 14;
 
+// Vertical gap (px) between a selected pin's own marker box and the field-context popup shown
+// above it — see `showInfoPopup`'s `positionAboveMarker` option. A rough upper bound on this
+// component's marker box heights (`buildHoverHtml`/`buildStackedLabelHtml`/`buildBidPillsHtml`,
+// each roughly 35-70px tall including their own pointer triangle), not a per-marker exact
+// measurement — good enough to reliably clear the marker without leaving excess dead space.
+const FIELD_CONTEXT_POPUP_OFFSET_PX = 56;
+
 interface RenderedMarker {
   marker: maplibregl.Marker;
   el: HTMLElement;
@@ -608,6 +615,21 @@ export class BidSheetMapComponent {
    * the acreage figure and the highlight to the parcel).
    */
   private async handlePinSelectFieldContext(lat: number, lng: number): Promise<void> {
+    if (!this.landMapMagicKey()) return;
+    // Owner enrichment (`findOverlappingParcels`, called unconditionally inside
+    // `runFieldContextLookup` regardless of tier) needs the 'parcels' vector SOURCE's tiles to
+    // actually be loaded for this point — that source has a hard minzoom floor of 14 (confirmed
+    // live against the vendor's real style response), below which MapLibre will never even REQUEST
+    // parcel tiles, no matter which tier (or none) is currently toggled on. Without this, selecting
+    // a pin while the CLU/Parcel toggle is 'off' (or 'clu') at a lower zoom silently got CLU data
+    // but never the parcel owner — not a toggle-state bug, a tile-loading one. Bump zoom in (never
+    // out) to the SAME target center this selection is already flying to, so it supersedes rather
+    // than fights the parent's simultaneous `flyTo` command for this same selection (see that effect
+    // above) — both target the identical destination, just a possibly-higher zoom.
+    const map = this.map;
+    if (map && map.getZoom() < PARCELS_MIN_SELECTABLE_ZOOM) {
+      map.easeTo({ center: [lng, lat], zoom: PARCELS_MIN_SELECTABLE_ZOOM, duration: 400 });
+    }
     const { info, lookupResults } = await this.runFieldContextLookup(lat, lng);
     this.showFieldContextPinPopup(lat, lng, info, lookupResults);
   }
@@ -678,14 +700,18 @@ export class BidSheetMapComponent {
     }
 
     const owner = info?.parcels[0]?.owner ?? null;
-    const popup = this.showInfoPopup([lng, lat], {
-      acreage: lookupField.acreage,
-      county: info?.county ?? null,
-      state: info?.state ?? null,
-      topCrop: info?.topCrop ?? null,
-      owner,
-      title: tier === 'clu' ? 'CLU Field' : 'Parcel',
-    });
+    const popup = this.showInfoPopup(
+      [lng, lat],
+      {
+        acreage: lookupField.acreage,
+        county: info?.county ?? null,
+        state: info?.state ?? null,
+        topCrop: info?.topCrop ?? null,
+        owner,
+        title: tier === 'clu' ? 'CLU Field' : 'Parcel',
+      },
+      { positionAboveMarker: true },
+    );
     // The popup's own "x" close button (and clicking elsewhere on the map, MapLibre's default
     // closeOnClick behavior) both fire this 'close' event — either way, the highlight should not
     // outlive the popup that explains it.
@@ -785,7 +811,16 @@ export class BidSheetMapComponent {
   /** Terminal read-only popup — no "Confirm this field" button, no persistence, just reference info.
    *  `title` is optional (only `showFieldContextPinPopup` passes one, to label which tier — CLU vs.
    *  Parcel — the shown acreage/highlight came from; `showReadOnlyFieldPopup`'s click-to-inspect
-   *  flow leaves it undefined, unchanged from before). */
+   *  flow leaves it undefined, unchanged from before).
+   *
+   *  `positionAboveMarker` is ALSO only ever passed by `showFieldContextPinPopup` — that popup
+   *  anchors to a SELECTED BID-SHEET PIN's coordinate, which already has its OWN marker box (a
+   *  colored name/bid label with its own downward-pointing tip) sitting at that exact spot. Popups
+   *  default-anchor to the SAME point the same way, so without this flag the popup would render
+   *  directly ON TOP of the marker's box instead of above it, AND draw a second, redundant pointer
+   *  tip. `showReadOnlyFieldPopup`'s click-to-inspect popup has no such marker to avoid (it anchors
+   *  to an arbitrary click point on a CLU/parcel polygon, not a pin) so it never passes this flag
+   *  and keeps its default anchor/tip, unchanged. */
   private showInfoPopup(
     lngLat: maplibregl.LngLatLike,
     info: {
@@ -797,6 +832,7 @@ export class BidSheetMapComponent {
       title?: string;
       error?: boolean;
     },
+    popupOptions?: { positionAboveMarker?: boolean },
   ): maplibregl.Popup {
     const map = this.map!;
     const container = this.popupContainer();
@@ -825,7 +861,22 @@ export class BidSheetMapComponent {
       container.append(rows);
     }
 
-    return new maplibregl.Popup({ closeButton: true, maxWidth: '280px' }).setLngLat(lngLat).setDOMContent(container).addTo(map);
+    const popup = new maplibregl.Popup({
+      closeButton: true,
+      maxWidth: '280px',
+      ...(popupOptions?.positionAboveMarker ? { anchor: 'bottom' as const, offset: FIELD_CONTEXT_POPUP_OFFSET_PX } : {}),
+    })
+      .setLngLat(lngLat)
+      .setDOMContent(container)
+      .addTo(map);
+
+    if (popupOptions?.positionAboveMarker) {
+      // The marker's own tip already visually connects the box to this point — this popup doesn't
+      // need a second one pointing at the same spot.
+      popup.getElement()?.querySelector('.maplibregl-popup-tip')?.remove();
+    }
+
+    return popup;
   }
 
   // ── helpers ───────────────────────────────────────────────────────────────
@@ -1051,7 +1102,20 @@ export class BidSheetMapComponent {
     // to is never replaced/detached.
     const rendered: RenderedMarker = { marker, el: contentEl, originalHtml: contentEl.innerHTML, hoverHtml };
 
-    contentEl.addEventListener('click', () => {
+    contentEl.addEventListener('click', (e) => {
+      // Stop this click from ALSO bubbling into MapLibre's own map-level click handling. Marker
+      // elements are DOM descendants of the same container MapLibre listens on for its layer-click
+      // delegation (`wireVendorLayerInteractions`'s CLU/parcel click-to-inspect handlers included) —
+      // despite being visually "on top" via absolute positioning, a native click on this element
+      // still bubbles up through that shared container, and MapLibre's delegation hit-tests purely
+      // by PIXEL POSITION, not by which DOM element actually received the click. Without this,
+      // clicking a pin sitting on top of a CLU/parcel polygon (very common — pins usually sit inside
+      // a rendered field) ALSO fired that polygon's OWN click-to-inspect popup for the exact same
+      // physical click, producing two popups at once whenever CLU/Parcel mode was active and the
+      // click selected a previously-unselected pin (reported bug: "a click is also being registered
+      // on the map ... within the map point's name box this should not register as a click on the
+      // map").
+      e.stopPropagation();
       const name = g.names[0];
       const loc = this.locations().find((l) => l.name === name);
       if (!loc) return;
