@@ -561,11 +561,13 @@ export class FieldTagMapComponent {
     const map = this.map;
     if (!map) return;
 
-    const coords = this.customer().coordinates;
-    if (coords) {
-      map.flyTo({ center: [coords.lng, coords.lat], zoom: SELECT_MODE_ZOOM });
-    }
-
+    // No recenter/flyTo here: the ONE viewpoint reset for a producer happens when their
+    // coordinates first resolve (see the customer().coordinates effect in the constructor, guarded
+    // by `_hadCustomerCoords`), which fires once per Fields-tab session regardless of which mode is
+    // active at the time. Entering select mode (clicking "Add fields") must never re-fire it — the
+    // originator may have already panned/zoomed manually (in review mode, or in a prior select-mode
+    // session before clicking "Done"), and clicking "Add fields" again should leave the camera
+    // exactly wherever they left it.
     if (!this.vendorLayersMerged) {
       const key = this.mapConfig().landMapMagicKey;
       if (!key) {
@@ -831,7 +833,6 @@ export class FieldTagMapComponent {
         lngLat,
         { fieldId: String(nativeId), acreage: calcAcres, county: result.county, state: result.state, owner, topCrop },
         () => this.commitFieldConfirmed(draft),
-        () => this.setVendorSelected(null),
       );
       // Stay in select mode — commitFieldConfirmed (on Confirm click) POSTs via the parent, which
       // appends to `tags` and flows back through the tags() effect for instant map feedback.
@@ -1028,7 +1029,6 @@ export class FieldTagMapComponent {
       topCrop: { name: string; pct: number } | null;
     },
     onConfirm: () => void,
-    onCancel: () => void,
   ): maplibregl.Popup {
     const map = this.map!;
     const container = this.popupContainer();
@@ -1065,34 +1065,24 @@ export class FieldTagMapComponent {
     }
     container.append(rows);
 
-    const buttonRow = document.createElement('div');
-    buttonRow.className = 'flex gap-2';
-
-    const cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.className =
-      'flex-1 rounded-md border border-gray-300 bg-white text-gray-700 px-3 py-1.5 text-sm font-medium hover:bg-gray-50';
-    cancelBtn.textContent = 'Cancel';
-
     const confirmBtn = document.createElement('button');
     confirmBtn.type = 'button';
-    confirmBtn.className = 'flex-1 rounded-md bg-green-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-green-700';
+    confirmBtn.className = 'w-full rounded-md bg-green-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-green-700';
     confirmBtn.textContent = 'Confirm this field';
+    container.append(confirmBtn);
 
-    buttonRow.append(cancelBtn, confirmBtn);
-    container.append(buttonRow);
-
+    // `closeButton: true` gives the popup MapLibre's own small top-right "X" — that's the only
+    // dismiss affordance now (no separate Cancel button); the vendor `selected` feature-state is
+    // intentionally left lit on dismiss (it clears on the next feature click or on leaving select
+    // mode via exitSelectMode, not here — wiring cleanup to the popup's 'close' event would also
+    // fire on our OWN programmatic .remove() calls when swapping popups for a newly clicked
+    // feature, which would wipe out that feature's just-set selection out from under it).
     const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '280px' }).setLngLat(lngLat).setDOMContent(container).addTo(map);
 
     confirmBtn.addEventListener('click', () => {
-      cancelBtn.disabled = true;
       confirmBtn.disabled = true;
       confirmBtn.textContent = 'Saving…';
       onConfirm();
-    });
-    cancelBtn.addEventListener('click', () => {
-      popup.remove();
-      onCancel();
     });
 
     return popup;
