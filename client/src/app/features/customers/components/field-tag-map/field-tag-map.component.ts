@@ -645,7 +645,7 @@ export class FieldTagMapComponent {
     if (ref) map.setFeatureState(ref, { selected: true });
   }
 
-  // ── The confirm flow (one AOI query per confirm) ─────────────────────────
+  // ── The confirm flow (one AOI query per click, reused — never re-queried on Confirm) ────
 
   private async handleFieldClick(
     e: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] },
@@ -659,7 +659,7 @@ export class FieldTagMapComponent {
     // G11: identity comes from the tile feature itself (native MVT id for CLU, parcel_id for
     // parcel) — never from point-lookup, whose CLU `id` is always the literal string "unknown".
     // Available immediately on click, no vendor round-trip required.
-    const nativeId = method === 'clu' ? tileFeature.id : tileProps['parcel_id'];
+    const nativeId = method === 'clu' ? tileFeature.id : (tileProps['parcel_id'] as string | number | undefined);
     if (nativeId == null) {
       this.selectError.emit('Could not resolve an identifier for the clicked feature.');
       return;
@@ -679,39 +679,48 @@ export class FieldTagMapComponent {
       return;
     }
 
+    if (tileFeature.id != null) {
+      this.setVendorSelected({ source: tileFeature.source, sourceLayer: tileFeature.sourceLayer, id: tileFeature.id });
+    }
+
+    // Show an immediate lightweight loading popup — the AOI retrieval below (~0.3-1s live) now
+    // happens BEFORE the confirm popup appears, not after the user clicks "Confirm this field",
+    // so the popup can be enriched with retrieved details (city/state, owner, top crop) the
+    // originator can use to verify they've found the right producer's field before committing.
+    this.activePopup?.remove();
+    this.activePopup = this.showLoadingPopup(e.lngLat);
+
+    await this.resolveAndShowFieldDetails(e.lngLat, tileFeature, tileProps, method, externalRef, nativeId, landMapMagicKey);
+  }
+
+  /**
+   * Point-lookup + geometry resolution + ONE AOI query, then swaps the loading popup for either
+   * the full details popup (success) or a retry-capable error popup (failure). Called once from
+   * `handleFieldClick` and again, recursively, from the error popup's "Retry" button — retry
+   * re-runs this exact function with the same closed-over click context, so it's indistinguishable
+   * from the first attempt other than not re-doing the duplicate check (already passed).
+   */
+  private async resolveAndShowFieldDetails(
+    lngLat: maplibregl.LngLatLike,
+    tileFeature: maplibregl.MapGeoJSONFeature,
+    tileProps: Record<string, unknown>,
+    method: 'clu' | 'parcel',
+    externalRef: string,
+    nativeId: string | number,
+    landMapMagicKey: string,
+  ): Promise<void> {
     const lookupLayer = method === 'clu' ? 'clu' : 'parcels';
     let lookupField: LookupField | undefined;
     try {
-      const results = await pointLookup(e.lngLat.lat, e.lngLat.lng, landMapMagicKey);
+      const results = await pointLookup((lngLat as maplibregl.LngLat).lat, (lngLat as maplibregl.LngLat).lng, landMapMagicKey);
       lookupField = results.find((f) => f.layer === lookupLayer) ?? results[0];
     } catch (err) {
       console.warn('[field-tag-map] Point Lookup failed; falling back to tile feature properties.', err);
     }
 
-    const acreage =
+    const popupAcreage =
       lookupField?.acreage ?? this.toNumber(lookupLayer === 'parcels' ? tileProps['acreage_calc'] : tileProps['calcacres']);
 
-    if (tileFeature.id != null) {
-      this.setVendorSelected({ source: tileFeature.source, sourceLayer: tileFeature.sourceLayer, id: tileFeature.id });
-    }
-
-    this.activePopup?.remove();
-    this.activePopup = this.showFieldPopup(
-      e.lngLat,
-      { fieldId: String(nativeId), acreage },
-      (resetButton) => void this.confirmSelection(method, externalRef, acreage, lookupField, tileFeature, resetButton),
-      () => this.setVendorSelected(null),
-    );
-  }
-
-  private async confirmSelection(
-    method: 'clu' | 'parcel',
-    externalRef: string,
-    popupAcreage: number | null,
-    lookupField: LookupField | undefined,
-    tileFeature: maplibregl.MapGeoJSONFeature,
-    resetButton: () => void,
-  ): Promise<void> {
     // A field spanning a tile boundary arrives as several disjoint fragments sharing a native id
     // (CLU: tile feature id; parcel: `parcel_id`); reconstruct the full field from every matching
     // fragment already loaded in the viewport before falling back to the single clicked fragment
@@ -726,23 +735,24 @@ export class FieldTagMapComponent {
       pickPolygonGeometry(tileFeature.geometry as Geometry);
 
     if (!sourceGeometry) {
-      this.selectError.emit('Could not resolve a polygon geometry for the clicked feature.');
-      resetButton();
+      this.activePopup?.remove();
+      this.activePopup = this.showErrorPopup(
+        lngLat,
+        'Could not resolve a polygon geometry for the clicked feature.',
+        null,
+        () => this.setVendorSelected(null),
+      );
       return;
     }
 
-    const landMapMagicKey = this.mapConfig().landMapMagicKey;
-    if (!landMapMagicKey) {
-      this.selectError.emit('LandMapMagic key is not configured.');
-      resetButton();
-      return;
-    }
     const cdlYear = this.mapConfig().cdlYear;
     const cdlFallbackYear = this.mapConfig().cdlFallbackYear;
 
     try {
-      // Exactly one AOI query per confirm. G9: parcel/drawn tiers never send "parcels" as a
-      // layer — the live API rejects it; only CLU tier adds "clu" alongside "cdl:<year>".
+      // Exactly one AOI query per click (not per confirm — the confirm button below just emits
+      // the already-built draft, no further vendor call). G9: parcel/drawn tiers never send
+      // "parcels" as a layer — the live API rejects it; only CLU tier adds "clu" alongside
+      // "cdl:<year>" (and, for all tiers, "states"/"counties" — see lmm-aoi-query.ts).
       //
       // CLU tier submits a PADDED bounding box, not sourceGeometry verbatim: the AOI endpoint
       // only returns features that geographically intersect the submitted polygon, and
@@ -768,7 +778,7 @@ export class FieldTagMapComponent {
       // just the single closest one) and merge ALL of their geometries via real polygon union —
       // the same union-merge this component already does for client-loaded tile fragments
       // (reconstructFullFieldGeometry).
-      const clickedCalcacres = this.toNumber((tileFeature.properties as Record<string, unknown> | undefined)?.['calcacres']);
+      const clickedCalcacres = this.toNumber(tileProps['calcacres']);
       let matchedGeometry: Polygon | MultiPolygon | null = null;
       let matchedAcres: number | null = null;
       if (method === 'clu' && clickedCalcacres != null) {
@@ -811,22 +821,37 @@ export class FieldTagMapComponent {
         cdlSnapshotJson: JSON.stringify(result.cropBreakdown),
       };
 
-      this.fieldConfirmed.emit(draft);
-      this.setVendorSelected(null);
+      // Owner is a real parcel TILE property (confirmed live: `{ robust_id, parcel_id, owner,
+      // acreage_calc }`) — CLU tiles carry no ownership field at all, so this is parcel-tier only.
+      const owner = method === 'parcel' ? this.toDisplayString(tileProps['owner']) : null;
+      const topCrop = this.topCrop(result.cropBreakdown);
+
       this.activePopup?.remove();
-      this.activePopup = null;
-      // Stay in select mode — the parent POSTs the draft and appends to `tags`, which flows back
-      // through the tags() effect and re-`setData`s the tagged-fields source for instant feedback.
+      this.activePopup = this.showFieldPopup(
+        lngLat,
+        { fieldId: String(nativeId), acreage: calcAcres, county: result.county, state: result.state, owner, topCrop },
+        () => this.commitFieldConfirmed(draft),
+      );
+      // Stay in select mode — commitFieldConfirmed (on Confirm click) POSTs via the parent, which
+      // appends to `tags` and flows back through the tags() effect for instant map feedback.
     } catch (err) {
       console.error('[field-tag-map] AOI Query failed:', err);
-      this.selectError.emit('AOI Query failed — could not capture field geometry/crop history.');
-      // Re-enable the Confirm button and restore its label rather than leaving the popup stuck
-      // at "Capturing…" — the user can retry directly from the popup (re-running only the 10-token
-      // AOI call, no extra point-lookup) instead of having to close the popup and re-click the map.
-      // The vendor `selected` feature-state is intentionally left lit so the retry targets the same
-      // clicked feature.
-      resetButton();
+      this.activePopup?.remove();
+      this.activePopup = this.showErrorPopup(
+        lngLat,
+        'Could not retrieve field details — check your connection and retry.',
+        () => void this.resolveAndShowFieldDetails(lngLat, tileFeature, tileProps, method, externalRef, nativeId, landMapMagicKey),
+        () => this.setVendorSelected(null),
+      );
     }
+  }
+
+  /** Confirm button handler once details have already been retrieved — no further vendor call. */
+  private commitFieldConfirmed(draft: FieldTagDraft): void {
+    this.fieldConfirmed.emit(draft);
+    this.setVendorSelected(null);
+    this.activePopup?.remove();
+    this.activePopup = null;
   }
 
   /**
@@ -956,54 +981,135 @@ export class FieldTagMapComponent {
     this.drawController?.rearm();
   }
 
-  // ── Popup (manual DOM — never setHTML with vendor-supplied strings) ─────
+  // ── Popups (manual DOM — never setHTML with vendor-supplied strings) ────
+  //
+  // MapLibre's `.maplibregl-popup-content` box is ALWAYS a plain white background (from
+  // maplibre-gl.css, never overridden for dark mode — confirmed: no app stylesheet touches any
+  // `.maplibregl-popup*` class). Popup content below therefore uses fixed, non-dark-mode-
+  // conditional colors chosen for contrast against that guaranteed-white box — the previous
+  // `dark:text-gray-100`/`dark:text-gray-300` classes rendered near-white text on that same white
+  // background whenever the app was in dark mode, which is what made the popup unreadable.
 
+  private popupContainer(minWidthClass = 'min-w-[200px]'): HTMLDivElement {
+    const container = document.createElement('div');
+    container.className = `text-sm text-gray-900 ${minWidthClass}`;
+    return container;
+  }
+
+  /** Shown immediately on click while point-lookup + the AOI retrieval are in flight. */
+  private showLoadingPopup(lngLat: maplibregl.LngLatLike): maplibregl.Popup {
+    const map = this.map!;
+    const container = this.popupContainer('min-w-[180px]');
+    container.classList.add('flex', 'items-center', 'gap-2', 'py-0.5');
+
+    const spinner = document.createElement('span');
+    spinner.className = 'inline-block w-3.5 h-3.5 shrink-0 rounded-full border-2 border-gray-300 border-t-gray-600 animate-spin';
+    const label = document.createElement('span');
+    label.className = 'text-gray-700';
+    label.textContent = 'Loading field details…';
+    container.append(spinner, label);
+
+    return new maplibregl.Popup({ closeButton: true, maxWidth: '240px' }).setLngLat(lngLat).setDOMContent(container).addTo(map);
+  }
+
+  /**
+   * Shown once point-lookup + the single AOI retrieval have both resolved. Confirm just emits the
+   * already-built draft (no vendor call happens on click — see commitFieldConfirmed).
+   */
   private showFieldPopup(
     lngLat: maplibregl.LngLatLike,
-    info: { fieldId: string; acreage: number | null },
-    onConfirm: (resetButton: () => void) => void,
-    onNotRight: () => void,
+    info: {
+      fieldId: string;
+      acreage: number | null;
+      county: string | null;
+      state: string | null;
+      owner: string | null;
+      topCrop: { name: string; pct: number } | null;
+    },
+    onConfirm: () => void,
   ): maplibregl.Popup {
     const map = this.map!;
-    const container = document.createElement('div');
-    container.className = 'text-sm';
+    const container = this.popupContainer();
 
     const idEl = document.createElement('div');
-    idEl.className = 'font-medium text-gray-900 dark:text-gray-100';
+    idEl.className = 'font-semibold text-base text-gray-900 mb-1.5';
     idEl.textContent = `Field ${info.fieldId}`;
+    container.append(idEl);
 
-    const acresEl = document.createElement('div');
-    acresEl.className = 'text-gray-600 dark:text-gray-300 mb-2';
-    acresEl.textContent = info.acreage != null ? `${info.acreage.toFixed(1)} acres` : 'Acreage unavailable';
+    const rows = document.createElement('div');
+    rows.className = 'space-y-1 mb-3';
+    const addRow = (label: string, value: string): void => {
+      const row = document.createElement('div');
+      row.className = 'flex items-baseline gap-1.5';
+      const labelEl = document.createElement('span');
+      labelEl.className = 'text-gray-500 text-xs uppercase tracking-wide shrink-0';
+      labelEl.textContent = label;
+      const valueEl = document.createElement('span');
+      valueEl.className = 'text-gray-900 font-medium';
+      valueEl.textContent = value;
+      row.append(labelEl, valueEl);
+      rows.append(row);
+    };
+
+    addRow('Acres', info.acreage != null ? info.acreage.toFixed(1) : 'Unavailable');
+    if (info.county || info.state) {
+      addRow('Location', [info.county, info.state].filter((v): v is string => !!v).join(', '));
+    }
+    if (info.owner) {
+      addRow('Owner', info.owner);
+    }
+    if (info.topCrop) {
+      addRow('Top crop', `${info.topCrop.name} (${Math.round(info.topCrop.pct)}%)`);
+    }
+    container.append(rows);
 
     const confirmBtn = document.createElement('button');
     confirmBtn.type = 'button';
-    confirmBtn.className = 'rounded-md bg-green-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-green-700';
+    confirmBtn.className = 'w-full rounded-md bg-green-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-green-700';
     confirmBtn.textContent = 'Confirm this field';
+    container.append(confirmBtn);
 
-    const notRight = document.createElement('a');
-    notRight.href = '#';
-    notRight.className = 'block mt-2 text-xs text-gray-500 hover:underline';
-    notRight.textContent = "This isn't right — try Parcel or Draw instead";
+    const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '280px' }).setLngLat(lngLat).setDOMContent(container).addTo(map);
 
-    container.append(idEl, acresEl, confirmBtn, notRight);
-
-    const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '260px' }).setLngLat(lngLat).setDOMContent(container).addTo(map);
-
-    const confirmBtnDefaultText = confirmBtn.textContent ?? 'Confirm this field';
     confirmBtn.addEventListener('click', () => {
       confirmBtn.disabled = true;
-      confirmBtn.textContent = 'Capturing…';
-      onConfirm(() => {
-        confirmBtn.disabled = false;
-        confirmBtn.textContent = confirmBtnDefaultText;
+      confirmBtn.textContent = 'Saving…';
+      onConfirm();
+    });
+
+    return popup;
+  }
+
+  /** Shown when the AOI retrieval itself fails; Retry re-runs the same request. */
+  private showErrorPopup(
+    lngLat: maplibregl.LngLatLike,
+    message: string,
+    onRetry: (() => void) | null,
+    onCancel: () => void,
+  ): maplibregl.Popup {
+    const map = this.map!;
+    const container = this.popupContainer('min-w-[180px]');
+
+    const msgEl = document.createElement('div');
+    msgEl.className = 'text-red-700 mb-2';
+    msgEl.textContent = message;
+    container.append(msgEl);
+
+    if (onRetry) {
+      const retryBtn = document.createElement('button');
+      retryBtn.type = 'button';
+      retryBtn.className = 'w-full rounded-md bg-gray-700 text-white px-3 py-1.5 text-sm font-medium hover:bg-gray-800';
+      retryBtn.textContent = 'Retry';
+      container.append(retryBtn);
+      retryBtn.addEventListener('click', () => {
+        retryBtn.disabled = true;
+        retryBtn.textContent = 'Retrying…';
+        onRetry();
       });
-    });
-    notRight.addEventListener('click', (ev) => {
-      ev.preventDefault();
-      popup.remove();
-      onNotRight();
-    });
+    }
+
+    const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '260px' }).setLngLat(lngLat).setDOMContent(container).addTo(map);
+    popup.on('close', onCancel);
 
     return popup;
   }
@@ -1013,5 +1119,23 @@ export class FieldTagMapComponent {
   private toNumber(value: unknown): number | null {
     const n = Number(value);
     return value != null && Number.isFinite(n) ? n : null;
+  }
+
+  private toDisplayString(value: unknown): string | null {
+    if (value == null) return null;
+    const s = String(value).trim();
+    return s.length > 0 ? s : null;
+  }
+
+  /** Highest-percentage CDL crop in a breakdown, or null if none carry a usable percentage. */
+  private topCrop(
+    breakdown: ReadonlyArray<{ crop: string; percentOfAoi: number | null }>,
+  ): { name: string; pct: number } | null {
+    let best: { crop: string; percentOfAoi: number } | null = null;
+    for (const entry of breakdown) {
+      if (entry.percentOfAoi == null) continue;
+      if (!best || entry.percentOfAoi > best.percentOfAoi) best = { crop: entry.crop, percentOfAoi: entry.percentOfAoi };
+    }
+    return best ? { name: best.crop, pct: best.percentOfAoi } : null;
   }
 }

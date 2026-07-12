@@ -72,6 +72,20 @@ export interface AoiQueryResult {
   acres: number;
   /** CDL year actually used (preferred year, or the fallback year on retry). */
   cdlYear: string;
+  /**
+   * State name the AOI falls within (e.g. "Nebraska"), from the vendor's `states` layer —
+   * confirmed live: `layers.states.features[0].name`. Null if the vendor returned no match.
+   */
+  state: string | null;
+  /**
+   * County name the AOI falls within (e.g. "Saunders County"), from the vendor's `counties`
+   * layer — confirmed live: `layers.counties.features[0].name`. Null if the vendor returned no
+   * match. There is no vendor "city" layer (the confirmed valid AOI layer catalog is `states,
+   * counties, plss, townships, sections, clu, cdl, ssurgo` — see
+   * docs/poc/field-tagging/03-frontend-map-component.md), so county is the closest available
+   * admin-boundary granularity and is labeled as "County", never mislabeled as "City".
+   */
+  county: string | null;
   /** Full raw API response, retained for POC inspection/debugging. */
   raw: AoiQueryResponse;
 }
@@ -106,7 +120,11 @@ async function postAoi(
   landMapMagicKey: string,
 ): Promise<AoiQueryResult> {
   const cdlKey = `cdl:${cdlYear}`;
-  const layers = includeCluLayer ? ['clu', cdlKey] : [cdlKey];
+  // "states" + "counties" are always requested alongside the tier-specific layers — confirmed
+  // live (curl against the real vendor endpoint) that these combine freely with "clu" and
+  // "cdl:<year>" in a single request (4-layer combined query returned 200 OK / all 4 layer keys
+  // present), so this adds city/state-equivalent context to every AOI call at no extra request.
+  const layers = includeCluLayer ? ['clu', 'states', 'counties', cdlKey] : ['states', 'counties', cdlKey];
   const res = await fetch(`${LMM_BASE_URL}/data/aoi?key=${encodeURIComponent(landMapMagicKey)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -142,11 +160,19 @@ async function postAoi(
     percentOfAoi: f.area.percent_of_aoi_in_feature,
   }));
 
+  // Confirmed live: each layer's top-level feature `.name` is the human-readable label
+  // ("Nebraska", "Saunders County") — no need to dig into the nested vendor `properties` bag
+  // (e.g. `properties.NAME`/`properties.STUSPS`), which vary in casing/shape between layers.
+  const state = body.layers['states']?.features[0]?.name ?? null;
+  const county = body.layers['counties']?.features[0]?.name ?? null;
+
   return {
     features,
     cropBreakdown,
     acres: body.aoi.area.acres,
     cdlYear,
+    state,
+    county,
     raw: body,
   };
 }

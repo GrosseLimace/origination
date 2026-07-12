@@ -31,6 +31,9 @@ const LMM_CLU_LAYER_IDS = ['clu-outline', 'clu-labels'];
 /** Real layer ids LandMapMagic returns for the parcels group. */
 const LMM_PARCELS_LAYER_IDS = ['parcels-fill', 'parcels-outline', 'parcels-labels'];
 
+/** The vendor's own parcel label symbol layer — see `overrideParcelsLabelText` below. */
+const PARCELS_LABELS_LAYER_ID = 'parcels-labels';
+
 /**
  * G5: LandMapMagic's CLU group ships only a line ("clu-outline") and a label layer — there is no
  * CLU fill layer. Line geometries have a thin pixel-width hit area, which makes click/hover
@@ -95,6 +98,7 @@ export async function mergeLandMapMagicLayers(
     if (!map.getLayer(layer.id)) map.addLayer(layer as LayerSpecification);
   }
 
+  overrideParcelsLabelText(map);
   addSyntheticLayers(map);
 
   return {
@@ -136,6 +140,32 @@ function simplifyTextFont(layer: LayerSpecification): void {
   if (Array.isArray(textFont) && textFont.length > 1 && typeof textFont[0] === 'string') {
     layer.layout = { ...layer.layout, 'text-font': [textFont[0]] };
   }
+}
+
+/**
+ * Overlay the parcel OWNER name directly on the map, mirroring how the vendor's own `clu-labels`
+ * layer already overlays each CLU field's acreage while browsing (no click required) — the goal
+ * is to help an originator visually locate a producer's field/parcel by scanning the map, and a
+ * bare `parcel_id` (the vendor's own default `parcels-labels` text) means nothing to them, while
+ * the owner name is exactly what they're scanning for. Confirmed real parcel tile property:
+ * `owner` (see lmm-point-lookup.ts's live-tile-decode comment: `{ robust_id, parcel_id, owner,
+ * acreage_calc }`). Falls back to an empty string via `coalesce` when the vendor didn't send an
+ * owner for a given parcel, so the label just renders blank rather than something misleading like
+ * the literal string "undefined".
+ */
+function overrideParcelsLabelText(map: maplibregl.Map): void {
+  if (!map.getLayer(PARCELS_LABELS_LAYER_ID)) return;
+  map.setLayoutProperty(PARCELS_LABELS_LAYER_ID, 'text-field', ['coalesce', ['get', 'owner'], '']);
+  map.setLayoutProperty(PARCELS_LABELS_LAYER_ID, 'text-size', 12);
+  // The vendor's own paint properties were tuned for its default (short, numeric) label text —
+  // an owner NAME is longer and needs to stay legible over both busy satellite imagery and the
+  // street/hybrid basemaps. White text + a solid dark halo reads reliably across all three
+  // basemap styles (imagery/street/hybrid — see the basemap toggle), unlike the vendor's likely
+  // thinner/lighter default halo which all but disappeared on satellite imagery.
+  map.setPaintProperty(PARCELS_LABELS_LAYER_ID, 'text-color', '#ffffff');
+  map.setPaintProperty(PARCELS_LABELS_LAYER_ID, 'text-halo-color', '#000000');
+  map.setPaintProperty(PARCELS_LABELS_LAYER_ID, 'text-halo-width', 1.5);
+  map.setPaintProperty(PARCELS_LABELS_LAYER_ID, 'text-halo-blur', 0.5);
 }
 
 /** Add the CLU hit-test fill and both selected-highlight outline layers (G4, G5). */
