@@ -12,7 +12,7 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { BidSheetEntry, BidSheetLocation, BidSheetLocationBid, Elevator, Commodity, MapConfig } from '@models';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import { BidSheetMapComponent } from '../../components/bid-sheet-map/bid-sheet-map.component';
-import { BidSheetMapRenderModel } from '../../components/bid-sheet-map/bid-sheet-map.model';
+import { BidSheetMapRenderModel, FieldContextInfo } from '../../components/bid-sheet-map/bid-sheet-map.model';
 import { environment } from '@env/environment';
 
 interface EditBidsRow {
@@ -252,18 +252,66 @@ export class BidSheetComponent {
    *  the Leaflet path's marker click handlers call directly. */
   onMapLocationSelected(loc: BidSheetLocation): void {
     this._selectMapLocation(loc);
+    // Remembered only so `onFieldContextResolved` can label the usage-tracking event with the
+    // point that was actually looked up — the child gates whether a lookup fires at all (only
+    // while its CLU/Parcel toggle is on) on the same click, so this never mislabels an unrelated
+    // lookup.
+    if (loc.latitude != null && loc.longitude != null) {
+      this._lastFieldContextCoordKey = `${loc.latitude.toFixed(5)},${loc.longitude.toFixed(5)}`;
+    }
   }
 
   /** Click handler wired to the MapLibre path's (mapClicked) output — same add-location flow the
    *  Leaflet path's _onMapClick calls after drawing its own "+" pin; payload is unchanged. */
   onMapClicked(coords: { lat: number; lng: number }): void {
     this._placeAddLocationPin(coords.lat, coords.lng);
+    this._lastFieldContextCoordKey = `${coords.lat.toFixed(5)},${coords.lng.toFixed(5)}`;
+    // The child always attempts a JIT lookup on pin-drop when a vendor key is configured (see
+    // 03-frontend-components.md "JIT field-context lookup", trigger 1) — show the Add Location
+    // form's spinner only when that's actually going to happen.
+    this.fieldContextInfo.set(null);
+    this.fieldContextLoading.set(!!this.mapConfig()?.landMapMagicKey);
   }
 
   /** Zoom handler wired to the MapLibre path's (zoomChanged) output — keeps mapZoom in sync so
    *  mapRenderModel recomputes pin kinds the same way Leaflet's zoomend handler does today. */
   onMapZoomChanged(zoom: number): void {
     this.mapZoom.set(zoom);
+  }
+
+  // --- CLU/Parcel JIT field-context lookup (docs/poc/bid-sheet-map/, read-only, never persisted) ---
+  /** Result of the most recent JIT lookup — displayed only in the Add Location form's "Field
+   *  context" section; discarded whenever the form closes/cancels (see exitAddLocationMode). */
+  readonly fieldContextInfo = signal<FieldContextInfo | null>(null);
+  readonly fieldContextLoading = signal(false);
+  private _lastFieldContextCoordKey: string | null = null;
+
+  /** One-line summary for the Add Location form, e.g. "CLU field — 42.3 ac, Story County, IA —
+   *  top crop: corn". Null while loading or when nothing has been looked up yet. */
+  readonly fieldContextSummary = computed<string | null>(() => {
+    const ctx = this.fieldContextInfo();
+    if (!ctx || !ctx.method) return null;
+    let summary = ctx.method === 'clu' ? 'CLU field' : 'Parcel';
+    const details: string[] = [];
+    if (ctx.acreage != null) details.push(`${ctx.acreage.toFixed(1)} ac`);
+    if (ctx.county) details.push(ctx.state ? `${ctx.county}, ${ctx.state}` : ctx.county);
+    if (details.length > 0) summary += ` — ${details.join(', ')}`;
+    if (ctx.topCrop) summary += ` — top crop: ${ctx.topCrop}`;
+    return summary;
+  });
+  /** True once a lookup has completed and found neither a CLU nor a parcel field at the point. */
+  readonly fieldContextNotFound = computed(() => {
+    const ctx = this.fieldContextInfo();
+    return ctx != null && ctx.method == null;
+  });
+
+  /** Handler wired to the MapLibre path's (fieldContextResolved) output. Fires exactly when the
+   *  child actually attempted a vendor round trip (pin-drop, or pin-select while its CLU/Parcel
+   *  toggle is on) — see 00-overview.md settled decision 6 for the usage-tracking rationale. */
+  onFieldContextResolved(info: FieldContextInfo | null): void {
+    this.fieldContextLoading.set(false);
+    this.fieldContextInfo.set(info);
+    this.usageTracking.postClickEvent('interaction', 'bidsheet', 'field-context-lookup', this._lastFieldContextCoordKey ?? undefined);
   }
   showFilters = signal<boolean>(true);
   /** True when the filter bar container is narrow enough that search/clear should wrap to a centered second row. */
@@ -1202,6 +1250,10 @@ export class BidSheetComponent {
     this._resetAddForm();
     this._refreshMapMarkers();
     this.addLocationOrigin.set(null);
+    // Field-context lookup result is display-only and never persisted — discard it whenever the
+    // form closes, whether saved, cancelled, or exited any other way (00-overview.md decision 4).
+    this.fieldContextInfo.set(null);
+    this.fieldContextLoading.set(false);
   }
 
   private _onMapClick(e: any): void {

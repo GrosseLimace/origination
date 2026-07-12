@@ -13,17 +13,29 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import maplibregl from 'maplibre-gl';
+import type { Geometry, Polygon, Position } from 'geojson';
 import { BidSheetLocation } from '@models';
-import { BidSheetMapRenderModel, BidSheetMapRenderGroup } from './bid-sheet-map.model';
+import { BidSheetMapRenderModel, BidSheetMapRenderGroup, FieldContextInfo, ParcelOwnerMatch } from './bid-sheet-map.model';
+import {
+  mergeLandMapMagicLayers,
+  setLayerGroupVisibility,
+  type LmmLayerIds,
+} from '../../../../shared/services/land-map-magic/lmm-styles.service';
+import { pointLookup, type LookupField } from '../../../../shared/services/land-map-magic/lmm-point-lookup';
+import { aoiQuery } from '../../../../shared/services/land-map-magic/lmm-aoi-query';
+import { pickPolygonGeometry, toAoiFeature, paddedBoundingBoxPolygon, pointInPolygon } from '../../../../shared/services/land-map-magic/geo';
 
 /**
  * BidSheetMapComponent — MapLibre GL rendering path for the Bid Sheet map.
  * See docs/poc/bid-sheet-map/03-frontend-components.md for the full design this ports from
- * `field-tag-map.component.ts` (basemap init/lifecycle pattern) and from
+ * `field-tag-map.component.ts` (basemap init/lifecycle pattern, CLU/Parcel vendor-layer merge,
+ * click-to-inspect popup mechanics, JIT point-lookup/AOI-query call sites) and from
  * `bid-sheet.component.ts`'s existing (still-present) Leaflet path (marker rendering/camera logic).
  *
- * This build-order step ports basemap + marker rendering + camera/add-location only — no
- * CLU/Parcel view, JIT field-context lookup, fullscreen, or address search (later steps).
+ * CLU/Parcel here is READ-ONLY reference context — no "Confirm this field" button, no persistence
+ * path, and (per docs/poc/bid-sheet-map/00-overview.md settled decision 5) no AOI/point-lookup call
+ * ever fires for a pin that hasn't been explicitly clicked/selected: never batch, never
+ * prefetch-on-viewport/hover, never a background warm-up.
  */
 
 // Basemap layers — all three added up-front in the initial style and switched only via
@@ -58,6 +70,12 @@ const BASEMAP_SWITCH_FALLBACK_MS = 2500;
 // Debounce window for zoom-driven marker re-renders — mirrors the Leaflet path's zoomend debounce.
 const ZOOM_DEBOUNCE_MS = 200;
 
+// Same padding rationale as field-tag-map.component.ts's CLU_AOI_PADDING_METERS: the AOI endpoint
+// only returns features that geographically intersect the submitted polygon, and a bare click point
+// has zero area — pad a small box around it so the AOI query has something to intersect.
+const CLU_AOI_PADDING_METERS = 400;
+const JIT_LOOKUP_AOI_PADDING_METERS = 200;
+
 interface RenderedMarker {
   marker: maplibregl.Marker;
   el: HTMLElement;
@@ -88,15 +106,25 @@ export class BidSheetMapComponent {
   readonly fitAll = input<{ nonce: number } | null>(null);
 
   readonly azureMapsKey = input.required<string>();
+  /** Vendor config — null hides the CLU/Parcel toggle entirely (see 00-overview.md decision 7). */
+  readonly landMapMagicKey = input<string | null>(null);
+  readonly cdlYear = input<string | null>(null);
+  readonly cdlFallbackYear = input<string | null>(null);
 
   // ── Outputs ───────────────────────────────────────────────────────────────
   readonly locationSelected = output<BidSheetLocation>();
   readonly mapClicked = output<{ lat: number; lng: number }>();
   readonly zoomChanged = output<number>();
+  /** JIT field-context lookup result — fired only from an explicit pin-drop or pin-selection, never
+   *  from hover/render/viewport. `null` means the lookup completed but found neither a CLU nor a
+   *  parcel field at that point (not a failure). See `runFieldContextLookup`. */
+  readonly fieldContextResolved = output<FieldContextInfo | null>();
 
   // ── Template-facing state (basemap toggle / loading overlay) ────────────
   readonly basemapStyle = signal<BasemapStyle>('street'); // street-first default, matching Leaflet
   readonly switching = signal(false);
+  /** CLU/Parcel optional view toggle — off by default, hidden entirely when landMapMagicKey() is null. */
+  readonly showFieldContext = signal<'off' | 'clu' | 'parcel'>('off');
 
   private map: maplibregl.Map | null = null;
   private readonly loaded = signal(false);
@@ -106,11 +134,20 @@ export class BidSheetMapComponent {
   private hoveredMarker: RenderedMarker | null = null;
   private zoomDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // ── CLU/Parcel vendor-layer state ────────────────────────────────────────
+  private lmmLayers: LmmLayerIds = { clu: [], parcels: [], cluFill: [], parcelFill: [] };
+  /** Guard flag: the vendor style is merged at most once per component lifetime, on first
+   *  toggle-to-on — a session that never touches the toggle costs zero vendor tokens/network calls
+   *  (see 03-frontend-components.md "Lazy vendor-layer merge"). */
+  private vendorLayersMerged = false;
+  private activePopup: maplibregl.Popup | null = null;
+
   constructor() {
     afterNextRender(() => this.initMap());
     this.destroyRef.onDestroy(() => {
       if (this.zoomDebounceTimer) clearTimeout(this.zoomDebounceTimer);
       this.resizeObserver?.disconnect();
+      this.activePopup?.remove();
       this.map?.remove();
     });
 
@@ -179,6 +216,329 @@ export class BidSheetMapComponent {
     setTimeout(finish, BASEMAP_SWITCH_FALLBACK_MS);
   }
 
+  // ── CLU/Parcel optional view toggle (template-bound) ─────────────────────
+
+  /**
+   * Two-button toggle (CLU / Parcel) — clicking the currently-active tier turns the view back off,
+   * matching "two buttons only, no draw tier" from 03-frontend-components.md. Hidden entirely in
+   * the template when `landMapMagicKey()` is null.
+   */
+  toggleFieldContext(mode: 'clu' | 'parcel'): void {
+    const next = this.showFieldContext() === mode ? 'off' : mode;
+    this.showFieldContext.set(next);
+    this.activePopup?.remove();
+    this.activePopup = null;
+
+    const map = this.map;
+    if (!map || !this.loaded()) return;
+
+    if (next === 'off') {
+      setLayerGroupVisibility(map, this.lmmLayers.clu, false);
+      setLayerGroupVisibility(map, this.lmmLayers.parcels, false);
+      return;
+    }
+
+    void this.ensureVendorLayers().then(() => {
+      setLayerGroupVisibility(map, this.lmmLayers.clu, this.showFieldContext() === 'clu');
+      setLayerGroupVisibility(map, this.lmmLayers.parcels, this.showFieldContext() === 'parcel');
+    });
+  }
+
+  /**
+   * Fetch + merge the LandMapMagic vendor style exactly once per component lifetime, on first
+   * toggle-to-on. Never called from init/effects — only from `toggleFieldContext` above — so a
+   * session that never touches the toggle never fetches vendor styles/tiles at all.
+   */
+  private async ensureVendorLayers(): Promise<void> {
+    const map = this.map;
+    if (!map || this.vendorLayersMerged) return;
+    const key = this.landMapMagicKey();
+    if (!key) return;
+    try {
+      // Never map.setStyle() — that would wipe the Azure imagery base and every rendered marker.
+      this.lmmLayers = await mergeLandMapMagicLayers(map, key);
+      this.vendorLayersMerged = true;
+      setLayerGroupVisibility(map, this.lmmLayers.clu, false);
+      setLayerGroupVisibility(map, this.lmmLayers.parcels, false);
+      this.wireVendorLayerInteractions(this.lmmLayers.cluFill, 'clu');
+      this.wireVendorLayerInteractions(this.lmmLayers.parcelFill, 'parcel');
+    } catch (err) {
+      console.error('[bid-sheet-map] Failed to load LandMapMagic layers:', err);
+    }
+  }
+
+  /**
+   * Click-to-inspect wiring — read-only info popup, no confirm button, no persistence path. Ported
+   * from field-tag-map.component.ts's `wireVendorLayerInteractions`, minus the confirm/select
+   * feature-state bookkeeping this component has no use for.
+   */
+  private wireVendorLayerInteractions(fillLayerIds: string[], method: 'clu' | 'parcel'): void {
+    const map = this.map;
+    if (!map) return;
+    for (const layerId of fillLayerIds) {
+      map.on('mousemove', layerId, () => {
+        if (this.showFieldContext() !== method) return;
+        map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', layerId, () => {
+        if (this.showFieldContext() !== method) return;
+        map.getCanvas().style.cursor = '';
+      });
+      map.on('click', layerId, (e) => {
+        if (this.showFieldContext() !== method) return;
+        void this.showReadOnlyFieldPopup(e, method);
+      });
+    }
+  }
+
+  /**
+   * Read-only click-to-inspect popup — one point-lookup + one AOI query per click (the same "one
+   * explicit action, one round trip" rule as the JIT lookup below), rendering acreage/county/state/
+   * top-crop/owner info with no "Confirm this field" affordance and no emit.
+   */
+  private async showReadOnlyFieldPopup(
+    e: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] },
+    method: 'clu' | 'parcel',
+  ): Promise<void> {
+    const tileFeature = e.features?.[0];
+    if (!tileFeature) return;
+    const key = this.landMapMagicKey();
+    if (!key) return;
+
+    this.activePopup?.remove();
+    this.activePopup = this.showLoadingPopup(e.lngLat);
+
+    const tileProps = (tileFeature.properties ?? {}) as Record<string, unknown>;
+    const lookupLayer = method === 'clu' ? 'clu' : 'parcels';
+
+    let lookupField: LookupField | undefined;
+    try {
+      const results = await pointLookup(e.lngLat.lat, e.lngLat.lng, key);
+      lookupField = results.find((f) => f.layer === lookupLayer) ?? results[0];
+    } catch (err) {
+      console.warn('[bid-sheet-map] Point Lookup failed; falling back to tile feature properties.', err);
+    }
+
+    const acreage =
+      lookupField?.acreage ?? this.toNumber(lookupLayer === 'parcels' ? tileProps['acreage_calc'] : tileProps['calcacres']);
+    const owner = method === 'parcel' ? this.toDisplayString(tileProps['owner']) : null;
+
+    const sourceGeometry =
+      pickPolygonGeometry(lookupField?.feature.geometry as Geometry | undefined) ??
+      pickPolygonGeometry(tileFeature.geometry as Geometry);
+
+    const cdlYear = this.cdlYear();
+    const cdlFallbackYear = this.cdlFallbackYear();
+
+    if (!sourceGeometry || !cdlYear || !cdlFallbackYear) {
+      this.activePopup?.remove();
+      this.activePopup = this.showInfoPopup(e.lngLat, { acreage, county: null, state: null, topCrop: null, owner });
+      return;
+    }
+
+    try {
+      const aoiGeometry = method === 'clu' ? paddedBoundingBoxPolygon(sourceGeometry, CLU_AOI_PADDING_METERS) : sourceGeometry;
+      const result = await aoiQuery(toAoiFeature(aoiGeometry), method === 'clu', key, cdlYear, cdlFallbackYear);
+      const topCrop = this.topCrop(result.cropBreakdown);
+      this.activePopup?.remove();
+      this.activePopup = this.showInfoPopup(e.lngLat, {
+        acreage,
+        county: result.county,
+        state: result.state,
+        topCrop: topCrop?.name ?? null,
+        owner,
+      });
+    } catch (err) {
+      console.error('[bid-sheet-map] AOI Query failed:', err);
+      this.activePopup?.remove();
+      this.activePopup = this.showInfoPopup(e.lngLat, { acreage, county: null, state: null, topCrop: null, owner, error: true });
+    }
+  }
+
+  // ── JIT field-context lookup (pin-drop / pin-select — explicit action only) ─────────────────
+  //
+  // Hard constraint (00-overview.md decision 5): exactly one point-lookup + one AOI query per one
+  // explicit user action, targeting exactly one point. Called from exactly two call sites in this
+  // file — the add-location click handler in `initMap()`, and the existing-pin click handler in
+  // `addMarker()` — never from hover, never from a render/redraw loop, never in bulk.
+
+  /**
+   * Fires the JIT lookup for one point. Emits `fieldContextResolved` exactly once per call, whether
+   * the lookup succeeds, finds nothing, or fails outright (a failed round trip still "fired" for
+   * usage-tracking purposes — see the parent's `onFieldContextResolved`). No-ops entirely (no emit
+   * at all) when `landMapMagicKey` isn't configured, so no vendor call is even attempted.
+   */
+  private async runFieldContextLookup(lat: number, lng: number): Promise<void> {
+    const key = this.landMapMagicKey();
+    if (!key) return;
+
+    let method: 'clu' | 'parcel' | null = null;
+    let acreage: number | null = null;
+    try {
+      const results = await pointLookup(lat, lng, key);
+      const lookupField = results.find((f) => f.layer === 'clu') ?? results.find((f) => f.layer === 'parcels') ?? null;
+      if (lookupField) {
+        method = lookupField.layer === 'clu' ? 'clu' : 'parcel';
+        acreage = lookupField.acreage;
+      }
+    } catch (err) {
+      console.warn('[bid-sheet-map] Point Lookup failed for field-context lookup:', err);
+    }
+
+    const cdlYear = this.cdlYear();
+    const cdlFallbackYear = this.cdlFallbackYear();
+    if (!cdlYear || !cdlFallbackYear) {
+      this.fieldContextResolved.emit(this.buildFieldContextResult(method, acreage, null, null, null));
+      return;
+    }
+
+    try {
+      // A bare click point has zero area, so pad a small box around it — the AOI endpoint only
+      // returns features that geographically intersect the submitted polygon (same rationale as
+      // field-tag-map.component.ts's CLU_AOI_PADDING_METERS, applied here regardless of method
+      // since there's no real clicked-feature geometry to submit instead).
+      const pointPolygon: Polygon = { type: 'Polygon', coordinates: [[[lng, lat], [lng, lat], [lng, lat], [lng, lat]]] };
+      const aoiGeometry = paddedBoundingBoxPolygon(pointPolygon, JIT_LOOKUP_AOI_PADDING_METERS);
+      const result = await aoiQuery(toAoiFeature(aoiGeometry), method === 'clu', key, cdlYear, cdlFallbackYear);
+      const topCrop = this.topCrop(result.cropBreakdown);
+      const parcels = this.findOverlappingParcels(lat, lng);
+      this.fieldContextResolved.emit(this.buildFieldContextResult(method, acreage, result.county, result.state, topCrop?.name ?? null, parcels));
+    } catch (err) {
+      console.error('[bid-sheet-map] AOI Query failed for field-context lookup:', err);
+      this.fieldContextResolved.emit(this.buildFieldContextResult(method, acreage, null, null, null));
+    }
+  }
+
+  private buildFieldContextResult(
+    method: 'clu' | 'parcel' | null,
+    acreage: number | null,
+    county: string | null,
+    state: string | null,
+    topCrop: string | null,
+    parcels: ParcelOwnerMatch[] = [],
+  ): FieldContextInfo | null {
+    if (method == null && acreage == null && county == null && state == null && topCrop == null && parcels.length === 0) {
+      return null;
+    }
+    return { method, acreage, county, state, topCrop, parcels };
+  }
+
+  /**
+   * Client-side spatial match against whatever "parcels" MVT tiles are already loaded (the vendor
+   * API has no owner-lookup endpoint — see field-tag-map.component.ts's `findOverlappingParcels`
+   * for the full rationale). Returns `[]` if the parcels source was never merged (e.g. the toggle
+   * has never been switched on this session) — this is a best-effort enrichment, not a blocking
+   * requirement of the JIT lookup.
+   */
+  private findOverlappingParcels(lat: number, lng: number): ParcelOwnerMatch[] {
+    const map = this.map;
+    if (!map || !map.getSource('parcels')) return [];
+    const point: Position = [lng, lat];
+    const fragments = map.querySourceFeatures('parcels', { sourceLayer: 'parcels' });
+    const seen = new Set<string | number>();
+    const matches: ParcelOwnerMatch[] = [];
+    for (const f of fragments) {
+      if (f.id == null || seen.has(f.id)) continue;
+      const geom = pickPolygonGeometry(f.geometry as Geometry);
+      if (!geom || !pointInPolygon(point, geom)) continue;
+      seen.add(f.id);
+      const props = (f.properties ?? {}) as Record<string, unknown>;
+      matches.push({
+        id: f.id,
+        parcelId: String(f.id),
+        owner: this.toDisplayString(props['owner']),
+        acreage: this.toNumber(props['acreage_calc']),
+      });
+    }
+    return matches;
+  }
+
+  // ── Read-only popups (see field-tag-map.component.ts's popup module comment for the dark-mode-
+  //    safe styling rationale — .maplibregl-popup-content is always a plain white box) ──────────
+
+  private popupContainer(minWidthClass = 'min-w-[200px]'): HTMLDivElement {
+    const container = document.createElement('div');
+    container.className = `text-sm text-gray-900 ${minWidthClass}`;
+    return container;
+  }
+
+  private appendPopupRow(rows: HTMLElement, label: string, value: string): void {
+    const row = document.createElement('div');
+    row.className = 'flex items-baseline gap-1.5';
+    const labelEl = document.createElement('span');
+    labelEl.className = 'text-gray-500 text-xs uppercase tracking-wide shrink-0';
+    labelEl.textContent = label;
+    const valueEl = document.createElement('span');
+    valueEl.className = 'text-gray-900 font-medium';
+    valueEl.textContent = value;
+    row.append(labelEl, valueEl);
+    rows.append(row);
+  }
+
+  private showLoadingPopup(lngLat: maplibregl.LngLatLike): maplibregl.Popup {
+    const map = this.map!;
+    const container = this.popupContainer('min-w-[180px]');
+    container.classList.add('flex', 'items-center', 'gap-2', 'py-0.5');
+    const spinner = document.createElement('span');
+    spinner.className = 'inline-block w-3.5 h-3.5 shrink-0 rounded-full border-2 border-gray-300 border-t-gray-600 animate-spin';
+    const label = document.createElement('span');
+    label.className = 'text-gray-700';
+    label.textContent = 'Loading field details…';
+    container.append(spinner, label);
+    return new maplibregl.Popup({ closeButton: true, maxWidth: '240px' }).setLngLat(lngLat).setDOMContent(container).addTo(map);
+  }
+
+  /** Terminal read-only popup — no "Confirm this field" button, no persistence, just reference info. */
+  private showInfoPopup(
+    lngLat: maplibregl.LngLatLike,
+    info: { acreage: number | null; county: string | null; state: string | null; topCrop: string | null; owner: string | null; error?: boolean },
+  ): maplibregl.Popup {
+    const map = this.map!;
+    const container = this.popupContainer();
+
+    if (info.error) {
+      const msg = document.createElement('div');
+      msg.className = 'text-red-700';
+      msg.textContent = 'Could not retrieve field details — check your connection and try again.';
+      container.append(msg);
+    } else {
+      const rows = document.createElement('div');
+      rows.className = 'space-y-1';
+      this.appendPopupRow(rows, 'Acres', info.acreage != null ? info.acreage.toFixed(1) : 'Unavailable');
+      if (info.county || info.state) {
+        this.appendPopupRow(rows, 'Location', [info.county, info.state].filter((v): v is string => !!v).join(', '));
+      }
+      if (info.topCrop) this.appendPopupRow(rows, 'Top crop', info.topCrop);
+      if (info.owner) this.appendPopupRow(rows, 'Owner', info.owner);
+      container.append(rows);
+    }
+
+    return new maplibregl.Popup({ closeButton: true, maxWidth: '280px' }).setLngLat(lngLat).setDOMContent(container).addTo(map);
+  }
+
+  // ── helpers ───────────────────────────────────────────────────────────────
+
+  private toNumber(value: unknown): number | null {
+    const n = Number(value);
+    return value != null && Number.isFinite(n) ? n : null;
+  }
+
+  private toDisplayString(value: unknown): string | null {
+    if (value == null) return null;
+    const s = String(value).trim();
+    return s.length > 0 ? s : null;
+  }
+
+  /** Highest-percentage CDL crop in a breakdown, or null if none carry a usable percentage. */
+  private topCrop(breakdown: ReadonlyArray<{ crop: string; percentOfAoi: number | null }>): { name: string; pct: number } | null {
+    let best: { crop: string; percentOfAoi: number } | null = null;
+    for (const entry of breakdown) {
+      if (entry.percentOfAoi == null) continue;
+      if (!best || entry.percentOfAoi > best.percentOfAoi) best = { crop: entry.crop, percentOfAoi: entry.percentOfAoi };
+    }
+    return best ? { name: best.crop, pct: best.percentOfAoi } : null;
+  }
+
   // ── Map bootstrap ─────────────────────────────────────────────────────────
 
   private azureTileUrl(tilesetId: string): string {
@@ -238,6 +598,10 @@ export class BidSheetMapComponent {
       const { lat, lng } = e.lngLat;
       this.placeAddLocationMarker(lat, lng);
       this.mapClicked.emit({ lat, lng });
+      // JIT field-context lookup, trigger 1 of 2 (00-overview.md decision 5) — fires unconditionally
+      // on drop (not gated on the CLU/Parcel view toggle), but only when a vendor key is configured
+      // at all; `runFieldContextLookup` itself no-ops (no emit) without one.
+      void this.runFieldContextLookup(lat, lng);
     });
 
     this.map.on('zoomend', () => {
@@ -378,7 +742,14 @@ export class BidSheetMapComponent {
     contentEl.addEventListener('click', () => {
       const name = g.names[0];
       const loc = this.locations().find((l) => l.name === name);
-      if (loc) this.locationSelected.emit(loc);
+      if (!loc) return;
+      this.locationSelected.emit(loc);
+      // JIT field-context lookup, trigger 2 of 2 (00-overview.md decision 5) — only while the
+      // CLU/Parcel toggle is on, and gated on the pin actually becoming "selected" (this click
+      // handler), never on hover or on the pin merely being rendered/visible.
+      if (this.showFieldContext() !== 'off' && loc.latitude != null && loc.longitude != null) {
+        void this.runFieldContextLookup(loc.latitude, loc.longitude);
+      }
     });
 
     // Expanded (panel-open) groups are already the expanded card — no hover-swap needed.

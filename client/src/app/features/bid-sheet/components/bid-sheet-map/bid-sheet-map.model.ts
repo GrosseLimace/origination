@@ -28,3 +28,32 @@ export interface BidSheetMapRenderGroup {
 export interface BidSheetMapRenderModel {
   groups: BidSheetMapRenderGroup[];
 }
+
+/**
+ * One already-loaded "parcels" MVT fragment overlapping a JIT field-context lookup point or a
+ * click-to-inspect popup — same shape as field-tag-map.component.ts's private `ParcelOwnerMatch`,
+ * lifted here so both the JIT lookup path and the read-only popup path in `BidSheetMapComponent`
+ * can share it (this component has no confirm/persist flow, so there's no draft type to attach it
+ * to — it's purely display data).
+ */
+export interface ParcelOwnerMatch {
+  id: string | number;
+  parcelId: string;
+  owner: string | null;
+  acreage: number | null;
+}
+
+/**
+ * Read-only, display-only result of a JIT LandMapMagic field-context lookup — see
+ * docs/poc/bid-sheet-map/03-frontend-components.md "JIT field-context lookup on pin-drop/pin-select".
+ * Never persisted; `method: null` means neither a CLU nor a parcel field was found at the queried
+ * point (still a completed lookup, not a failure — see `BidSheetMapComponent.runFieldContextLookup`).
+ */
+export interface FieldContextInfo {
+  method: 'clu' | 'parcel' | null;
+  acreage: number | null;
+  county: string | null;
+  state: string | null;
+  topCrop: string | null;
+  parcels: ParcelOwnerMatch[];
+}

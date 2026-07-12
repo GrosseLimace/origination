@@ -60,4 +60,34 @@
       Hybrid
     </button>
   </div>
+
+  <!-- CLU/Parcel optional view toggle — hidden entirely when no LandMapMagic key is configured.
+       Two buttons only (no "draw" tier, no tier-hint copy — see
+       docs/poc/bid-sheet-map/03-frontend-components.md). Clicking the active tier turns it back off. -->
+  @if (landMapMagicKey()) {
+    <div class="absolute top-3 right-3 z-[1000] flex items-center gap-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg p-1">
+      <button
+        type="button"
+        class="rounded-md px-2 py-1 text-xs font-medium"
+        [class.bg-green-100]="showFieldContext() === 'clu'"
+        [class.dark:bg-green-900]="showFieldContext() === 'clu'"
+        [class.text-gray-700]="showFieldContext() !== 'clu'"
+        [class.dark:text-gray-300]="showFieldContext() !== 'clu'"
+        title="CLU field boundaries (read-only)"
+        (click)="toggleFieldContext('clu')">
+        CLU
+      </button>
+      <button
+        type="button"
+        class="rounded-md px-2 py-1 text-xs font-medium"
+        [class.bg-blue-100]="showFieldContext() === 'parcel'"
+        [class.dark:bg-blue-900]="showFieldContext() === 'parcel'"
+        [class.text-gray-700]="showFieldContext() !== 'parcel'"
+        [class.dark:text-gray-300]="showFieldContext() !== 'parcel'"
+        title="Parcel boundaries (read-only)"
+        (click)="toggleFieldContext('parcel')">
+        Parcel
+      </button>
+    </div>
+  }
 </div>
