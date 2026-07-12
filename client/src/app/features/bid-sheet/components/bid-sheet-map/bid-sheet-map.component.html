@@ -19,9 +19,13 @@
     </div>
   }
 
-  <!-- Basemap toggle — bottom-left, three-way (Satellite/Map/Hybrid), reused verbatim from
-       field-tag-map.component.html's basemap button row. -->
-  <div class="absolute bottom-4 left-32 z-[1000] flex items-center gap-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg p-1">
+  <!-- Basemap toggle — three-way (Satellite/Map/Hybrid), reused verbatim from
+       field-tag-map.component.html's basemap button row. Stacked directly ABOVE the parent's
+       bottom-left action row (Add Location / engine toggle / Refresh) rather than sharing that row
+       at a fixed horizontal offset — the parent's row width varies (fewer buttons in MapLibre mode
+       than Leaflet mode, and either way the text can reflow), so a shared row with a hardcoded
+       left offset collided with those buttons. Stacking vertically is offset-width-independent. -->
+  <div class="absolute bottom-16 left-4 z-[1000] flex items-center gap-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg p-1">
     <button
       type="button"
       class="rounded-md px-2 py-1 text-xs font-medium"
