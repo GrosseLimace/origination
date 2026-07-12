@@ -1025,7 +1025,21 @@ export class BidSheetComponent {
     const targetZoom = zoom ?? Math.max(this._map?.getZoom() ?? this.mapZoom(), 11);
     if (this._map && this._L) {
       const center = this._offsetCenter(lat, lng, targetZoom);
-      this._map.flyTo(center, targetZoom, { duration: 0.6 });
+      if (this.mapEngine() === 'leaflet') {
+        this._map.flyTo(center, targetZoom, { duration: 0.6 });
+      } else {
+        // Leaflet's container sits at `display:none` (zero pixel size) whenever MapLibre is the
+        // active engine — both engines stay permanently mounted (see the template's engine-toggle
+        // comment). `flyTo()`'s animation math divides by the container's pixel size
+        // (`getSize()`), which is {0,0} while hidden; that corrupts the map's internal zoom/center
+        // state in a way the resize-driven `invalidateSize()` call (the ResizeObserver in
+        // `_initializeMap`) can't repair afterward — Leaflet then renders only its background with
+        // no tiles the next time the user switches engines. `setView` with `animate: false` updates
+        // the same center/zoom state immediately without that size-dependent animation math, so the
+        // hidden map is still correctly positioned (with no visible animation, since nobody can see
+        // it) whenever the user actually switches back to Leaflet.
+        this._map.setView(center, targetZoom, { animate: false });
+      }
     }
     this.mapFlyToCmd.set({ lat, lng, zoom: targetZoom, nonce: ++this._mapCmdNonce });
   }
@@ -1043,11 +1057,18 @@ export class BidSheetComponent {
     } else if (locs.length === 1) {
       this._flyToLocation(locs[0].latitude!, locs[0].longitude!, 10);
     } else {
-      if (this._map && this._L) {
+      if (this._map && this._L && this.mapEngine() === 'leaflet') {
         const panelOpen = this.showPanel();
         const rightPad = panelOpen ? BidSheetComponent.PANEL_WIDTH_PX + 20 : 50;
         const bounds = this._L.latLngBounds(locs.map(l => [l.latitude!, l.longitude!] as [number, number]));
-        // fitBounds with right padding ensures bounds fit in the visible area (excluding the panel)
+        // fitBounds with right padding ensures bounds fit in the visible area (excluding the panel).
+        // Only called while Leaflet is actually the visible engine — same zero-size-container
+        // hazard as `_flyToLocation` above: `fitBounds`'s target-zoom calculation also depends on
+        // the container's pixel size via `getSize()`, which is {0,0} while Leaflet's container is
+        // `display:none` (MapLibre active), corrupting the map's view in a way `invalidateSize()`
+        // can't repair later. There's no size-independent equivalent worth replicating here for the
+        // "multiple locations" case, so this simply skips updating the hidden Leaflet map's camera
+        // rather than risk corrupting it — MapLibre's own camera (`mapFitAllCmd` below) is unaffected.
         this._map.fitBounds(bounds, { paddingTopLeft: [50, 50], paddingBottomRight: [rightPad, 80], maxZoom: 12 });
       }
       this.mapFitAllCmd.set({ nonce: ++this._mapCmdNonce });
