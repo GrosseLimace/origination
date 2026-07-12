@@ -70,6 +70,11 @@ const BASEMAP_SWITCH_FALLBACK_MS = 2500;
 // Debounce window for zoom-driven marker re-renders — mirrors the Leaflet path's zoomend debounce.
 const ZOOM_DEBOUNCE_MS = 200;
 
+// Zoom level after a geocoded address-search fly — matches field-tag-map.component.ts's
+// SEARCH_RESULT_ZOOM (close enough to place an add-location pin precisely, not so close the
+// surrounding context disappears).
+const ADDRESS_SEARCH_ZOOM = 13;
+
 // Same padding rationale as field-tag-map.component.ts's CLU_AOI_PADDING_METERS: the AOI endpoint
 // only returns features that geographically intersect the submitted polygon, and a bare click point
 // has zero area — pad a small box around it so the AOI query has something to intersect.
@@ -104,6 +109,16 @@ export class BidSheetMapComponent {
   /** Camera commands — nonce'd so a repeat command (e.g. clicking the same pin twice) still re-fires. */
   readonly flyTo = input<{ lat: number; lng: number; zoom?: number; nonce: number } | null>(null);
   readonly fitAll = input<{ nonce: number } | null>(null);
+  /**
+   * Geocoded address-search "fly" command — mirrors `flyTo`'s nonce pattern (a repeat search for the
+   * identical address must still re-fire, which plain signal equality on identical coordinates would
+   * otherwise swallow) and, more directly, `flyToLocation` on `field-tag-map.component.ts`. Driven by
+   * the parent's `onAddressSearch()` handler (customer-fields.component.ts's pattern), which resolves
+   * the query via `ApiService.geocodeSearch()` before setting this.
+   */
+  readonly flyToLocation = input<{ lat: number; lng: number; nonce: number } | null>(null);
+  /** True while the parent's address-search geocode call is in flight — drives the search button's spinner. */
+  readonly searchPending = input<boolean>(false);
 
   readonly azureMapsKey = input.required<string>();
   /** Vendor config — null hides the CLU/Parcel toggle entirely (see 00-overview.md decision 7). */
@@ -119,12 +134,21 @@ export class BidSheetMapComponent {
    *  from hover/render/viewport. `null` means the lookup completed but found neither a CLU nor a
    *  parcel field at that point (not a failure). See `runFieldContextLookup`. */
   readonly fieldContextResolved = output<FieldContextInfo | null>();
+  /**
+   * Geocoded address-search box submit — additive to the parent's pin-name filter search (which
+   * keeps filtering visible bid-location pins by name, unchanged). The parent resolves this query
+   * via `ApiService.geocodeSearch()` and feeds the result back through `flyToLocation` above,
+   * mirroring `customer-fields.component.ts`'s `onAddressSearch()`.
+   */
+  readonly addressSearch = output<string>();
 
   // ── Template-facing state (basemap toggle / loading overlay) ────────────
   readonly basemapStyle = signal<BasemapStyle>('street'); // street-first default, matching Leaflet
   readonly switching = signal(false);
   /** CLU/Parcel optional view toggle — off by default, hidden entirely when landMapMagicKey() is null. */
   readonly showFieldContext = signal<'off' | 'clu' | 'parcel'>('off');
+  /** Geocoded address-search input box text (template-bound). */
+  readonly addressSearchText = signal('');
 
   private map: maplibregl.Map | null = null;
   private readonly loaded = signal(false);
@@ -191,6 +215,26 @@ export class BidSheetMapComponent {
       if (!this.loaded() || cmd == null) return;
       this.fitToVisibleGroups();
     });
+
+    // flyToLocation (address search -> camera) -> flyTo. Mirrors field-tag-map.component.ts's
+    // identically-named effect; panel-aware padding matches the `flyTo` effect above.
+    effect(() => {
+      const loc = this.flyToLocation();
+      if (!this.loaded() || loc == null || !this.map) return;
+      this.map.flyTo({
+        center: [loc.lng, loc.lat],
+        zoom: ADDRESS_SEARCH_ZOOM,
+        duration: 600,
+        padding: { top: 0, bottom: 0, left: 0, right: this.panelWidthPx() },
+      });
+    });
+  }
+
+  /** Address-search submit handler (template-bound) — mirrors field-tag-map.component.ts's
+   *  `emitAddressSearch()`. Purely emits the raw query text; the parent owns the geocode call. */
+  emitAddressSearch(): void {
+    const q = this.addressSearchText().trim();
+    if (q) this.addressSearch.emit(q);
   }
 
   /** Basemap toggle (template-bound). Visibility-only — never map.setStyle(). */

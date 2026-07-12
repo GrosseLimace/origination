@@ -1,4 +1,4 @@
-    <div class="relative overflow-hidden isolate rounded-lg h-full" style="min-height: 400px;">
+    <div [class]="rootClass()" style="min-height: 400px;">
 
         <!-- Full-screen map — engine A/B toggle (docs/poc/bid-sheet-map/). MapLibre is the default
              in every environment; Leaflet stays fully available side-by-side for comparison. BOTH
@@ -21,6 +21,8 @@
           [panelWidthPx]="mapPanelWidthPx()"
           [flyTo]="mapFlyToCmd()"
           [fitAll]="mapFitAllCmd()"
+          [flyToLocation]="flyToLocationCmd()"
+          [searchPending]="isSearchingAddress()"
           [azureMapsKey]="mapConfig()?.azureMapsKey ?? ''"
           [landMapMagicKey]="mapConfig()?.landMapMagicKey ?? null"
           [cdlYear]="mapConfig()?.cdlYear ?? null"
@@ -29,6 +31,7 @@
           (mapClicked)="onMapClicked($event)"
           (zoomChanged)="onMapZoomChanged($event)"
           (fieldContextResolved)="onFieldContextResolved($event)"
+          (addressSearch)="onAddressSearch($event)"
           style="position:absolute; inset:0;"
           [style.display]="mapEngine() === 'maplibre' ? 'block' : 'none'"
         />
@@ -193,6 +196,25 @@
                 <line x1="3" x2="21" y1="6" y2="6"/><line x1="3" x2="21" y1="12" y2="12"/><line x1="3" x2="21" y1="18" y2="18"/>
               </svg>
               Bids
+            </button>
+            <!-- Fullscreen/maximize toggle (docs/poc/bid-sheet-map/), ported from
+                 customer-fields.component.ts's isMaximized/rootClass pattern. -->
+            <button
+              (click)="toggleMaximize()"
+              [title]="isMaximized() ? 'Restore' : 'Maximize'"
+              class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-gray-700 hover:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500 rounded-lg shadow-lg transition-colors"
+            >
+              @if (isMaximized()) {
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 3H5a2 2 0 00-2 2v4M15 3h4a2 2 0 012 2v4M9 21H5a2 2 0 01-2-2v-4M15 21h4a2 2 0 002-2v-4" />
+                </svg>
+                Restore
+              } @else {
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 9V5a2 2 0 012-2h4M21 9V5a2 2 0 00-2-2h-4M3 15v4a2 2 0 002 2h4M21 15v4a2 2 0 01-2 2h-4" />
+                </svg>
+                Maximize
+              }
             </button>
           </div>
 

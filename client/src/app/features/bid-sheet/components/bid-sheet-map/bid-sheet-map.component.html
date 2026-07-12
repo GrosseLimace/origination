@@ -61,6 +61,43 @@
     </button>
   </div>
 
+  <!-- Geocoded address search — additive to the parent's pin-NAME filter box (top-left, inside the
+       parent's floating filter bar); this jumps the camera to an arbitrary address instead of
+       filtering visible pins, most useful in Add Location mode before dropping a pin. Placed
+       top-right (distinct corner from the parent's filter bar) so the two search boxes never
+       visually collide; stacked BELOW the CLU/Parcel toggle (rather than sharing its row at a fixed
+       offset) when that toggle is present, same width-independent stacking idiom already used for
+       the basemap toggle vs. the parent's bottom-left action row above. -->
+  <form
+    class="absolute right-3 z-[1000] flex items-center gap-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg px-2 py-1.5"
+    [class.top-3]="!landMapMagicKey()"
+    [class.top-14]="!!landMapMagicKey()"
+    (submit)="$event.preventDefault(); emitAddressSearch()">
+    <input
+      type="text"
+      placeholder="Search for an address…"
+      class="w-40 sm:w-56 bg-transparent text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none px-1"
+      [value]="addressSearchText()"
+      (input)="addressSearchText.set($any($event.target).value)" />
+    <button
+      type="submit"
+      class="shrink-0 rounded-md p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+      [disabled]="searchPending()"
+      title="Fly to address">
+      @if (searchPending()) {
+        <svg class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+        </svg>
+      } @else {
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="7"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+      }
+    </button>
+  </form>
+
   <!-- CLU/Parcel optional view toggle — hidden entirely when no LandMapMagic key is configured.
        Two buttons only (no "draw" tier, no tier-hint copy — see
        docs/poc/bid-sheet-map/03-frontend-components.md). Clicking the active tier turns it back off. -->

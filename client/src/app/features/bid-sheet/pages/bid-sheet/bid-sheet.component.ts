@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, signal, computed, viewChild, ElementRef, isDevMode, afterNextRender } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, signal, computed, viewChild, ElementRef, isDevMode, afterNextRender, HostListener } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -246,6 +246,66 @@ export class BidSheetComponent {
 
   toggleMapEngine(): void {
     this.mapEngine.set(this.mapEngine() === 'maplibre' ? 'leaflet' : 'maplibre');
+  }
+
+  // --- Geocoded address search (MapLibre path only, docs/poc/bid-sheet-map/) ---
+  // Additive to the existing pin-NAME filter box (`searchQuery` above) — that box keeps filtering
+  // visible bid-location pins by name exactly as today; this is a separate "jump the camera to an
+  // arbitrary address" command, wired to `BidSheetMapComponent`'s (addressSearch) output the same
+  // way `customer-fields.component.ts`'s `onAddressSearch()` wires `field-tag-map.component.ts`.
+  readonly flyToLocationCmd = signal<{ lat: number; lng: number; nonce: number } | null>(null);
+  readonly isSearchingAddress = signal(false);
+  private _flyToLocationNonce = 0;
+
+  /** Handler wired to the MapLibre path's (addressSearch) output. Resolves the query via
+   *  ApiService.geocodeSearch() and flies the camera to the first hit; a toast on zero results. */
+  onAddressSearch(query: string): void {
+    this.isSearchingAddress.set(true);
+    this.apiService.geocodeSearch(query)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (results) => {
+          this.isSearchingAddress.set(false);
+          const hit = results[0];
+          if (!hit) {
+            this.toastService.warning(`No location found for "${query}".`);
+            return;
+          }
+          this.flyToLocationCmd.set({ lat: hit.lat, lng: hit.lng, nonce: ++this._flyToLocationNonce });
+        },
+        // geocodeSearch already swallows HTTP errors to [] — defensive only.
+        error: () => { this.isSearchingAddress.set(false); },
+      });
+  }
+
+  // --- Fullscreen/maximize (docs/poc/bid-sheet-map/, ported from customer-fields.component.ts) ---
+  // CSS fixed-overlay, not the native Fullscreen API — same rationale as customer-fields.component.ts:
+  // ToastContainerComponent is mounted at the app root as a sibling of the whole feature tree, so
+  // native requestFullscreen() would hide toasts this page depends on (save/refresh errors, "no
+  // location found"). The CSS overlay keeps toasts, nav, and every modal on this page working.
+  readonly isMaximized = signal(false);
+
+  /**
+   * z-[55]: mirrors customer-fields.component.ts's rationale verbatim — the app's `<app-header>` is
+   * `position: sticky; z-50` (header.component.ts), so z-[55] sits strictly above it (maximizing
+   * genuinely covers the header) while staying strictly below the toast container's z-[60]
+   * (toast-container.component.ts) so toasts remain visible/reachable while maximized. This page's
+   * own overlays (filter bar, panel, modals, print dialog, etc.) all live inside the root element's
+   * own `isolate` stacking context at z-[998]..z-[1200], so they are unaffected by this change —
+   * their stacking order relative to EACH OTHER doesn't change, only the root element's position
+   * relative to the header/toasts outside it.
+   */
+  readonly rootClass = computed(() =>
+    this.isMaximized()
+      ? 'fixed inset-0 z-[55] overflow-hidden isolate bg-gray-50 dark:bg-gray-900 p-2'
+      : 'relative overflow-hidden isolate rounded-lg h-full');
+
+  toggleMaximize(): void {
+    this.isMaximized.set(!this.isMaximized());
+  }
+
+  @HostListener('document:keydown.escape') onEscMaximize(): void {
+    if (this.isMaximized()) this.isMaximized.set(false);
   }
 
   /** Click handler wired to the MapLibre path's (locationSelected) output — same selection logic
