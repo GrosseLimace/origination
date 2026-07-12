@@ -5,7 +5,10 @@ import { ToastService, Toast } from '@core/services/toast.service';
   selector: 'app-toast-container',
   standalone: true,
   template: `
-    <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full">
+    <!-- z-[60]: must stay above the Field Tagging maximize overlay (z-[55], which itself sits
+         above the app's sticky z-50 header) — toasts must always be visible regardless of what
+         full-screen UI is active. -->
+    <div class="fixed bottom-4 right-4 z-[60] flex flex-col gap-2 max-w-sm w-full">
       @for (toast of toastService.toasts(); track toast.id) {
         <div
           class="px-4 py-3 rounded-lg shadow-lg flex items-start gap-3 animate-slide-in"

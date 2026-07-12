@@ -74,9 +74,11 @@
   </div>
 </div>
 
-<!-- Delete confirmation — inline modal, mirrors the Notes delete-confirm pattern. -->
+<!-- Delete confirmation — inline modal, mirrors the Notes delete-confirm pattern.
+     z-[60]: must stay above the maximize overlay (z-[55]) so it's still reachable while
+     maximized, matching the toast container's z-[60]. -->
 @if (tagPendingDelete()) {
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 overflow-hidden" (click)="cancelDelete()">
+  <div class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 overflow-hidden" (click)="cancelDelete()">
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6" (click)="$event.stopPropagation()">
       <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Delete field?</h3>
       <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">

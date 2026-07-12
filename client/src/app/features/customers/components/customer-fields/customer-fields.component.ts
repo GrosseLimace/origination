@@ -147,10 +147,17 @@ export class CustomerFieldsComponent {
   // found"). The CSS overlay keeps toasts, nav, and the delete-confirm modal all working.
   readonly isMaximized = signal(false);
 
-  /** z-40: strictly below the toast container and the delete-confirm modal below (both z-50). */
+  /**
+   * z-[55]: the app's `<app-header>` is `position: sticky; z-50` (see header.component.ts), so a
+   * plain `z-40` here (as originally planned, assuming the header was unpositioned/unindexed)
+   * left the sticky header painting ON TOP of this "fullscreen" overlay — the header never
+   * actually got covered. z-[55] sits strictly above the header's z-50 so maximizing genuinely
+   * covers it, while staying strictly below the toast container and the delete-confirm modal
+   * below (both bumped to z-[60] specifically so they remain reachable while maximized).
+   */
   readonly rootClass = computed(() =>
     this.isMaximized()
-      ? 'fixed inset-0 z-40 flex flex-col gap-3 bg-gray-50 dark:bg-gray-900 p-4 overflow-hidden'
+      ? 'fixed inset-0 z-[55] flex flex-col gap-3 bg-gray-50 dark:bg-gray-900 p-4 overflow-hidden'
       : 'flex flex-col gap-3 h-full');
 
   toggleMaximize(): void {
