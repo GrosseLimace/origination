@@ -10,13 +10,29 @@ using Microsoft.Extensions.Caching.Memory;
 namespace GrainOriginatorPortal.Api.Services;
 
 /// <inheritdoc />
-/// <remarks>Registered as a singleton so the rate-limiter and last-call timestamp are shared across
-/// requests, enforcing Nominatim's global 1-req/sec limit.</remarks>
+/// <remarks>
+/// Registered as a singleton so the batch throttle and last-call timestamp are shared across
+/// requests. Backed by the Azure Maps Search/Geocoding REST API (Get Geocoding, api-version
+/// 2023-06-01), reusing the same subscription key already configured for map tile rendering
+/// (FieldTags:AzureMapsKey). This replaced a Nominatim (OpenStreetMap)-backed implementation:
+/// live testing showed Nominatim's structured address search returned zero results for rural
+/// addresses with non-standard numbering (e.g. "77040 ROAD 330, OGALLALA, NE" and
+/// "8888 COUNTY ROAD 23, STERLING, CO"), while Azure Maps' Get Geocoding endpoint resolved both
+/// to precise rooftop-level points. Azure Maps' documented single-request Search QPS limit
+/// (500 on Gen2, 50 on Gen1 S0) is far looser than Nominatim's 1 req/sec usage policy, so the
+/// artificial per-call delay used for Nominatim has been dropped; a lighter delay remains only
+/// on the batch path as a conservative guard against bursting the 10 QPS batch/search-batch limit.
+/// </remarks>
 public class GeocodeService : IGeocodeService
 {
+    private const string ApiVersion = "2023-06-01";
+
+    // Conservative spacing between batch items — Azure Maps' documented Search Batch QPS limit is
+    // 10/sec; 110ms keeps us under that with margin even though this loop calls the single-request
+    // endpoint (whose own limit, 500 QPS on Gen2, is far higher) rather than the dedicated batch API.
+    private const int BatchItemDelayMs = 110;
+
     // Bounded cache with size limit and sliding expiration (CWE-400 / M-12)
-    private readonly SemaphoreSlim _rateLimiter = new(1, 1);
-    private DateTime _lastNominatimCall = DateTime.MinValue;
     private static readonly MemoryCacheEntryOptions _cacheOptions = new()
     {
         SlidingExpiration = TimeSpan.FromHours(4),
@@ -24,12 +40,14 @@ public class GeocodeService : IGeocodeService
     };
 
     private readonly IHttpClientFactory _httpFactory;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<GeocodeService> _logger;
     private readonly IMemoryCache _cache;
 
-    public GeocodeService(IHttpClientFactory httpFactory, ILogger<GeocodeService> logger, IMemoryCache cache)
+    public GeocodeService(IHttpClientFactory httpFactory, IConfiguration configuration, ILogger<GeocodeService> logger, IMemoryCache cache)
     {
         _httpFactory = httpFactory;
+        _configuration = configuration;
         _logger = logger;
         _cache = cache;
     }
@@ -49,32 +67,28 @@ public class GeocodeService : IGeocodeService
             return new GeocodeResult { Key = request.Key, Lat = cached?[0], Lng = cached?[1] };
         }
 
-        await _rateLimiter.WaitAsync(cancellationToken);
+        var apiKey = GetApiKey();
+        if (apiKey == null)
+        {
+            _logger.LogError("Azure Maps key missing for {KeyHash} [{ErrorCode}] [{ErrorCategory}]",
+                Fingerprint(cacheKey), "INFRASTRUCTURE_GEOCODE_MISCONFIGURED", "Infrastructure");
+            return new GeocodeResult { Key = request.Key };
+        }
+
         try
         {
-            // Enforce 1 request per second to Nominatim
-            var elapsed = DateTime.UtcNow - _lastNominatimCall;
-            if (elapsed.TotalMilliseconds < 1100)
-            {
-                await Task.Delay(1100 - (int)elapsed.TotalMilliseconds, cancellationToken);
-            }
-
-            var url = BuildNominatimUrl(request);
-            _lastNominatimCall = DateTime.UtcNow;
-
-            var http = _httpFactory.CreateClient("nominatim");
+            var url = BuildAzureMapsGeocodeUrl(request, apiKey);
+            var http = _httpFactory.CreateClient("azuremaps");
             var response = await http.GetAsync(url, cancellationToken);
 
             if (response.IsSuccessStatusCode)
             {
                 var json = await response.Content.ReadAsStringAsync(cancellationToken);
-                var data = JsonSerializer.Deserialize<JsonElement[]>(json);
-                if (data != null && data.Length > 0)
+                var point = ParseFirstFeaturePoint(json);
+                if (point != null)
                 {
-                    var lat = double.Parse(data[0].GetProperty("lat").GetString()!);
-                    var lng = double.Parse(data[0].GetProperty("lon").GetString()!);
-                    _cache.Set(cacheKey, new[] { lat, lng }, _cacheOptions);
-                    return new GeocodeResult { Key = request.Key, Lat = lat, Lng = lng };
+                    _cache.Set(cacheKey, point, _cacheOptions);
+                    return new GeocodeResult { Key = request.Key, Lat = point[0], Lng = point[1] };
                 }
                 else
                 {
@@ -83,12 +97,12 @@ public class GeocodeService : IGeocodeService
             }
             else if (response.StatusCode == HttpStatusCode.TooManyRequests)
             {
-                _logger.LogError("Nominatim rate limit hit for {KeyHash} [{ErrorCode}] [{ErrorCategory}]",
+                _logger.LogError("Azure Maps rate limit hit for {KeyHash} [{ErrorCode}] [{ErrorCategory}]",
                     Fingerprint(cacheKey), "INFRASTRUCTURE_GEOCODE_RATE_LIMITED", "Infrastructure");
             }
             else
             {
-                _logger.LogError("Nominatim returned {StatusCode} for {KeyHash} [{ErrorCode}] [{ErrorCategory}]",
+                _logger.LogError("Azure Maps returned {StatusCode} for {KeyHash} [{ErrorCode}] [{ErrorCategory}]",
                     (int)response.StatusCode, Fingerprint(cacheKey), "INFRASTRUCTURE_GEOCODE_UNAVAILABLE", "Infrastructure");
             }
         }
@@ -101,10 +115,6 @@ public class GeocodeService : IGeocodeService
         {
             _logger.LogError(ex, "Geocode request timed out for {KeyHash} [{ErrorCode}] [{ErrorCategory}]",
                 Fingerprint(cacheKey), "INFRASTRUCTURE_TIMEOUT", "Infrastructure");
-        }
-        finally
-        {
-            _rateLimiter.Release();
         }
 
         return new GeocodeResult { Key = request.Key };
@@ -124,8 +134,16 @@ public class GeocodeService : IGeocodeService
             requests = requests.Take(50).ToList();
         }
 
+        var apiKey = GetApiKey();
+        if (apiKey == null)
+        {
+            _logger.LogError("Azure Maps key missing for batch geocode request [{ErrorCode}] [{ErrorCategory}]",
+                "INFRASTRUCTURE_GEOCODE_MISCONFIGURED", "Infrastructure");
+            return requests.Select(r => new GeocodeResult { Key = r.Key }).ToList();
+        }
+
         var results = new List<GeocodeResult>();
-        var http = _httpFactory.CreateClient("nominatim");
+        var http = _httpFactory.CreateClient("azuremaps");
         var rateLimitAttempt = 0;
 
         foreach (var req in requests)
@@ -139,10 +157,9 @@ public class GeocodeService : IGeocodeService
                 continue;
             }
 
-            // Call Nominatim (server-to-server, no CORS)
             try
             {
-                var url = BuildNominatimUrl(req);
+                var url = BuildAzureMapsGeocodeUrl(req, apiKey);
                 var response = await http.GetAsync(url, cancellationToken);
 
                 if (response.StatusCode == HttpStatusCode.TooManyRequests)
@@ -150,7 +167,7 @@ public class GeocodeService : IGeocodeService
                     // Exponential backoff with jitter per §6.2: min(baseDelay × 2^attempt + jitter, maxDelay)
                     var backoffMs = (int)Math.Min(500 * Math.Pow(2, rateLimitAttempt) + Random.Shared.Next(0, 200), 30_000);
                     _logger.LogError(
-                        "Nominatim rate limit on batch item {KeyHash}. Backing off {BackoffMs}ms (attempt {Attempt}) [{ErrorCode}] [{ErrorCategory}]",
+                        "Azure Maps rate limit on batch item {KeyHash}. Backing off {BackoffMs}ms (attempt {Attempt}) [{ErrorCode}] [{ErrorCategory}]",
                         Fingerprint(cacheKey), backoffMs, rateLimitAttempt + 1, "INFRASTRUCTURE_GEOCODE_RATE_LIMITED", "Infrastructure");
                     await Task.Delay(backoffMs, cancellationToken);
                     rateLimitAttempt++;
@@ -163,13 +180,11 @@ public class GeocodeService : IGeocodeService
                 if (response.IsSuccessStatusCode)
                 {
                     var json = await response.Content.ReadAsStringAsync(cancellationToken);
-                    var data = JsonSerializer.Deserialize<JsonElement[]>(json);
-                    if (data != null && data.Length > 0)
+                    var point = ParseFirstFeaturePoint(json);
+                    if (point != null)
                     {
-                        var lat = double.Parse(data[0].GetProperty("lat").GetString()!);
-                        var lng = double.Parse(data[0].GetProperty("lon").GetString()!);
-                        _cache.Set(cacheKey, new[] { lat, lng }, _cacheOptions);
-                        results.Add(new GeocodeResult { Key = req.Key, Lat = lat, Lng = lng });
+                        _cache.Set(cacheKey, point, _cacheOptions);
+                        results.Add(new GeocodeResult { Key = req.Key, Lat = point[0], Lng = point[1] });
                     }
                     else
                     {
@@ -179,13 +194,13 @@ public class GeocodeService : IGeocodeService
                 }
                 else
                 {
-                    _logger.LogError("Nominatim returned {StatusCode} for batch item {KeyHash} [{ErrorCode}] [{ErrorCategory}]",
+                    _logger.LogError("Azure Maps returned {StatusCode} for batch item {KeyHash} [{ErrorCode}] [{ErrorCategory}]",
                         (int)response.StatusCode, Fingerprint(cacheKey), "INFRASTRUCTURE_GEOCODE_UNAVAILABLE", "Infrastructure");
                     results.Add(new GeocodeResult { Key = req.Key });
                 }
 
-                // Respect Nominatim rate limit: 1 req/sec
-                await Task.Delay(1100, cancellationToken);
+                // Conservative spacing — see BatchItemDelayMs remarks above.
+                await Task.Delay(BatchItemDelayMs, cancellationToken);
             }
             catch (HttpRequestException ex)
             {
@@ -222,32 +237,28 @@ public class GeocodeService : IGeocodeService
             };
         }
 
-        await _rateLimiter.WaitAsync(cancellationToken);
+        var apiKey = GetApiKey();
+        if (apiKey == null)
+        {
+            _logger.LogError("Azure Maps key missing for search query [{ErrorCode}] [{ErrorCategory}]",
+                "INFRASTRUCTURE_GEOCODE_MISCONFIGURED", "Infrastructure");
+            return new List<GeocodeSearchResult>();
+        }
+
         try
         {
-            var elapsed = DateTime.UtcNow - _lastNominatimCall;
-            if (elapsed.TotalMilliseconds < 1100)
-            {
-                await Task.Delay(1100 - (int)elapsed.TotalMilliseconds, cancellationToken);
-            }
+            var url = $"geocode?api-version={ApiVersion}&subscription-key={apiKey}&query={Uri.EscapeDataString(q)}&top={limit}&countryRegion=US";
 
-            var url = $"search?q={Uri.EscapeDataString(q)}&format=json&limit={limit}";
-            _lastNominatimCall = DateTime.UtcNow;
-
-            var http = _httpFactory.CreateClient("nominatim");
+            var http = _httpFactory.CreateClient("azuremaps");
             var response = await http.GetAsync(url, cancellationToken);
 
             if (response.IsSuccessStatusCode)
             {
                 var json = await response.Content.ReadAsStringAsync(cancellationToken);
-                var data = JsonSerializer.Deserialize<JsonElement[]>(json);
-                if (data != null && data.Length > 0)
+                var points = ParseFeaturePoints(json);
+                if (points.Count > 0)
                 {
-                    var results = data.Select(d => new GeocodeSearchResult
-                    {
-                        Lat = double.Parse(d.GetProperty("lat").GetString()!),
-                        Lng = double.Parse(d.GetProperty("lon").GetString()!)
-                    }).ToList();
+                    var results = points.Select(p => new GeocodeSearchResult { Lat = p[0], Lng = p[1] }).ToList();
 
                     // Cache first result
                     _cache.Set(cacheKey, new[] { results[0].Lat, results[0].Lng }, _cacheOptions);
@@ -256,7 +267,7 @@ public class GeocodeService : IGeocodeService
             }
             else
             {
-                _logger.LogError("Nominatim search returned {StatusCode} for query {QueryHash} [{ErrorCode}] [{ErrorCategory}]",
+                _logger.LogError("Azure Maps search returned {StatusCode} for query {QueryHash} [{ErrorCode}] [{ErrorCategory}]",
                     (int)response.StatusCode, Fingerprint(q), "INFRASTRUCTURE_GEOCODE_UNAVAILABLE", "Infrastructure");
             }
         }
@@ -270,15 +281,17 @@ public class GeocodeService : IGeocodeService
             _logger.LogError(ex, "Geocode search timed out for query {QueryHash} [{ErrorCode}] [{ErrorCategory}]",
                 Fingerprint(q), "INFRASTRUCTURE_TIMEOUT", "Infrastructure");
         }
-        finally
-        {
-            _rateLimiter.Release();
-        }
 
         return new List<GeocodeSearchResult>();
     }
 
     // -------------------------------------------------------------------------
+    private string? GetApiKey()
+    {
+        var key = _configuration["FieldTags:AzureMapsKey"];
+        return string.IsNullOrWhiteSpace(key) ? null : key;
+    }
+
     private static string BuildCacheKey(GeocodeRequest r)
     {
         var streetPart = string.IsNullOrWhiteSpace(r.Street) ? "" : r.Street.ToLower().Trim();
@@ -287,14 +300,60 @@ public class GeocodeService : IGeocodeService
             : $"{streetPart},{r.City?.ToLower()},{r.State?.ToLower()},{r.Zip?.ToLower()}".Trim(',');
     }
 
-    private static string BuildNominatimUrl(GeocodeRequest r)
+    private static string BuildAzureMapsGeocodeUrl(GeocodeRequest r, string apiKey)
     {
-        var queryParams = new List<string> { "country=US", "format=json", "limit=1" };
-        if (!string.IsNullOrWhiteSpace(r.Street)) queryParams.Add($"street={Uri.EscapeDataString(r.Street)}");
-        if (!string.IsNullOrWhiteSpace(r.City)) queryParams.Add($"city={Uri.EscapeDataString(r.City)}");
-        if (!string.IsNullOrWhiteSpace(r.State)) queryParams.Add($"state={Uri.EscapeDataString(r.State)}");
-        if (!string.IsNullOrWhiteSpace(r.Zip)) queryParams.Add($"postalcode={Uri.EscapeDataString(r.Zip)}");
-        return $"search?{string.Join("&", queryParams)}";
+        var queryParams = new List<string>
+        {
+            $"api-version={ApiVersion}",
+            $"subscription-key={apiKey}",
+            "countryRegion=US",
+            "top=1"
+        };
+        if (!string.IsNullOrWhiteSpace(r.Street)) queryParams.Add($"addressLine={Uri.EscapeDataString(r.Street)}");
+        if (!string.IsNullOrWhiteSpace(r.City)) queryParams.Add($"locality={Uri.EscapeDataString(r.City)}");
+        if (!string.IsNullOrWhiteSpace(r.State)) queryParams.Add($"adminDistrict={Uri.EscapeDataString(r.State)}");
+        if (!string.IsNullOrWhiteSpace(r.Zip)) queryParams.Add($"postalCode={Uri.EscapeDataString(r.Zip)}");
+        return $"geocode?{string.Join("&", queryParams)}";
+    }
+
+    /// <summary>
+    /// Parses the [lat, lng] point from the first feature of an Azure Maps Get Geocoding
+    /// GeoJSON FeatureCollection response, or null if no features were returned.
+    /// </summary>
+    private static double[]? ParseFirstFeaturePoint(string json)
+    {
+        var points = ParseFeaturePoints(json, maxCount: 1);
+        return points.Count > 0 ? points[0] : null;
+    }
+
+    /// <summary>
+    /// Parses [lat, lng] points (in feature order) from an Azure Maps Get Geocoding GeoJSON
+    /// FeatureCollection response. GeoJSON orders coordinates as [lon, lat], so this flips them
+    /// to the [lat, lng] convention used by GeocodeResult/GeocodeSearchResult.
+    /// </summary>
+    private static List<double[]> ParseFeaturePoints(string json, int? maxCount = null)
+    {
+        var points = new List<double[]>();
+        using var doc = JsonDocument.Parse(json);
+        if (!doc.RootElement.TryGetProperty("features", out var features) || features.ValueKind != JsonValueKind.Array)
+        {
+            return points;
+        }
+
+        foreach (var feature in features.EnumerateArray())
+        {
+            if (maxCount.HasValue && points.Count >= maxCount.Value) break;
+
+            if (!feature.TryGetProperty("geometry", out var geometry)) continue;
+            if (!geometry.TryGetProperty("coordinates", out var coordinates)) continue;
+            if (coordinates.ValueKind != JsonValueKind.Array || coordinates.GetArrayLength() < 2) continue;
+
+            var lon = coordinates[0].GetDouble();
+            var lat = coordinates[1].GetDouble();
+            points.Add(new[] { lat, lon });
+        }
+
+        return points;
     }
 
     // -------------------------------------------------------------------------

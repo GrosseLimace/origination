@@ -19,7 +19,7 @@ public class GeocodeController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Geocodes a single address via Nominatim. Rate-limited to 1 req/sec.</summary>
+    /// <summary>Geocodes a single address via Azure Maps.</summary>
     [HttpPost("single")]
     [ProducesResponseType(typeof(GeocodeResult), StatusCodes.Status200OK)]
     public async Task<ActionResult<GeocodeResult>> SingleGeocode([FromBody] GeocodeRequest request, CancellationToken cancellationToken = default)
@@ -28,7 +28,7 @@ public class GeocodeController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Batch geocodes up to 50 addresses via Nominatim. Rate-limited to 1 req/sec per address.</summary>
+    /// <summary>Batch geocodes up to 50 addresses via Azure Maps.</summary>
     [HttpPost("batch")]
     [ProducesResponseType(typeof(List<GeocodeResult>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<GeocodeResult>>> BatchGeocode([FromBody] List<GeocodeRequest> requests, CancellationToken cancellationToken = default)
@@ -37,7 +37,7 @@ public class GeocodeController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Free-text geocode search via Nominatim (proxied server-side). Rate-limited to 1 req/sec.</summary>
+    /// <summary>Free-text geocode search via Azure Maps (proxied server-side).</summary>
     [HttpGet("search")]
     [ProducesResponseType(typeof(List<GeocodeSearchResult>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<GeocodeSearchResult>>> Search([FromQuery] string q, [FromQuery] int limit = 1, CancellationToken cancellationToken = default)

@@ -231,7 +231,7 @@ builder.Services.AddScoped<IBidSheetService, BidSheetService>();
 builder.Services.AddScoped<IUserPreferenceService, UserPreferenceService>();
 builder.Services.AddScoped<IUserTradeUnitService, UserTradeUnitService>();
 builder.Services.AddScoped<ITradeUnitService, TradeUnitService>();
-// Singleton so the Nominatim rate-limiter + last-call timestamp are shared across requests.
+// Singleton so the Azure Maps batch throttle + last-call timestamp are shared across requests.
 builder.Services.AddSingleton<IGeocodeService, GeocodeService>();
 builder.Services.AddScoped<IUsageDashboardService, UsageDashboardService>();
 builder.Services.AddScoped<IDailyRecapGroupService, DailyRecapGroupService>();
@@ -254,7 +254,10 @@ builder.Services.AddCors(options =>
 
 // =============================================================================
 // HTTP CLIENTS
-// Nominatim geocoding client — BaseAddress set here so controllers use relative URLs.
+// Azure Maps geocoding client — BaseAddress set here so controllers use relative URLs.
+// Reuses the same Azure Maps subscription key already configured for map tile rendering
+// (FieldTags:AzureMapsKey) — see GeocodeService for why Nominatim (OpenStreetMap) was replaced:
+// its rural/county-road address coverage was too sparse and silently degraded to city centroids.
 // Resilience pipeline: retry with exponential backoff + circuit breaker per §6.
 // CorrelationIdOutboundHandler propagates X-Correlation-Id to all outbound calls (§8).
 // =============================================================================
@@ -262,14 +265,13 @@ builder.Services.AddCors(options =>
 // Register the outbound correlation handler so the DI container can create it
 builder.Services.AddTransient<CorrelationIdOutboundHandler>();
 
-builder.Services.AddHttpClient("nominatim", client =>
+builder.Services.AddHttpClient("azuremaps", client =>
 {
-    client.BaseAddress = new Uri("https://nominatim.openstreetmap.org/");
-    client.DefaultRequestHeaders.Add("User-Agent", "GrainOriginatorPortal/1.0");
+    client.BaseAddress = new Uri("https://atlas.microsoft.com/");
     client.Timeout = TimeSpan.FromSeconds(10);
 })
 .AddHttpMessageHandler<CorrelationIdOutboundHandler>()
-.AddResilienceHandler("nominatim", pipeline =>
+.AddResilienceHandler("azuremaps", pipeline =>
 {
     // Retry: up to 3 attempts with exponential backoff + jitter (§6.2)
     pipeline.AddRetry(new HttpRetryStrategyOptions
