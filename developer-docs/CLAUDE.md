@@ -475,18 +475,6 @@ publish/
 az login --tenant 1521f999-f722-4a4f-9747-166f93e9b0d1
 ```
 
-## Mapping features (proof of concept)
-
-The app has a MapLibre GL + Azure Maps + LandMapMagic mapping capability: a Customer Profile
-**"Fields" tab** (tag a producer's USDA CLU / parcel / hand-drawn field boundaries — persists to a
-local SQLite `FieldTagDbContext`) and a rebuilt **Bid Sheet map** (read-only field/parcel context,
-CDL crop overlay). This is **local-dev-only POC** — dormant unless `FieldTags:*` config is set,
-never migrated into shared Azure SQL, uses a browser-exposed free-tier vendor key.
-
-**Full detail lives in [`docs/maps/`](../docs/maps/)** — start with `docs/maps/README.md`
-(as-built architecture) and `docs/maps/PATH-TO-PRODUCTION.md` before extending or productionizing
-any of it. Don't duplicate that detail here.
-
 ## SQL Database
 
 - **Authentication**: Managed Identity (no credentials needed)
