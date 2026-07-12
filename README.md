@@ -166,6 +166,20 @@ All routes require Azure AD bearer token authentication. Base path: `/api/v1`
 | GET | `/diagnostics/health` | Health check |
 | GET | `/diagnostics/ping` | Ping |
 
+### Field Tagging & Maps (proof of concept)
+> Local-development POC — dormant unless configured. See [`docs/maps/`](docs/maps/) for the full
+> architecture, and [`docs/maps/PATH-TO-PRODUCTION.md`](docs/maps/PATH-TO-PRODUCTION.md) for what
+> moving this to production requires. Routes below use literal prefixes (no `/api/v1`).
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/customers/{customerId}/field-tags` | List a producer's tagged field boundaries |
+| POST | `/api/customers/{customerId}/field-tags` | Tag a CLU field / parcel / drawn polygon |
+| DELETE | `/api/customers/{customerId}/field-tags/{id}` | Soft-delete a field tag |
+| POST | `/api/customers/{customerId}/field-tags/apply-calculated-acres` | Set `ProducerDetails.TotalAcres` from the sum of tagged fields |
+| GET | `/api/field-tag-config` | Runtime map keys for the Customer Profile Fields tab (all-or-nothing gating) |
+| GET | `/api/map-config` | Runtime map keys for the Bid Sheet map (per-key independent gating) |
+
 ## Data Sources
 
 | DbContext | Database | Access |
@@ -202,12 +216,16 @@ Azure AD bearer tokens via `Microsoft.Identity.Web`. All API endpoints require a
 | MSAL Angular | ^5.1.1 | Azure AD authentication |
 | MSAL Browser | ^5.4.0 | Azure AD authentication |
 | RxJS | ^7.8 | Reactive programming |
-| Leaflet | ^1.9.4 | Maps |
+| Leaflet | ^1.9.4 | Maps (Build List, Customer maps; Bid Sheet A/B toggle) |
+| MapLibre GL | ^4.7.1 | WebGL maps (Fields tab + Bid Sheet — maps POC, see `docs/maps/`) |
+| @mapbox/mapbox-gl-draw | ^1.5.1 | Polygon drawing (Fields tab Tier 4 — maps POC) |
+| polygon-clipping | ^0.15.7 | Polygon union for CLU tile-seam reconstruction (maps POC) |
 | Vitest | ^4.1.8 | Unit testing |
+| Playwright | ^1.61.0 | End-to-end testing (dev) |
 
 ## Software Bill of Materials (SBOM)
 
-Last Updated: 2026-06-15
+Last Updated: 2026-07-12
 
 ### Backend Dependencies (C# / .NET 10)
 
@@ -222,6 +240,8 @@ Last Updated: 2026-06-15
 | Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore | 10.0.3 | MIT | EF Core health check endpoint |
 | Microsoft.Extensions.Http.Resilience | 10.3.0 | MIT | HTTP retry / resilience policies |
 | Microsoft.Identity.Web | 3.8.4 | MIT | Azure AD / JWT Bearer authentication |
+| Microsoft.EntityFrameworkCore.Sqlite | 10.0.1 | MIT | Local SQLite store for the field-tagging POC (branch-only; to be removed on promotion — see `docs/maps/PATH-TO-PRODUCTION.md`) |
+| SQLitePCLRaw.lib.e_sqlite3 | 3.53.3 | Apache-2.0 | Native SQLite engine for the above; pinned to clear NU1903 (GHSA-2m69-gcr7-jv3q) |
 
 ### Frontend Dependencies (Angular 21 / TypeScript)
 
@@ -236,6 +256,9 @@ Last Updated: 2026-06-15
 | @it/design-system | 0.1.1 | Internal | Scoular IT design system components |
 | leaflet | 1.9.4 | BSD-2-Clause | Interactive map rendering |
 | leaflet.markercluster | ~1.5.3 | MIT | Leaflet marker clustering |
+| maplibre-gl | 4.7.1 | BSD-3-Clause | WebGL vector/raster map rendering (maps POC — Fields tab + Bid Sheet) |
+| @mapbox/mapbox-gl-draw | 1.5.1 | ISC | Polygon draw tool on MapLibre (Fields tab Tier 4 — maps POC) |
+| polygon-clipping | 0.15.7 | MIT | Polygon boolean ops (union) for CLU tile-seam reconstruction (maps POC) |
 | rxjs | 7.8.2 | Apache-2.0 | Reactive programming (Observables) |
 | tslib | 2.8.1 | 0BSD | TypeScript runtime helpers |
 | zone.js | 0.15.1 | MIT | Angular change detection zone |

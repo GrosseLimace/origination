@@ -2,7 +2,7 @@
 
 Migration of the Bid Sheet screen's map from **Leaflet + OpenStreetMap/Esri raster tiles** to
 **MapLibre GL + Azure Maps raster tiles**, reusing the map UI stack already built and validated for
-the field-tagging feature (`docs/poc/field-tagging/`). This is a rendering-layer swap, not a data
+the field-tagging feature (`docs/maps/field-tagging/`). This is a rendering-layer swap, not a data
 migration — `BidSheetLocation` and every existing Bid Sheet API call are unchanged. It additionally
 brings optional, read-only **LandMapMagic CLU/Parcel** context onto the Bid Sheet map, retrieved
 just-in-time per explicit user click — never persisted, never bulk-fetched.
@@ -197,7 +197,7 @@ on record for whoever picks up the next iteration of this feature:
 2. **Eventually replace bare lat/lng pinpoints with saved field/parcel geometries.** The Customer
    Profile's Fields tab already made this exact transition for producers: ad-hoc coordinates were
    replaced by persisted `CustomerFieldTag` records carrying real CLU/parcel/drawn boundary
-   geometry (`docs/poc/field-tagging/01-data-model.md`). This pass keeps
+   geometry (`docs/maps/field-tagging/01-data-model.md`). This pass keeps
    `BidSheetLocation.latitude/longitude` as a bare point *deliberately* — explicitly framed as
    "legacy" once this future enhancement lands. A later pass could let an originator tag a bid-sheet
    delivery location with an actual field/parcel boundary the same way producers' fields are tagged

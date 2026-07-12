@@ -21,7 +21,7 @@ Each step leaves the app runnable and independently verifiable.
      `features/customers/services/field-tagging/` to `shared/services/land-map-magic/`; update the
      two import sites in `field-tag-map.component.ts`.
    - Verify: field-tagging's existing manual test checklist
-     (`docs/poc/field-tagging/05-local-dev-setup.md`) still passes unchanged — this step must be a
+     (`docs/maps/field-tagging/05-local-dev-setup.md`) still passes unchanged — this step must be a
      pure relocation with zero behavior change.
 3. **`BidSheetMapComponent`, basemap + marker rendering only** (`03-frontend-components.md`)
    - New component, three-basemap MapLibre style (street-first default), DOM-marker port of
