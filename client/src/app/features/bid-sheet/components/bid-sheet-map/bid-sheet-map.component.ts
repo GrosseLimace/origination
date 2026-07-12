@@ -91,6 +91,11 @@ const JIT_LOOKUP_AOI_PADDING_METERS = 200;
 const CLU_MIN_SELECTABLE_ZOOM = 12;
 const PARCELS_MIN_SELECTABLE_ZOOM = 14;
 
+// ~1.2s fallback so a forced zoom-in for parcel-owner enrichment (see `handlePinSelectFieldContext`)
+// never blocks the JIT lookup indefinitely if the map's 'idle' event doesn't fire for some reason —
+// same fallback idiom as BASEMAP_SWITCH_FALLBACK_MS above.
+const FIELD_CONTEXT_TILE_WAIT_FALLBACK_MS = 1200;
+
 // Vertical gap (px) between a selected pin's own marker box and the field-context popup shown
 // above it — see `showInfoPopup`'s `positionAboveMarker` option. A rough upper bound on this
 // component's marker box heights (`buildHoverHtml`/`buildStackedLabelHtml`/`buildBidPillsHtml`,
@@ -628,17 +633,45 @@ export class BidSheetMapComponent {
     // actually be loaded for this point — that source has a hard minzoom floor of 14 (confirmed
     // live against the vendor's real style response), below which MapLibre will never even REQUEST
     // parcel tiles, no matter which tier (or none) is currently toggled on. Without this, selecting
-    // a pin while the CLU/Parcel toggle is 'off' (or 'clu') at a lower zoom silently got CLU data
-    // but never the parcel owner — not a toggle-state bug, a tile-loading one. Bump zoom in (never
-    // out) to the SAME target center this selection is already flying to, so it supersedes rather
-    // than fights the parent's simultaneous `flyTo` command for this same selection (see that effect
-    // above) — both target the identical destination, just a possibly-higher zoom.
+    // a pin at a lower zoom silently got CLU data but never the parcel owner — not a toggle-state
+    // bug, a tile-loading one. Bump zoom in (never out) to the SAME target center this selection is
+    // already flying to, so it supersedes rather than fights the parent's simultaneous `flyTo`
+    // command for this same selection (see that effect above) — both target the identical
+    // destination, just a possibly-higher zoom.
     const map = this.map;
     if (map && map.getZoom() < PARCELS_MIN_SELECTABLE_ZOOM) {
       map.easeTo({ center: [lng, lat], zoom: PARCELS_MIN_SELECTABLE_ZOOM, duration: 400 });
+      // Crossing the zoom floor only makes MapLibre START requesting the newly-in-range parcel
+      // tiles — the actual fetch + decode still takes real network time afterward. Relying on the
+      // fixed 400ms `easeTo` duration (or the incidental delay of the point-lookup/AOI network
+      // round trips below) to "probably" cover that is a race that can easily lose, which is
+      // exactly why owner data was still sometimes missing even after the zoom bump above landed:
+      // `findOverlappingParcels` only sees tiles that have ALREADY finished loading by the moment it
+      // runs. Wait for the map's own 'idle' event (fires once there's no outstanding tile/source
+      // work) instead of guessing a duration.
+      await this.waitForMapIdle();
     }
     const { info, lookupResults } = await this.runFieldContextLookup(lat, lng);
     this.showFieldContextPinPopup(lat, lng, info, lookupResults);
+  }
+
+  /** Resolves once the map has no outstanding tile/source work ('idle'), or after a fallback
+   *  timeout — see `FIELD_CONTEXT_TILE_WAIT_FALLBACK_MS`'s doc comment. Used by
+   *  `handlePinSelectFieldContext` to give newly-in-range parcel tiles a real chance to finish
+   *  loading before the owner-enrichment lookup runs, rather than guessing a fixed delay. */
+  private waitForMapIdle(): Promise<void> {
+    const map = this.map;
+    if (!map) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      map.once('idle', finish);
+      setTimeout(finish, FIELD_CONTEXT_TILE_WAIT_FALLBACK_MS);
+    });
   }
 
   /**
@@ -664,6 +697,14 @@ export class BidSheetMapComponent {
    * (`findOverlappingParcels`'s client-side geometry match, already computed unconditionally inside
    * `runFieldContextLookup`), which conveniently already carries the exact matched feature `id` too
    * — no need to separately re-query/re-match geometry for the highlight in that case.
+   *
+   * CLU/off tier ALSO falls back to the parcel match when NO CLU field exists at the clicked point
+   * at all — a common case: CLU only covers agricultural common land units, while cadastral parcel
+   * data covers essentially all land, so a "random" point is far more likely to fall within some
+   * parcel than within a specific CLU field. Without this fallback, a point with no CLU coverage but
+   * a real parcel/owner underneath it showed NOTHING (the CLU branch's own "no CLU here" check
+   * returned before ever reaching the owner data) — silently dropping owner info that was sitting
+   * right there in `info.parcels`, which is exactly the kind of gap this feature exists to close.
    */
   private showFieldContextPinPopup(
     lat: number,
@@ -679,20 +720,18 @@ export class BidSheetMapComponent {
     this.fieldContextPopup = null;
 
     const tier: 'clu' | 'parcel' = this.showFieldContext() === 'parcel' ? 'parcel' : 'clu';
-    const source: 'clu' | 'parcels' = tier === 'clu' ? 'clu' : 'parcels';
 
-    let acreage: number | null;
+    let acreage: number | null = null;
     let featureId: string | number | null = null;
+    let source: 'clu' | 'parcels' = 'clu';
+    let title: string;
 
-    if (tier === 'parcel') {
-      const match = info?.parcels[0] ?? null;
-      if (!match) return;
-      acreage = match.acreage;
-      featureId = match.id;
-    } else {
-      const lookupField = lookupResults.find((f) => f.layer === 'clu') ?? null;
-      if (!lookupField) return;
-      acreage = lookupField.acreage;
+    const cluLookupField = tier === 'clu' ? lookupResults.find((f) => f.layer === 'clu') ?? null : null;
+
+    if (tier === 'clu' && cluLookupField) {
+      acreage = cluLookupField.acreage;
+      source = 'clu';
+      title = 'CLU Field';
 
       // Deliberately a GEOGRAPHIC point-in-polygon match against already-loaded SOURCE features
       // (`querySourceFeatures` + `pointInPolygon`), the exact technique `findOverlappingParcels`
@@ -715,6 +754,17 @@ export class BidSheetMapComponent {
           }
         }
       }
+    } else {
+      // Either the tier is explicitly 'parcel', OR it's CLU/off but no CLU field exists at this
+      // point — either way, fall back to the parcel match. `source`/`title` reflect whichever data
+      // actually ends up used, NOT the raw toggle state, so the highlight always targets the right
+      // source.
+      const match = info?.parcels[0] ?? null;
+      if (!match) return;
+      acreage = match.acreage;
+      featureId = match.id;
+      source = 'parcels';
+      title = 'Parcel';
     }
 
     if (featureId != null) {
@@ -731,7 +781,7 @@ export class BidSheetMapComponent {
         state: info?.state ?? null,
         topCrop: info?.topCrop ?? null,
         owner,
-        title: tier === 'clu' ? 'CLU Field' : 'Parcel',
+        title,
       },
       { positionAboveMarker: true },
     );
