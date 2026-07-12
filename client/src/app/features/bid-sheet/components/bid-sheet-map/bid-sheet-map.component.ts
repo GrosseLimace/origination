@@ -83,6 +83,14 @@ const ADDRESS_SEARCH_ZOOM = 13;
 const CLU_AOI_PADDING_METERS = 400;
 const JIT_LOOKUP_AOI_PADDING_METERS = 200;
 
+// Minimum zoom at which the vendor's CLU / Parcel vector tiles actually exist and render at all —
+// confirmed live against the vendor's real style response (`GET /v1/styles?...&layers=clu,parcels`):
+// the `clu` source's own `minzoom` is 12, the `parcels` source's own `minzoom` is 14. Below these
+// floors there is nothing to select or highlight no matter how the paint/opacity toggle is set —
+// see `enforceMinZoomForTier`.
+const CLU_MIN_SELECTABLE_ZOOM = 12;
+const PARCELS_MIN_SELECTABLE_ZOOM = 14;
+
 interface RenderedMarker {
   marker: maplibregl.Marker;
   el: HTMLElement;
@@ -231,13 +239,19 @@ export class BidSheetMapComponent {
 
     // addLocationMode -> clear the add-location "+" pin when leaving the mode (the form's Cancel/
     // Done both flow through the parent's exitAddLocationMode(), which this mirrors on our side).
+    // Entering the mode WHILE a CLU/Parcel tier is already active also enforces that tier's minimum
+    // selectable zoom (see `enforceMinZoomForTier`) — dropping a new pin needs to actually be able to
+    // see/select the CLU or parcel shape it's about to attach to.
     effect(() => {
       const mode = this.addLocationMode();
       if (!this.loaded()) return;
       if (!mode) {
         this.addLocationMarker?.remove();
         this.addLocationMarker = null;
+        return;
       }
+      const tier = this.showFieldContext();
+      if (tier !== 'off') this.enforceMinZoomForTier(tier);
     });
 
     // flyTo (selection/search -> camera), mirroring field-tag-map.component.ts's flyToTagId pattern.
@@ -348,10 +362,34 @@ export class BidSheetMapComponent {
       return;
     }
 
+    // Turning a tier ON: zoom IN (never out) to that tier's minimum selectable zoom, but only when
+    // no bid-sheet pin is currently selected — a selected pin already owns the camera via its own
+    // `flyTo` command (00-overview.md's existing camera-ownership split), so this only kicks in for
+    // plain browsing / about-to-add-a-location. See `enforceMinZoomForTier`.
+    this.enforceMinZoomForTier(next);
+
     void this.ensureVendorLayers().then(() => {
       setLayerGroupOpacity(map, this.cluOpacity, this.showFieldContext() === 'clu');
       setLayerGroupOpacity(map, this.parcelOpacity, this.showFieldContext() === 'parcel');
     });
+  }
+
+  /**
+   * Zooms IN (never out) to the minimum zoom at which the given tier's CLU/parcel shapes actually
+   * exist and render — see `CLU_MIN_SELECTABLE_ZOOM`/`PARCELS_MIN_SELECTABLE_ZOOM`. No-ops if the
+   * map is already at or above that floor (leaves the user's own zoom alone), and no-ops if a
+   * bid-sheet pin is currently selected (checked via `renderModel().groups[].isPanelOpen` — the
+   * same "is a location open in the detail panel" flag the render model already carries) since a
+   * selected pin's own camera command already takes precedence over this general "make shapes
+   * selectable while browsing" behavior.
+   */
+  private enforceMinZoomForTier(tier: 'clu' | 'parcel'): void {
+    const map = this.map;
+    if (!map) return;
+    const minZoom = tier === 'clu' ? CLU_MIN_SELECTABLE_ZOOM : PARCELS_MIN_SELECTABLE_ZOOM;
+    if (map.getZoom() >= minZoom) return;
+    if (this.renderModel().groups.some((g) => g.isPanelOpen)) return;
+    map.easeTo({ zoom: minZoom, duration: 400 });
   }
 
   /**
@@ -605,16 +643,33 @@ export class BidSheetMapComponent {
     const lookupField = lookupResults.find((f) => f.layer === layerName) ?? null;
     if (!lookupField) return;
 
-    const hitLayerId = tier === 'clu' ? this.lmmLayers.cluFill[0] : this.lmmLayers.parcelFill[0];
-    const source = tier === 'clu' ? 'clu' : 'parcels';
+    const source = layerName; // 'clu' | 'parcels' — matches the vendor source id 1:1 (see below).
 
+    // Deliberately a GEOGRAPHIC point-in-polygon match against already-loaded SOURCE features
+    // (`querySourceFeatures` + `pointInPolygon`), the exact technique `findOverlappingParcels`
+    // already uses successfully for parcels — NOT a pixel-based `queryRenderedFeatures` at the
+    // single screen pixel the pin projects to. That was the original (buggy) approach here, and it
+    // reliably failed for parcels specifically: cadastral parcel polygons are far smaller/finer-
+    // grained than CLU field polygons, so a bid location's recorded lat/lng is much more likely to
+    // land in a gap or right on a tile-seam/rendering-precision edge relative to a narrow parcel
+    // boundary than relative to a large CLU field boundary — which is exactly the "CLU highlight
+    // always works, parcel highlight never does" asymmetry that was reported. Testing the real
+    // polygon geometry directly in lat/lng space sidesteps screen-pixel and tile-clipping precision
+    // entirely. Confirmed live against the vendor's actual style (`GET /v1/styles?...`): both
+    // `clu-outline` and `parcels-fill` declare `source-layer` equal to their source id ('clu'/
+    // 'parcels'), so `source` doubles as the sourceLayer name here, same as `findOverlappingParcels`.
     let featureId: string | number | null = null;
-    if (hitLayerId && map.getLayer(hitLayerId)) {
-      // Same "already-loaded tiles only" caveat as `findOverlappingParcels` — if the relevant tile
-      // hasn't downloaded yet at this point/zoom, this simply finds nothing and no highlight shows.
-      const rendered = map.queryRenderedFeatures(map.project([lng, lat]), { layers: [hitLayerId] });
-      const hit = rendered.find((f) => f.id != null);
-      if (hit?.id != null) featureId = hit.id;
+    if (map.getSource(source)) {
+      const point: Position = [lng, lat];
+      const fragments = map.querySourceFeatures(source, { sourceLayer: source });
+      for (const f of fragments) {
+        if (f.id == null) continue;
+        const geom = pickPolygonGeometry(f.geometry as Geometry);
+        if (geom && pointInPolygon(point, geom)) {
+          featureId = f.id;
+          break;
+        }
+      }
     }
 
     if (featureId != null) {
