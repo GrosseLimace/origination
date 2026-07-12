@@ -9,6 +9,73 @@
   -->
   <div #mapContainer class="absolute! inset-0"></div>
 
+  <!-- Address search — both modes. Top-center, clear of the top-left zoom control, the top-right
+       tier selector (select mode), and the bottom overlays. -->
+  <form
+    class="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm px-2 py-1.5"
+    (submit)="$event.preventDefault(); emitAddressSearch()">
+    <input
+      type="text"
+      placeholder="Search for an address…"
+      class="w-56 sm:w-72 bg-transparent text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none px-1"
+      [value]="addressSearchText()"
+      (input)="addressSearchText.set($any($event.target).value)" />
+    <button
+      type="submit"
+      class="shrink-0 rounded-md p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+      [disabled]="searchPending()"
+      title="Search">
+      @if (searchPending()) {
+        <svg class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+        </svg>
+      } @else {
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="7"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+      }
+    </button>
+  </form>
+
+  <!-- Basemap toggle — both modes. Bottom-left, above the MapLibre ScaleControl. -->
+  <div class="absolute bottom-8 left-2 z-10 flex items-center gap-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-1">
+    <button
+      type="button"
+      class="rounded-md px-2 py-1 text-xs font-medium"
+      [class.bg-gray-200]="basemapStyle() === 'imagery'"
+      [class.dark:bg-gray-600]="basemapStyle() === 'imagery'"
+      [class.text-gray-700]="basemapStyle() !== 'imagery'"
+      [class.dark:text-gray-300]="basemapStyle() !== 'imagery'"
+      title="Satellite imagery"
+      (click)="setBasemap('imagery')">
+      Satellite
+    </button>
+    <button
+      type="button"
+      class="rounded-md px-2 py-1 text-xs font-medium"
+      [class.bg-gray-200]="basemapStyle() === 'street'"
+      [class.dark:bg-gray-600]="basemapStyle() === 'street'"
+      [class.text-gray-700]="basemapStyle() !== 'street'"
+      [class.dark:text-gray-300]="basemapStyle() !== 'street'"
+      title="Streets and boundaries"
+      (click)="setBasemap('street')">
+      Map
+    </button>
+    <button
+      type="button"
+      class="rounded-md px-2 py-1 text-xs font-medium"
+      [class.bg-gray-200]="basemapStyle() === 'hybrid'"
+      [class.dark:bg-gray-600]="basemapStyle() === 'hybrid'"
+      [class.text-gray-700]="basemapStyle() !== 'hybrid'"
+      [class.dark:text-gray-300]="basemapStyle() !== 'hybrid'"
+      title="Satellite with roads and labels"
+      (click)="setBasemap('hybrid')">
+      Hybrid
+    </button>
+  </div>
+
   <!-- Tier selector — select mode only (Tier 1 CLU, Tier 2 Parcel, Tier 4 Draw; Tier 3 omitted). -->
   @if (isSelectMode()) {
     <div class="absolute top-3 right-3 z-10 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-2 w-64">

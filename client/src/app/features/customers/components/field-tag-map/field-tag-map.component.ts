@@ -61,10 +61,27 @@ const TAGGED_FILL_LAYER_ID = 'tagged-fields-fill';
 const TAGGED_OUTLINE_LAYER_ID = 'tagged-fields-outline';
 const TAGGED_OUTLINE_DASHED_LAYER_ID = 'tagged-fields-outline-dashed';
 
+// Basemap layers — all three added up-front in initMap()'s initial style, at the bottom of the
+// layer stack, and switched only via setLayoutProperty visibility toggles (never map.setStyle(),
+// which would wipe the tagged-fields source and merged vendor CLU/parcel layers). Verified live
+// against atlas.microsoft.com/map/tile: microsoft.imagery and microsoft.base.road are opaque raster
+// PNGs; microsoft.base.hybrid.road is a transparent raster PNG suitable for stacking over imagery;
+// microsoft.base.hybrid is a VECTOR tileset and is NOT used here.
+const STREET_SOURCE_ID = 'azure-street';
+const HYBRID_OVERLAY_SOURCE_ID = 'azure-hybrid-overlay';
+const IMAGERY_LAYER_ID = AZURE_SOURCE_ID; // matches existing pattern where layer id == source id
+const STREET_LAYER_ID = 'azure-street';
+const HYBRID_OVERLAY_LAYER_ID = 'azure-hybrid-overlay';
+const AZURE_IMAGERY_TILESET = 'microsoft.imagery';
+const AZURE_STREET_TILESET = 'microsoft.base.road';
+const AZURE_HYBRID_TILESET = 'microsoft.base.hybrid.road';
+type BasemapStyle = 'imagery' | 'street' | 'hybrid';
+
 const DEFAULT_CENTER: [number, number] = [-98.5795, 39.8283]; // CONUS geographic center
 const DEFAULT_ZOOM = 4;
 const REVIEW_ZOOM_NO_TAGS = 13;
 const SELECT_MODE_ZOOM = 15; // G12: CLU tiles only render at zoom >= 12; 15 lands comfortably inside range
+const SEARCH_RESULT_ZOOM = 13;
 
 // G10/G13: the AOI endpoint only returns features that geographically intersect the SUBMITTED
 // polygon. `sourceGeometry` can be a single small tile-clipped fragment, so pad its bounding box
@@ -111,18 +128,28 @@ export class FieldTagMapComponent {
    */
   readonly flyToTagId = input<{ tagId: number; nonce: number } | null>(null);
   readonly mapConfig = input.required<FieldTagMapConfig>();
+  readonly searchPending = input<boolean>(false);
+  /**
+   * Address-search "fly" command, mirroring `flyToTagId`'s nonce pattern (same reason: a repeat
+   * search for the identical string must still re-fire flyTo — plain signal equality on identical
+   * coordinates would otherwise swallow it).
+   */
+  readonly flyToLocation = input<{ lat: number; lng: number; nonce: number } | null>(null);
 
   // ── Outputs ───────────────────────────────────────────────────────────────
   readonly tagHover = output<number | null>();
   readonly fieldConfirmed = output<FieldTagDraft>();
   readonly duplicateAttempted = output<string>();
   readonly selectError = output<string>();
+  readonly addressSearch = output<string>();
 
   // ── Template-facing state (tier selector / legend) ──────────────────────
   readonly currentTier = signal<Tier>('clu');
   readonly tierHint = signal<string>('');
   readonly methodStyle = FIELD_TAG_METHOD_STYLE;
   readonly isSelectMode = signal(false);
+  readonly basemapStyle = signal<BasemapStyle>('imagery'); // preserves current default view
+  readonly addressSearchText = signal('');
 
   private map: maplibregl.Map | null = null;
   private readonly loaded = signal(false);
@@ -207,6 +234,13 @@ export class FieldTagMapComponent {
       if (!this.loaded() || cmd == null) return;
       this.flyToTag(cmd.tagId);
     });
+
+    // flyToLocation (address search -> camera) -> flyTo. Mirrors flyToTagId above.
+    effect(() => {
+      const loc = this.flyToLocation();
+      if (!this.loaded() || loc == null) return;
+      this.map?.flyTo({ center: [loc.lng, loc.lat], zoom: SEARCH_RESULT_ZOOM });
+    });
   }
 
   /** Tier selector click handler (template-bound). */
@@ -228,14 +262,37 @@ export class FieldTagMapComponent {
     }
   }
 
+  /** Address-search submit handler (template-bound). */
+  emitAddressSearch(): void {
+    const q = this.addressSearchText().trim();
+    if (q) this.addressSearch.emit(q);
+  }
+
+  /**
+   * Basemap toggle (template-bound). Switches visibility only via setLayoutProperty — never
+   * map.setStyle(), which would wipe the tagged-fields source and merged vendor CLU/parcel layers.
+   */
+  setBasemap(style: BasemapStyle): void {
+    this.basemapStyle.set(style);
+    const map = this.map;
+    if (!map || !map.getLayer(IMAGERY_LAYER_ID)) return; // guard until style loaded, matching other methods' pattern
+    map.setLayoutProperty(STREET_LAYER_ID, 'visibility', style === 'street' ? 'visible' : 'none');
+    map.setLayoutProperty(IMAGERY_LAYER_ID, 'visibility', style === 'street' ? 'none' : 'visible');
+    map.setLayoutProperty(HYBRID_OVERLAY_LAYER_ID, 'visibility', style === 'hybrid' ? 'visible' : 'none');
+  }
+
   // ── Map bootstrap ─────────────────────────────────────────────────────────
+
+  private azureTileUrl(tilesetId: string): string {
+    const key = this.mapConfig().azureMapsKey ?? '';
+    return (
+      `https://atlas.microsoft.com/map/tile?api-version=2.0&tilesetId=${tilesetId}` +
+      `&zoom={z}&x={x}&y={y}&subscription-key=${key}`
+    );
+  }
 
   private initMap(): void {
     const container = this.mapContainerRef.nativeElement;
-    const azureKey = this.mapConfig().azureMapsKey ?? '';
-    const tileUrl =
-      'https://atlas.microsoft.com/map/tile?api-version=2.0&tilesetId=microsoft.imagery' +
-      `&zoom={z}&x={x}&y={y}&subscription-key=${azureKey}`;
 
     const coords = this.customer().coordinates;
     const center: [number, number] = coords ? [coords.lng, coords.lat] : DEFAULT_CENTER;
@@ -248,14 +305,30 @@ export class FieldTagMapComponent {
       style: {
         version: 8,
         sources: {
+          [STREET_SOURCE_ID]: {
+            type: 'raster',
+            tiles: [this.azureTileUrl(AZURE_STREET_TILESET)],
+            tileSize: 256,
+            attribution: '© Microsoft — Azure Maps',
+          },
           [AZURE_SOURCE_ID]: {
             type: 'raster',
-            tiles: [tileUrl],
+            tiles: [this.azureTileUrl(AZURE_IMAGERY_TILESET)],
+            tileSize: 256,
+            attribution: '© Microsoft — Azure Maps',
+          },
+          [HYBRID_OVERLAY_SOURCE_ID]: {
+            type: 'raster',
+            tiles: [this.azureTileUrl(AZURE_HYBRID_TILESET)],
             tileSize: 256,
             attribution: '© Microsoft — Azure Maps',
           },
         },
-        layers: [{ id: AZURE_SOURCE_ID, type: 'raster', source: AZURE_SOURCE_ID }],
+        layers: [
+          { id: STREET_LAYER_ID, type: 'raster', source: STREET_SOURCE_ID, layout: { visibility: 'none' } },
+          { id: IMAGERY_LAYER_ID, type: 'raster', source: AZURE_SOURCE_ID },
+          { id: HYBRID_OVERLAY_LAYER_ID, type: 'raster', source: HYBRID_OVERLAY_SOURCE_ID, layout: { visibility: 'none' } },
+        ],
       },
     });
 

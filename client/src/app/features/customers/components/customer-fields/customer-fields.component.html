@@ -1,4 +1,4 @@
-<div class="flex flex-col gap-3 h-full">
+<div [class]="rootClass()">
   <!-- Header: mode toggle + Use calculated acres -->
   <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm px-4 py-3">
     <div class="text-sm text-gray-600 dark:text-gray-300">
@@ -17,6 +17,21 @@
       </app-button>
       <app-button variant="primary" size="sm" (onClick)="toggleMode()">
         {{ mode() === 'select' ? 'Done' : 'Add fields' }}
+      </app-button>
+      <app-button
+        variant="ghost"
+        size="icon"
+        [title]="isMaximized() ? 'Restore' : 'Maximize'"
+        (onClick)="toggleMaximize()">
+        @if (isMaximized()) {
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 3H5a2 2 0 00-2 2v4M15 3h4a2 2 0 012 2v4M9 21H5a2 2 0 01-2-2v-4M15 21h4a2 2 0 002-2v-4" />
+          </svg>
+        } @else {
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 9V5a2 2 0 012-2h4M21 9V5a2 2 0 00-2-2h-4M3 15v4a2 2 0 002 2h4M21 15v4a2 2 0 01-2 2h-4" />
+          </svg>
+        }
       </app-button>
     </div>
   </div>
@@ -47,10 +62,13 @@
         [hoveredTagId]="hoveredTagId()"
         [flyToTagId]="flyToTag()"
         [mapConfig]="mapConfig()"
+        [flyToLocation]="flyToLocation()"
+        [searchPending]="isSearchingAddress()"
         (tagHover)="onMapHover($event)"
         (fieldConfirmed)="onFieldConfirmed($event)"
         (duplicateAttempted)="onDuplicateAttempted($event)"
         (selectError)="onSelectError($event)"
+        (addressSearch)="onAddressSearch($event)"
       ></app-field-tag-map>
     </div>
   </div>

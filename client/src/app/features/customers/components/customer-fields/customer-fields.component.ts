@@ -1,6 +1,8 @@
-import { Component, ChangeDetectionStrategy, DestroyRef, computed, effect, inject, input, output, signal } from '@angular/core';
+import { Component, ChangeDetectionStrategy, DestroyRef, HostListener, computed, effect, inject, input, output, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
+import { from } from 'rxjs';
+import { concatMap, first } from 'rxjs/operators';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
@@ -77,33 +79,51 @@ export class CustomerFieldsComponent {
     const addr = resolveCustomerAddress(customer);
     if (!addr.city && !addr.state && !addr.zip) return;
 
-    const key = geocodeCacheKey(addr);
-    const cached = this.appState.mapGeocodeCache.get(key);
+    const fullKey = geocodeCacheKey(addr);
+    const cached = this.appState.mapGeocodeCache.get(fullKey);
     if (cached) {
       this._resolvedCoords.set(cached);
       return;
     }
 
-    this.apiService.geocodeSingle({
-      key,
-      street: addr.street || undefined,
-      city: addr.city,
-      state: expandStateAbbrev(addr.state),
-      zip: addr.zip,
-    })
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (result) => {
-          if (seq !== this._geocodeRequestSeq) return; // stale — customer() changed mid-flight
-          if (result.lat == null || result.lng == null) return;
-          const coords = { lat: result.lat, lng: result.lng };
-          this.appState.setGeocodeCache(key, coords);
-          this._resolvedCoords.set(coords);
-        },
-        // ApiService.geocodeSingle already swallows HTTP errors into a null-coords result, so
-        // this is just a defensive backstop — the map's own default-view fallback still applies.
-        error: () => { /* no-op: map falls back to its default view */ },
-      });
+    // Progressive degradation ladder: full address, then city+state, then zip-only, stopping at
+    // first success. Each tier gets its own composed cache key via geocodeCacheKey(...), using the
+    // raw (un-expanded) state abbreviation to stay consistent with how a customer with only those
+    // parts would compose their own key. Caching under BOTH the full-address key and the winning
+    // tier's own narrower key is safe: a narrow key is only ever read by another customer whose own
+    // full address composes to that exact same narrow string (i.e. one who themselves only has
+    // that much address info), so serving them the cached centroid is never worse than what they'd
+    // get otherwise, and a fuller-address customer always composes a different, more specific key.
+    const cityStateKey = geocodeCacheKey({ street: '', city: addr.city, state: addr.state, zip: '' });
+    const zipKey = geocodeCacheKey({ street: '', city: '', state: '', zip: addr.zip });
+
+    const tiers: Array<{ key: string; street?: string; city?: string; state?: string; zip?: string }> = [];
+    tiers.push({ key: fullKey, street: addr.street || undefined, city: addr.city, state: expandStateAbbrev(addr.state), zip: addr.zip });
+    if (addr.city && addr.state) tiers.push({ key: cityStateKey, city: addr.city, state: expandStateAbbrev(addr.state) });
+    if (addr.zip) tiers.push({ key: zipKey, zip: addr.zip });
+
+    // Drop tiers whose key duplicates an earlier one (avoids a redundant identical call, e.g. a
+    // city+state-only customer whose full key already equals cityStateKey).
+    const seen = new Set<string>();
+    const uniqueTiers = tiers.filter((t) => !seen.has(t.key) && (seen.add(t.key), true));
+
+    from(uniqueTiers).pipe(
+      concatMap((req) => this.apiService.geocodeSingle(req)),
+      first((r) => r.lat != null && r.lng != null, null as { key: string; lat: number | null; lng: number | null } | null),
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe({
+      next: (result) => {
+        if (seq !== this._geocodeRequestSeq) return; // stale — customer() changed mid-flight
+        if (!result || result.lat == null || result.lng == null) return; // all tiers failed — map falls back to its default view
+        const coords = { lat: result.lat, lng: result.lng };
+        this.appState.setGeocodeCache(fullKey, coords);
+        if (result.key !== fullKey) this.appState.setGeocodeCache(result.key, coords);
+        this._resolvedCoords.set(coords);
+      },
+      // ApiService.geocodeSingle already swallows HTTP errors into a null-coords result, so this
+      // is just a defensive backstop — the map's own default-view fallback still applies.
+      error: () => { /* no-op: map falls back to its default view */ },
+    });
   }
 
   // ── Owned state — single source of truth for hover sync (see class doc) ──
@@ -114,6 +134,32 @@ export class CustomerFieldsComponent {
    *  swallow a repeat click on an unchanged tagId (04-frontend-list-and-hover-sync.md → "Click-to-fly"). */
   readonly flyToTag = signal<{ tagId: number; nonce: number } | null>(null);
   private flyNonce = 0;
+
+  /** Address-search "fly" command signal, mirroring flyToTag's nonce pattern above. */
+  readonly flyToLocation = signal<{ lat: number; lng: number; nonce: number } | null>(null);
+  private flyLocationNonce = 0;
+  readonly isSearchingAddress = signal(false);
+
+  // ── Fullscreen/maximize toggle ────────────────────────────────────────────
+  // CSS fixed-overlay, not the native Fullscreen API: ToastContainerComponent is mounted at the
+  // app root as a sibling of the whole feature tree, so native requestFullscreen() would hide
+  // toasts this feature depends on (duplicate-field warnings, save/AOI errors, "no location
+  // found"). The CSS overlay keeps toasts, nav, and the delete-confirm modal all working.
+  readonly isMaximized = signal(false);
+
+  /** z-40: strictly below the toast container and the delete-confirm modal below (both z-50). */
+  readonly rootClass = computed(() =>
+    this.isMaximized()
+      ? 'fixed inset-0 z-40 flex flex-col gap-3 bg-gray-50 dark:bg-gray-900 p-4 overflow-hidden'
+      : 'flex flex-col gap-3 h-full');
+
+  toggleMaximize(): void {
+    this.isMaximized.set(!this.isMaximized());
+  }
+
+  @HostListener('document:keydown.escape') onEsc(): void {
+    if (this.isMaximized()) this.isMaximized.set(false);
+  }
 
   /** Total calculated acres across all currently loaded tags (null calcAcres excluded). */
   readonly totalAcres = computed(() => this.tags().reduce((sum, t) => sum + (t.calcAcres ?? 0), 0));
@@ -173,6 +219,27 @@ export class CustomerFieldsComponent {
 
   onSelectError(message: string): void {
     this.toastService.error(message);
+  }
+
+  // ── Address search (map's addressSearch output) ───────────────────────────
+  onAddressSearch(query: string): void {
+    this.isSearchingAddress.set(true);
+    this.apiService.geocodeSearch(query)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (results) => {
+          this.isSearchingAddress.set(false);
+          const hit = results[0];
+          if (!hit) {
+            this.toastService.warning(`No location found for "${query}".`);
+            return;
+          }
+          this.flyLocationNonce++;
+          this.flyToLocation.set({ lat: hit.lat, lng: hit.lng, nonce: this.flyLocationNonce });
+        },
+        // geocodeSearch already swallows HTTP errors to [] — defensive only.
+        error: () => { this.isSearchingAddress.set(false); },
+      });
   }
 
   // ── Delete (list's delete output -> confirm -> soft-delete) ──────────────
