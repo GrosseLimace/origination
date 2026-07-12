@@ -34,6 +34,9 @@ const LMM_PARCELS_LAYER_IDS = ['parcels-fill', 'parcels-outline', 'parcels-label
 /** The vendor's own parcel label symbol layer — see `overrideParcelsLabelText` below. */
 const PARCELS_LABELS_LAYER_ID = 'parcels-labels';
 
+/** The vendor's own CLU acreage label symbol layer — see `overrideCluLabelText` below. */
+const CLU_LABELS_LAYER_ID = 'clu-labels';
+
 /**
  * G5: LandMapMagic's CLU group ships only a line ("clu-outline") and a label layer — there is no
  * CLU fill layer. Line geometries have a thin pixel-width hit area, which makes click/hover
@@ -99,6 +102,7 @@ export async function mergeLandMapMagicLayers(
   }
 
   overrideParcelsLabelText(map);
+  overrideCluLabelText(map);
   addSyntheticLayers(map);
 
   return {
@@ -155,17 +159,56 @@ function simplifyTextFont(layer: LayerSpecification): void {
  */
 function overrideParcelsLabelText(map: maplibregl.Map): void {
   if (!map.getLayer(PARCELS_LABELS_LAYER_ID)) return;
-  map.setLayoutProperty(PARCELS_LABELS_LAYER_ID, 'text-field', ['coalesce', ['get', 'owner'], '']);
-  map.setLayoutProperty(PARCELS_LABELS_LAYER_ID, 'text-size', 12);
+  // Vendor's own text-field already falls back `owner` -> `owner_name` -> ''; keep that fallback
+  // chain rather than dropping straight to owner-or-blank.
+  map.setLayoutProperty(PARCELS_LABELS_LAYER_ID, 'text-field', ['coalesce', ['get', 'owner'], ['get', 'owner_name'], '']);
+  // Confirmed live (GET /v1/styles?...&layers=parcels): the vendor's own text-size is a
+  // zoom-interpolated 9px (zoom 15) -> 11px (16) -> 12px (17) — small, and visibly smaller than
+  // clu-labels' flat 14px acreage text. Match clu-labels for visual parity/legibility.
+  map.setLayoutProperty(PARCELS_LABELS_LAYER_ID, 'text-size', 14);
   // The vendor's own paint properties were tuned for its default (short, numeric) label text —
   // an owner NAME is longer and needs to stay legible over both busy satellite imagery and the
   // street/hybrid basemaps. White text + a solid dark halo reads reliably across all three
-  // basemap styles (imagery/street/hybrid — see the basemap toggle), unlike the vendor's likely
-  // thinner/lighter default halo which all but disappeared on satellite imagery.
+  // basemap styles (imagery/street/hybrid — see the basemap toggle).
   map.setPaintProperty(PARCELS_LABELS_LAYER_ID, 'text-color', '#ffffff');
   map.setPaintProperty(PARCELS_LABELS_LAYER_ID, 'text-halo-color', '#000000');
   map.setPaintProperty(PARCELS_LABELS_LAYER_ID, 'text-halo-width', 1.5);
   map.setPaintProperty(PARCELS_LABELS_LAYER_ID, 'text-halo-blur', 0.5);
+  // Confirmed live: the vendor's own text-opacity is
+  // interpolate(linear, zoom, 15, 0, 16, 0.8, 17, 1) with the layer's own minzoom: 15 — i.e. the
+  // label doesn't exist at all below zoom 15, is fully INVISIBLE right at 15, and only reaches
+  // full opacity at zoom 17. That's the "fades in/out based on zoom level" behavior reported.
+  // Shift the whole ramp down by one zoom level (14/15/16 instead of 15/16/17) and lower the
+  // layer's own zoom floor to match, so the label starts becoming visible — and reaches full
+  // darkness — one zoom level earlier than the vendor default.
+  map.setLayerZoomRange(PARCELS_LABELS_LAYER_ID, 14, 24);
+  map.setPaintProperty(PARCELS_LABELS_LAYER_ID, 'text-opacity', [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    14,
+    0,
+    15,
+    0.8,
+    16,
+    1,
+  ]);
+}
+
+/**
+ * Confirmed live (GET /v1/styles?...&layers=clu): `clu-labels` ships with `text-color: #000000` +
+ * a 3px `text-halo-color: #ffffff` — black text on a white halo, reported as hard to read
+ * (particularly over the lighter street/hybrid basemaps and lighter cropland/soil imagery, where a
+ * white halo blends into the background instead of standing out against it). Swap to the same
+ * white-text/black-halo scheme used for `parcels-labels` for a consistent, higher-contrast look
+ * across both tiers and all three basemap styles (imagery/street/hybrid).
+ */
+function overrideCluLabelText(map: maplibregl.Map): void {
+  if (!map.getLayer(CLU_LABELS_LAYER_ID)) return;
+  map.setPaintProperty(CLU_LABELS_LAYER_ID, 'text-color', '#ffffff');
+  map.setPaintProperty(CLU_LABELS_LAYER_ID, 'text-halo-color', '#000000');
+  map.setPaintProperty(CLU_LABELS_LAYER_ID, 'text-halo-width', 2);
+  map.setPaintProperty(CLU_LABELS_LAYER_ID, 'text-halo-blur', 0.5);
 }
 
 /** Add the CLU hit-test fill and both selected-highlight outline layers (G4, G5). */

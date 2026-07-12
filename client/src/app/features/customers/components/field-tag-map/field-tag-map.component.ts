@@ -831,6 +831,7 @@ export class FieldTagMapComponent {
         lngLat,
         { fieldId: String(nativeId), acreage: calcAcres, county: result.county, state: result.state, owner, topCrop },
         () => this.commitFieldConfirmed(draft),
+        () => this.setVendorSelected(null),
       );
       // Stay in select mode — commitFieldConfirmed (on Confirm click) POSTs via the parent, which
       // appends to `tags` and flows back through the tags() effect for instant map feedback.
@@ -1027,6 +1028,7 @@ export class FieldTagMapComponent {
       topCrop: { name: string; pct: number } | null;
     },
     onConfirm: () => void,
+    onCancel: () => void,
   ): maplibregl.Popup {
     const map = this.map!;
     const container = this.popupContainer();
@@ -1063,18 +1065,34 @@ export class FieldTagMapComponent {
     }
     container.append(rows);
 
+    const buttonRow = document.createElement('div');
+    buttonRow.className = 'flex gap-2';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className =
+      'flex-1 rounded-md border border-gray-300 bg-white text-gray-700 px-3 py-1.5 text-sm font-medium hover:bg-gray-50';
+    cancelBtn.textContent = 'Cancel';
+
     const confirmBtn = document.createElement('button');
     confirmBtn.type = 'button';
-    confirmBtn.className = 'w-full rounded-md bg-green-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-green-700';
+    confirmBtn.className = 'flex-1 rounded-md bg-green-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-green-700';
     confirmBtn.textContent = 'Confirm this field';
-    container.append(confirmBtn);
+
+    buttonRow.append(cancelBtn, confirmBtn);
+    container.append(buttonRow);
 
     const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '280px' }).setLngLat(lngLat).setDOMContent(container).addTo(map);
 
     confirmBtn.addEventListener('click', () => {
+      cancelBtn.disabled = true;
       confirmBtn.disabled = true;
       confirmBtn.textContent = 'Saving…';
       onConfirm();
+    });
+    cancelBtn.addEventListener('click', () => {
+      popup.remove();
+      onCancel();
     });
 
     return popup;
