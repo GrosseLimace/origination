@@ -2,6 +2,10 @@ export const environment = {
   production: false,
   envName: 'Dev',
   bidSheetEnabled: true,
+  // Bid Sheet map engine A/B toggle (docs/poc/bid-sheet-map/) — MapLibre is the default
+  // in every environment, including prod, from day one; Leaflet stays available via the
+  // dev-visible runtime toggle.
+  bidSheetMapLibreDefault: true,
   usageDashboardEnabled: true,
   dailyDigestEnabled: true,
   apiBaseUrl: '/api',

@@ -2,6 +2,10 @@ export const environment = {
   production: true,
   envName: 'production',
   bidSheetEnabled: true,
+  // MapLibre is the default map engine everywhere, including prod, from day one (see
+  // docs/poc/bid-sheet-map/00-overview.md, settled decision 10). Leaflet remains fully
+  // available behind the runtime mapEngine toggle for direct A/B comparison.
+  bidSheetMapLibreDefault: true,
   usageDashboardEnabled: true,
   // Daily Digest (recap groups): OFF in PROD until the feature launches. Gates the
   // /daily-digest route + the "Daily Recap" nav link. Flip to true (and deploy the

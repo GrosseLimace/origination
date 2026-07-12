@@ -9,8 +9,11 @@ import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
 import { ToastService } from '@core/services/toast.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
-import { BidSheetEntry, BidSheetLocation, BidSheetLocationBid, Elevator, Commodity } from '@models';
+import { BidSheetEntry, BidSheetLocation, BidSheetLocationBid, Elevator, Commodity, MapConfig } from '@models';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
+import { BidSheetMapComponent } from '../../components/bid-sheet-map/bid-sheet-map.component';
+import { BidSheetMapRenderModel } from '../../components/bid-sheet-map/bid-sheet-map.model';
+import { environment } from '@env/environment';
 
 interface EditBidsRow {
   name: string;
@@ -56,7 +59,7 @@ const FILTER_BAR_WRAP_WIDTH = 1050;
 @Component({
   selector: 'app-bid-sheet',
   standalone: true,
-  imports: [CommonModule, FormsModule, TradeUnitSelectorComponent, CdkDropList, CdkDrag, CdkDragHandle],
+  imports: [CommonModule, FormsModule, TradeUnitSelectorComponent, CdkDropList, CdkDrag, CdkDragHandle, BidSheetMapComponent],
   templateUrl: './bid-sheet.component.html',
   styleUrl: './bid-sheet.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -212,11 +215,56 @@ export class BidSheetComponent {
   // --- Panel ---
   showPanel = signal<boolean>(false);
   showLegend = signal<boolean>(true);
-  /** Active base map: 'street' (OpenStreetMap) or 'satellite' (Esri aerial imagery + labels). */
+  /** Active base map: 'street' (OpenStreetMap) or 'satellite' (Esri aerial imagery + labels).
+   *  Leaflet-path-only — the MapLibre path owns its own three-way basemap toggle internally. */
   mapView = signal<'street' | 'satellite'>('street');
   /** True while a base-layer switch is loading its tiles — drives a brief loading overlay so the
-   *  map doesn't visibly flash/pop tiles during the toggle. */
+   *  map doesn't visibly flash/pop tiles during the toggle. Leaflet-path-only. */
   mapSwitching = signal<boolean>(false);
+
+  // --- Map engine A/B toggle (docs/poc/bid-sheet-map/) ---
+  /** MapLibre is the default in every environment, including prod, from day one; Leaflet stays
+   *  fully available behind this runtime toggle for direct comparison — see 00-overview.md
+   *  settled decision 10. */
+  readonly mapEngine = signal<'leaflet' | 'maplibre'>(
+    environment.bidSheetMapLibreDefault ? 'maplibre' : 'leaflet'
+  );
+  /** Runtime config for any MapLibre/Azure Maps consumer (GET /api/map-config). */
+  readonly mapConfig = signal<MapConfig | null>(null);
+  /** Current zoom of whichever map engine is active — mirrors Leaflet's own `_map.getZoom()`, kept
+   *  in sync via the MapLibre path's `zoomChanged` output so `mapRenderModel` can react to it. */
+  readonly mapZoom = signal<number>(6);
+  /** Nonce'd camera commands feeding the MapLibre path — bumped alongside every Leaflet
+   *  `_flyToLocation`/US-overview-reset call so both engines' cameras move identically regardless
+   *  of which one is currently mounted. */
+  readonly mapFlyToCmd = signal<{ lat: number; lng: number; zoom?: number; nonce: number } | null>(null);
+  readonly mapFitAllCmd = signal<{ nonce: number } | null>(null);
+  private _mapCmdNonce = 0;
+  /** Pixel width of the side panel when open, as an input for the MapLibre path's camera padding —
+   *  mirrors the Leaflet path's private PANEL_WIDTH_PX constant. */
+  readonly mapPanelWidthPx = computed(() => (this.showPanel() ? BidSheetComponent.PANEL_WIDTH_PX : 0));
+
+  toggleMapEngine(): void {
+    this.mapEngine.set(this.mapEngine() === 'maplibre' ? 'leaflet' : 'maplibre');
+  }
+
+  /** Click handler wired to the MapLibre path's (locationSelected) output — same selection logic
+   *  the Leaflet path's marker click handlers call directly. */
+  onMapLocationSelected(loc: BidSheetLocation): void {
+    this._selectMapLocation(loc);
+  }
+
+  /** Click handler wired to the MapLibre path's (mapClicked) output — same add-location flow the
+   *  Leaflet path's _onMapClick calls after drawing its own "+" pin; payload is unchanged. */
+  onMapClicked(coords: { lat: number; lng: number }): void {
+    this._placeAddLocationPin(coords.lat, coords.lng);
+  }
+
+  /** Zoom handler wired to the MapLibre path's (zoomChanged) output — keeps mapZoom in sync so
+   *  mapRenderModel recomputes pin kinds the same way Leaflet's zoomend handler does today. */
+  onMapZoomChanged(zoom: number): void {
+    this.mapZoom.set(zoom);
+  }
   showFilters = signal<boolean>(true);
   /** True when the filter bar container is narrow enough that search/clear should wrap to a centered second row. */
   filterBarNarrow = signal<boolean>(false);
@@ -581,8 +629,28 @@ export class BidSheetComponent {
       this._onTradeUnitsChanged(tus);
     });
 
+    // Runtime map config (Azure Maps key, etc.) for the MapLibre path — see GET /api/map-config.
+    this.apiService.getMapConfig().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (cfg) => this.mapConfig.set(cfg),
+      error: () => { /* MapLibre basemap tiles simply won't load; the toggle can still fall back to Leaflet */ }
+    });
+
+    // Leaflet init/teardown, driven by the mapEngine toggle. Only one engine's DOM is mounted at a
+    // time (@if/@else in the template) — when 'leaflet' is active, (re)-initialize once the #mapEl
+    // div exists (reusing _initializeMapWhenReady's own element-not-ready retry loop); when
+    // 'maplibre' is active, tear the Leaflet instance down so a later switch back re-initializes
+    // cleanly rather than reusing a detached map.
+    effect(() => {
+      const engine = this.mapEngine();
+      if (engine === 'leaflet') {
+        this._mapRetries = 0;
+        this._initializeMapWhenReady();
+      } else {
+        this._destroyMap();
+      }
+    });
+
     this._startRefreshTimer();
-    this._initializeMapWhenReady();
 
     this.destroyRef.onDestroy(() => {
       this._destroyMap();
@@ -670,8 +738,9 @@ export class BidSheetComponent {
       this._applyAllProducersFilters();
       this.filterBids();
       this._refreshMapMarkers();
-      // Reset map to US overview
+      // Reset map to US overview — both engines (see _flyToLocation's comment on mapFlyToCmd).
       if (this._map) this._map.setView([38.5, -98.0], 5);
+      this.mapFlyToCmd.set({ lat: 38.5, lng: -98.0, zoom: 5, nonce: ++this._mapCmdNonce });
     }
   }
 
@@ -819,33 +888,40 @@ export class BidSheetComponent {
     return this._map.unproject(adjusted, zoom);
   }
 
-  /** Smoothly moves the map to a single location, accounting for the side panel if open. */
+  /** Smoothly moves the map to a single location, accounting for the side panel if open. Drives
+   *  BOTH engines: the Leaflet map directly (if mounted) and, always, `mapFlyToCmd` — a nonce'd
+   *  camera command the MapLibre path consumes via its own `flyTo` input — so switching engines
+   *  never loses "where the camera should be." */
   private _flyToLocation(lat: number, lng: number, zoom?: number): void {
-    if (!this._map || !this._L) return;
-    const targetZoom = zoom ?? Math.max(this._map.getZoom(), 11);
-    const center = this._offsetCenter(lat, lng, targetZoom);
-    this._map.flyTo(center, targetZoom, { duration: 0.6 });
+    const targetZoom = zoom ?? Math.max(this._map?.getZoom() ?? this.mapZoom(), 11);
+    if (this._map && this._L) {
+      const center = this._offsetCenter(lat, lng, targetZoom);
+      this._map.flyTo(center, targetZoom, { duration: 0.6 });
+    }
+    this.mapFlyToCmd.set({ lat, lng, zoom: targetZoom, nonce: ++this._mapCmdNonce });
   }
 
   private _zoomToBidLocations(): void {
-    if (!this._map || !this._L) return;
     const locs = this.bidLocations().filter(l => l.latitude && l.longitude);
     if (locs.length === 0) return;
 
     // Prioritize: selected location → first location
     const refName = this.selectedLocationName();
     const refLoc = refName ? locs.find(l => l.name === refName) : null;
-    const panelOpen = this.showPanel();
-    const rightPad = panelOpen ? BidSheetComponent.PANEL_WIDTH_PX + 20 : 50;
 
     if (refLoc) {
       this._flyToLocation(refLoc.latitude!, refLoc.longitude!, 10);
     } else if (locs.length === 1) {
       this._flyToLocation(locs[0].latitude!, locs[0].longitude!, 10);
     } else {
-      const bounds = this._L.latLngBounds(locs.map(l => [l.latitude!, l.longitude!] as [number, number]));
-      // fitBounds with right padding ensures bounds fit in the visible area (excluding the panel)
-      this._map.fitBounds(bounds, { paddingTopLeft: [50, 50], paddingBottomRight: [rightPad, 80], maxZoom: 12 });
+      if (this._map && this._L) {
+        const panelOpen = this.showPanel();
+        const rightPad = panelOpen ? BidSheetComponent.PANEL_WIDTH_PX + 20 : 50;
+        const bounds = this._L.latLngBounds(locs.map(l => [l.latitude!, l.longitude!] as [number, number]));
+        // fitBounds with right padding ensures bounds fit in the visible area (excluding the panel)
+        this._map.fitBounds(bounds, { paddingTopLeft: [50, 50], paddingBottomRight: [rightPad, 80], maxZoom: 12 });
+      }
+      this.mapFitAllCmd.set({ nonce: ++this._mapCmdNonce });
     }
   }
 
@@ -1139,11 +1215,8 @@ export class BidSheetComponent {
     // Remove previous pin
     this._removeAddLocationPin();
 
-    // Place pin
+    // Place pin (Leaflet-specific drawing — the MapLibre path draws its own "+" pin)
     const { lat, lng } = e.latlng;
-    this.newLocationLat.set(lat);
-    this.newLocationLng.set(lng);
-
     const _L = this._L!;
     const pinIcon = _L.divIcon({
       className: 'custom-marker',
@@ -1155,6 +1228,18 @@ export class BidSheetComponent {
     });
     if (!this._map) return;
     this._addLocationPin = _L.marker([lat, lng], { icon: pinIcon }).addTo(this._map);
+
+    this._placeAddLocationPin(lat, lng);
+  }
+
+  /** Non-Leaflet-specific tail of the add-location pin-drop flow — captures the clicked
+   *  coordinates and opens the form. Shared by both engines: Leaflet's `_onMapClick` (after
+   *  drawing its own "+" pin) and the MapLibre path's `mapClicked` output (after drawing its own).
+   *  The `createBidSheetLocation` payload this eventually feeds is unchanged either way. */
+  private _placeAddLocationPin(lat: number, lng: number): void {
+    if (!this.addLocationMode()) return;
+    this.newLocationLat.set(lat);
+    this.newLocationLng.set(lng);
 
     // Auto-select TU if only one is available
     const tus = this.addLocationTus();
@@ -2460,6 +2545,146 @@ export class BidSheetComponent {
   // Map
   // =========================================================================
 
+  /**
+   * Pure view-model consumed identically by BOTH map engines (docs/poc/bid-sheet-map/
+   * 03-frontend-components.md — "Component split"). Extracted from what used to be
+   * `_refreshMapMarkers`'s own mixed bid-status-computation-plus-drawing pass: the
+   * `statusColors` table, zoom/search/TU/crop filtering rules, and per-group pin-kind/color
+   * decisions are UNCHANGED from before — only relocated out of the drawing loop, so neither
+   * rendering path can ever compute status/color differently from the other.
+   */
+  readonly mapRenderModel = computed<BidSheetMapRenderModel>(() => {
+    const zoom = this.mapZoom();
+    const activeTus = this.activeTradeUnits();
+    const hasTu = activeTus.length > 0;
+    const month = this.selectedMonth();
+    const activeTuSet = new Set(activeTus);
+    const crop = this.selectedCrop();
+    const year = this.selectedYear();
+
+    const refName = this.selectedLocationName();
+    const refBid = this._parseBid(refName ? this._getLatestBid(refName, year, crop, month) : '');
+
+    const statusColors: Record<string, { bg: string; border: string }> = {
+      reference: { bg: '#2563eb', border: '#1d4ed8' },
+      beating:   { bg: '#dc2626', border: '#991b1b' },
+      matching:  { bg: '#eab308', border: '#a16207' },
+      none:      { bg: '#6b7280', border: '#4b5563' }
+    };
+
+    const searchQ = this.searchQuery().toLowerCase();
+
+    const locKey = (lat: number, lng: number) => `${lat.toFixed(3)},${lng.toFixed(3)}`;
+    const locsByPos = new Map<string, BidSheetLocation[]>();
+    for (const loc of this.allMapLocations()) {
+      if (!loc.latitude || !loc.longitude) continue;
+      const key = locKey(loc.latitude, loc.longitude);
+      const arr = locsByPos.get(key) || [];
+      arr.push(loc);
+      locsByPos.set(key, arr);
+    }
+
+    const panelOpenName = this.panelSelectedLocation();
+    const panelNames = new Set(this.filteredBidItems().map(i => i.name));
+    const hasIndividualTu = this.hasIndividualTu() || this.cropYears().length > 0;
+
+    const groups: BidSheetMapRenderModel['groups'] = [];
+
+    for (const [, locs] of locsByPos) {
+      if (searchQ && !locs.some(l => l.name.toLowerCase().includes(searchQ))) continue;
+      const names = locs.map(l => l.name);
+      const isActiveTu = activeTuSet.size === 0 || locs.some(l => activeTuSet.has(l.tradeUnitCode ?? ''));
+      const isRef = !!(hasIndividualTu && refName && names.includes(refName));
+      const isPanelOpen = !!(panelOpenName && names.includes(panelOpenName));
+      if (hasTu && !names.some(n => panelNames.has(n))) continue;
+      if (crop && !names.some(n => this._getLatestBid(n, year, crop, month))) continue;
+
+      const lat = locs[0].latitude!;
+      const lng = locs[0].longitude!;
+      const showBidValues = isActiveTu && hasIndividualTu && !!crop;
+      const hoverBid = crop ? this._getLatestBid(locs[0].name, year, crop, month) : '';
+
+      if (isPanelOpen) {
+        const bidStr = crop ? this._getLatestBid(panelOpenName, year, crop, month) : '';
+        let pinBg = '#6b7280', pinBorder = '#4b5563';
+        if (isRef) { pinBg = statusColors['reference'].bg; pinBorder = statusColors['reference'].border; }
+        else if (hasIndividualTu && refName && bidStr) {
+          const status = this._computeItemStatus(bidStr, false, refBid);
+          const c = statusColors[status] ?? statusColors['none'];
+          pinBg = c.bg; pinBorder = c.border;
+        } else if (isActiveTu && hasIndividualTu) { pinBg = '#00875F'; pinBorder = '#006B4C'; }
+        groups.push({
+          lat, lng, names, pinKind: 'expanded', items: [],
+          hover: { name: panelOpenName, bid: bidStr, bg: pinBg, border: pinBorder },
+          isPanelOpen: true
+        });
+        continue;
+      }
+
+      if (zoom < 6 && !searchQ) {
+        let color: string, border: string;
+        if (isRef) { color = statusColors['reference'].bg; border = statusColors['reference'].border; }
+        else if (hasIndividualTu && refName && crop) {
+          const bidVal = this._getLatestBid(locs[0].name, year, crop, month);
+          const status = bidVal ? this._computeItemStatus(bidVal, false, refBid) : 'none';
+          color = statusColors[status].bg; border = statusColors[status].border;
+        } else if (isActiveTu && hasIndividualTu) { color = '#00875F'; border = '#006B4C'; }
+        else { color = '#9ca3af'; border = '#6b7280'; }
+        groups.push({
+          lat, lng, names, pinKind: 'dot', items: [{ label: '', bg: color, border }],
+          hover: { name: locs[0].name, bid: hoverBid, bg: color, border },
+          isPanelOpen: false
+        });
+        continue;
+      }
+
+      if (showBidValues) {
+        const bidItems = names
+          .map(n => {
+            const isNameRef = hasIndividualTu && n === refName;
+            const bidVal = this._getLatestBid(n, year, crop, month);
+            if (isNameRef) {
+              const { bg, border } = statusColors['reference'];
+              return { label: bidVal || '--', bg, border };
+            }
+            if (!bidVal) return null;
+            const status = this._computeItemStatus(bidVal, false, refBid);
+            const { bg, border } = statusColors[status] ?? statusColors['none'];
+            return { label: bidVal, bg, border };
+          })
+          .filter((x): x is NonNullable<typeof x> => x !== null);
+
+        if (bidItems.length > 0) {
+          groups.push({
+            lat, lng, names, pinKind: 'bidPills', items: bidItems,
+            hover: { name: locs[0].name, bid: hoverBid, bg: bidItems[0].bg, border: bidItems[0].border },
+            isPanelOpen: false
+          });
+          continue;
+        }
+      }
+
+      // Default: name labels — match the pill color story used elsewhere
+      let bg: string, border: string;
+      if (isRef) { bg = statusColors['reference'].bg; border = statusColors['reference'].border; }
+      else if (hasIndividualTu && refName && crop) {
+        const bidVal = this._getLatestBid(locs[0].name, year, crop, month);
+        const status = bidVal ? this._computeItemStatus(bidVal, false, refBid) : 'none';
+        bg = statusColors[status].bg; border = statusColors[status].border;
+      } else if (isActiveTu && hasIndividualTu) { bg = '#00875F'; border = '#006B4C'; }
+      else { bg = '#9ca3af'; border = '#6b7280'; }
+
+      groups.push({
+        lat, lng, names, pinKind: 'nameLabels',
+        items: names.map(n => ({ label: n, bg, border })),
+        hover: { name: locs[0].name, bid: hoverBid, bg, border },
+        isPanelOpen: false
+      });
+    }
+
+    return { groups };
+  });
+
   private _mapRetries = 0;
   private _resizeObserver: ResizeObserver | null = null;
   private _L: typeof Leaflet | null = null;
@@ -2549,6 +2774,14 @@ export class BidSheetComponent {
     } catch { /* map init failed — will retry on next navigation */ }
   }
 
+  /** Finds the actual BidSheetLocation backing a render-model group's first name — the render
+   *  model is a display-only view-model (see bid-sheet-map.model.ts) and deliberately doesn't
+   *  carry entity references, so both engines' click handlers resolve the entity by name. */
+  private _locationForGroupClick(names: string[]): BidSheetLocation | undefined {
+    const name = names[0];
+    return this.allMapLocations().find(l => l.name === name) ?? this.bidLocations().find(l => l.name === name);
+  }
+
   private _refreshMapMarkers(): void {
     if (!this._map || !this._clusterGroup || !this._L) return;
     const L = this._L;
@@ -2556,199 +2789,84 @@ export class BidSheetComponent {
     // Keep map clean during add-location mode
     if (this.addLocationMode()) return;
 
-    const activeTus = this.activeTradeUnits();
-    const hasTu = activeTus.length > 0;
     const zoom = this._map.getZoom();
-    const month = this.selectedMonth();
+    if (this.mapZoom() !== zoom) this.mapZoom.set(zoom);
 
-    const locKey = (lat: number, lng: number) => `${lat.toFixed(3)},${lng.toFixed(3)}`;
-    const activeTuSet = new Set(activeTus);
-    const crop = this.selectedCrop();
-    const year = this.selectedYear();
-
-    // Reference bid for status comparison — use selectedYear (same year used for bid pill lookups)
-    const refName = this.selectedLocationName();
-    const refBid = this._parseBid(refName ? this._getLatestBid(refName, year, crop, month) : '');
-
-    const statusColors: Record<string, { bg: string; border: string }> = {
-      reference: { bg: '#2563eb', border: '#1d4ed8' },
-      beating:   { bg: '#dc2626', border: '#991b1b' },
-      matching:  { bg: '#eab308', border: '#a16207' },
-      none:      { bg: '#6b7280', border: '#4b5563' }
-    };
-
-    // Search query — only filter map pins, panel stays full
-    const searchQ = this.searchQuery().toLowerCase();
-
-    // Group all map locations by coordinates
-    const locsByPos = new Map<string, BidSheetLocation[]>();
-    for (const loc of this.allMapLocations()) {
-      if (!loc.latitude || !loc.longitude) continue;
-      const key = locKey(loc.latitude, loc.longitude);
-      const arr = locsByPos.get(key) || [];
-      arr.push(loc);
-      locsByPos.set(key, arr);
-    }
-
-    const selectedName = this.selectedLocationName();
-    const panelOpenName = this.panelSelectedLocation();
-
-    // Build set of location names visible in the panel (respects crop/TU/search filters)
-    const panelNames = new Set(this.filteredBidItems().map(i => i.name));
-
-    // View parity: All Producers (with derived crop-year data) renders bids/status like a single TU.
-    const hasIndividualTu = this.hasIndividualTu() || this.cropYears().length > 0;
-
-    // Pass 1: decide which coordinate groups actually render a marker (apply the skip filters once)
-    // and capture the per-group flags the draw pass needs.
-    const renderGroups: { locs: BidSheetLocation[]; names: string[]; isActiveTu: boolean; isRef: boolean; isPanelOpen: boolean; }[] = [];
-    for (const [, locs] of locsByPos) {
-      // If searching, skip this pin group unless at least one location name matches
-      if (searchQ && !locs.some(l => l.name.toLowerCase().includes(searchQ))) continue;
-      const names = locs.map(l => l.name);
-      // In All Producers (no TU filter) every location is "in scope"; with a TU, only its locations are.
-      const isActiveTu = activeTuSet.size === 0 || locs.some(l => activeTuSet.has(l.tradeUnitCode ?? ''));
-      const isRef = !!(hasIndividualTu && refName && names.includes(refName));
-      const isPanelOpen = !!(panelOpenName && names.includes(panelOpenName));
-      // When filters are active, only show locations that appear in the panel
-      if (hasTu && !names.some(n => panelNames.has(n))) continue;
-      // Skip locations with no bid for the selected crop/year/month
-      if (crop && !names.some(n => this._getLatestBid(n, year, crop, month))) continue;
-      renderGroups.push({ locs, names, isActiveTu, isRef, isPanelOpen });
-    }
+    const groups = this.mapRenderModel().groups;
 
     // Spread out groups whose pins would overlap on screen so none get hidden behind another. The
     // offset is measured in screen pixels at the current zoom, so as you zoom in and the true
     // positions separate, the spread shrinks and each pin glides back toward its real spot.
-    const displayPos = this._spreadOverlappingPins(
-      renderGroups.map(g => [g.locs[0].latitude!, g.locs[0].longitude!] as [number, number]),
-      zoom
-    );
+    const displayPos = this._spreadOverlappingPins(groups.map(g => [g.lat, g.lng] as [number, number]), zoom);
 
-    // Pass 2: draw each group at its (possibly offset) display position.
-    renderGroups.forEach((g, gi) => {
-      const { locs, names, isActiveTu, isRef, isPanelOpen } = g;
+    groups.forEach((g, gi) => {
       const [lat, lng] = displayPos[gi];
-      const showBidValues = isActiveTu && hasIndividualTu && crop;
+      const selectClicked = () => {
+        const loc = this._locationForGroupClick(g.names);
+        if (loc) this._selectMapLocation(loc);
+      };
 
-      // Panel-open location — render expanded with name + bid (uses status color if reference, otherwise gray)
-      if (isPanelOpen) {
-        const bidStr = crop ? this._getLatestBid(panelOpenName, year, crop, month) : '';
-        let pinBg = '#6b7280', pinBorder = '#4b5563';
-        if (isRef) { pinBg = '#2563eb'; pinBorder = '#1d4ed8'; }
-        else if (hasIndividualTu && refName && bidStr) {
-          const status = this._computeItemStatus(bidStr, false, refBid);
-          const c = statusColors[status] ?? statusColors['none'];
-          pinBg = c.bg; pinBorder = c.border;
-        } else if (isActiveTu && hasIndividualTu) { pinBg = '#00875F'; pinBorder = '#006B4C'; }
-        const expandedIcon = this._buildHoverIcon(panelOpenName, bidStr, pinBg, pinBorder);
+      if (g.pinKind === 'expanded') {
+        const expandedIcon = this._buildHoverIcon(g.hover.name, g.hover.bid, g.hover.bg, g.hover.border);
         const marker = L.marker([lat, lng], { icon: expandedIcon, zIndexOffset: 1000 });
-        marker.on('click', () => this._selectMapLocation(locs[0]));
+        marker.on('click', selectClicked);
         this._clusterGroup.addLayer(marker);
         return;
       }
 
-      // Below the bid-pin zoom threshold: colored dot — but when searching, always show name labels.
-      // Lowered from 8 → 6 so the bid-value pins appear sooner (esp. in All Producers, which opens at
-      // the wider US overview). Zoom 5 = national overview keeps dots; 6+ shows the bid pins.
-      if (zoom < 6 && !searchQ) {
-        // Compute dot color from bid status (matches the pill colors used when zoomed in)
-        let color: string, border: string;
-        if (isRef) {
-          color = statusColors['reference'].bg; border = statusColors['reference'].border;
-        } else if (hasIndividualTu && refName && crop) {
-          // Use beating/matching/none color based on this location's bid vs the reference
-          const bidVal = this._getLatestBid(locs[0].name, year, crop, month);
-          const status = bidVal ? this._computeItemStatus(bidVal, false, refBid) : 'none';
-          color = statusColors[status].bg; border = statusColors[status].border;
-        } else if (isActiveTu && hasIndividualTu) {
-          color = '#00875F'; border = '#006B4C';
-        } else {
-          color = '#9ca3af'; border = '#6b7280';
-        }
+      if (g.pinKind === 'dot') {
+        const { bg: color, border } = g.items[0] ?? { bg: '#9ca3af', border: '#6b7280' };
         const dotIcon = L.divIcon({
           className: 'custom-marker',
           html: `<div style="width:14px;height:14px;background:${color};border:2px solid ${border};border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,0.3);cursor:pointer;"></div>`,
           iconSize: [14, 14], iconAnchor: [7, 7]
         });
         const m = L.marker([lat, lng], { icon: dotIcon });
-        m.on('click', () => this._selectMapLocation(locs[0]));
-        const hoverBid2 = crop ? this._getLatestBid(locs[0].name, year, crop, month) : '';
-        this._bindHoverExpand(m, dotIcon, locs[0].name, hoverBid2, color, border);
+        m.on('click', selectClicked);
+        this._bindHoverExpand(m, dotIcon, g.hover.name, g.hover.bid, color, border);
         this._clusterGroup.addLayer(m);
         return;
       }
 
-      if (showBidValues) {
-        // Active TU with crop selected — show bid values with status colors
-        const bidItems = names
-          .map(n => {
-            const isNameRef = hasIndividualTu && n === refName;
-            const bidVal = this._getLatestBid(n, year, crop, month);
-            if (isNameRef) {
-              const { bg, border } = statusColors['reference'];
-              return { name: n, label: bidVal || '--', bg, border };
-            }
-            if (!bidVal) return null;
-            const status = this._computeItemStatus(bidVal, false, refBid);
-            const { bg, border } = statusColors[status] ?? statusColors['none'];
-            return { name: n, label: bidVal, bg, border };
-          })
-          .filter((x): x is NonNullable<typeof x> => x !== null);
-
-        if (bidItems.length > 0) {
-          const linesHtml = bidItems.map(({ label, bg, border }) => {
-            const isGrey = bg === '#d1d5db';
-            const pillBg = isGrey ? '#6b7280' : bg;
-            const pillBorder = isGrey ? '#4b5563' : border;
-            return `<div style="background:${pillBg};border:2px solid ${pillBorder};border-radius:6px;padding:5px 6px;font-size:11px;font-weight:700;color:#fff;white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,0.3);line-height:1.2;cursor:pointer;">${this._esc(label)}</div>`;
-          }).join('');
-          const maxWidth = Math.max(58, ...bidItems.map(({ label }) => label.length * 7 + 16));
-          const height = bidItems.length * 28 + 16;
-          const primaryBg = bidItems[0].bg;
-          const divIcon = L.divIcon({
-            className: 'custom-marker',
-            html: `<div style="position:relative;width:${maxWidth}px;text-align:center;display:flex;flex-direction:column;gap:2px;align-items:center;">
-              ${linesHtml}
-              <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid ${primaryBg};margin:-1px auto 0;"></div>
-            </div>`,
-            iconSize: [maxWidth, height],
-            iconAnchor: [maxWidth / 2, height]
-          });
-          const marker = L.marker([lat, lng], { icon: divIcon });
-          marker.on('click', () => this._selectMapLocation(locs[0]));
-          const hoverBid3 = crop ? this._getLatestBid(locs[0].name, year, crop, month) : '';
-          this._bindHoverExpand(marker, divIcon, locs[0].name, hoverBid3, primaryBg, bidItems[0].border);
-          this._clusterGroup.addLayer(marker);
-          return;
-        }
+      if (g.pinKind === 'bidPills') {
+        const linesHtml = g.items.map(({ label, bg, border }) => {
+          const isGrey = bg === '#d1d5db';
+          const pillBg = isGrey ? '#6b7280' : bg;
+          const pillBorder = isGrey ? '#4b5563' : border;
+          return `<div style="background:${pillBg};border:2px solid ${pillBorder};border-radius:6px;padding:5px 6px;font-size:11px;font-weight:700;color:#fff;white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,0.3);line-height:1.2;cursor:pointer;">${this._esc(label)}</div>`;
+        }).join('');
+        const maxWidth = Math.max(58, ...g.items.map(({ label }) => label.length * 7 + 16));
+        const height = g.items.length * 28 + 16;
+        const primaryBg = g.items[0]?.bg ?? '#6b7280';
+        const divIcon = L.divIcon({
+          className: 'custom-marker',
+          html: `<div style="position:relative;width:${maxWidth}px;text-align:center;display:flex;flex-direction:column;gap:2px;align-items:center;">
+            ${linesHtml}
+            <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid ${primaryBg};margin:-1px auto 0;"></div>
+          </div>`,
+          iconSize: [maxWidth, height],
+          iconAnchor: [maxWidth / 2, height]
+        });
+        const marker = L.marker([lat, lng], { icon: divIcon });
+        marker.on('click', selectClicked);
+        this._bindHoverExpand(marker, divIcon, g.hover.name, g.hover.bid, primaryBg, g.items[0]?.border ?? '#4b5563');
+        this._clusterGroup.addLayer(marker);
+        return;
       }
 
-      // Default: name labels — match the pill color story used elsewhere
-      let bg: string, border: string;
-      if (isRef) {
-        bg = statusColors['reference'].bg; border = statusColors['reference'].border;
-      } else if (hasIndividualTu && refName && crop) {
-        // Use beating/matching/none color based on this location's bid vs the reference
-        const bidVal = this._getLatestBid(locs[0].name, year, crop, month);
-        const status = bidVal ? this._computeItemStatus(bidVal, false, refBid) : 'none';
-        bg = statusColors[status].bg; border = statusColors[status].border;
-      } else if (isActiveTu && hasIndividualTu) {
-        bg = '#00875F'; border = '#006B4C';
-      } else {
-        bg = '#9ca3af'; border = '#6b7280';
-      }
-      const maxWidth = Math.max(80, ...names.map(n => n.length * 6 + 20));
+      // nameLabels
+      const bg = g.items[0]?.bg ?? '#9ca3af';
+      const border = g.items[0]?.border ?? '#6b7280';
+      const maxWidth = Math.max(80, ...g.names.map(n => n.length * 6 + 20));
       const nameIcon = L.divIcon({
         className: 'custom-marker',
-        html: this._buildStackedLabel(names, bg, border),
-        iconSize: [maxWidth, names.length * 26 + 8],
-        iconAnchor: [maxWidth / 2, names.length * 26 + 8]
+        html: this._buildStackedLabel(g.names, bg, border),
+        iconSize: [maxWidth, g.names.length * 26 + 8],
+        iconAnchor: [maxWidth / 2, g.names.length * 26 + 8]
       });
       const marker = L.marker([lat, lng], { icon: nameIcon });
-      marker.on('click', () => this._selectMapLocation(locs[0]));
-      const hoverBid4 = crop ? this._getLatestBid(locs[0].name, year, crop, month) : '';
-      this._bindHoverExpand(marker, nameIcon, locs[0].name, hoverBid4, bg, border);
+      marker.on('click', selectClicked);
+      this._bindHoverExpand(marker, nameIcon, g.hover.name, g.hover.bid, bg, border);
       this._clusterGroup.addLayer(marker);
     });
   }

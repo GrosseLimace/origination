@@ -1,0 +1,59 @@
+<div class="relative w-full h-full">
+  <!--
+    `absolute!` (position: absolute !important) is deliberate — see field-tag-map.component.html's
+    identical comment. MapLibre adds `.maplibregl-map` to this container at runtime, and its own
+    stylesheet rule (`.maplibregl-map { position: relative }`) has equal specificity to Tailwind's
+    `absolute` utility and wins on cascade order, silently demoting the container to
+    position:relative — which defeats `inset-0` and collapses the container to height 0, leaving a
+    blank map. This bit field-tagging once; the fix is ported, not rediscovered.
+  -->
+  <div #mapContainer class="absolute! inset-0"></div>
+
+  <!-- Base-layer switch overlay — same UX as the Leaflet path's mapSwitching overlay. -->
+  @if (switching()) {
+    <div class="absolute inset-0 z-[1100] flex items-center justify-center bg-white/40 dark:bg-gray-900/40 backdrop-blur-[1px] pointer-events-none">
+      <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/90 dark:bg-gray-800/90 shadow-lg">
+        <div class="inline-block animate-spin rounded-full h-5 w-5 border-2 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green"></div>
+        <span class="text-sm font-medium text-gray-600 dark:text-gray-300">Loading map…</span>
+      </div>
+    </div>
+  }
+
+  <!-- Basemap toggle — bottom-left, three-way (Satellite/Map/Hybrid), reused verbatim from
+       field-tag-map.component.html's basemap button row. -->
+  <div class="absolute bottom-4 left-32 z-[1000] flex items-center gap-1 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg p-1">
+    <button
+      type="button"
+      class="rounded-md px-2 py-1 text-xs font-medium"
+      [class.bg-gray-200]="basemapStyle() === 'imagery'"
+      [class.dark:bg-gray-600]="basemapStyle() === 'imagery'"
+      [class.text-gray-700]="basemapStyle() !== 'imagery'"
+      [class.dark:text-gray-300]="basemapStyle() !== 'imagery'"
+      title="Satellite imagery"
+      (click)="setBasemap('imagery')">
+      Satellite
+    </button>
+    <button
+      type="button"
+      class="rounded-md px-2 py-1 text-xs font-medium"
+      [class.bg-gray-200]="basemapStyle() === 'street'"
+      [class.dark:bg-gray-600]="basemapStyle() === 'street'"
+      [class.text-gray-700]="basemapStyle() !== 'street'"
+      [class.dark:text-gray-300]="basemapStyle() !== 'street'"
+      title="Streets and boundaries"
+      (click)="setBasemap('street')">
+      Map
+    </button>
+    <button
+      type="button"
+      class="rounded-md px-2 py-1 text-xs font-medium"
+      [class.bg-gray-200]="basemapStyle() === 'hybrid'"
+      [class.dark:bg-gray-600]="basemapStyle() === 'hybrid'"
+      [class.text-gray-700]="basemapStyle() !== 'hybrid'"
+      [class.dark:text-gray-300]="basemapStyle() !== 'hybrid'"
+      title="Satellite with roads and labels"
+      (click)="setBasemap('hybrid')">
+      Hybrid
+    </button>
+  </div>
+</div>

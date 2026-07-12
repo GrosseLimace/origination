@@ -2,6 +2,7 @@ export const environment = {
   production: false,
   envName: 'Local',
   bidSheetEnabled: true,
+  bidSheetMapLibreDefault: true,
   usageDashboardEnabled: true,
   dailyDigestEnabled: true,
   apiBaseUrl: 'http://localhost:5000/api',

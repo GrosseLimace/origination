@@ -2,6 +2,7 @@ export const environment = {
   production: false,
   envName: 'QA',
   bidSheetEnabled: true,
+  bidSheetMapLibreDefault: true,
   usageDashboardEnabled: true,
   dailyDigestEnabled: true,
   apiBaseUrl: '/api',

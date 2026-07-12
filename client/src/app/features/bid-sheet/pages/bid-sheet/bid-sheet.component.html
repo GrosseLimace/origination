@@ -1,10 +1,29 @@
     <div class="relative overflow-hidden isolate rounded-lg h-full" style="min-height: 400px;">
 
-        <!-- Full-screen map -->
-        <div #mapEl id="bid-locations-map" style="height: 100%; width: 100%;"></div>
+        <!-- Full-screen map — engine A/B toggle (docs/poc/bid-sheet-map/). MapLibre is the default
+             in every environment; Leaflet stays fully available side-by-side for comparison. Only
+             one engine is ever mounted at a time. -->
+        @if (mapEngine() === 'maplibre') {
+          <app-bid-sheet-map
+            [locations]="allMapLocations()"
+            [renderModel]="mapRenderModel()"
+            [addLocationMode]="addLocationMode()"
+            [panelWidthPx]="mapPanelWidthPx()"
+            [flyTo]="mapFlyToCmd()"
+            [fitAll]="mapFitAllCmd()"
+            [azureMapsKey]="mapConfig()?.azureMapsKey ?? ''"
+            (locationSelected)="onMapLocationSelected($event)"
+            (mapClicked)="onMapClicked($event)"
+            (zoomChanged)="onMapZoomChanged($event)"
+            style="position:absolute; inset:0;"
+          />
+        } @else {
+          <div #mapEl id="bid-locations-map" style="height: 100%; width: 100%;"></div>
+        }
 
-        <!-- Base-layer switch overlay — covers the brief tile load so the map doesn't flash/pop -->
-        @if (mapSwitching()) {
+        <!-- Base-layer switch overlay — covers the brief tile load so the map doesn't flash/pop
+             (Leaflet path only; the MapLibre path owns its own equivalent overlay). -->
+        @if (mapEngine() === 'leaflet' && mapSwitching()) {
           <div class="absolute inset-0 z-[1100] flex items-center justify-center bg-white/40 dark:bg-gray-900/40 backdrop-blur-[1px] pointer-events-none">
             <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/90 dark:bg-gray-800/90 shadow-lg">
               <div class="inline-block animate-spin rounded-full h-5 w-5 border-2 border-gray-300 dark:border-gray-600 border-t-scoular-green dark:border-t-scoular-green"></div>
@@ -103,6 +122,7 @@
               </svg>
               Add Location
             </button>
+            @if (mapEngine() === 'leaflet') {
             <button
               (click)="toggleMapView()"
               [title]="mapView() === 'street' ? 'Switch to satellite (realistic) view' : 'Switch to street map'"
@@ -122,6 +142,19 @@
                 </svg>
                 Map
               }
+            </button>
+            }
+            <!-- Leaflet/MapLibre A/B comparison toggle (docs/poc/bid-sheet-map/) — a permanent
+                 comparison tool, not scaffolding scheduled for deletion. -->
+            <button
+              (click)="toggleMapEngine()"
+              [title]="'Map engine: ' + mapEngine() + ' (click to switch)'"
+              class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-purple-700 hover:bg-purple-800 rounded-lg shadow-lg transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+              </svg>
+              {{ mapEngine() === 'maplibre' ? 'MapLibre' : 'Leaflet' }}
             </button>
             <button
               (click)="refreshBids()"
