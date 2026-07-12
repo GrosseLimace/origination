@@ -10,7 +10,6 @@ import {
   afterNextRender,
   inject,
   signal,
-  untracked,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import maplibregl from 'maplibre-gl';
@@ -19,8 +18,10 @@ import { BidSheetLocation } from '@models';
 import { BidSheetMapRenderModel, BidSheetMapRenderGroup, FieldContextInfo, ParcelOwnerMatch } from './bid-sheet-map.model';
 import {
   mergeLandMapMagicLayers,
-  setLayerGroupVisibility,
+  captureLayerOpacity,
+  setLayerGroupOpacity,
   type LmmLayerIds,
+  type LmmLayerOpacitySnapshot,
 } from '../../../../shared/services/land-map-magic/lmm-styles.service';
 import { pointLookup, type LookupField } from '../../../../shared/services/land-map-magic/lmm-point-lookup';
 import { aoiQuery } from '../../../../shared/services/land-map-magic/lmm-aoi-query';
@@ -182,9 +183,21 @@ export class BidSheetMapComponent {
 
   // ── CLU/Parcel vendor-layer state ────────────────────────────────────────
   private lmmLayers: LmmLayerIds = { clu: [], parcels: [], cluFill: [], parcelFill: [] };
-  /** Guard flag: the vendor style is merged at most once per component lifetime, on first
-   *  toggle-to-on — a session that never touches the toggle costs zero vendor tokens/network calls
-   *  (see 03-frontend-components.md "Lazy vendor-layer merge"). */
+  /** Captured "fully on" paint-opacity values for the CLU/parcels real vendor layers — see
+   *  `setLayerGroupOpacity`'s doc comment for why tier prominence is driven by paint opacity here
+   *  instead of `layout.visibility` (keeping both sources' tiles loading regardless of which tier,
+   *  or neither, is visually toggled on — required for `findOverlappingParcels` to work at all
+   *  while the CLU tier is active, and for owner enrichment to work even with the toggle off). */
+  private cluOpacity: LmmLayerOpacitySnapshot[] = [];
+  private parcelOpacity: LmmLayerOpacitySnapshot[] = [];
+  /** Guard flag: the vendor style is merged at most once per component lifetime — either on first
+   *  toggle-to-on, OR on the first JIT field-context lookup (pin-drop/pin-select), whichever comes
+   *  first (see `runFieldContextLookup` and `ensureVendorLayers`). A session that never touches the
+   *  toggle AND never clicks/drops a pin still costs zero vendor tokens/network calls; otherwise the
+   *  first such interaction now costs one vendor style-merge fetch even if the CLU/Parcel UI itself
+   *  is never opened — a deliberate cost-model shift from the original "toggle-gated only" design,
+   *  needed so parcel-owner enrichment is available on every pin click regardless of tier/toggle
+   *  state (see 03-frontend-components.md and the fix for "owner data missing while CLU active"). */
   private vendorLayersMerged = false;
   private activePopup: maplibregl.Popup | null = null;
 
@@ -254,13 +267,15 @@ export class BidSheetMapComponent {
     // fieldContextLookupCmd (pin-select JIT trigger, commanded by the parent) -> runFieldContextLookup.
     // The parent only sets this when a click actually transitions a pin TO selected (never on
     // deselection or a repeat click on an already-selected pin — see 03-frontend-components.md and
-    // the fix for the "over-fires on deselect/repeat click" bug). This component still gates on its
-    // own showFieldContext toggle, since that state isn't known to the parent — read via `untracked`
-    // so flipping the toggle alone (with no new selection) never re-fires this effect off a stale cmd.
+    // the fix for the "over-fires on deselect/repeat click" bug). Fires unconditionally regardless
+    // of the CLU/Parcel toggle state — this used to gate on `showFieldContext() !== 'off'`, but the
+    // JIT lookup (acreage/crop/owner enrichment for the Add Location form) is independent product
+    // data from the read-only CLU/Parcel map overlay: a pin click should always attempt it, exactly
+    // like the pin-DROP trigger below already does unconditionally (see `initMap`'s map click
+    // handler). `untracked` is no longer needed here since the toggle is no longer read at all.
     effect(() => {
       const cmd = this.fieldContextLookupCmd();
       if (cmd == null) return;
-      if (untracked(() => this.showFieldContext()) === 'off') return;
       void this.runFieldContextLookup(cmd.lat, cmd.lng);
     });
   }
@@ -312,14 +327,14 @@ export class BidSheetMapComponent {
     if (!map || !this.loaded()) return;
 
     if (next === 'off') {
-      setLayerGroupVisibility(map, this.lmmLayers.clu, false);
-      setLayerGroupVisibility(map, this.lmmLayers.parcels, false);
+      setLayerGroupOpacity(map, this.cluOpacity, false);
+      setLayerGroupOpacity(map, this.parcelOpacity, false);
       return;
     }
 
     void this.ensureVendorLayers().then(() => {
-      setLayerGroupVisibility(map, this.lmmLayers.clu, this.showFieldContext() === 'clu');
-      setLayerGroupVisibility(map, this.lmmLayers.parcels, this.showFieldContext() === 'parcel');
+      setLayerGroupOpacity(map, this.cluOpacity, this.showFieldContext() === 'clu');
+      setLayerGroupOpacity(map, this.parcelOpacity, this.showFieldContext() === 'parcel');
     });
   }
 
@@ -337,8 +352,15 @@ export class BidSheetMapComponent {
       // Never map.setStyle() — that would wipe the Azure imagery base and every rendered marker.
       this.lmmLayers = await mergeLandMapMagicLayers(map, key);
       this.vendorLayersMerged = true;
-      setLayerGroupVisibility(map, this.lmmLayers.clu, false);
-      setLayerGroupVisibility(map, this.lmmLayers.parcels, false);
+      // Layout visibility for every merged layer stays 'visible' PERMANENTLY from here on — it is
+      // never toggled again for either group. Tier prominence (which tier looks "on") is driven
+      // entirely by paint opacity below (`setLayerGroupOpacity`), which has no effect on whether
+      // MapLibre keeps fetching that source's vector tiles — see `setLayerGroupOpacity`'s doc
+      // comment in lmm-styles.service.ts for the full rationale.
+      this.cluOpacity = captureLayerOpacity(map, this.lmmLayers.clu);
+      this.parcelOpacity = captureLayerOpacity(map, this.lmmLayers.parcels);
+      setLayerGroupOpacity(map, this.cluOpacity, false);
+      setLayerGroupOpacity(map, this.parcelOpacity, false);
       this.wireVendorLayerInteractions(this.lmmLayers.cluFill, 'clu');
       this.wireVendorLayerInteractions(this.lmmLayers.parcelFill, 'parcel');
     } catch (err) {
@@ -460,6 +482,17 @@ export class BidSheetMapComponent {
   private async runFieldContextLookup(lat: number, lng: number): Promise<void> {
     const key = this.landMapMagicKey();
     if (!key) return;
+
+    // Lazily merge the vendor style/sources on the very FIRST JIT lookup of the session, even if
+    // the CLU/Parcel toggle has never been touched at all — parcel-owner enrichment below
+    // (`findOverlappingParcels`) needs the 'parcels' vector source to exist and be actively
+    // fetching tiles, which requires this merge to have happened. `ensureVendorLayers` still
+    // guards on `vendorLayersMerged` so this is a no-op after the first call (from either this
+    // lookup or the CLU/Parcel toggle, whichever fires first) — see that guard's doc comment for
+    // the resulting cost-model shift (a pin click now COSTS one vendor style-merge fetch even with
+    // the toggle UI never opened, which is intentional per the "owner data regardless of tier or
+    // toggle state" fix).
+    await this.ensureVendorLayers();
 
     let method: 'clu' | 'parcel' | null = null;
     let acreage: number | null = null;

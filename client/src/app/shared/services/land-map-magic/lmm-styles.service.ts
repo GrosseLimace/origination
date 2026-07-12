@@ -298,3 +298,67 @@ export function setLayerGroupVisibility(map: maplibregl.Map, layerIds: string[],
     }
   }
 }
+
+/**
+ * Paint-opacity property to use per REAL vendor layer id, for consumers that toggle CLU/Parcel
+ * tier prominence WITHOUT ever setting `layout.visibility` to `'none'` — see
+ * `captureLayerOpacity`/`setLayerGroupOpacity` below for why. Deliberately excludes the synthetic
+ * hit-test/selected-highlight layers `addSyntheticLayers` adds (`clu-hit-fill`,
+ * `clu-selected-outline`, `parcels-selected-outline`, `parcels-popup-highlight`) — those either stay
+ * permanently invisible by design (the hit-fill layer) or already drive their own opacity off a
+ * feature-state expression (the selected/highlight outlines), so neither needs tier-based toggling.
+ */
+const LAYER_OPACITY_PAINT_PROP: Partial<Record<string, 'fill-opacity' | 'line-opacity' | 'text-opacity'>> = {
+  'clu-outline': 'line-opacity',
+  [CLU_LABELS_LAYER_ID]: 'text-opacity',
+  'parcels-fill': 'fill-opacity',
+  'parcels-outline': 'line-opacity',
+  [PARCELS_LABELS_LAYER_ID]: 'text-opacity',
+};
+
+/** A captured "fully on" paint-opacity value for one real vendor layer — see `captureLayerOpacity`. */
+export interface LmmLayerOpacitySnapshot {
+  layerId: string;
+  prop: 'fill-opacity' | 'line-opacity' | 'text-opacity';
+  onValue: unknown;
+}
+
+/**
+ * Snapshots each real vendor layer's CURRENT paint-opacity expression (i.e. captured AFTER any
+ * override like `overrideParcelsLabelText`'s zoom-interpolated `text-opacity`, not some hardcoded
+ * `1`) so `setLayerGroupOpacity` can restore it verbatim later. Layer ids with no known opacity
+ * paint property (the synthetic hit/selected layers — see `LAYER_OPACITY_PAINT_PROP`'s doc comment)
+ * are silently skipped.
+ */
+export function captureLayerOpacity(map: maplibregl.Map, layerIds: string[]): LmmLayerOpacitySnapshot[] {
+  const out: LmmLayerOpacitySnapshot[] = [];
+  for (const id of layerIds) {
+    const prop = LAYER_OPACITY_PAINT_PROP[id];
+    if (!prop || !map.getLayer(id)) continue;
+    out.push({ layerId: id, prop, onValue: map.getPaintProperty(id, prop) ?? 1 });
+  }
+  return out;
+}
+
+/**
+ * Toggles visual prominence for a captured layer set via PAINT opacity, never `layout.visibility`.
+ *
+ * Why this exists (vs. the plain `setLayerGroupVisibility` above): MapLibre stops fetching a vector
+ * source's tiles once no `layout.visibility: 'visible'` layer references that source within the
+ * current view. The bid-sheet map's CLU/Parcel tier toggle used to call `setLayerGroupVisibility`
+ * with `layout.visibility: 'none'` on whichever tier's layer group was inactive — which silently
+ * starved the 'parcels' source of any tile fetch at all while the CLU tier was the one visually
+ * active, even though the source itself had already been merged into the style. That in turn broke
+ * the JIT field-context lookup's client-side parcel-owner enrichment
+ * (`findOverlappingParcels`/`querySourceFeatures`), which can only see tiles MapLibre has actually
+ * already downloaded. Keeping `layout.visibility` permanently `'visible'` for every merged layer and
+ * driving tier prominence through paint opacity instead has no effect on tile fetching, so both
+ * sources keep loading tiles regardless of which tier (or neither) is visually toggled on.
+ */
+export function setLayerGroupOpacity(map: maplibregl.Map, snapshot: LmmLayerOpacitySnapshot[], visible: boolean): void {
+  for (const { layerId, prop, onValue } of snapshot) {
+    if (map.getLayer(layerId)) {
+      map.setPaintProperty(layerId, prop, visible ? onValue : 0);
+    }
+  }
+}
