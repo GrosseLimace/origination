@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, signal, computed, viewChild, ElementRef, isDevMode } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, signal, computed, viewChild, ElementRef, isDevMode, afterNextRender } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -635,20 +635,15 @@ export class BidSheetComponent {
       error: () => { /* MapLibre basemap tiles simply won't load; the toggle can still fall back to Leaflet */ }
     });
 
-    // Leaflet init/teardown, driven by the mapEngine toggle. Only one engine's DOM is mounted at a
-    // time (@if/@else in the template) — when 'leaflet' is active, (re)-initialize once the #mapEl
-    // div exists (reusing _initializeMapWhenReady's own element-not-ready retry loop); when
-    // 'maplibre' is active, tear the Leaflet instance down so a later switch back re-initializes
-    // cleanly rather than reusing a detached map.
-    effect(() => {
-      const engine = this.mapEngine();
-      if (engine === 'leaflet') {
-        this._mapRetries = 0;
-        this._initializeMapWhenReady();
-      } else {
-        this._destroyMap();
-      }
-    });
+    // Leaflet bootstrap — the #mapEl div is now permanently mounted alongside <app-bid-sheet-map>
+    // (CSS display toggling in the template, not a structural @if/@else), so the Leaflet map
+    // instance is created ONCE for the page's lifetime and never torn down/recreated on an engine
+    // switch. That's what keeps its rendered base layer (street/satellite) from ever desyncing
+    // from the `mapView` signal — there's nothing to "lose" on switch since the instance persists.
+    // (Previously this ran inside an effect() keyed on mapEngine(), destroying/recreating the map
+    // every switch; _initializeMap always defaulted to the street layer on (re)creation, which is
+    // why the mapView signal could say "satellite" while the freshly-rebuilt map showed street.)
+    afterNextRender(() => this._initializeMapWhenReady());
 
     this._startRefreshTimer();
 
@@ -2741,8 +2736,11 @@ export class BidSheetComponent {
         })
       ]);
 
-      // Default to street; toggleMapView() swaps to satellite.
-      this._streetLayer.addTo(this._map);
+      // Apply whatever mapView is currently selected — not hardcoded to street. mapView is a
+      // page-lifetime signal (toggleMapView() may have set it to 'satellite' before this runs,
+      // e.g. if a slow container-size retry delayed init), so honor it rather than always
+      // defaulting to street and leaving the toggle UI showing a view that isn't actually rendered.
+      (this.mapView() === 'satellite' ? this._satelliteLayer : this._streetLayer).addTo(this._map);
 
       this._clusterGroup = (L as any).markerClusterGroup({
         maxClusterRadius: 12,

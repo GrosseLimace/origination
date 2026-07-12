@@ -1,25 +1,35 @@
     <div class="relative overflow-hidden isolate rounded-lg h-full" style="min-height: 400px;">
 
         <!-- Full-screen map — engine A/B toggle (docs/poc/bid-sheet-map/). MapLibre is the default
-             in every environment; Leaflet stays fully available side-by-side for comparison. Only
-             one engine is ever mounted at a time. -->
-        @if (mapEngine() === 'maplibre') {
-          <app-bid-sheet-map
-            [locations]="allMapLocations()"
-            [renderModel]="mapRenderModel()"
-            [addLocationMode]="addLocationMode()"
-            [panelWidthPx]="mapPanelWidthPx()"
-            [flyTo]="mapFlyToCmd()"
-            [fitAll]="mapFitAllCmd()"
-            [azureMapsKey]="mapConfig()?.azureMapsKey ?? ''"
-            (locationSelected)="onMapLocationSelected($event)"
-            (mapClicked)="onMapClicked($event)"
-            (zoomChanged)="onMapZoomChanged($event)"
-            style="position:absolute; inset:0;"
-          />
-        } @else {
-          <div #mapEl id="bid-locations-map" style="height: 100%; width: 100%;"></div>
-        }
+             in every environment; Leaflet stays fully available side-by-side for comparison. BOTH
+             engines are permanently mounted (never a structural @if/@else) — only their CSS
+             visibility toggles with mapEngine(). This is deliberate: a structural @if/@else fully
+             destroys/recreates whichever branch isn't current every time mapEngine() flips, which
+             caused two bugs — (1) MapLibre's container could still be mid-layout (zero size) the
+             instant a freshly-constructed map read its dimensions, leaving it blank until another
+             toggle; (2) Leaflet's map instance/DOM got rebuilt from scratch on every switch back,
+             always defaulting to the street layer regardless of the `mapView` signal, so the
+             satellite/street toggle UI could desync from what was actually rendered. Keeping both
+             mounted means each engine's map is constructed once for the page's lifetime; MapLibre's
+             own ResizeObserver (see bid-sheet-map.component.ts) catches the display:none -> visible
+             transition and calls map.resize(), and Leaflet's instance is never torn down so there's
+             nothing for its base layer to desync from. -->
+        <app-bid-sheet-map
+          [locations]="allMapLocations()"
+          [renderModel]="mapRenderModel()"
+          [addLocationMode]="addLocationMode()"
+          [panelWidthPx]="mapPanelWidthPx()"
+          [flyTo]="mapFlyToCmd()"
+          [fitAll]="mapFitAllCmd()"
+          [azureMapsKey]="mapConfig()?.azureMapsKey ?? ''"
+          (locationSelected)="onMapLocationSelected($event)"
+          (mapClicked)="onMapClicked($event)"
+          (zoomChanged)="onMapZoomChanged($event)"
+          style="position:absolute; inset:0;"
+          [style.display]="mapEngine() === 'maplibre' ? 'block' : 'none'"
+        />
+        <div #mapEl id="bid-locations-map" style="position:absolute; inset:0;"
+             [style.display]="mapEngine() === 'leaflet' ? 'block' : 'none'"></div>
 
         <!-- Base-layer switch overlay — covers the brief tile load so the map doesn't flash/pop
              (Leaflet path only; the MapLibre path owns its own equivalent overlay). -->
