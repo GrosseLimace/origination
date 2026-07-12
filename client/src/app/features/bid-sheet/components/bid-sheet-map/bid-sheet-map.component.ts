@@ -365,6 +365,10 @@ export class BidSheetMapComponent {
       });
       map.on('click', layerId, (e) => {
         if (this.showFieldContext() !== method) return;
+        // Add-location mode owns this click instead (see the map-wide handler in `initMap()`) —
+        // its own JIT lookup already covers the point, so skip click-to-inspect entirely here to
+        // avoid firing both paths (and both vendor round trips) for one physical click.
+        if (this.addLocationMode()) return;
         void this.showReadOnlyFieldPopup(e, method);
       });
     }
