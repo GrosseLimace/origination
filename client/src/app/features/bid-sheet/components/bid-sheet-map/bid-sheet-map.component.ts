@@ -569,6 +569,19 @@ export class BidSheetMapComponent {
     // toggle state" fix).
     await this.ensureVendorLayers();
 
+    // Parcel-owner enrichment (`findOverlappingParcels`, called near the end of every branch below)
+    // needs the 'parcels' source's tiles for THIS point to have actually FINISHED loading — and that
+    // can still be pending even at an already-sufficient zoom: MapLibre prioritizes fetching tiles
+    // for whatever's actually being PAINTED, so while CLU is the tier currently rendered (non-zero
+    // paint opacity), the invisible (opacity-0) 'parcels' tiles for the same area can end up queued
+    // behind CLU's own tile requests, taking longer to arrive — this is exactly why owner data was
+    // reliably missing while CLU was the active tier but present while Parcel was active, at the
+    // IDENTICAL point and zoom (parcels tiles get that same fetch priority when Parcel is the tier
+    // actually being rendered). Kick off an idle-wait now, run it CONCURRENTLY with the point-lookup/
+    // AOI network round trips below (so it doesn't add latency on top of them), and only actually
+    // await it right before each branch's owner-enrichment step needs it.
+    const tilesReady = this.waitForMapIdle();
+
     let method: 'clu' | 'parcel' | null = null;
     let acreage: number | null = null;
     let lookupResults: LookupField[] = [];
@@ -589,6 +602,7 @@ export class BidSheetMapComponent {
       // Parcel-owner enrichment is independent of the CDL-year config the AOI query needs below —
       // don't drop it here too (it previously silently went missing whenever cdlYear/cdlFallbackYear
       // weren't configured at all, same class of bug as the AOI-failure branch below).
+      await tilesReady;
       const parcels = this.findOverlappingParcels(lat, lng);
       const info = this.buildFieldContextResult(method, acreage, null, null, null, parcels);
       this.fieldContextResolved.emit(info);
@@ -604,6 +618,7 @@ export class BidSheetMapComponent {
       const aoiGeometry = paddedBoundingBoxPolygon(pointPolygon, JIT_LOOKUP_AOI_PADDING_METERS);
       const result = await aoiQuery(toAoiFeature(aoiGeometry), method === 'clu', key, cdlYear, cdlFallbackYear);
       const topCrop = this.topCrop(result.cropBreakdown);
+      await tilesReady;
       const parcels = this.findOverlappingParcels(lat, lng);
       const info = this.buildFieldContextResult(method, acreage, result.county, result.state, topCrop?.name ?? null, parcels);
       this.fieldContextResolved.emit(info);
@@ -612,6 +627,7 @@ export class BidSheetMapComponent {
       console.error('[bid-sheet-map] AOI Query failed for field-context lookup:', err);
       // Parcel-owner enrichment doesn't depend on the AOI query that just failed — still attempt it
       // rather than silently dropping it (same rationale as the cdlYear-missing branch above).
+      await tilesReady;
       const parcels = this.findOverlappingParcels(lat, lng);
       const info = this.buildFieldContextResult(method, acreage, null, null, null, parcels);
       this.fieldContextResolved.emit(info);
@@ -632,24 +648,17 @@ export class BidSheetMapComponent {
     // `runFieldContextLookup` regardless of tier) needs the 'parcels' vector SOURCE's tiles to
     // actually be loaded for this point — that source has a hard minzoom floor of 14 (confirmed
     // live against the vendor's real style response), below which MapLibre will never even REQUEST
-    // parcel tiles, no matter which tier (or none) is currently toggled on. Without this, selecting
-    // a pin at a lower zoom silently got CLU data but never the parcel owner — not a toggle-state
-    // bug, a tile-loading one. Bump zoom in (never out) to the SAME target center this selection is
-    // already flying to, so it supersedes rather than fights the parent's simultaneous `flyTo`
-    // command for this same selection (see that effect above) — both target the identical
-    // destination, just a possibly-higher zoom.
+    // parcel tiles, no matter which tier (or none) is currently toggled on. Bump zoom in (never out)
+    // to the SAME target center this selection is already flying to, so it supersedes rather than
+    // fights the parent's simultaneous `flyTo` command for this same selection (see that effect
+    // above) — both target the identical destination, just a possibly-higher zoom. This only
+    // guarantees the zoom FLOOR is met — `runFieldContextLookup`'s own `tilesReady` wait (below)
+    // separately guarantees the tiles have actually finished loading by the time they're needed,
+    // which the zoom floor alone does NOT (see that wait's doc comment for why this even matters at
+    // an ALREADY-sufficient zoom).
     const map = this.map;
     if (map && map.getZoom() < PARCELS_MIN_SELECTABLE_ZOOM) {
       map.easeTo({ center: [lng, lat], zoom: PARCELS_MIN_SELECTABLE_ZOOM, duration: 400 });
-      // Crossing the zoom floor only makes MapLibre START requesting the newly-in-range parcel
-      // tiles — the actual fetch + decode still takes real network time afterward. Relying on the
-      // fixed 400ms `easeTo` duration (or the incidental delay of the point-lookup/AOI network
-      // round trips below) to "probably" cover that is a race that can easily lose, which is
-      // exactly why owner data was still sometimes missing even after the zoom bump above landed:
-      // `findOverlappingParcels` only sees tiles that have ALREADY finished loading by the moment it
-      // runs. Wait for the map's own 'idle' event (fires once there's no outstanding tile/source
-      // work) instead of guessing a duration.
-      await this.waitForMapIdle();
     }
     const { info, lookupResults } = await this.runFieldContextLookup(lat, lng);
     this.showFieldContextPinPopup(lat, lng, info, lookupResults);
@@ -657,8 +666,10 @@ export class BidSheetMapComponent {
 
   /** Resolves once the map has no outstanding tile/source work ('idle'), or after a fallback
    *  timeout — see `FIELD_CONTEXT_TILE_WAIT_FALLBACK_MS`'s doc comment. Used by
-   *  `handlePinSelectFieldContext` to give newly-in-range parcel tiles a real chance to finish
-   *  loading before the owner-enrichment lookup runs, rather than guessing a fixed delay. */
+   *  `runFieldContextLookup` to give the 'parcels' source's tiles a real chance to finish loading
+   *  before the owner-enrichment step (`findOverlappingParcels`) needs them, rather than guessing a
+   *  fixed delay — see that call site's doc comment for why this matters even at an
+   *  already-sufficient zoom. */
   private waitForMapIdle(): Promise<void> {
     const map = this.map;
     if (!map) return Promise.resolve();
