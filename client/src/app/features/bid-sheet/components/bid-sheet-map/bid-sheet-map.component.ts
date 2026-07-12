@@ -1013,6 +1013,16 @@ export class BidSheetMapComponent {
       container,
       center: DEFAULT_CENTER,
       zoom: DEFAULT_ZOOM,
+      // Default (unset) AttributionControl auto-collapses to a compact icon only below a fixed
+      // 640px CONTAINER-width threshold; above that it renders the full text strip ("USDA FSA |
+      // LandMapMagic | © Microsoft — Azure Maps") on one line, but nothing stops it wrapping onto a
+      // second, much taller line if that text ever needs more horizontal room than the container
+      // provides at that width (a longer attribution string added later, larger browser zoom, etc).
+      // Forcing compact ALWAYS (see addControl below) makes the control's footprint a small,
+      // constant-height icon (~24px + 10px margin) at every viewport size, so the parent's KEY
+      // legend (bid-sheet.component.html) can reserve a fixed, reliable clearance above it instead
+      // of guessing at the unbounded height of wrapped attribution text.
+      attributionControl: false,
       style: {
         version: 8,
         sources: {
@@ -1046,6 +1056,9 @@ export class BidSheetMapComponent {
     });
 
     this.map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
+    // compact: true (not the library default of "auto below 640px") — see the attributionControl:
+    // false comment above for why a forced-constant footprint matters here.
+    this.map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
 
     this.resizeObserver = new ResizeObserver(() => this.map?.resize());
     this.resizeObserver.observe(container);
