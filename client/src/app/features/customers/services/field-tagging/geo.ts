@@ -3,7 +3,10 @@
 // (new — see docs/poc/field-tagging/01-data-model.md "Canonical serialization before hashing").
 
 import type { Feature, Polygon, MultiPolygon, Position, Geometry } from 'geojson';
-import { union as polygonClippingUnion } from 'polygon-clipping';
+// `polygon-clipping`'s ESM build only provides a default export (an object with
+// `.union`/`.intersection`/etc. as properties) — there is no named `union` export despite the
+// package's own TypeScript types suggesting otherwise. Import the default and call `.union(...)`.
+import polygonClipping from 'polygon-clipping';
 
 const EARTH_RADIUS_M = 6378137;
 const SQ_METERS_PER_ACRE = 4046.8564224;
@@ -178,7 +181,7 @@ function fromPcMultiPolygon(multiPolygon: PcMultiPolygon): Polygon | MultiPolygo
 export function unionGeometries(geoms: (Polygon | MultiPolygon)[]): Polygon | MultiPolygon | null {
   if (geoms.length === 0) return null;
   const [first, ...rest] = geoms.map(toPcGeom);
-  const merged = polygonClippingUnion(first, ...rest);
+  const merged = polygonClipping.union(first, ...rest);
   const result = fromPcMultiPolygon(merged);
   return result ? normalizeWinding(result) : null;
 }
