@@ -1,0 +1,39 @@
+<!-- Floating launcher FAB -->
+<div class="fixed bottom-6 right-6 z-[55] flex flex-col items-end gap-2">
+  <!-- Type picker popover -->
+  @if (pickerOpen()) {
+    <div class="mb-1 w-56 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl overflow-hidden"
+      role="menu" aria-label="Choose a calculator">
+      <p class="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 border-b border-gray-100 dark:border-gray-700">
+        Calculators
+      </p>
+      @for (t of types; track t.type) {
+        <button type="button" role="menuitem"
+          class="w-full text-left px-3 py-2.5 hover:bg-gray-100 dark:hover:bg-gray-700/60 focus:outline-none focus:bg-gray-100 dark:focus:bg-gray-700/60"
+          (click)="select(t.type)">
+          <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t.label }}</span>
+          <span class="block text-xs text-gray-500 dark:text-gray-400">{{ t.description }}</span>
+        </button>
+      }
+    </div>
+  }
+
+  <button type="button"
+    (click)="togglePicker()"
+    [attr.aria-expanded]="pickerOpen()"
+    title="Calculators"
+    aria-label="Open calculators"
+    class="h-12 w-12 rounded-full bg-scoular-green-accessible text-white shadow-lg hover:bg-scoular-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scoular-green flex items-center justify-center">
+    <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/>
+      <line x1="8" y1="10" x2="8" y2="10"/><line x1="12" y1="10" x2="12" y2="10"/><line x1="16" y1="10" x2="16" y2="10"/>
+      <line x1="8" y1="14" x2="8" y2="14"/><line x1="12" y1="14" x2="12" y2="14"/>
+      <line x1="8" y1="18" x2="12" y2="18"/>
+    </svg>
+  </button>
+</div>
+
+<!-- Movable calculator widget -->
+@if (activeType(); as type) {
+  <app-calculator-widget [type]="type" [title]="titleFor(type)" [producerName]="producerName()" (close)="closeWidget()" />
+}

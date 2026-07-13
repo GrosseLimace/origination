@@ -15,6 +15,8 @@ import { CustomerListComponent } from '../../components/customer-list/customer-l
 import { CustomerProfileComponent } from '../../components/customer-profile/customer-profile.component';
 import { CustomerNotesComponent } from '../../components/customer-notes/customer-notes.component';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent } from '@shared/components/card/card.component';
+import { CalculatorLauncherComponent } from '@features/calculators/components/calculator-launcher.component';
+import { environment } from '@env/environment';
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -25,7 +27,8 @@ import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComp
     CardComponent,
     CardContentComponent,
     CardHeaderComponent,
-    CardTitleComponent
+    CardTitleComponent,
+    CalculatorLauncherComponent
   ],
   templateUrl: './home.component.html',
 })
@@ -42,6 +45,8 @@ export class HomeComponent {
   /** Manager = holds the "Admin" app role (same gate as the Usage Dashboard). Enables the
    *  "Team Lists" tab in the Add-to-List dropdown. */
   readonly isManager = this.userRoles.isAdmin;
+  /** Gates the floating calculator launcher (Profitability calc + future calculators). */
+  readonly calculatorEnabled = environment.calculatorEnabled;
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 

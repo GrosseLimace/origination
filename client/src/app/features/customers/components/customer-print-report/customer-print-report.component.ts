@@ -763,7 +763,7 @@ export class CustomerPrintReportComponent {
               const totalDisplay = g.totalBushels != null
                 ? `${Math.round(g.totalBushels).toLocaleString()} bu`
                 : `${Math.round(g.totalNetWeight).toLocaleString()} lbs`;
-              return `<tr>
+              return `<tr style="background:${this.commodityBandColor(g.isWheat ? 'wheat' : g.productCode)};">
                 <td style="padding:4px 8px;font-weight:500;border:1px solid #e5e7eb;">${this._esc(g.productCode)}</td>
                 <td style="padding:4px 8px;border:1px solid #e5e7eb;">${g.ticketCount}</td>
                 <td style="padding:4px 8px;border:1px solid #e5e7eb;">${totalDisplay}</td>
@@ -784,19 +784,20 @@ export class CustomerPrintReportComponent {
       const plantingThead = `<thead><tr class="table-header">
         <th style="padding:5px 8px;border:1px solid #e5e7eb;">Type</th><th style="padding:5px 8px;border:1px solid #e5e7eb;">Acres</th><th style="padding:5px 8px;border:1px solid #e5e7eb;">Crop Year</th>
       </tr></thead>`;
+      // Column header shown ONCE above all crops (gridlined, matching the body tables).
+      const plantingHeader = `<table style="width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;margin-bottom:6px;">${plantingColgroup}${plantingThead}</table>`;
       html += `<div class="section">
         <div class="section-title">Planting Intentions</div>
-        ${this.plantingByCrop().map((group, gi) => {
-          const first = gi === 0;
+        ${plantingHeader}
+        ${this.plantingByCrop().map((group) => {
           return `
           <div style="margin-bottom:12px;">
-            <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;font-weight:700;color:#374151;padding:6px 10px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px 8px 0 0;">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;font-weight:700;color:#374151;padding:6px 10px;background:${this.commodityBandColor(group.crop)};border:1px solid #e5e7eb;border-radius:8px 8px 0 0;">
               <span>${this._esc(group.crop)}</span>
               <span style="color:#6b7280;">Total: ${group.totalAcres.toLocaleString()} acres</span>
             </div>
             <table style="width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;">
               ${plantingColgroup}
-              ${first ? plantingThead : ''}
               <tbody>
                 ${group.intentions.map(pi => `<tr>
                   <td style="padding:4px 8px;font-weight:500;border:1px solid #e5e7eb;">${this._esc(pi.type || '—')}</td>
@@ -820,7 +821,7 @@ export class CustomerPrintReportComponent {
             <th style="text-align:center;padding:5px 8px;border:1px solid #e5e7eb;">Crop</th><th style="text-align:center;padding:5px 8px;border:1px solid #e5e7eb;">Quantity</th><th style="text-align:center;padding:5px 8px;border:1px solid #e5e7eb;">Storage Since</th><th style="text-align:center;padding:5px 8px;border:1px solid #e5e7eb;">Storage Days</th><th style="text-align:center;padding:5px 8px;border:1px solid #e5e7eb;">Accumulated Cost</th>
           </tr></thead>
           <tbody>
-            ${storageGrps.map(g => `<tr>
+            ${storageGrps.map(g => `<tr style="background:${this.commodityBandColor(g.crop)};">
               <td style="text-align:center;padding:4px 8px;font-weight:500;border:1px solid #e5e7eb;">${this._esc(g.crop)}</td>
               <td style="text-align:center;padding:4px 8px;border:1px solid #e5e7eb;">${g.totalBushels.toLocaleString()} bu</td>
               <td style="text-align:center;padding:4px 8px;border:1px solid #e5e7eb;">${this.formatDate(g.earliestDate)}</td>

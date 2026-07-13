@@ -1,0 +1,121 @@
+<div class="space-y-4">
+  <!-- Crop columns (1, or 2 when comparing) -->
+  <div class="flex flex-wrap gap-4">
+    @for (view of views(); track i; let i = $index) {
+      <section class="flex-1 min-w-[16rem] space-y-3">
+        <header class="flex items-center justify-between">
+          <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+            {{ views().length > 1 ? 'Crop ' + (i + 1) : 'Crop' }}
+          </h3>
+          @if (views().length > 1) {
+            <button type="button"
+              class="text-xs text-gray-500 hover:text-scoular-red-accessible dark:text-gray-400"
+              (click)="removeCrop(i)">Remove</button>
+          }
+        </header>
+
+        <!-- Inputs reflow into more columns as the panel widens (container auto-fit grid);
+             at the default width this is a single column, matching the compact layout. -->
+        <div class="grid gap-x-3 gap-y-2 grid-cols-[repeat(auto-fit,minmax(13rem,1fr))]">
+        <!-- Farm name -->
+        <div class="scoular-form-group">
+          <label class="scoular-form-label">Farm Name</label>
+          <app-input placeholder="Enter farm name" [clearable]="true"
+            [ngModel]="view.form.farmName"
+            (ngModelChange)="setField(i, 'farmName', $event)" />
+        </div>
+
+        <!-- Commodity -->
+        <div class="scoular-form-group">
+          <label class="scoular-form-label">Grain Commodity</label>
+          <app-select
+            [ngModel]="view.form.commodity"
+            (ngModelChange)="setField(i, 'commodity', $event)">
+            @for (c of commodities; track c.value) {
+              <option [value]="c.value">{{ c.label }}</option>
+            }
+          </app-select>
+        </div>
+
+        <!-- Required numeric fields -->
+        <div class="scoular-form-group">
+          <label class="scoular-form-label">Total Acres <span class="text-scoular-red-accessible">*</span></label>
+          <app-input type="text" inputmode="decimal" placeholder="0" [clearable]="true"
+            [class]="isMissing(i, 'totalAcres') ? 'error' : ''"
+            [ngModel]="view.form.totalAcres"
+            (ngModelChange)="setField(i, 'totalAcres', $event)"
+            (focusout)="normalizeField(i, 'totalAcres')" />
+        </div>
+        <div class="scoular-form-group">
+          <label class="scoular-form-label">Expected Yield per Acre (bu) <span class="text-scoular-red-accessible">*</span></label>
+          <app-input type="text" inputmode="decimal" placeholder="0" [clearable]="true"
+            [class]="isMissing(i, 'yieldPerAcre') ? 'error' : ''"
+            [ngModel]="view.form.yieldPerAcre"
+            (ngModelChange)="setField(i, 'yieldPerAcre', $event)"
+            (focusout)="normalizeField(i, 'yieldPerAcre')" />
+        </div>
+        <div class="scoular-form-group">
+          <label class="scoular-form-label">Expected Sale Price per Bushel ($) <span class="text-scoular-red-accessible">*</span></label>
+          <app-input type="text" inputmode="decimal" placeholder="0.00" [clearable]="true"
+            [class]="isMissing(i, 'pricePerBushel') ? 'error' : ''"
+            [ngModel]="view.form.pricePerBushel"
+            (ngModelChange)="setField(i, 'pricePerBushel', $event)"
+            (focusout)="normalizeField(i, 'pricePerBushel')" />
+        </div>
+
+        <!-- Cost fields -->
+        @for (field of costFields; track field.key) {
+          <div class="scoular-form-group">
+            <label class="scoular-form-label">{{ field.label }}</label>
+            <app-input type="text" inputmode="decimal" placeholder="0" [clearable]="true"
+              [ngModel]="view.form[field.key]"
+              (ngModelChange)="setField(i, field.key, $event)"
+              (focusout)="normalizeField(i, field.key)" />
+          </div>
+        }
+        </div>
+
+        <!-- Validation message -->
+        @if (view.missing.length > 0) {
+          <p class="scoular-form-error" role="alert">
+            Enter Total Acres, Yield, and Sale Price to calculate.
+          </p>
+        }
+
+        <!-- Results -->
+        <div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-3">
+          <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-2">Summary</p>
+          <dl class="space-y-1 text-sm">
+            <div class="flex justify-between"><dt class="text-gray-600 dark:text-gray-400">Total Revenue</dt>
+              <dd class="text-gray-900 dark:text-white">{{ view.result.totalRevenue | accountingCurrency }}</dd></div>
+            <div class="flex justify-between"><dt class="text-gray-600 dark:text-gray-400">Total Variable Cost</dt>
+              <dd class="text-gray-900 dark:text-white">{{ view.result.totalVariableCost | accountingCurrency }}</dd></div>
+            <div class="flex justify-between"><dt class="text-gray-600 dark:text-gray-400">Total Fixed Cost</dt>
+              <dd class="text-gray-900 dark:text-white">{{ view.result.totalFixedCost | accountingCurrency }}</dd></div>
+            <div class="flex justify-between"><dt class="text-gray-600 dark:text-gray-400">Total Cost</dt>
+              <dd class="text-gray-900 dark:text-white">{{ view.result.totalCost | accountingCurrency }}</dd></div>
+            <div class="flex justify-between"><dt class="text-gray-600 dark:text-gray-400">Cost per Acre</dt>
+              <dd class="text-gray-900 dark:text-white">{{ view.result.costPerAcre | accountingCurrency }}</dd></div>
+            <div class="flex justify-between"><dt class="text-gray-600 dark:text-gray-400">Breakeven $/Bushel</dt>
+              <dd class="text-gray-900 dark:text-white">{{ view.result.breakevenPerBushel | accountingCurrency:4 }}</dd></div>
+          </dl>
+          <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex justify-between items-baseline">
+            <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">Profit</span>
+            <span class="text-lg font-bold"
+              [class]="view.result.profit >= 0 ? 'text-scoular-green-accessible dark:text-scoular-green' : 'text-scoular-red-accessible dark:text-scoular-red'">
+              {{ view.result.profit | accountingCurrency }}
+            </span>
+          </div>
+        </div>
+      </section>
+    }
+  </div>
+
+  <!-- Actions -->
+  <div class="flex items-center justify-between gap-2 pt-1">
+    <app-button variant="outline" size="sm" (onClick)="addCrop()">+ Add Crop</app-button>
+    <app-button variant="primary" size="sm" [disabled]="!isValid()" (onClick)="downloadPdf()">
+      Download PDF
+    </app-button>
+  </div>
+</div>
