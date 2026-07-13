@@ -395,6 +395,7 @@ public class ApplicationDbContext : DbContext
             entity.Ignore(e => e.Farm);
             entity.Ignore(e => e.TotalAcres);
             entity.Ignore(e => e.ESignEnabled);
+            entity.Ignore(e => e.AchEnabled);
             entity.Ignore(e => e.ScoularViewRecipients);
             entity.Ignore(e => e.Guild);
             entity.Ignore(e => e.Coordinates);
