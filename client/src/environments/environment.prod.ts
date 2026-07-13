@@ -7,6 +7,9 @@ export const environment = {
   // /daily-digest route + the "Daily Recap" nav link. Flip to true (and deploy the
   // Logic App + apply the recap migrations) when launching.
   dailyDigestEnabled: false,
+  // Profitability Calculator: OFF in PROD until the feature launches. Gates the
+  // floating calculator launcher on the customer home page. Flip to true to launch.
+  calculatorEnabled: false,
   apiBaseUrl: '/api',
   msalConfig: {
     auth: {

@@ -1,0 +1,54 @@
+<div
+  cdkDrag
+  class="fixed top-[10vh] left-[calc(50vw_-_13rem)] z-[60] flex flex-col w-[26rem] min-w-[20rem] max-w-[92vw] min-h-[16rem] max-h-[85vh] overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl"
+  [class.resize]="!minimized()"
+  [class.ring-2]="minimized()"
+  [class.ring-scoular-green-accessible]="minimized()"
+  [style.width]="panelWidth()"
+  [style.height]="minimized() ? 'auto' : null"
+  [style.minHeight]="minimized() ? '0' : null">
+
+  <!-- Title bar = drag handle -->
+  <div cdkDragHandle
+    class="flex-none flex items-center justify-between gap-3 px-4 py-2.5 border-b border-gray-200 dark:border-gray-700 cursor-move select-none rounded-t-lg bg-gray-50 dark:bg-gray-800/80">
+    <div class="flex items-center gap-2 min-w-0">
+      <svg class="w-4 h-4 text-scoular-green-accessible dark:text-scoular-green flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/>
+        <line x1="8" y1="10" x2="8" y2="10"/><line x1="12" y1="10" x2="12" y2="10"/><line x1="16" y1="10" x2="16" y2="10"/>
+        <line x1="8" y1="14" x2="8" y2="14"/><line x1="12" y1="14" x2="12" y2="14"/><line x1="16" y1="14" x2="16" y2="18"/>
+        <line x1="8" y1="18" x2="12" y2="18"/>
+      </svg>
+      <span class="text-sm font-semibold text-gray-900 dark:text-white truncate">{{ title() }}</span>
+    </div>
+    <div class="flex items-center gap-1 flex-shrink-0">
+      <button type="button" (click)="toggleMinimize()"
+        [attr.aria-label]="minimized() ? 'Expand' : 'Minimize'"
+        class="p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 dark:hover:text-gray-200">
+        @if (minimized()) {
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="18 15 12 9 6 15"/></svg>
+        } @else {
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        }
+      </button>
+      <button type="button" (click)="close.emit()" aria-label="Close calculator"
+        class="p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 dark:hover:text-gray-200">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Body — hidden (not destroyed) when minimized so entered values persist -->
+  <div class="flex-1 min-h-0 p-4 overflow-auto" [class.hidden]="minimized()">
+    @switch (type()) {
+      @case ('profitability') {
+        <app-profitability-calculator [producerName]="producerName()" />
+      }
+      @case ('check') {
+        <app-check-calculator [producerName]="producerName()" (columnCount)="onColumnCount($event)" />
+      }
+      @case ('cancelRoll') {
+        <app-cancel-roll-calculator [producerName]="producerName()" (columnCount)="onColumnCount($event)" />
+      }
+    }
+  </div>
+</div>
