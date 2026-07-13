@@ -66,6 +66,13 @@ export class ProducerInsightsComponent {
       : 'background: rgba(255, 255, 255, 0.15); color: white; border: 1px solid rgba(255, 255, 255, 0.3);';
   }
 
+  // Blue variant for the ACH Payment pill (distinct from the green eSign pill).
+  get achBadgeStyle(): string {
+    return this.isDarkMode
+      ? 'background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4);'
+      : 'background: rgba(255, 255, 255, 0.15); color: white; border: 1px solid rgba(255, 255, 255, 0.3);';
+  }
+
   getPacingChangeStyle(pct: number): string {
     return pct >= 0 ? 'color: #4ade80;' : 'color: #f87171;';
   }
