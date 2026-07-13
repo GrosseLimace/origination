@@ -19,6 +19,8 @@ public class OriginationDbContext : DbContext
     // read-only projection of originations.vw_CustomerTradeUnits and drives the
     // dbo.Customer / dbo.CustomerTradeUnit sync + per-request customer access checks.
     public DbSet<CustomerTradeUnitView> CustomerTradeUnits => Set<CustomerTradeUnitView>();
+    // Read-only projection of base.Customer for ACH enrichment (PaymentMethod not in the curated views).
+    public DbSet<CustomerPaymentInfo> CustomerPaymentInfos => Set<CustomerPaymentInfo>();
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<Ticket> Tickets => Set<Ticket>();
     public DbSet<TicketQuality> TicketQualities => Set<TicketQuality>();
@@ -279,6 +281,19 @@ public class OriginationDbContext : DbContext
             // FreightAdjustment is NOT a column on vw_ContractPricing — it's enriched by the repository
             // from base.ContractPrice, so EF must not try to SELECT it from the view.
             entity.Ignore(e => e.FreightAdjustment);
+        });
+
+        // Minimal read-only projection of base.Customer for ACH enrichment. PaymentMethod is not in the
+        // curated customer views, so we read it straight from the base table (filtered to IsCurrent in the
+        // repo) and match on CustomerId (== dbo.Customer.Id). PaymentMethod is CHAR-padded in ODS → Trim on read.
+        modelBuilder.Entity<CustomerPaymentInfo>(entity =>
+        {
+            entity.HasNoKey();
+            entity.ToView("Customer", schema: "base");
+            entity.Property(e => e.CustomerId).HasColumnName("CustomerId");
+            entity.Property(e => e.PaymentMethod).HasColumnName("PaymentMethod")
+                  .HasConversion(v => v, v => v != null ? v.Trim() : v);
+            entity.Property(e => e.IsCurrent).HasColumnName("IsCurrent");
         });
 
         // Minimal read-only projection of base.ContractPrice for enriching pricing lines with
