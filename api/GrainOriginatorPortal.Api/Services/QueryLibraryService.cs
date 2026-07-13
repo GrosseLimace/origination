@@ -27,12 +27,16 @@ public class QueryLibraryService : IQueryLibraryService
     /// <inheritdoc />
     public async Task LogSearchAsync(string searchText, int? matchedQueryId, CancellationToken cancellationToken)
     {
+        // Redact contact PII (emails, phone numbers, bare digit runs) before persisting: the raw
+        // search box is free-text and can contain producer emails/phones, and this log is later
+        // surfaced to admins via the usage dashboard's query-search-gaps endpoint. Only sensitive
+        // tokens are masked, so search terms stay intact for gap analysis.
         // UserId + timestamp are request/business context, so the entity is built here and the
         // repository just persists it.
         await _repository.AddSearchLogAsync(new QuerySearchLog
         {
             UserId = _requestContext.GetCurrentUser(),
-            SearchText = searchText,
+            SearchText = TelemetrySanitizer.Redact(searchText, "library-search") ?? searchText,
             MatchedQueryId = matchedQueryId,
             Timestamp = DateTime.UtcNow
         }, cancellationToken);

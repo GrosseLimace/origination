@@ -72,4 +72,16 @@ public class TelemetrySanitizerTests
     {
         Assert.Equal(input, TelemetrySanitizer.Redact(input, FreeText));
     }
+
+    [Fact]
+    public void LibrarySearchIsTreatedAsFreeText()
+    {
+        // M-029: the QueryLibrary search-log path persists raw search-box text, so "library-search"
+        // must mask bare digit runs (in addition to emails/phones) before it reaches the admin dashboard.
+        var result = TelemetrySanitizer.Redact("wheat john@x.com acct 4025551234", subFeatureCode: "library-search");
+        Assert.Contains("[redacted-email]", result);
+        Assert.Contains("[redacted-number]", result);
+        Assert.DoesNotContain("4025551234", result);
+        Assert.Contains("wheat", result);
+    }
 }
