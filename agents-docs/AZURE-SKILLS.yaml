@@ -1,0 +1,26 @@
+# Machine-readable Azure resource map for scoular-skills (azure-insights, azure-log, azure-exec).
+# Bootstrapped from developer-docs/START-HERE.md + GITHUB-ACTIONS-CICD.md on 2026-07-12.
+# Regenerate with --refresh-config if infrastructure changes.
+
+defaults:
+  env: dev
+
+environments:
+  dev:
+    subscription: 9ae7649f-19b3-4bf0-b593-b51ce94b5ee5   # scoular-apps-nonprod
+    resource_group: rg-origination-dev-eus
+    app_service: app-origination-dev-eus
+    app_insights: appi-origination-dev-eus
+    url: https://origination-dev.scoular.com
+  qa:
+    subscription: 9ae7649f-19b3-4bf0-b593-b51ce94b5ee5   # scoular-apps-nonprod
+    resource_group: rg-origination-qa-eus
+    app_service: app-origination-qa-eus
+    app_insights: appi-origination-qa-eus                 # assumed from naming standard; verify on first QA use
+    url: https://origination-qa.scoular.com
+  prod:
+    subscription: 53575e56-bade-48c9-a763-6964ecd3bf2f   # scoular-apps-prod
+    resource_group: rg-origination-prd-eus                # assumed from naming standard; verify on first prod use
+    app_service: app-origination-prd-eus                  # assumed from naming standard; verify on first prod use
+    app_insights: appi-origination-prd-eus                # assumed from naming standard; verify on first prod use
+    url: https://origination.scoular.com
