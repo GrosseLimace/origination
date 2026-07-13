@@ -670,9 +670,9 @@
                             "name": "activities",
                             "value": {
                               "Created": "@{formatDateTime(\n    convertFromUtc(concat(item()?['CreatedAt'],'Z'),'Central Standard Time'),\n    'M/d/yyyy h:mm tt'\n)}",
+                              "Regarding": "@{item()?['CustomerName']}",
                               "Note": "@{item()?['Description']}",
-                              "Owner": "@{body('Get_User')['DisplayName']}",
-                              "Regarding": "@{item()?['CustomerName']}"
+                              "Owner": "@{body('Get_User')['DisplayName']}"
                             }
                           },
                           "type": "AppendToArrayVariable"
