@@ -160,7 +160,9 @@ export class CustomerPrintReportComponent {
 
   getPricingLinesForContract(contract: Contract): ContractPricingLine[] {
     const key = contract.sourceContractId;
-    return key ? (this.pricingLinesMap().get(key) ?? []) : [];
+    // Sequence 0 is a placeholder/summary row (it carries the flat price used by getPricingInfo,
+    // but shouldn't be listed as its own pricing line) — keep it in the map, hide it from display.
+    return key ? (this.pricingLinesMap().get(key) ?? []).filter(l => l.priceSequence !== 0) : [];
   }
 
   /** Pricing lines that belong to the contracts shown in this report (openContracts).
@@ -212,7 +214,13 @@ export class CustomerPrintReportComponent {
     }
     return Array.from(map.entries())
       .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([, { label, contracts }]) => ({ commodity: label, contracts }));
+      .map(([, { label, contracts }]) => ({
+        commodity: label,
+        contracts,
+        // Total contracted quantity for the commodity — shown on the group band header.
+        totalQuantity: contracts.reduce((sum, c) => sum + (c.quantity ?? 0), 0),
+        unit: contracts[0]?.unit || 'bu',
+      }));
   });
 
   /** Planting intentions grouped by crop then sorted by planting year desc */
@@ -226,7 +234,11 @@ export class CustomerPrintReportComponent {
       if (!map.has(category)) map.set(category, { crop: category, intentions: [] });
       map.get(category)!.intentions.push(pi);
     }
-    return Array.from(map.values());
+    // Carry total acres per crop for the group band label.
+    return Array.from(map.values()).map(g => ({
+      ...g,
+      totalAcres: g.intentions.reduce((sum, pi) => sum + (pi.acres ?? 0), 0),
+    }));
   });
 
   readonly totalContracted = computed(() =>
@@ -613,70 +625,88 @@ export class CustomerPrintReportComponent {
         <col style="width: 24%;" />
         <col style="width: 20%;" />
       </colgroup>`;
+      // Single gridlined header row shown once at the top of the Contracts section.
       const contractThead = `<thead><tr class="table-header">
-        <th>Contract #</th><th>Quantity</th><th>Price</th><th>Delivery Window</th><th>Status</th>
+        <th style="padding:6px 8px;border:1px solid #e5e7eb;">Contract #</th><th style="padding:6px 8px;border:1px solid #e5e7eb;">Quantity</th><th style="padding:6px 8px;border:1px solid #e5e7eb;">Price</th><th style="padding:6px 8px;border:1px solid #e5e7eb;">Delivery Window</th><th style="padding:6px 8px;border:1px solid #e5e7eb;">Status</th>
       </tr></thead>`;
 
+      // One contract's 5-cell row (borderCells = draw gridlines around each cell, for the flat view).
+      const contractRow = (ct: Contract, borderCells: boolean): string => {
+        const status = this.getCalculatedStatus(ct);
+        const styles = this.getStatusStyles(status);
+        const unit = this._esc(ct.unit || 'bu');
+        const b = borderCells ? 'border:1px solid #e5e7eb;' : '';
+        return `<td style="padding:4px 8px;font-weight:500;${b}">${this._esc(ct.sourceContractId || ct.contractNumber)}</td>
+          <td style="padding:4px 8px;${b}">${(ct.quantity ?? 0).toLocaleString()} ${unit}</td>
+          <td style="padding:4px 8px;${b}">${this._esc(this.getContractPrice(ct))}</td>
+          <td style="padding:4px 8px;font-size:10px;${b}">${this._esc(this.formatDeliveryPeriod(ct.deliveryStart, ct.deliveryEnd))}</td>
+          <td style="padding:4px 8px;${b}"><span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:10px;font-weight:600;background:${styles.bg};color:${styles.color};">${this._esc(status)}</span></td>`;
+      };
+
+      // A contract's pricing-lines table (used inside the grouped card).
+      const pricingTable = (ct: Contract): string => {
+        const lines = this.getPricingLinesForContract(ct);
+        if (lines.length === 0) return '';
+        const unit = this._esc(ct.unit || 'bu');
+        return `<div style="padding:6px 8px 8px 8px;background:#f9fafb;border-top:1px solid #f3f4f6;">
+          <table style="width:100%;border-collapse:collapse;font-size:10px;background:#ffffff;border:1px solid #e5e7eb;border-radius:4px;">
+            <thead><tr style="background:#f3f4f6;">
+              <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Seq</th>
+              <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Quantity</th>
+              <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Basis</th>
+              <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Hedge</th>
+              <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Flat Price</th>
+              <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Freight Adj</th>
+              <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Price Date</th>
+              <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Confirm</th>
+            </tr></thead>
+            <tbody>
+              ${lines.map(line => `<tr>
+                <td style="text-align:center;padding:4px 6px;color:#6b7280;">${line.priceSequence ?? ''}</td>
+                <td style="text-align:center;padding:4px 6px;">${(line.priceQuantity ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })} ${unit}</td>
+                <td style="text-align:center;padding:4px 6px;">${line.basisPrice != null ? this.formatCurrency(line.basisPrice) : '—'}</td>
+                <td style="text-align:center;padding:4px 6px;">${line.hedgePrice != null ? this.formatCurrency(line.hedgePrice) : '—'}</td>
+                <td style="text-align:center;padding:4px 6px;font-weight:600;">${line.flatPrice != null ? this.formatCurrency(line.flatPrice) : '—'}</td>
+                <td style="text-align:center;padding:4px 6px;">${line.freightAdjustment != null ? this.formatCurrency(line.freightAdjustment) : '—'}</td>
+                <td style="text-align:center;padding:4px 6px;">${line.priceDate ? this.formatDate(line.priceDate) : '—'}</td>
+                <td style="text-align:center;padding:4px 6px;">${this._esc(line.customerConfirmStatus || '—')}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+      };
+
+      const grouped = this.showPricingLines();
+      // Plain (borderless) header used once, under the first commodity, in the grouped view.
+      const groupedHeader = `<table style="width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;margin-bottom:6px;">${contractColgroup}<thead><tr class="table-header"><th style="padding:5px 8px;">Contract #</th><th style="padding:5px 8px;">Quantity</th><th style="padding:5px 8px;">Price</th><th style="padding:5px 8px;">Delivery Window</th><th style="padding:5px 8px;">Status</th></tr></thead></table>`;
       html += `<div class="section">
         <div class="section-title">Contracts</div>
-        ${this.contractsByCommodity().map(group => `
-          <div style="margin-bottom: 18px;">
-            <div style="font-size: 12px; font-weight: 700; color: #374151; padding: 6px 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px 6px 0 0;">${this._esc(group.commodity)}</div>
-            <div style="border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px; padding: 8px;">
-              ${group.contracts.map(ct => {
-                const status = this.getCalculatedStatus(ct);
-                const styles = this.getStatusStyles(status);
-                const unit = this._esc(ct.unit || 'bu');
-                const lines = this.getPricingLinesForContract(ct);
-                const pricingHtml = this.showPricingLines() && lines.length > 0
-                  ? `<tr style="background:#f9fafb;"><td colspan="5" style="padding:8px 10px 10px 10px;">
-                      <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Pricing Lines (${lines.length})</div>
-                      <table style="width:100%;border-collapse:collapse;font-size:10px;background:#ffffff;border:1px solid #e5e7eb;border-radius:4px;">
-                        <thead><tr style="background:#f3f4f6;">
-                          <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Seq</th>
-                          <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Quantity</th>
-                          <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Basis</th>
-                          <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Hedge</th>
-                          <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Flat Price</th>
-                          <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Freight Adj</th>
-                          <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Price Date</th>
-                          <th style="text-align:center;padding:4px 6px;font-weight:600;color:#6b7280;">Confirm</th>
-                        </tr></thead>
-                        <tbody>
-                          ${lines.map(line => `<tr>
-                            <td style="text-align:center;padding:4px 6px;color:#6b7280;">${line.priceSequence ?? ''}</td>
-                            <td style="text-align:center;padding:4px 6px;">${(line.priceQuantity ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })} ${unit}</td>
-                            <td style="text-align:center;padding:4px 6px;">${line.basisPrice != null ? this.formatCurrency(line.basisPrice) : '—'}</td>
-                            <td style="text-align:center;padding:4px 6px;">${line.hedgePrice != null ? this.formatCurrency(line.hedgePrice) : '—'}</td>
-                            <td style="text-align:center;padding:4px 6px;font-weight:600;">${line.flatPrice != null ? this.formatCurrency(line.flatPrice) : '—'}</td>
-                            <td style="text-align:center;padding:4px 6px;">${line.freightAdjustment != null ? this.formatCurrency(line.freightAdjustment) : '—'}</td>
-                            <td style="text-align:center;padding:4px 6px;">${line.priceDate ? this.formatDate(line.priceDate) : '—'}</td>
-                            <td style="text-align:center;padding:4px 6px;">${this._esc(line.customerConfirmStatus || '—')}</td>
-                          </tr>`).join('')}
-                        </tbody>
-                      </table>
-                    </td></tr>`
-                  : '';
-                return `<div style="margin-bottom: 8px; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; page-break-inside: avoid;">
-                  <table style="width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;">
-                    ${contractColgroup}
-                    ${contractThead}
-                    <tbody>
-                      <tr>
-                        <td style="font-weight:500;">${this._esc(ct.sourceContractId || ct.contractNumber)}</td>
-                        <td>${(ct.quantity ?? 0).toLocaleString()} ${unit}</td>
-                        <td>${this._esc(this.getContractPrice(ct))}</td>
-                        <td style="font-size:10px;">${this._esc(this.formatDeliveryPeriod(ct.deliveryStart, ct.deliveryEnd))}</td>
-                        <td><span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:10px;font-weight:600;background:${styles.bg};color:${styles.color};">${this._esc(status)}</span></td>
-                      </tr>
-                      ${pricingHtml}
-                    </tbody>
-                  </table>
-                </div>`;
-              }).join('')}
+        ${this.contractsByCommodity().map((group, gi) => {
+          const first = gi === 0;
+          return `
+          <div style="margin-bottom: 14px;">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;font-weight:700;color:#374151;padding:6px 10px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px 8px 0 0;">
+              <span>${this._esc(group.commodity)}</span>
+              <span style="color:#6b7280;">Total: ${group.totalQuantity.toLocaleString()} ${this._esc(group.unit)}</span>
             </div>
-          </div>
-        `).join('')}
+            ${grouped
+              ? `<div style="border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;padding:6px;">
+                  ${first ? groupedHeader : ''}
+                  ${group.contracts.map(ct => `
+                    <div style="border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;margin-top:6px;page-break-inside:avoid;">
+                      <table style="width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;">${contractColgroup}<tbody><tr>${contractRow(ct, false)}</tr></tbody></table>
+                      ${pricingTable(ct)}
+                    </div>`).join('')}
+                </div>`
+              : `<table style="width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;">
+                  ${contractColgroup}
+                  ${first ? contractThead : ''}
+                  <tbody>
+                    ${group.contracts.map(ct => `<tr style="page-break-inside:avoid;">${contractRow(ct, true)}</tr>`).join('')}
+                  </tbody>
+                </table>`}
+          </div>`;
+        }).join('')}
       </div>`;
     }
 
@@ -689,21 +719,21 @@ export class CustomerPrintReportComponent {
         <div class="section-title">Unapplied Tickets</div>
         <div class="table-wrap"><table>
           <thead><tr class="table-header">
-            <th>Crop</th><th># Tickets</th><th>Total Net</th><th>Avg Date</th><th>Avg Moisture</th><th>Avg Test Wt</th>${showProtein ? '<th>Avg Protein</th>' : ''}
+            <th style="padding:5px 8px;border:1px solid #e5e7eb;">Crop</th><th style="padding:5px 8px;border:1px solid #e5e7eb;"># Tickets</th><th style="padding:5px 8px;border:1px solid #e5e7eb;">Total Net</th><th style="padding:5px 8px;border:1px solid #e5e7eb;">Avg Date</th><th style="padding:5px 8px;border:1px solid #e5e7eb;">Avg Moisture</th><th style="padding:5px 8px;border:1px solid #e5e7eb;">Avg Test Wt</th>${showProtein ? '<th style="padding:5px 8px;border:1px solid #e5e7eb;">Avg Protein</th>' : ''}
           </tr></thead>
           <tbody>
-            ${ticketGroups.map((g, i) => {
+            ${ticketGroups.map(g => {
               const totalDisplay = g.totalBushels != null
                 ? `${Math.round(g.totalBushels).toLocaleString()} bu`
                 : `${Math.round(g.totalNetWeight).toLocaleString()} lbs`;
-              return `<tr${i > 0 ? ' class="table-row-border"' : ''}>
-                <td style="font-weight:500;">${this._esc(g.productCode)}</td>
-                <td>${g.ticketCount}</td>
-                <td>${totalDisplay}</td>
-                <td>${g.avgDate ? this.formatDate(g.avgDate) : '—'}</td>
-                <td>${g.avgMoisture != null ? fmtNum(g.avgMoisture, 1) + '%' : '—'}</td>
-                <td>${g.avgTestWeight != null ? fmtNum(g.avgTestWeight, 1) : '—'}</td>
-                ${showProtein ? `<td>${g.avgProtein != null ? fmtNum(g.avgProtein, 1) + '%' : '—'}</td>` : ''}
+              return `<tr>
+                <td style="padding:4px 8px;font-weight:500;border:1px solid #e5e7eb;">${this._esc(g.productCode)}</td>
+                <td style="padding:4px 8px;border:1px solid #e5e7eb;">${g.ticketCount}</td>
+                <td style="padding:4px 8px;border:1px solid #e5e7eb;">${totalDisplay}</td>
+                <td style="padding:4px 8px;border:1px solid #e5e7eb;">${g.avgDate ? this.formatDate(g.avgDate) : '—'}</td>
+                <td style="padding:4px 8px;border:1px solid #e5e7eb;">${g.avgMoisture != null ? fmtNum(g.avgMoisture, 1) + '%' : '—'}</td>
+                <td style="padding:4px 8px;border:1px solid #e5e7eb;">${g.avgTestWeight != null ? fmtNum(g.avgTestWeight, 1) : '—'}</td>
+                ${showProtein ? `<td style="padding:4px 8px;border:1px solid #e5e7eb;">${g.avgProtein != null ? fmtNum(g.avgProtein, 1) + '%' : '—'}</td>` : ''}
               </tr>`;
             }).join('')}
           </tbody>
@@ -711,24 +741,35 @@ export class CustomerPrintReportComponent {
       </div>`;
     }
 
-    // Planting Intentions
+    // Planting Intentions (grouped by crop; crop band + total acres, header once)
     if (this.showPlanting() && this.plantingIntentions().length > 0) {
+      const plantingColgroup = `<colgroup><col style="width:40%;" /><col style="width:30%;" /><col style="width:30%;" /></colgroup>`;
+      const plantingThead = `<thead><tr class="table-header">
+        <th style="padding:5px 8px;border:1px solid #e5e7eb;">Type</th><th style="padding:5px 8px;border:1px solid #e5e7eb;">Acres</th><th style="padding:5px 8px;border:1px solid #e5e7eb;">Crop Year</th>
+      </tr></thead>`;
       html += `<div class="section">
         <div class="section-title">Planting Intentions</div>
-        <div class="table-wrap"><table>
-          <thead><tr class="table-header">
-            <th>Crop</th><th>Type</th><th>Acres</th>
-          </tr></thead>
-          <tbody>
-            ${this.plantingIntentions().map((pi, i) => {
-              return `<tr${i > 0 ? ' class="table-row-border"' : ''}>
-              <td style="font-weight:500;">${this._esc(pi.crop)}</td>
-              <td>${this._esc(pi.type || '')}</td>
-              <td>${(pi.acres ?? 0).toLocaleString()}</td>
-            </tr>`;
-            }).join('')}
-          </tbody>
-        </table></div>
+        ${this.plantingByCrop().map((group, gi) => {
+          const first = gi === 0;
+          return `
+          <div style="margin-bottom:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;font-weight:700;color:#374151;padding:6px 10px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px 8px 0 0;">
+              <span>${this._esc(group.crop)}</span>
+              <span style="color:#6b7280;">Total: ${group.totalAcres.toLocaleString()} acres</span>
+            </div>
+            <table style="width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;">
+              ${plantingColgroup}
+              ${first ? plantingThead : ''}
+              <tbody>
+                ${group.intentions.map(pi => `<tr>
+                  <td style="padding:4px 8px;font-weight:500;border:1px solid #e5e7eb;">${this._esc(pi.type || '—')}</td>
+                  <td style="padding:4px 8px;border:1px solid #e5e7eb;">${(pi.acres ?? 0).toLocaleString()}</td>
+                  <td style="padding:4px 8px;border:1px solid #e5e7eb;">${pi.plantingYear}</td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>`;
+        }).join('')}
       </div>`;
     }
 
@@ -739,15 +780,15 @@ export class CustomerPrintReportComponent {
         <div class="section-title">Grain in Storage</div>
         <div class="table-wrap"><table>
           <thead><tr class="table-header">
-            <th style="text-align:center;">Crop</th><th style="text-align:center;">Quantity</th><th style="text-align:center;">Storage Since</th><th style="text-align:center;">Storage Days</th><th style="text-align:center;">Accumulated Cost</th>
+            <th style="text-align:center;padding:5px 8px;border:1px solid #e5e7eb;">Crop</th><th style="text-align:center;padding:5px 8px;border:1px solid #e5e7eb;">Quantity</th><th style="text-align:center;padding:5px 8px;border:1px solid #e5e7eb;">Storage Since</th><th style="text-align:center;padding:5px 8px;border:1px solid #e5e7eb;">Storage Days</th><th style="text-align:center;padding:5px 8px;border:1px solid #e5e7eb;">Accumulated Cost</th>
           </tr></thead>
           <tbody>
-            ${storageGrps.map((g, i) => `<tr${i > 0 ? ' class="table-row-border"' : ''}>
-              <td style="text-align:center;font-weight:500;">${this._esc(g.crop)}</td>
-              <td style="text-align:center;">${g.totalBushels.toLocaleString()} bu</td>
-              <td style="text-align:center;">${this.formatDate(g.earliestDate)}</td>
-              <td style="text-align:center;">${g.totalDays}</td>
-              <td style="text-align:center;">${this.formatCurrency(g.totalCost)}</td>
+            ${storageGrps.map(g => `<tr>
+              <td style="text-align:center;padding:4px 8px;font-weight:500;border:1px solid #e5e7eb;">${this._esc(g.crop)}</td>
+              <td style="text-align:center;padding:4px 8px;border:1px solid #e5e7eb;">${g.totalBushels.toLocaleString()} bu</td>
+              <td style="text-align:center;padding:4px 8px;border:1px solid #e5e7eb;">${this.formatDate(g.earliestDate)}</td>
+              <td style="text-align:center;padding:4px 8px;border:1px solid #e5e7eb;">${g.totalDays}</td>
+              <td style="text-align:center;padding:4px 8px;border:1px solid #e5e7eb;">${this.formatCurrency(g.totalCost)}</td>
             </tr>`).join('')}
           </tbody>
         </table></div>

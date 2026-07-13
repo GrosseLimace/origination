@@ -8,6 +8,6 @@
     "sqlServerName": { "value": "azrscosqld01.database.windows.net" },
     "sharedMailbox": { "value": "dev-OriginationsApp@scoular.com" },
     "sqlConnectionName": { "value": "sql" },
-    "aiFoundryEndpoint": { "value": "https://datacloudeusaz9305643847.openai.azure.com/openai/deployments/D365CRM-CustomerNotesSummary-gpt-4/chat/completions?api-version=2024-08-01-preview" }
+    "aiFoundryEndpoint": { "value": "https://sco-aif-origination-dev-eus.cognitiveservices.azure.com/openai/deployments/gpt-5.1/chat/completions?api-version=2025-01-01-preview" }
   }
 }

@@ -836,6 +836,11 @@ export class BuildListComponent {
         return (a.name || '').localeCompare(b.name || '');
       });
     }
+    // Ranking prompts ("Top by grain on farm", "top 10 by contract value", …) come back from the
+    // NLQ engine already sorted by the ranked metric — preserve that order instead of alphabetizing.
+    if (this.nlqFilterService.isRankingQuery(this.queryText())) {
+      return list;
+    }
     return [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   });
 

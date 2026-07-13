@@ -51,7 +51,7 @@ Key Vault integration is required. Do not introduce any — keep all auth on man
 | `sqlServerName` | `azrscosqld01.database.windows.net` | `azrscosqlq01.database.windows.net` | `azrscosqlp01.database.windows.net` | Origination SQL server per env (same FQDNs the app deploys use). |
 | `sharedMailbox` | `dev-OriginationsApp@scoular.com` | `qa-OriginationsApp@scoular.com` | `OriginationsApp@scoular.com` | Graph `sendMail` sender UPN. ⚠️ Confirm the prod mailbox UPN. |
 | `sqlConnectionName` | `sql` | `sqlrecap` | `sql` | `Microsoft.Web/connections` (MSI) name, created by the template. QA uses `sqlrecap` to avoid an orphaned V2 `sql` connection left by a failed deploy (no delete rights); revert to `sql` once that orphan is cleaned up. |
-| `aiFoundryEndpoint` | Azure OpenAI chat-completions URL | _same as Dev_ | _same as Dev_ | Shared data-cloud Azure OpenAI. Correct for now; expected to move to a dedicated AI resource later — update the URL when it does. |
+| `aiFoundryEndpoint` | `sco-aif-origination-dev-eus` / `gpt-5.1` | `sco-aif-origination-qa-eus` / `gpt-5.1` | `sco-aif-origination-eus` / `gpt-5.1` | Per-env Azure AI Foundry resource (`sco-aif-origination-<env>-eus`, prod drops the env token), `gpt-5.1` chat-completions deployment, `api-version=2025-01-01-preview`. Body uses `max_completion_tokens` (required by gpt-5.1). ⚠️ Confirm the QA/Prod resources + deployments exist before those deploys. |
 
 > **Teams channel routing:** there is **no** `teamsChannelEmail` parameter. A `teams`-delivery group
 > routes to its **own** `TeamsChannelEmail` — entered in the app, stored on the recap group, and
