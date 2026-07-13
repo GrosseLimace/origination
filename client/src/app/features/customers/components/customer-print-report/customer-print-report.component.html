@@ -225,7 +225,7 @@
                   </thead>
                   <tbody>
                     @for (g of ticketsByCommodity(); track g.productCode) {
-                      <tr>
+                      <tr [style.background]="commodityBandColor(g.isWheat ? 'wheat' : g.productCode)">
                         <td style="padding: 4px 8px; text-align: center; font-weight: 500; border: 1px solid #e5e7eb;">{{ g.productCode }}</td>
                         <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ g.ticketCount }}</td>
                         <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ g.totalBushels != null ? (g.totalBushels | number:'1.0-0') + ' bu' : (g.totalNetWeight | number:'1.0-0') + ' lbs' }}</td>
@@ -247,24 +247,28 @@
           @if (showPlanting() && plantingIntentions().length > 0) {
             <div style="margin-bottom: 24px;">
               <div [style.color]="accentColor()" style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px;">Planting Intentions</div>
-              @for (group of plantingByCrop(); track group.crop; let first = $first) {
+
+              <!-- Column header shown ONCE above all crops. -->
+              <table style="width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; margin-bottom: 6px;">
+                <colgroup><col style="width: 40%;" /><col style="width: 30%;" /><col style="width: 30%;" /></colgroup>
+                <thead>
+                  <tr [style.background]="accentLight()">
+                    <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Type</th>
+                    <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Acres</th>
+                    <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Crop Year</th>
+                  </tr>
+                </thead>
+              </table>
+
+              @for (group of plantingByCrop(); track group.crop) {
                 <div style="margin-bottom: 12px;">
-                  <!-- Crop band: name on the left, total acres on the right -->
-                  <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; font-weight: 700; color: #374151; padding: 6px 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px 8px 0 0;">
+                  <!-- Crop band: name on the left, total acres on the right; tinted by crop. -->
+                  <div [style.background]="commodityBandColor(group.crop)" style="display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; font-weight: 700; color: #374151; padding: 6px 10px; border: 1px solid #e5e7eb; border-radius: 8px 8px 0 0;">
                     <span>{{ group.crop }}</span>
                     <span style="color: #6b7280;">Total: {{ group.totalAcres.toLocaleString() }} acres</span>
                   </div>
                   <table style="width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
                     <colgroup><col style="width: 40%;" /><col style="width: 30%;" /><col style="width: 30%;" /></colgroup>
-                    @if (first) {
-                      <thead>
-                        <tr [style.background]="accentLight()">
-                          <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Type</th>
-                          <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Acres</th>
-                          <th style="text-align: center; padding: 5px 8px; font-weight: 600; color: #374151; border: 1px solid #e5e7eb;">Crop Year</th>
-                        </tr>
-                      </thead>
-                    }
                     <tbody>
                       @for (pi of group.intentions; track pi.id) {
                         <tr>
@@ -297,7 +301,7 @@
                   </thead>
                   <tbody>
                     @for (g of storageGroups(); track g.crop) {
-                      <tr>
+                      <tr [style.background]="commodityBandColor(g.crop)">
                         <td style="padding: 4px 8px; text-align: center; font-weight: 500; border: 1px solid #e5e7eb;">{{ g.crop }}</td>
                         <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ g.totalBushels.toLocaleString() }} bu</td>
                         <td style="padding: 4px 8px; text-align: center; border: 1px solid #e5e7eb;">{{ formatDate(g.earliestDate) }}</td>
