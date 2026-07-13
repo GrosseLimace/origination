@@ -956,6 +956,11 @@ export class NlqFilterService {
       matched.push(lowerQuery.includes('not') || lowerQuery.includes('no ') || lowerQuery.includes('without')
         ? 'esign_disabled' : 'esign_enabled');
     }
+    // ACH payment method (\bach\b so it never matches inside reach/each/attach/etc.)
+    if (/\bach\b/.test(lowerQuery)) {
+      matched.push(lowerQuery.includes('not') || lowerQuery.includes('no ') || lowerQuery.includes('without')
+        ? 'ach_disabled' : 'ach_payment');
+    }
     if (/(?:trad|deal|work|grow|produc|rais|farm)\w*\s*(?:in|with|of)?\s*(?:corn|soybeans?|wheat|oats|barley|sorghum|milo|beans|canola|sunflower)/i.test(lowerQuery) ||
         /(?:corn|soybeans?|wheat|oats|barley|sorghum|milo|beans|canola|sunflower)\s*(?:customers?|producers?|growers?|farmers?)/i.test(lowerQuery)) {
       matched.push('commodities_match');
@@ -1633,6 +1638,12 @@ export class NlqFilterService {
     if (lowerQuery.includes('esign') || lowerQuery.includes('e-sign') || lowerQuery.includes('electronic sign')) {
       const isNegative = lowerQuery.includes('not') || lowerQuery.includes('no ') || lowerQuery.includes('without');
       result = result.filter(c => isNegative ? !c.eSignEnabled : c.eSignEnabled);
+    }
+
+    // ACH payment method (PaymentMethod == 'H'). \bach\b avoids matching reach/each/attach/etc.
+    if (/\bach\b/.test(lowerQuery)) {
+      const isNegative = lowerQuery.includes('not') || lowerQuery.includes('no ') || lowerQuery.includes('without');
+      result = result.filter(c => isNegative ? !c.achEnabled : c.achEnabled);
     }
 
     // Commodities match (from customer's commodity list + ticket product codes + contracts)
