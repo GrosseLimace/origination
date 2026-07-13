@@ -1,0 +1,160 @@
+<div class="space-y-4">
+  <!-- Producer this check is for; prefilled from the selected customer, printed on the report. -->
+  <div class="scoular-form-group">
+    <label class="scoular-form-label">Producer</label>
+    <app-input type="text" placeholder="Producer name" [clearable]="true"
+      [ngModel]="producer()" (ngModelChange)="producer.set($event)" />
+  </div>
+
+  <!-- Commodity columns sit side-by-side (scroll horizontally if the panel is narrow). -->
+  <div class="flex gap-4 overflow-x-auto pb-1">
+    @for (view of views(); track i; let i = $index) {
+      <section class="flex-1 min-w-[16rem] space-y-3">
+        @if (views().length > 1) {
+          <div class="flex justify-end">
+            <button type="button"
+              class="text-xs text-gray-500 hover:text-scoular-red-accessible dark:text-gray-400"
+              (click)="removeCommodity(i)">Remove</button>
+          </div>
+        }
+
+        <!-- Inputs reflow into more columns as the panel widens (container auto-fit grid). -->
+        <div class="grid gap-x-3 gap-y-2 grid-cols-[repeat(auto-fit,minmax(13rem,1fr))]">
+          <div class="scoular-form-group relative">
+            <label class="scoular-form-label">Commodity</label>
+            <div class="relative">
+              <input type="text" class="scoular-form-input h-10 pr-9" placeholder="Search e.g. HRWW"
+                [ngModel]="view.form.commodity"
+                (ngModelChange)="setField(i, 'commodity', $event); openSuggest(i)"
+                (focus)="openSuggest(i)"
+                (blur)="closeSuggestSoon()" />
+              @if (view.form.commodity) {
+                <button type="button" tabindex="-1" aria-label="Clear"
+                  class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                  (mousedown)="$event.preventDefault()" (click)="setField(i, 'commodity', '')">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 6L6 18"/>
+                    <path d="M6 6l12 12"/>
+                  </svg>
+                </button>
+              }
+            </div>
+            @if (openSuggestIndex() === i && activeSuggestions().length) {
+              <ul class="absolute z-20 mt-1 w-full max-h-48 overflow-auto rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg">
+                @for (c of activeSuggestions(); track c.code) {
+                  <li>
+                    <button type="button"
+                      class="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+                      (mousedown)="pickCommodity(i, c.code)">
+                      <span class="font-medium text-gray-900 dark:text-white">{{ c.code }}</span>
+                      <span class="text-gray-500 dark:text-gray-400"> — {{ c.name }}</span>
+                    </button>
+                  </li>
+                }
+              </ul>
+            }
+          </div>
+
+          <div class="scoular-form-group">
+            <label class="scoular-form-label">Bushels</label>
+            <app-input type="text" inputmode="decimal" placeholder="0" [clearable]="true"
+              [ngModel]="view.form.bushels" (ngModelChange)="setField(i, 'bushels', $event)"
+              (focusout)="normalizeField(i, 'bushels')" />
+          </div>
+
+          <div class="scoular-form-group">
+            <label class="scoular-form-label">Basis</label>
+            <app-input type="text" inputmode="decimal" placeholder="(0.70)" [clearable]="true"
+              [ngModel]="view.form.basis" (ngModelChange)="setField(i, 'basis', $event)"
+              (focusout)="normalizeField(i, 'basis')" />
+          </div>
+
+          <div class="scoular-form-group">
+            <label class="scoular-form-label">Future Price</label>
+            <app-input type="text" inputmode="decimal" placeholder="0.00" [clearable]="true"
+              [ngModel]="view.form.futurePrice" (ngModelChange)="setField(i, 'futurePrice', $event)"
+              (focusout)="normalizeField(i, 'futurePrice')" />
+          </div>
+
+          <!-- Check-off: mode + value -->
+          <div class="scoular-form-group">
+            <label class="scoular-form-label">Check-Off</label>
+            <div class="flex gap-2">
+              <app-select class="w-16 shrink-0"
+                [ngModel]="view.form.checkOffMode" (ngModelChange)="setField(i, 'checkOffMode', $event)">
+                <option value="percent">%</option>
+                <option value="perBushel">$</option>
+              </app-select>
+              <div class="flex-1 min-w-0">
+                <app-input class="w-full" type="text" inputmode="decimal" [clearable]="true"
+                  [placeholder]="view.form.checkOffMode === 'percent' ? '2' : '0.02'"
+                  [ngModel]="view.form.checkOffValue" (ngModelChange)="setField(i, 'checkOffValue', $event)"
+                  (focusout)="normalizeField(i, 'checkOffValue')" />
+              </div>
+            </div>
+          </div>
+
+          <div class="scoular-form-group">
+            <label class="scoular-form-label">Average Delivery Date</label>
+            <app-input type="date"
+              [ngModel]="view.form.avgDeliveryDate" (ngModelChange)="setField(i, 'avgDeliveryDate', $event)" />
+          </div>
+
+          <div class="scoular-form-group">
+            <label class="scoular-form-label">Today's Date</label>
+            <app-input type="date"
+              [ngModel]="view.form.settlementDate" (ngModelChange)="setField(i, 'settlementDate', $event)" />
+          </div>
+
+          <div class="scoular-form-group">
+            <label class="scoular-form-label">Freight per Bushel</label>
+            <app-input type="text" inputmode="decimal" placeholder="0" [clearable]="true"
+              [ngModel]="view.form.freightPerBushel" (ngModelChange)="setField(i, 'freightPerBushel', $event)"
+              (focusout)="normalizeField(i, 'freightPerBushel')" />
+          </div>
+
+          <div class="scoular-form-group">
+            <label class="scoular-form-label">Daily DP Fee</label>
+            <app-input type="text" inputmode="decimal" placeholder="0.002" [clearable]="true"
+              [ngModel]="view.form.dailyDpFee" (ngModelChange)="setField(i, 'dailyDpFee', $event)"
+              (focusout)="normalizeField(i, 'dailyDpFee')" />
+          </div>
+        </div>
+
+        <!-- Results -->
+        <div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-3">
+          <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-2">Settlement</p>
+          <dl class="space-y-1 text-sm">
+            <div class="flex justify-between"><dt class="text-gray-600 dark:text-gray-400">Cash Price</dt>
+              <dd class="text-gray-900 dark:text-white">{{ view.result.cashPrice | accountingCurrency:4 }}</dd></div>
+            <div class="flex justify-between"><dt class="text-gray-600 dark:text-gray-400">Total Before Fees</dt>
+              <dd class="text-gray-900 dark:text-white">{{ view.result.totalBeforeFees | accountingCurrency }}</dd></div>
+            <div class="flex justify-between"><dt class="text-gray-600 dark:text-gray-400">Days Since Delivery</dt>
+              <dd class="text-gray-900 dark:text-white">{{ view.result.daysSinceDelivery | number:'1.0-0' }}</dd></div>
+            <div class="flex justify-between"><dt class="text-gray-600 dark:text-gray-400">Total Check-Off</dt>
+              <dd class="text-scoular-red-accessible dark:text-scoular-red">{{ view.result.totalCheckOff | accountingCurrency }}</dd></div>
+            <div class="flex justify-between"><dt class="text-gray-600 dark:text-gray-400">Total DP Fees</dt>
+              <dd class="text-scoular-red-accessible dark:text-scoular-red">{{ view.result.totalDpFees | accountingCurrency }}</dd></div>
+            <div class="flex justify-between"><dt class="text-gray-600 dark:text-gray-400">Total Freight</dt>
+              <dd class="text-scoular-red-accessible dark:text-scoular-red">{{ view.result.totalFreight | accountingCurrency }}</dd></div>
+          </dl>
+          <div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex justify-between items-baseline">
+            <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">Total</span>
+            <span class="text-lg font-bold"
+              [class]="view.result.total >= 0 ? 'text-scoular-green-accessible dark:text-scoular-green' : 'text-scoular-red-accessible dark:text-scoular-red'">
+              {{ view.result.total | accountingCurrency }}
+            </span>
+          </div>
+        </div>
+      </section>
+    }
+  </div>
+
+  <!-- Actions -->
+  <div class="flex items-center justify-between gap-2 pt-1">
+    <app-button variant="outline" size="sm" (onClick)="addCommodity()">+ Add Commodity</app-button>
+    <app-button variant="primary" size="sm" (onClick)="downloadPdf()">
+      Download PDF
+    </app-button>
+  </div>
+</div>

@@ -73,6 +73,13 @@ export class ProducerInsightsComponent {
       : 'background: rgba(255, 255, 255, 0.15); color: white; border: 1px solid rgba(255, 255, 255, 0.3);';
   }
 
+  // Amber variant for the Check Payment pill (shown when the producer is not on ACH).
+  get checkBadgeStyle(): string {
+    return this.isDarkMode
+      ? 'background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4);'
+      : 'background: rgba(255, 255, 255, 0.15); color: white; border: 1px solid rgba(255, 255, 255, 0.3);';
+  }
+
   getPacingChangeStyle(pct: number): string {
     return pct >= 0 ? 'color: #4ade80;' : 'color: #f87171;';
   }

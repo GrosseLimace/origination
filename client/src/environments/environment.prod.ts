@@ -9,6 +9,9 @@ export const environment = {
   // recaps), and the recap migrations (CreateDailyRecapGroups, AddGetRecapNotesProc)
   // must be applied to the prod DB. Merge this branch as part of that launch.
   dailyDigestEnabled: true,
+  // Profitability Calculator: OFF in PROD until the feature launches. Gates the
+  // floating calculator launcher on the customer home page. Flip to true to launch.
+  calculatorEnabled: false,
   apiBaseUrl: '/api',
   msalConfig: {
     auth: {
