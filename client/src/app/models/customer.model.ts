@@ -27,6 +27,7 @@ export interface Customer {
   totalAcres: number;
   linkedProducerIds: string[];
   eSignEnabled: boolean;
+  achEnabled: boolean;             // base.Customer.PaymentMethod == 'H'
   scoularViewRecipients?: string;  // Comma-separated "Name | email/phone", from dbo.eSignEnrollment
   guild?: string;                  // Guild name, from dbo.eSignEnrollment
   coordinates?: Coordinates;

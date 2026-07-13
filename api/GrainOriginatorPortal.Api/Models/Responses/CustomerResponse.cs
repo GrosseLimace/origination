@@ -33,6 +33,7 @@ public record CustomerResponse
     public List<string> LinkedProducerIds { get; init; } = new();
 
     public bool ESignEnabled { get; init; }
+    public bool AchEnabled { get; init; }
     public string? ScoularViewRecipients { get; init; }
     public string? Guild { get; init; }
     public CoordinatesResponse? Coordinates { get; init; }

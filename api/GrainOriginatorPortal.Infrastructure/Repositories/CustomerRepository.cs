@@ -65,6 +65,7 @@ public class CustomerRepository : ICustomerRepository
             .ToList();
 
         await EnrichCustomersWithESignAsync(customers, cancellationToken);
+        await EnrichCustomersWithAchAsync(customers, cancellationToken);
         _logger.LogInformation("Returning {Count} customers from Customer{Filter}", customers.Count, filterMsg);
         return customers;
     }
@@ -158,6 +159,7 @@ public class CustomerRepository : ICustomerRepository
         .ToList();
 
         await EnrichCustomersWithESignAsync(scoredCustomers, cancellationToken);
+        await EnrichCustomersWithAchAsync(scoredCustomers, cancellationToken);
         // Do not log the raw search term — it may contain producer name/phone (PII). Log metadata only.
         _logger.LogInformation("Customer search returned {Count} customers from Customer", scoredCustomers.Count);
         return scoredCustomers;
@@ -348,6 +350,39 @@ public class CustomerRepository : ICustomerRepository
     }
 
     /// <summary>
+    /// Enriches customers with ACH status read straight from base.Customer (PaymentMethod == 'H').
+    /// PaymentMethod is not surfaced by the curated customer views, so we read the base table directly
+    /// (current rows only), matched on CustomerId (== Customer.Id). One batched IN-query, like eSign.
+    /// </summary>
+    /// <summary>ACH-enabled when the ODS base.Customer PaymentMethod code is 'H' (case/whitespace-insensitive).</summary>
+    public static bool IsAchPaymentMethod(string? paymentMethod) =>
+        string.Equals(paymentMethod?.Trim(), "H", StringComparison.OrdinalIgnoreCase);
+
+    private async Task EnrichCustomersWithAchAsync(List<Customer> customers, CancellationToken cancellationToken = default)
+    {
+        if (customers.Count == 0) return;
+
+        var ids = customers.Select(c => c.Id).Distinct().ToList();
+
+        var rows = await _context.CustomerPaymentInfos
+            .AsNoTracking()
+            .Where(p => p.IsCurrent && ids.Contains(p.CustomerId))
+            .Select(p => new { p.CustomerId, p.PaymentMethod })
+            .ToListAsync(cancellationToken);
+
+        // 'H' = ACH enabled (PaymentMethod is trimmed on read via the entity's value conversion).
+        var achIds = rows
+            .Where(p => IsAchPaymentMethod(p.PaymentMethod))
+            .Select(p => p.CustomerId)
+            .ToHashSet();
+
+        foreach (var customer in customers)
+        {
+            if (achIds.Contains(customer.Id)) customer.AchEnabled = true;
+        }
+    }
+
+    /// <summary>
     /// Calculates a relevance score for a customer name based on how well it matches the search terms.
     /// Higher scores indicate better matches.
     /// </summary>
@@ -497,6 +532,7 @@ public class CustomerRepository : ICustomerRepository
         }
 
         await EnrichCustomersWithESignAsync(customers, cancellationToken);
+        await EnrichCustomersWithAchAsync(customers, cancellationToken);
         return customers;
     }
 

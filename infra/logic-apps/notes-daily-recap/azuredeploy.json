@@ -147,7 +147,7 @@
                         "Set_Summary_Variable": {
                           "inputs": {
                             "name": "summary",
-                            "value": "@replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(coalesce(item()?['message']?['content'], ''), 'javascript:', ''), '<script', '&lt;script'), '</script', '&lt;/script'), '<iframe', '&lt;iframe'), '<img', '&lt;img'), '<a', '&lt;a'), '<svg', '&lt;svg'), '<object', '&lt;object'), '<embed', '&lt;embed'), '<link', '&lt;link'), '<style', '&lt;style')"
+                            "value": "@replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(coalesce(item()?['message']?['content'], ''), '<', '&lt;'), '>', '&gt;'), '&lt;h2&gt;', '<h2>'), '&lt;/h2&gt;', '</h2>'), '&lt;h3&gt;', '<h3>'), '&lt;/h3&gt;', '</h3>'), '&lt;ul&gt;', '<ul>'), '&lt;/ul&gt;', '</ul>'), '&lt;li&gt;', '<li>'), '&lt;/li&gt;', '</li>'), '&lt;p&gt;', '<p>'), '&lt;/p&gt;', '</p>'), '&lt;strong&gt;', '<strong>'), '&lt;/strong&gt;', '</strong>'), '&lt;em&gt;', '<em>'), '&lt;/em&gt;', '</em>')"
                           },
                           "type": "SetVariable"
                         }

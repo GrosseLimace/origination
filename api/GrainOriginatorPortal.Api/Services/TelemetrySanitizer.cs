@@ -20,6 +20,7 @@ public static partial class TelemetrySanitizer
     {
         "library-search-no-match",
         "query-request-submitted",
+        "library-search",
     };
 
     [GeneratedRegex(@"[^\s@]+@[^\s@]+\.[^\s@]+", RegexOptions.Compiled)]

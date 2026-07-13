@@ -46,6 +46,9 @@ public class Customer
     public bool ESignEnabled { get; set; }
     public string? ScoularViewRecipients { get; set; }  // Comma-separated "Name | email/phone", populated from dbo.eSignEnrollment
     public string? Guild { get; set; }                   // Guild name, populated from dbo.eSignEnrollment
+    // ACH-enabled = base.Customer.PaymentMethod == 'H'. Transient (not a dbo.Customer column);
+    // enriched at read time from ODS, like ESignEnabled.
+    public bool AchEnabled { get; set; }
     public Coordinates? Coordinates { get; set; }
 
     // ODS metadata fields
