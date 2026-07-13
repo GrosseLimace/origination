@@ -1,0 +1,468 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": "origination/infra — instant-share-note Logic App",
+    "description": "Instant-share Logic App: when a CRM note is created with @mentions, immediately emails the note to the mentioned people/groups. All external calls use the workflow system-assigned managed identity (no secrets)."
+  },
+  "parameters": {
+    "logicAppName": {
+      "type": "string",
+      "defaultValue": "logic-origination-instant-share-note-dev-eus",
+      "metadata": {
+        "description": "Name of the Logic App workflow resource."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region. Defaults to the target resource group location."
+      }
+    },
+    "environmentTag": {
+      "type": "string",
+      "defaultValue": "Dev",
+      "allowedValues": [
+        "Dev",
+        "QA",
+        "Prod"
+      ],
+      "metadata": {
+        "description": "Value for the Environment resource tag."
+      }
+    },
+    "sqlServerName": {
+      "type": "string",
+      "defaultValue": "azrscosqld01.database.windows.net",
+      "metadata": {
+        "description": "Fully-qualified SQL server name used by the SQL API connection dataset paths."
+      }
+    },
+    "sharedMailbox": {
+      "type": "string",
+      "defaultValue": "dev-OriginationsApp@scoular.com",
+      "metadata": {
+        "description": "Shared mailbox (UPN) that Microsoft Graph sendMail sends the shared note as."
+      }
+    },
+    "sqlConnectionName": {
+      "type": "string",
+      "defaultValue": "sqlshare",
+      "metadata": {
+        "description": "Name of the Microsoft.Web/connections SQL connection (MSI auth) in the target resource group. Distinct from the daily-recap app's 'sql' connection so the two templates do not fight over the same connection resource."
+      }
+    }
+  },
+  "variables": {
+    "sqlConnectionId": "[resourceId('Microsoft.Web/connections', parameters('sqlConnectionName'))]",
+    "sqlManagedApiId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', parameters('location'), '/managedApis/sql')]"
+  },
+  "resources": [
+    {
+      "comments": "SQL API connection used by the workflow (managed-identity auth, no stored secret). kind V1 (Consumption); the SQL connector selects MSI via parameterValueSet 'oauthMI'. Server + database are supplied per-action by the connector's v2 dataset paths.",
+      "type": "Microsoft.Web/connections",
+      "apiVersion": "2016-06-01",
+      "name": "[parameters('sqlConnectionName')]",
+      "location": "[parameters('location')]",
+      "kind": "V1",
+      "tags": {
+        "Application": "Origination",
+        "Environment": "[parameters('environmentTag')]",
+        "IaC": "True"
+      },
+      "properties": {
+        "displayName": "[parameters('sqlConnectionName')]",
+        "parameterValueSet": {
+          "name": "oauthMI",
+          "values": {}
+        },
+        "api": {
+          "id": "[variables('sqlManagedApiId')]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[parameters('logicAppName')]",
+      "location": "[parameters('location')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/connections', parameters('sqlConnectionName'))]"
+      ],
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "tags": {
+        "Application": "Origination",
+        "Environment": "[parameters('environmentTag')]",
+        "IaC": "True",
+        "Team": "Full Stack Development"
+      },
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "actions": {
+            "Initialize_recipient": {
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "recipient",
+                    "type": "array"
+                  }
+                ]
+              },
+              "runAfter": {},
+              "type": "InitializeVariable"
+            },
+            "Condition_Has_Mentions": {
+              "actions": {
+                "Parse_Mentions": {
+                  "inputs": {
+                    "content": "@triggerBody()?['Mentions']",
+                    "schema": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "email": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "type"
+                        ]
+                      }
+                    }
+                  },
+                  "runAfter": {},
+                  "type": "ParseJson"
+                },
+                "Get_Customer": {
+                  "inputs": {
+                    "host": {
+                      "connection": {
+                        "name": "@parameters('$connections')['sql']['connectionId']"
+                      }
+                    },
+                    "method": "get",
+                    "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('Origination'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[Customer]'))}/items/@{encodeURIComponent(encodeURIComponent(triggerBody()?['CustomerId']))}"
+                  },
+                  "runAfter": {
+                    "Parse_Mentions": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "ApiConnection"
+                },
+                "Get_Author": {
+                  "inputs": {
+                    "host": {
+                      "connection": {
+                        "name": "@parameters('$connections')['sql']['connectionId']"
+                      }
+                    },
+                    "method": "get",
+                    "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('Entitlements'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[Users]'))}/items/@{encodeURIComponent(encodeURIComponent(triggerBody()?['CreatedBy']))}"
+                  },
+                  "runAfter": {
+                    "Get_Customer": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "ApiConnection"
+                },
+                "For_each_Mention": {
+                  "actions": {
+                    "Switch_Member_Type": {
+                      "cases": {
+                        "Case_person": {
+                          "actions": {
+                            "Append_Person_Recipient": {
+                              "inputs": {
+                                "name": "recipient",
+                                "value": {
+                                  "emailAddress": {
+                                    "address": "@{coalesce(item()?['email'], concat(item()?['id'], '@scoular.com'))}"
+                                  }
+                                }
+                              },
+                              "type": "AppendToArrayVariable"
+                            }
+                          },
+                          "case": "person"
+                        },
+                        "Case_trade-unit": {
+                          "actions": {
+                            "Get_Trade_Unit_Members": {
+                              "inputs": {
+                                "host": {
+                                  "connection": {
+                                    "name": "@parameters('$connections')['sql']['connectionId']"
+                                  }
+                                },
+                                "method": "get",
+                                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('Entitlements'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[UserTradeUnitAssignments]'))}/items",
+                                "queries": {
+                                  "$filter": "TradeUnitCode eq @{item()?['id']}"
+                                }
+                              },
+                              "type": "ApiConnection"
+                            },
+                            "For_each_Trade_Unit_Member": {
+                              "actions": {
+                                "Append_Trade_Unit_Recipient": {
+                                  "inputs": {
+                                    "name": "recipient",
+                                    "value": {
+                                      "emailAddress": {
+                                        "address": "@{item()?['UserId']}@scoular.com"
+                                      }
+                                    }
+                                  },
+                                  "type": "AppendToArrayVariable"
+                                }
+                              },
+                              "foreach": "@body('Get_Trade_Unit_Members')?['value']",
+                              "runAfter": {
+                                "Get_Trade_Unit_Members": [
+                                  "Succeeded"
+                                ]
+                              },
+                              "type": "Foreach"
+                            }
+                          },
+                          "case": "trade-unit"
+                        },
+                        "Case_trade-unit-group": {
+                          "actions": {
+                            "Get_Trade_Unit_Group_Members": {
+                              "inputs": {
+                                "host": {
+                                  "connection": {
+                                    "name": "@parameters('$connections')['sql']['connectionId']"
+                                  }
+                                },
+                                "method": "get",
+                                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('Entitlements'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[UserGroupAssignments]'))}/items",
+                                "queries": {
+                                  "$filter": "GroupId eq @{item()?['id']}"
+                                }
+                              },
+                              "type": "ApiConnection"
+                            },
+                            "For_each_Group_Member": {
+                              "actions": {
+                                "Append_Group_Recipient": {
+                                  "inputs": {
+                                    "name": "recipient",
+                                    "value": {
+                                      "emailAddress": {
+                                        "address": "@{item()?['UserId']}@scoular.com"
+                                      }
+                                    }
+                                  },
+                                  "type": "AppendToArrayVariable"
+                                }
+                              },
+                              "foreach": "@body('Get_Trade_Unit_Group_Members')?['value']",
+                              "runAfter": {
+                                "Get_Trade_Unit_Group_Members": [
+                                  "Succeeded"
+                                ]
+                              },
+                              "type": "Foreach"
+                            }
+                          },
+                          "case": "trade-unit-group"
+                        }
+                      },
+                      "default": {
+                        "actions": {}
+                      },
+                      "expression": "@item()?['type']",
+                      "type": "Switch"
+                    }
+                  },
+                  "foreach": "@body('Parse_Mentions')",
+                  "runAfter": {
+                    "Get_Author": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "Foreach"
+                },
+                "Compose_Recipients": {
+                  "inputs": "@union(variables('recipient'), variables('recipient'))",
+                  "runAfter": {
+                    "For_each_Mention": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "Compose"
+                },
+                "Condition_Has_Recipients": {
+                  "actions": {
+                    "HTTP_Send_Share_Email": {
+                      "inputs": {
+                        "authentication": {
+                          "audience": "https://graph.microsoft.com",
+                          "type": "ManagedServiceIdentity"
+                        },
+                        "body": {
+                          "message": {
+                            "body": {
+                              "content": "<!DOCTYPE html>\n<html>\n<head>\n<style>\ntable, th, td {\n  border: 1px solid black;\n  border-collapse: collapse;\n}\nth, td {\n  padding: 5px;\n  text-align: left;\n  vertical-align: top;\n}\n</style>\n</head>\n<body>\n\n<h2>You were mentioned in a note</h2>\n\n<table style=\"width:100%\">\n  <tr><th style=\"width:120px\">Regarding</th><td>@{coalesce(body('Get_Customer')?['CustomerName'], '')}</td></tr>\n  <tr><th>Note</th><td>@{triggerBody()?['Description']}</td></tr>\n  <tr><th>From</th><td>@{coalesce(body('Get_Author')?['DisplayName'], triggerBody()?['CreatedBy'])}</td></tr>\n  <tr><th>Created</th><td>@{formatDateTime(convertFromUtc(concat(triggerBody()?['CreatedAt'],'Z'),'Central Standard Time'),'M/d/yyyy h:mm tt')}</td></tr>\n</table>\n</body>\n</html>",
+                              "contentType": "HTML"
+                            },
+                            "subject": "@{coalesce(body('Get_Author')?['DisplayName'], triggerBody()?['CreatedBy'])} mentioned you in a note on @{coalesce(body('Get_Customer')?['CustomerName'], 'a customer')}",
+                            "toRecipients": "@outputs('Compose_Recipients')"
+                          },
+                          "saveToSentItems": true
+                        },
+                        "method": "POST",
+                        "uri": "https://graph.microsoft.com/v1.0/users/@{parameters('sharedMailbox')}/sendMail"
+                      },
+                      "runtimeConfiguration": {
+                        "contentTransfer": {
+                          "transferMode": "Chunked"
+                        }
+                      },
+                      "type": "Http"
+                    }
+                  },
+                  "else": {
+                    "actions": {}
+                  },
+                  "expression": {
+                    "and": [
+                      {
+                        "greater": [
+                          "@length(outputs('Compose_Recipients'))",
+                          0
+                        ]
+                      }
+                    ]
+                  },
+                  "runAfter": {
+                    "Compose_Recipients": [
+                      "Succeeded"
+                    ]
+                  },
+                  "type": "If"
+                }
+              },
+              "else": {
+                "actions": {}
+              },
+              "expression": {
+                "and": [
+                  {
+                    "not": {
+                      "equals": [
+                        "@trim(coalesce(triggerBody()?['Mentions'], ''))",
+                        ""
+                      ]
+                    }
+                  },
+                  {
+                    "not": {
+                      "equals": [
+                        "@coalesce(triggerBody()?['IsDeleted'], false)",
+                        true
+                      ]
+                    }
+                  }
+                ]
+              },
+              "runAfter": {
+                "Initialize_recipient": [
+                  "Succeeded"
+                ]
+              },
+              "type": "If"
+            }
+          },
+          "contentVersion": "1.0.0.0",
+          "outputs": {},
+          "parameters": {
+            "$connections": {
+              "defaultValue": {},
+              "type": "Object"
+            },
+            "sharedMailbox": {
+              "defaultValue": "dev-OriginationsApp@scoular.com",
+              "type": "String"
+            },
+            "sqlServerName": {
+              "defaultValue": "azrscosqld01.database.windows.net",
+              "type": "String"
+            }
+          },
+          "triggers": {
+            "When_a_note_is_created": {
+              "inputs": {
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['sql']['connectionId']"
+                  }
+                },
+                "method": "get",
+                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('sqlServerName')))},@{encodeURIComponent(encodeURIComponent('Origination'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[Notes]'))}/onnewitems"
+              },
+              "recurrence": {
+                "frequency": "Minute",
+                "interval": 3
+              },
+              "splitOn": "@triggerBody()?['value']",
+              "type": "ApiConnection"
+            }
+          }
+        },
+        "parameters": {
+          "$connections": {
+            "value": {
+              "sql": {
+                "connectionId": "[variables('sqlConnectionId')]",
+                "connectionName": "[parameters('sqlConnectionName')]",
+                "connectionProperties": {
+                  "authentication": {
+                    "type": "ManagedServiceIdentity"
+                  }
+                },
+                "id": "[variables('sqlManagedApiId')]"
+              }
+            }
+          },
+          "sharedMailbox": {
+            "value": "[parameters('sharedMailbox')]"
+          },
+          "sqlServerName": {
+            "value": "[parameters('sqlServerName')]"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "logicAppResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Logic/workflows', parameters('logicAppName'))]"
+    },
+    "logicAppPrincipalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Logic/workflows', parameters('logicAppName')), '2019-05-01', 'full').identity.principalId]"
+    }
+  }
+}
