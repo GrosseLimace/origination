@@ -4,8 +4,19 @@ Implementation plan for granting `UsageAggregationBackgroundService` a **narrowl
 secretless way to read the membership of the Entra ID groups that grant access to Origination,
 so the Usage Dashboard can compare **who has access** against **who actually uses the app**.
 
-**Status: proposed — not yet implemented.** Requires identity-team sign-off before the Entra
-steps run (see [Open Questions](#open-questions--approvals)).
+**Status:** Part 1 (Entra ID) is **implemented and its acceptance check has passed** (2026-07-14).
+Full status, the role/assignment details, and the acceptance-check results live in
+[`APP-GROUP-MEMBERSHIP-READER.md`](APP-GROUP-MEMBERSHIP-READER.md#current-status) — that doc is
+the canonical record for "is Part 1 done and does it work"; this doc won't restate it. Part 3's
+**Configuration** sub-step is also done — `UsageAccessAudit:*` app settings are deployed to
+Dev/QA (Prod defined-but-dormant, see [Configuration](#configuration)) — but that's config-only
+prep; no other application code exists yet.
+
+**The load-bearing open item is [Step 5](#step-5-graph-permission-for-basic-profile-properties)**
+— the acceptance check surfaced that member profile properties (UPN, display name) aren't
+readable under Part 1's role and need a second, separate Graph permission. That's a design
+decision affecting Part 3's code, so it's documented here rather than in the role's own status
+doc.
 
 ---
 
@@ -22,6 +33,7 @@ steps run (see [Open Questions](#open-questions--approvals)).
   - [Step 2: Collect the principal and scope IDs](#step-2-collect-the-principal-and-scope-ids)
   - [Step 3: Assign the role, scoped per group](#step-3-assign-the-role-scoped-per-group)
   - [Step 4: Smoke-test before writing any code](#step-4-smoke-test-before-writing-any-code)
+  - [Step 5: Graph permission for basic profile properties](#step-5-graph-permission-for-basic-profile-properties)
 - [Part 2 — Networking](#part-2--networking)
 - [Part 3 — Application Changes](#part-3--application-changes)
   - [Configuration](#configuration)
@@ -32,6 +44,7 @@ steps run (see [Open Questions](#open-questions--approvals)).
   - [Identity join semantics](#identity-join-semantics)
   - [Local development](#local-development)
 - [Security Considerations](#security-considerations)
+- [Handoff — What's Actually Left To Do](#handoff--whats-actually-left-to-do)
 - [Rollout Plan](#rollout-plan)
 - [Backout Plan](#backout-plan)
 - [Open Questions / Approvals](#open-questions--approvals)
@@ -215,20 +228,39 @@ per-object assignment is self-evidently minimal in an access review.
 The load-bearing assumption is that Graph honors a *custom* directory role carried in an
 app-only token's `wids` claim. **Verify this in Dev before building anything on it.**
 
-Directory role activation for a service principal can take a few minutes to propagate. Then,
-from inside the Dev App Service (Kudu — `/azure-exec` skill):
+Directory role activation for a service principal can take a few minutes to propagate.
+
+> **Do not run this via the Kudu `/azure-exec` skill / `/api/command` endpoint.** That endpoint
+> executes in a separate sidecar container which does **not** carry `IDENTITY_ENDPOINT` /
+> `IDENTITY_HEADER` (confirmed empirically 2026-07-14: `env | grep -c IDENTITY` → `0` inside
+> that container). A token-fetch curl run there silently fails on empty variables — it does not
+> test what this step claims to test. Use one of:
+> - **Browser-based SSH** into the Dev App Service (Portal → SSH, or
+>   `https://app-origination-dev-eus.scm.azurewebsites.net/webssh/host`) — this execs into the
+>   real app container, which does have the identity env vars. Run the commands below there.
+> - A **temporary diagnostic route** added to the .NET app that calls `ManagedIdentityCredential`
+>   directly and hits the same two Graph URLs, deployed to Dev, hit once, then removed.
+
+From inside the real app container (via browser SSH, **not** `/api/command`):
 
 ```bash
 # 1. Get an MI token for Graph (App Service token endpoint)
+# Uses sed instead of python3/jq — neither is guaranteed present in the app container;
+# sed is. If jq happens to be available, `| jq -r .access_token` is equivalent and clearer.
 TOKEN=$(curl -s "$IDENTITY_ENDPOINT?resource=https://graph.microsoft.com&api-version=2019-08-01" \
-  -H "X-IDENTITY-HEADER: $IDENTITY_HEADER" | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+  -H "X-IDENTITY-HEADER: $IDENTITY_HEADER" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
 
-# 2. MUST succeed (200, member list) — a scoped access group
-curl -s -o /dev/null -w "%{http_code}\n" \
-  -H "Authorization: Bearer $TOKEN" \
-  "https://graph.microsoft.com/v1.0/groups/<dev-users-group-id>/transitiveMembers?\$select=id,userPrincipalName"
+# 2. MUST succeed (200, member list) — a scoped access group.
+# Use the real group IDs from the UsageAccessAudit__Groups__*__ObjectId app settings IaC
+# deployed to Dev (index 0 = Origination App Dev Users, 1 = Dev Super Users,
+# 2 = Azure - Origination App - Developer Admins) — these are real env vars in the
+# container now, not placeholders. Drop -o /dev/null while diagnosing to see the response body.
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://graph.microsoft.com/v1.0/groups/$UsageAccessAudit__Groups__0__ObjectId/transitiveMembers?\$select=id,userPrincipalName"
 
-# 3. MUST fail (403) — any group NOT scoped to the role
+# 3. MUST fail (403) — any group NOT scoped to the role. No env var exists for this on
+# purpose (it must be a group the role was never assigned to) — substitute a real, unrelated
+# group's object ID here.
 curl -s -o /dev/null -w "%{http_code}\n" \
   -H "Authorization: Bearer $TOKEN" \
   "https://graph.microsoft.com/v1.0/groups/<unrelated-group-id>/members"
@@ -239,6 +271,50 @@ membership reads is not honored as designed — stop, and fall back to the expor
 (option 2 in [Alternatives](#alternatives-considered-and-rejected)) with this same scoped role
 on the exporter's identity, or escalate to the identity team.
 
+**Result: passed, 2026-07-14 (Dev)** — full results recorded in
+[`APP-GROUP-MEMBERSHIP-READER.md`](APP-GROUP-MEMBERSHIP-READER.md#acceptance-check), not
+restated here. Short version relevant to what comes next: step 2 succeeded but every returned
+member had `"userPrincipalName":null` — expected, documented Graph behavior, not a
+propagation issue — which is what drove [Step 5](#step-5-graph-permission-for-basic-profile-properties)
+below.
+
+### Step 5: Graph permission for basic profile properties
+
+**Finding (2026-07-14):** the custom role's `microsoft.directory/groups/members/read` grants
+reading the *membership relationship* — which IDs belong to the group — but not the *member
+objects' own properties*. When a caller lacks permission to read a returned object's type, Graph
+still returns the object but nulls every property except `id`/`@odata.type`. This matches
+`APP-GROUP-MEMBERSHIP-READER.md`'s own description of the role ("confers nothing over the users
+listed... does not extend to a group's members as directory objects") — we'd documented this as
+a security property without tracing that it also blocks the UPN/display-name read the dashboard
+needs.
+
+**Why this needs a different mechanism than Part 1's custom role:** object-scoped role
+assignments don't cascade onto a group's members as their own directory objects, for the same
+reason above — so a second custom role for user-property reads would need to be assigned at
+`directoryScopeId: "/"` (tenant-wide) to reach arbitrary members of arbitrary groups. That
+removes the one advantage (per-object scoping) that justified using Entra RBAC over a Graph
+permission in the first place. Since the blast radius converges to tenant-wide either way, this
+step uses a plain Graph API permission instead of extending the RBAC approach — no scoping
+benefit is being given up by doing so, and it's Microsoft's own purpose-built least-privilege
+answer for this exact scenario.
+
+**Decision: request `User.ReadBasic.All`, Application permission**, granted directly to the
+managed identity's service principal (`New-MgServicePrincipalAppRoleAssignment` against the
+Microsoft Graph service principal — no client secret, same secretless pattern as Part 1).
+Confirmed property set: `displayName`, `givenName`, `id`, `mail`, `photo`, `securityIdentifier`,
+`surname`, `userPrincipalName`. This covers everything the identity-join design needs.
+
+**Known limitation — `accountEnabled` is not in the basic set.** `User.ReadBasic.All` does not
+expose it; only the fuller `User.Read.All` does. **Decision: drop `AccountEnabled` from
+`AccessGroupMemberSnapshot` and the Usage Dashboard for now** rather than request the broader
+permission for one field — see [Snapshot entity and migration](#snapshot-entity-and-migration).
+Revisit if there's a real product need for surfacing disabled-account status later.
+
+**Not yet executed** — this is a decision, not a completed step. Someone with the appropriate
+Entra permissions needs to grant `User.ReadBasic.All` (Application) to each environment's MI
+service principal, the same way the Part 1 role assignments were made.
+
 ## Part 2 — Networking
 
 Per [`developer-docs/CLAUDE.md`](../../developer-docs/CLAUDE.md), the App Service's VNet
@@ -247,8 +323,9 @@ egress is NSG-restricted and external API calls need a custom outbound rule.
 - **Token acquisition** uses the App Service-local identity endpoint — no NSG change.
 - **`graph.microsoft.com:443`** is a new outbound dependency. Verify whether the existing
   `AzureActiveDirectory` service-tag rule (used for token validation metadata) already covers
-  Microsoft Graph IPs; if not, add an outbound allow rule for Graph before rollout. Test from
-  Kudu with the smoke-test above — a hang/timeout on step 2 indicates NSG, not authorization.
+  Microsoft Graph IPs; if not, add an outbound allow rule for Graph before rollout. Test with the
+  Step 4 smoke-test above (from browser SSH, not `/api/command`) — a hang/timeout on step 2
+  indicates NSG, not authorization.
 
 ## Part 3 — Application Changes
 
@@ -269,6 +346,18 @@ pattern). Group IDs are per-environment App Service app settings, not committed 
 
 App Service setting form: `UsageAccessAudit__Groups__0__ObjectId`, etc. Group **object IDs are
 not secrets** — plain app settings are fine; Key Vault is not required.
+
+**Status (2026-07-14): deployed to Dev and QA, defined-but-dormant in Prod.** IaC added
+`overrides.appSettings.{dev,qa,prod}` in `infrastructure-as-code/origination/app-config.json`
+and ran `deploy.ps1 -Component appservice` for Dev and QA — confirmed live via
+`az webapp config appsettings list` on both. **Prod is intentionally not applied** — the
+setting block exists in config but has not been deployed to `app-origination-eus` (confirmed
+empty). It will not reach the live Prod App Service until a future `-Component appservice`/`all`
+deploy runs for Prod, which could happen for an unrelated reason before this feature's code and
+acceptance check are ready — harmless today (no code reads `UsageAccessAudit:*` yet), but don't
+mistake its presence in `app-config.json` for a signal the feature is live in Prod. This was
+config-only prep, unblocking application-side work; no application code exists yet
+(`IAccessGroupMembershipService` is still unwritten — see [Handoff](#handoff--whats-actually-left-to-do)).
 
 ### NuGet dependency and SBOM
 
@@ -295,9 +384,13 @@ public class AccessGroupMemberSnapshot
     public string UserPrincipalName { get; set; } = string.Empty;
     public string UserId { get; set; } = string.Empty;         // normalized join key — see below
     public string? DisplayName { get; set; }
-    public bool AccountEnabled { get; set; }
 }
 ```
+
+`AccountEnabled` intentionally omitted — see
+[Step 5](#step-5-graph-permission-for-basic-profile-properties): `User.ReadBasic.All` doesn't
+expose it, and requesting the fuller `User.Read.All` for one field wasn't judged worth it.
+Revisit if a real product need for disabled-account status shows up later.
 
 Suggested indexes: `(SnapshotDate, GroupObjectId)` and `(SnapshotDate, UserId)`. Retention:
 delete snapshots older than the existing usage-retention window (90 days,
@@ -310,9 +403,17 @@ delete snapshots older than the existing usage-retention window (90 days,
 
 - `GraphServiceClient` built on `ManagedIdentityCredential` (per the cold-start guidance in
   `developer-docs/CLAUDE.md` — do not use `DefaultAzureCredential` on App Service).
-- For each configured group: `GET /groups/{id}/transitiveMembers/microsoft.graph.user`
-  with `$select=id,userPrincipalName,displayName,accountEnabled`, following `@odata.nextLink`
-  pages. **Transitive** members so nested-group members are captured.
+- **Two Graph calls per group, not one** — see
+  [Step 5](#step-5-graph-permission-for-basic-profile-properties) for why a single `$select`
+  can't get both membership and profile data under the current permission model:
+  1. `GET /groups/{id}/transitiveMembers/microsoft.graph.user` with `$select=id` (this is all
+     the custom role authorizes — requesting `userPrincipalName`/`displayName` here comes back
+     null, not an error), following `@odata.nextLink` pages. **Transitive** so nested-group
+     members are captured.
+  2. Resolve profile properties for the returned IDs via `User.ReadBasic.All`, e.g.
+     `GET /users?$filter=id in ({ids})&$select=id,userPrincipalName,displayName` (batch by ID, or
+     use `/$batch` — id list per group is small). This call needs `User.ReadBasic.All` granted
+     to the MI service principal; step 1 alone does not authorize it.
 - Writes one snapshot per day (idempotent: delete-and-rewrite the current date's rows, so an
   intra-day rerun self-heals).
 - **Failure isolation:** wrap in the same pattern as `RefreshTradeUnitSnapshotAsync` — log a
@@ -352,9 +453,15 @@ Never work around it by putting a client secret in local config.
 
 ## Security Considerations
 
-- **Blast radius if the App Service is fully compromised:** attacker can enumerate members of
-  the configured access groups — names/UPNs of app users — and nothing else directory-wise.
-  No write path, no other groups, no tenant-wide read.
+- **Blast radius if the App Service is fully compromised:** *membership* enumeration is confined
+  to the configured access groups only — no tenant-wide reach there. But `User.ReadBasic.All`
+  (Step 5) is unavoidably tenant-wide by construction (object-scoped role assignments can't reach
+  arbitrary member users, so this had to be a Graph permission instead of a further-scoped Entra
+  role — see Step 5's reasoning). Net effect: a compromised App Service could read basic profile
+  properties (`displayName`, `userPrincipalName`, `mail`, `photo`, etc.) for *any* user in the
+  tenant, not just members of the three access groups — narrower than `User.Read.All` (no
+  extended profile, no manager chain, no licenses), but broader than the group-membership grant
+  alone. No write path either way.
 - **Grant visibility:** the custom role and its assignments appear in Entra role assignments
   and audit logs; assignment/removal events are logged. Include the role in periodic access
   reviews alongside the existing quarterly group reviews.
@@ -365,16 +472,41 @@ Never work around it by putting a client secret in local config.
   aggregation service. Accepted: the MI already holds Key Vault read and SQL access; this adds
   a strictly-scoped directory read. A dedicated user-assigned MI is the alternative if the
   grant should be self-documenting (see below).
-- **Change management:** the Prod role assignment and NSG change require a ServiceNow CHG.
+- **Change management:** the Prod role assignment was applied without a ServiceNow CHG,
+  treated as non-disruptive (read-only Graph directory-role grant, no deployment/downtime
+  risk); IT Security's approval of the Global Administrator activation used to make it serves
+  as the change record. The Part 2 NSG change has not happened yet and will need its own CHG
+  before Prod rollout.
+
+## Handoff — What's Actually Left To Do
+
+Read this before touching Part 2 or Part 3. In priority order:
+
+1. ~~Close the acceptance check (Step 4).~~ **Done, 2026-07-14** — `200`/`403` both confirmed as
+   designed in Dev.
+2. **Grant `User.ReadBasic.All` (Application) to each environment's MI** — see
+   [Step 5](#step-5-graph-permission-for-basic-profile-properties). Needed before the membership
+   service can resolve UPN/display name for the IDs Step 4 already proved it can enumerate.
+3. Proceed with Part 2 (Networking) and the rest of Part 3 (Application Changes). Part 3's
+   **Configuration** sub-step is already done (Dev/QA app settings deployed, Prod
+   defined-but-dormant — see [Configuration](#configuration)); everything else in Part 3 (NuGet
+   dependency, snapshot entity/migration — now without `AccountEnabled` — membership service
+   using the two-call model, aggregation integration) is still unwritten. (Part 2's NSG change
+   still needs its own CHG when it happens — see Security Considerations.)
 
 ## Rollout Plan
 
-1. **Dev:** create role → assign to Dev MI (3 groups) → smoke-test (Step 4) → NSG
-   verification → app changes behind config → verify snapshot rows and dashboard join.
-2. **QA:** assign to QA MI, set config, verify. Exercise the Graph-outage path (temporarily
-   remove one assignment; confirm warning log + stale-snapshot fallback).
-3. **Prod:** CHG ticket covering role assignment + app settings + (if needed) NSG rule.
-   Deploy config after the assignment propagates; verify first snapshot next cycle.
+1. **Dev:** ~~create role → assign to Dev MI (3 groups)~~ done. ~~set config~~ done
+   (`UsageAccessAudit:*` app settings live). ~~smoke-test (Step 4)~~ **passed 2026-07-14.**
+   **Remaining:** grant `User.ReadBasic.All` (Step 5) → NSG verification → write the application
+   code (Part 3) → verify snapshot rows and dashboard join.
+2. **QA:** ~~assign to QA MI~~ done. ~~set config~~ done. **Remaining:** verify once app code
+   exists. Exercise the Graph-outage path (temporarily remove one assignment; confirm warning
+   log + stale-snapshot fallback).
+3. **Prod:** role assignment done (see [Open Questions](#open-questions--approvals) item 1);
+   app settings defined but **not yet applied** (see [Configuration](#configuration)). CHG
+   ticket still needed covering the app-settings deploy + (if needed) NSG rule. Deploy config
+   after Dev/QA validation; verify first snapshot next cycle.
 
 Each step is independently reversible; the app ships dormant until its config is set.
 
@@ -388,21 +520,18 @@ Each step is independently reversible; the app ships dormant until its config is
 
 ## Open Questions / Approvals
 
-1. **Done, 2026-07-14** — the role definition and all nine scoped assignments are live. See
-   [`APP-GROUP-MEMBERSHIP-READER.md`](APP-GROUP-MEMBERSHIP-READER.md): a generically named,
-   IT-Security-owned shared role (`App Group Membership Reader`), with Origination holding only
-   scoped assignments. Supporting facts (tenant surveyed 2026-07-14): Entra allows 100 custom
-   roles per tenant; Scoular has 2 today (`Verkada Administrator`, `LAPS admin`), neither
-   granting `groups/members/read` — no existing role to reuse, ample headroom, and `LAPS admin`
-   is precedent for the single-tightly-bounded-permission pattern. The acceptance check
-   (verifying the grant is scoped as expected) is still open — fall back to the
-   external-exporter model (scoped role on a pipeline identity, app reads only the table)
-   before falling back to `GroupMember.Read.All`.
+1. ~~Role/assignments approval and creation~~ / ~~smoke-test outcome (Step 4)~~ — both **done and
+   passed**; see [`APP-GROUP-MEMBERSHIP-READER.md`](APP-GROUP-MEMBERSHIP-READER.md) for the
+   canonical record (role definition, assignments, ownership, acceptance-check results) rather
+   than restating it here.
 2. **System-assigned vs dedicated user-assigned MI.** This doc specifies the system-assigned
    MI (pragmatic; no new identity). A user-assigned MI dedicated to usage auditing is
    self-documenting in access reviews and portable if the usage services move to their own
    host — but within one process the separation is cosmetic. Decide at Dev rollout; the
    scripts differ only in `principalId`.
-3. **Smoke-test outcome (Step 4)** — the design is contingent on Graph honoring the scoped
-   custom role for app-only membership reads. Validated in Dev before any application work
-   proceeds.
+3. **`User.ReadBasic.All` grant (Step 5), not yet executed.** Needed to resolve UPN/display name
+   for the member IDs the acceptance check proved enumerable; discovered as a gap only once that
+   check actually ran (member objects came back with every property null except `id`).
+   Tenant-wide by construction — see
+   [Step 5](#step-5-graph-permission-for-basic-profile-properties) for why that's unavoidable
+   here and what it does/doesn't expose.
