@@ -109,6 +109,22 @@ public class ApplicationDbContext : DbContext
                   .HasConstraintName("FK_Notes_Customer_CustomerId");
 
             entity.HasIndex(e => e.CustomerId).HasDatabaseName("IX_Notes_CustomerId");
+
+            // Covering index for the last-contact aggregate (GROUP BY CustomerId +
+            // MAX(CreatedAt) with a TradeUnit residual predicate) and for per-customer
+            // reads ordered by CreatedAt. Filtered to live rows; touches no LOB columns,
+            // so the aggregate never reads Description/Mentions pages.
+            entity.HasIndex(e => new { e.CustomerId, e.CreatedAt })
+                  .HasDatabaseName("IX_Notes_CustomerId_CreatedAt")
+                  .HasFilter("[IsDeleted] = 0")
+                  .IncludeProperties(e => e.TradeUnit);
+
+            // Supports dbo.GetRecapNotes (WHERE CreatedBy = @user AND CreatedAt >= ...),
+            // which otherwise full-scans the table once per recap recipient. Deliberately
+            // NOT filtered on IsDeleted because the proc doesn't filter it (pre-existing
+            // behavior — deleted notes appear in recaps; flagged separately, not changed here).
+            entity.HasIndex(e => new { e.CreatedBy, e.CreatedAt })
+                  .HasDatabaseName("IX_Notes_CreatedBy_CreatedAt");
         });
 
         modelBuilder.Entity<PlantingIntention>(entity =>

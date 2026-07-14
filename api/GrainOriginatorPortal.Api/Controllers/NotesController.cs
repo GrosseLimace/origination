@@ -36,6 +36,19 @@ public class NotesController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
+    /// <summary>Per-customer "last contacted" aggregate — one row per customer with notes
+    /// ({customerId, customerCode, lastNoteAt}). Covers ALL notes per producer (no trade-unit
+    /// filter — notes are open per producer, matching the per-customer endpoint), so linked
+    /// producers in unselected TUs are represented and the badge reflects the true latest
+    /// contact. Ships no note bodies; payload is bounded by customer count, not note count.</summary>
+    [HttpGet("last-contact")]
+    [ProducesResponseType(typeof(List<NoteLastContactResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<NoteLastContactResponse>>> GetLastContact(CancellationToken cancellationToken = default)
+    {
+        return Ok(await _service.GetLastContactAsync(cancellationToken));
+    }
+
+    // -------------------------------------------------------------------------
     /// <summary>Gets all notes for a specific customer. Open to any authenticated originator —
     /// trade-unit entitlements are a UX default, not an access-control boundary.</summary>
     [HttpGet("customer/{customerId:long}")]

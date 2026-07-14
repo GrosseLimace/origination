@@ -100,19 +100,23 @@ export class BuildListComponent {
   // reselect to recover. Including waitingForTickets() clears it as soon as tickets land.
   private _dataReadyEffect = effect(() => {
     this.notes();
+    this.appState.notesLoaded();
     this.storedGrain();
     this._ticketsReady();
     this._contractsReady();
-    if (this.queryText().trim() && (this.isProcessing() || this.waitingForTickets()) && this.coreDataLoaded()) {
+    if (this.queryText().trim() && (this.isProcessing() || this.waitingForTickets() || this.waitingForNotes()) && this.coreDataLoaded()) {
       untracked(() => {
         // Re-check if the needed data is now available
         const q = this.queryText();
         const ticketsOk = !this.nlqFilterService.queryInvolvesTickets(q) || this._ticketsReady();
         const contractsOk = !this.nlqFilterService.queryInvolvesContracts(q) || this._contractsReady();
         const storageOk = !this.nlqFilterService.queryInvolvesStorage(q) || this.storedGrain().length > 0;
-        const notesOk = !this.nlqFilterService.queryInvolvesContact(q) || this.notes().length > 0;
+        // Gate on notesLoaded (not notes().length) so a trade unit with genuinely zero notes
+        // doesn't hang the spinner forever.
+        const notesOk = !this.nlqFilterService.queryInvolvesNotes(q) || this.appState.notesLoaded();
         if (ticketsOk && contractsOk && storageOk && notesOk) {
           this.waitingForTickets.set(false);
+          this.waitingForNotes.set(false);
           this._applyNlqFilter();
           this.isProcessing.set(false);
         }
@@ -912,6 +916,12 @@ export class BuildListComponent {
   private _assignBase: { query: string; tradeUnits?: string; filters?: RefinementFilters; includedCustomerIds?: number[]; excludedCustomerIds?: number[] } | null = null;
   isProcessing = signal(false);
   waitingForTickets = signal(false);
+  /** True while a note-dependent query is parked waiting for the lazily-loaded full note set.
+   *  Drives the "Loading note data…" spinner and suppresses the no-match banner so the query
+   *  doesn't flash "no results" before the notes fetch lands (mirrors waitingForTickets). */
+  waitingForNotes = signal(false);
+  /** Guards the one-shot background notes fetch so overlapping queries don't each fire one. */
+  private _notesFetchInFlight = false;
   hasGenerated = signal(false);
   showMap = signal(false);
   loading = signal(false);
@@ -1737,12 +1747,13 @@ export class BuildListComponent {
     const tus = this.appState.selectedTradeUnits();
     const tuParam = tus.length > 0 ? tus : undefined;
 
-    // Fetch core data (everything except tickets — those are slow and load in background)
+    // Fetch core data (everything except tickets and notes — tickets are slow and load in
+    // background; the full note set is lazily fetched by _fetchAndFilter the first time a
+    // query runs while it's missing, so page load never waits on the note download)
     forkJoin({
       customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
       contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => { this.contractsLoadFailed.set(true); return of([] as Contract[]); })),
       plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[]))),
-      notes: this.apiService.getNotes().pipe(catchError(() => of([] as Note[]))),
       storedGrain: this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
       savedLists: this.apiService.getSavedLists().pipe(catchError(() => of([] as SavedList[]))),
       producerDetails: this.apiService.getAllProducerDetails().pipe(catchError(() => of([] as ProducerDetails[])))
@@ -1754,7 +1765,10 @@ export class BuildListComponent {
         this.customers.set(data.customers);
         this.contracts.set(data.contracts);
         this.plantingIntentions.set(data.plantingIntentions);
-        this.notes.set(data.notes);
+        // Seed notes from the shared lazy cache when another consumer already loaded it
+        // (home saved-list enrichment, customer-list NLQ). Otherwise leave local notes
+        // as-is; _fetchAndFilter tops them up when a query actually needs them.
+        if (this.appState.notesLoaded()) this.notes.set(this.appState.notes());
         this.storedGrain.set(data.storedGrain);
         this.savedLists.set(data.savedLists);
         // Merge producer details into customer objects, then write to appState
@@ -1764,7 +1778,6 @@ export class BuildListComponent {
         this.appState.setCustomers(this.customers());
         this.appState.setContracts(data.contracts);
         this.appState.setPlantingIntentions(data.plantingIntentions);
-        this.appState.setNotes(data.notes);
         this.appState.setStoredGrain(data.storedGrain);
         this.appState.setSavedLists(data.savedLists);
 
@@ -2003,12 +2016,19 @@ export class BuildListComponent {
     const queryGen = ++this._queryGenId;
     this.isProcessing.set(true);
     this.waitingForTickets.set(false); // Reset — will be set to true below only if this query needs tickets
+    this.waitingForNotes.set(false);   // Reset — will be set to true below only if this query needs notes
 
-    // Saved lists always re-fetch to ensure fresh data
+    // Saved lists always re-fetch to ensure fresh data (_fetchAndFilter loads notes itself).
     if (overrideTradeUnits && overrideTradeUnits.length > 0) {
       this._fetchAndFilter(overrideTradeUnits);
       return;
     }
+
+    // Notes are lazily loaded now (page load no longer downloads them). Kick off the one-shot
+    // fetch up front (idempotent) so it's in flight regardless of which wait below returns
+    // first — otherwise a note query that also waits on tickets would never trigger the fetch.
+    const needsNotes = this.nlqFilterService.queryInvolvesNotes(this.queryText());
+    if (needsNotes) this._ensureNotesLoaded();
 
     // If query needs tickets and they haven't loaded yet, wait for them specifically.
     // Tickets are the only data loaded outside the main forkJoin (background subscription),
@@ -2029,11 +2049,48 @@ export class BuildListComponent {
       return;
     }
 
-    // All other data (notes, storage, planting) comes from the forkJoin
-    // which completes before coreDataLoaded is set. Run the NLQ immediately.
+    // If the query reads notes and the lazy full set hasn't landed yet, wait for it — otherwise
+    // the NLQ would run against zero notes and paint a false "no results". _dataReadyEffect
+    // re-runs this filter once notes arrive (or the fetch gives up).
+    if (needsNotes && !this.appState.notesLoaded()) {
+      this.waitingForNotes.set(true);
+      return;
+    }
+
+    // All needed data is in hand — run the NLQ immediately.
     this.waitingForTickets.set(false);
+    this.waitingForNotes.set(false);
     this._applyNlqFilter();
     this.isProcessing.set(false);
+  }
+
+  /** One-shot background fetch of the full note set into the shared lazy cache. No-op if the
+   *  cache is already warm or a fetch is in flight (ApiService also dedupes the request). On
+   *  completion it writes both appState.notes and the local signal, which re-triggers
+   *  _dataReadyEffect to run the parked query. On error it marks the cache loaded (empty) so
+   *  the spinner clears and the query proceeds rather than hanging. */
+  private _ensureNotesLoaded(): void {
+    if (this.appState.notesLoaded()) {
+      // Cache warm elsewhere (home/customer-list) — sync the local signal if we missed it.
+      if (this.notes().length !== this.appState.notes().length) this.notes.set(this.appState.notes());
+      return;
+    }
+    if (this._notesFetchInFlight) return;
+    this._notesFetchInFlight = true;
+    this.apiService.getNotes().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (data) => {
+        this._notesFetchInFlight = false;
+        const list = data ?? [];
+        this.appState.setNotes(list); // sets notesLoaded = true
+        this.notes.set(list);         // re-triggers _dataReadyEffect
+      },
+      error: () => {
+        this._notesFetchInFlight = false;
+        // Give up rather than strand the spinner — run against an empty set (genuine no-match).
+        this.appState.setNotes([]);
+        this.notes.set([]);
+      }
+    });
   }
 
   /** Fetches fresh data for specific trade units and runs the NLQ filter. */
@@ -2054,7 +2111,12 @@ export class BuildListComponent {
     const ticketsOk = !needsTickets || this._ticketsReady();
     const storageOk = !needsStorage || this.storedGrain().length > 0;
     const notesOk = !needsNotes || this.notes().length > 0;
-    if (tusMatch && this.coreDataLoaded() && this.customers().length > 0 && ticketsOk && storageOk && notesOk) {
+    // Notes are lazily loaded now (page load no longer downloads them) — require the full
+    // set before ANY query runs, not just contact-phrased ones, because the NLQ's
+    // supplementary keyword matching can consult note content for generic keyword queries.
+    // notesLoaded (not length) distinguishes "not fetched" from "TU genuinely has none".
+    const notesReady = this.appState.notesLoaded();
+    if (tusMatch && this.coreDataLoaded() && this.customers().length > 0 && ticketsOk && storageOk && notesOk && notesReady) {
       this._resolvePendingIncludes();
       this._applyNlqFilter();
       this.isProcessing.set(false);
@@ -2062,12 +2124,16 @@ export class BuildListComponent {
     }
 
     const tuParam = tradeUnits.length > 0 ? tradeUnits : undefined;
+    // Only hit the notes endpoint when the shared cache is cold — otherwise reuse it.
+    const fetchingNotes = !this.appState.notesLoaded();
     forkJoin({
       customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
       contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => { this.contractsLoadFailed.set(true); return of([] as Contract[]); })),
       tickets: this.apiService.getTickets(tuParam).pipe(catchError(() => of([] as Ticket[]))),
       plantingIntentions: this.apiService.getPlantingIntentions(tuParam).pipe(catchError(() => of([] as PlantingIntention[]))),
-      notes: this.apiService.getNotes().pipe(catchError(() => of([] as Note[]))),
+      notes: fetchingNotes
+        ? this.apiService.getNotes().pipe(catchError(() => of([] as Note[])))
+        : of(this.appState.notes()),
       storedGrain: this.apiService.getStoredGrain(tuParam).pipe(catchError(() => of([] as StoredGrain[]))),
       producerDetails: (this.appState.producerDetails().length > 0 ? of(this.appState.producerDetails()) : this.apiService.getAllProducerDetails()).pipe(catchError(() => of([] as ProducerDetails[])))
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -2078,6 +2144,9 @@ export class BuildListComponent {
         this.contracts.set(data.contracts);
         this.tickets.set(data.tickets);
         this.notes.set(data.notes);
+        // Warm the shared lazy cache so other consumers (home enrichment, customer-list
+        // saved lists) and this page's next query skip the download.
+        if (fetchingNotes) this.appState.setNotes(data.notes);
         this.plantingIntentions.set(data.plantingIntentions);
         this.storedGrain.set(data.storedGrain);
         this._ticketsReady.set(true);
@@ -2155,7 +2224,17 @@ export class BuildListComponent {
     const queryNeedsTickets = this.nlqFilterService.queryInvolvesTickets(this.queryText());
     const ticketsPending = queryNeedsTickets && (!this._ticketsReady() || this.tickets().length === 0);
     this.waitingForTickets.set(ticketsPending);
-    this.queryReturnedNoMatches.set(result.customers.length === 0 && !ticketsPending);
+    // Same guard for notes: if the query reads notes but the lazy set isn't loaded yet, treat
+    // it as pending (not a zero-match) so we don't flash "no results" before the fetch lands.
+    // _dataReadyEffect re-runs this filter once notes arrive.
+    const notesPending = this.nlqFilterService.queryInvolvesNotes(this.queryText()) && !this.appState.notesLoaded();
+    this.waitingForNotes.set(notesPending);
+    // Ensure the fetch is actually in flight. processQuery starts it before parking a query,
+    // but direct callers of _applyNlqFilter (the restore/background-refresh at _loadFresh and
+    // the appState-tickets effect) bypass processQuery — without this the "Loading note data…"
+    // spinner would hang with nothing fetching. Idempotent: no-ops if loaded or already fetching.
+    if (notesPending) this._ensureNotesLoaded();
+    this.queryReturnedNoMatches.set(result.customers.length === 0 && !ticketsPending && !notesPending);
     this.filteredCustomers.set(result.customers);
 
     // If the query mentions pacing, apply direction filtering here at the component level

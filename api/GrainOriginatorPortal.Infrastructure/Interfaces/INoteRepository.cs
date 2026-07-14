@@ -10,6 +10,14 @@ namespace GrainOriginatorPortal.Infrastructure.Interfaces;
 public interface INoteRepository
 {
     Task<List<Note>> GetAsync(IEnumerable<string>? tradeUnits, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Per-customer MAX(CreatedAt) over ALL non-deleted notes — the lightweight feed for the
+    /// customer list's "last contacted" badges. Not trade-unit-filtered: notes are open per
+    /// producer (matches GetByCustomerAsync), so the badge reflects the true latest contact
+    /// regardless of a note's TradeUnit tag. Trade-unit scoping happens on the customers query.
+    /// </summary>
+    Task<List<NoteLastContact>> GetLastContactAsync(CancellationToken cancellationToken);
     Task<List<Note>> GetByCustomerAsync(long customerId, CancellationToken cancellationToken);
     Task<Note?> GetByIdAsync(long noteId, CancellationToken cancellationToken);
     Task<Note> AddAsync(long customerId, string content, string? tradeUnit, string? mentionsJson, string currentUser, CancellationToken cancellationToken);

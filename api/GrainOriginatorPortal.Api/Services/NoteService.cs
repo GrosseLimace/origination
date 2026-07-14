@@ -13,20 +13,17 @@ public class NoteService : INoteService
 {
     private readonly INoteRepository _repository;
     private readonly ICustomerRepository _customerRepository;
-    private readonly IUserEntitlementService _entitlementService;
     private readonly IDisplayNameLookupRepository _displayNameLookup;
     private readonly IRequestContextService _requestContext;
 
     public NoteService(
         INoteRepository repository,
         ICustomerRepository customerRepository,
-        IUserEntitlementService entitlementService,
         IDisplayNameLookupRepository displayNameLookup,
         IRequestContextService requestContext)
     {
         _repository = repository;
         _customerRepository = customerRepository;
-        _entitlementService = entitlementService;
         _displayNameLookup = displayNameLookup;
         _requestContext = requestContext;
     }
@@ -34,19 +31,27 @@ public class NoteService : INoteService
     /// <inheritdoc />
     public async Task<List<NoteResponse>> GetAllAsync(string? tradeUnits, CancellationToken cancellationToken)
     {
+        // No trade-unit entitlement filter on the notes themselves: trade units scope WHICH
+        // producers a rep works (the customers query / optional producer-TU filter below), not
+        // which of a producer's notes are visible. This matches the aggregate and per-customer
+        // note endpoints so badges, the profile, and NLQ/search all see the same note set.
+        // Per AR-02, trade-unit entitlement on list/search views is a relevance default, not an
+        // access boundary. The optional tradeUnits arg still scopes by the customer's TU when a
+        // caller passes it (producer scoping — no caller does today).
         var tuList = tradeUnits?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var notes = await _repository.GetAsync(tuList, cancellationToken);
-
-        var allowed = await _entitlementService.GetAllowedTradeUnitCodesAsync(cancellationToken);
-        // Fail closed: if entitlements are unavailable and uncached, refuse rather than returning
-        // data we can't authorize (CWE-285). Mirrors EnforceTradeUnitAccessAttribute.
-        if (!_entitlementService.EntitlementsAvailable)
-            throw new GrainOriginatorPortal.Api.Exceptions.InfrastructureException(
-                "Authorization data is temporarily unavailable. Please retry shortly.",
-                "ENTITLEMENTS_DB_UNAVAILABLE", StatusCodes.Status503ServiceUnavailable);
-        notes = notes.Where(n => n.TradeUnit == null || allowed.Contains(n.TradeUnit)).ToList();
-
         return await MapWithNamesAsync(notes, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<List<NoteLastContactResponse>> GetLastContactAsync(CancellationToken cancellationToken)
+    {
+        // No entitlement gate: notes are open per producer (AR-02), so the badge aggregate
+        // matches the per-customer note endpoints (GetByCustomerAsync/GetByIdAsync), which are
+        // also ungated. It ships only dates + customer codes (no note content). The customer
+        // LIST is separately trade-unit-scoped, so extra aggregate rows are never surfaced.
+        var rows = await _repository.GetLastContactAsync(cancellationToken);
+        return rows.Select(r => r.ToResponse()).ToList();
     }
 
     /// <inheritdoc />

@@ -8,6 +8,7 @@ import {
   Ticket,
   PlantingIntention,
   Note,
+  NoteLastContact,
   StoredGrain,
   SavedList,
   TeamMember,
@@ -508,6 +509,15 @@ export class ApiService {
     const key = `notes:${[...(tradeUnits ?? [])].sort().join(',')}`;
     return this._dedupe(key,
       this.http.get<Note[]>(url).pipe(catchError(e => this.handleError(e)))
+    );
+  }
+
+  /** Per-customer "last contacted" aggregate — tiny rows (no note bodies), all trade units.
+   *  Feeds the list badges; payload is bounded by customer count, not note count. */
+  getNotesLastContact(): Observable<NoteLastContact[]> {
+    return this._dedupe('notes-last-contact',
+      this.http.get<NoteLastContact[]>(`${this.baseUrl}/notes/last-contact`)
+        .pipe(catchError(e => this.handleError(e)))
     );
   }
 

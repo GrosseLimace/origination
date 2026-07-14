@@ -5,7 +5,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject, of, forkJoin, takeUntil } from 'rxjs';
 import { catchError, debounceTime, switchMap, map } from 'rxjs/operators';
 import { StoredGrain, Ticket, PlantingIntention, Contract } from '@models';
-import { Customer, SavedList, Note, ProducerDetails } from '@models';
+import { Customer, SavedList, Note, NoteLastContact, ProducerDetails } from '@models';
 import { MsalService } from '@azure/msal-angular';
 import { ApiService } from '@core/services/api.service';
 import { AppStateService } from '@core/services/app-state.service';
@@ -35,7 +35,9 @@ export class CustomerListComponent {
   public customers = input<Customer[]>([]);
   public selectedCustomer = input<Customer | null>(null);
   public savedLists = input<SavedList[]>([]);
-  public notes = input<Note[]>([]);
+  /** Per-customer "last contacted" aggregate (all trade units, one row per customer with
+   *  notes) — feeds the badge cache without the full note download. */
+  public noteLastContacts = input<NoteLastContact[]>([]);
   public loading = input(false);
   public producerDetailsMap = input(new Map<number, ProducerDetails>());
   /** Extra customers fetched for incoming/outgoing linked-producer lookups (populated by the home
@@ -164,12 +166,12 @@ export class CustomerListComponent {
       }
     });
 
-    // React to customers/notes/filteredCustomers changes — filteredCustomers covers the
+    // React to customers/last-contact/filteredCustomers changes — filteredCustomers covers the
     // search-with-no-TU case where customers() input is empty but filteredCustomers has results.
     effect(() => {
       this.customers();
       this.filteredCustomers();
-      this.notes();
+      this.noteLastContacts();
       this.linkedProducerCustomers();
       this._rebuildLastContactCache();
     });
@@ -450,6 +452,15 @@ export class CustomerListComponent {
     if (this.nlqFilterService.queryInvolvesContracts(query) && this.appStateService.contracts().length === 0) {
       missing['contracts'] = this.apiService.getContracts(tuParam).pipe(catchError(() => of([] as Contract[])));
     }
+    // Notes: the full set is now lazily loaded (badges use the last-contact aggregate).
+    // Fetch it for ANY saved-list run while missing — not just contact-phrased queries —
+    // because the NLQ's supplementary keyword matching can consult note content for
+    // generic keyword queries too. Gate on notesLoaded, not length (a TU can genuinely
+    // have zero notes). Usually a no-op: home's saved-list enrichment warms this cache
+    // and the ApiService dedupes a concurrent request.
+    if (!this.appStateService.notesLoaded()) {
+      missing['notes'] = this.apiService.getNotes().pipe(catchError(() => of([] as Note[])));
+    }
     // Also fetch the query library when the saved list lacks the _promptCategory hint —
     // we use it to resolve dimension by queryText match in applyRefinementFilters.
     if (savedList.filters && !savedList.filters._promptCategory && this.appStateService.queryLibrary().length === 0) {
@@ -466,6 +477,7 @@ export class CustomerListComponent {
           if (results.tickets) this.appStateService.setTickets(results.tickets);
           if (results.plantingIntentions) this.appStateService.setPlantingIntentions(results.plantingIntentions);
           if (results.contracts) this.appStateService.setContracts(results.contracts);
+          if (results.notes) this.appStateService.setNotes(results.notes);
           if (results.queryLibrary) this.appStateService.queryLibrary.set(results.queryLibrary);
           this._executeNlq(savedList);
           this.savedListLoading.set(false);
@@ -559,22 +571,30 @@ export class CustomerListComponent {
    * Performance optimization: Pre-calculate all last contact info once
    * instead of filtering/sorting on every render for every customer.
    *
-   * Complexity: O(m + n) where m = notes count, n = customers count
-   * Previously: O(n * m) on EVERY change detection cycle
+   * Fed by the last-contact aggregate (one row per customer with notes, all trade units)
+   * rather than the full note download — O(r + n) where r = customers-with-notes.
    */
   private _rebuildLastContactCache(): void {
     const newCache = new Map<number, LastContactInfo>();
 
-    // Group notes by customerCode (ODS source ID string) — more stable than customerId.
-    // Notes carry the ODS code of the customer they were written for, so this works even
-    // after linked-producer relationships are removed or for cross-TU producers whose
-    // customer record isn't in the current loaded set (no sourceToId resolution needed).
-    const notesByCode = new Map<string, Note[]>();
-    for (const note of this.notes()) {
-      const key = note.customerCode;
+    // Treat bare ISO strings as UTC (API stores DateTime.UtcNow without Z suffix).
+    const parseUtc = (ts: string | Date) => {
+      const raw = typeof ts === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
+      return new Date(raw).getTime();
+    };
+
+    // Index the aggregate by customerCode (ODS source ID string) — more stable than
+    // customerId. This works even after linked-producer relationships are removed or for
+    // cross-TU producers whose customer record isn't in the current loaded set. Rows are
+    // already the most-recent CREATED note per customer (createdAt only — pinning/editing
+    // is not a new contact event; the server aggregate uses MAX(CreatedAt)).
+    const lastByCode = new Map<string, number>();
+    for (const row of this.noteLastContacts()) {
+      const key = row.customerCode;
       if (!key) continue;
-      if (!notesByCode.has(key)) notesByCode.set(key, []);
-      notesByCode.get(key)!.push(note);
+      const ms = parseUtc(row.lastNoteAt);
+      const existing = lastByCode.get(key);
+      if (existing === undefined || ms > existing) lastByCode.set(key, ms);
     }
 
     // Calculate last contact for each customer - single pass O(n)
@@ -601,9 +621,13 @@ export class CustomerListComponent {
       } else {
         allCodes = new Set(customer.linkedProducerIds || []);
       }
-      const customerNotes = [...allCodes].flatMap(code => notesByCode.get(code) || []);
+      let lastMs = -1;
+      for (const code of allCodes) {
+        const ms = lastByCode.get(code);
+        if (ms !== undefined && ms > lastMs) lastMs = ms;
+      }
 
-      if (customerNotes.length === 0) {
+      if (lastMs < 0) {
         newCache.set(customer.id, {
           text: 'Never contacted',
           daysAgo: -1,
@@ -612,16 +636,7 @@ export class CustomerListComponent {
         continue;
       }
 
-      // Find the most recently CREATED note — createdAt only, not modifiedAt.
-      // Pinning or editing a note updates modifiedAt but is not a new contact event.
-      // Treat bare ISO strings as UTC (API stores DateTime.UtcNow without Z suffix).
-      const parseUtc = (ts: string | Date) => {
-        const raw = typeof ts === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
-        return new Date(raw).getTime();
-      };
-      const lastNote = customerNotes.reduce((latest, note) => parseUtc(note.createdAt) > parseUtc(latest.createdAt) ? note : latest, customerNotes[0]);
-
-      const noteDate = new Date(parseUtc(lastNote.createdAt));
+      const noteDate = new Date(lastMs);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       noteDate.setHours(0, 0, 0, 0);

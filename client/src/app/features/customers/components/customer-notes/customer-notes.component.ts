@@ -28,6 +28,10 @@ export class CustomerNotesComponent {
   public customer = input.required<Customer>();
   public customerCodeMap = input<Map<number, string>>(new Map());
   public linkedCustomers = input<Customer[]>([]);
+  /** True while the parent is fetching this producer's notes (notes load per-producer on
+   *  selection now). While loading and empty, show a spinner instead of "No notes yet" so
+   *  a producer WITH notes doesn't flash a misleading empty state. */
+  public isLoadingNotes = input<boolean>(false);
   /** True while the parent has an in-flight createNote request. Used to disable the
    *  Add Note button + switch its label to "Saving..." so the user sees feedback that
    *  their click landed. Fixes the "had to click 2-3 times" bug — without this signal,

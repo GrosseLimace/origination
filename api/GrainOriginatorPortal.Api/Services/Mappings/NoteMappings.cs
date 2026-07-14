@@ -52,4 +52,11 @@ public static class NoteMappings
         // free of Api-layer types. Empty/invalid JSON degrades to an empty list (see DeserializeMentions).
         Mentions = DeserializeMentions(n.MentionsJson),
     };
+
+    public static NoteLastContactResponse ToResponse(this NoteLastContact n) => new()
+    {
+        CustomerId = n.CustomerId,
+        CustomerCode = n.CustomerCode,
+        LastNoteAt = n.LastNoteAt,
+    };
 }

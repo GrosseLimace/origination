@@ -9,6 +9,10 @@ namespace GrainOriginatorPortal.Api.Services;
 public interface INoteService
 {
     Task<List<NoteResponse>> GetAllAsync(string? tradeUnits, CancellationToken cancellationToken);
+
+    /// <summary>Per-customer last-contact aggregate for list badges — all trade units
+    /// (entitlement-filtered), no note bodies. Bounded by customer count.</summary>
+    Task<List<NoteLastContactResponse>> GetLastContactAsync(CancellationToken cancellationToken);
     Task<List<NoteResponse>> GetByCustomerAsync(long customerId, CancellationToken cancellationToken);
     Task<NoteResponse?> GetByIdAsync(long noteId, CancellationToken cancellationToken);
     Task<NoteResponse> CreateAsync(long customerId, string content, IReadOnlyList<NoteMention>? mentions, CancellationToken cancellationToken);
