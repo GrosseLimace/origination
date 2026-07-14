@@ -132,9 +132,10 @@ snapshot against `UserActivityDaily` / `WeeklyLoginAggregate` to report access-v
 ### Prerequisites
 
 - **Entra ID P1** — required for custom directory roles (Scoular has this).
-- **Privileged Role Administrator** — held by IT Security. Steps 1 and 3 are executed by
-  them; the formal request (with ready-to-run scripts) is
-  [`REQUEST-APP-GROUP-MEMBERSHIP-READER.md`](REQUEST-APP-GROUP-MEMBERSHIP-READER.md).
+- **Privileged Role Administrator** — normally held by IT Security for steps 1 and 3; in
+  practice these were executed 2026-07-14 by khague under active Global Administrator. See
+  [`APP-GROUP-MEMBERSHIP-READER.md`](APP-GROUP-MEMBERSHIP-READER.md) for the implemented role,
+  assignments, and current status.
 - Scoped assignments to a service principal must be made via Graph / Microsoft.Graph
   PowerShell; the portal UX does not cover this combination.
 
@@ -387,15 +388,14 @@ Each step is independently reversible; the app ships dormant until its config is
 
 ## Open Questions / Approvals
 
-1. **IT Security sign-off and execution** — the role definition and assignments require
-   Privileged Role Administrator, held by IT Security. The formal request is
-   [`REQUEST-APP-GROUP-MEMBERSHIP-READER.md`](REQUEST-APP-GROUP-MEMBERSHIP-READER.md): a
-   generically named, Security-owned shared role (`App Group Membership Reader`), with
-   Origination holding only scoped assignments. Supporting facts (tenant surveyed
-   2026-07-14): Entra allows 100 custom roles per tenant; Scoular has 2 today (`Verkada
-   Administrator`, `LAPS admin`), neither granting `groups/members/read` — no existing role
-   to reuse, ample headroom, and `LAPS admin` is precedent for the
-   single-tightly-bounded-permission pattern. If the request is declined: fall back to the
+1. **Done, 2026-07-14** — the role definition and all nine scoped assignments are live. See
+   [`APP-GROUP-MEMBERSHIP-READER.md`](APP-GROUP-MEMBERSHIP-READER.md): a generically named,
+   IT-Security-owned shared role (`App Group Membership Reader`), with Origination holding only
+   scoped assignments. Supporting facts (tenant surveyed 2026-07-14): Entra allows 100 custom
+   roles per tenant; Scoular has 2 today (`Verkada Administrator`, `LAPS admin`), neither
+   granting `groups/members/read` — no existing role to reuse, ample headroom, and `LAPS admin`
+   is precedent for the single-tightly-bounded-permission pattern. The acceptance check
+   (verifying the grant is scoped as expected) is still open — fall back to the
    external-exporter model (scoped role on a pipeline identity, app reads only the table)
    before falling back to `GroupMember.Read.All`.
 2. **System-assigned vs dedicated user-assigned MI.** This doc specifies the system-assigned

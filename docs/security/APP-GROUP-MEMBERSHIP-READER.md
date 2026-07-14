@@ -1,22 +1,22 @@
-# Request: Create Custom Entra Role "App Group Membership Reader"
+# Custom Entra Role: "App Group Membership Reader"
 
-**To:** IT Security (Privileged Role Administrator holders)
-**From:** Origination team (Karl Hague)
-**Date:** 2026-07-14
-**Action requested:** Create one custom Entra ID role definition and nine scoped role
-assignments (scripts provided below, ready to run).
+**Team:** Origination (Karl Hague)
+**Implemented:** 2026-07-14
+**What this is:** One custom Entra ID role definition and nine scoped role assignments, granting
+the Origination App Service managed identities read-only access to the membership of their own
+access groups.
 
 ---
 
 ## Table of Contents
 
-- [The Ask](#the-ask)
-- [Why This Is Needed](#why-this-is-needed)
+- [Current Status](#current-status)
+- [Why This Exists](#why-this-exists)
 - [What the Role Grants — and Does Not](#what-the-role-grants--and-does-not)
 - [Why a Generic Name](#why-a-generic-name)
-- [Requested Role Definition](#requested-role-definition)
-- [Requested Assignments](#requested-assignments)
-- [Execution Script](#execution-script)
+- [Role Definition](#role-definition)
+- [Assignments](#assignments)
+- [Codified Tooling](#codified-tooling)
 - [Acceptance Check](#acceptance-check)
 - [Ownership and Governance](#ownership-and-governance)
 - [Backout](#backout)
@@ -24,19 +24,18 @@ assignments (scripts provided below, ready to run).
 
 ---
 
-## The Ask
+## Current Status
 
-1. **Create one custom directory role**: `App Group Membership Reader`, containing the single
-   permission `microsoft.directory/groups/members/read`.
-2. **Create nine scoped assignments** of that role to the Origination App Service managed
-   identities — one assignment per (environment identity × access group), each scoped to a
-   single group object (`directoryScopeId = "/<groupObjectId>"`).
+| Item | Status |
+|------|--------|
+| Role definition created | ✅ Done — `App Group Membership Reader`, id `f1ab68f5-2123-4296-8549-c81b6330cb39`. Created directly by khague under active GA (Global Administrator), rather than by a separate IT Security executor as originally scoped when this started as a request. |
+| Dev assignments (3) | ✅ Done — MI `7ff98598-94a0-42cb-81d9-87a6200cb3d9` → devUsers, devSuperUsers, developerAdmins |
+| QA assignments (3) | ✅ Done — MI `14bc8ee3-de60-48ea-a2f5-5064ad568371` → qaUsers, qaSuperUsers, developerAdmins |
+| Prod assignments (3) | ✅ Done — MI `a60a898f-0008-4bca-83a9-5bb05dc9d435` → prodUsers, superUsers, productionSupport. **Applied without a ServiceNow CHG** — treated as non-disruptive (read-only Graph directory-role grant, no deployment/downtime risk). Flag if a formal change record is still required. |
+| Assignment-side tooling | Codified as `origination/Set-GroupMembershipReaderRoles.ps1` (idempotent, `-Environment`/`-WhatIf` support). Kept **Origination-only** rather than folded into the shared `Deploy-AppService`/app-groups module — revisit centralizing only if another app requests the same capability. |
+| Acceptance check | ⏳ **Still open.** The obvious approach — Kudu `/api/command` from inside the Dev App Service — does not work: that endpoint runs in a separate sidecar container with no `IDENTITY_ENDPOINT`/`IDENTITY_HEADER` env vars, so it cannot mint an MI token (confirmed empirically 2026-07-14). Use either the browser-based SSH console (`https://app-origination-dev-eus.scm.azurewebsites.net/webssh/host`, which execs into the real app container) or a temporary in-app diagnostic route calling `ManagedIdentityCredential` directly. |
 
-Both actions require Privileged Role Administrator, which is why this request comes to your
-team. Origination will supply the managed-identity and group object IDs at execution time
-(lookup commands included below).
-
-## Why This Is Needed
+## Why This Exists
 
 Origination's usage-tracking subsystem records who uses the app. To report
 **entitled-but-inactive** users (access reviews, license hygiene), its background service needs
@@ -44,7 +43,7 @@ to read the member lists of the Entra groups that grant application access — n
 
 - **Workload identities start from zero.** Managed identities have no default directory read.
   (Every *member user* in the tenant can already read these non-hidden group memberships by
-  default — this request raises a locked-down workload identity to *less than* ordinary user
+  default — this grant raises a locked-down workload identity to *less than* ordinary user
   read, on named groups only.)
 - **Graph application permissions cannot be scoped.** The standard alternative,
   `GroupMember.Read.All`, is tenant-wide by construction — it would let the app read the
@@ -77,47 +76,64 @@ team can request assignments of, instead of each team minting an identical app-b
 - Auditability is unaffected: the review surface is the assignment list (which principal,
   which group), not the definition.
 
-## Requested Role Definition
+## Role Definition
 
 | Field | Value |
 |-------|-------|
 | Display name | `App Group Membership Reader` |
+| Role ID | `f1ab68f5-2123-4296-8549-c81b6330cb39` |
 | Description | `Read-only membership enumeration of specific Entra groups. Grants nothing at definition level — assign scoped to individual group objects (directoryScopeId = "/<groupId>"). Owned by IT Security; assignments granted per application request.` |
 | Permissions | `microsoft.directory/groups/members/read` (only) |
 | Enabled | `true` |
 
-## Requested Assignments
+## Assignments
 
 Principal is the **system-assigned managed identity** of each Origination App Service.
 All nine assignments use this single role definition; only principal and scope vary.
 
-| Env | App Service (principal) | Scoped group |
-|-----|------------------------|--------------|
-| Dev | `app-origination-dev-eus` | Origination App Dev Users |
-| Dev | `app-origination-dev-eus` | Origination App Dev Super Users |
-| Dev | `app-origination-dev-eus` | Azure - Origination App - Developer Admins |
-| QA | `app-origination-qa-eus` | Origination App QA Users |
-| QA | `app-origination-qa-eus` | Origination App QA Super Users |
-| QA | `app-origination-qa-eus` | Azure - Origination App - Developer Admins |
-| Prod | `app-origination-eus` | Origination App Users |
-| Prod | `app-origination-eus` | Origination App Super Users |
-| Prod | `app-origination-eus` | Azure - Origination App - Production Support |
-
-If a phased approach is preferred, **Dev only** (first three rows) is sufficient to validate
-the design; QA/Prod assignments can follow as separate requests (Prod under its ServiceNow
-CHG).
+| Env | App Service (principal) | MI Object ID | Scoped group |
+|-----|------------------------|--------------|--------------|
+| Dev | `app-origination-dev-eus` | `7ff98598-94a0-42cb-81d9-87a6200cb3d9` | Origination App Dev Users |
+| Dev | `app-origination-dev-eus` | `7ff98598-94a0-42cb-81d9-87a6200cb3d9` | Origination App Dev Super Users |
+| Dev | `app-origination-dev-eus` | `7ff98598-94a0-42cb-81d9-87a6200cb3d9` | Azure - Origination App - Developer Admins |
+| QA | `app-origination-qa-eus` | `14bc8ee3-de60-48ea-a2f5-5064ad568371` | Origination App QA Users |
+| QA | `app-origination-qa-eus` | `14bc8ee3-de60-48ea-a2f5-5064ad568371` | Origination App QA Super Users |
+| QA | `app-origination-qa-eus` | `14bc8ee3-de60-48ea-a2f5-5064ad568371` | Azure - Origination App - Developer Admins |
+| Prod | `app-origination-eus` | `a60a898f-0008-4bca-83a9-5bb05dc9d435` | Origination App Users |
+| Prod | `app-origination-eus` | `a60a898f-0008-4bca-83a9-5bb05dc9d435` | Origination App Super Users |
+| Prod | `app-origination-eus` | `a60a898f-0008-4bca-83a9-5bb05dc9d435` | Azure - Origination App - Production Support |
 
 > Note: assignments to service principals are always permanent/active — PIM eligibility does
 > not apply to workload identities.
 
-## Execution Script
+## Codified Tooling
+
+The assignment side is codified as `origination/Set-GroupMembershipReaderRoles.ps1` — kept
+**Origination-only** rather than folded into the shared `Deploy-AppService`/app-groups module,
+since this is currently a single-app need. Revisit centralizing into the shared module only if
+another template app requests the same capability.
+
+The script:
+- Requires the `App Group Membership Reader` role definition to already exist (created above).
+- Requires Privileged Role Administrator (active) to create assignments.
+- Resolves each App Service's managed identity via `Get-AzWebApp` in the matching subscription.
+- Is idempotent — checks existing role assignments before creating, skipping groups already
+  assigned.
+- Supports `-Environment {Dev|QA|Prod}` to target a single environment, and `-WhatIf` for a dry
+  run.
 
 ```powershell
-# Requires: Privileged Role Administrator (active), Microsoft Graph PowerShell SDK
+# Requires: Privileged Role Administrator (active), Microsoft Graph PowerShell SDK, Az PowerShell
+./origination/Set-GroupMembershipReaderRoles.ps1              # all environments
+./origination/Set-GroupMembershipReaderRoles.ps1 -Environment Dev -WhatIf   # dry run, one env
+```
+
+Internally, role-definition creation (a one-time, IT-Security-class operation) looked like:
+
+```powershell
 Connect-MgGraph -TenantId "1521f999-f722-4a4f-9747-166f93e9b0d1" `
     -Scopes "RoleManagement.ReadWrite.Directory" -NoWelcome
 
-# --- 1. Create the role definition ---
 $role = New-MgRoleManagementDirectoryRoleDefinition -BodyParameter @{
     displayName     = "App Group Membership Reader"
     description     = 'Read-only membership enumeration of specific Entra groups. Grants nothing at definition level - assign scoped to individual group objects (directoryScopeId = "/<groupId>"). Owned by IT Security; assignments granted per application request.'
@@ -126,35 +142,22 @@ $role = New-MgRoleManagementDirectoryRoleDefinition -BodyParameter @{
         @{ allowedResourceActions = @("microsoft.directory/groups/members/read") }
     )
 }
-
-# --- 2. Resolve principals and scopes ---
-# MI object ID per App Service (run in the matching subscription context):
-#   (Get-AzWebApp -ResourceGroupName rg-origination-dev-eus -Name app-origination-dev-eus).Identity.PrincipalId
-# Group object IDs:
-#   Get-MgGroup -Filter "displayName eq 'Origination App Dev Users'" | Select Id, DisplayName
-
-# --- 3. Create scoped assignments (repeat per environment) ---
-$miPrincipal = "<managed-identity object id>"
-$groupIds    = @("<users-group-id>", "<superusers-group-id>", "<admins-group-id>")
-
-foreach ($groupId in $groupIds) {
-    New-MgRoleManagementDirectoryRoleAssignment -BodyParameter @{
-        roleDefinitionId = $role.Id
-        principalId      = $miPrincipal
-        directoryScopeId = "/$groupId"
-    }
-}
 ```
 
 ## Acceptance Check
 
-After propagation (allow ~15 minutes), Origination will verify from inside the Dev App
-Service using its managed-identity token:
+**Still open** — see [Current Status](#current-status). The plan is to verify from inside the
+Dev App Service, using its managed-identity token:
 
 - `GET /groups/<scoped-group-id>/transitiveMembers` → **200** with member list.
 - `GET /groups/<any-other-group-id>/members` → **403**.
 
-Origination will report both results back as confirmation the grant behaves as scoped.
+Kudu's `/api/command` REST endpoint (the usual quick path for in-container checks) cannot be used
+for this — it runs in a separate sidecar container that lacks the `IDENTITY_ENDPOINT` /
+`IDENTITY_HEADER` environment variables needed to mint an MI token (confirmed empirically
+2026-07-14: `env | grep -c IDENTITY` → `0` inside that container). Use the browser-based SSH
+console instead (execs into the real app container), or add a temporary diagnostic route to the
+.NET app that calls `ManagedIdentityCredential` directly.
 
 ## Ownership and Governance
 
@@ -179,6 +182,7 @@ Origination will report both results back as confirmation the grant behaves as s
 - Full Origination design and application changes:
   [`docs/security/GROUP-MEMBERSHIP-READ.md`](GROUP-MEMBERSHIP-READ.md)
 - Access-group inventory: [`developer-docs/ENTRA-ID-GROUPS-GUIDE.md`](../../developer-docs/ENTRA-ID-GROUPS-GUIDE.md)
+- Assignment-side script: [`Set-GroupMembershipReaderRoles.ps1`](../../Set-GroupMembershipReaderRoles.ps1)
 - Microsoft: [Entra RBAC overview (assignment scope)](https://learn.microsoft.com/en-us/entra/identity/role-based-access-control/custom-overview),
   [Default user permissions](https://learn.microsoft.com/en-us/entra/fundamentals/users-default-permissions),
   [Entra service limits](https://learn.microsoft.com/en-us/entra/identity/users/directory-service-limits-restrictions)
