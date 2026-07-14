@@ -317,15 +317,22 @@ service principal, the same way the Part 1 role assignments were made.
 
 ## Part 2 — Networking
 
-Per [`developer-docs/CLAUDE.md`](../../developer-docs/CLAUDE.md), the App Service's VNet
-egress is NSG-restricted and external API calls need a custom outbound rule.
+**Validated, 2026-07-14 (Dev) — passed as a byproduct of the Step 4 acceptance check, no
+separate test needed.** Per [`developer-docs/CLAUDE.md`](../../developer-docs/CLAUDE.md), the
+App Service's VNet egress is NSG-restricted and external API calls need a custom outbound rule;
+`graph.microsoft.com:443` was a new outbound dependency to verify. Step 4's step 2 returned a
+real `200` (and step 3 a real `403`) rather than a hang/timeout, which is exactly the signal
+this section already called out as proof the NSG egress rule permits the Graph call — a
+timeout would have meant NSG, not authorization. This doesn't depend on `User.ReadBasic.All`
+(Step 5) at all — it uses the same token/role Part 1 already has, so it isn't blocked by the
+current GA-reactivation wait.
 
 - **Token acquisition** uses the App Service-local identity endpoint — no NSG change.
-- **`graph.microsoft.com:443`** is a new outbound dependency. Verify whether the existing
-  `AzureActiveDirectory` service-tag rule (used for token validation metadata) already covers
-  Microsoft Graph IPs; if not, add an outbound allow rule for Graph before rollout. Test with the
-  Step 4 smoke-test above (from browser SSH, not `/api/command`) — a hang/timeout on step 2
-  indicates NSG, not authorization.
+- Confirmed the existing outbound rule set (whatever it is — likely the `AzureActiveDirectory`
+  service-tag rule already covering Graph IPs, or Graph traffic wasn't actually NSG-restricted
+  in Dev) permits `graph.microsoft.com:443`. Not yet confirmed identically in QA/Prod — cheap to
+  re-verify there the same way (a real HTTP response vs. a hang) once those environments have a
+  reason to make the call, but no NSG changes are anticipated based on the Dev result.
 
 ## Part 3 — Application Changes
 
@@ -475,8 +482,9 @@ Never work around it by putting a client secret in local config.
 - **Change management:** the Prod role assignment was applied without a ServiceNow CHG,
   treated as non-disruptive (read-only Graph directory-role grant, no deployment/downtime
   risk); IT Security's approval of the Global Administrator activation used to make it serves
-  as the change record. The Part 2 NSG change has not happened yet and will need its own CHG
-  before Prod rollout.
+  as the change record. Part 2 turned out not to need an NSG change at all (validated in Dev —
+  see [Part 2](#part-2--networking)), so no separate CHG is anticipated there; re-confirm in
+  QA/Prod before assuming the same.
 
 ## Handoff — What's Actually Left To Do
 
@@ -487,26 +495,29 @@ Read this before touching Part 2 or Part 3. In priority order:
 2. **Grant `User.ReadBasic.All` (Application) to each environment's MI** — see
    [Step 5](#step-5-graph-permission-for-basic-profile-properties). Needed before the membership
    service can resolve UPN/display name for the IDs Step 4 already proved it can enumerate.
-3. Proceed with Part 2 (Networking) and the rest of Part 3 (Application Changes). Part 3's
-   **Configuration** sub-step is already done (Dev/QA app settings deployed, Prod
+3. ~~Part 2 (Networking)~~ **validated in Dev as a byproduct of Step 4** — no NSG change needed
+   there; not yet re-confirmed in QA/Prod, but no changes are anticipated (see
+   [Part 2](#part-2--networking)). Proceed with the rest of Part 3 (Application Changes). Part
+   3's **Configuration** sub-step is already done (Dev/QA app settings deployed, Prod
    defined-but-dormant — see [Configuration](#configuration)); everything else in Part 3 (NuGet
    dependency, snapshot entity/migration — now without `AccountEnabled` — membership service
-   using the two-call model, aggregation integration) is still unwritten. (Part 2's NSG change
-   still needs its own CHG when it happens — see Security Considerations.)
+   using the two-call model, aggregation integration) is still unwritten.
 
 ## Rollout Plan
 
 1. **Dev:** ~~create role → assign to Dev MI (3 groups)~~ done. ~~set config~~ done
    (`UsageAccessAudit:*` app settings live). ~~smoke-test (Step 4)~~ **passed 2026-07-14.**
-   **Remaining:** grant `User.ReadBasic.All` (Step 5) → NSG verification → write the application
-   code (Part 3) → verify snapshot rows and dashboard join.
-2. **QA:** ~~assign to QA MI~~ done. ~~set config~~ done. **Remaining:** verify once app code
-   exists. Exercise the Graph-outage path (temporarily remove one assignment; confirm warning
-   log + stale-snapshot fallback).
+   ~~NSG verification (Part 2)~~ **validated as a byproduct of Step 4** — no NSG change needed.
+   **Remaining:** grant `User.ReadBasic.All` (Step 5) → write the application code (Part 3) →
+   verify snapshot rows and dashboard join.
+2. **QA:** ~~assign to QA MI~~ done. ~~set config~~ done. **Remaining:** re-confirm Part 2
+   networking the same way (not yet tested in QA — see [Part 2](#part-2--networking)); verify
+   once app code exists; exercise the Graph-outage path (temporarily remove one assignment;
+   confirm warning log + stale-snapshot fallback).
 3. **Prod:** role assignment done (see [Open Questions](#open-questions--approvals) item 1);
-   app settings defined but **not yet applied** (see [Configuration](#configuration)). CHG
-   ticket still needed covering the app-settings deploy + (if needed) NSG rule. Deploy config
-   after Dev/QA validation; verify first snapshot next cycle.
+   app settings defined but **not yet applied** (see [Configuration](#configuration)). Part 2
+   networking not yet tested in Prod either, though no changes are anticipated based on the Dev
+   result. Deploy config after Dev/QA validation; verify first snapshot next cycle.
 
 Each step is independently reversible; the app ships dormant until its config is set.
 
