@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.Text.Json;
 using GrainOriginatorPortal.Api.Models;
+using GrainOriginatorPortal.Api.Services.Mappings;
+using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using Xunit;
 
 namespace GrainOriginatorPortal.Api.Tests;
@@ -50,5 +52,64 @@ public class NoteMentionSerializationTests
         Assert.Equal("CEgr", m.Id);
         Assert.Equal("Caden Egr", m.Name);
         Assert.Equal("CEgr@scoular.com", m.Email);
+    }
+
+    // ── ToResponse mention deserialization (NoteMappings) ─────────────────────────────────────
+    // Guards the GET /api/notes 500 that occurred when a stored Mentions blob didn't match the
+    // (now lowercase, required) NoteMention contract. The mapping must be tolerant.
+
+    private static Note NoteWith(string? mentionsJson) => new()
+    {
+        Id = 1,
+        CustomerId = 100,
+        CustomerName = "Acme Farms",
+        CreatedBy = "CEgr",
+        Description = "note body",
+        MentionsJson = mentionsJson
+    };
+
+    [Fact]
+    public void ToResponse_ParsesCurrentLowercaseMentions()
+    {
+        var resp = NoteWith("[{\"type\":\"trade-unit\",\"id\":\"OMAHA\",\"name\":\"Omaha TU\"}]")
+            .ToResponse(new Dictionary<string, string>());
+        var m = Assert.Single(resp.Mentions);
+        Assert.Equal("trade-unit", m.Type);
+        Assert.Equal("OMAHA", m.Id);
+    }
+
+    [Fact]
+    public void ToResponse_ParsesLegacyPascalCaseMentions()
+    {
+        // Pre-lowercase-contract rows still deserialize (case-insensitive) rather than 500.
+        var resp = NoteWith("[{\"Type\":\"person\",\"Id\":\"CEgr\",\"Name\":\"Caden Egr\",\"Email\":\"CEgr@scoular.com\"}]")
+            .ToResponse(new Dictionary<string, string>());
+        var m = Assert.Single(resp.Mentions);
+        Assert.Equal("person", m.Type);
+        Assert.Equal("CEgr", m.Id);
+        Assert.Equal("Caden Egr", m.Name);
+    }
+
+    [Fact]
+    public void ToResponse_BlobMissingRequiredFieldsDegradesToEmpty()
+    {
+        // The exact shape that 500'd the notes list: a stored blob that doesn't satisfy the
+        // required NoteMention fields must degrade to an empty list, not throw.
+        var resp = NoteWith("[{\"foo\":\"bar\"}]").ToResponse(new Dictionary<string, string>());
+        Assert.Empty(resp.Mentions);
+    }
+
+    [Fact]
+    public void ToResponse_MalformedJsonDegradesToEmpty()
+    {
+        var resp = NoteWith("{ not valid json").ToResponse(new Dictionary<string, string>());
+        Assert.Empty(resp.Mentions);
+    }
+
+    [Fact]
+    public void ToResponse_NullMentionsIsEmpty()
+    {
+        var resp = NoteWith(null).ToResponse(new Dictionary<string, string>());
+        Assert.Empty(resp.Mentions);
     }
 }
