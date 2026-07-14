@@ -54,9 +54,16 @@ export class CustomerNotesComponent {
 
   // ---- "@" mention picker state ----
   noteTextarea = viewChild<ElementRef<HTMLTextAreaElement>>('noteTextarea');
+  /** Backdrop div mirroring the textarea text so selected @mentions render green while typing. */
+  noteBackdrop = viewChild<ElementRef<HTMLDivElement>>('noteBackdrop');
   mentionCatalog = signal<MentionCatalog>({ people: [], tradeUnits: [], groups: [] });
   /** Structured mentions chosen for the note being composed; sent to the API on submit. */
   mentions = signal<NoteMention[]>([]);
+  /** Live segmentation of the compose text so already-selected @mentions show green as the
+   *  user keeps typing (turns green on select, not only after the note is saved). */
+  readonly composeSegments = computed(() =>
+    this._segmentMentions(this.newNote(), this.mentions().map(m => m.name))
+  );
   mentionDropdownOpen = signal(false);
   mentionQuery = signal('');
   mentionActiveIndex = signal(0);
@@ -188,6 +195,53 @@ export class CustomerNotesComponent {
       'border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20': note.isPinned,
       'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800': !note.isPinned
     };
+  }
+
+  /** Splits a saved note's text into plain + "@mention" segments so mentioned names can be
+   *  shown green in the view (signalling the note was shared with them). */
+  noteContentSegments(note: Note): { text: string; mention: boolean }[] {
+    return this._segmentMentions(note.content ?? '', (note.mentions ?? []).map(m => m.name));
+  }
+
+  /** Matches the exact "@Name" tokens the composer inserts (see selectMention), longest name
+   *  first so "@Caden Egr" wins over a shorter "@Caden". Pure string matching — no HTML is built,
+   *  so there is no XSS surface. Shared by the saved-note view and the live compose highlight. */
+  private _segmentMentions(content: string, names: string[]): { text: string; mention: boolean }[] {
+    const tokens = [...new Set(names.map(n => '@' + n).filter(t => t.length > 1))]
+      .sort((a, b) => b.length - a.length);
+    if (tokens.length === 0) return [{ text: content, mention: false }];
+
+    const segments: { text: string; mention: boolean }[] = [];
+    const pushChar = (ch: string) => {
+      const last = segments[segments.length - 1];
+      if (last && !last.mention) last.text += ch;
+      else segments.push({ text: ch, mention: false });
+    };
+
+    let i = 0;
+    while (i < content.length) {
+      let hit: string | null = null;
+      if (content[i] === '@') {
+        for (const t of tokens) {
+          if (content.startsWith(t, i)) { hit = t; break; }
+        }
+      }
+      if (hit) {
+        segments.push({ text: hit, mention: true });
+        i += hit.length;
+      } else {
+        pushChar(content[i]);
+        i++;
+      }
+    }
+    return segments;
+  }
+
+  /** Keep the highlight backdrop scrolled in lockstep with the textarea (multi-line notes). */
+  syncBackdropScroll(): void {
+    const ta = this.noteTextarea()?.nativeElement;
+    const bd = this.noteBackdrop()?.nativeElement;
+    if (ta && bd) { bd.scrollTop = ta.scrollTop; bd.scrollLeft = ta.scrollLeft; }
   }
 
   getInitials(name: string): string {
@@ -323,6 +377,7 @@ export class CustomerNotesComponent {
       if (ta) {
         ta.focus();
         ta.setSelectionRange(caretPos, caretPos);
+        this.syncBackdropScroll();
       }
     });
   }
