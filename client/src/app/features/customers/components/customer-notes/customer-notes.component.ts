@@ -120,6 +120,7 @@ export class CustomerNotesComponent {
   showDeleteConfirm = signal(false);
   noteToDelete = signal<Note | null>(null);
   filterValue = signal(''); // '' = All; customer id as string when a producer is selected
+  noteSearch = signal(''); // free-text filter over note content/author/date; '' = no filter
 
   // Performance optimization: Cache sorted notes to avoid re-sorting on every change detection
   sortedNotesCache = signal<Note[]>([]);
@@ -135,10 +136,11 @@ export class CustomerNotesComponent {
       this._updateSortedNotesCache();
     });
 
-    // Reset filter only when the selected customer changes, not on every note edit
+    // Reset filters (producer + search) only when the selected customer changes, not on every note edit
     effect(() => {
       const _customer = this.customer();
       this.filterValue.set('');
+      this.noteSearch.set('');
     });
 
     // Clear the textarea only after the parent reports a successful save (counter goes
@@ -165,10 +167,47 @@ export class CustomerNotesComponent {
     });
   }
 
-  get displayedNotes(): Note[] {
-    if (!this.filterValue()) return this.sortedNotesCache();
-    const id = Number(this.filterValue());
-    return this.sortedNotesCache().filter(n => n.customerId === id);
+  /** Notes to render: sorted cache, narrowed by the producer filter (when a linked customer is
+   *  selected) and then by the free-text search. Search matches note content, author (created/
+   *  modified by) and the created/modified dates, case-insensitive, where a note matches only if it
+   *  contains ALL of the typed words (AND) — so a full date like "Jun 17, 2026" pins to that day. */
+  readonly displayedNotes = computed<Note[]>(() => {
+    const sorted = this.sortedNotesCache();
+    const producerId = this.filterValue();
+    const byProducer = producerId
+      ? sorted.filter(n => n.customerId === Number(producerId))
+      : sorted;
+
+    const terms = this.noteSearch().trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return byProducer;
+
+    return byProducer.filter(n => {
+      const hay = this._noteSearchHaystack(n);
+      return terms.every(t => hay.includes(t));
+    });
+  });
+
+  /** Lowercased searchable text for a note: content + author(s) + created/modified dates. Dates
+   *  are included in both numeric (1/3/2026) and long (January 3, 2026) forms so "1/3", "2026",
+   *  "jan", or "january" all match. */
+  private _noteSearchHaystack(n: Note): string {
+    return [
+      n.content,
+      n.createdBy,
+      n.modifiedBy,
+      this._dateSearchText(n.createdAt),
+      this._dateSearchText(n.modifiedAt),
+    ].filter(Boolean).join(' ').toLowerCase();
+  }
+
+  /** Formats a note timestamp into searchable date text, or '' if absent/invalid. Mirrors
+   *  _parseNoteTime's UTC handling for bare ISO strings. */
+  private _dateSearchText(ts: string | Date | undefined | null): string {
+    if (!ts) return '';
+    const raw = typeof ts === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return '';
+    return `${d.toLocaleDateString('en-US')} ${d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`;
   }
 
   /**
@@ -201,10 +240,32 @@ export class CustomerNotesComponent {
     };
   }
 
-  /** Splits a saved note's text into plain + "@mention" segments so mentioned names can be
-   *  shown green in the view (signalling the note was shared with them). */
-  noteContentSegments(note: Note): { text: string; mention: boolean }[] {
-    return this._segmentMentions(note.content ?? '', (note.mentions ?? []).map(m => m.name));
+  /** Segments a saved note's body for display: @mention runs (shown green, signalling the note was
+   *  shared with them) plus, within the remaining text, any current search-term matches (highlighted).
+   *  Pure string splitting into text segments — no HTML is built, so there is no XSS surface. */
+  noteViewSegments(note: Note): { text: string; kind: 'plain' | 'mention' | 'search' }[] {
+    const mentionSegs = this._segmentMentions(note.content ?? '', (note.mentions ?? []).map(m => m.name));
+    const terms = this.noteSearch().trim().toLowerCase().split(/\s+/).filter(Boolean);
+
+    const out: { text: string; kind: 'plain' | 'mention' | 'search' }[] = [];
+    for (const seg of mentionSegs) {
+      if (seg.mention) { out.push({ text: seg.text, kind: 'mention' }); continue; }
+      if (terms.length === 0) { out.push({ text: seg.text, kind: 'plain' }); continue; }
+      for (const part of this._splitBySearchTerms(seg.text, terms)) out.push(part);
+    }
+    return out;
+  }
+
+  /** Splits a plain text run into search-match / non-match segments (case-insensitive). One capture
+   *  group so String.split keeps the matched text — odd indices are the matches. */
+  private _splitBySearchTerms(text: string, terms: string[]): { text: string; kind: 'plain' | 'search' }[] {
+    if (!text) return [];
+    const escaped = terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const re = new RegExp(`(${escaped.join('|')})`, 'gi');
+    return text
+      .split(re)
+      .map((part, i) => ({ text: part, kind: (i % 2 === 1 ? 'search' : 'plain') as 'plain' | 'search' }))
+      .filter(seg => seg.text.length > 0);
   }
 
   /** Matches the exact "@Name" tokens the composer inserts (see selectMention), longest name

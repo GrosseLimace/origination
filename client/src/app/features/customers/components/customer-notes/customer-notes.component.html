@@ -84,6 +84,34 @@
         }
       } @else {
 
+        <!-- Note search — filters the visible notes by text/author/date (all typed words required). -->
+        <div class="relative">
+          <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/><path stroke-linecap="round" d="m21 21-4.3-4.3"/>
+            </svg>
+          </span>
+          <input
+            type="text"
+            [ngModel]="noteSearch()"
+            (ngModelChange)="noteSearch.set($event)"
+            placeholder="Search notes..."
+            class="w-full h-9 pl-10 pr-10 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent"
+          />
+          @if (noteSearch()) {
+            <button
+              type="button"
+              (click)="noteSearch.set('')"
+              aria-label="Clear search"
+              class="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            >
+              <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+              </svg>
+            </button>
+          }
+        </div>
+
         <!-- Producer filter — only shown when linked customers exist -->
         @if (linkedCustomers().length > 0) {
           <select
@@ -100,13 +128,13 @@
         }
 
         <!-- Notes or filtered-empty state -->
-        @if (displayedNotes.length === 0) {
+        @if (displayedNotes().length === 0) {
           <div class="text-center py-6 text-sm text-gray-400 dark:text-gray-500">
-            No notes from this producer.
+            {{ noteSearch().trim() ? 'No notes match your search.' : 'No notes from this producer.' }}
           </div>
         } @else {
         <div class="space-y-6 overflow-y-auto pr-1" style="max-height: calc(100vh - 16rem)">
-          @for (note of displayedNotes; track note.id) {
+          @for (note of displayedNotes(); track note.id) {
             <div class="border rounded-lg p-4 relative" [ngClass]="getNoteClass(note)">
               <!-- Top right actions -->
               <div class="absolute top-3 right-3 flex items-center gap-2">
@@ -200,7 +228,7 @@
               <!-- Note content (view mode) -->
               @if (editingNoteId() !== note.id) {
                 <p class="text-gray-700 dark:text-gray-300 whitespace-pre-wrap pt-3"
-                   [class.line-clamp-4]="!isNoteExpanded(note.id)">@for (seg of noteContentSegments(note); track $index) {<span [class]="seg.mention ? 'font-semibold text-scoular-green-accessible dark:text-scoular-green' : ''">{{ seg.text }}</span>}</p>
+                   [class.line-clamp-4]="!isNoteExpanded(note.id)">@for (seg of noteViewSegments(note); track $index) {<span [class]="seg.kind === 'mention' ? 'font-semibold text-scoular-green-accessible dark:text-scoular-green' : seg.kind === 'search' ? 'rounded bg-green-100 px-0.5 text-green-800 dark:bg-green-500/30 dark:text-green-200' : ''">{{ seg.text }}</span>}</p>
                 @if (note.content.length > 300) {
                   <button
                     (click)="toggleNoteExpand(note.id)"
