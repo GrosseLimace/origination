@@ -26,11 +26,13 @@ public class DiagnosticsControllerAppAccessTests
 {
     private readonly Mock<IGraphDirectoryClient> _graphMock = new();
 
-    private DiagnosticsController CreateSut(string? groupName = "Origination App Dev Users")
+    private DiagnosticsController CreateSut(string? groupName = "Origination App Dev Users", string? groupId = null)
     {
         var configValues = new Dictionary<string, string?>();
         if (groupName is not null)
             configValues["AppAccess:GroupName"] = groupName;
+        if (groupId is not null)
+            configValues["AppAccess:GroupId"] = groupId;
         var config = new ConfigurationBuilder().AddInMemoryCollection(configValues).Build();
 
         var env = new Mock<IWebHostEnvironment>();
@@ -112,6 +114,56 @@ public class DiagnosticsControllerAppAccessTests
 
         Assert.Equal("EgressBlocked", body.Outcome);
         Assert.Contains("outbound rule", body.Detail);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task GroupIdConfigured_UsesDirectRead_NeverSearchesByName()
+    {
+        _graphMock.Setup(g => g.GetGroupByIdAsync("gid-direct", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GraphReadResult<GraphGroupRef>
+            {
+                Status = GraphReadStatus.Ok,
+                Value = new GraphGroupRef("gid-direct", "Origination App Dev Users")
+            });
+        _graphMock.Setup(g => g.GetGroupTransitiveUserMembersAsync("gid-direct", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GraphReadResult<List<GraphUser>>
+            {
+                Status = GraphReadStatus.Ok,
+                Value = [new GraphUser("1", "Caden Egr", "CEgr@scoular.com", true)]
+            });
+        var sut = CreateSut(groupName: null, groupId: "gid-direct");
+
+        var body = Body(await sut.GetAppAccessGroupMembers());
+
+        Assert.Equal("Ok", body.Outcome);
+        Assert.Equal("Origination App Dev Users", body.GroupName); // label from the direct read
+        _graphMock.Verify(g => g.FindGroupByNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task AllMembersIdOnly_ReportsMembersIdOnly_NamingTheMissingPermission()
+    {
+        _graphMock.Setup(g => g.GetGroupByIdAsync("gid-direct", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GraphReadResult<GraphGroupRef>
+            {
+                Status = GraphReadStatus.Ok,
+                Value = new GraphGroupRef("gid-direct", "Origination App Dev Users")
+            });
+        _graphMock.Setup(g => g.GetGroupTransitiveUserMembersAsync("gid-direct", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GraphReadResult<List<GraphUser>>
+            {
+                Status = GraphReadStatus.Ok,
+                Value = [new GraphUser("1", null, null, null), new GraphUser("2", null, null, null)]
+            });
+        var sut = CreateSut(groupName: null, groupId: "gid-direct");
+
+        var body = Body(await sut.GetAppAccessGroupMembers());
+
+        Assert.Equal("MembersIdOnly", body.Outcome);
+        Assert.Equal(2, body.MemberCount);
+        Assert.Contains("User.ReadBasic.All", body.Detail);
     }
 
     // -------------------------------------------------------------------------

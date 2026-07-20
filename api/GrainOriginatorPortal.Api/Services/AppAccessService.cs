@@ -62,10 +62,11 @@ public class AppAccessService : IAppAccessService
 
     private async Task<AppAccessSet> FetchAsync(CancellationToken cancellationToken)
     {
+        var groupId = _config.GetValue<string>("AppAccess:GroupId")?.Trim();
         var groupName = _config.GetValue<string>("AppAccess:GroupName")?.Trim();
-        if (string.IsNullOrEmpty(groupName))
+        if (string.IsNullOrEmpty(groupId) && string.IsNullOrEmpty(groupName))
         {
-            _logger.LogWarning("App-access filter inactive: AppAccess:GroupName is not configured for this environment");
+            _logger.LogWarning("App-access filter inactive: neither AppAccess:GroupId nor AppAccess:GroupName is configured for this environment");
             return AppAccessSet.Unavailable;
         }
 
@@ -74,11 +75,17 @@ public class AppAccessService : IAppAccessService
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(FetchTimeout);
 
-            var group = await _graph.FindGroupByNameAsync(groupName, timeout.Token);
-            if (!group.Ok)
-                return LogUnavailable("group resolve", group.Status.ToString(), group.Detail);
+            // With a configured object id, go straight to the member read — the scoped managed
+            // identity cannot search groups, and the direct read needs no name resolution.
+            if (string.IsNullOrEmpty(groupId))
+            {
+                var group = await _graph.FindGroupByNameAsync(groupName!, timeout.Token);
+                if (!group.Ok)
+                    return LogUnavailable("group resolve", group.Status.ToString(), group.Detail);
+                groupId = group.Value!.Id;
+            }
 
-            var members = await _graph.GetGroupTransitiveUserMembersAsync(group.Value!.Id, timeout.Token);
+            var members = await _graph.GetGroupTransitiveUserMembersAsync(groupId, timeout.Token);
             if (!members.Ok)
                 return LogUnavailable("member read", members.Status.ToString(), members.Detail);
 
@@ -93,6 +100,14 @@ public class AppAccessService : IAppAccessService
                 shortNames.Add(shortName);
                 displayNames[shortName] = user.DisplayName ?? shortName;
             }
+
+            // Scoped-grant gotcha: with group read but no User.ReadBasic.All, Graph returns members
+            // as id-only (no UPNs). We key on UPN, so an id-only list would produce an EMPTY access
+            // set and hide every user from the dashboards — that must fail OPEN instead.
+            if (members.Value.Count > 0 && shortNames.Count == 0)
+                return LogUnavailable("member read", "MembersIdOnly",
+                    $"{members.Value.Count} members returned with no userPrincipalName — the identity " +
+                    "also needs the User.ReadBasic.All application permission to see member names/UPNs");
 
             _logger.LogInformation("App-access set refreshed: {MemberCount} enabled members", shortNames.Count);
             return new AppAccessSet { Available = true, ShortNames = shortNames, DisplayNames = displayNames };

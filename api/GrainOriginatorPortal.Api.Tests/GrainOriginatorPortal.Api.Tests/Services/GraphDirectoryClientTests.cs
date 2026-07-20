@@ -137,6 +137,37 @@ public class GraphDirectoryClientTests
     }
 
     // -------------------------------------------------------------------------
+    // Group-by-id (direct object read — the only lookup a scoped grant allows)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task GetGroupById_UsesDirectObjectRead_AndParsesSingleObjectResponse()
+    {
+        // Direct GETs return the object itself, not a { "value": [...] } collection.
+        _handler.Enqueue(HttpStatusCode.OK, """{ "id": "abc-123", "displayName": "Origination App Dev Users" }""");
+
+        var result = await _sut.GetGroupByIdAsync("abc-123", CancellationToken.None);
+
+        Assert.Equal(GraphReadStatus.Ok, result.Status);
+        Assert.Equal("abc-123", result.Value!.Id);
+        Assert.Equal("Origination App Dev Users", result.Value.DisplayName);
+        // Must be groups/{id} — a $filter search would be rejected under a group-scoped grant.
+        Assert.Contains("/groups/abc-123?", _handler.RequestUris[0]);
+        Assert.DoesNotContain("$filter", _handler.RequestUris[0]);
+    }
+
+    [Fact]
+    public async Task GetGroupById_Forbidden_MapsToPermissionMissing()
+    {
+        _handler.Enqueue(HttpStatusCode.Forbidden, "{}");
+
+        var result = await _sut.GetGroupByIdAsync("abc-123", CancellationToken.None);
+
+        Assert.Equal(GraphReadStatus.PermissionMissing, result.Status);
+        Assert.Equal(403, result.HttpStatus);
+    }
+
+    // -------------------------------------------------------------------------
     // Group-by-name resolution
     // -------------------------------------------------------------------------
 

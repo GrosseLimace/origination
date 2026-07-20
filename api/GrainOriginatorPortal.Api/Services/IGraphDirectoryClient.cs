@@ -43,9 +43,16 @@ public sealed record GraphUser(string Id, string? DisplayName, string? UserPrinc
 /// </summary>
 public interface IGraphDirectoryClient
 {
-    /// <summary>Resolves a group by exact display name. Empty result → NotFound.</summary>
+    /// <summary>Reads a group directly by object id (GET /groups/{id}) — the ONLY group lookup that
+    /// works for the scoped managed identity, which may read specific groups but cannot list/search.</summary>
+    Task<GraphReadResult<GraphGroupRef>> GetGroupByIdAsync(string groupId, CancellationToken cancellationToken);
+
+    /// <summary>Resolves a group by exact display name via a group SEARCH — requires tenant-wide
+    /// group read, so this only works under a developer credential locally. Empty result → NotFound.</summary>
     Task<GraphReadResult<GraphGroupRef>> FindGroupByNameAsync(string displayName, CancellationToken cancellationToken);
 
-    /// <summary>All transitive USER members of a group (nested groups flattened; devices/SPs excluded).</summary>
+    /// <summary>All transitive USER members of a group (nested groups flattened; devices/SPs excluded).
+    /// NOTE: without User.ReadBasic.All (or User.Read.All) alongside the group read, Graph returns
+    /// members as id-only — DisplayName/UserPrincipalName come back null.</summary>
     Task<GraphReadResult<List<GraphUser>>> GetGroupTransitiveUserMembersAsync(string groupId, CancellationToken cancellationToken);
 }

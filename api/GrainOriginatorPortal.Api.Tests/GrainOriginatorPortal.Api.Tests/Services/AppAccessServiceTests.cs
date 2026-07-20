@@ -16,11 +16,13 @@ public class AppAccessServiceTests
     private readonly Mock<IGraphDirectoryClient> _graphMock = new();
     private readonly MemoryCache _cache = new(new MemoryCacheOptions { SizeLimit = 100 });
 
-    private AppAccessService CreateSut(string? groupName = "Origination App Dev Users")
+    private AppAccessService CreateSut(string? groupName = "Origination App Dev Users", string? groupId = null)
     {
         var values = new Dictionary<string, string?> { ["AppAccess:CacheMinutes"] = "30" };
         if (groupName is not null)
             values["AppAccess:GroupName"] = groupName;
+        if (groupId is not null)
+            values["AppAccess:GroupId"] = groupId;
         var config = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
         return new AppAccessService(_graphMock.Object, config, _cache, new Mock<ILogger<AppAccessService>>().Object);
     }
@@ -119,5 +121,50 @@ public class AppAccessServiceTests
 
         Assert.False(result.Available);
         _graphMock.Verify(g => g.FindGroupByNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task GroupIdConfigured_ReadsMembersDirectly_NeverSearchesByName()
+    {
+        // The scoped managed identity cannot list/search groups — a configured id must skip
+        // straight to the member read.
+        _graphMock.Setup(g => g.GetGroupTransitiveUserMembersAsync("gid-direct", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GraphReadResult<List<GraphUser>>
+            {
+                Status = GraphReadStatus.Ok,
+                Value = [new GraphUser("1", "Caden Egr", "CEgr@scoular.com", true)]
+            });
+
+        var result = await CreateSut(groupId: "gid-direct").GetAccessSetAsync(CancellationToken.None);
+
+        Assert.True(result.Available);
+        Assert.Contains("CEgr", result.ShortNames);
+        _graphMock.Verify(g => g.FindGroupByNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _graphMock.Verify(g => g.GetGroupByIdAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task IdOnlyMembers_FailsOpen_InsteadOfHidingEveryUser()
+    {
+        // Group read granted but User.ReadBasic.All missing: Graph returns members with ids only.
+        // An "available but empty" set would filter every user out of the dashboards — must be
+        // treated as unavailable (fail open).
+        _graphMock.Setup(g => g.GetGroupTransitiveUserMembersAsync("gid-direct", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GraphReadResult<List<GraphUser>>
+            {
+                Status = GraphReadStatus.Ok,
+                Value =
+                [
+                    new GraphUser("1", null, null, null),
+                    new GraphUser("2", null, null, null)
+                ]
+            });
+
+        var result = await CreateSut(groupId: "gid-direct").GetAccessSetAsync(CancellationToken.None);
+
+        Assert.False(result.Available);
+        Assert.Empty(result.ShortNames);
     }
 }

@@ -29,6 +29,30 @@ public class GraphDirectoryClient : IGraphDirectoryClient
     }
 
     /// <inheritdoc />
+    public async Task<GraphReadResult<GraphGroupRef>> GetGroupByIdAsync(string groupId, CancellationToken cancellationToken)
+    {
+        // Direct object GET — no $filter/search, so it works under a group-scoped grant.
+        var result = await GetPagedAsync($"groups/{Uri.EscapeDataString(groupId)}?$select=id,displayName", cancellationToken);
+        if (!result.Ok)
+            return Propagate<GraphGroupRef>(result);
+
+        var group = result.Value!
+            .Select(el => new GraphGroupRef(
+                el.GetProperty("id").GetString()!,
+                el.TryGetProperty("displayName", out var dn) ? dn.GetString() : null))
+            .FirstOrDefault();
+
+        return group is null
+            ? new GraphReadResult<GraphGroupRef>
+            {
+                Status = GraphReadStatus.NotFound,
+                HttpStatus = result.HttpStatus,
+                Detail = $"No Entra group has the object id '{groupId}'."
+            }
+            : new GraphReadResult<GraphGroupRef> { Status = GraphReadStatus.Ok, HttpStatus = result.HttpStatus, Value = group };
+    }
+
+    /// <inheritdoc />
     public async Task<GraphReadResult<GraphGroupRef>> FindGroupByNameAsync(string displayName, CancellationToken cancellationToken)
     {
         var filter = Uri.EscapeDataString($"displayName eq '{EscapeODataLiteral(displayName)}'");
@@ -116,8 +140,17 @@ public class GraphDirectoryClient : IGraphDirectoryClient
                         $"Unexpected Graph response {(int)response.StatusCode}.");
 
                 using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
-                foreach (var element in doc.RootElement.GetProperty("value").EnumerateArray())
-                    items.Add(element.Clone()); // Clone — the document is disposed per page
+                if (doc.RootElement.TryGetProperty("value", out var collection))
+                {
+                    // Collection response (list/members) — accumulate and follow paging.
+                    foreach (var element in collection.EnumerateArray())
+                        items.Add(element.Clone()); // Clone — the document is disposed per page
+                }
+                else
+                {
+                    // Single-object response (direct GET /groups/{id}) — one item, no paging.
+                    items.Add(doc.RootElement.Clone());
+                }
 
                 nextUrl = doc.RootElement.TryGetProperty("@odata.nextLink", out var next) ? next.GetString() : null;
             }
