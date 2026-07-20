@@ -7,10 +7,12 @@ namespace GrainOriginatorPortal.Api.Services;
 public class UsageDashboardService : IUsageDashboardService
 {
     private readonly IUsageRepository _repo;
+    private readonly IAppAccessService _appAccess;
 
-    public UsageDashboardService(IUsageRepository repo)
+    public UsageDashboardService(IUsageRepository repo, IAppAccessService appAccess)
     {
         _repo = repo;
+        _appAccess = appAccess;
     }
 
     private static readonly Dictionary<string, string> FeatureLabels = new()
@@ -23,14 +25,34 @@ public class UsageDashboardService : IUsageDashboardService
         ["position-report"] = "Position Report",
     };
 
-    /// <summary>Resolves the allowed user-id set: all snapshot users, or those in the given TU codes.</summary>
+    /// <summary>
+    /// Resolves the dashboard's user universe. When the Entra app-access set is available:
+    /// "all users" (no trade-unit filter) = everyone who can actually sign in to the app, and a
+    /// trade-unit filter narrows to that unit's entitled users who also have access. When the
+    /// access set is unavailable (Graph blocked/misconfigured — expected in deployed envs until
+    /// the IT grants land) this falls open to the pre-existing behavior: the full entitlements
+    /// snapshot, so the dashboard never breaks on a Graph outage.
+    /// </summary>
     private async Task<HashSet<string>> GetUserIdSetAsync(string? tradeUnitKey, CancellationToken cancellationToken)
     {
         var codes = string.IsNullOrWhiteSpace(tradeUnitKey)
             ? null
             : tradeUnitKey.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var access = await _appAccess.GetAccessSetAsync(cancellationToken);
+
+        if (codes is null && access.Available)
+        {
+            // "All users" = the access group itself — includes people with access but no
+            // entitlements row (they'd be invisible to the snapshot), excludes entitled
+            // people who can't sign in.
+            return new HashSet<string>(access.ShortNames, StringComparer.OrdinalIgnoreCase);
+        }
+
         var ids = await _repo.GetSnapshotUserIdsAsync(codes, cancellationToken);
-        return new HashSet<string>(ids, StringComparer.OrdinalIgnoreCase);
+        var set = new HashSet<string>(ids, StringComparer.OrdinalIgnoreCase);
+        if (access.Available)
+            set.IntersectWith(access.ShortNames);
+        return set;
     }
 
     private async Task<Dictionary<string, string>> GetDisplayNameDictAsync(HashSet<string> userIds, CancellationToken cancellationToken)
@@ -77,6 +99,9 @@ public class UsageDashboardService : IUsageDashboardService
         var toUtc = to.ToUniversalTime().Date.AddDays(1);
         var userIds = await GetUserIdSetAsync(tradeUnitKey, cancellationToken);
         var displayNames = await GetDisplayNameDictAsync(userIds, cancellationToken);
+        // Entra display names fill in for access-group members with no entitlements snapshot row
+        // (e.g. admin accounts) — cached, so this is a dictionary lookup, not a Graph call.
+        var accessNames = (await _appAccess.GetAccessSetAsync(cancellationToken)).DisplayNames;
 
         var activityLookup = (await _repo.GetLastActivityByUserAsync(fromUtc, toUtc, userIds, cancellationToken))
             .ToDictionary(a => a.UserId, StringComparer.OrdinalIgnoreCase);
@@ -108,7 +133,9 @@ public class UsageDashboardService : IUsageDashboardService
             result.Add(new UsageDashboardUserDto
             {
                 UserId = userId,
-                DisplayName = displayNames.GetValueOrDefault(userId, userId),
+                DisplayName = displayNames.GetValueOrDefault(userId)
+                    ?? accessNames.GetValueOrDefault(userId)
+                    ?? userId,
                 LoginCount = hasSession ? session!.LoginCount : 0,
                 LastActive = hasActivity ? activity!.LastActive : null,
                 AvgSessionMinutes = hasSession ? Math.Round(session!.AvgDuration, 1) : 0,

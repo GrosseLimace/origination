@@ -14,6 +14,7 @@ using GrainOriginatorPortal.Infrastructure.Data;
 using GrainOriginatorPortal.Infrastructure.Data.Entities;
 using GrainOriginatorPortal.Api.Exceptions;
 using GrainOriginatorPortal.Api.Models;
+using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
 
 namespace GrainOriginatorPortal.Api.Controllers;
@@ -33,6 +34,8 @@ public class DiagnosticsController : ControllerBase
     private readonly IWebHostEnvironment _env;
     private readonly IHttpClientFactory _httpFactory;
     private readonly CustomerSyncService _customerSync;
+    private readonly IGraphDirectoryClient _graphDirectory;
+    private readonly IConfiguration _config;
     private static int _isGeocoding;
 
     public DiagnosticsController(
@@ -42,7 +45,9 @@ public class DiagnosticsController : ControllerBase
         ILogger<DiagnosticsController> logger,
         IWebHostEnvironment env,
         IHttpClientFactory httpFactory,
-        CustomerSyncService customerSync)
+        CustomerSyncService customerSync,
+        IGraphDirectoryClient graphDirectory,
+        IConfiguration config)
     {
         _context = context;
         _appContext = appContext;
@@ -51,6 +56,8 @@ public class DiagnosticsController : ControllerBase
         _env = env;
         _httpFactory = httpFactory;
         _customerSync = customerSync;
+        _graphDirectory = graphDirectory;
+        _config = config;
     }
 
     // -------------------------------------------------------------------------
@@ -207,6 +214,79 @@ public class DiagnosticsController : ControllerBase
     {
         var result = await _customerSync.SyncAsync(cancellationToken);
         return Ok(result);
+    }
+
+    // -------------------------------------------------------------------------
+    /// <summary>
+    /// App-access spike: reads the transitive member list of the Entra group configured at
+    /// <c>AppAccess:GroupName</c> via Microsoft Graph, using the App Service managed identity
+    /// (or the developer's own credential locally). Always 200 — the <c>Outcome</c> field is the
+    /// verdict: Ok, or a categorized reason (EgressBlocked = NSG outbound rule needed,
+    /// PermissionMissing = GroupMember.Read.All grant needed, TokenFailure, NotFound, NotConfigured).
+    ///
+    /// Deliberately NOT gated by <see cref="DenyIfNotDevelopment"/> (like customer-sync/run):
+    /// the deployed dev environment runs ASPNETCORE_ENVIRONMENT=Dev, which that gate would 404 —
+    /// and deployed Dev is exactly where the managed identity's Graph access must be proven.
+    /// Read-only; admin-gated by the controller-level policy.
+    /// </summary>
+    [HttpGet("app-access-group-members")]
+    [ProducesResponseType(typeof(AppAccessGroupMembersResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAppAccessGroupMembers(CancellationToken cancellationToken = default)
+    {
+        var groupName = _config.GetValue<string>("AppAccess:GroupName")?.Trim();
+        if (string.IsNullOrEmpty(groupName))
+        {
+            return Ok(new AppAccessGroupMembersResponse
+            {
+                GroupName = string.Empty,
+                Outcome = "NotConfigured",
+                Detail = "AppAccess:GroupName is not set for this environment."
+            });
+        }
+
+        var groupResult = await _graphDirectory.FindGroupByNameAsync(groupName, cancellationToken);
+        if (!groupResult.Ok)
+        {
+            return Ok(new AppAccessGroupMembersResponse
+            {
+                GroupName = groupName,
+                Outcome = groupResult.Status.ToString(),
+                HttpStatus = groupResult.HttpStatus,
+                Detail = groupResult.Detail
+            });
+        }
+
+        var membersResult = await _graphDirectory.GetGroupTransitiveUserMembersAsync(groupResult.Value!.Id, cancellationToken);
+        if (!membersResult.Ok)
+        {
+            return Ok(new AppAccessGroupMembersResponse
+            {
+                GroupName = groupName,
+                Outcome = membersResult.Status.ToString(),
+                HttpStatus = membersResult.HttpStatus,
+                Detail = membersResult.Detail
+            });
+        }
+
+        var members = membersResult.Value!
+            .OrderBy(u => u.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .Select(u => new AppAccessGroupMemberResponse
+            {
+                DisplayName = u.DisplayName,
+                UserPrincipalName = u.UserPrincipalName,
+                AccountEnabled = u.AccountEnabled
+            })
+            .ToList();
+
+        _logger.LogInformation("App-access group read OK: {MemberCount} members", members.Count);
+        return Ok(new AppAccessGroupMembersResponse
+        {
+            GroupName = groupName,
+            Outcome = "Ok",
+            HttpStatus = 200,
+            MemberCount = members.Count,
+            Members = members
+        });
     }
 
     // -------------------------------------------------------------------------
