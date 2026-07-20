@@ -1276,6 +1276,11 @@ export class HomeComponent {
     ));
   }
 
+  /** Producer ids with an auto-save PUT currently in flight — prevents the concurrent double-save race. */
+  private readonly _autoSaveInFlight = new Set<number>();
+  /** Producer ids whose auto-save was deferred while one was in flight — re-run once it completes. */
+  private readonly _autoSavePending = new Set<number>();
+
   private _autoSaveCommodities(customer: Customer, customerTickets: Ticket[]): void {
     const ticketCommodities = [...new Set(customerTickets.map(t => t.productCode || '').filter(Boolean))];
     const contractCommodities = [...new Set(
@@ -1287,6 +1292,16 @@ export class HomeComponent {
     const storedCommodities = customer.commodities || [];
     const hasNew = sourceCommodities.some(tc => !storedCommodities.includes(tc));
     if (!hasNew) return;
+
+    // Serialize auto-saves per producer. This fires from BOTH the contracts- and tickets-arrival
+    // callbacks on select; firing two PUTs concurrently races the upsert's child-row rebuild
+    // (each deletes rows the other already deleted → 500). If one is already in flight for this
+    // producer, defer and re-run once it finishes with the freshly-merged commodity set.
+    if (this._autoSaveInFlight.has(customer.id)) {
+      this._autoSavePending.add(customer.id);
+      return;
+    }
+    this._autoSaveInFlight.add(customer.id);
 
     const merged = [...new Set([...storedCommodities, ...sourceCommodities])].sort();
     const existingPd = this.producerDetailsMap().get(customer.id);
@@ -1314,8 +1329,19 @@ export class HomeComponent {
           this.customers.set(updated);
         }
         if (this.selectedCustomer()?.id === customer.id) this.selectedCustomer.set(updatedCustomer);
+        this._autoSaveInFlight.delete(customer.id);
+        // A deferred call arrived while this save was in flight — re-run once, now serialized, with
+        // the freshly-merged customer so commodities from the later callback (e.g. contracts that
+        // arrived after tickets) still get persisted.
+        if (this._autoSavePending.delete(customer.id)) {
+          const latest = this.customers().find(c => c.id === customer.id) || updatedCustomer;
+          this._autoSaveCommodities(latest, this.allCustomerTickets());
+        }
       },
-      error: () => {}
+      error: () => {
+        this._autoSaveInFlight.delete(customer.id);
+        this._autoSavePending.delete(customer.id);
+      }
     });
   }
 
