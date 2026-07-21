@@ -5,14 +5,52 @@
         @if (addDisabledReason()) {
           <p class="text-sm text-gray-500 dark:text-gray-400 italic text-center py-2">{{ addDisabledReason() }}</p>
         } @else {
-          <textarea
-            [ngModel]="newNote()"
-            (ngModelChange)="newNote.set($event)"
-            [disabled]="isSavingNote()"
-            placeholder="Add a note about this producer..."
-            rows="3"
-            class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent resize-y min-h-[4.5rem] disabled:opacity-60 disabled:cursor-not-allowed"
-          ></textarea>
+          <div class="relative">
+            <!-- Highlight backdrop: mirrors the textarea text so selected @mentions render green
+                 while the user keeps typing. Kept pixel-aligned with the textarea (same font,
+                 padding, border width, wrapping); the textarea on top has transparent text + a
+                 visible caret. aria-hidden + pointer-events-none — purely visual. -->
+            <div
+              #noteBackdrop
+              aria-hidden="true"
+              class="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words rounded-md border border-transparent px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
+            >@for (seg of composeSegments(); track $index) {<span [class]="seg.mention ? 'font-semibold text-scoular-green-accessible dark:text-scoular-green' : ''">{{ seg.text }}</span>}</div>
+
+            <textarea
+              #noteTextarea
+              [ngModel]="newNote()"
+              (ngModelChange)="newNote.set($event)"
+              (input)="onNoteCaretChange()"
+              (scroll)="syncBackdropScroll()"
+              (click)="onNoteCaretChange()"
+              (keyup)="onNoteCaretChange()"
+              (keydown)="onNoteKeydown($event)"
+              [disabled]="isSavingNote()"
+              placeholder="Add a note about this producer..."
+              rows="3"
+              class="relative z-10 w-full rounded-md border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm text-transparent caret-gray-900 dark:caret-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent resize-y min-h-[4.5rem] disabled:opacity-60 disabled:cursor-not-allowed"
+            ></textarea>
+
+            <!-- @ mention autocomplete dropdown -->
+            @if (mentionDropdownOpen() && mentionOptions().length > 0) {
+              <div class="absolute left-0 right-0 top-full z-30 mt-1 max-h-60 overflow-y-auto rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg">
+                @for (opt of mentionOptions(); track opt.type + ':' + opt.id; let i = $index) {
+                  <button
+                    type="button"
+                    (mousedown)="$event.preventDefault()"
+                    (click)="selectMention(opt)"
+                    (mouseenter)="mentionActiveIndex.set(i)"
+                    class="w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-3 cursor-pointer"
+                    [ngClass]="i === mentionActiveIndex() ? 'bg-scoular-green/10 dark:bg-scoular-green/20' : 'hover:bg-gray-50 dark:hover:bg-gray-700'"
+                  >
+                    <span class="font-medium text-gray-900 dark:text-gray-100 truncate">{{ opt.name }}</span>
+                    <span class="text-xs text-gray-400 dark:text-gray-500 truncate shrink-0">{{ opt.secondary }}</span>
+                  </button>
+                }
+              </div>
+            }
+          </div>
+
           <div class="flex justify-end mt-2">
             <app-button
               variant="default"
@@ -27,13 +65,52 @@
 
       <!-- Notes List -->
       @if (notes().length === 0) {
-        <div class="text-center py-8 text-gray-500 dark:text-gray-400">
-          <svg class="mx-auto h-12 w-12 text-gray-400 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/>
-          </svg>
-          <p class="mt-4">No notes yet for this producer</p>
-        </div>
+        @if (isLoadingNotes()) {
+          <!-- Notes load per-producer on selection — don't flash "No notes yet" mid-fetch -->
+          <div class="text-center py-8 text-gray-500 dark:text-gray-400">
+            <svg class="animate-spin mx-auto h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+            </svg>
+            <p class="mt-4">Loading notes…</p>
+          </div>
+        } @else {
+          <div class="text-center py-8 text-gray-500 dark:text-gray-400">
+            <svg class="mx-auto h-12 w-12 text-gray-400 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/>
+            </svg>
+            <p class="mt-4">No notes yet for this producer</p>
+          </div>
+        }
       } @else {
+
+        <!-- Note search — filters the visible notes by text/author/date (all typed words required). -->
+        <div class="relative">
+          <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/><path stroke-linecap="round" d="m21 21-4.3-4.3"/>
+            </svg>
+          </span>
+          <input
+            type="text"
+            [ngModel]="noteSearch()"
+            (ngModelChange)="noteSearch.set($event)"
+            placeholder="Search notes..."
+            class="w-full h-9 pl-10 pr-10 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent"
+          />
+          @if (noteSearch()) {
+            <button
+              type="button"
+              (click)="noteSearch.set('')"
+              aria-label="Clear search"
+              class="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            >
+              <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+              </svg>
+            </button>
+          }
+        </div>
 
         <!-- Producer filter — only shown when linked customers exist -->
         @if (linkedCustomers().length > 0) {
@@ -51,13 +128,13 @@
         }
 
         <!-- Notes or filtered-empty state -->
-        @if (displayedNotes.length === 0) {
+        @if (displayedNotes().length === 0) {
           <div class="text-center py-6 text-sm text-gray-400 dark:text-gray-500">
-            No notes from this producer.
+            {{ noteSearch().trim() ? 'No notes match your search.' : 'No notes from this producer.' }}
           </div>
         } @else {
         <div class="space-y-6 overflow-y-auto pr-1" style="max-height: calc(100vh - 16rem)">
-          @for (note of displayedNotes; track note.id) {
+          @for (note of displayedNotes(); track note.id) {
             <div class="border rounded-lg p-4 relative" [ngClass]="getNoteClass(note)">
               <!-- Top right actions -->
               <div class="absolute top-3 right-3 flex items-center gap-2">
@@ -151,7 +228,7 @@
               <!-- Note content (view mode) -->
               @if (editingNoteId() !== note.id) {
                 <p class="text-gray-700 dark:text-gray-300 whitespace-pre-wrap pt-3"
-                   [class.line-clamp-4]="!isNoteExpanded(note.id)">{{ note.content }}</p>
+                   [class.line-clamp-4]="!isNoteExpanded(note.id)">@for (seg of noteViewSegments(note); track $index) {<span [class]="seg.kind === 'mention' ? 'font-semibold text-scoular-green-accessible dark:text-scoular-green' : seg.kind === 'search' ? 'rounded bg-green-100 px-0.5 text-green-800 dark:bg-green-500/30 dark:text-green-200' : ''">{{ seg.text }}</span>}</p>
                 @if (note.content.length > 300) {
                   <button
                     (click)="toggleNoteExpand(note.id)"

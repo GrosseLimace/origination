@@ -1,5 +1,5 @@
 import { Injectable, signal, computed } from '@angular/core';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, Commodity, CommodityConversion, HarvestWindow, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, RefinementFilters, ContractPricingLine, QueryLibraryItem } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, StoredGrain, SavedList, Commodity, CommodityConversion, HarvestWindow, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, RefinementFilters, ContractPricingLine, QueryLibraryItem } from '@models';
 import { ProducerDetails } from '../../models/producer-details.model';
 
 export interface DashboardCacheEntry {
@@ -98,7 +98,12 @@ export class AppStateService {
   todaysTickets = signal<Ticket[]>([]);
   tickets = signal<Ticket[]>([]);
   plantingIntentions = signal<PlantingIntention[]>([]);
+  /** Full TU-wide note set — a LAZY cache for NLQ/saved-list consumers only (see notesLoaded).
+   *  No longer eagerly bulk-loaded on page load / TU change; badges use noteLastContacts. */
   notes = signal<Note[]>([]);
+  /** Per-customer "last contacted" aggregate — the lightweight badge feed (all trade units,
+   *  entitlement-filtered). Preloaded on TU change; tiny regardless of how many notes exist. */
+  noteLastContacts = signal<NoteLastContact[]>([]);
   storedGrain = signal<StoredGrain[]>([]);
   savedLists = signal<SavedList[]>([]);
   commodities = signal<Commodity[]>([]);
@@ -164,6 +169,11 @@ export class AppStateService {
 
   setNotes(notes: Note[]): void {
     this.notes.set(notes);
+    this.notesLoaded.set(true);
+  }
+
+  setNoteLastContacts(rows: NoteLastContact[]): void {
+    this.noteLastContacts.set(rows);
   }
 
   setStoredGrain(storedGrain: StoredGrain[]): void {
@@ -212,6 +222,17 @@ export class AppStateService {
   clearTicketsCache(): void {
     this.tickets.set([]);
     this.ticketsLoaded.set(false);
+  }
+
+  // True once the full TU-wide note set has been loaded into `notes` (via setNotes). NLQ/
+  // saved-list consumers gate their lazy fetch on this instead of `notes().length === 0`,
+  // because notes are no longer eagerly bulk-loaded — an emptiness check would misfire for
+  // a user whose trade units genuinely have zero notes. Reset on TU change / logout.
+  notesLoaded = signal(false);
+
+  clearNotesCache(): void {
+    this.notes.set([]);
+    this.notesLoaded.set(false);
   }
 
   // Per-dataset loading flags — let each screen/category render as soon as ITS own data
@@ -294,7 +315,8 @@ export class AppStateService {
     this.contracts.set([]);
     this.clearTicketsCache();
     this.plantingIntentions.set([]);
-    this.notes.set([]);
+    this.clearNotesCache();
+    this.noteLastContacts.set([]);
     this.storedGrain.set([]);
     this.savedLists.set([]);
     this.commodities.set([]);

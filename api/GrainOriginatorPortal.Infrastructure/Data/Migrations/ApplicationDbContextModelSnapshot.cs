@@ -1171,6 +1171,15 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.HasIndex("CustomerId")
                         .HasDatabaseName("IX_Notes_CustomerId");
 
+                    b.HasIndex("CreatedBy", "CreatedAt")
+                        .HasDatabaseName("IX_Notes_CreatedBy_CreatedAt");
+
+                    b.HasIndex("CustomerId", "CreatedAt")
+                        .HasDatabaseName("IX_Notes_CustomerId_CreatedAt")
+                        .HasFilter("[IsDeleted] = 0");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("CustomerId", "CreatedAt"), new[] { "TradeUnit" });
+
                     b.ToTable("Notes", "dbo");
                 });
 

@@ -10,7 +10,7 @@ import { ToastService } from '@core/services/toast.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { UserRolesService } from '@core/services/user-roles.service';
-import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, StoredGrain, SavedList, ProducerDetails, ContractPricingLine, DashboardPlantingEstimate, Commodity, NoteMention } from '@models';
 import { CustomerListComponent } from '../../components/customer-list/customer-list.component';
 import { CustomerProfileComponent } from '../../components/customer-profile/customer-profile.component';
 import { CustomerNotesComponent } from '../../components/customer-notes/customer-notes.component';
@@ -81,13 +81,30 @@ export class HomeComponent {
    *  circuit returned early before pricing lines were restored, leaving the
    *  panel showing the prior producer's data on re-click). */
   private readonly _customerPricingCache = new Map<string, ContractPricingLine[]>();
+  /** Per-customer full-notes cache (Tier 2). Notes are no longer bulk-downloaded; the
+   *  selected producer's linked group is fetched via getNotesByCustomer on selection and
+   *  cached here for the session. Map.has distinguishes "fetched, zero notes" from "not
+   *  fetched yet"; a failed fetch is NOT cached so the next selection retries. Kept in
+   *  sync by the note CRUD handlers; cleared on TU change with the other caches. */
+  private readonly _customerNotesCache = new Map<number, Note[]>();
+  /** Guards the one-per-session background full-notes fetch used by saved-list enrichment. */
+  private _notesFetchInFlight = false;
+  /** Producer ids whose notes have already been re-fetched during the CURRENT selection.
+   *  Reset when a new producer is selected. Lets _ensureCustomerNotes refresh each producer
+   *  once per selection (so notes added by other reps show on re-click — stale-while-revalidate)
+   *  without the several internal calls per selection (details-arrival, BFS) re-fetching. */
+  private readonly _notesRefreshedThisSelection = new Set<number>();
 
   // Public signals — template binds directly to these
   readonly customers = signal<Customer[]>([]);
   readonly contracts = signal<Contract[]>([]);
   readonly tickets = signal<Ticket[]>([]);
   readonly plantingIntentions = signal<PlantingIntention[]>([]);
-  readonly notes = signal<Note[]>([]);
+  /** Per-customer "last contacted" aggregate — the badge feed for the customer list.
+   *  Covers ALL trade units (entitlement-filtered server-side) so linked producers in
+   *  unselected TUs are represented without downloading any note bodies. Full notes are
+   *  fetched per-producer on selection into _customerNotesCache. */
+  readonly noteLastContacts = signal<NoteLastContact[]>([]);
   readonly storedGrain = signal<StoredGrain[]>([]);
   readonly savedLists = signal<SavedList[]>([]);
   /** Manager-only: saved lists tied to the selected TU(s) created by other users (overlap-matched
@@ -145,6 +162,10 @@ export class HomeComponent {
   readonly isLoadingPricingLines = signal(false);
   readonly isLoadingStoredGrain = signal(false);
   readonly isLoadingPlanting = signal(true);
+  /** True while the selected producer's (and linked group's) notes are being fetched.
+   *  Drives the notes panel's loading state so a producer with notes doesn't flash
+   *  "No notes yet" during the per-customer fetch. */
+  readonly isLoadingNotes = signal(false);
 
   readonly isMobile = signal(false);
   readonly loading = signal(false);
@@ -201,12 +222,12 @@ export class HomeComponent {
     this._lastTradeUnitKey = [...this.selectedTradeUnits()].sort().join(',');
     this._initialized = true;
 
-    // Keep notes in sync with appState — handles the case where the data-preload
-    // delivers notes after _restoreStateFromService() already ran (restore path skips
-    // _loadAllData so there is no notes subscription to pick up the arriving data).
+    // Keep the last-contact aggregate in sync with appState — handles the case where the
+    // data-preload delivers it after _restoreStateFromService() already ran (restore path
+    // skips _loadAllData so there is no subscription to pick up the arriving data).
     effect(() => {
-      const stateNotes = this.appState.notes();
-      untracked(() => this.notes.set(stateNotes));
+      const rows = this.appState.noteLastContacts();
+      untracked(() => this.noteLastContacts.set(rows));
     });
 
     // React to global trade unit changes made via TradeUnitSelectorComponent
@@ -255,7 +276,7 @@ export class HomeComponent {
       this.tickets.set([]);
       this.plantingIntentions.set(this.appState.plantingIntentions());
       this.isLoadingPlanting.set(false);
-      this.notes.set(this.appState.notes());
+      this.noteLastContacts.set(this.appState.noteLastContacts());
       this.storedGrain.set(this.appState.storedGrain());
       this.savedLists.set(this.appState.savedLists());
       this._enrichSavedLists();
@@ -279,6 +300,11 @@ export class HomeComponent {
         this.isLoadingUnappliedTickets.set(true);
         this._loadCustomerData(stateSelectedCustomer.id);
         this._loadCustomerTickets(stateSelectedCustomer.id, stateSelectedCustomer.scoularId);
+        // Re-fetch the producer's (and linked group's) notes — the per-customer notes
+        // cache is component-local, so navigation back must repopulate it (same pattern
+        // as the tickets / planting re-fetch on restore).
+        this._notesRefreshedThisSelection.clear();
+        this._ensureCustomerNotes(stateSelectedCustomer);
         // Re-fetch per-customer planting intentions on navigation back —
         // these are not stored in appState so they must be reloaded.
         this.allCustomerPlantingIntentions.set([]);
@@ -383,17 +409,9 @@ export class HomeComponent {
       error: () => { this.isLoadingPlanting.set(false); }
     });
 
-    this.apiService.getNotes().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (data) => {
-        const list = data ?? [];
-        this.notes.set(list);
-        this.appState.setNotes(list);
-        // Re-filter customer notes if a customer is already selected when notes arrive
-        const sel = this.selectedCustomer();
-        if (sel) this._loadCustomerData(sel.id);
-      },
-      error: () => {}
-    });
+    // Last-contact aggregate instead of the full note download — the selected producer's
+    // full notes load separately via _ensureCustomerNotes on selection.
+    this._refreshLastContacts();
 
     this.apiService.getStoredGrain(tradeUnits).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
@@ -490,6 +508,9 @@ export class HomeComponent {
           this.selectedCustomer.set(updatedSel);
           this._fetchMissingLinkedProducers(updatedSel);
           this._loadCustomerData(updatedSel.id, updatedSel);
+          // linkedProducerIds may have changed with the merged details — make sure the
+          // (possibly expanded) group's notes are cached.
+          this._ensureCustomerNotes(updatedSel);
         }
       }
     }
@@ -561,6 +582,29 @@ export class HomeComponent {
     if (this.teamSavedLists().length && teamNeeds) {
       this.teamSavedLists.set(this._enrichLists(this.teamSavedLists(), forceRefresh));
     }
+    // Saved-list queries can filter on note content / authors / contact dates, and the full
+    // note set is now lazily loaded. If any list needed resolving while it's missing, fetch
+    // it in the background and re-enrich when it lands — mirrors the query-library
+    // fetch-then-reenrich above. Doesn't block first paint; runs at most once per session.
+    if (((this.savedLists().length && ownNeeds) || (this.teamSavedLists().length && teamNeeds))
+        && !this.appState.notesLoaded()) {
+      this._loadFullNotesForEnrichment();
+    }
+  }
+
+  /** Background one-shot fetch of the full note set for saved-list NLQ enrichment. */
+  private _loadFullNotesForEnrichment(): void {
+    if (this._notesFetchInFlight || this.appState.notesLoaded()) return;
+    this._notesFetchInFlight = true;
+    this.apiService.getNotes().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (data) => {
+        this._notesFetchInFlight = false;
+        this.appState.setNotes(data ?? []);
+        // Re-evaluate saved lists now that note-based queries have their data.
+        this._enrichSavedLists(true);
+      },
+      error: () => { this._notesFetchInFlight = false; }
+    });
   }
 
   /** Resolve each list's NLQ query + filters + included/excluded overrides into a cached
@@ -573,7 +617,9 @@ export class HomeComponent {
       customers: this.customers(),
       contracts: this.contracts(),
       tickets: this.tickets(),
-      notes: this.notes(),
+      // Full note set from the lazy NLQ cache — empty until a note-based list triggers
+      // _loadFullNotesForEnrichment, which re-enriches once it lands.
+      notes: this.appState.notes(),
       plantingIntentions: this.plantingIntentions(),
       storedGrain: this.storedGrain(),
       commodities: this.appState.commodities(),
@@ -600,7 +646,7 @@ export class HomeComponent {
         if (matched?.category) listFilters = { ...listFilters, _promptCategory: matched.category };
       }
       const refined = listFilters
-        ? this.nlqFilterService.applyRefinementFilters(result.customers, listFilters, this.contracts(), this.notes(), {
+        ? this.nlqFilterService.applyRefinementFilters(result.customers, listFilters, this.contracts(), this.appState.notes(), {
             tickets: this.tickets(),
             storedGrain: this.storedGrain(),
             plantingIntentions: this.plantingIntentions(),
@@ -715,12 +761,12 @@ export class HomeComponent {
     this.selectedCustomer.set(null);
     this.appState.selectCustomer(null);
     this._crossTradeUnitCustomers.set(new Map());
-    // Clear stale customer list and notes immediately so the old unfiltered list and
-    // wrong "last contacted" dates don't show while the new API calls are in flight.
+    // Clear the stale customer list immediately so the old roster doesn't show while the
+    // new API calls are in flight. The last-contact aggregate is NOT cleared — it covers
+    // all trade units, so it stays correct across TU switches (it refreshes in the
+    // background via _loadAllData / data-preload for freshness).
     this.customers.set([]);
     this.appState.setCustomers([]);
-    this.notes.set([]);
-    this.appState.setNotes([]);
     // Per-producer tickets accumulate in the local signal across selections, so clear them on TU
     // change to drop the prior TU's producers' tickets. (appState.tickets — the TU-wide list/NLQ
     // cache — is cleared separately by data-preload's clearTicketsCache.)
@@ -729,9 +775,13 @@ export class HomeComponent {
     // customers, and re-clicking a producer that overlaps the new TU must re-fetch
     // contracts/tickets/pricing/grain to reflect the new scope. Without this, the
     // _customerLoadDone short-circuit would serve stale data from the prior TU.
+    // Notes are cleared for freshness parity: the next selection re-fetches, picking up
+    // notes other users added since.
     this._customerLoadDone.clear();
     this._customerPricingCache.clear();
     this._customerPlantingCache.clear();
+    this._customerNotesCache.clear();
+    this._notesRefreshedThisSelection.clear();
     this._linkedFetchDone.clear();
     // Cancel any in-flight per-customer requests (pricing lines, contracts, tickets,
     // grain, planting, notes, linked-producers) tied to the prior customer so they
@@ -741,26 +791,90 @@ export class HomeComponent {
     this._cancelSelection$.next();
     this.isLoadingPricingLines.set(false);
     this.isLoadingUnappliedTickets.set(false);
+    this.isLoadingNotes.set(false);
     // Reset loading flag so an explicit user selection is never blocked by a
     // background load that may still be in-flight.
     this._isLoading = false;
     if (tradeUnits && tradeUnits.length > 0) {
       this._loadAllData(tradeUnits);
     } else {
-      // No TU selected (e.g. after Reset) — load all notes without a TU filter so
-      // customer list cards show correct "last contacted" dates in search results.
-      // Without this, notes stay stale from the previous TU until a customer is clicked.
-      this.apiService.getNotes().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-        next: (data) => {
-          // Discard if the user selected a TU while this request was in-flight —
-          // _loadAllData will set the correct TU-filtered notes when it completes.
-          if (this.selectedTradeUnits().length > 0) return;
-          this.notes.set(data);
-          this.appState.setNotes(data);
-        },
-        error: () => {}
-      });
+      // No TU selected (e.g. after Reset) — data-preload skips its pipeline entirely in
+      // this state, so refresh the last-contact aggregate here so customer list cards
+      // show correct "last contacted" dates in search results. The aggregate spans all
+      // trade units, so the same call serves the no-TU flow.
+      this._refreshLastContacts();
     }
+  }
+
+  /** Refreshes the per-customer last-contact aggregate (deduped in ApiService, so a
+   *  concurrent data-preload request shares one HTTP call). Tiny payload — one row per
+   *  customer with notes, no note bodies. */
+  private _refreshLastContacts(): void {
+    this.apiService.getNotesLastContact().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (rows) => {
+        const list = rows ?? [];
+        this.noteLastContacts.set(list);
+        this.appState.setNoteLastContacts(list);
+      },
+      error: () => {}
+    });
+  }
+
+  /**
+   * Ensures the full notes for `customer` AND its currently-known linked group are loaded and
+   * fresh, then recomputes the selected producer's notes panel + last-contact badges.
+   *
+   * Stale-while-revalidate: any cached notes render immediately (re-clicking a producer is
+   * instant — no spinner flash), and every group member is re-fetched once per selection via
+   * the per-customer endpoint so notes added by OTHER reps appear on re-click. The
+   * _notesRefreshedThisSelection guard means the several internal calls per selection
+   * (producer-details arrival, BFS completion) don't each re-fetch. The endpoint has no TU
+   * filter, so linked producers in unselected trade units are fully covered. Failed fetches
+   * aren't cached (and aren't marked refreshed), so they retry on the next trigger.
+   */
+  private _ensureCustomerNotes(customer: Customer): void {
+    const groupIds = [...new Set([customer.id, ...this.getLinkedGroup(customer).map(c => c.id)])];
+
+    // Show whatever's already cached right away — instant re-click, no spinner if we have data.
+    const haveAnyCached = groupIds.some(id => this._customerNotesCache.has(id));
+    if (haveAnyCached) {
+      this.isLoadingNotes.set(false);
+      const sel = this.selectedCustomer();
+      if (sel) this._loadCustomerData(sel.id);
+    }
+
+    // Refresh each group member at most once per selection.
+    const toFetch = groupIds.filter(id => !this._notesRefreshedThisSelection.has(id));
+    if (toFetch.length === 0) {
+      this.isLoadingNotes.set(false);
+      return;
+    }
+    toFetch.forEach(id => this._notesRefreshedThisSelection.add(id));
+
+    // Only show the spinner on a cold selection (nothing cached to display meanwhile).
+    if (!haveAnyCached) this.isLoadingNotes.set(true);
+
+    forkJoin(toFetch.map(id =>
+      this.apiService.getNotesByCustomer(id).pipe(catchError(() => of(null as Note[] | null)))
+    )).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (lists) => {
+        lists.forEach((list, i) => {
+          if (!list) {
+            // Fetch failed — allow a later retry rather than caching a wrong empty.
+            this._notesRefreshedThisSelection.delete(toFetch[i]);
+            return;
+          }
+          this._customerNotesCache.set(toFetch[i], list);
+          // Keep the list badge in step with the freshly-fetched notes (picks up other reps'
+          // adds/deletes for this producer, consistent with the panel).
+          this._recomputeLastContactFor(toFetch[i]);
+        });
+        this.isLoadingNotes.set(false);
+        const sel = this.selectedCustomer();
+        if (sel) this._loadCustomerData(sel.id);
+      },
+      error: () => this.isLoadingNotes.set(false)
+    });
   }
 
   handleSelectCustomer(customer: Customer, fromDeepLink = false): void {
@@ -768,6 +882,8 @@ export class HomeComponent {
     // browser's connection pool isn't blocked by stale linked-producer / notes /
     // planting calls when the user clicks through producers quickly.
     this._cancelSelection$.next();
+    // New selection — allow each producer's notes to be re-fetched once so other reps' adds show.
+    this._notesRefreshedThisSelection.clear();
     // Reset navigation context when user manually selects (but NOT when coming from a deep link)
     if (!fromDeepLink) {
       this.pendingContractId.set(null);
@@ -807,6 +923,9 @@ export class HomeComponent {
             this.selectedCustomer.set(updated);
             this._fetchMissingLinkedProducers(updated);
             this._loadCustomerData(updated.id, updated);
+            // linkedProducerIds may have just arrived/changed — make sure the (possibly
+            // expanded) group's notes are cached so the panel shows the full history.
+            this._ensureCustomerNotes(updated);
           }
         },
         error: () => {}
@@ -821,6 +940,9 @@ export class HomeComponent {
     this._loadCustomerContractsAndTickets(customer.id, customer.scoularId);
     this._loadCustomerData(customer.id);
     this._fetchMissingLinkedProducers(customer);
+    // Fetch this producer's (and known linked group's) full notes — notes are no longer
+    // bulk-downloaded, so selection is what hydrates the notes panel. Cache-hit = instant.
+    this._ensureCustomerNotes(customer);
 
     // Fetch planting intentions exactly once per customer selection.
     // _loadCustomerData is called multiple times (contracts, tickets, storedGrain callbacks),
@@ -849,19 +971,8 @@ export class HomeComponent {
         });
     }
 
-    // When no trade units are active, _loadAllData never ran so notes may be stale or missing.
-    // Always refresh notes in this case so the selected customer's notes appear.
-    if (this.selectedTradeUnits().length === 0) {
-      this.apiService.getNotes().pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe({
-        next: (data) => {
-          this.notes.set(data);
-          this.appState.setNotes(data);
-          const sel = this.selectedCustomer();
-          if (sel) this._loadCustomerData(sel.id);
-        },
-        error: () => {}
-      });
-    }
+    // (No-TU special case removed: the selected producer's notes come from the per-customer
+    // fetch above, and the badge aggregate spans all trade units — both are TU-independent.)
   }
 
   /** Applies ProducerDetails enrichment onto a freshly-fetched Customer. */
@@ -943,42 +1054,19 @@ export class HomeComponent {
       const discovered = [...outgoing, ...incoming]
         .filter((c): c is Customer => !!c && !visited.has(c.id));
 
-      // Fetch notes for every newly-discovered cross-TU customer. The bulk
-      // /api/notes endpoint scopes by the user's selected TUs, so notes for a
-      // linked producer in an unselected TU never come back through that path.
-      // The per-customer endpoint has no TU filter — pull the linked producer's
-      // notes individually and merge them into the local notes() signal so the
-      // selected customer's activity summary, last-contacted, and inline notes
-      // all see the linked-group's full history. We skip notes already present
-      // (by id) to keep the merge idempotent across concurrent BFS recursions.
-      const noteFetches = discovered
-        .filter(c => c.id !== customer.id)
-        .map(c => this.apiService.getNotesByCustomer(c.id).pipe(catchError(() => of([] as Note[]))));
-      if (noteFetches.length > 0) {
-        forkJoin(noteFetches).pipe(takeUntil(this._cancelSelection$), takeUntilDestroyed(this.destroyRef)).subscribe(noteLists => {
-          const incomingNotes = noteLists.flat();
-          if (incomingNotes.length === 0) return;
-          this.notes.update(arr => {
-            const seen = new Set(arr.map(n => n.id));
-            const additions = incomingNotes.filter(n => !seen.has(n.id));
-            return additions.length > 0 ? [...arr, ...additions] : arr;
-          });
-          this.appState.setNotes(this.notes());
-          // Refresh the selected customer's note panel if it's the customer
-          // whose chain we just expanded — picks up the freshly-fetched links.
-          const sel = this.selectedCustomer();
-          if (sel?.id === customer.id) this._loadCustomerData(sel.id);
-        });
-      }
-
       // Recurse into each newly-discovered customer so their own links (both
       // directions) get fetched too — completes the transitive closure.
       for (const next of discovered) {
         this._fetchMissingLinkedProducers(next, visited);
       }
 
+      // The selected producer's linked group may have just expanded — top up the
+      // per-customer notes cache for any newly-known members (the per-customer
+      // endpoint has no TU filter, so linked producers in unselected trade units
+      // are fully covered) and recompute the panel. Cache hits skip the network,
+      // so BFS levels with no new members cost nothing.
       const sel = this.selectedCustomer();
-      if (sel?.id === customer.id) this._loadCustomerData(sel.id);
+      if (sel) this._ensureCustomerNotes(sel);
     });
   }
 
@@ -1181,7 +1269,11 @@ export class HomeComponent {
     const codeMap = new Map<number, string>();
     [currentCustomer, ...linkedGroup].forEach(c => { if (c?.scoularId) codeMap.set(c.id, c.scoularId); });
     this.customerCodeMap.set(codeMap);
-    this.customerNotes.set(this._sortNotes(this.notes().filter(n => linkedIds.has(n.customerId))));
+    // Pure recompute from the per-customer notes cache (hydrated by _ensureCustomerNotes) —
+    // safe to call from every data-arrival callback, exactly like the filters above.
+    this.customerNotes.set(this._sortNotes(
+      [...linkedIds].flatMap(id => this._customerNotesCache.get(id) ?? [])
+    ));
   }
 
   /** Producer ids with an auto-save PUT currently in flight — prevents the concurrent double-save race. */
@@ -1438,6 +1530,9 @@ export class HomeComponent {
     // immediately. Recursive BFS (transitive) so newly added edges extend the group.
     this._fetchMissingLinkedProducers(updated);
     this._loadCustomerData(updated.id, updated);
+    // A newly-linked producer that was ALREADY in the roster never goes through the BFS
+    // network path, so make sure the expanded group's notes are cached for the panel.
+    this._ensureCustomerNotes(updated);
   }
 
   /**
@@ -1492,6 +1587,8 @@ export class HomeComponent {
 
   handleSelectLinkedCustomer(customerId: number): void {
     if (customerId === this.selectedCustomer()?.id) return;
+    // New selection — allow each producer's notes to be re-fetched once (other reps' adds show).
+    this._notesRefreshedThisSelection.clear();
     // Reset navigation context — user is manually selecting a linked producer
     this.pendingContractId.set(null);
     this.pendingTab.set(null);
@@ -1510,6 +1607,7 @@ export class HomeComponent {
       this._fetchMissingLinkedProducers(customer);
       this._loadCustomerContractsAndTickets(customer.id, customer.scoularId);
       this._loadCustomerData(customer.id);
+      this._ensureCustomerNotes(customer);
       this.allCustomerPlantingIntentions.set([]);
       this.customerPlantingIntentions.set([]);
       const piRequestId = ++this._piRequestId;
@@ -1549,6 +1647,7 @@ export class HomeComponent {
           this._fetchMissingLinkedProducers(fetched);
           this._loadCustomerContractsAndTickets(fetched.id, fetched.scoularId);
           this._loadCustomerData(fetched.id);
+          this._ensureCustomerNotes(fetched);
           this.allCustomerPlantingIntentions.set([]);
           this.customerPlantingIntentions.set([]);
           const piRequestId = ++this._piRequestId;
@@ -1566,19 +1665,8 @@ export class HomeComponent {
         error: () => {}
       });
     }
-    // Notes may not be loaded if no trade units are active — refresh so the linked
-    // customer's notes appear even when _loadAllData was never called.
-    if (this.selectedTradeUnits().length === 0) {
-      this.apiService.getNotes().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-        next: (data) => {
-          this.notes.set(data);
-          this.appState.setNotes(data);
-          const sel = this.selectedCustomer();
-          if (sel) this._loadCustomerData(sel.id);
-        },
-        error: () => {}
-      });
-    }
+    // (No-TU special case removed: _ensureCustomerNotes above hydrates the linked
+    // customer's notes via the per-customer endpoint, which is TU-independent.)
   }
 
   addPlantingIntention(data: {crop: string, category?: string, type?: string, description?: string, acres: number, plantingYear: number, tradeUnit: string}): void {
@@ -1698,7 +1786,8 @@ export class HomeComponent {
    *  fails, the user's typed content survives and they can retry. */
   readonly noteSaveSucceededCounter = signal(0);
 
-  addNote(content: string): void {
+  addNote(payload: { content: string; mentions: NoteMention[] }): void {
+    const { content, mentions } = payload;
     const sel = this.selectedCustomer();
     if (!sel) return;
     // Not-yet-onboarded producer: there's no dbo.Customer row for a note to attach to
@@ -1712,11 +1801,11 @@ export class HomeComponent {
     if (this.isSavingNote()) return;
     const tradeUnit = this.selectedTradeUnits().length === 1 ? this.selectedTradeUnits()[0] : undefined;
     this.isSavingNote.set(true);
-    this.apiService.createNote(sel.id, content, tradeUnit).subscribe({
+    this.apiService.createNote(sel.id, content, tradeUnit, mentions).subscribe({
       next: (note) => {
-        this.notes.update(arr => [...arr, note]);
-        this.appState.setNotes(this.notes());
+        this._applyNoteToCache(note);
         this.customerNotes.update(arr => this._sortNotes([...arr, note]));
+        this._recomputeLastContactFor(note.customerId);
         this.toastService.success('Note added');
         // Increment FIRST so the child clears its textarea, then drop the flag.
         this.noteSaveSucceededCounter.update(n => n + 1);
@@ -1729,6 +1818,53 @@ export class HomeComponent {
         this.isSavingNote.set(false);
       }
     });
+  }
+
+  /** Inserts or replaces `note` in the per-customer notes cache and, when the full
+   *  TU-wide NLQ cache has been lazily loaded, mirrors the change there so saved-list /
+   *  build-list queries keep seeing fresh data. */
+  private _applyNoteToCache(note: Note): void {
+    const cached = this._customerNotesCache.get(note.customerId);
+    if (cached) {
+      const idx = cached.findIndex(n => n.id === note.id);
+      this._customerNotesCache.set(note.customerId,
+        idx >= 0 ? cached.map(n => n.id === note.id ? note : n) : [...cached, note]);
+    } else {
+      this._customerNotesCache.set(note.customerId, [note]);
+    }
+    if (this.appState.notesLoaded()) {
+      const all = this.appState.notes();
+      const idx = all.findIndex(n => n.id === note.id);
+      this.appState.setNotes(idx >= 0 ? all.map(n => n.id === note.id ? note : n) : [...all, note]);
+    }
+  }
+
+  /** Removes a note from the per-customer cache and (if loaded) the NLQ cache. */
+  private _removeNoteFromCache(noteId: number, customerId: number): void {
+    const cached = this._customerNotesCache.get(customerId);
+    if (cached) this._customerNotesCache.set(customerId, cached.filter(n => n.id !== noteId));
+    if (this.appState.notesLoaded()) {
+      this.appState.setNotes(this.appState.notes().filter(n => n.id !== noteId));
+    }
+  }
+
+  /** Recomputes the last-contact aggregate entry for one customer from the per-customer
+   *  notes cache (which the CRUD handlers keep current). A customer whose last note was
+   *  deleted drops back to "Never contacted"; a new note raises the badge date. */
+  private _recomputeLastContactFor(customerId: number): void {
+    const cached = this._customerNotesCache.get(customerId) ?? [];
+    this.noteLastContacts.update(rows => {
+      const rest = rows.filter(r => r.customerId !== customerId);
+      if (cached.length === 0) return rest;
+      const lastMs = cached.reduce((m, n) => Math.max(m, this._parseNoteTime(n.createdAt)), 0);
+      const row: NoteLastContact = {
+        customerId,
+        customerCode: cached[0].customerCode,
+        lastNoteAt: new Date(lastMs)
+      };
+      return [...rest, row];
+    });
+    this.appState.setNoteLastContacts(this.noteLastContacts());
   }
 
   private _parseNoteTime(ts: string | Date): number {
@@ -1751,8 +1887,8 @@ export class HomeComponent {
   toggleNotePin(note: Note): void {
     this.apiService.toggleNotePin(note.id).subscribe({
       next: (updated) => {
-        this.notes.update(arr => arr.map(n => n.id === updated.id ? updated : n));
-        this.appState.setNotes(this.notes());
+        // Pin/unpin doesn't change createdAt, so the last-contact aggregate is untouched.
+        this._applyNoteToCache(updated);
         this.customerNotes.update(arr =>
           this._sortNotes(arr.map(n => n.id === updated.id ? updated : n))
         );
@@ -1765,8 +1901,8 @@ export class HomeComponent {
   editNote(data: { noteId: number; content: string }): void {
     this.apiService.updateNote(data.noteId, data.content).subscribe({
       next: (updated) => {
-        this.notes.update(arr => arr.map(n => n.id === updated.id ? updated : n));
-        this.appState.setNotes(this.notes());
+        // Content edits don't change createdAt, so the last-contact aggregate is untouched.
+        this._applyNoteToCache(updated);
         this.customerNotes.update(arr =>
           this._sortNotes(arr.map(n => n.id === updated.id ? updated : n))
         );
@@ -1777,10 +1913,15 @@ export class HomeComponent {
   }
 
   deleteNote(noteId: number): void {
+    // Resolve the note's owning customer BEFORE the delete — deletes come from the panel,
+    // so the note is in customerNotes (possibly belonging to a linked producer).
+    const target = this.customerNotes().find(n => n.id === noteId);
     this.apiService.deleteNote(noteId).subscribe({
       next: () => {
-        this.notes.update(arr => arr.filter(n => n.id !== noteId));
-        this.appState.setNotes(this.notes());
+        if (target) {
+          this._removeNoteFromCache(noteId, target.customerId);
+          this._recomputeLastContactFor(target.customerId);
+        }
         this.customerNotes.update(arr => arr.filter(n => n.id !== noteId));
         this.toastService.success('Note deleted');
       },

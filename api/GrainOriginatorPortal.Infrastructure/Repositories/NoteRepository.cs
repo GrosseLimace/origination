@@ -21,8 +21,12 @@ public class NoteRepository : INoteRepository
     {
         _logger.LogInformation("Attempting to retrieve notes from database");
 
+        // Bulk read that returns every non-deleted note — same generous timeout the other
+        // bulk repositories use. The 30s default was being exceeded at post-import volume,
+        // and a timeout counts as transient so EnableRetryOnFailure re-ran the whole query.
+        _appContext.Database.SetCommandTimeout(120);
+
         var query = _appContext.Notes.AsNoTracking()
-            .Include(n => n.Customer)
             .Where(n => !n.IsDeleted);
         var tuList = tradeUnits?.Where(t => !string.IsNullOrEmpty(t)).ToList();
         if (tuList is { Count: > 0 })
@@ -44,17 +48,73 @@ public class NoteRepository : INoteRepository
                     && ctu.IsActive
                     && tuList.Contains(ctu.TradeUnit)));
         }
-        var notes = await query
-            .OrderByDescending(n => n.CreatedAt)
+
+        // Project to exactly the columns the response needs instead of Include(Customer),
+        // which duplicated the full Customer row onto every note over the SQL wire. No
+        // ORDER BY in SQL: CreatedAt has no supporting index, so SQL Server sorted the
+        // LOB-bearing rows (Description/Mentions) through tempdb; ordering the materialized
+        // rows in memory below is cheap and keeps the response array order identical.
+        // (EF can't project into a mapped entity type, hence the anonymous row + rebuild.)
+        var rows = await query
+            .Select(n => new
+            {
+                n.Id,
+                n.CustomerId,
+                n.TradeUnit,
+                n.Description,
+                n.CreatedBy,
+                n.CreatedAt,
+                n.ModifiedBy,
+                n.ModifiedAt,
+                n.IsPinned,
+                n.Subject,
+                n.MentionsJson,
+                // CustomerName / CustomerCode come from the Customer FK join
+                // (the columns were dropped from dbo.Notes in Phase 3b).
+                CustomerName = n.Customer!.Name,
+                CustomerCode = n.Customer!.ScoularId
+            })
             .ToListAsync(cancellationToken);
-        foreach (var n in notes)
-        {
-            // CustomerName / CustomerCode now come from the Customer FK join
-            // (the columns were dropped from dbo.Notes in Phase 3b).
-            n.CustomerName = n.Customer?.Name ?? string.Empty;
-            n.CustomerCode = n.Customer?.ScoularId;
-        }
-        return notes;
+
+        return rows
+            .OrderByDescending(r => r.CreatedAt)
+            .Select(r => new Note
+            {
+                Id = r.Id,
+                CustomerId = r.CustomerId,
+                CustomerName = r.CustomerName ?? string.Empty,
+                CustomerCode = r.CustomerCode,
+                TradeUnit = r.TradeUnit,
+                Description = r.Description,
+                CreatedBy = r.CreatedBy,
+                CreatedAt = r.CreatedAt,
+                ModifiedBy = r.ModifiedBy,
+                ModifiedAt = r.ModifiedAt,
+                IsPinned = r.IsPinned,
+                Subject = r.Subject,
+                MentionsJson = r.MentionsJson
+            })
+            .ToList();
+    }
+
+    public async Task<List<NoteLastContact>> GetLastContactAsync(CancellationToken cancellationToken)
+    {
+        // One row per customer with notes — the "last contacted" badge feed. Aggregates ALL
+        // non-deleted notes per customer with no trade-unit filter: notes are open per producer
+        // (matches GetByCustomerAsync / the per-customer endpoint, AR-02), so the badge reflects
+        // the producer's true latest contact regardless of which TU a note happened to be tagged
+        // with. Trade-unit scoping lives on the CUSTOMERS query (which producers show), not here.
+        // Touches no LOB columns.
+        return await _appContext.Notes.AsNoTracking()
+            .Where(n => !n.IsDeleted)
+            .GroupBy(n => new { n.CustomerId, n.Customer!.ScoularId })
+            .Select(g => new NoteLastContact
+            {
+                CustomerId = g.Key.CustomerId,
+                CustomerCode = g.Key.ScoularId,
+                LastNoteAt = g.Max(n => n.CreatedAt)
+            })
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<List<Note>> GetByCustomerAsync(long customerId, CancellationToken cancellationToken)
@@ -86,7 +146,7 @@ public class NoteRepository : INoteRepository
         return note;
     }
 
-    public async Task<Note> AddAsync(long customerId, string content, string? tradeUnit, string currentUser, CancellationToken cancellationToken)
+    public async Task<Note> AddAsync(long customerId, string content, string? tradeUnit, string? mentionsJson, string currentUser, CancellationToken cancellationToken)
     {
         // Resolve denormalized name/code from dbo.Customer (the UI's source of truth).
         var snap = await _appContext.Customers.AsNoTracking()
@@ -101,6 +161,7 @@ public class NoteRepository : INoteRepository
             CustomerCode = snap?.ScoularId,
             TradeUnit = tradeUnit,
             Description = content,
+            MentionsJson = mentionsJson,
             CreatedBy = currentUser,
             CreatedAt = DateTime.UtcNow
         };
@@ -131,7 +192,7 @@ public class NoteRepository : INoteRepository
         return note;
     }
 
-    public async Task<Note?> UpdateAsync(long noteId, string content, string currentUser, CancellationToken cancellationToken)
+    public async Task<Note?> UpdateAsync(long noteId, string content, string? mentionsJson, string currentUser, CancellationToken cancellationToken)
     {
         var note = await _appContext.Notes
             .Include(n => n.Customer)
@@ -142,6 +203,7 @@ public class NoteRepository : INoteRepository
         }
 
         note.Description = content;
+        note.MentionsJson = mentionsJson;   // replace mentions on update (null clears them)
         note.ModifiedBy = currentUser;
         note.ModifiedAt = DateTime.UtcNow;
         await _appContext.SaveChangesAsync(cancellationToken);
