@@ -29,6 +29,7 @@ public class StoredGrainRepository : IStoredGrainRepository
             SELECT
                 WHR_RECEIPT_NUMBER,
                 LOCATION_CODE,
+                ELEVATOR_CODE,
                 CUSTOMER_ID,
                 COMMODITY_CODE,
                 NET_QUANTITY,
@@ -64,26 +65,22 @@ public class StoredGrainRepository : IStoredGrainRepository
             ISNULL(sg.STORAGE_DAYS, 0) AS StorageDays,
             sg.CHARGED_FROM_DATE AS ChargedFromDate,
             sg.CHARGED_THRU_DATE AS ChargedThruDate,
-            -- Human-readable facility location. LOCATION_CODE maps 1:1 to ctrm.vw_GNP003.Location_Code
-            -- (verified: full coverage, unique key), the same location master the ticket fallback uses.
+            -- Human-readable facility location, resolved ONLY from the elevator master via the SAME
+            -- composite key tickets use: ctrm.vw_GNP026 on
+            -- (Elevator_Code + Elevator_Location_Code) = (ELEVATOR_CODE + LOCATION_CODE), taking the
+            -- elevator city/state (e.g. PRATT = PRATT, KS).
             --
-            -- IMPORTANT — this is the DIVISION/LOCATION, not the physical elevator, and it can differ
-            -- from the "Location" shown for the SAME ticket on the Unapplied Tickets screen:
-            --   * A storage receipt only records LOCATION_CODE (a division/location, e.g. 1340 = HANCOCK).
-            --     That is the ONLY location field on vw_GNTA39D1 — there is no elevator code here.
-            --   * The ticket record carries the actual ElevatorCode (e.g. EMERSO = EMERSON), which the
-            --     ticket screen resolves via ctrm.vw_GNP026 (elevator master). EMERSO rolls up under
-            --     division 1340, so the ticket shows the elevator (Emerson) while storage shows the
-            --     division it belongs to (Hancock). Both are correct, just at different granularity.
-            -- So for any division with >1 elevator, Storage will show the division and Tickets the
-            -- elevator. To make them agree we'd have to join each receipt to its matching ticket
-            -- (same number) and borrow the ticket's elevator — deliberately NOT done here. See the
-            -- ticket-side lookup in TicketRepository.PopulateElevatorLocations (vw_GNP026 + vw_GNP003).
-            ISNULL(LTRIM(RTRIM(loc.Location_City)), '') AS LocationCity,
-            ISNULL(LTRIM(RTRIM(loc.Location_State)), '') AS LocationState
+            -- Deliberately NO division fallback: if the elevator can't be resolved from those two
+            -- codes (e.g. ELEVATOR_CODE is null/missing), we return blank rather than showing the
+            -- division's town. A division can contain multiple elevators in different towns, so the
+            -- division location could be a DIFFERENT place than where the grain actually sits — showing
+            -- it would risk presenting a misleading location. Blank (→ "—" in the UI) is safer than wrong.
+            ISNULL(LTRIM(RTRIM(elev.Elevator_City)), '') AS LocationCity,
+            ISNULL(LTRIM(RTRIM(elev.Elevator_State)), '') AS LocationState
         FROM LatestReceipts sg
-        LEFT JOIN ctrm.vw_GNP003 loc
-               ON LTRIM(RTRIM(loc.Location_Code)) = LTRIM(RTRIM(sg.LOCATION_CODE))
+        LEFT JOIN ctrm.vw_GNP026 elev
+               ON LTRIM(RTRIM(elev.Elevator_Code)) = LTRIM(RTRIM(sg.ELEVATOR_CODE))
+              AND LTRIM(RTRIM(elev.Elevator_Location_Code)) = LTRIM(RTRIM(sg.LOCATION_CODE))
         WHERE sg.rn = 1
         """;
 

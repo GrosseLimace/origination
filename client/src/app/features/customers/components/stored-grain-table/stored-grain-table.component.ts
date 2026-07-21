@@ -6,8 +6,12 @@ import { Customer, StoredGrain } from '@models';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
 
+export type StorageGroupMode = 'both' | 'crop' | 'location';
+
 export interface CommodityGroup {
-  crop: string;
+  key: string;       // unique group key (drives expand/collapse); depends on the group mode
+  crop: string;      // commodity label (shown in crop / both modes)
+  location: string;  // location label (shown in location / both modes), e.g. "PRATT, KS" or "No location"
   receipts: StoredGrain[];
   totalBushels: number;
   totalCost: number;
@@ -31,6 +35,11 @@ export class StoredGrainTableComponent {
   searchQuery = signal('');
   expandedCommodities = signal(new Set<string>());
 
+  /** Collapsible "Filter" bar + group-by mode, mirroring the Unapplied Tickets table.
+   *  Default 'crop' preserves the historical storage grouping; users can switch to Location or both. */
+  summaryExpanded = signal(false);
+  groupMode = signal<StorageGroupMode>('crop');
+
   currentSortColumn: string | null = null;
   currentSortDirection: 'none' | 'asc' | 'desc' = 'none';
 
@@ -42,7 +51,7 @@ export class StoredGrainTableComponent {
     effect(() => {
       const groups = this.allCommodityGroups();
       this.expandedCommodities.set(
-        groups.length === 1 ? new Set([groups[0].crop]) : new Set()
+        groups.length === 1 ? new Set([groups[0].key]) : new Set()
       );
       this.searchQuery.set('');
     });
@@ -52,14 +61,27 @@ export class StoredGrainTableComponent {
     new Map(this.storedGrain().map(g => [g.id, g]))
   );
 
+  /** Display label for a receipt's location (elevator city/state), or "No location" when unresolved. */
+  private _grainLocation(g: StoredGrain): string {
+    const city = g.locationCity?.trim();
+    const state = g.locationState?.trim();
+    if (city && state) return `${city}, ${state}`;
+    return city || state || 'No location';
+  }
+
   private readonly allCommodityGroups = computed<CommodityGroup[]>(() => {
+    const mode = this.groupMode();
     const groupMap = new Map<string, CommodityGroup>();
 
     for (const grain of this.storedGrain()) {
-      const key = grain.crop || 'Unknown';
+      const crop = grain.crop || 'Unknown';
+      const location = this._grainLocation(grain);
+      const key = mode === 'crop' ? crop : mode === 'location' ? location : `${crop}|${location}`;
       if (!groupMap.has(key)) {
         groupMap.set(key, {
-          crop: key,
+          key,
+          crop,
+          location,
           receipts: [],
           totalBushels: 0,
           totalCost: 0,
@@ -74,7 +96,8 @@ export class StoredGrainTableComponent {
       if (rowDate < group.earliestDate) group.earliestDate = rowDate;
     }
 
-    return Array.from(groupMap.values()).sort((a, b) => a.crop.localeCompare(b.crop));
+    return Array.from(groupMap.values())
+      .sort((a, b) => a.crop.localeCompare(b.crop) || a.location.localeCompare(b.location));
   });
 
   readonly commodityGroups = computed<CommodityGroup[]>(() => {
@@ -84,16 +107,12 @@ export class StoredGrainTableComponent {
     // Expand search term through commodity aliases (e.g., "milo" → also matches "sorghum")
     const searchTerms = expandCommodityAliases(term);
 
+    // Filter at the receipt level (works for every group mode): match commodity alias, ticket #,
+    // date, or facility location (city/state), then rebuild the group from the matched receipts.
     const result: CommodityGroup[] = [];
     for (const group of this.allCommodityGroups()) {
-      // Commodity name matches any alias
-      const cropLower = group.crop.toLowerCase();
-      if (searchTerms.some(t => cropLower.includes(t))) {
-        result.push(group);
-        continue;
-      }
-      // Filter to receipts matching ticket #, date, or facility location (city/state)
       const matchedReceipts = group.receipts.filter(r =>
+        searchTerms.some(t => (r.crop || '').toLowerCase().includes(t)) ||
         r.receiptNumber.toLowerCase().includes(term) ||
         this._formatDate(r.storageStartDate).includes(term) ||
         (r.locationCity?.toLowerCase().includes(term) ?? false) ||
@@ -110,6 +129,10 @@ export class StoredGrainTableComponent {
     }
     return result;
   });
+
+  setGroupMode(mode: StorageGroupMode): void {
+    this.groupMode.set(mode);
+  }
 
   readonly totalStorageCost = computed(() =>
     this.allCommodityGroups().reduce((sum, g) => sum + g.totalCost, 0)
@@ -129,11 +152,11 @@ export class StoredGrainTableComponent {
     this.showSearch.set(false);
   }
 
-  toggleCommodity(crop: string, event: MouseEvent): void {
-    const isOpening = !this.expandedCommodities().has(crop);
+  toggleCommodity(key: string, event: MouseEvent): void {
+    const isOpening = !this.expandedCommodities().has(key);
     this.expandedCommodities.update(set => {
       const next = new Set(set);
-      isOpening ? next.add(crop) : next.delete(crop);
+      isOpening ? next.add(key) : next.delete(key);
       return next;
     });
     if (isOpening) {
@@ -147,8 +170,8 @@ export class StoredGrainTableComponent {
     }
   }
 
-  isExpanded(crop: string): boolean {
-    return this.expandedCommodities().has(crop);
+  isExpanded(key: string): boolean {
+    return this.expandedCommodities().has(key);
   }
 
   handleSort(column: string): void {
