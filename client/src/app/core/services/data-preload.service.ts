@@ -6,7 +6,7 @@ import { MsalBroadcastService, MsalService } from '@azure/msal-angular';
 import { InteractionStatus } from '@azure/msal-browser';
 import { ApiService } from './api.service';
 import { AppStateService } from './app-state.service';
-import { Customer, Contract, Ticket, Note, PlantingIntention, StoredGrain, SavedList, Commodity, CommodityConversion, HarvestWindow, DashboardSummary } from '@models';
+import { Customer, Contract, Ticket, NoteLastContact, PlantingIntention, StoredGrain, SavedList, Commodity, CommodityConversion, HarvestWindow, DashboardSummary } from '@models';
 import { ProducerDetails } from '../../models/producer-details.model';
 
 @Injectable({ providedIn: 'root' })
@@ -71,6 +71,9 @@ export class DataPreloadService {
         // list/NLQ consumers (customer-list, build-list) when a ticket query needs it. Clear it on
         // TU change so those consumers re-fetch for the new TU instead of reusing the prior TU's set.
         this.appState.clearTicketsCache();
+        // Same for the full note set: NLQ/saved-list consumers fetch it lazily when a note
+        // query needs it. Badges use the noteLastContacts aggregate below instead.
+        this.appState.clearNotesCache();
 
         // Core group — dataLoading clears when all three are ready so that
         // Unconfirmed Contracts, Spot Loads, and Unshipped Bushels all appear
@@ -105,10 +108,13 @@ export class DataPreloadService {
             if (coreArrived.customers && coreArrived.contracts) this.appState.setDataLoading(false);
           })
         );
-        const notes$ = this.apiService.getNotes().pipe(
-          catchError(() => of([] as Note[])),
+        // Last-contact aggregate instead of the full note download: tiny rows (one per
+        // customer with notes, all trade units) that feed the list badges. Full note
+        // bodies load per-producer on selection or lazily for NLQ.
+        const notes$ = this.apiService.getNotesLastContact().pipe(
+          catchError(() => of([] as NoteLastContact[])),
           tap(data => {
-            this.appState.setNotes(data);
+            this.appState.setNoteLastContacts(data);
           })
         );
 

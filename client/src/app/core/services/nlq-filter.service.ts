@@ -118,6 +118,25 @@ export class NlqFilterService {
       || q.includes('never contacted') || q.includes('not contacted');
   }
 
+  /**
+   * Returns true if this query's RESULTS can depend on note data — i.e. parseAndFilter will
+   * read context.notes. That's broader than queryInvolvesContact: besides explicit contact
+   * and "notes mentioning X" queries, the supplementary note-keyword merge runs for general
+   * keyword queries too (everything EXCEPT ranking "top N", planting, ticket, and grain-on-farm
+   * prompts — mirrors the skip conditions in parseAndFilter). Callers use this to make sure the
+   * lazily-loaded note set is present before running a query, so it never evaluates against an
+   * empty note array and paints a false "no results".
+   */
+  queryInvolvesNotes(query: string): boolean {
+    const q = query.toLowerCase();
+    if (this.queryInvolvesContact(q) || this._isNoteSearchQuery(q)) return true;
+    // Otherwise the supplementary keyword merge runs unless the query is one of these types.
+    return !/^top\s*\d+/.test(q)
+      && !this.queryInvolvesPlanting(q)
+      && !this.queryInvolvesTickets(q)
+      && !this.queryInvolvesGrainOnFarm(q);
+  }
+
   /** Returns true if the query involves planting-related patterns that require planting intentions data. */
   queryInvolvesPlanting(query: string): boolean {
     const q = query.toLowerCase();

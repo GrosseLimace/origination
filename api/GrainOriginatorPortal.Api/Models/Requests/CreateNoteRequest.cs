@@ -13,4 +13,11 @@ public record CreateNoteRequest
 
     [StringLength(100)]
     public string? TradeUnit { get; init; }
+
+    /// <summary>
+    /// Optional "@" mentions (person / trade unit / group) chosen while composing the note.
+    /// Persisted as a JSON array in Notes.Mentions. No picker UI sends these yet.
+    /// </summary>
+    [MaxLength(50)]
+    public IReadOnlyList<NoteMention>? Mentions { get; init; }
 }

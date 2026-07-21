@@ -8,6 +8,7 @@ import {
   Ticket,
   PlantingIntention,
   Note,
+  NoteLastContact,
   StoredGrain,
   SavedList,
   TeamMember,
@@ -36,7 +37,9 @@ import {
   ActivityBreakdown,
   UnderusedFeature,
   UserUsageDetail,
-  QueryLibraryItem
+  QueryLibraryItem,
+  NoteMention,
+  MentionCatalog
 } from '@models';
 import { environment } from '@env/environment';
 import { ToastService } from '@core/services/toast.service';
@@ -509,16 +512,33 @@ export class ApiService {
     );
   }
 
+  /** Per-customer "last contacted" aggregate — tiny rows (no note bodies), all trade units.
+   *  Feeds the list badges; payload is bounded by customer count, not note count. */
+  getNotesLastContact(): Observable<NoteLastContact[]> {
+    return this._dedupe('notes-last-contact',
+      this.http.get<NoteLastContact[]>(`${this.baseUrl}/notes/last-contact`)
+        .pipe(catchError(e => this.handleError(e)))
+    );
+  }
+
   /** Fetches all notes for a specific customer */
   getNotesByCustomer(customerId: number): Observable<Note[]> {
     return this.http.get<Note[]>(`${this.baseUrl}/notes/customer/${customerId}`)
       .pipe(catchError(e => this.handleError(e)));
   }
 
-  /** Creates a new note for a customer */
-  createNote(customerId: number, content: string, tradeUnit?: string): Observable<Note> {
-    return this.http.post<Note>(`${this.baseUrl}/notes`, { customerId, content, tradeUnit })
+  /** Creates a new note for a customer (optionally with "@" mentions) */
+  createNote(customerId: number, content: string, tradeUnit?: string, mentions?: NoteMention[]): Observable<Note> {
+    return this.http.post<Note>(`${this.baseUrl}/notes`, { customerId, content, tradeUnit, mentions })
       .pipe(catchError(e => this.handleError(e)));
+  }
+
+  /** Lookup data (people / trade units / groups) for the note "@" mention picker */
+  getMentionCatalog(): Observable<MentionCatalog> {
+    return this._dedupe('mention-catalog',
+      this.http.get<MentionCatalog>(`${this.baseUrl}/notes/mention-catalog`)
+        .pipe(catchError(() => of<MentionCatalog>({ people: [], tradeUnits: [], groups: [] })))
+    );
   }
 
   /** Toggles the pinned status of a note */
