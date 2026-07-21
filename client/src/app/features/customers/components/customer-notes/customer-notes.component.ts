@@ -1,9 +1,20 @@
-import { Component, input, output, effect, DestroyRef, inject, ChangeDetectionStrategy, signal } from '@angular/core';
+import { Component, input, output, effect, DestroyRef, inject, ChangeDetectionStrategy, signal, computed, viewChild, ElementRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { ToastService } from '@core/services/toast.service';
-import { Customer, Note } from '@models';
+import { ApiService } from '@core/services/api.service';
+import { Customer, Note, NoteMention, MentionCatalog } from '@models';
+
+/** A single selectable row in the "@" mention dropdown. */
+interface MentionOption {
+  type: NoteMention['type'];
+  id: string;
+  name: string;
+  email?: string;
+  secondary?: string;
+}
 
 @Component({
   selector: 'app-customer-notes',
@@ -17,6 +28,10 @@ export class CustomerNotesComponent {
   public customer = input.required<Customer>();
   public customerCodeMap = input<Map<number, string>>(new Map());
   public linkedCustomers = input<Customer[]>([]);
+  /** True while the parent is fetching this producer's notes (notes load per-producer on
+   *  selection now). While loading and empty, show a spinner instead of "No notes yet" so
+   *  a producer WITH notes doesn't flash a misleading empty state. */
+  public isLoadingNotes = input<boolean>(false);
   /** True while the parent has an in-flight createNote request. Used to disable the
    *  Add Note button + switch its label to "Saving..." so the user sees feedback that
    *  their click landed. Fixes the "had to click 2-3 times" bug — without this signal,
@@ -30,35 +45,102 @@ export class CustomerNotesComponent {
   /** When set, the add-note form is disabled and this message is shown instead of the
    *  input — used for a not-yet-onboarded producer who must be assigned a trade unit first. */
   public addDisabledReason = input<string | null>(null);
-  public addNote = output<string>();
+  public addNote = output<{ content: string; mentions: NoteMention[] }>();
   public togglePin = output<Note>();
   public editNote = output<{ noteId: number; content: string }>();
   public deleteNote = output<number>();
 
   private readonly destroyRef = inject(DestroyRef);
   private readonly toastService = inject(ToastService);
+  private readonly apiService = inject(ApiService);
 
   newNote = signal('');
+
+  // ---- "@" mention picker state ----
+  noteTextarea = viewChild<ElementRef<HTMLTextAreaElement>>('noteTextarea');
+  /** Backdrop div mirroring the textarea text so selected @mentions render green while typing. */
+  noteBackdrop = viewChild<ElementRef<HTMLDivElement>>('noteBackdrop');
+  mentionCatalog = signal<MentionCatalog>({ people: [], tradeUnits: [], groups: [] });
+  /** Structured mentions chosen for the note being composed; sent to the API on submit. */
+  mentions = signal<NoteMention[]>([]);
+  /** Live segmentation of the compose text so already-selected @mentions show green as the
+   *  user keeps typing (turns green on select, not only after the note is saved). */
+  readonly composeSegments = computed(() =>
+    this._segmentMentions(this.newNote(), this.mentions().map(m => m.name))
+  );
+  mentionDropdownOpen = signal(false);
+  mentionQuery = signal('');
+  mentionActiveIndex = signal(0);
+  private mentionAtIndex = -1;  // index of the triggering '@' in the textarea value
+  private mentionCaret = 0;     // caret position when the query was captured
+
+  /** Catalog rows ranked by relevance to the current "@" query, capped for the dropdown.
+   *  Mentionable types: people, trade units, and trade-unit groups.
+   *  Ranking puts matches on the PRIMARY identifier (TU code, person name/UPN, group name)
+   *  above matches that only hit a SECONDARY field (TU description, person email). So "@1084"
+   *  surfaces that trade unit, and "@Corn Belt" surfaces the group above trade units whose
+   *  location name merely contains "corn" (e.g. "ABI WET BREW CORN"). */
+  mentionOptions = computed<MentionOption[]>(() => {
+    if (!this.mentionDropdownOpen()) return [];
+    const q = this.mentionQuery().trim().toLowerCase();
+    if (!q) return [];
+    const cat = this.mentionCatalog();
+
+    // Lower score = better match. -1 means no match (excluded).
+    const score = (primary: string[], secondary: string[]): number => {
+      const prim = primary.map(s => s.toLowerCase()).filter(Boolean);
+      const sec = secondary.map(s => s.toLowerCase()).filter(Boolean);
+      if (prim.some(s => s.startsWith(q))) return 0;
+      if (prim.some(s => s.includes(q))) return 1;
+      if (sec.some(s => s.startsWith(q))) return 2;
+      if (sec.some(s => s.includes(q))) return 3;
+      return -1;
+    };
+
+    const ranked: { opt: MentionOption; score: number }[] = [];
+    for (const p of cat.people) {
+      const s = score([p.displayName, p.userId], [p.email]);
+      if (s >= 0) ranked.push({ opt: { type: 'person', id: p.userId, name: p.displayName, email: p.email, secondary: p.email }, score: s });
+    }
+    for (const t of cat.tradeUnits) {
+      const s = score([t.code], [t.description ?? '']);
+      if (s >= 0) ranked.push({ opt: { type: 'trade-unit', id: t.code, name: t.code, secondary: t.description || 'Trade unit' }, score: s });
+    }
+    for (const g of cat.groups) {
+      const s = score([g.name], []);
+      if (s >= 0) ranked.push({ opt: { type: 'trade-unit-group', id: String(g.groupId), name: g.name, secondary: 'Group' }, score: s });
+    }
+
+    ranked.sort((a, b) => a.score - b.score || a.opt.name.localeCompare(b.opt.name));
+    return ranked.map(r => r.opt).slice(0, 8);
+  });
   openMenuId = signal<number | null>(null);
   editingNoteId = signal<number | null>(null);
   editContent = signal('');
   showDeleteConfirm = signal(false);
   noteToDelete = signal<Note | null>(null);
   filterValue = signal(''); // '' = All; customer id as string when a producer is selected
+  noteSearch = signal(''); // free-text filter over note content/author/date; '' = no filter
 
   // Performance optimization: Cache sorted notes to avoid re-sorting on every change detection
   sortedNotesCache = signal<Note[]>([]);
 
   constructor() {
+    // Load the "@" mention catalog once (per-user, not per-customer).
+    this.apiService.getMentionCatalog()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(c => this.mentionCatalog.set(c));
+
     effect(() => {
       const _notes = this.notes();
       this._updateSortedNotesCache();
     });
 
-    // Reset filter only when the selected customer changes, not on every note edit
+    // Reset filters (producer + search) only when the selected customer changes, not on every note edit
     effect(() => {
       const _customer = this.customer();
       this.filterValue.set('');
+      this.noteSearch.set('');
     });
 
     // Clear the textarea only after the parent reports a successful save (counter goes
@@ -71,6 +153,8 @@ export class CustomerNotesComponent {
       const current = this.noteSaveSucceededCounter();
       if (current > lastSeenSuccessCount) {
         this.newNote.set('');
+        this.mentions.set([]);
+        this.closeMentionDropdown();
       }
       lastSeenSuccessCount = current;
     });
@@ -83,10 +167,47 @@ export class CustomerNotesComponent {
     });
   }
 
-  get displayedNotes(): Note[] {
-    if (!this.filterValue()) return this.sortedNotesCache();
-    const id = Number(this.filterValue());
-    return this.sortedNotesCache().filter(n => n.customerId === id);
+  /** Notes to render: sorted cache, narrowed by the producer filter (when a linked customer is
+   *  selected) and then by the free-text search. Search matches note content, author (created/
+   *  modified by) and the created/modified dates, case-insensitive, where a note matches only if it
+   *  contains ALL of the typed words (AND) — so a full date like "Jun 17, 2026" pins to that day. */
+  readonly displayedNotes = computed<Note[]>(() => {
+    const sorted = this.sortedNotesCache();
+    const producerId = this.filterValue();
+    const byProducer = producerId
+      ? sorted.filter(n => n.customerId === Number(producerId))
+      : sorted;
+
+    const terms = this.noteSearch().trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return byProducer;
+
+    return byProducer.filter(n => {
+      const hay = this._noteSearchHaystack(n);
+      return terms.every(t => hay.includes(t));
+    });
+  });
+
+  /** Lowercased searchable text for a note: content + author(s) + created/modified dates. Dates
+   *  are included in both numeric (1/3/2026) and long (January 3, 2026) forms so "1/3", "2026",
+   *  "jan", or "january" all match. */
+  private _noteSearchHaystack(n: Note): string {
+    return [
+      n.content,
+      n.createdBy,
+      n.modifiedBy,
+      this._dateSearchText(n.createdAt),
+      this._dateSearchText(n.modifiedAt),
+    ].filter(Boolean).join(' ').toLowerCase();
+  }
+
+  /** Formats a note timestamp into searchable date text, or '' if absent/invalid. Mirrors
+   *  _parseNoteTime's UTC handling for bare ISO strings. */
+  private _dateSearchText(ts: string | Date | undefined | null): string {
+    if (!ts) return '';
+    const raw = typeof ts === 'string' && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts + 'Z' : ts;
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return '';
+    return `${d.toLocaleDateString('en-US')} ${d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`;
   }
 
   /**
@@ -117,6 +238,75 @@ export class CustomerNotesComponent {
       'border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20': note.isPinned,
       'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800': !note.isPinned
     };
+  }
+
+  /** Segments a saved note's body for display: @mention runs (shown green, signalling the note was
+   *  shared with them) plus, within the remaining text, any current search-term matches (highlighted).
+   *  Pure string splitting into text segments — no HTML is built, so there is no XSS surface. */
+  noteViewSegments(note: Note): { text: string; kind: 'plain' | 'mention' | 'search' }[] {
+    const mentionSegs = this._segmentMentions(note.content ?? '', (note.mentions ?? []).map(m => m.name));
+    const terms = this.noteSearch().trim().toLowerCase().split(/\s+/).filter(Boolean);
+
+    const out: { text: string; kind: 'plain' | 'mention' | 'search' }[] = [];
+    for (const seg of mentionSegs) {
+      if (seg.mention) { out.push({ text: seg.text, kind: 'mention' }); continue; }
+      if (terms.length === 0) { out.push({ text: seg.text, kind: 'plain' }); continue; }
+      for (const part of this._splitBySearchTerms(seg.text, terms)) out.push(part);
+    }
+    return out;
+  }
+
+  /** Splits a plain text run into search-match / non-match segments (case-insensitive). One capture
+   *  group so String.split keeps the matched text — odd indices are the matches. */
+  private _splitBySearchTerms(text: string, terms: string[]): { text: string; kind: 'plain' | 'search' }[] {
+    if (!text) return [];
+    const escaped = terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const re = new RegExp(`(${escaped.join('|')})`, 'gi');
+    return text
+      .split(re)
+      .map((part, i) => ({ text: part, kind: (i % 2 === 1 ? 'search' : 'plain') as 'plain' | 'search' }))
+      .filter(seg => seg.text.length > 0);
+  }
+
+  /** Matches the exact "@Name" tokens the composer inserts (see selectMention), longest name
+   *  first so "@Caden Egr" wins over a shorter "@Caden". Pure string matching — no HTML is built,
+   *  so there is no XSS surface. Shared by the saved-note view and the live compose highlight. */
+  private _segmentMentions(content: string, names: string[]): { text: string; mention: boolean }[] {
+    const tokens = [...new Set(names.map(n => '@' + n).filter(t => t.length > 1))]
+      .sort((a, b) => b.length - a.length);
+    if (tokens.length === 0) return [{ text: content, mention: false }];
+
+    const segments: { text: string; mention: boolean }[] = [];
+    const pushChar = (ch: string) => {
+      const last = segments[segments.length - 1];
+      if (last && !last.mention) last.text += ch;
+      else segments.push({ text: ch, mention: false });
+    };
+
+    let i = 0;
+    while (i < content.length) {
+      let hit: string | null = null;
+      if (content[i] === '@') {
+        for (const t of tokens) {
+          if (content.startsWith(t, i)) { hit = t; break; }
+        }
+      }
+      if (hit) {
+        segments.push({ text: hit, mention: true });
+        i += hit.length;
+      } else {
+        pushChar(content[i]);
+        i++;
+      }
+    }
+    return segments;
+  }
+
+  /** Keep the highlight backdrop scrolled in lockstep with the textarea (multi-line notes). */
+  syncBackdropScroll(): void {
+    const ta = this.noteTextarea()?.nativeElement;
+    const bd = this.noteBackdrop()?.nativeElement;
+    if (ta && bd) { bd.scrollTop = ta.scrollTop; bd.scrollLeft = ta.scrollLeft; }
   }
 
   getInitials(name: string): string {
@@ -174,11 +364,95 @@ export class CustomerNotesComponent {
       this.toastService.error('Note exceeds 5,000 character limit. Please shorten it before submitting.');
       return;
     }
-    this.addNote.emit(text);
+    // Only keep mentions whose "@Name" is still present in the note text — so a mention the
+    // user deleted from the text isn't sent. The text is the source of truth; mentions are
+    // tracked silently (no visible chips) for the future send endpoint.
+    const mentions = this.mentions().filter(m => text.includes('@' + m.name));
+    this.addNote.emit({ content: text, mentions });
     // Don't clear the textarea here — wait for the parent to report success
     // (noteSaveSucceededCounter increments). If the save fails, the user's text
     // stays intact so they can retry without retyping.
   }
+
+  // ---- "@" mention picker ----
+
+  /** Recompute the mention dropdown from the caret position. Fires on input/keyup/click. */
+  onNoteCaretChange(): void {
+    const ta = this.noteTextarea()?.nativeElement;
+    if (!ta) return;
+    const value = ta.value;
+    const pos = ta.selectionStart ?? value.length;
+    // Active mention = an "@" at a word boundary, then a first non-space char, then any run of
+    // characters up to the caret — spaces allowed, so multi-word names like "Caden Testing" match
+    // while typing. No newline or second "@" inside. Requiring the first char to be non-space means
+    // a bare "@" (or "@ ") shows nothing until the user types a letter.
+    const match = value.slice(0, pos).match(/(?:^|\s)@([^\s@][^\n@]*)$/);
+    if (match) {
+      this.mentionAtIndex = pos - match[1].length - 1;
+      this.mentionCaret = pos;
+      this.mentionQuery.set(match[1]);
+      this.mentionActiveIndex.set(0);
+      this.mentionDropdownOpen.set(true);
+      // The query now tolerates spaces, so it would otherwise keep matching after a completed
+      // mention (e.g. "@Corn Belt and then..."). Close once nothing matches instead of leaving an
+      // empty dropdown open.
+      if (this.mentionOptions().length === 0) this.closeMentionDropdown();
+    } else {
+      this.closeMentionDropdown();
+    }
+  }
+
+  /** Arrow/Enter/Escape navigation while the dropdown is open. */
+  onNoteKeydown(event: KeyboardEvent): void {
+    if (!this.mentionDropdownOpen()) return;
+    const opts = this.mentionOptions();
+    if (opts.length === 0) return;
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      this.mentionActiveIndex.update(i => (i + 1) % opts.length);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      this.mentionActiveIndex.update(i => (i - 1 + opts.length) % opts.length);
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      this.selectMention(opts[this.mentionActiveIndex()]);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      this.closeMentionDropdown();
+    }
+  }
+
+  /** Insert the chosen mention into the text and record it structurally. */
+  selectMention(opt: MentionOption): void {
+    if (this.mentionAtIndex < 0) return;
+    const value = this.newNote();
+    const before = value.slice(0, this.mentionAtIndex);
+    const after = value.slice(this.mentionCaret);
+    const insert = `@${opt.name} `;
+    this.newNote.set(before + insert + after);
+    // Dedupe by type+id — the same person/TU/group is only sent once even if @-ed twice.
+    this.mentions.update(list =>
+      list.some(x => x.type === opt.type && x.id === opt.id)
+        ? list
+        : [...list, { type: opt.type, id: opt.id, name: opt.name, email: opt.email }]);
+    this.closeMentionDropdown();
+    const caretPos = (before + insert).length;
+    setTimeout(() => {
+      const ta = this.noteTextarea()?.nativeElement;
+      if (ta) {
+        ta.focus();
+        ta.setSelectionRange(caretPos, caretPos);
+        this.syncBackdropScroll();
+      }
+    });
+  }
+
+  closeMentionDropdown(): void {
+    this.mentionDropdownOpen.set(false);
+    this.mentionQuery.set('');
+    this.mentionAtIndex = -1;
+  }
+
 
   toggleMenu(noteId: number, event: Event) {
     event.stopPropagation();

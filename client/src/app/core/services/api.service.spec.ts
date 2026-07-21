@@ -101,6 +101,13 @@ describe('ApiService', () => {
     req.flush([]);
   });
 
+  it('getNotesLastContact() calls GET /notes/last-contact', () => {
+    service.getNotesLastContact().subscribe();
+    const req = httpMock.expectOne(`${BASE}/notes/last-contact`);
+    expect(req.request.method).toBe('GET');
+    req.flush([]);
+  });
+
   it('createNote() calls POST /notes with body', () => {
     service.createNote(5, 'Good contact', 'TU1').subscribe();
     const req = httpMock.expectOne(`${BASE}/notes`);

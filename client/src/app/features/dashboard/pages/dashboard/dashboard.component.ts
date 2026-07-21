@@ -643,7 +643,9 @@ export class DashboardComponent {
   );
 
   // Last-contacted info per customer — mirrors build-list's lastContactByCustomer.
-  // Walks notes (incl. linked producers, forward + reverse edges) to find the most recent.
+  // Walks the last-contact aggregate (incl. linked producers, forward + reverse edges) to
+  // find the most recent. Fed by noteLastContacts — one MAX(CreatedAt) row per customer,
+  // all trade units — instead of the full note download.
   private readonly _lastContactByCustomer = computed(() => {
     const map = new Map<number, { text: string; colorClass: string; daysAgo: number }>();
     const parseUtc = (ts: string | Date) => {
@@ -652,11 +654,11 @@ export class DashboardComponent {
     };
 
     const notesByCode = new Map<string, { time: number }>();
-    for (const n of this.appStateService.notes()) {
-      if (!n.customerCode) continue;
-      const time = parseUtc(n.createdAt);
-      const existing = notesByCode.get(n.customerCode);
-      if (!existing || time > existing.time) notesByCode.set(n.customerCode, { time });
+    for (const row of this.appStateService.noteLastContacts()) {
+      if (!row.customerCode) continue;
+      const time = parseUtc(row.lastNoteAt);
+      const existing = notesByCode.get(row.customerCode);
+      if (!existing || time > existing.time) notesByCode.set(row.customerCode, { time });
     }
 
     const all = this.customers();

@@ -37,6 +37,41 @@
       </div>
     </div>
 
+    <!-- Filter / Group bar: mirrors the Unapplied Tickets "Filter" bar. -->
+    <div class="border-b border-gray-100 dark:border-gray-700 transition-colors"
+         [ngClass]="summaryExpanded() ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-900/40'">
+      <button
+        (click)="summaryExpanded.set(!summaryExpanded())"
+        class="w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors"
+        [ngClass]="summaryExpanded() ? 'text-gray-900 dark:text-white font-medium' : 'text-gray-500 dark:text-gray-400'">
+        <svg class="w-4 h-4 text-gray-500 dark:text-gray-400 flex-shrink-0 transition-transform" [class.rotate-90]="summaryExpanded()" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 18 6-6-6-6"/>
+        </svg>
+        Filter Storage
+      </button>
+      @if (summaryExpanded()) {
+        <div class="px-3 pb-2 text-sm">
+          <div class="flex items-center gap-3 py-1.5 flex-wrap">
+            <span class="text-gray-600 dark:text-gray-400">Group by</span>
+            <div class="inline-flex rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <button (click)="setGroupMode('both')" class="px-3 py-1 text-xs transition-colors"
+                [ngClass]="groupMode() === 'both' ? 'bg-scoular-green-accessible text-white' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'">
+                Crop &amp; Location
+              </button>
+              <button (click)="setGroupMode('crop')" class="px-3 py-1 text-xs border-l border-gray-200 dark:border-gray-700 transition-colors"
+                [ngClass]="groupMode() === 'crop' ? 'bg-scoular-green-accessible text-white' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'">
+                Crop
+              </button>
+              <button (click)="setGroupMode('location')" class="px-3 py-1 text-xs border-l border-gray-200 dark:border-gray-700 transition-colors"
+                [ngClass]="groupMode() === 'location' ? 'bg-scoular-green-accessible text-white' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'">
+                Location
+              </button>
+            </div>
+          </div>
+        </div>
+      }
+    </div>
+
     <!-- Commodity Groups -->
     <div class="max-h-[calc(100vh-14rem)] overflow-y-auto space-y-2 pt-2 px-1">
 
@@ -46,20 +81,28 @@
         </p>
       }
 
-      @for (group of commodityGroups(); track group.crop) {
+      @for (group of commodityGroups(); track group.key) {
         <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
 
           <!-- Collapsed Header -->
           <div
             class="flex items-center justify-between px-4 py-3 cursor-pointer select-none bg-gray-50 dark:bg-gray-800/60 hover:bg-gray-100 dark:hover:bg-gray-700/60 transition-colors"
-            (click)="toggleCommodity(group.crop, $event)"
+            (click)="toggleCommodity(group.key, $event)"
           >
             <div class="flex items-center gap-3 min-w-0">
-              <svg class="h-4 w-4 text-gray-400 flex-shrink-0 transition-transform duration-200" [class.rotate-90]="isExpanded(group.crop)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg class="h-4 w-4 text-gray-400 flex-shrink-0 transition-transform duration-200" [class.rotate-90]="isExpanded(group.key)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 18 6-6-6-6"/>
               </svg>
               <div class="min-w-0">
-                <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ group.crop }}</p>
+                <p class="text-sm font-semibold text-gray-900 dark:text-white">
+                  @if (groupMode() === 'crop') {
+                    {{ group.crop }}
+                  } @else if (groupMode() === 'location') {
+                    {{ group.location }}
+                  } @else {
+                    {{ group.crop }} <span class="text-gray-400 dark:text-gray-500">·</span> {{ group.location }}
+                  }
+                </p>
                 <p class="text-xs text-gray-500 dark:text-gray-400">
                   {{ group.receipts.length }} ticket{{ group.receipts.length !== 1 ? 's' : '' }}
                   &middot; Since {{ group.earliestDate | date:'M/d/yyyy' }}
@@ -97,20 +140,23 @@
                         </svg>
                       </span>
                     </app-table-head>
-                    <app-table-head [sortable]="true" (click)="handleSort('netBu')">
-                      <span class="flex items-center justify-center gap-1">Net Bu
-                        <svg class="w-3.5 h-3.5" [class]="getSortIconClass('netBu')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          @if (currentSortColumn === 'netBu' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
-                          @else if (currentSortColumn === 'netBu' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
-                          @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
-                        </svg>
-                      </span>
-                    </app-table-head>
                     <app-table-head [sortable]="true" (click)="handleSort('charged')">
                       <span class="flex items-center justify-center gap-1">Charged From – Thru
                         <svg class="w-3.5 h-3.5" [class]="getSortIconClass('charged')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           @if (currentSortColumn === 'charged' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
                           @else if (currentSortColumn === 'charged' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
+                          @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
+                        </svg>
+                      </span>
+                    </app-table-head>
+                    <app-table-head>
+                      <span class="flex items-center justify-center">Location</span>
+                    </app-table-head>
+                    <app-table-head [sortable]="true" (click)="handleSort('netBu')">
+                      <span class="flex items-center justify-center gap-1">Net Bu
+                        <svg class="w-3.5 h-3.5" [class]="getSortIconClass('netBu')" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          @if (currentSortColumn === 'netBu' && currentSortDirection === 'asc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/> }
+                          @else if (currentSortColumn === 'netBu' && currentSortDirection === 'desc') { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/> }
                           @else { <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/> }
                         </svg>
                       </span>
@@ -148,8 +194,9 @@
                   @for (grain of sortedReceipts(group.receipts); track grain.id) {
                     <app-table-row>
                       <app-table-cell class="text-center">{{ grain.receiptNumber }}</app-table-cell>
-                      <app-table-cell class="text-center">{{ grain.quantity | number }}</app-table-cell>
                       <app-table-cell class="text-center">{{ grain.chargedFromDate | date:'M/d/yy' }} – {{ grain.chargedThruDate | date:'M/d/yy' }}</app-table-cell>
+                      <app-table-cell class="text-center">{{ (grain.locationCity && grain.locationState) ? grain.locationCity + ', ' + grain.locationState : (grain.locationCity || grain.locationState || '—') }}</app-table-cell>
+                      <app-table-cell class="text-center">{{ grain.quantity | number }}</app-table-cell>
                       <app-table-cell class="text-center" >{{ grain.storageDays | number:'1.0-1' }}</app-table-cell>
                       <app-table-cell class="text-center" >${{ grain.storageRate.toFixed(3) }}</app-table-cell>
                       <app-table-cell class="text-center text-scoular-red-accessible dark:text-scoular-red font-medium" >{{ getCost(grain.id) | currency:'USD':'symbol':'1.2-2' }}</app-table-cell>

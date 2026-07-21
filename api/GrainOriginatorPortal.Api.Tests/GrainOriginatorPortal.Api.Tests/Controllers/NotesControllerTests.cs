@@ -8,6 +8,7 @@ using Moq;
 // Project namespaces
 using GrainOriginatorPortal.Api.Controllers;
 using GrainOriginatorPortal.Api.Exceptions;
+using GrainOriginatorPortal.Api.Models;
 using GrainOriginatorPortal.Api.Models.Requests;
 using GrainOriginatorPortal.Api.Models.Responses;
 using GrainOriginatorPortal.Api.Services;
@@ -22,7 +23,9 @@ public class NotesControllerTests
     public NotesControllerTests()
     {
         _serviceMock = new Mock<INoteService>();
-        _sut = new NotesController(_serviceMock.Object, new Mock<ILogger<NotesController>>().Object);
+        // EntitlementsDbContext is only used by the mention-catalog endpoint, which these tests
+        // don't exercise — null is never dereferenced by the methods under test.
+        _sut = new NotesController(_serviceMock.Object, null!, new Mock<ILogger<NotesController>>().Object);
     }
 
     // -------------------------------------------------------------------------
@@ -43,6 +46,27 @@ public class NotesControllerTests
         // Assert
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var returned = Assert.IsAssignableFrom<List<NoteResponse>>(ok.Value);
+        Assert.Equal(2, returned.Count);
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task GetLastContact_ReturnsOkWithAggregates()
+    {
+        // Arrange
+        var rows = new List<NoteLastContactResponse>
+        {
+            new() { CustomerId = 10, CustomerCode = "C10", LastNoteAt = new DateTime(2026, 7, 1) },
+            new() { CustomerId = 11, CustomerCode = "C11", LastNoteAt = new DateTime(2026, 6, 15) }
+        };
+        _serviceMock.Setup(s => s.GetLastContactAsync(It.IsAny<CancellationToken>())).ReturnsAsync(rows);
+
+        // Act
+        var result = await _sut.GetLastContact();
+
+        // Assert
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var returned = Assert.IsAssignableFrom<List<NoteLastContactResponse>>(ok.Value);
         Assert.Equal(2, returned.Count);
     }
 
@@ -98,7 +122,7 @@ public class NotesControllerTests
         // Arrange
         var note = new NoteResponse { Id = 3, CustomerId = 1, Description = "Updated content" };
         _serviceMock.Setup(s => s.GetByIdAsync(3, It.IsAny<CancellationToken>())).ReturnsAsync(note);
-        _serviceMock.Setup(s => s.UpdateAsync(3, "Updated content", It.IsAny<CancellationToken>())).ReturnsAsync(note);
+        _serviceMock.Setup(s => s.UpdateAsync(3, "Updated content", It.IsAny<IReadOnlyList<NoteMention>?>(), It.IsAny<CancellationToken>())).ReturnsAsync(note);
         var request = new UpdateNoteRequest { Content = "Updated content" };
 
         // Act

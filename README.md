@@ -222,6 +222,7 @@ Last Updated: 2026-07-07
 | Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore | 10.0.3 | MIT | EF Core health check endpoint |
 | Microsoft.Extensions.Http.Resilience | 10.3.0 | MIT | HTTP retry / resilience policies |
 | Microsoft.Identity.Web | 3.8.4 | MIT | Azure AD / JWT Bearer authentication |
+| System.Security.Cryptography.Xml | 10.0.10 | MIT | XML crypto — transitive (via Microsoft.Identity.Web), pinned to clear EncryptedXml advisories (GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf, CVE-2026-47302, CVE-2026-50525 & CVE-2026-50648 DoS, CVE-2026-47304 feature-bypass) |
 
 ### Frontend Dependencies (Angular 21 / TypeScript)
 
@@ -247,8 +248,10 @@ Last Updated: 2026-07-07
 | esbuild | ≥0.28.1 | MIT | Bundler — transitive (via @angular/build, vitest), pinned in `overrides` (security fix: RCE via NPM_CONFIG_REGISTRY + Windows path traversal, ≥0.28.1) |
 | vite | ≥7.3.5 | MIT | Dev server/bundler — transitive (via @angular/build), pinned in `overrides` (security fix: `server.fs.deny` bypass + launch-editor NTLM disclosure on Windows, ≥7.3.5) |
 | @babel/core | ≥7.29.6 | MIT | JS compiler — transitive (via @angular/build, @angular/compiler-cli), pinned in `overrides` (security fix: arbitrary file read via sourceMappingURL, ≥7.29.6) |
-| tar | ≥7.5.16 | ISC | Tar parser — transitive (via @angular/cli), pinned in `overrides` (security fix: PAX header smuggling / parser differential, ≥7.5.16) |
+| tar | ≥7.5.19 | ISC | Tar parser — transitive (via @angular/cli), pinned in `overrides` (security fix: decompression/parse DoS via unlimited input, ≥7.5.19) |
 | ws | ≥8.21.0 | MIT | WebSocket — transitive (via happy-dom test env), pinned in `overrides` (security fix: memory-exhaustion DoS, ≥8.21.0) |
+| brace-expansion | ≥5.0.7 | MIT | Brace pattern expansion — transitive (via @angular/cli, @analogjs/vite-plugin-angular → minimatch/glob), pinned in `overrides` (security fix: exponential-time expansion DoS, ≥5.0.7) |
+| body-parser | ≥2.3.0 | MIT | HTTP body parsing — transitive (via @angular/cli dev server), pinned in `overrides` (security fix: size-limit enforcement silently disabled on invalid `limit`, ≥2.3.0) |
 
 ## CI/CD
 

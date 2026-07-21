@@ -71,6 +71,18 @@ that producer's profile and related data outside their entitled trade units:
 - `GET /api/notes/customer/{customerId}`
 - `GET /api/plantingintentions/customer/{customerId}`
 
+**Update (2026-07-21):** the notes list/search endpoints are no longer trade-unit-filtered on the
+server either — note **content** is now returned org-wide to any authenticated rep:
+
+- `GET /api/notes` (bulk; feeds NLQ / saved-list / Build-A-List keyword search)
+- `GET /api/notes/last-contact` (per-customer last-contact aggregate; feeds list + dashboard badges)
+
+This was a deliberate performance change (two-tier notes loading): the server sends the full note set
+and the client filters to the selected trade unit's producers, so **UI results remain trade-unit-scoped**
+— a rep still only *sees* notes for producers in their selected trade units. The broadening is on the
+wire only (the raw payload contains org-wide note content, visible via browser dev tools). This falls
+squarely under the same "trade units are a UX filter, not an access boundary" rationale below.
+
 ### Decision: Accepted
 
 **Rationale.** Same model as AR-01 — this is an internal collaboration tool for authenticated Scoular

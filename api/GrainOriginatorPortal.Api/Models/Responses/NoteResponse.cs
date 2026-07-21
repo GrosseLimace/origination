@@ -1,8 +1,10 @@
+using GrainOriginatorPortal.Api.Models;
+
 namespace GrainOriginatorPortal.Api.Models.Responses;
 
 /// <summary>Wire shape for a customer note. Entity-shaped (Decision 1) minus the JSON-ignored
 /// Customer navigation; includes the entity's computed Content alias and resolves CreatedBy/
-/// ModifiedBy to display names.</summary>
+/// ModifiedBy to display names. Subject + Mentions back the note Subject/@-mention feature.</summary>
 public record NoteResponse
 {
     public int Id { get; init; }
@@ -20,4 +22,6 @@ public record NoteResponse
     public DateTime? DeletedAt { get; init; }
     public string? DeletedBy { get; init; }
     public string Content { get; init; } = string.Empty;
+    public string? Subject { get; init; }
+    public IReadOnlyList<NoteMention> Mentions { get; init; } = [];
 }
