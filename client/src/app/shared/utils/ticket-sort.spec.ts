@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Ticket } from '@models';
-import { compareTicketNumbers, compareTicketsByDateThenNumber } from './ticket-sort';
+import { compareNumericStrings, compareTicketNumbers, compareTicketsByDateThenNumber } from './ticket-sort';
 
 /** Minimal Ticket factory — only the fields the sort comparators read. */
 function makeTicket(over: Partial<Ticket>): Ticket {
@@ -17,6 +17,20 @@ function makeTicket(over: Partial<Ticket>): Ticket {
 }
 
 const numbersOf = (tickets: Ticket[]) => tickets.map(t => t.ticketNumber);
+
+describe('compareNumericStrings (shared ticket/receipt-number primitive)', () => {
+  it('orders numeric-like strings numerically, not lexicographically', () => {
+    const list = ['1000', '999', '1'];
+    list.sort(compareNumericStrings);
+    expect(list).toEqual(['1', '999', '1000']);
+  });
+
+  it('sorts numeric ahead of non-numeric, and empty/null last', () => {
+    const list = ['X', '5', '', null as unknown as string];
+    list.sort(compareNumericStrings);
+    expect(list).toEqual(['5', 'X', '', null]);
+  });
+});
 
 describe('compareTicketNumbers', () => {
   it('orders numerically, not lexicographically ("999" before "1000")', () => {
