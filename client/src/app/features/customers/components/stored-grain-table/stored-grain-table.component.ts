@@ -5,6 +5,7 @@ import { TableComponent, TableHeaderComponent, TableBodyComponent, TableRowCompo
 import { Customer, StoredGrain } from '@models';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
+import { compareNumericStrings } from '@shared/utils/ticket-sort';
 
 export type StorageGroupMode = 'both' | 'crop' | 'location';
 
@@ -189,15 +190,27 @@ export class StoredGrainTableComponent {
     return this.currentSortColumn === column ? 'text-gray-600 dark:text-gray-300' : 'text-gray-400 dark:text-gray-600';
   }
 
+  /** Charged-from date value for default ordering, falling back to the storage-start date when
+   *  a receipt has no charged-from window yet. Missing dates sort first (0). */
+  private _chargedDateValue(g: StoredGrain): number {
+    const d = g.chargedFromDate ?? g.storageStartDate;
+    return d ? new Date(d).getTime() : 0;
+  }
+
   sortedReceipts(receipts: StoredGrain[]): StoredGrain[] {
-    if (!this.currentSortColumn || this.currentSortDirection === 'none') return receipts;
+    if (!this.currentSortColumn || this.currentSortDirection === 'none') {
+      // Default: Charged From date ascending, then smallest → largest ticket # within a date.
+      return [...receipts].sort((a, b) =>
+        (this._chargedDateValue(a) - this._chargedDateValue(b)) ||
+        compareNumericStrings(a.receiptNumber, b.receiptNumber));
+    }
     const sorted = [...receipts].sort((a, b) => {
       let cmp = 0;
       switch (this.currentSortColumn) {
-        case 'ticket': cmp = a.receiptNumber.localeCompare(b.receiptNumber); break;
+        case 'ticket': cmp = compareNumericStrings(a.receiptNumber, b.receiptNumber); break;
         case 'commodity': cmp = (a.crop || '').localeCompare(b.crop || ''); break;
         case 'netBu': cmp = (a.quantity || 0) - (b.quantity || 0); break;
-        case 'charged': cmp = new Date(a.chargedFromDate || 0).getTime() - new Date(b.chargedFromDate || 0).getTime(); break;
+        case 'charged': cmp = (new Date(a.chargedFromDate || 0).getTime() - new Date(b.chargedFromDate || 0).getTime()) || compareNumericStrings(a.receiptNumber, b.receiptNumber); break;
         case 'storageDays': cmp = (a.storageDays || 0) - (b.storageDays || 0); break;
         case 'rate': cmp = (a.storageRate || 0) - (b.storageRate || 0); break;
         case 'amount': cmp = (a.receivableAmount || 0) - (b.receivableAmount || 0); break;

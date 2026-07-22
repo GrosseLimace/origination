@@ -6,6 +6,7 @@ import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Ticket, Contract } from '@models';
 import { expandSearchWithAliases } from '@shared/utils/commodity-aliases';
+import { compareTicketNumbers, compareTicketsByDateThenNumber } from '@shared/utils/ticket-sort';
 
 type SortColumn = 'id' | 'date' | 'crop' | 'location' | 'appliedDockQuantity' | 'moisture' | 'testWeight' | 'protein';
 type SortDirection = 'none' | 'asc' | 'desc';
@@ -151,11 +152,7 @@ export class TicketsTableComponent {
     // unbooked unload/loadout tickets. P, S, B, and no-contract tickets are applied.
     return this.tickets()
       .filter(t => !t.isApplied)
-      .sort((a, b) => {
-        const da = this._parseTicketDate(a.date)?.getTime() ?? 0;
-        const db = this._parseTicketDate(b.date)?.getTime() ?? 0;
-        return da - db; // oldest first
-      });
+      .sort(compareTicketsByDateThenNumber); // oldest first, then smallest ticket # within a date
   }
 
   /** Build the group key for a ticket given the active mode. Always uses
@@ -254,18 +251,14 @@ export class TicketsTableComponent {
 
   private _sortTicketList(tickets: Ticket[]): Ticket[] {
     if (!this.currentSortColumn || this.currentSortDirection === 'none') {
-      // Default: oldest to newest within each crop group
-      return [...tickets].sort((a, b) => {
-        const da = a.date ? new Date(a.date).getTime() : 0;
-        const db = b.date ? new Date(b.date).getTime() : 0;
-        return da - db;
-      });
+      // Default: oldest to newest within each crop group, then smallest ticket # within a date
+      return [...tickets].sort(compareTicketsByDateThenNumber);
     }
     const sorted = [...tickets].sort((a, b) => {
       let comparison = 0;
       switch (this.currentSortColumn) {
-        case 'id': comparison = a.id - b.id; break;
-        case 'date': comparison = (this._parseTicketDate(a.date)?.getTime() ?? 0) - (this._parseTicketDate(b.date)?.getTime() ?? 0); break;
+        case 'id': comparison = compareTicketNumbers(a, b); break;
+        case 'date': comparison = (this._parseTicketDate(a.date)?.getTime() ?? 0) - (this._parseTicketDate(b.date)?.getTime() ?? 0) || compareTicketNumbers(a, b); break;
         case 'location': {
           const locA = (a.elevatorCity || '').toLowerCase();
           const locB = (b.elevatorCity || '').toLowerCase();
@@ -443,10 +436,10 @@ export class TicketsTableComponent {
 
       switch (column) {
         case 'id':
-          comparison = a.id - b.id;
+          comparison = compareTicketNumbers(a, b);
           break;
         case 'date':
-          comparison = (this._parseTicketDate(a.date)?.getTime() ?? 0) - (this._parseTicketDate(b.date)?.getTime() ?? 0);
+          comparison = (this._parseTicketDate(a.date)?.getTime() ?? 0) - (this._parseTicketDate(b.date)?.getTime() ?? 0) || compareTicketNumbers(a, b);
           break;
         case 'crop':
           comparison = (a.productCode || '').localeCompare(b.productCode || '');
