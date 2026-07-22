@@ -228,8 +228,9 @@
               <!-- Note content (view mode) -->
               @if (editingNoteId() !== note.id) {
                 <p class="text-gray-700 dark:text-gray-300 whitespace-pre-wrap pt-3"
+                   appClampOverflow (clampOverflow)="setNoteOverflow(note.id, $event)"
                    [class.line-clamp-4]="!isNoteExpanded(note.id)">@for (seg of noteViewSegments(note); track $index) {<span [class]="seg.kind === 'mention' ? 'font-semibold text-scoular-green-accessible dark:text-scoular-green' : seg.kind === 'search' ? 'rounded bg-green-100 px-0.5 text-green-800 dark:bg-green-500/30 dark:text-green-200' : ''">{{ seg.text }}</span>}</p>
-                @if (note.content.length > 300) {
+                @if (isNoteOverflowing(note.id) || isNoteExpanded(note.id)) {
                   <button
                     (click)="toggleNoteExpand(note.id)"
                     class="text-xs text-scoular-blue dark:text-scoular-blue hover:underline mt-1 cursor-pointer">
