@@ -64,6 +64,18 @@ These skills were copied when the repo was created. Your team owns them and can 
 
 ---
 
+## Project-Local Skills
+
+These skills were built for this repo and are NOT synced from dev-standards.
+
+| Skill | Command | Description |
+|-------|---------|-------------|
+| PROD Release Summary | `/prod-release-summary` | At PROD promotion time, read the GitHub Projects "In QA" cards and the shipped code, then generate a two-tier release summary (business-facing What's New + technical notes) in `docs/release-notes/` with an email-ready copy on the clipboard |
+
+**Repo location**: `.claude/skills/<skill-name>/SKILL.md`
+
+---
+
 ## Installing a New Skill
 
 To add a skill from dev-standards that is not in your repo yet:

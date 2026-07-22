@@ -1,0 +1,19 @@
+query ($projectId: ID!) {
+  node(id: $projectId) {
+    ... on ProjectV2 {
+      title
+      fields(first: 30) {
+        nodes {
+          ... on ProjectV2SingleSelectField {
+            id
+            name
+            options {
+              id
+              name
+            }
+          }
+        }
+      }
+    }
+  }
+}

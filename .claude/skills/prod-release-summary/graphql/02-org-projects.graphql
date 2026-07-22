@@ -1,0 +1,12 @@
+query ($org: String!) {
+  organization(login: $org) {
+    projectsV2(first: 50, orderBy: { field: UPDATED_AT, direction: DESC }) {
+      nodes {
+        id
+        number
+        title
+        closed
+      }
+    }
+  }
+}
