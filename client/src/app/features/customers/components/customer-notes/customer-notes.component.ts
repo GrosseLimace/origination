@@ -3,6 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@shared/components/button/button.component';
+import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.directive';
 import { ToastService } from '@core/services/toast.service';
 import { ApiService } from '@core/services/api.service';
 import { Customer, Note, NoteMention, MentionCatalog } from '@models';
@@ -19,7 +20,7 @@ interface MentionOption {
 @Component({
   selector: 'app-customer-notes',
   standalone: true,
-  imports: [CommonModule, FormsModule, ButtonComponent],
+  imports: [CommonModule, FormsModule, ButtonComponent, ClampOverflowDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './customer-notes.component.html'
 })
@@ -505,6 +506,11 @@ export class CustomerNotesComponent {
 
   expandedNotes = new Set<number>();
 
+  /** Note ids whose content is actually clipped by the line-clamp (reported by
+   *  ClampOverflowDirective). Drives the "Show more" button so it appears for every
+   *  truncated note, not just long-by-character-count ones. */
+  readonly overflowingNotes = signal(new Set<number>());
+
   isNoteExpanded(id: number): boolean {
     return this.expandedNotes.has(id);
   }
@@ -515,6 +521,20 @@ export class CustomerNotesComponent {
     } else {
       this.expandedNotes.add(id);
     }
+  }
+
+  /** Record whether a note's clamped content overflows (from ClampOverflowDirective). */
+  setNoteOverflow(id: number, overflowing: boolean): void {
+    this.overflowingNotes.update(set => {
+      if (set.has(id) === overflowing) return set; // no change → keep reference stable
+      const next = new Set(set);
+      overflowing ? next.add(id) : next.delete(id);
+      return next;
+    });
+  }
+
+  isNoteOverflowing(id: number): boolean {
+    return this.overflowingNotes().has(id);
   }
 
   executeDelete() {
