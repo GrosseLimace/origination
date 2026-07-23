@@ -156,6 +156,8 @@ export class CustomerNotesComponent {
         this.newNote.set('');
         this.mentions.set([]);
         this.closeMentionDropdown();
+        // Collapse the box back to its min height after the content clears (next tick, post-render).
+        setTimeout(() => this.autoGrowNote());
       }
       lastSeenSuccessCount = current;
     });
@@ -310,6 +312,34 @@ export class CustomerNotesComponent {
     if (ta && bd) { bd.scrollTop = ta.scrollTop; bd.scrollLeft = ta.scrollLeft; }
   }
 
+  /** Largest the compose box grows to before it starts scrolling internally (~10 lines). */
+  private static readonly NOTE_MAX_HEIGHT_PX = 320;
+  private growRaf = 0;
+
+  /** Grow the note textarea to fit its content (up to NOTE_MAX_HEIGHT_PX), instead of scrolling
+   *  inside a fixed 3-row box. A fixed box let the mention-highlight backdrop's text bleed past
+   *  the border when the note overflowed; growing to fit removes that. Also drops the scrollbar
+   *  while it fits, so the transparent textarea and the backdrop wrap text identically (keeping
+   *  the green @mention highlight pixel-aligned with the caret). The backdrop is absolute
+   *  inset-0, so it tracks the new height automatically.
+   *
+   *  The height measurement forces a reflow (set height:auto → read scrollHeight), so it is
+   *  batched into one requestAnimationFrame — running it synchronously on every keystroke made
+   *  fast typing visibly lag. Rapid keystrokes coalesce into a single resize per frame. */
+  private autoGrowNote(): void {
+    if (this.growRaf) return; // a resize is already queued for the next frame
+    this.growRaf = requestAnimationFrame(() => {
+      this.growRaf = 0;
+      const ta = this.noteTextarea()?.nativeElement;
+      if (!ta) return;
+      const max = CustomerNotesComponent.NOTE_MAX_HEIGHT_PX;
+      ta.style.height = 'auto';                                 // reset so scrollHeight is the true content height
+      ta.style.height = `${Math.min(ta.scrollHeight, max)}px`;
+      ta.style.overflowY = ta.scrollHeight > max ? 'auto' : 'hidden';
+      this.syncBackdropScroll();
+    });
+  }
+
   getInitials(name: string): string {
     const parts = name.split(' ').filter(p => p.length > 0);
     if (parts.length >= 2) {
@@ -381,6 +411,7 @@ export class CustomerNotesComponent {
   onNoteCaretChange(): void {
     const ta = this.noteTextarea()?.nativeElement;
     if (!ta) return;
+    this.autoGrowNote(); // fires on (input) → keep the box sized to its content as the user types
     const value = ta.value;
     const pos = ta.selectionStart ?? value.length;
     // Active mention = an "@" at a word boundary, then a first non-space char, then any run of
@@ -443,7 +474,7 @@ export class CustomerNotesComponent {
       if (ta) {
         ta.focus();
         ta.setSelectionRange(caretPos, caretPos);
-        this.syncBackdropScroll();
+        this.autoGrowNote(); // inserted mention may add a line — resize (also syncs backdrop)
       }
     });
   }
