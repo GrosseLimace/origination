@@ -1,6 +1,6 @@
 ---
 name: prod-release-summary
-description: Generate a two-tier PROD release summary from the GitHub Projects "In QA" column at promotion time. Reads the cards AND the shipped code, writes docs/release-notes/<date>.md, copies an email-ready version to the clipboard, and reminds the user to move cards to In PROD / Closed. Bootstraps agents-docs/RELEASE-SUMMARY.yaml on first use.
+description: Generate a two-tier PROD release summary from the GitHub Projects "In QA" column at promotion time. Reads the cards AND the shipped code, prints the summary, and copies an email-ready version to the clipboard. By default writes NOTHING to the repo (baseline auto-detected from PROD deploy history); pass --save to persist docs/release-notes/<date>.md and build a versioned history. Reminds the user to move cards to In PROD / Closed.
 allowed-tools: Read, Glob, Grep, Write, Edit, Bash(git:*), Bash(gh:*), Bash(ls:*), Bash(mkdir:*), PowerShell
 ---
 
@@ -17,22 +17,27 @@ IS the release.
 
 ## Command Shape
 
-- `/prod-release-summary` — full run: writes `docs/release-notes/<date>.md`, updates the index, copies email version to clipboard
-- `/prod-release-summary --dry-run` — full flow, but output goes to the scratchpad only; no repo files written, no state updated, no commit offer
-- `/prod-release-summary --since <sha>` — override the baseline SHA (skip auto-detection)
-- `/prod-release-summary --refresh-config` — re-run project discovery and regenerate `agents-docs/RELEASE-SUMMARY.yaml`
+- `/prod-release-summary` — **default (preview) mode:** read the board, correlate the code, print the summary in chat, and copy the email version to the clipboard. **Writes nothing to the repo.** Baseline is auto-detected from the PROD deploy history. This is the mode to use until the flow is automated.
+- `/prod-release-summary --save` — everything the default does, PLUS persist the notes into the repo: write `docs/release-notes/<date>.md`, update the index, write/update `agents-docs/RELEASE-SUMMARY.yaml`, and offer a commit. Use this once you want a versioned release-notes history (and as the basis for the future Logic App / CI automation).
+- `/prod-release-summary --since <sha>` — override the baseline SHA (skip auto-detection).
+- `/prod-release-summary --refresh-config` — (only meaningful with `--save`) re-run project discovery and regenerate `agents-docs/RELEASE-SUMMARY.yaml`.
 
-## Repo-Owned Config Contract
+`--dry-run` is accepted as an alias for the default preview mode (kept for
+familiarity); it behaves identically, since the default already writes nothing.
 
-This skill must use `agents-docs/RELEASE-SUMMARY.yaml` as its machine-readable
-source of board and repo facts.
+## Repo-Owned Config Contract (`--save` mode only)
 
-If that file does not exist, run the **First-Run Bootstrap** below before doing
-anything else.
+In `--save` mode the skill uses `agents-docs/RELEASE-SUMMARY.yaml` as its
+machine-readable source of board and repo facts. **In the default preview mode
+the skill does NOT read or write this file** — it discovers the board live each
+run (two quick queries) and keeps nothing on disk.
+
+If `--save` is used and that file does not exist, run the **First-Run
+Bootstrap** below before writing notes.
 
 - If `--refresh-config` is passed, regenerate the YAML via project discovery.
 - Otherwise, use the existing YAML.
-- On every run, perform a lightweight drift check: run query 03
+- On every `--save` run, perform a lightweight drift check: run query 03
   (`graphql/03-status-field.graphql`) against the cached project ID and confirm
   the cached `in_qa` optionId still exists. If it doesn't, warn the user and
   recommend `--refresh-config`.
@@ -171,11 +176,13 @@ The baseline is the commit currently live in PROD. Resolve it in this order:
 
 ## Steady-State Workflow
 
-### Step 1: Resolve config
+### Step 1: Resolve config / discover the board
 
-Load `agents-docs/RELEASE-SUMMARY.yaml`. If missing → First-Run Bootstrap.
-If `--refresh-config` → re-run Step B2. Run the drift check (query 03, confirm
-`in_qa` optionId resolves).
+- **Default preview mode:** run project discovery live (Step B2 queries) to get
+  the project ID and the In QA optionId. Do NOT read or write any config file.
+- **`--save` mode:** load `agents-docs/RELEASE-SUMMARY.yaml`; if missing →
+  First-Run Bootstrap; if `--refresh-config` → re-run Step B2. Run the drift
+  check (query 03, confirm `in_qa` optionId resolves).
 
 ### Step 2: Tooling and auth
 
@@ -188,8 +195,11 @@ git fetch github main --quiet && git rev-parse github/main
 ```
 
 - `deployed_sha` = `github/main` HEAD (what `deploy-prod.yml` deploys).
-- `baseline` = `--since <sha>` if given; otherwise `last_release.sha` validated
-  per the config-contract rule; otherwise Step B3.
+- `baseline` resolution order:
+  1. `--since <sha>` if given.
+  2. `--save` mode only: `last_release.sha` from the config / newest
+     `docs/release-notes/*.md` frontmatter, validated per the config-contract rule.
+  3. Otherwise (default preview mode): the PROD deploy history — Step B3.
 - Release range = `<baseline>..github/main`.
 
 **Always echo the chosen baseline (SHA, date, source — notes file / run URL /
@@ -268,17 +278,17 @@ Fill `templates/release-notes.md` (same directory as this skill):
   authoritative baseline the NEXT run reads), `previous_sha`,
   `deploy_workflow_run` URL (from `gh run list`, or "pending"), `cards` list.
 
-Write to `docs/release-notes/<YYYY-MM-DD>.md` (append `-2`, `-3` suffix if a
-same-day file exists). Then:
+**Default preview mode:** print the fully-rendered notes in chat and write a
+copy to the session scratchpad only. Do NOT touch `docs/`, the index, or any
+config file. Do NOT offer a commit.
+
+**`--save` mode:** write to `docs/release-notes/<YYYY-MM-DD>.md` (append `-2`,
+`-3` suffix if a same-day file exists). Then:
 
 - Update the index `docs/release-notes/README.md` — a table of
   `| Date | Deployed SHA | Headline |` rows, newest first (create the file
   with a one-line intro if missing).
 - Update `last_release` in `agents-docs/RELEASE-SUMMARY.yaml`.
-
-**If `--dry-run`:** write the notes file to the session scratchpad instead,
-do NOT touch `docs/`, the index, or the YAML, and do NOT offer a commit.
-Clearly head all output with `DRY RUN`.
 
 ### Step 7: Email version and clipboard
 
@@ -301,14 +311,15 @@ Print, verbatim:
 > Cards are still In QA. After you verify PROD, move them to **In PROD /
 > Closed** manually — this skill never moves cards.
 
-Then offer (ask — do NOT run it automatically):
+**`--save` mode only:** then offer (ask — do NOT run it automatically):
 
 ```bash
 git add docs/release-notes/ agents-docs/RELEASE-SUMMARY.yaml
 git commit -m "docs(release): PROD release notes <date>"
 ```
 
-Do NOT commit or push without an explicit yes from the user.
+Do NOT commit or push without an explicit yes from the user. In default
+preview mode there is nothing to commit.
 
 ## Future Automation (portability note)
 
@@ -346,16 +357,15 @@ API key plus an NSG egress rule from the self-hosted runners.
    ```bash
    gh api graphql --hostname scoular.ghe.com -f query='query{viewer{login}}'
    ```
-2. **Discovery test:** with `agents-docs/RELEASE-SUMMARY.yaml` absent, run
-   `/prod-release-summary --dry-run` — confirm it finds the project and prints
-   the option-ID table for confirmation before writing the YAML.
-3. **Dry run:** `/prod-release-summary --dry-run` against whatever is In QA
-   right now — verifies the full flow without touching the repo.
-4. **Baseline override:** `/prod-release-summary --dry-run --since <sha of 2-3
-   merges ago>` — verifies diff-scoping and card/commit correlation on a known
-   small range.
-5. **Draft-card test:** temporarily add a draft card to In QA, dry-run, confirm
-   it appears in What's New flagged `(no code change identified)`, remove it.
-6. **Real first run:** at the next actual promotion, run without `--dry-run`;
-   confirm the notes file, index, YAML `last_release`, clipboard content, and
-   the move-cards reminder.
+2. **Preview run (default):** `/prod-release-summary` against whatever is In QA
+   right now — verifies discovery, board read, correlation, summary, and
+   clipboard without touching the repo.
+3. **Baseline override:** `/prod-release-summary --since <sha of 2-3 merges
+   ago>` — verifies diff-scoping and card/commit correlation on a known small
+   range.
+4. **Draft-card test:** temporarily add a draft card to In QA, run the preview,
+   confirm it appears in What's New flagged `(no code change identified)`,
+   remove it.
+5. **Save run (only when adopting versioned history):** `/prod-release-summary
+   --save` — confirm it writes the notes file, index, YAML `last_release`,
+   copies the clipboard content, and offers (but does not auto-run) the commit.
