@@ -1,0 +1,102 @@
+# Paged project items with Status value and content expansion.
+# Projects v2 has no server-side status filter — page through everything and
+# filter client-side on the cached "In QA" optionId.
+#
+# NOTE: `closedByPullRequestsReferences` (the "Development" links) is
+# schema-version-dependent on GHE. If the API rejects that field, remove that
+# block and rely on the timelineItems fallback below.
+query ($projectId: ID!, $cursor: String) {
+  node(id: $projectId) {
+    ... on ProjectV2 {
+      items(first: 50, after: $cursor) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          id
+          type
+          fieldValueByName(name: "Status") {
+            ... on ProjectV2ItemFieldSingleSelectValue {
+              name
+              optionId
+            }
+          }
+          content {
+            ... on DraftIssue {
+              title
+              body
+            }
+            ... on Issue {
+              number
+              title
+              body
+              url
+              state
+              labels(first: 10) {
+                nodes {
+                  name
+                }
+              }
+              closedByPullRequestsReferences(first: 10, includeClosedPrs: true) {
+                nodes {
+                  number
+                  title
+                  url
+                  state
+                  merged
+                  mergeCommit {
+                    oid
+                  }
+                }
+              }
+              timelineItems(itemTypes: [CROSS_REFERENCED_EVENT, CONNECTED_EVENT], first: 30) {
+                nodes {
+                  ... on CrossReferencedEvent {
+                    source {
+                      ... on PullRequest {
+                        number
+                        title
+                        url
+                        state
+                        merged
+                        mergeCommit {
+                          oid
+                        }
+                      }
+                    }
+                  }
+                  ... on ConnectedEvent {
+                    subject {
+                      ... on PullRequest {
+                        number
+                        title
+                        url
+                        state
+                        merged
+                        mergeCommit {
+                          oid
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            ... on PullRequest {
+              number
+              title
+              body
+              url
+              state
+              merged
+              mergeCommit {
+                oid
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
