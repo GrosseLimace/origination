@@ -14,7 +14,7 @@
               #noteBackdrop
               aria-hidden="true"
               class="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words rounded-md border border-transparent px-3 py-2 text-sm text-gray-900 dark:text-gray-100"
-            >@for (seg of composeSegments(); track $index) {<span [class]="seg.mention ? 'font-semibold text-scoular-green-accessible dark:text-scoular-green' : ''">{{ seg.text }}</span>}</div>
+            >@for (seg of composeSegments(); track $index) {<span [class]="seg.mention ? 'text-scoular-green-accessible dark:text-scoular-green' : ''">{{ seg.text }}</span>}</div>
 
             <textarea
               #noteTextarea
@@ -28,7 +28,7 @@
               [disabled]="isSavingNote()"
               placeholder="Add a note about this producer..."
               rows="3"
-              class="relative z-10 w-full rounded-md border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm text-transparent caret-gray-900 dark:caret-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent resize-y min-h-[4.5rem] disabled:opacity-60 disabled:cursor-not-allowed"
+              class="relative z-10 w-full rounded-md border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm text-transparent caret-gray-900 dark:caret-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-scoular-green focus:border-transparent resize-none overflow-y-hidden min-h-[4.5rem] disabled:opacity-60 disabled:cursor-not-allowed"
             ></textarea>
 
             <!-- @ mention autocomplete dropdown -->
