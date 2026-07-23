@@ -100,37 +100,48 @@ If `gh` is not installed:
 winget install --id GitHub.cli -e
 ```
 
-Then tell the user to open a NEW terminal (PATH refresh) and authenticate:
+Then tell the user to open a NEW terminal (PATH refresh) and authenticate.
+Browser login is simplest:
 
 ```bash
-gh auth login --hostname scoular.ghe.com
+gh auth login --hostname scoular.ghe.com --git-protocol https --web
 ```
 
-using a **classic PAT created on scoular.ghe.com** (Settings > Developer
-settings > Personal access tokens — NOT github.com) with scopes: `repo` and
-`read:project`. Verify with `gh auth status --hostname scoular.ghe.com` before
-proceeding. If auth fails, stop and give the user the exact remediation
-command — do not continue.
+(Alternatively, a **classic PAT created on scoular.ghe.com** — Settings >
+Developer settings > Personal access tokens, NOT github.com — with scopes
+`repo` and `read:project`.)
+
+**`read:project` scope is required and the `--web` flow does NOT grant it by
+default.** After login, check the scopes in `gh auth status --hostname
+scoular.ghe.com`. If `read:project` is missing, have the user run:
+
+```bash
+gh auth refresh --hostname scoular.ghe.com --scopes read:project
+```
+
+Verify with `gh auth status --hostname scoular.ghe.com` before proceeding
+(look for `read:project` in the token scopes). If auth fails, stop and give
+the user the exact remediation command — do not continue.
 
 ### Step B2: Project discovery
 
 1. Run the repo-level query:
    ```bash
    gh api graphql --hostname scoular.ghe.com \
-     -f query=@.claude/skills/prod-release-summary/graphql/01-repo-projects.graphql \
-     -F owner=IT -F name=origination
+     -F query=@.claude/skills/prod-release-summary/graphql/01-repo-projects.graphql \
+     -f owner=IT -f name=origination
    ```
 2. If no candidates, fall back to org-level:
    ```bash
    gh api graphql --hostname scoular.ghe.com \
-     -f query=@.claude/skills/prod-release-summary/graphql/02-org-projects.graphql \
-     -F org=IT
+     -F query=@.claude/skills/prod-release-summary/graphql/02-org-projects.graphql \
+     -f org=IT
    ```
 3. For each open candidate project, run query 03 with its node ID:
    ```bash
    gh api graphql --hostname scoular.ghe.com \
-     -f query=@.claude/skills/prod-release-summary/graphql/03-status-field.graphql \
-     -F projectId=<id>
+     -F query=@.claude/skills/prod-release-summary/graphql/03-status-field.graphql \
+     -f projectId=<id>
    ```
 4. **Selection rule:** the correct project is the open one whose single-select
    field named `Status` has options matching (case-insensitive, trimmed):
@@ -191,11 +202,14 @@ Run query 04, paging until `hasNextPage` is false:
 
 ```bash
 gh api graphql --hostname scoular.ghe.com \
-  -f query=@.claude/skills/prod-release-summary/graphql/04-items.graphql \
-  -F projectId=<project.id>
+  -F query=@.claude/skills/prod-release-summary/graphql/04-items.graphql \
+  -f projectId=<project.id>
 ```
 
-(pass `-F cursor=<endCursor>` on subsequent pages)
+(pass `-f cursor=<endCursor>` on subsequent pages)
+
+**Flag note:** the query file uses capital `-F` (reads `@file`); string
+variables use lowercase `-f` (raw string — avoids `-F`'s type coercion).
 
 Keep only items where `fieldValueByName.optionId == status_options.in_qa`.
 Bucket them: **issues with linked PRs**, **PR items**, **draft cards**
