@@ -126,7 +126,7 @@
           </div>
 
           <!-- Expanded: Individual Tickets -->
-          @if (isExpanded(group.crop)) {
+          @if (isExpanded(group.key)) {
             <div class="overflow-auto" style="max-height: min(50vh, 400px);">
               <app-table [stickyHeader]="true">
                 <app-table-header>
