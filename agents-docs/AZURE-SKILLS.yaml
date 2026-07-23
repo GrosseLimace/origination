@@ -1,0 +1,34 @@
+# Azure resource map for the azure-* skills (azure-insights / azure-log / azure-exec).
+# Generated from developer-docs/ and verified against Azure on 2026-07-23.
+metadata:
+  generated_from:
+    - developer-docs/CLAUDE.md
+    - developer-docs/START-HERE.md
+    - developer-docs/GITHUB-ACTIONS-CICD.md
+  generated_at: 2026-07-23
+  verified_with: az resource list (dev + qa confirmed live; prod not readable by current account)
+defaults:
+  env: dev
+  dir: /home/site/wwwroot
+environments:
+  dev:
+    subscription: scoular-apps-nonprod
+    resource_group: rg-origination-dev-eus
+    web_app: app-origination-dev-eus
+    app_insights: appi-origination-dev-eus
+    log_roots:
+      - /home/LogFiles
+  qa:
+    subscription: scoular-apps-nonprod
+    resource_group: rg-origination-qa-eus
+    web_app: app-origination-qa-eus
+    app_insights: appi-origination-qa-eus
+    log_roots:
+      - /home/LogFiles
+  prod:
+    subscription: scoular-apps-prod
+    resource_group: rg-origination-eus          # by naming convention — UNVERIFIED (prod resources not readable by current account)
+    web_app: app-origination-eus                # by naming convention — UNVERIFIED
+    app_insights: appi-origination-eus          # by naming convention — UNVERIFIED; run with --refresh-config once prod Reader access is granted
+    log_roots:
+      - /home/LogFiles
