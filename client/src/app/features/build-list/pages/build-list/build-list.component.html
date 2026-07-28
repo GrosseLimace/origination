@@ -1333,7 +1333,7 @@
                               @if (storageBreakdown(customer).length) {
                                 <span class="text-gray-300 dark:text-gray-600 shrink-0">•</span>
                                 @for (b of storageBreakdown(customer); track b.crop) {
-                                  <span class="inline-flex items-center gap-1 rounded-md bg-scoular-green/10 dark:bg-scoular-green-accessible/20 px-1.5 py-0.5 text-xs font-medium text-scoular-green-accessible dark:text-scoular-green shrink-0">
+                                  <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium shrink-0" [ngClass]="commodityChipClass(b.category)">
                                     {{ b.crop }} {{ b.bushels | number }}
                                   </span>
                                 }
@@ -1350,7 +1350,7 @@
                           @if (showGrainOnFarmFilters() && grainOnFarmBreakdown(customer).length) {
                             <div class="flex flex-wrap items-center gap-1 mt-1.5">
                               @for (g of grainOnFarmBreakdown(customer); track g.commodityGroup) {
-                                <span class="inline-flex items-center gap-1 rounded-md bg-scoular-green/10 dark:bg-scoular-green-accessible/20 px-1.5 py-0.5 text-xs font-medium text-scoular-green-accessible dark:text-scoular-green">
+                                <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium" [ngClass]="commodityChipClass(g.commodityGroup)">
                                   {{ g.commodityGroup }} {{ g.bushelsOnHand | number }}
                                 </span>
                               }
@@ -1476,7 +1476,7 @@
                                     @if (storageBreakdown(linked).length) {
                                       <span class="text-gray-300 dark:text-gray-600 shrink-0">•</span>
                                       @for (b of storageBreakdown(linked); track b.crop) {
-                                        <span class="inline-flex items-center gap-1 rounded-md bg-scoular-green/10 dark:bg-scoular-green-accessible/20 px-1.5 py-0.5 text-xs font-medium text-scoular-green-accessible dark:text-scoular-green shrink-0">
+                                        <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium shrink-0" [ngClass]="commodityChipClass(b.category)">
                                           {{ b.crop }} {{ b.bushels | number }}
                                         </span>
                                       }
@@ -1493,7 +1493,7 @@
                                 @if (showGrainOnFarmFilters() && grainOnFarmBreakdown(linked).length) {
                                   <div class="flex flex-wrap items-center gap-1 mt-1.5">
                                     @for (g of grainOnFarmBreakdown(linked); track g.commodityGroup) {
-                                      <span class="inline-flex items-center gap-1 rounded-md bg-scoular-green/10 dark:bg-scoular-green-accessible/20 px-1.5 py-0.5 text-xs font-medium text-scoular-green-accessible dark:text-scoular-green">
+                                      <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium" [ngClass]="commodityChipClass(g.commodityGroup)">
                                         {{ g.commodityGroup }} {{ g.bushelsOnHand | number }}
                                       </span>
                                     }

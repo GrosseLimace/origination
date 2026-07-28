@@ -16,27 +16,7 @@ import { CustomerPrintReportComponent } from '../customer-print-report/customer-
 import { AppStateService } from '@core/services/app-state.service';
 import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket, PlantingIntention, StoredGrain, Note, ContractPricingLine, DashboardPlantingEstimate, Commodity, HarvestWindow, SavedList } from '@models';
-
-// Per-commodity chip colors for the Grain-on-Farm breakdown — distinct per crop (not all amber),
-// styled like the commodity tags. Common crops are fixed; anything else gets a stable color from
-// the palette (hashed by name, so a given crop is always the same color).
-const GRAIN_CHIP_BY_CROP: Record<string, string> = {
-  Corn: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
-  Soybeans: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200',
-  Wheat: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200',
-  Milo: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200',
-  Sorghum: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200',
-  Canola: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200',
-  Millet: 'bg-lime-100 text-lime-800 dark:bg-lime-900/40 dark:text-lime-200',
-};
-const GRAIN_CHIP_PALETTE: string[] = [
-  'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200',
-  'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200',
-  'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200',
-  'bg-pink-100 text-pink-800 dark:bg-pink-900/40 dark:text-pink-200',
-  'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200',
-  'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200',
-];
+import { commodityChipClass } from '@shared/utils/commodity-color';
 
 @Component({
   selector: 'app-customer-profile',
@@ -90,13 +70,9 @@ export class CustomerProfileComponent {
   toggleGrainOnFarm(): void {
     if (this.grainOnFarmRows().length > 0) this.showGrainOnFarm.update(v => !v);
   }
-  /** Tailwind chip classes for a grain-on-farm commodity — a stable, distinct color per crop. */
+  /** Tailwind chip classes for a grain-on-farm commodity — the shared per-crop color. */
   grainChipClass(commodity: string): string {
-    const key = (commodity ?? '').trim();
-    if (GRAIN_CHIP_BY_CROP[key]) return GRAIN_CHIP_BY_CROP[key];
-    let h = 0;
-    for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-    return GRAIN_CHIP_PALETTE[h % GRAIN_CHIP_PALETTE.length];
+    return commodityChipClass(commodity);
   }
   public selectedTradeUnits = input<string[]>([]);
   public contracts = input<Contract[]>([]);

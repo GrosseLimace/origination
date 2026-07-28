@@ -13,6 +13,7 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { UserRolesService } from '@core/services/user-roles.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, TeamMember, ProducerDetails, RefinementFilters, QueryLibraryItem, GrainOnFarmItem } from '@models';
+import { commodityChipClass } from '@shared/utils/commodity-color';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '@shared/components/card/card.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
@@ -3166,10 +3167,27 @@ export class BuildListComponent {
     return recs.reduce((sum, s) => sum + (s.quantity ?? 0), 0);
   }
 
+  /** Shared per-crop chip color, exposed to the template. */
+  readonly commodityChipClass = commodityChipClass;
+
+  /** Lower-cased commodity code OR name → crop category ("yc"/"corn" → "Corn"), from the
+   *  Commodities table — so storage chips (which carry codes like YC/SOR) color by their crop. */
+  private readonly _commodityCategoryByKey = computed(() => {
+    const map = new Map<string, string>();
+    for (const cm of this.appState.commodities()) {
+      const group = (cm.category || cm.name || '').trim();
+      if (!group) continue;
+      if (cm.code) map.set(cm.code.trim().toLowerCase(), group);
+      if (cm.name) map.set(cm.name.trim().toLowerCase(), group);
+    }
+    return map;
+  });
+
   /** Per-commodity storage totals (bushels summed across locations), largest first — mirrors the
    *  grain-on-farm chips so Storage results show each commodity + bushels inline without opening
-   *  the producer. */
-  storageBreakdown(customer: Customer): { crop: string; bushels: number }[] {
+   *  the producer. `category` is the resolved crop name used for the shared chip color (the raw
+   *  `crop` code is still what's displayed). */
+  storageBreakdown(customer: Customer): { crop: string; bushels: number; category: string }[] {
     const byCrop = new Map<string, number>();
     for (const s of this._storageByCustomerId().get(customer.id) ?? []) {
       const qty = s.quantity ?? 0;
@@ -3177,8 +3195,9 @@ export class BuildListComponent {
       const crop = (s.crop || 'Unknown').trim();
       byCrop.set(crop, (byCrop.get(crop) ?? 0) + qty);
     }
+    const catByKey = this._commodityCategoryByKey();
     return [...byCrop.entries()]
-      .map(([crop, bushels]) => ({ crop, bushels }))
+      .map(([crop, bushels]) => ({ crop, bushels, category: catByKey.get(crop.toLowerCase()) ?? crop }))
       .sort((a, b) => b.bushels - a.bushels);
   }
 }
