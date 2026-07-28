@@ -32,14 +32,29 @@ public class UserTradeUnitService : IUserTradeUnitService
         {
             var rows = await _entitlements.GetByUserAsync(userId, cancellationToken);
             return rows
-                .Select(u => new { GroupName = u.GroupName ?? "Default", u.TradeUnitCode })
-                .Distinct()
+                .Select(u => new { GroupName = u.GroupName ?? "Default", u.TradeUnitCode, u.Description })
                 .GroupBy(u => u.GroupName)
                 .OrderBy(g => g.Key)
-                .Select(g => new UserTradeUnitGroupResponse
+                .Select(g =>
                 {
-                    GroupName = g.Key,
-                    TradeUnitCodes = g.Select(u => u.TradeUnitCode).Distinct().OrderBy(c => c).ToList()
+                    // Dedupe by code within the group; keep the first non-empty description
+                    // (e.g. "Pratt, KS") for that code from the entitlements view rows.
+                    var units = g
+                        .GroupBy(u => u.TradeUnitCode)
+                        .Select(cg => new TradeUnitOptionResponse
+                        {
+                            Code = cg.Key,
+                            Description = cg.Select(x => x.Description)
+                                            .FirstOrDefault(d => !string.IsNullOrWhiteSpace(d))
+                        })
+                        .OrderBy(o => o.Code)
+                        .ToList();
+                    return new UserTradeUnitGroupResponse
+                    {
+                        GroupName = g.Key,
+                        TradeUnitCodes = units.Select(u => u.Code).ToList(),
+                        TradeUnits = units
+                    };
                 })
                 .ToList();
         }

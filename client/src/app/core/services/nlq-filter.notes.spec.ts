@@ -54,6 +54,10 @@ describe('NlqFilterService.queryInvolvesNotes', () => {
   it('is false for grain-on-farm queries', () => {
     expect(svc.queryInvolvesNotes('producers with grain on farm')).toBe(false);
   });
+  it('is false for storage queries (storage has its own filter; no note-keyword merge)', () => {
+    expect(svc.queryInvolvesNotes('all producers storing grain')).toBe(false);
+    expect(svc.queryInvolvesNotes('producers with grain in storage')).toBe(false);
+  });
 });
 
 describe('NlqFilterService — a note matches regardless of its trade-unit tag', () => {

@@ -122,8 +122,8 @@ export class NlqFilterService {
    * Returns true if this query's RESULTS can depend on note data — i.e. parseAndFilter will
    * read context.notes. That's broader than queryInvolvesContact: besides explicit contact
    * and "notes mentioning X" queries, the supplementary note-keyword merge runs for general
-   * keyword queries too (everything EXCEPT ranking "top N", planting, ticket, and grain-on-farm
-   * prompts — mirrors the skip conditions in parseAndFilter). Callers use this to make sure the
+   * keyword queries too (everything EXCEPT ranking "top N", planting, ticket, grain-on-farm, and
+   * storage prompts — mirrors the skip conditions in parseAndFilter). Callers use this to make sure the
    * lazily-loaded note set is present before running a query, so it never evaluates against an
    * empty note array and paints a false "no results".
    */
@@ -134,7 +134,8 @@ export class NlqFilterService {
     return !/^top\s*\d+/.test(q)
       && !this.queryInvolvesPlanting(q)
       && !this.queryInvolvesTickets(q)
-      && !this.queryInvolvesGrainOnFarm(q);
+      && !this.queryInvolvesGrainOnFarm(q)
+      && !this.queryInvolvesStorage(q);
   }
 
   /** Returns true if the query involves planting-related patterns that require planting intentions data. */
@@ -1224,9 +1225,12 @@ export class NlqFilterService {
     // SKIP when:
     // - Explicit note search ("notes mentioning X") — already handled by applyNoteFilters
     // - Ranking queries ("top 10") — note merging would dilute ranked results
+    // - Planting / tickets / grain-on-farm / storage prompts — these have their own authoritative
+    //   filter; merging note-keyword matches would add producers who merely MENTION the keyword in
+    //   a note (e.g. "storing grain" pulling in producers with no actual storage).
     if (!this._isNoteSearchQuery(lowerQuery) && !/^top\s*\d+/.test(lowerQuery) &&
         !this.queryInvolvesPlanting(lowerQuery) && !this.queryInvolvesTickets(lowerQuery) &&
-        !this.queryInvolvesGrainOnFarm(lowerQuery)) {
+        !this.queryInvolvesGrainOnFarm(lowerQuery) && !this.queryInvolvesStorage(lowerQuery)) {
       const noteMatchedIds = this._findCustomersByNoteKeywords(lowerQuery, context.notes, context.customers);
       if (noteMatchedIds.size > 0) {
         const existingIds = new Set(result.map(c => c.id));

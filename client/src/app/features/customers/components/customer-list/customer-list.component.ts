@@ -406,6 +406,17 @@ export class CustomerListComponent {
       // shared object reference is visible everywhere that holds it.
       const savedList = this.savedLists().find(l => String(l.id) === id);
       if (savedList) savedList.customerIds = undefined as any;
+      // Clear any active producer-search term so applyFilters() resolves the saved list through
+      // the fast LOCAL NLQ path. With a term present, applyFilters() diverts to the search
+      // pipeline (and the slow ODS fallback in All-Producers mode) and that path never clears
+      // savedListLoading — leaving "Running saved list..." up for the whole search. Mirrors the
+      // clear-on-trade-unit-change behavior. Set the value directly (not clearSearch(), which would
+      // call applyFilters() a second time) so the applyFilters() below runs once with no term.
+      if (this.searchInputValue) {
+        this.searchInputValue = '';
+        this.searchLoading.set(false);
+        this.appStateService.setSearchQuery('');
+      }
     } else {
       this.savedListLoading.set(false);
     }

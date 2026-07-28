@@ -845,6 +845,13 @@ export class BuildListComponent {
     if (this.nlqFilterService.isRankingQuery(this.queryText())) {
       return list;
     }
+    // Storage prompts: surface the producers with the most grain in storage first (sort by total
+    // storage bushels desc), matching the inline per-commodity breakdown shown on each result.
+    // Alphabetical name is the tiebreaker (e.g. producers with equal / zero storage).
+    if (this.showStorageFilters()) {
+      return [...list].sort((a, b) =>
+        this.storageBu(b) - this.storageBu(a) || (a.name || '').localeCompare(b.name || ''));
+    }
     return [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   });
 
@@ -3140,5 +3147,38 @@ export class BuildListComponent {
     return (customer.grainOnFarm ?? [])
       .filter(g => !!g.commodityGroup && (g.bushelsOnHand ?? 0) > 0)
       .sort((a, b) => (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0));
+  }
+
+  /** Storage receipts grouped by numeric customerId (StoredGrain joins on Customer.id, not scoularId). */
+  private readonly _storageByCustomerId = computed(() => {
+    const map = new Map<number, StoredGrain[]>();
+    for (const s of this.storedGrain()) {
+      const arr = map.get(s.customerId);
+      if (arr) arr.push(s); else map.set(s.customerId, [s]);
+    }
+    return map;
+  });
+
+  /** Total bushels a producer currently has in storage (sum of NET_QUANTITY across all receipts).
+   *  Drives the Storage-results sort (most storage first). */
+  storageBu(customer: Customer): number {
+    const recs = this._storageByCustomerId().get(customer.id) ?? [];
+    return recs.reduce((sum, s) => sum + (s.quantity ?? 0), 0);
+  }
+
+  /** Per-commodity storage totals (bushels summed across locations), largest first — mirrors the
+   *  grain-on-farm chips so Storage results show each commodity + bushels inline without opening
+   *  the producer. */
+  storageBreakdown(customer: Customer): { crop: string; bushels: number }[] {
+    const byCrop = new Map<string, number>();
+    for (const s of this._storageByCustomerId().get(customer.id) ?? []) {
+      const qty = s.quantity ?? 0;
+      if (qty <= 0) continue;
+      const crop = (s.crop || 'Unknown').trim();
+      byCrop.set(crop, (byCrop.get(crop) ?? 0) + qty);
+    }
+    return [...byCrop.entries()]
+      .map(([crop, bushels]) => ({ crop, bushels }))
+      .sort((a, b) => b.bushels - a.bushels);
   }
 }
