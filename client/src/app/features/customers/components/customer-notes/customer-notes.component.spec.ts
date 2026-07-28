@@ -130,4 +130,19 @@ describe('CustomerNotesComponent — note search filter + highlight', () => {
     const segs = component.noteViewSegments(note);
     expect(segs.filter(s => s.kind === 'mention').map(s => s.text)).toEqual(['@Caden Egr']);
   });
+
+  // The "Show more" toggle is driven by real clamp overflow (reported per-note by
+  // ClampOverflowDirective), not by character count — so it appears for every truncated note.
+  it('tracks per-note clamp overflow for the Show more toggle', () => {
+    expect(component.isNoteOverflowing(1)).toBe(false);
+
+    component.setNoteOverflow(1, true);
+    component.setNoteOverflow(2, false);
+    expect(component.isNoteOverflowing(1)).toBe(true);
+    expect(component.isNoteOverflowing(2)).toBe(false);
+
+    // Clearing overflow (e.g. after expand removes the clamp) drops it from the set.
+    component.setNoteOverflow(1, false);
+    expect(component.isNoteOverflowing(1)).toBe(false);
+  });
 });

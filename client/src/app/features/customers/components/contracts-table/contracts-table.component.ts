@@ -7,6 +7,7 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, Ticket, ContractPricingLine } from '@models';
 import { expandSearchWithAliases } from '@shared/utils/commodity-aliases';
 import { getContractDeliveryStats } from '@shared/utils/contract-delivery';
+import { compareTicketsByDateThenNumber } from '@shared/utils/ticket-sort';
 
 type SortColumn = 'contractNumber' | 'date' | 'crop' | 'quantity' | 'specialType' | 'price' | 'deliveryStart' | 'status'
   | 'remaining' | 'delivered' | 'unsettled';
@@ -681,7 +682,7 @@ export class ContractsTableComponent {
       }
 
       return false;
-    }).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    }).sort(compareTicketsByDateThenNumber);
   }
 
   hasWheatInAppliedTickets(contract: Contract): boolean {
