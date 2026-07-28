@@ -503,6 +503,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Latitude).IsRequired(false);
             entity.Property(e => e.Longitude).IsRequired(false);
             entity.Property(e => e.ElevatorCode).HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.BarchartLocationKey).HasMaxLength(50).IsRequired(false);
             entity.Property(e => e.TradeUnitCode).HasMaxLength(100).IsRequired();
             entity.Property(e => e.GroupName).HasMaxLength(200).IsRequired(false);
             entity.Property(e => e.IsScoularFacility).HasDefaultValue(false).IsRequired();
@@ -511,6 +512,8 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.ModifiedBy).HasMaxLength(255).IsRequired(false);
             entity.Property(e => e.ModifiedAt).IsRequired(false);
             entity.HasIndex(e => e.TradeUnitCode).HasDatabaseName("IX_BidSheetLocations_TradeUnitCode");
+            // Non-unique: the same BarChart location may be placed in multiple trade units (one row per TU).
+            entity.HasIndex(e => e.BarchartLocationKey).HasDatabaseName("IX_BidSheetLocations_BarchartLocationKey");
             entity.HasMany(e => e.Bids).WithOne(b => b.Location).HasForeignKey(b => b.LocationId).OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -526,6 +529,11 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.CropYear).IsRequired();
             entity.Property(e => e.Month).HasDefaultValue(0).IsRequired();
             entity.Property(e => e.Bid).HasMaxLength(50).IsRequired();
+            // Feed provenance: 'Barchart' rows are read-only to users (enforced in BidSheetRepository);
+            // the bridge proc only ever writes rows where Source='Barchart'.
+            entity.Property(e => e.Source).HasMaxLength(20).HasDefaultValue(BidSources.Manual).IsRequired();
+            entity.Property(e => e.BarchartSymbol).HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.QuoteAsOf).IsRequired(false);
             entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
             entity.Property(e => e.ModifiedBy).HasMaxLength(255).IsRequired(false);

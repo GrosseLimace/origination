@@ -126,7 +126,8 @@ public class BidSheetRepository : IBidSheetRepository
     public async Task DeleteBidsAsync(int locationId, string commodityCode, int? month, CancellationToken cancellationToken)
     {
         var query = _appContext.BidSheetLocationBids
-            .Where(b => b.LocationId == locationId && b.CommodityCode == commodityCode);
+            // Feed-owned cells are read-only to users; only the BarChart bridge manages them.
+            .Where(b => b.LocationId == locationId && b.CommodityCode == commodityCode && b.Source != BidSources.Barchart);
         if (month.HasValue)
             query = query.Where(b => b.Month == month.Value);
         var bids = await query.ToListAsync(cancellationToken);
@@ -220,8 +221,9 @@ public class BidSheetRepository : IBidSheetRepository
             var key = (loc.Id, (req.CommodityCode ?? "").ToUpperInvariant(), req.CropYear, req.Month);
             if (string.IsNullOrWhiteSpace(req.Bid))
             {
-                // Empty bid = user cleared the input → delete the existing row if present
-                if (bidLookup.TryGetValue(key, out var toRemove))
+                // Empty bid = user cleared the input → delete the existing row if present.
+                // Feed-owned cells are read-only to users — silently ignore the clear.
+                if (bidLookup.TryGetValue(key, out var toRemove) && toRemove.Source != BidSources.Barchart)
                 {
                     _appContext.BidSheetLocationBids.Remove(toRemove);
                     bidLookup.Remove(key);
@@ -229,6 +231,9 @@ public class BidSheetRepository : IBidSheetRepository
             }
             else if (bidLookup.TryGetValue(key, out var bid))
             {
+                // Feed-owned cells are read-only to users — silently ignore the edit.
+                if (bid.Source == BidSources.Barchart) continue;
+
                 bid.Bid = req.Bid;
                 bid.ModifiedBy = userId;
                 bid.ModifiedAt = now;
@@ -244,6 +249,7 @@ public class BidSheetRepository : IBidSheetRepository
                     CropYear = req.CropYear,
                     Month = req.Month,
                     Bid = req.Bid,
+                    Source = BidSources.Manual,
                     CreatedBy = userId,
                     CreatedAt = now
                 };
@@ -402,12 +408,15 @@ public class BidSheetRepository : IBidSheetRepository
                      && b.CropYear == bid.CropYear && b.Month == bid.Month, cancellationToken);
             if (existing == null) continue;
             _appContext.Entry(bid).State = EntityState.Detached; // drop the duplicate insert
+            reconciled = true;
+            // If the row that won the race is feed-owned, it's read-only to users —
+            // drop the colliding insert without applying the user's value.
+            if (existing.Source == BidSources.Barchart) continue;
             existing.Bid = bid.Bid;
             existing.CommodityName = bid.CommodityName;
             existing.CommodityCategory = bid.CommodityCategory;
             existing.ModifiedBy = bid.CreatedBy;
             existing.ModifiedAt = DateTime.UtcNow;
-            reconciled = true;
         }
         return reconciled;
     }

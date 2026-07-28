@@ -17,7 +17,7 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.3")
+                .HasAnnotation("ProductVersion", "10.0.1")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -33,6 +33,10 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.Property<string>("Address")
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("BarchartLocationKey")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("City")
                         .HasMaxLength(100)
@@ -90,6 +94,9 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("BarchartLocationKey")
+                        .HasDatabaseName("IX_BidSheetLocations_BarchartLocationKey");
+
                     b.HasIndex("TradeUnitCode")
                         .HasDatabaseName("IX_BidSheetLocations_TradeUnitCode");
 
@@ -103,6 +110,10 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("BarchartSymbol")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("Bid")
                         .IsRequired()
@@ -149,6 +160,16 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int")
                         .HasDefaultValue(0);
+
+                    b.Property<DateTime?>("QuoteAsOf")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("Manual");
 
                     b.HasKey("Id");
 
