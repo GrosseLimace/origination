@@ -1,4 +1,3 @@
-using GrainOriginatorPortal.Api.Services;
 using GrainOriginatorPortal.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -21,16 +20,11 @@ namespace GrainOriginatorPortal.Api.Controllers;
 public class EntitlementsController : ControllerBase
 {
     private readonly EntitlementsDbContext _entitlementsDb;
-    private readonly IAppAccessService _appAccess;
     private readonly ILogger<EntitlementsController> _logger;
 
-    public EntitlementsController(
-        EntitlementsDbContext entitlementsDb,
-        IAppAccessService appAccess,
-        ILogger<EntitlementsController> logger)
+    public EntitlementsController(EntitlementsDbContext entitlementsDb, ILogger<EntitlementsController> logger)
     {
         _entitlementsDb = entitlementsDb;
-        _appAccess = appAccess;
         _logger = logger;
     }
 
@@ -122,13 +116,6 @@ public class EntitlementsController : ControllerBase
                 .OrderBy(p => p.DisplayName, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            // Only offer people who can actually sign in to the app (Entra access group) —
-            // an entitled-but-no-access person shouldn't be a selectable recap recipient.
-            // Fails open when the access set is unavailable (Graph blocked/misconfigured):
-            // the picker shows the unfiltered entitlements list exactly as before.
-            var access = await _appAccess.GetAccessSetAsync(ct);
-            people = FilterToAppAccess(people, access);
-
             // Trade Units = the caller's own TUs (deduped + ordered).
             var tradeUnits = rows
                 .Where(r => callerTuCodes.Contains(r.TradeUnitCode))
@@ -169,12 +156,6 @@ public class EntitlementsController : ControllerBase
             return Ok(new EntitlementsCatalogResponse());
         }
     }
-
-    /// <summary>People with app access when the set is available; everyone (fail open) when not.</summary>
-    internal static List<EntitlementPerson> FilterToAppAccess(List<EntitlementPerson> people, AppAccessSet access) =>
-        access.Available
-            ? people.Where(p => access.ShortNames.Contains(p.UserId)).ToList()
-            : people;
 }
 
 public class EntitlementsCatalogResponse

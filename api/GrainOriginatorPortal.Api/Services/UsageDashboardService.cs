@@ -8,11 +8,19 @@ public class UsageDashboardService : IUsageDashboardService
 {
     private readonly IUsageRepository _repo;
     private readonly IAppAccessService _appAccess;
+    // IT/dev accounts to keep OUT of usage analytics. Populated only in prod (via
+    // UsageDashboard:ExcludeUsers) — empty in dev/QA, so a no-op there. These users still have app
+    // access everywhere else; this exclusion is usage-dashboard-only. Keyed by short name (UPN
+    // before the '@'), case-insensitive to match the rest of the dashboard's user keys.
+    private readonly HashSet<string> _excludedUsers;
 
-    public UsageDashboardService(IUsageRepository repo, IAppAccessService appAccess)
+    public UsageDashboardService(IUsageRepository repo, IAppAccessService appAccess, IConfiguration config)
     {
         _repo = repo;
         _appAccess = appAccess;
+        _excludedUsers = new HashSet<string>(
+            config.GetSection("UsageDashboard:ExcludeUsers").Get<string[]>() ?? [],
+            StringComparer.OrdinalIgnoreCase);
     }
 
     private static readonly Dictionary<string, string> FeatureLabels = new()
@@ -40,18 +48,25 @@ public class UsageDashboardService : IUsageDashboardService
             : tradeUnitKey.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var access = await _appAccess.GetAccessSetAsync(cancellationToken);
 
+        HashSet<string> set;
         if (codes is null && access.Available)
         {
             // "All users" = the access group itself — includes people with access but no
             // entitlements row (they'd be invisible to the snapshot), excludes entitled
             // people who can't sign in.
-            return new HashSet<string>(access.ShortNames, StringComparer.OrdinalIgnoreCase);
+            set = new HashSet<string>(access.ShortNames, StringComparer.OrdinalIgnoreCase);
+        }
+        else
+        {
+            var ids = await _repo.GetSnapshotUserIdsAsync(codes, cancellationToken);
+            set = new HashSet<string>(ids, StringComparer.OrdinalIgnoreCase);
+            if (access.Available)
+                set.IntersectWith(access.ShortNames);
         }
 
-        var ids = await _repo.GetSnapshotUserIdsAsync(codes, cancellationToken);
-        var set = new HashSet<string>(ids, StringComparer.OrdinalIgnoreCase);
-        if (access.Available)
-            set.IntersectWith(access.ShortNames);
+        // Drop configured IT/dev accounts (prod only — empty elsewhere) from every dashboard view.
+        if (_excludedUsers.Count > 0)
+            set.ExceptWith(_excludedUsers);
         return set;
     }
 

@@ -1,3 +1,6 @@
+// Microsoft namespaces
+using Microsoft.Extensions.Configuration;
+
 // Third-party namespaces
 using Moq;
 
@@ -35,7 +38,17 @@ public class UsageDashboardServiceTests
             .ReturnsAsync([]);
         _repoMock.Setup(r => r.GetNotesCreatedCountsByUserAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
-        _sut = new UsageDashboardService(_repoMock.Object, _appAccessMock.Object);
+        _sut = CreateSut();
+    }
+
+    /// <summary>Builds the service with an optional UsageDashboard:ExcludeUsers config list.</summary>
+    private UsageDashboardService CreateSut(params string[] excludeUsers)
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(excludeUsers
+                .Select((u, i) => new KeyValuePair<string, string?>($"UsageDashboard:ExcludeUsers:{i}", u)))
+            .Build();
+        return new UsageDashboardService(_repoMock.Object, _appAccessMock.Object, config);
     }
 
     private void SetupAccess(bool available, params string[] shortNames)
@@ -119,6 +132,36 @@ public class UsageDashboardServiceTests
 
         Assert.Equal("Caden Egr", users.Single(u => u.UserId == "CEgr").DisplayName);          // snapshot name wins
         Assert.Equal("admin-CEgr (Entra)", users.Single(u => u.UserId == "admin-CEgr").DisplayName); // Entra fallback
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task ExcludeUsers_DropsConfiguredItDevAccounts_CaseInsensitive_FromEveryView()
+    {
+        SetupAccess(true, "CEgr", "admin-CEgr", "KHague");
+        // Config uses different casing than the access set to prove case-insensitive matching.
+        var sut = CreateSut("cegr", "ADMIN-CEGR");
+
+        var users = await sut.GetUsersAsync(From, To, tradeUnitKey: null, status: null, CancellationToken.None);
+
+        Assert.Single(users);
+        Assert.Equal("KHague", users[0].UserId); // only the non-excluded originator remains
+    }
+
+    // -------------------------------------------------------------------------
+    [Fact]
+    public async Task ExcludeUsers_AppliesToTradeUnitFilteredViews_Too()
+    {
+        SetupAccess(true, "CEgr", "SFletcher");
+        _repoMock.Setup(r => r.GetSnapshotUserIdsAsync(
+                It.Is<IReadOnlyCollection<string>>(c => c.Contains("TU1")), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(["CEgr", "SFletcher"]); // both entitled + have access
+        var sut = CreateSut("SFletcher");
+
+        var users = await sut.GetUsersAsync(From, To, tradeUnitKey: "TU1", status: null, CancellationToken.None);
+
+        Assert.Single(users);
+        Assert.Equal("CEgr", users[0].UserId); // SFletcher excluded even within a TU filter
     }
 
     // -------------------------------------------------------------------------
