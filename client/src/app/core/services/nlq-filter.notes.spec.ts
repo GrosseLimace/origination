@@ -51,8 +51,8 @@ describe('NlqFilterService.queryNeedsFullNotes', () => {
   it('is true for pinned-note queries', () => {
     expect(svc.queryNeedsFullNotes('producers with pinned notes')).toBe(true);
   });
-  it('is true for the "with notes" boolean', () => {
-    expect(svc.queryNeedsFullNotes('customers with notes')).toBe(true);
+  it('is FALSE for the bare "with notes" boolean (resolves from the aggregate has-note set)', () => {
+    expect(svc.queryNeedsFullNotes('customers with notes')).toBe(false);
   });
   it('is true for "most notes" rankings', () => {
     expect(svc.queryNeedsFullNotes('top 10 by notes')).toBe(true);
@@ -65,6 +65,11 @@ describe('NlqFilterService.queryNeedsFullNotes', () => {
   });
   it('is false for general keyword queries (no more note-keyword merge)', () => {
     expect(svc.queryNeedsFullNotes('producers with milo')).toBe(false);
+  });
+  it('is false for date-recency even when phrased "with notes added <date>" (not the has-any-note boolean)', () => {
+    expect(svc.queryNeedsFullNotes('producers with notes added yesterday')).toBe(false);
+    expect(svc.queryNeedsFullNotes('customers with notes added in the last 7 days')).toBe(false);
+    expect(svc.queryNeedsFullNotes('producers with notes made this week')).toBe(false);
   });
   it('is false for contracts / tickets / planting / storage / grain-on-farm / ranking', () => {
     expect(svc.queryNeedsFullNotes('producers with active contracts')).toBe(false);
@@ -131,6 +136,35 @@ describe('NlqFilterService — recency filters resolve from the last-contact agg
       .customers.map(c => c.id).sort((a, b) => a - b);
     // Alpha inherits Bravo's recent contact via the link → excluded; only Charlie remains.
     expect(ids).toEqual([3]);
+  });
+
+  it('"notes added yesterday" resolves from the aggregate and is NOT filtered to current-user notes', () => {
+    // Regression guard for the author-capture trap: "yesterday" must not be read as an author,
+    // which (via buildAuthorCandidates injecting the current user) would drop teammate-authored
+    // notes. Alpha's yesterday note was written by a TEAMMATE, not the current user.
+    const alpha = customer(1, 'Alpha Farms', 'A001');
+    const bravo = customer(2, 'Bravo Farms', 'B002');
+    const aggregate = [lastContact(1, 'A001', 1), lastContact(2, 'B002', 40)];
+    const notes = [note(1, 1, 'A001', 'called about basis')]; // createdBy defaults to rep@scoular.com (a teammate)
+    const context: NlqFilterContext = {
+      customers: [alpha, bravo], contracts: [], tickets: [], notes,
+      noteLastContacts: aggregate, plantingIntentions: [], storedGrain: [],
+      currentUserDisplayName: 'Caden Egr', currentUserUsername: 'CEgr@scoular.com',
+    };
+    const ids = svc.parseAndFilter('producers with notes added yesterday', context)
+      .customers.map(c => c.id).sort((a, b) => a - b);
+    // Alpha (note within the last 2 days, by a teammate) is returned; Bravo (40d) is not.
+    expect(ids).toEqual([1]);
+  });
+
+  it('"customers with notes" resolves from the aggregate has-note set (full notes empty)', () => {
+    const a = customer(1, 'A Farms', 'A001');
+    const b = customer(2, 'B Farms', 'B002');
+    const c = customer(3, 'C Farms', 'C003');
+    const aggregate = [lastContact(1, 'A001', 5), lastContact(3, 'C003', 200)]; // A + C have notes; B does not
+    const ids = svc.parseAndFilter('customers with notes', ctx([a, b, c], [], aggregate))
+      .customers.map(x => x.id).sort((x, y) => x - y);
+    expect(ids).toEqual([1, 3]); // aggregate membership = has a note; B excluded — no full notes needed
   });
 });
 

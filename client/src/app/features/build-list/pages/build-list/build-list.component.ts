@@ -84,6 +84,11 @@ export class BuildListComponent {
   private _contractsReady = signal(false);
   private _loadRequestId = 0;
   private _queryGenId = 0;
+  // Key of the windowed note slice currently in this.notes() for DISPLAY (`${queryGen}:${days}`).
+  // Windowed reads are LOCAL-only — they never warm appState.notes/notesLoaded (that cache means
+  // "the full set"), so a partial slice can't leak to other consumers as if it were complete.
+  private _loadedNoteWindowKey = signal<string>('');
+  private _windowNotesFetchInFlight = false;
   private _pendingIncludedIds: number[] = [];
   // True once the forkJoin (or cache restore) has populated all core data signals.
   // Guards processQuery() and example chips from running against partial/empty data.
@@ -103,6 +108,7 @@ export class BuildListComponent {
   private _dataReadyEffect = effect(() => {
     this.notes();
     this.appState.notesLoaded();
+    this._loadedNoteWindowKey();   // re-run when a windowed note slice lands
     this.storedGrain();
     this._ticketsReady();
     this._contractsReady();
@@ -116,7 +122,7 @@ export class BuildListComponent {
         // Gate on notesLoaded (not notes().length) so a trade unit with genuinely zero notes
         // doesn't hang the spinner forever. noteFilterActive() is true only when a prompt/refine
         // actually reads note content — non-note prompts never wait on notes.
-        const notesOk = !this.noteFilterActive() || this.appState.notesLoaded();
+        const notesOk = this._notesReadyForQuery();
         if (ticketsOk && contractsOk && storageOk && notesOk) {
           this.waitingForTickets.set(false);
           this.waitingForNotes.set(false);
@@ -1046,14 +1052,16 @@ export class BuildListComponent {
   readonly lastContactByCustomer = computed(() => {
     const map = new Map<number, { text: string; colorClass: string; daysAgo: number }>();
 
-    // Index notes by customerCode (source customer ID) — same as home page
+    // Index latest-contact time by customerCode from the lightweight last-contact aggregate
+    // (always loaded on TU change), NOT the full note set — so the badge and recency-refine sets
+    // are correct on every prompt and never depend on a full-notes download.
     const notesByCode = new Map<string, { time: number }>();
-    for (const n of this.notes()) {
-      if (!n.customerCode) continue;
-      const time = BuildListComponent.parseNoteTime(n.createdAt);
-      const existing = notesByCode.get(n.customerCode);
+    for (const lc of this.appState.noteLastContacts()) {
+      if (!lc.customerCode) continue;
+      const time = BuildListComponent.parseNoteTime(lc.lastNoteAt as unknown as string);
+      const existing = notesByCode.get(lc.customerCode);
       if (!existing || time > existing.time) {
-        notesByCode.set(n.customerCode, { time });
+        notesByCode.set(lc.customerCode, { time });
       }
     }
 
@@ -1730,6 +1738,16 @@ export class BuildListComponent {
     } else {
       this.loading.set(false);
     }
+
+    // Interrupted-query recovery: if the user navigated away WHILE a query was still running, its
+    // in-flight fetch was cancelled (takeUntilDestroyed) and state was saved with hasGenerated=false
+    // and no results. Restoring that would leave the query text in the box with no results and no
+    // spinner. Re-run it here so returning to the page transparently completes the query.
+    // (A query that finished — hasGenerated=true — restored its results above and is NOT re-run,
+    // so a legitimate zero-match result is preserved.)
+    if (this.queryText().trim() && !this.hasGenerated() && !this.isProcessing()) {
+      this.processQuery();
+    }
   }
 
   /** Fetches all data fresh from the API for the current trade units.
@@ -2052,7 +2070,7 @@ export class BuildListComponent {
     // fetch up front (idempotent) so it's in flight regardless of which wait below returns
     // first — otherwise a note query that also waits on tickets would never trigger the fetch.
     const needsNotes = this.noteFilterActive();
-    if (needsNotes) this._ensureNotesLoaded();
+    if (needsNotes) this._ensureNotesForQuery();
 
     // If query needs tickets and they haven't loaded yet, wait for them specifically.
     // Tickets are the only data loaded outside the main forkJoin (background subscription),
@@ -2073,10 +2091,10 @@ export class BuildListComponent {
       return;
     }
 
-    // If the query reads notes and the lazy full set hasn't landed yet, wait for it — otherwise
-    // the NLQ would run against zero notes and paint a false "no results". _dataReadyEffect
-    // re-runs this filter once notes arrive (or the fetch gives up).
-    if (needsNotes && !this.appState.notesLoaded()) {
+    // If the query reads notes and the slice it needs (windowed or full) hasn't landed yet, wait —
+    // otherwise the NLQ would run against zero notes and paint a false "no results".
+    // _dataReadyEffect re-runs this filter once the notes arrive (or the fetch gives up).
+    if (needsNotes && !this._notesReadyForQuery()) {
       this.waitingForNotes.set(true);
       return;
     }
@@ -2086,6 +2104,76 @@ export class BuildListComponent {
     this.waitingForNotes.set(false);
     this._applyNlqFilter();
     this.isProcessing.set(false);
+  }
+
+  /** Bounded recency window (days) a positive date-scoped prompt/refine needs for DISPLAY, or null
+   *  if it isn't a bounded positive-recency one. Padded +1 day so the fetch slice is always at
+   *  least as wide as the display cutoff (never drops a shown note). */
+  private _recencyWindowDays(): number | null {
+    const r = this.appliedRefinements();
+    if (r.notesInLastDays != null && r.notesInLastDays > 0) return r.notesInLastDays + 1;
+    const q = this.queryText().toLowerCase();
+    const numeric = q.match(/(?:notes?\s+(?:added|made|entered|written|created|left)|contacted|called|reach(?:ed)?\s+out)\s*(?:in|within)?\s*(?:the\s+)?(?:last|past)?\s*(\d+)\s*days?/);
+    if (numeric) return parseInt(numeric[1], 10) + 1;
+    if (/\btoday\b/.test(q)) return 2;
+    if (/\byesterday\b/.test(q)) return 3;
+    if (/\b(?:this|last)\s+week\b/.test(q)) return 8;
+    if (/\b(?:this|last)\s+month\b/.test(q)) return 32;
+    return null;
+  }
+
+  /** How many notes the CURRENT prompt needs loaded for display: 'none', 'full', or a day window.
+   *  The matched SET and the last-contact badge come from the aggregate regardless — this governs
+   *  only the DISPLAY payload. */
+  private _noteLoadNeed(): 'none' | 'full' | number {
+    if (!this.noteFilterActive()) return 'none';
+    const r = this.appliedRefinements();
+    const q = this.queryText().toLowerCase();
+    const needsFull =
+      this.nlqFilterService.queryNeedsFullNotes(q)
+      || !!r.noteKeyword?.trim() || !!r.hasPinnedNotes
+      || !!r.contactedByMeOnly || !!r.contactedBySomeoneElse
+      || !!r.contactedOnlyOnce || !!r.contactedMoreThan5
+      // absence prompts show the (possibly old) most-recent note for context:
+      || !!r.neverContacted || (r.notContactedDays != null && r.notContactedDays > 0)
+      || /never\s+contacted|not\s+contacted|haven'?t\s+contacted|haven'?t\s+called/.test(q);
+    if (needsFull) return 'full';
+    const w = this._recencyWindowDays();
+    return w != null ? w : 'full';
+  }
+
+  /** True when the notes this prompt needs for display are already loaded. */
+  private _notesReadyForQuery(): boolean {
+    const need = this._noteLoadNeed();
+    if (need === 'none') return true;
+    if (need === 'full') return this.appState.notesLoaded();
+    return this._loadedNoteWindowKey() === `${this._queryGenId}:${need}`;
+  }
+
+  /** Loads exactly the notes the current prompt needs: the full set (shared cache) for
+   *  content/author/pinned/count/absence prompts, or a date-windowed slice (local only) for
+   *  positive-recency prompts. No-op when nothing is needed or the right data is already present. */
+  private _ensureNotesForQuery(): void {
+    const need = this._noteLoadNeed();
+    if (need === 'none') return;
+    if (need === 'full') { this._ensureNotesLoaded(); return; }
+    const key = `${this._queryGenId}:${need}`;
+    if (this._loadedNoteWindowKey() === key || this._windowNotesFetchInFlight) return;
+    this._windowNotesFetchInFlight = true;
+    const tu = this.appState.selectedTradeUnits();
+    const tuParam = tu.length > 0 ? tu : undefined;
+    this.apiService.getNotes(tuParam, need).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (data) => {
+        this._windowNotesFetchInFlight = false;
+        this.notes.set(data ?? []);          // DISPLAY only — do NOT warm the full-set cache
+        this._loadedNoteWindowKey.set(key);  // re-triggers _dataReadyEffect (via notes()) to run the query
+      },
+      error: () => {
+        this._windowNotesFetchInFlight = false;
+        this.notes.set([]);
+        this._loadedNoteWindowKey.set(key);
+      }
+    });
   }
 
   /** One-shot background fetch of the full note set into the shared lazy cache. No-op if the
@@ -2258,13 +2346,14 @@ export class BuildListComponent {
     // Same guard for notes: if the query reads notes but the lazy set isn't loaded yet, treat
     // it as pending (not a zero-match) so we don't flash "no results" before the fetch lands.
     // _dataReadyEffect re-runs this filter once notes arrive.
-    const notesPending = this.noteFilterActive() && !this.appState.notesLoaded();
+    const notesPending = this.noteFilterActive() && !this._notesReadyForQuery();
     this.waitingForNotes.set(notesPending);
     // Ensure the fetch is actually in flight. processQuery starts it before parking a query,
     // but direct callers of _applyNlqFilter (the restore/background-refresh at _loadFresh and
     // the appState-tickets effect) bypass processQuery — without this the "Loading note data…"
-    // spinner would hang with nothing fetching. Idempotent: no-ops if loaded or already fetching.
-    if (notesPending) this._ensureNotesLoaded();
+    // spinner would hang with nothing fetching. Idempotent: no-ops if the needed slice is present
+    // or a fetch is already in flight.
+    if (notesPending) this._ensureNotesForQuery();
     this.queryReturnedNoMatches.set(result.customers.length === 0 && !ticketsPending && !notesPending);
     this.filteredCustomers.set(result.customers);
 

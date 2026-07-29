@@ -27,12 +27,14 @@ public class NotesController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Gets all notes.</summary>
+    /// <summary>Gets all notes. Pass <c>sinceDays</c> to window the read to notes created within
+    /// the last N days — date-scoped prompts ("notes added yesterday") use this to avoid pulling
+    /// the entire note set.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(List<NoteResponse>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<NoteResponse>>> GetAll([FromQuery] string? tradeUnits = null, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<List<NoteResponse>>> GetAll([FromQuery] string? tradeUnits = null, [FromQuery] int? sinceDays = null, CancellationToken cancellationToken = default)
     {
-        return Ok(await _service.GetAllAsync(tradeUnits, cancellationToken));
+        return Ok(await _service.GetAllAsync(tradeUnits, sinceDays, cancellationToken));
     }
 
     // -------------------------------------------------------------------------

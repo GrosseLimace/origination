@@ -63,7 +63,7 @@ public class NoteServiceTests
         // Arrange — notes tagged to a mix of trade units (including one the caller would not be
         // "entitled" to) all come back; the trade-unit tag is not a visibility filter.
         _repositoryMock
-            .Setup(r => r.GetAsync(It.IsAny<IEnumerable<string>?>(), It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetAsync(It.IsAny<IEnumerable<string>?>(), It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Note>
             {
                 new() { Id = 1, CustomerId = 10, TradeUnit = "1084", Description = "a", CreatedBy = "u@x" },
@@ -72,7 +72,7 @@ public class NoteServiceTests
             });
 
         // Act
-        var result = await _sut.GetAllAsync(null, CancellationToken.None);
+        var result = await _sut.GetAllAsync(null, null, CancellationToken.None);
 
         // Assert — every note is returned regardless of its TradeUnit tag.
         Assert.Equal(3, result.Count);

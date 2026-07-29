@@ -141,10 +141,25 @@ export class NlqFilterService {
    */
   queryNeedsFullNotes(query: string): boolean {
     const q = query.toLowerCase();
-    return this._isNoteSearchQuery(q)                             // content / author / "contacted by X"
-      || /\bpinned\b/.test(q)                                      // pinned-note filter
-      || /(?:with|has|have)\s+notes?\b/.test(q)                    // "customers with notes" boolean
-      || /most\s+notes|most\s+engaged|by\s+notes/.test(q);         // ranking by note count
+    // Note-CONTENT search — needs bodies.
+    if (/note(?:s)?\s*(?:about|mentioning|containing|saying|that\s+(?:say|mention|include|contain))|search\s+notes?\s+for|note\s*search|whose\s+notes?/.test(q)) return true;
+    // Note-AUTHOR search — needs createdBy/modifiedBy. Require an explicit "by/from <name>" so a
+    // date-scoped prompt ("notes added yesterday") is NOT misread as an author; plus the
+    // possessive and "everyone/who <name> has noted" phrasings.
+    if (/note(?:s)?\s+(?:(?:entered|created|added|written|made|left|placed|modified|updated|edited)\s+)?(?:by|from)\s+\S/.test(q)) return true;
+    if (/(?:contacted|noted|called|reached)\s+by\s+\S/.test(q)) return true;
+    if (/\w+['’]s\s+notes?\b/.test(q)) return true;
+    if (/(?:everyone|customers?|producers?|growers?|farmers?)\s+\w+\s+(?:has|have)\s+(?:entered|placed|created|added|written|left|made|noted|contacted|called|reached)/.test(q)) return true;
+    if (/who\s+(?:has|have)\s+\w+\s+(?:noted|contacted|called|reached|entered|placed)/.test(q)) return true;
+    // Pinned-note filter — needs the isPinned flag.
+    if (/\bpinned\b/.test(q)) return true;
+    // NOTE: the bare "customers with notes" (has-any-note) boolean is intentionally NOT here — it
+    // resolves from the aggregate-derived has-note set (see applyNoteFilters), so it needs no
+    // full-notes download. On build-list, display of that prompt is still handled by its own
+    // noteFilterActive/_noteLoadNeed gate.
+    // Ranking by note count — needs per-customer counts.
+    if (/most\s+notes|most\s+engaged|by\s+notes/.test(q)) return true;
+    return false;
   }
 
   /**
@@ -1241,7 +1256,7 @@ export class NlqFilterService {
     result = this.applyAcresFilter(lowerQuery, result);
     result = this.applyCustomerInfoFilters(lowerQuery, result, context.tickets, context.contracts);
     result = this.applyContactFilters(lowerQuery, result, latestNoteByCustomer, customerIdsWithNotes, context.notes, context.customers, context.currentUserDisplayName, context.currentUserUsername);
-    result = this.applyNoteFilters(lowerQuery, result, context.notes, context.customers, context.currentUserDisplayName, context.currentUserUsername);
+    result = this.applyNoteFilters(lowerQuery, result, context.notes, context.customers, customerIdsWithNotes, context.currentUserDisplayName, context.currentUserUsername);
     result = this.applyStorageFilters(lowerQuery, result, context.storedGrain);
     result = this.applyPlantingFilters(lowerQuery, result, context.plantingIntentions);
     result = this.applyContractFilters(lowerQuery, result, context.contracts);
@@ -2049,13 +2064,19 @@ export class NlqFilterService {
   // NOTE FILTERS (pinned, content search)
   // ============================================================
 
-  private applyNoteFilters(lowerQuery: string, result: Customer[], notes: Note[], allCustomers: Customer[] = result, currentUserDisplayName?: string, currentUserUsername?: string): Customer[] {
-    // "Customers with notes" — broad boolean (has any note)
+  /** Date/recency phrases that a note-verb query ("notes added yesterday") can leave in the
+   *  author-capture group. Used to reject them so they aren't treated as a person's name. */
+  private static readonly _DATE_RECENCY_PHRASE =
+    /^(?:today|yesterday|tomorrow|recently|this\s+(?:week|month|year|quarter)|last\s+(?:week|month|year|quarter)|(?:in\s+(?:the\s+)?(?:last|past)\s+)?\d+\s*days?(?:\s+ago)?)$/;
+
+  private applyNoteFilters(lowerQuery: string, result: Customer[], notes: Note[], allCustomers: Customer[] = result, customerIdsWithNotes: Set<number> = new Set(), currentUserDisplayName?: string, currentUserUsername?: string): Customer[] {
+    // "Customers with notes" — broad boolean (has any note). Resolved from the aggregate-derived
+    // has-note set (linked-producer aware, always available) rather than the full note bodies, so
+    // this prompt never forces a full-notes download.
     if (/(?:with|has|have)\s+notes?\b/.test(lowerQuery) &&
         !this._isNoteSearchQuery(lowerQuery) &&
         !lowerQuery.includes('no note') && !lowerQuery.includes('without note')) {
-      const customersWithNotes = new Set<number>(notes.map(n => n.customerId));
-      result = result.filter(c => customersWithNotes.has(c.id));
+      result = result.filter(c => customerIdsWithNotes.has(c.id));
     }
 
     // Pinned notes
@@ -2094,7 +2115,13 @@ export class NlqFilterService {
     for (const pattern of authorPatterns) {
       const match = lowerQuery.match(pattern);
       if (match) {
-        noteAuthor = match[1].trim();
+        const candidate = match[1].trim();
+        // Guard: "notes added yesterday / this week / in last 30 days" must NOT be read as an
+        // author named "yesterday"/"this week"/etc. Without this, buildAuthorCandidates injects
+        // the current user's identity and the query silently collapses to "notes I authored",
+        // dropping teammate-authored notes. Date-scoped recency is handled by applyContactFilters.
+        if (NlqFilterService._DATE_RECENCY_PHRASE.test(candidate)) continue;
+        noteAuthor = candidate;
         break;
       }
     }

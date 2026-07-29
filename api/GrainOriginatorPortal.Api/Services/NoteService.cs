@@ -29,7 +29,7 @@ public class NoteService : INoteService
     }
 
     /// <inheritdoc />
-    public async Task<List<NoteResponse>> GetAllAsync(string? tradeUnits, CancellationToken cancellationToken)
+    public async Task<List<NoteResponse>> GetAllAsync(string? tradeUnits, int? sinceDays, CancellationToken cancellationToken)
     {
         // No trade-unit entitlement filter on the notes themselves: trade units scope WHICH
         // producers a rep works (the customers query / optional producer-TU filter below), not
@@ -39,7 +39,13 @@ public class NoteService : INoteService
         // access boundary. The optional tradeUnits arg still scopes by the customer's TU when a
         // caller passes it (producer scoping — no caller does today).
         var tuList = tradeUnits?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var notes = await _repository.GetAsync(tuList, cancellationToken);
+        // sinceDays > 0 windows the read to recently-created notes (date-scoped prompts). A
+        // null/<=0 value keeps the full-set behavior. Cutoff is UTC midnight N days back so
+        // "last 1 day" reliably covers all of yesterday regardless of the current time of day.
+        DateTime? createdSinceUtc = sinceDays is > 0
+            ? DateTime.UtcNow.Date.AddDays(-sinceDays.Value)
+            : null;
+        var notes = await _repository.GetAsync(tuList, createdSinceUtc, cancellationToken);
         return await MapWithNamesAsync(notes, cancellationToken);
     }
 

@@ -17,7 +17,7 @@ public class NoteRepository : INoteRepository
         _logger = logger;
     }
 
-    public async Task<List<Note>> GetAsync(IEnumerable<string>? tradeUnits, CancellationToken cancellationToken)
+    public async Task<List<Note>> GetAsync(IEnumerable<string>? tradeUnits, DateTime? createdSinceUtc, CancellationToken cancellationToken)
     {
         _logger.LogInformation("Attempting to retrieve notes from database");
 
@@ -28,6 +28,13 @@ public class NoteRepository : INoteRepository
 
         var query = _appContext.Notes.AsNoTracking()
             .Where(n => !n.IsDeleted);
+        // Optional recency window — date-scoped note prompts ("notes added yesterday",
+        // "notes in last N days") only need this slice, not every note. Cuts both the rows
+        // returned and the per-note author-name resolution below (the real cost at 28.8k notes).
+        if (createdSinceUtc is { } sinceUtc)
+        {
+            query = query.Where(n => n.CreatedAt >= sinceUtc);
+        }
         var tuList = tradeUnits?.Where(t => !string.IsNullOrEmpty(t)).ToList();
         if (tuList is { Count: > 0 })
         {

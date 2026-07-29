@@ -501,12 +501,16 @@ export class ApiService {
   // Note Operations (Customer contact notes)
   // ==========================================================================
 
-  /** Fetches notes, optionally filtered by trade units */
-  getNotes(tradeUnits?: string[]): Observable<Note[]> {
-    const url = tradeUnits?.length
-      ? `${this.baseUrl}/notes?tradeUnits=${encodeURIComponent(tradeUnits.join(','))}`
-      : `${this.baseUrl}/notes`;
-    const key = `notes:${[...(tradeUnits ?? [])].sort().join(',')}`;
+  /** Fetches notes, optionally filtered by trade units. Pass `sinceDays` to window the read to
+   *  notes created within the last N days — date-scoped prompts ("notes added yesterday") use this
+   *  to avoid pulling the entire note set. Windowed reads get their own dedupe key so they never
+   *  collide with (or masquerade as) the full-set cache. */
+  getNotes(tradeUnits?: string[], sinceDays?: number): Observable<Note[]> {
+    const params: string[] = [];
+    if (tradeUnits?.length) params.push(`tradeUnits=${encodeURIComponent(tradeUnits.join(','))}`);
+    if (sinceDays != null && sinceDays > 0) params.push(`sinceDays=${sinceDays}`);
+    const url = params.length ? `${this.baseUrl}/notes?${params.join('&')}` : `${this.baseUrl}/notes`;
+    const key = `notes:${[...(tradeUnits ?? [])].sort().join(',')}:since=${sinceDays ?? ''}`;
     return this._dedupe(key,
       this.http.get<Note[]>(url).pipe(catchError(e => this.handleError(e)))
     );
