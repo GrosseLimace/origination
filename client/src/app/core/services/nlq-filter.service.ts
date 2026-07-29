@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { Customer, Contract, Ticket, Note, PlantingIntention, StoredGrain, RefinementFilters, Commodity, CommodityConversion } from '@models';
 import { isContractUnconfirmed, isContractOverdueWithUnshippedBu, buildConversionMap } from '@shared/utils/contract-status';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
+import { plantingQueryScope, isIrrigated, isDryland } from '@shared/utils/planting-chips';
 
 export interface NlqFilterContext {
   customers: Customer[];
@@ -2345,12 +2346,13 @@ export class NlqFilterService {
   private applyPlantingFilters(lowerQuery: string, result: Customer[], plantingIntentions: PlantingIntention[]): Customer[] {
     let filteredIntentions = [...plantingIntentions];
 
+    // Year / irrigation type the prompt asks about. Read through the shared helper so the result
+    // rows (which re-derive the same scope to label their chips) can't drift from what we filter on.
+    const scope = plantingQueryScope(lowerQuery);
+
     // Filter by planting year if specified
-    const yearMatch = lowerQuery.match(/plant(?:ing|ed)?\s*(?:in|for)\s*(\d{4})/);
-    const yearMatch2 = lowerQuery.match(/(\d{4})\s*plant(?:ing)?/);
-    const plantingYear = yearMatch?.[1] || yearMatch2?.[1];
-    if (plantingYear) {
-      const year = parseInt(plantingYear);
+    if (scope.year) {
+      const year = scope.year;
       filteredIntentions = filteredIntentions.filter(p => p.plantingYear === year);
       // If year specified alone (no crop), filter customers with any planting in that year
       const customersWithYear = new Set<number>(filteredIntentions.map(p => p.customerId));
@@ -2358,13 +2360,13 @@ export class NlqFilterService {
     }
 
     // Filter by planting type (irrigated/dryland)
-    if (lowerQuery.includes('irrigated')) {
-      filteredIntentions = filteredIntentions.filter(p => p.type?.toLowerCase().includes('irrigat'));
+    if (scope.irrigatedOnly) {
+      filteredIntentions = filteredIntentions.filter(p => isIrrigated(p.type));
       const ids = new Set<number>(filteredIntentions.map(p => p.customerId));
       result = result.filter(c => ids.has(c.id));
     }
-    if (lowerQuery.includes('dryland') || lowerQuery.includes('dry land')) {
-      filteredIntentions = filteredIntentions.filter(p => p.type?.toLowerCase().includes('dryland') || p.type?.toLowerCase().includes('dry land'));
+    if (scope.drylandOnly) {
+      filteredIntentions = filteredIntentions.filter(p => isDryland(p.type));
       const ids = new Set<number>(filteredIntentions.map(p => p.customerId));
       result = result.filter(c => ids.has(c.id));
     }
