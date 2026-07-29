@@ -452,13 +452,14 @@ export class CustomerListComponent {
     if (this.nlqFilterService.queryInvolvesContracts(query) && this.appStateService.contracts().length === 0) {
       missing['contracts'] = this.apiService.getContracts(tuParam).pipe(catchError(() => of([] as Contract[])));
     }
-    // Notes: the full set is now lazily loaded (badges use the last-contact aggregate).
-    // Fetch it for ANY saved-list run while missing — not just contact-phrased queries —
-    // because the NLQ's supplementary keyword matching can consult note content for
-    // generic keyword queries too. Gate on notesLoaded, not length (a TU can genuinely
-    // have zero notes). Usually a no-op: home's saved-list enrichment warms this cache
-    // and the ApiService dedupes a concurrent request.
-    if (!this.appStateService.notesLoaded()) {
+    // Notes (full set with bodies/authors): fetch ONLY for prompts that actually read note
+    // content/authors/pinned/counts, or whose refine filters do. Recency ("not contacted",
+    // "never contacted", "notes in last N days") and every non-note prompt resolve from the
+    // last-contact aggregate (always loaded on TU change), so they never download the full set.
+    // Gate on notesLoaded, not length (a TU can genuinely have zero notes).
+    const needsFullNotes = this.nlqFilterService.queryNeedsFullNotes(query)
+      || this.nlqFilterService.refineFiltersNeedFullNotes(savedList.filters);
+    if (needsFullNotes && !this.appStateService.notesLoaded()) {
       missing['notes'] = this.apiService.getNotes().pipe(catchError(() => of([] as Note[])));
     }
     // Also fetch the query library when the saved list lacks the _promptCategory hint —
@@ -507,6 +508,7 @@ export class CustomerListComponent {
       contracts,
       tickets: this.appStateService.tickets(),
       notes,
+      noteLastContacts: this.appStateService.noteLastContacts(),
       plantingIntentions: this.appStateService.plantingIntentions(),
       storedGrain: this.appStateService.storedGrain(),
       commodities: this.appStateService.commodities()
@@ -533,7 +535,8 @@ export class CustomerListComponent {
           tickets: this.appStateService.tickets(),
           storedGrain: this.appStateService.storedGrain(),
           plantingIntentions: this.appStateService.plantingIntentions(),
-          commodityConversions: this.appStateService.commodityConversions()
+          commodityConversions: this.appStateService.commodityConversions(),
+          noteLastContacts: this.appStateService.noteLastContacts()
         })
       : result.customers;
     savedList.customerIds = this.nlqFilterService.applyCustomerOverrides(

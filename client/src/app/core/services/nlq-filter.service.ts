@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Customer, Contract, Ticket, Note, PlantingIntention, StoredGrain, RefinementFilters, Commodity, CommodityConversion } from '@models';
+import { Customer, Contract, Ticket, Note, NoteLastContact, PlantingIntention, StoredGrain, RefinementFilters, Commodity, CommodityConversion } from '@models';
 import { isContractUnconfirmed, isContractOverdueWithUnshippedBu, buildConversionMap } from '@shared/utils/contract-status';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
 
@@ -7,7 +7,13 @@ export interface NlqFilterContext {
   customers: Customer[];
   contracts: Contract[];
   tickets: Ticket[];
+  /** Full note set with bodies/authors — ONLY loaded for prompts that need note content, authors,
+   *  pinned flags, or note counts (see queryNeedsFullNotes). Empty for every other prompt. */
   notes: Note[];
+  /** Lightweight last-contact aggregate (one row per customer, latest note time — no bodies).
+   *  Always loaded on TU change; the source for recency/"never contacted" filters so they never
+   *  need the full note set. */
+  noteLastContacts?: NoteLastContact[];
   plantingIntentions: PlantingIntention[];
   storedGrain: StoredGrain[];
   commodities?: Commodity[];
@@ -119,22 +125,40 @@ export class NlqFilterService {
   }
 
   /**
-   * Returns true if this query's RESULTS can depend on note data — i.e. parseAndFilter will
-   * read context.notes. That's broader than queryInvolvesContact: besides explicit contact
-   * and "notes mentioning X" queries, the supplementary note-keyword merge runs for general
-   * keyword queries too (everything EXCEPT ranking "top N", planting, ticket, and grain-on-farm
-   * prompts — mirrors the skip conditions in parseAndFilter). Callers use this to make sure the
-   * lazily-loaded note set is present before running a query, so it never evaluates against an
-   * empty note array and paints a false "no results".
+   * Returns true ONLY for prompts that need the FULL note set (bodies / authors / pinned flags /
+   * note counts) loaded before they can run correctly:
+   *   - note-content or author search ("notes mentioning X", "notes by Caden", "contacted by X"),
+   *   - pinned-note filters,
+   *   - "with/has notes" boolean, and
+   *   - "most notes / most engaged / by notes" rankings.
+   *
+   * Recency prompts ("not contacted in N days", "never contacted", "notes in last N days") are
+   * deliberately EXCLUDED — they resolve from the lightweight last-contact aggregate
+   * (noteLastContacts), which is always loaded, so they never trigger a full-notes fetch. Every
+   * non-note prompt (contracts, tickets, planting, storage, grain-on-farm, general keyword) returns
+   * false and never loads notes. Callers use this to gate the lazy full-notes load.
    */
-  queryInvolvesNotes(query: string): boolean {
+  queryNeedsFullNotes(query: string): boolean {
     const q = query.toLowerCase();
-    if (this.queryInvolvesContact(q) || this._isNoteSearchQuery(q)) return true;
-    // Otherwise the supplementary keyword merge runs unless the query is one of these types.
-    return !/^top\s*\d+/.test(q)
-      && !this.queryInvolvesPlanting(q)
-      && !this.queryInvolvesTickets(q)
-      && !this.queryInvolvesGrainOnFarm(q);
+    return this._isNoteSearchQuery(q)                             // content / author / "contacted by X"
+      || /\bpinned\b/.test(q)                                      // pinned-note filter
+      || /(?:with|has|have)\s+notes?\b/.test(q)                    // "customers with notes" boolean
+      || /most\s+notes|most\s+engaged|by\s+notes/.test(q);         // ranking by note count
+  }
+
+  /**
+   * Returns true if a saved list's / build-list's refine filters require the FULL note set.
+   * Note-content, pinned, author, and note-count refines need bodies; recency refines
+   * (neverContacted / notContactedDays / notesInLastDays) resolve from the aggregate, so they do NOT.
+   */
+  refineFiltersNeedFullNotes(filters: RefinementFilters | null | undefined): boolean {
+    if (!filters) return false;
+    return !!filters.noteKeyword
+      || filters.hasPinnedNotes === true
+      || filters.contactedByMeOnly === true
+      || filters.contactedBySomeoneElse === true
+      || filters.contactedOnlyOnce === true
+      || filters.contactedMoreThan5 === true;
   }
 
   /** Returns true if the query involves planting-related patterns that require planting intentions data. */
@@ -463,6 +487,9 @@ export class NlqFilterService {
       storedGrain?: StoredGrain[];
       plantingIntentions?: PlantingIntention[];
       commodityConversions?: CommodityConversion[];
+      /** Lightweight last-contact aggregate — source for the recency refines so they don't need
+       *  the full note set. Falls back to `notes` if not supplied (older callers). */
+      noteLastContacts?: NoteLastContact[];
     }
   ): Customer[] {
     let list = customers;
@@ -519,14 +546,24 @@ export class NlqFilterService {
     if (filters.neverContacted
         || (filters.notContactedDays != null && filters.notContactedDays > 0)
         || (filters.notesInLastDays != null && filters.notesInLastDays > 0)) {
-      // Pre-index latest note per customer — O(notes) build instead of O(customers × notes) scan
+      // Recency refines resolve from the lightweight last-contact aggregate (one row per customer,
+      // always loaded) so they never require the full note set. Fall back to `notes` for older
+      // callers that don't pass the aggregate.
       const latestNoteTime = new Map<number, number>();
       const customerIdsWithNotes = new Set<number>();
-      for (const n of notes) {
-        customerIdsWithNotes.add(n.customerId);
-        const time = new Date(n.createdAt).getTime();
-        const existing = latestNoteTime.get(n.customerId);
-        if (!existing || time > existing) latestNoteTime.set(n.customerId, time);
+      const aggregate = dimensionContext?.noteLastContacts;
+      if (aggregate && aggregate.length > 0) {
+        for (const lc of aggregate) {
+          customerIdsWithNotes.add(lc.customerId);
+          latestNoteTime.set(lc.customerId, new Date(lc.lastNoteAt).getTime());
+        }
+      } else {
+        for (const n of notes) {
+          customerIdsWithNotes.add(n.customerId);
+          const time = new Date(n.createdAt).getTime();
+          const existing = latestNoteTime.get(n.customerId);
+          if (!existing || time > existing) latestNoteTime.set(n.customerId, time);
+        }
       }
       if (filters.neverContacted) {
         list = list.filter(c => !customerIdsWithNotes.has(c.id));
@@ -1141,10 +1178,11 @@ export class NlqFilterService {
     const lowerQuery = this.normalizeSynonyms(query.toLowerCase());
     let result = [...context.customers];
 
-    // Pre-index: latest note per customer — matches home page logic.
-    // Indexes notes by customerCode (source ID), resolves linked producer notes
-    // bidirectionally (outgoing + incoming links).
-    const latestNoteByCustomer = new Map<number, { note: Note; time: number }>();
+    // Pre-index: latest CONTACT time per customer — sourced from the lightweight last-contact
+    // aggregate (noteLastContacts, always loaded on TU change), NOT the full note set. This lets
+    // recency / "never contacted" filters run without downloading every note. Resolves linked
+    // producers bidirectionally (outgoing + incoming links), matching the home page rollup.
+    const latestNoteByCustomer = new Map<number, { time: number }>();
     const customerIdsWithNotes = new Set<number>();
 
     // Treat bare ISO strings as UTC — API stores DateTime.UtcNow without Z suffix.
@@ -1153,15 +1191,13 @@ export class NlqFilterService {
       return new Date(raw).getTime();
     };
 
-    // Index notes by customerCode (source customer ID string)
-    const noteTimeByCode = new Map<string, { note: Note; time: number }>();
-    for (const n of context.notes) {
-      if (!n.customerCode) continue;
-      const time = parseUtc(n.createdAt);
-      const existing = noteTimeByCode.get(n.customerCode);
-      if (!existing || time > existing.time) {
-        noteTimeByCode.set(n.customerCode, { note: n, time });
-      }
+    // Index latest-contact time by customerCode (source customer ID string)
+    const noteTimeByCode = new Map<string, number>();
+    for (const lc of (context.noteLastContacts ?? [])) {
+      if (!lc.customerCode) continue;
+      const time = parseUtc(lc.lastNoteAt);
+      const existing = noteTimeByCode.get(lc.customerCode);
+      if (existing == null || time > existing) noteTimeByCode.set(lc.customerCode, time);
     }
 
     // Build bidirectional linked-producer map
@@ -1178,7 +1214,7 @@ export class NlqFilterService {
       }
     }
 
-    // Resolve latest note per customer including bidirectional linked producers
+    // Resolve latest contact per customer including bidirectional linked producers
     for (const customer of context.customers) {
       const freshLinked = linkedById.get(customer.id) ?? customer.linkedProducerIds ?? [];
       const allCodes = new Set<string>();
@@ -1187,13 +1223,13 @@ export class NlqFilterService {
       for (const incomingCode of (incomingCodeLinks.get(customer.scoularId || '') || new Set<string>())) {
         allCodes.add(incomingCode);
       }
-      let latestEntry: { note: Note; time: number } | null = null;
+      let latest = 0;
       for (const code of allCodes) {
-        const entry = noteTimeByCode.get(code);
-        if (entry && (!latestEntry || entry.time > latestEntry.time)) latestEntry = entry;
+        const t = noteTimeByCode.get(code);
+        if (t && t > latest) latest = t;
       }
-      if (latestEntry) {
-        latestNoteByCustomer.set(customer.id, latestEntry);
+      if (latest > 0) {
+        latestNoteByCustomer.set(customer.id, { time: latest });
         customerIdsWithNotes.add(customer.id);
       }
     }
@@ -1215,27 +1251,11 @@ export class NlqFilterService {
     result = this.applyCrossEntityFilters(lowerQuery, result, context.contracts, context.tickets, context.plantingIntentions);
     result = this.applyRankingFilters(lowerQuery, result, context.contracts, context.tickets, context.plantingIntentions, context.storedGrain, context.notes);
 
-    // ── Supplementary note search ──────────────────────────────────────
-    // Notes are a first-class data source. Always search note content for
-    // meaningful query keywords and merge in matches alongside structured filters.
-    // E.g., "Customers with milo" finds customers with milo contracts AND customers
-    // whose notes mention milo — merged together.
-    //
-    // SKIP when:
-    // - Explicit note search ("notes mentioning X") — already handled by applyNoteFilters
-    // - Ranking queries ("top 10") — note merging would dilute ranked results
-    if (!this._isNoteSearchQuery(lowerQuery) && !/^top\s*\d+/.test(lowerQuery) &&
-        !this.queryInvolvesPlanting(lowerQuery) && !this.queryInvolvesTickets(lowerQuery) &&
-        !this.queryInvolvesGrainOnFarm(lowerQuery)) {
-      const noteMatchedIds = this._findCustomersByNoteKeywords(lowerQuery, context.notes, context.customers);
-      if (noteMatchedIds.size > 0) {
-        const existingIds = new Set(result.map(c => c.id));
-        const additional = context.customers.filter(c => noteMatchedIds.has(c.id) && !existingIds.has(c.id));
-        if (additional.length > 0) {
-          result = [...result, ...additional];
-        }
-      }
-    }
+    // NOTE: the former "supplementary note-keyword merge" (which unioned in any producer whose notes
+    // mentioned a query keyword, for every non-ranking/planting/ticket/grain prompt) was removed.
+    // Prompts now resolve from their own authoritative data only; note-content search is an explicit,
+    // opt-in behavior of note prompts (applyNoteFilters) and the `noteKeyword` refine — not an
+    // implicit tax that forced the full note set to load for contracts/general/etc. prompts.
 
     return result;
   }
@@ -1867,7 +1887,7 @@ export class NlqFilterService {
   private applyContactFilters(
     lowerQuery: string,
     result: Customer[],
-    latestNoteByCustomer: Map<number, { note: Note; time: number }>,
+    latestNoteByCustomer: Map<number, { time: number }>,
     customerIdsWithNotes: Set<number>,
     notes: Note[] = [],
     customers: Customer[] = [],
@@ -2188,72 +2208,6 @@ export class NlqFilterService {
    * and returns customer IDs whose notes contain ALL of them.
    * Used after pattern-based filtering to merge in note-matched customers.
    */
-  private _findCustomersByNoteKeywords(lowerQuery: string, notes: Note[], allCustomers: Customer[]): Set<number> {
-    const matched = new Set<number>();
-
-    // Strip NLQ structural words that are part of query syntax, not search content
-    const structuralWords = new Set([
-      // Query verbs/prepositions
-      'show', 'find', 'list', 'get', 'give', 'pull', 'search', 'look',
-      'customers', 'customer', 'producers', 'producer', 'growers', 'grower',
-      'farmers', 'farmer', 'who', 'that', 'have', 'has', 'with', 'without',
-      'more', 'less', 'than', 'over', 'under', 'above', 'below',
-      'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can',
-      'was', 'one', 'our', 'out', 'had', 'how', 'did', 'let', 'say',
-      'she', 'too', 'use', 'been', 'said', 'each', 'them', 'then',
-      'what', 'when', 'will', 'into', 'some', 'about', 'their', 'which',
-      'would', 'there', 'these', 'other', 'from', 'they', 'this',
-      // NLQ-specific
-      'active', 'contracts', 'contract', 'deliveries', 'delivery', 'delivered',
-      'tickets', 'ticket', 'planting', 'planted', 'storage', 'stored', 'contacted',
-      'acres', 'bushels', 'days', 'ago', 'last', 'past', 'recently', 'never',
-      'notes', 'note', 'mentioning', 'containing', 'saying',
-    ]);
-
-    // Extract meaningful keywords (4+ chars, not structural)
-    const keywords = lowerQuery.split(/\s+/)
-      .filter(w => w.length >= 4 && !structuralWords.has(w))
-      // Remove pure numbers (already handled by quantity filters)
-      .filter(w => !/^\d+$/.test(w));
-
-    if (keywords.length === 0) return matched;
-
-    // Pre-index notes by customer (including linked producers)
-    const sourceIdToNumericId = new Map<string, number>();
-    for (const c of allCustomers) {
-      if (c.scoularId) sourceIdToNumericId.set(c.scoularId, c.id);
-    }
-
-    const noteContentByCustomer = new Map<number, string>();
-    for (const n of notes) {
-      const existing = noteContentByCustomer.get(n.customerId) || '';
-      noteContentByCustomer.set(n.customerId, existing + ' ' + n.content.toLowerCase());
-    }
-
-    for (const c of allCustomers) {
-      // Collect this customer's notes + linked producer notes
-      let allContent = noteContentByCustomer.get(c.id) || '';
-      if (c.linkedProducerIds?.length) {
-        for (const linkedSourceId of c.linkedProducerIds) {
-          const linkedId = sourceIdToNumericId.get(linkedSourceId);
-          if (linkedId && linkedId !== c.id) {
-            const linkedContent = noteContentByCustomer.get(linkedId);
-            if (linkedContent) allContent += ' ' + linkedContent;
-          }
-        }
-      }
-
-      if (!allContent.trim()) continue;
-
-      // Customer matches if ALL keywords appear in their notes (substring match)
-      if (keywords.every(kw => allContent.includes(kw))) {
-        matched.add(c.id);
-      }
-    }
-
-    return matched;
-  }
-
   // ============================================================
   // STORAGE FILTER
   // ============================================================

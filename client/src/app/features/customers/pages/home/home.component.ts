@@ -582,12 +582,18 @@ export class HomeComponent {
     if (this.teamSavedLists().length && teamNeeds) {
       this.teamSavedLists.set(this._enrichLists(this.teamSavedLists(), forceRefresh));
     }
-    // Saved-list queries can filter on note content / authors / contact dates, and the full
-    // note set is now lazily loaded. If any list needed resolving while it's missing, fetch
-    // it in the background and re-enrich when it lands — mirrors the query-library
-    // fetch-then-reenrich above. Doesn't block first paint; runs at most once per session.
-    if (((this.savedLists().length && ownNeeds) || (this.teamSavedLists().length && teamNeeds))
-        && !this.appState.notesLoaded()) {
+    // The full note set (bodies/authors) is only needed for saved lists whose query or refine
+    // filters actually read note CONTENT/authors/pinned/counts — recency lists ("not contacted…")
+    // and every non-note list resolve from the last-contact aggregate. Only kick off the
+    // background full-notes fetch when at least one UNRESOLVED list genuinely needs it, so a user
+    // whose lists are all contracts/tickets/etc. never pays the notes download on home load.
+    const listNeedsFullNotes = (l: SavedList) =>
+      (forceRefresh || !l.customerIds?.length)
+      && (this.nlqFilterService.queryNeedsFullNotes(l.query)
+          || this.nlqFilterService.refineFiltersNeedFullNotes(l.filters));
+    const anyNeedsFullNotes =
+      this.savedLists().some(listNeedsFullNotes) || this.teamSavedLists().some(listNeedsFullNotes);
+    if (anyNeedsFullNotes && !this.appState.notesLoaded()) {
       this._loadFullNotesForEnrichment();
     }
   }
@@ -620,6 +626,9 @@ export class HomeComponent {
       // Full note set from the lazy NLQ cache — empty until a note-based list triggers
       // _loadFullNotesForEnrichment, which re-enriches once it lands.
       notes: this.appState.notes(),
+      // Last-contact aggregate (always loaded) — powers recency/"never contacted" resolution
+      // without the full note set.
+      noteLastContacts: this.appState.noteLastContacts(),
       plantingIntentions: this.plantingIntentions(),
       storedGrain: this.storedGrain(),
       commodities: this.appState.commodities(),
@@ -650,7 +659,8 @@ export class HomeComponent {
             tickets: this.tickets(),
             storedGrain: this.storedGrain(),
             plantingIntentions: this.plantingIntentions(),
-            commodityConversions: this.appState.commodityConversions()
+            commodityConversions: this.appState.commodityConversions(),
+            noteLastContacts: this.appState.noteLastContacts()
           })
         : result.customers;
       const ids = this.nlqFilterService.applyCustomerOverrides(
