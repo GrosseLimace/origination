@@ -123,8 +123,8 @@ export class ApiService {
   }
 
   /** Fetches trade unit groups assigned to the currently authenticated user from the Entitlements database */
-  getUserTradeUnits(): Observable<{ groupName: string; tradeUnitCodes: string[] }[]> {
-    return this.http.get<{ groupName: string; tradeUnitCodes: string[] }[]>(`${this.baseUrl}/usertradeunits`)
+  getUserTradeUnits(): Observable<{ groupName: string; tradeUnitCodes: string[]; tradeUnits: { code: string; description?: string }[] }[]> {
+    return this.http.get<{ groupName: string; tradeUnitCodes: string[]; tradeUnits: { code: string; description?: string }[] }[]>(`${this.baseUrl}/usertradeunits`)
       .pipe(catchError(e => this.handleError(e)));
   }
 

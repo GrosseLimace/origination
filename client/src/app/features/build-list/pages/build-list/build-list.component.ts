@@ -13,6 +13,8 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { UserRolesService } from '@core/services/user-roles.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, TeamMember, ProducerDetails, RefinementFilters, QueryLibraryItem, GrainOnFarmItem } from '@models';
+import { commodityChipClass } from '@shared/utils/commodity-color';
+import { plantingChips, plantingQueryScope, PlantingChip, isIrrigated, isDryland, isDoubleCrop } from '@shared/utils/planting-chips';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '@shared/components/card/card.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
@@ -666,21 +668,23 @@ export class BuildListComponent {
       const ids = new Set<number>(this.plantingIntentions().filter(p => p.plantingYear === year).map(p => p.customerId));
       list = list.filter(c => ids.has(c.id));
     }
+    // Type predicates are shared with the result-row chips (planting-chips.ts) so a producer that
+    // matched on "irrigated" can't then show dryland chips.
     if (r.irrigatedOnly) {
       const ids = new Set<number>(
-        this.plantingIntentions().filter(p => p.type?.toLowerCase().includes('irrigat')).map(p => p.customerId)
+        this.plantingIntentions().filter(p => isIrrigated(p.type)).map(p => p.customerId)
       );
       list = list.filter(c => ids.has(c.id));
     }
     if (r.drylandOnly) {
       const ids = new Set<number>(
-        this.plantingIntentions().filter(p => p.type?.toLowerCase().includes('dryland') || p.type?.toLowerCase().includes('dry land')).map(p => p.customerId)
+        this.plantingIntentions().filter(p => isDryland(p.type)).map(p => p.customerId)
       );
       list = list.filter(c => ids.has(c.id));
     }
     if (r.doubleCropOnly) {
       const ids = new Set<number>(
-        this.plantingIntentions().filter(p => p.type?.toLowerCase().includes('double crop')).map(p => p.customerId)
+        this.plantingIntentions().filter(p => isDoubleCrop(p.type)).map(p => p.customerId)
       );
       list = list.filter(c => ids.has(c.id));
     }
@@ -845,6 +849,21 @@ export class BuildListComponent {
     // NLQ engine already sorted by the ranked metric — preserve that order instead of alphabetizing.
     if (this.nlqFilterService.isRankingQuery(this.queryText())) {
       return list;
+    }
+    // Storage prompts: surface the producers with the most grain in storage first (sort by total
+    // storage bushels desc), matching the inline per-commodity breakdown shown on each result.
+    // Alphabetical name is the tiebreaker (e.g. producers with equal / zero storage).
+    if (this.showStorageFilters()) {
+      return [...list].sort((a, b) =>
+        this.storageBu(b) - this.storageBu(a) || (a.name || '').localeCompare(b.name || ''));
+    }
+    // Planting prompts: same idea, biggest acreage first — matching the per-crop acres chips.
+    // Acres are computed once per producer up front rather than inside the comparator, which
+    // would rebuild each producer's breakdown on every comparison.
+    if (this.showPlantingFilters()) {
+      const acres = new Map<number, number>(list.map(c => [c.id, this.plantingAcres(c)]));
+      return [...list].sort((a, b) =>
+        (acres.get(b.id) ?? 0) - (acres.get(a.id) ?? 0) || (a.name || '').localeCompare(b.name || ''));
     }
     return [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   });
@@ -1912,6 +1931,9 @@ export class BuildListComponent {
     this._queryGenId++;
     this.isProcessing.set(false);
     this.waitingForTickets.set(false);
+    // Must be cleared here too: the recovery effect only clears it while a query is active, so a
+    // note prompt abandoned mid-fetch would leave "Loading note data…" spinning under the library.
+    this.waitingForNotes.set(false);
     this.queryText.set('');
     this.hasGenerated.set(false);
     this.filteredCustomers.set([]);
@@ -1941,6 +1963,7 @@ export class BuildListComponent {
     this._queryGenId++;
     this.isProcessing.set(false);
     this.waitingForTickets.set(false);
+    this.waitingForNotes.set(false);
     this.queryReturnedNoMatches.set(false);
     this.showRefinePanel.set(false);
     this.pendingRefinements.set({});
@@ -2163,6 +2186,10 @@ export class BuildListComponent {
         if (queryGen !== this._queryGenId) return;
         this.toastService.error('Failed to load data for query');
         this.isProcessing.set(false);
+        // Nothing more is coming, so the recovery effect will never clear these — drop the
+        // spinners here or the failure reads as an endless load.
+        this.waitingForTickets.set(false);
+        this.waitingForNotes.set(false);
       }
     });
   }
@@ -3131,18 +3158,132 @@ export class BuildListComponent {
     return this.cropsByCustomer().get(customerId) ?? [];
   }
 
-  /** Total bushels currently on the farm for a producer (sum of per-commodity grain-on-farm). */
-  grainOnFarmBu(customer: Customer): number {
-    return (customer.grainOnFarm ?? []).reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0);
-  }
-
   /**
-   * Per-crop grain-on-farm rows that actually have bushels on hand, largest first — used to
-   * render the per-commodity chips beneath the "bu on farm" total in Grain on Farm results.
+   * Per-crop grain-on-farm rows that actually have bushels on hand, largest first — the chips
+   * shown inline on Grain on Farm results.
    */
   grainOnFarmBreakdown(customer: Customer): GrainOnFarmItem[] {
     return (customer.grainOnFarm ?? [])
       .filter(g => !!g.commodityGroup && (g.bushelsOnHand ?? 0) > 0)
       .sort((a, b) => (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0));
   }
+
+  /** Storage receipts grouped by numeric customerId (StoredGrain joins on Customer.id, not scoularId). */
+  private readonly _storageByCustomerId = computed(() => {
+    const map = new Map<number, StoredGrain[]>();
+    for (const s of this.storedGrain()) {
+      const arr = map.get(s.customerId);
+      if (arr) arr.push(s); else map.set(s.customerId, [s]);
+    }
+    return map;
+  });
+
+  /** Total bushels a producer currently has in storage (sum of NET_QUANTITY across all receipts).
+   *  Drives the Storage-results sort (most storage first). */
+  storageBu(customer: Customer): number {
+    const recs = this._storageByCustomerId().get(customer.id) ?? [];
+    return recs.reduce((sum, s) => sum + (s.quantity ?? 0), 0);
+  }
+
+  /** Shared per-crop chip color, exposed to the template. */
+  readonly commodityChipClass = commodityChipClass;
+
+  /** Lower-cased commodity code OR name → crop category ("yc"/"corn" → "Corn"), from the
+   *  Commodities table — so storage chips (which carry codes like YC/SOR) color by their crop. */
+  private readonly _commodityCategoryByKey = computed(() => {
+    const map = new Map<string, string>();
+    for (const cm of this.appState.commodities()) {
+      const group = (cm.category || cm.name || '').trim();
+      if (!group) continue;
+      if (cm.code) map.set(cm.code.trim().toLowerCase(), group);
+      if (cm.name) map.set(cm.name.trim().toLowerCase(), group);
+    }
+    return map;
+  });
+
+  /** Per-commodity storage totals (bushels summed across locations), largest first — mirrors the
+   *  grain-on-farm chips so Storage results show each commodity + bushels inline without opening
+   *  the producer. `category` is the resolved crop name used for the shared chip color (the raw
+   *  `crop` code is still what's displayed). */
+  storageBreakdown(customer: Customer): { crop: string; bushels: number; category: string }[] {
+    const byCrop = new Map<string, number>();
+    for (const s of this._storageByCustomerId().get(customer.id) ?? []) {
+      const qty = s.quantity ?? 0;
+      if (qty <= 0) continue;
+      const crop = (s.crop || 'Unknown').trim();
+      byCrop.set(crop, (byCrop.get(crop) ?? 0) + qty);
+    }
+    const catByKey = this._commodityCategoryByKey();
+    return [...byCrop.entries()]
+      .map(([crop, bushels]) => ({ crop, bushels, category: catByKey.get(crop.toLowerCase()) ?? crop }))
+      .sort((a, b) => b.bushels - a.bushels);
+  }
+
+  /** Planting intentions grouped by numeric customerId. Mirror of `_storageByCustomerId`. */
+  private readonly _plantingByCustomerId = computed(() => {
+    const map = new Map<number, PlantingIntention[]>();
+    for (const p of this.plantingIntentions()) {
+      const arr = map.get(p.customerId);
+      if (arr) arr.push(p); else map.set(p.customerId, [p]);
+    }
+    return map;
+  });
+
+  /**
+   * Season / irrigation type the running prompt asks about ("Producers with 2025 planting
+   * intentions"). Refine-panel values win when set — the panel hides its year control for prompts
+   * that already name one, so in practice only one of the two is ever in play.
+   */
+  private readonly _plantingQueryScope = computed(() => plantingQueryScope(this.queryText()));
+
+  /** Per-crop planting chips for a producer — see plantingChips() for the year/type scoping. */
+  plantingBreakdown(customer: Customer): PlantingChip[] {
+    const r = this.appliedRefinements();
+    const q = this._plantingQueryScope();
+    return plantingChips(
+      this._plantingByCustomerId().get(customer.id) ?? [],
+      {
+        year: r.plantingYear ?? q.year,
+        irrigatedOnly: r.irrigatedOnly || q.irrigatedOnly,
+        drylandOnly: r.drylandOnly || q.drylandOnly,
+        doubleCropOnly: r.doubleCropOnly,
+      },
+      this._commodityCategoryByKey(),
+    );
+  }
+
+  /** Acres across the chips shown for a producer — drives the Planting-results sort. */
+  plantingAcres(customer: Customer): number {
+    return this.plantingBreakdown(customer).reduce((sum, c) => sum + c.acres, 0);
+  }
+
+  /**
+   * The dimension-specific chips rendered inline after a result's location — storage bushels,
+   * planting acres or grain on farm, whichever the prompt is about. Empty for every other
+   * category, in which case the row falls back to the producer's total acres.
+   *
+   * Numbers are formatted here rather than in the template because each chip is a single string.
+   */
+  resultChips(customer: Customer): { text: string; colorKey: string }[] {
+    if (this.showStorageFilters()) {
+      return this.storageBreakdown(customer)
+        .map(b => ({ text: `${b.crop} ${b.bushels.toLocaleString('en-US')}`, colorKey: b.category }));
+    }
+    if (this.showPlantingFilters()) {
+      return this.plantingBreakdown(customer)
+        .map(c => ({ text: `${c.label} · ${c.acres.toLocaleString('en-US')} ac · ${c.year}`, colorKey: c.colorKey }));
+    }
+    if (this.showGrainOnFarmFilters()) {
+      return this.grainOnFarmBreakdown(customer)
+        .map(g => ({ text: `${g.commodityGroup} ${(g.bushelsOnHand ?? 0).toLocaleString('en-US')}`, colorKey: g.commodityGroup }));
+    }
+    return [];
+  }
+
+  /**
+   * Whether the identity column gets the wide, wrapping layout instead of the fixed 18rem one —
+   * true for the categories that render inline chips, which need the extra room.
+   */
+  readonly wideIdentityColumn = computed(() =>
+    this.showStorageFilters() || this.showPlantingFilters() || this.showGrainOnFarmFilters());
 }

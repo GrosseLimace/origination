@@ -58,14 +58,27 @@ export class AppStateService {
     } catch { /* ignore */ }
   }
 
-  // Trade unit groups cache — loaded once and shared globally
-  userGroups = signal<{ groupName: string; tradeUnitCodes: string[] }[]>([]);
+  // Trade unit groups cache — loaded once and shared globally. tradeUnits carries each code's
+  // description/location (e.g. "Pratt, KS"); tradeUnitCodes is kept for code-only consumers.
+  userGroups = signal<{ groupName: string; tradeUnitCodes: string[]; tradeUnits?: { code: string; description?: string }[] }[]>([]);
   userGroupsLoaded = signal(false);
 
-  setUserGroups(groups: { groupName: string; tradeUnitCodes: string[] }[]): void {
+  setUserGroups(groups: { groupName: string; tradeUnitCodes: string[]; tradeUnits?: { code: string; description?: string }[] }[]): void {
     this.userGroups.set(groups);
     this.userGroupsLoaded.set(true);
   }
+
+  /** Trade-unit code → description/location (e.g. "2190" → "Pratt, KS"), from the loaded groups.
+   *  Empty until groups load (or for older cached data without descriptions). */
+  readonly tradeUnitDescriptions = computed(() => {
+    const map = new Map<string, string>();
+    for (const g of this.userGroups()) {
+      for (const tu of g.tradeUnits ?? []) {
+        if (tu.description && !map.has(tu.code)) map.set(tu.code, tu.description);
+      }
+    }
+    return map;
+  });
 
   // View state
   currentView = signal<'customers' | 'insights' | 'buildlist' | 'dashboard'>('customers');
