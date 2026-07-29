@@ -2069,6 +2069,23 @@ export class NlqFilterService {
   private static readonly _DATE_RECENCY_PHRASE =
     /^(?:today|yesterday|tomorrow|recently|this\s+(?:week|month|year|quarter)|last\s+(?:week|month|year|quarter)|(?:in\s+(?:the\s+)?(?:last|past)\s+)?\d+\s*days?(?:\s+ago)?)$/;
 
+  /** Extracts the note-content search keywords from a query. MUST mirror the content-search block
+   *  in applyNoteFilters (same patterns, same ≥3-char stop-word-filtered split) — build-list uses
+   *  this to send a server-side `contentAny` SUPERSET, which the matcher below then narrows
+   *  exactly. Returns [] when the query isn't a note-content search. */
+  extractNoteSearchKeywords(query: string): string[] {
+    const q = query.toLowerCase();
+    let searchTerm: string | null = null;
+    const m1 = q.match(/note(?:s)?\s*(?:about|mentioning|containing|with|saying|that\s+(?:say|mention|include|contain))\s+(.+)$/);
+    if (m1) searchTerm = m1[1].trim();
+    if (!searchTerm) { const m2 = q.match(/(?:search\s+notes?\s+for|note\s*search\s*:?\s*)(.+)$/); if (m2) searchTerm = m2[1].trim(); }
+    if (!searchTerm) { const m3 = q.match(/whose\s+notes?\s+(?:say|mention|include|contain|reference)\s+(.+)$/); if (m3) searchTerm = m3[1].trim(); }
+    if (!searchTerm) return [];
+    const stopWords = new Set(['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'has', 'her', 'his', 'its', 'was', 'one', 'our', 'out', 'had', 'how', 'who', 'did', 'get', 'let', 'say', 'she', 'too', 'use', 'that', 'this', 'with', 'from', 'they', 'been', 'have', 'said', 'each', 'than', 'them', 'then', 'what', 'when', 'will', 'into', 'some', 'about', 'their', 'which', 'would', 'there', 'these', 'other']);
+    const keywords = searchTerm.split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
+    return keywords.length > 0 ? keywords : [searchTerm];
+  }
+
   private applyNoteFilters(lowerQuery: string, result: Customer[], notes: Note[], allCustomers: Customer[] = result, customerIdsWithNotes: Set<number> = new Set(), currentUserDisplayName?: string, currentUserUsername?: string): Customer[] {
     // "Customers with notes" — broad boolean (has any note). Resolved from the aggregate-derived
     // has-note set (linked-producer aware, always available) rather than the full note bodies, so

@@ -8,7 +8,7 @@ namespace GrainOriginatorPortal.Api.Services;
 /// carry "@" mentions, persisted as a JSON array on the note.</summary>
 public interface INoteService
 {
-    Task<List<NoteResponse>> GetAllAsync(string? tradeUnits, int? sinceDays, CancellationToken cancellationToken);
+    Task<List<NoteResponse>> GetAllAsync(string? tradeUnits, int? sinceDays, string? contentAny, string? authorAny, bool pinnedOnly, string? customerIds, CancellationToken cancellationToken);
 
     /// <summary>Per-customer last-contact aggregate for list badges — all trade units
     /// (entitlement-filtered), no note bodies. Bounded by customer count.</summary>

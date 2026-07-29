@@ -475,6 +475,7 @@
            flash before the _appStateTicketsEffect re-runs the filter with real data. -->
       @if (hasGenerated() && queryText().trim() && !waitingForTickets() && !waitingForNotes() && !isProcessing()) {
         @let displayed = displayedCustomers();
+        @let rendered = renderedCustomers();
         @let filtered = filteredCustomers();
         @let refinementCount = activeRefinementCount();
         @let crops = availableCrops();
@@ -1292,7 +1293,7 @@
               </div>
             } @else {
               <div class="divide-y divide-gray-200 dark:divide-gray-700">
-                @for (customer of displayed; track customer.id) {
+                @for (customer of rendered; track customer.id) {
                   @let contactInfo = getLastContactInfo(customer.id);
                   @let customerCrops = getCustomerCrops(customer.id);
                   @let linkedInfo = linkedProducerInfoByCustomer().get(customer.id) ?? null;
@@ -1300,7 +1301,7 @@
                   @let matchingNotes = noteFilterActive()
                     ? (isLinkedOpen ? getOwnMatchingNotes(customer) : (matchingNotesByCustomer().get(customer.id) ?? null))
                     : null;
-                  <div class="py-4 -mx-6 px-6 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                  <div class="group/card py-4 -mx-6 px-6 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
                        [class.cursor-pointer]="!linkedFeatureActive()"
                        (click)="!linkedFeatureActive() && selectCustomer(customer)">
                     <div [ngClass]="noteFilterActive()
@@ -1381,7 +1382,24 @@
                                     <span class="italic text-gray-400 dark:text-gray-500">{{ note.viaName }}</span>
                                   }
                                 </div>
-                                <p class="mt-0.5 text-gray-700 dark:text-gray-300 break-words" [innerHTML]="note.content | highlight: getActiveNoteKeyword()"></p>
+                                <div class="relative mt-0.5">
+                                  <p appClampOverflow (clampOverflow)="setNoteOverflow(note.id, $event)"
+                                     [class.line-clamp-4]="!isNoteTextExpanded(note.id)"
+                                     class="text-gray-700 dark:text-gray-300 break-words"
+                                     [innerHTML]="note.content | highlight: getActiveNoteKeyword()"></p>
+                                  @if (isNoteOverflowing(note.id) && !isNoteTextExpanded(note.id)) {
+                                    <button type="button" (click)="$event.stopPropagation(); toggleNoteText(note.id)"
+                                            class="absolute bottom-0 right-0 flex items-center pl-10 text-xs font-medium text-scoular-green-accessible hover:underline cursor-pointer focus:outline-none bg-gradient-to-r from-transparent via-white to-white group-hover/card:via-gray-50 group-hover/card:to-gray-50 dark:via-gray-800 dark:to-gray-800 dark:group-hover/card:via-gray-700 dark:group-hover/card:to-gray-700">
+                                      … See more
+                                    </button>
+                                  }
+                                  @if (isNoteTextExpanded(note.id)) {
+                                    <button type="button" (click)="$event.stopPropagation(); toggleNoteText(note.id)"
+                                            class="mt-0.5 text-xs font-medium text-scoular-green-accessible hover:underline cursor-pointer focus:outline-none">
+                                      See less
+                                    </button>
+                                  }
+                                </div>
                               </div>
                             }
                           </div>
@@ -1496,7 +1514,24 @@
                                             <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="currentColor" class="text-scoular-yellow"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
                                           }
                                         </div>
-                                        <p class="mt-0.5 text-gray-700 dark:text-gray-300 break-words" [innerHTML]="note.content | highlight: getActiveNoteKeyword()"></p>
+                                        <div class="relative mt-0.5">
+                                          <p appClampOverflow (clampOverflow)="setNoteOverflow(note.id, $event)"
+                                             [class.line-clamp-4]="!isNoteTextExpanded(note.id)"
+                                             class="text-gray-700 dark:text-gray-300 break-words"
+                                             [innerHTML]="note.content | highlight: getActiveNoteKeyword()"></p>
+                                          @if (isNoteOverflowing(note.id) && !isNoteTextExpanded(note.id)) {
+                                            <button type="button" (click)="$event.stopPropagation(); toggleNoteText(note.id)"
+                                                    class="absolute bottom-0 right-0 flex items-center pl-10 text-xs font-medium text-scoular-green-accessible hover:underline cursor-pointer focus:outline-none bg-gradient-to-r from-transparent via-white to-white group-hover/card:via-gray-50 group-hover/card:to-gray-50 dark:via-gray-800 dark:to-gray-800 dark:group-hover/card:via-gray-700 dark:group-hover/card:to-gray-700">
+                                              … See more
+                                            </button>
+                                          }
+                                          @if (isNoteTextExpanded(note.id)) {
+                                            <button type="button" (click)="$event.stopPropagation(); toggleNoteText(note.id)"
+                                                    class="mt-0.5 text-xs font-medium text-scoular-green-accessible hover:underline cursor-pointer focus:outline-none">
+                                              See less
+                                            </button>
+                                          }
+                                        </div>
                                       </div>
                                     }
                                   </div>
@@ -1541,6 +1576,11 @@
                       </div>
                     }
                   </div>
+                }
+                <!-- Progressive-render sentinel: rendering the next batch when it scrolls near view.
+                     Present only while more matched producers remain to render. -->
+                @if (rendered.length < displayed.length) {
+                  <div #loadMoreSentinel class="h-4" aria-hidden="true"></div>
                 }
               </div>
             }

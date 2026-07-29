@@ -29,7 +29,7 @@ public class NoteService : INoteService
     }
 
     /// <inheritdoc />
-    public async Task<List<NoteResponse>> GetAllAsync(string? tradeUnits, int? sinceDays, CancellationToken cancellationToken)
+    public async Task<List<NoteResponse>> GetAllAsync(string? tradeUnits, int? sinceDays, string? contentAny, string? authorAny, bool pinnedOnly, string? customerIds, CancellationToken cancellationToken)
     {
         // No trade-unit entitlement filter on the notes themselves: trade units scope WHICH
         // producers a rep works (the customers query / optional producer-TU filter below), not
@@ -45,7 +45,18 @@ public class NoteService : INoteService
         DateTime? createdSinceUtc = sinceDays is > 0
             ? DateTime.UtcNow.Date.AddDays(-sinceDays.Value)
             : null;
-        var notes = await _repository.GetAsync(tuList, createdSinceUtc, cancellationToken);
+        // contentAny / authorAny are comma-separated match terms the CLIENT extracted (keywords /
+        // author candidates). The repo returns any note matching ANY of them — a superset the
+        // client then narrows with its exact matching, so no note the client needs is dropped.
+        var contentTerms = contentAny?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var authorTerms = authorAny?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        // customerIds scopes the read to specific producers (per-batch note loading for huge
+        // note lists). Non-numeric tokens are ignored rather than failing the whole request.
+        var customerIdList = customerIds?
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => long.TryParse(s, out var id) ? id : (long?)null)
+            .Where(id => id.HasValue).Select(id => id!.Value).ToList();
+        var notes = await _repository.GetAsync(tuList, createdSinceUtc, contentTerms, authorTerms, pinnedOnly, customerIdList, cancellationToken);
         return await MapWithNamesAsync(notes, cancellationToken);
     }
 

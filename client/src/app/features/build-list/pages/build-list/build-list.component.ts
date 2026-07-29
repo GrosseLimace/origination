@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, DestroyRef, inject, effect, untracked, signal, computed } from '@angular/core';
+import { Component, ChangeDetectionStrategy, DestroyRef, inject, effect, untracked, signal, computed, viewChild, ElementRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -23,6 +23,7 @@ import { InputComponent } from '@shared/components/input/input.component';
 import { CustomerMapComponent } from '@features/customers/components/map/customer-map.component';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import { HighlightPipe } from '@shared/pipes/highlight.pipe';
+import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.directive';
 import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
 import { isContractUnconfirmed, isContractOverdueWithUnshippedBu, buildConversionMap } from '@shared/utils/contract-status';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
@@ -50,7 +51,8 @@ import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
     InputComponent,
     CustomerMapComponent,
     TradeUnitSelectorComponent,
-    HighlightPipe
+    HighlightPipe,
+    ClampOverflowDirective
   ],
   templateUrl: './build-list.component.html',
   styles: [`input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }`],
@@ -84,11 +86,17 @@ export class BuildListComponent {
   private _contractsReady = signal(false);
   private _loadRequestId = 0;
   private _queryGenId = 0;
-  // Key of the windowed note slice currently in this.notes() for DISPLAY (`${queryGen}:${days}`).
-  // Windowed reads are LOCAL-only — they never warm appState.notes/notesLoaded (that cache means
+  // Key of the server-narrowed note slice currently in this.notes() for DISPLAY (encodes the
+  // query generation + scope, e.g. `${gen}:content:beans|corn`, `${gen}:w:3`, `${gen}:pinned`).
+  // Scoped reads are LOCAL-only — they never warm appState.notes/notesLoaded (that cache means
   // "the full set"), so a partial slice can't leak to other consumers as if it were complete.
-  private _loadedNoteWindowKey = signal<string>('');
-  private _windowNotesFetchInFlight = false;
+  private _loadedNoteScopeKey = signal<string>('');
+  private _scopedNotesFetchInFlight = false;
+  // Batched note-load bookkeeping ('batched' scope): customerIds whose note bodies have already
+  // been fetched for DISPLAY, and an in-flight guard so batches serialize (each re-checks on
+  // completion for producers that rendered while it was loading).
+  private _batchedNoteCustomerIds = new Set<number>();
+  private _batchNotesFetchInFlight = false;
   private _pendingIncludedIds: number[] = [];
   // True once the forkJoin (or cache restore) has populated all core data signals.
   // Guards processQuery() and example chips from running against partial/empty data.
@@ -108,7 +116,7 @@ export class BuildListComponent {
   private _dataReadyEffect = effect(() => {
     this.notes();
     this.appState.notesLoaded();
-    this._loadedNoteWindowKey();   // re-run when a windowed note slice lands
+    this._loadedNoteScopeKey();   // re-run when a scoped note slice lands
     this.storedGrain();
     this._ticketsReady();
     this._contractsReady();
@@ -278,6 +286,28 @@ export class BuildListComponent {
     return [...selectedCrops].some(crop => v.includes(crop) || crop.includes(v));
   }
 
+
+  // Progressive rendering: paint the result list in batches so a huge match (e.g. "producers with
+  // notes") renders ~instantly and scrolls smoothly, while ALL notes stay loaded in memory and
+  // readable — each batch appears as the user scrolls to it (no new fetch). Reset to the first
+  // batch whenever the result set changes (effect in the constructor).
+  private static readonly _RENDER_BATCH = 40;
+  readonly renderLimit = signal(BuildListComponent._RENDER_BATCH);
+  /** The slice of displayedCustomers currently rendered to the DOM. */
+  readonly renderedCustomers = computed(() => this.displayedCustomers().slice(0, this.renderLimit()));
+  /** Order-insensitive signature of the displayed result MEMBERSHIP. The render-reset and batched-
+   *  note-reset effects key off this rather than displayedCustomers() so that batched note appends —
+   *  which only RE-SORT the list (by newest note) without changing who's in it — don't collapse the
+   *  render window or wipe the notes we just loaded. Only a genuinely new/narrowed result set
+   *  (new query, crop/state chip) changes the membership and triggers a reset. */
+  private readonly _displayedMembershipKey = computed(() => {
+    const ids = this.displayedCustomers().map(c => c.id);
+    ids.sort((a, b) => a - b);
+    return ids.join(',');
+  });
+  /** Bottom-of-list sentinel; when it scrolls into view we render the next batch. */
+  private readonly _loadMoreSentinel = viewChild<ElementRef<HTMLElement>>('loadMoreSentinel');
+  private _renderObserver?: IntersectionObserver;
 
   readonly displayedCustomers = computed(() => {
     let list = this.filteredCustomers();
@@ -834,6 +864,21 @@ export class BuildListComponent {
     // sort alphabetically by name so finding a specific producer doesn't depend on data
     // recency.
     if (this.noteFilterActive()) {
+      // Batched note prompts ("producers with notes", absence like "not contacted in 30 days")
+      // load note BODIES progressively as the user scrolls — so a sort keyed on those bodies would
+      // reshuffle rows as each batch arrives (jumpy, and it churns the render window). Instead sort
+      // by the last-contact AGGREGATE, which is fully loaded up front: a stable key giving most
+      // recently contacted first, with never-contacted producers sinking to the bottom.
+      if (this._noteScope().mode === 'batched') {
+        const timeByCustomer = this._lastContactTimeByCustomer();
+        return [...list].sort((a, b) => {
+          const dt = (timeByCustomer.get(b.id) ?? 0) - (timeByCustomer.get(a.id) ?? 0);
+          if (dt !== 0) return dt;
+          return (a.name || '').localeCompare(b.name || '');
+        });
+      }
+      // Non-batched note prompts (content/author/pinned/window): the matching notes are all loaded
+      // up front, so sort by the most recent matching note across the producer's linked component.
       const notesMap = this.matchingNotesByCustomer();
       const maxTimeFor = (customerId: number): number => {
         const notes = notesMap.get(customerId);
@@ -966,6 +1011,12 @@ export class BuildListComponent {
   expandedNoteCount = signal<Map<number, number>>(new Map());
   readonly NOTE_PAGE_SIZE = 5;
   expandedLinkedCustomerIds = signal<Set<number>>(new Set());
+  // Per-note "See more" state: ids of individual notes whose long body is expanded (clamped to a
+  // few lines otherwise so one big note can't blow up a producer card).
+  expandedNoteTextIds = signal<Set<number>>(new Set());
+  // Note ids whose clamped body is ACTUALLY clipped (reported by ClampOverflowDirective) — drives
+  // the "See more" toggle so it appears only for genuinely truncated notes, not by char-count guess.
+  overflowingNoteIds = signal<Set<number>>(new Set());
 
   // ── Manage Members ──────────────────────────────────────────────────────
   showManageMembersPanel = signal(false);
@@ -1046,47 +1097,50 @@ export class BuildListComponent {
     return map;
   });
 
-  /** Most recent note per customer — pre-indexed for O(1) template lookup.
-   *  Matches home page logic: indexes notes by customerCode (source ID), resolves
-   *  linked producer notes bidirectionally (outgoing + incoming links). */
-  readonly lastContactByCustomer = computed(() => {
-    const map = new Map<number, { text: string; colorClass: string; daysAgo: number }>();
-
-    // Index latest-contact time by customerCode from the lightweight last-contact aggregate
-    // (always loaded on TU change), NOT the full note set — so the badge and recency-refine sets
-    // are correct on every prompt and never depend on a full-notes download.
-    const notesByCode = new Map<string, { time: number }>();
+  /** Raw latest-contact time (ms since epoch) per customerId, from the lightweight last-contact
+   *  AGGREGATE (always loaded on TU change — not the full note set) with the linked-producer
+   *  connected-component rollup applied. Because the aggregate is present up front, this is a
+   *  STABLE sort key that doesn't shift as note bodies stream in for batched prompts. Absent from
+   *  the map = the producer and its entire linked chain have never been contacted. */
+  private readonly _lastContactTimeByCustomer = computed(() => {
+    // Index latest-contact time by customerCode from the aggregate — correct on every prompt and
+    // never dependent on a full-notes download.
+    const notesByCode = new Map<string, number>();
     for (const lc of this.appState.noteLastContacts()) {
       if (!lc.customerCode) continue;
       const time = BuildListComponent.parseNoteTime(lc.lastNoteAt as unknown as string);
       const existing = notesByCode.get(lc.customerCode);
-      if (!existing || time > existing.time) {
-        notesByCode.set(lc.customerCode, { time });
-      }
+      if (existing == null || time > existing) notesByCode.set(lc.customerCode, time);
     }
 
-    // Walk the full linked-producer connected component for each customer so the
-    // "last contacted" date reflects the entire chain (A→B→C). Same closure used
-    // everywhere else linked behavior matters, so the "last contacted" badge agrees
-    // with the inline note panel.
-    const allCustomers = this.customers();
+    // Walk the full linked-producer connected component for each customer so the "last contacted"
+    // time reflects the entire chain (A→B→C). Same closure used everywhere else linked behavior
+    // matters, so this key, the badge, and the inline note panel all agree.
     const components = this.linkedProducerComponents();
-
-    const latestNotes = new Map<number, { time: number }>();
-    for (const customer of allCustomers) {
+    const latest = new Map<number, number>();
+    for (const customer of this.customers()) {
       if (!customer.scoularId) continue;
       const codes = components.get(customer.scoularId) ?? new Set([customer.scoularId]);
       let latestTime = 0;
       for (const code of codes) {
-        const entry = notesByCode.get(code);
-        if (entry && entry.time > latestTime) latestTime = entry.time;
+        const t = notesByCode.get(code);
+        if (t != null && t > latestTime) latestTime = t;
       }
-      if (latestTime > 0) latestNotes.set(customer.id, { time: latestTime });
+      if (latestTime > 0) latest.set(customer.id, latestTime);
     }
+    return latest;
+  });
+
+  /** Most recent note per customer — pre-indexed for O(1) template lookup. Derived from the
+   *  aggregate-backed {@link _lastContactTimeByCustomer} (with linked rollup), so the badge agrees
+   *  with the sort order and the inline note panel. */
+  readonly lastContactByCustomer = computed(() => {
+    const map = new Map<number, { text: string; colorClass: string; daysAgo: number }>();
+    const latestNotes = this._lastContactTimeByCustomer();
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    for (const [customerId, { time }] of latestNotes) {
+    for (const [customerId, time] of latestNotes) {
       const noteDate = new Date(time);
       noteDate.setHours(0, 0, 0, 0);
       // Math.round (not floor): both endpoints are zeroed to local midnight, so the diff is an
@@ -1650,8 +1704,53 @@ export class BuildListComponent {
     effect(() => {
       this.appliedRefinements();
       this.queryText();
-      untracked(() => this.expandedNoteCount.set(new Map()));
+      untracked(() => {
+        this.expandedNoteCount.set(new Map());
+        this.expandedNoteTextIds.set(new Set());
+        this.overflowingNoteIds.set(new Set());
+      });
     });
+
+    // Progressive rendering — reset to the first batch whenever the result MEMBERSHIP changes so a
+    // new/narrowed result set starts small (and fast) rather than inheriting a large prior render
+    // window. Keyed on membership (not displayedCustomers) so batched note appends, which only
+    // re-sort the same producers, don't collapse the window. For a 'batched' note prompt a changed
+    // membership also means the accumulated per-batch notes no longer describe the list — clear
+    // them so the batch effect refetches from scratch.
+    effect(() => {
+      this._displayedMembershipKey();
+      untracked(() => {
+        this.renderLimit.set(BuildListComponent._RENDER_BATCH);
+        if (this._noteScope().mode === 'batched') {
+          this._batchedNoteCustomerIds.clear();
+          if (this.notes().length) this.notes.set([]);
+        }
+      });
+    });
+
+    // 'batched' note prompts: as the render window grows (new query or scroll), fetch note bodies
+    // for the just-rendered producers by customerId and accumulate them for display — the huge
+    // "everyone with notes" set never blocks first paint.
+    effect(() => {
+      this.renderedCustomers();
+      untracked(() => this._loadNotesForRenderedBatch());
+    });
+
+    // Observe the bottom sentinel; when it scrolls near the viewport, render the next batch.
+    // rootMargin pre-loads slightly ahead so scrolling feels seamless. Re-wires whenever the
+    // sentinel appears/disappears (it's only present while more rows remain to render).
+    effect(() => {
+      const el = this._loadMoreSentinel()?.nativeElement;
+      this._renderObserver?.disconnect();
+      if (!el) return;
+      this._renderObserver = new IntersectionObserver(entries => {
+        if (entries.some(e => e.isIntersecting)) {
+          this.renderLimit.update(n => n + BuildListComponent._RENDER_BATCH);
+        }
+      }, { rootMargin: '600px' });
+      this._renderObserver.observe(el);
+    });
+    this.destroyRef.onDestroy(() => this._renderObserver?.disconnect());
 
     this.destroyRef.onDestroy(() => {
       // If trade units changed while this component was alive, discard state entirely
@@ -2122,56 +2221,122 @@ export class BuildListComponent {
     return null;
   }
 
-  /** How many notes the CURRENT prompt needs loaded for display: 'none', 'full', or a day window.
-   *  The matched SET and the last-contact badge come from the aggregate regardless — this governs
-   *  only the DISPLAY payload. */
-  private _noteLoadNeed(): 'none' | 'full' | number {
-    if (!this.noteFilterActive()) return 'none';
+  /** The note load the CURRENT prompt needs. The matched SET and last-contact badge come from the
+   *  aggregate regardless — this governs only the DISPLAY payload:
+   *   - 'none'    : no note-focused criterion active.
+   *   - 'scoped'  : a server-narrowed slice (recency window / content keywords / pinned), fetched
+   *                 LOCAL-only; the client then matches exactly, so the set is unchanged.
+   *   - 'batched' : huge "everyone with notes" / "not contacted" lists — the set comes from the
+   *                 aggregate (instant) and note bodies load one RENDER BATCH at a time by
+   *                 customerId, so the first screen never waits on the whole 28.8k-note set.
+   *   - 'full'    : needs the whole set (author matching, note counts, or any unclassifiable combo). */
+  private _noteScope(): { mode: 'none' } | { mode: 'full' } | { mode: 'batched' } | { mode: 'scoped'; key: string; opts: { sinceDays?: number; contentAny?: string[]; pinnedOnly?: boolean } } {
+    if (!this.noteFilterActive()) return { mode: 'none' };
     const r = this.appliedRefinements();
     const q = this.queryText().toLowerCase();
-    const needsFull =
-      this.nlqFilterService.queryNeedsFullNotes(q)
-      || !!r.noteKeyword?.trim() || !!r.hasPinnedNotes
-      || !!r.contactedByMeOnly || !!r.contactedBySomeoneElse
-      || !!r.contactedOnlyOnce || !!r.contactedMoreThan5
-      // absence prompts show the (possibly old) most-recent note for context:
-      || !!r.neverContacted || (r.notContactedDays != null && r.notContactedDays > 0)
+    // Author matching and note-counts genuinely need the whole set.
+    const count = !!r.contactedOnlyOnce || !!r.contactedMoreThan5 || /most\s+notes|most\s+engaged|by\s+notes/.test(q);
+    const author = !!r.contactedByMeOnly || !!r.contactedBySomeoneElse;
+    if (count || author) return { mode: 'full' };
+
+    const absence = !!r.neverContacted || (r.notContactedDays != null && r.notContactedDays > 0)
       || /never\s+contacted|not\s+contacted|haven'?t\s+contacted|haven'?t\s+called/.test(q);
-    if (needsFull) return 'full';
-    const w = this._recencyWindowDays();
-    return w != null ? w : 'full';
+    const kws = new Set<string>();
+    for (const k of this.nlqFilterService.extractNoteSearchKeywords(this.queryText())) kws.add(k);
+    const refineKw = r.noteKeyword?.trim().toLowerCase();
+    if (refineKw) kws.add(refineKw);
+    const contentActive = kws.size > 0;
+    const pinnedActive = /pinned/.test(q) || !!r.hasPinnedNotes;
+    // Absence phrasing ("not contacted in 30 days") trips the recency regex — ignore the window
+    // for absence so it routes to 'batched', not a wrong positive-recency slice.
+    const window = absence ? null : this._recencyWindowDays();
+    const gen = this._queryGenId;
+
+    // More than one distinct criterion → full (safe; scoping one could drop notes another needs).
+    if ([absence, contentActive, pinnedActive, window != null].filter(Boolean).length > 1) return { mode: 'full' };
+
+    if (contentActive) {
+      const list = [...kws].sort();
+      return { mode: 'scoped', key: `${gen}:content:${list.join('|')}`, opts: { contentAny: list } };
+    }
+    if (pinnedActive) return { mode: 'scoped', key: `${gen}:pinned`, opts: { pinnedOnly: true } };
+    if (window != null) return { mode: 'scoped', key: `${gen}:w:${window}`, opts: { sinceDays: window } };
+    if (absence) return { mode: 'batched' };
+    // Bare "producers with notes" (has-any-note) — but NOT "with notes BY <name>" (that's author).
+    if (/(?:with|has|have)\s+notes?\b/.test(q) && !/\bby\b/.test(q)) return { mode: 'batched' };
+    return { mode: 'full' };
   }
 
-  /** True when the notes this prompt needs for display are already loaded. */
+  /** True when the notes this prompt needs for display are already loaded. Batched prompts never
+   *  block — their set comes from the aggregate and note bodies stream in per render batch. */
   private _notesReadyForQuery(): boolean {
-    const need = this._noteLoadNeed();
-    if (need === 'none') return true;
-    if (need === 'full') return this.appState.notesLoaded();
-    return this._loadedNoteWindowKey() === `${this._queryGenId}:${need}`;
+    const scope = this._noteScope();
+    if (scope.mode === 'none' || scope.mode === 'batched') return true;
+    if (scope.mode === 'full') return this.appState.notesLoaded();
+    return this._loadedNoteScopeKey() === scope.key;
   }
 
-  /** Loads exactly the notes the current prompt needs: the full set (shared cache) for
-   *  content/author/pinned/count/absence prompts, or a date-windowed slice (local only) for
-   *  positive-recency prompts. No-op when nothing is needed or the right data is already present. */
+  /** Loads the notes the current prompt needs: full set (shared cache) for full-mode; a
+   *  server-narrowed slice (local) for scoped; nothing here for batched (the batch effect loads
+   *  note bodies per render batch). No-op when nothing's needed or the slice is already present. */
   private _ensureNotesForQuery(): void {
-    const need = this._noteLoadNeed();
-    if (need === 'none') return;
-    if (need === 'full') { this._ensureNotesLoaded(); return; }
-    const key = `${this._queryGenId}:${need}`;
-    if (this._loadedNoteWindowKey() === key || this._windowNotesFetchInFlight) return;
-    this._windowNotesFetchInFlight = true;
+    const scope = this._noteScope();
+    if (scope.mode === 'none' || scope.mode === 'batched') return;
+    if (scope.mode === 'full') { this._ensureNotesLoaded(); return; }
+    if (this._loadedNoteScopeKey() === scope.key || this._scopedNotesFetchInFlight) return;
+    this._scopedNotesFetchInFlight = true;
     const tu = this.appState.selectedTradeUnits();
     const tuParam = tu.length > 0 ? tu : undefined;
-    this.apiService.getNotes(tuParam, need).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.apiService.getNotes(tuParam, scope.opts).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
-        this._windowNotesFetchInFlight = false;
-        this.notes.set(data ?? []);          // DISPLAY only — do NOT warm the full-set cache
-        this._loadedNoteWindowKey.set(key);  // re-triggers _dataReadyEffect (via notes()) to run the query
+        this._scopedNotesFetchInFlight = false;
+        this.notes.set(data ?? []);            // DISPLAY only — do NOT warm the full-set cache
+        this._loadedNoteScopeKey.set(scope.key); // re-triggers _dataReadyEffect (via notes()) to run the query
       },
       error: () => {
-        this._windowNotesFetchInFlight = false;
+        this._scopedNotesFetchInFlight = false;
         this.notes.set([]);
-        this._loadedNoteWindowKey.set(key);
+        this._loadedNoteScopeKey.set(scope.key);
+      }
+    });
+  }
+
+  /** Batched note loading: fetch note bodies for the producers in the current render window (and
+   *  their linked-producer components) by customerId, accumulating into this.notes() as the user
+   *  scrolls — so a huge "everyone with notes" list never waits on all 28.8k notes up front. Only
+   *  used by the 'batched' scope; serialized via _batchNotesFetchInFlight, and it re-checks after
+   *  each fetch to pick up producers that rendered while it was in flight. */
+  private _loadNotesForRenderedBatch(): void {
+    if (this._noteScope().mode !== 'batched' || this._batchNotesFetchInFlight) return;
+    const codeToId = new Map<string, number>();
+    for (const c of this.customers()) if (c.scoularId) codeToId.set(c.scoularId, c.id);
+    const components = this.linkedProducerComponents();
+    const needed = new Set<number>();
+    for (const c of this.renderedCustomers()) {
+      if (!this._batchedNoteCustomerIds.has(c.id)) needed.add(c.id);
+      const codes = c.scoularId ? components.get(c.scoularId) : null;
+      if (codes) for (const code of codes) {
+        const id = codeToId.get(code);
+        if (id != null && !this._batchedNoteCustomerIds.has(id)) needed.add(id);
+      }
+    }
+    if (needed.size === 0) return;
+    const ids = [...needed];
+    this._batchNotesFetchInFlight = true;
+    // No trade-unit filter — like the full-set load and the last-contact aggregate, fetch ALL
+    // notes for these customerIds so a linked producer's note in an unselected TU is never missed.
+    this.apiService.getNotes(undefined, { customerIds: ids }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (data) => {
+        this._batchNotesFetchInFlight = false;
+        for (const id of ids) this._batchedNoteCustomerIds.add(id);
+        const seen = new Set(this.notes().map(n => n.id));
+        const fresh = (data ?? []).filter(n => !seen.has(n.id));
+        if (fresh.length) this.notes.set([...this.notes(), ...fresh]);
+        this._loadNotesForRenderedBatch(); // pick up any producers rendered during the fetch
+      },
+      error: () => {
+        this._batchNotesFetchInFlight = false;
+        for (const id of ids) this._batchedNoteCustomerIds.add(id); // don't retry-loop on a failed id set
       }
     });
   }
@@ -3188,6 +3353,35 @@ export class BuildListComponent {
   /** Active keyword used for inline highlight in matching notes. */
   getActiveNoteKeyword(): string {
     return this.appliedRefinements().noteKeyword?.trim() ?? '';
+  }
+
+  /** Record whether a note's clamped body is actually clipped (from ClampOverflowDirective). */
+  setNoteOverflow(noteId: number, overflowing: boolean): void {
+    this.overflowingNoteIds.update(s => {
+      if (s.has(noteId) === overflowing) return s; // no change → keep reference stable
+      const next = new Set(s);
+      overflowing ? next.add(noteId) : next.delete(noteId);
+      return next;
+    });
+  }
+
+  /** True when a note's body is genuinely truncated by the clamp (so it needs a "See more"). */
+  isNoteOverflowing(noteId: number): boolean {
+    return this.overflowingNoteIds().has(noteId);
+  }
+
+  /** Whether an individual long note is expanded to its full body. */
+  isNoteTextExpanded(noteId: number): boolean {
+    return this.expandedNoteTextIds().has(noteId);
+  }
+
+  /** Toggle a single long note between clamped and full. */
+  toggleNoteText(noteId: number): void {
+    this.expandedNoteTextIds.update(s => {
+      const next = new Set(s);
+      if (next.has(noteId)) next.delete(noteId); else next.add(noteId);
+      return next;
+    });
   }
 
   toggleLinkedExpand(customerId: number): void {

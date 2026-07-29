@@ -81,6 +81,22 @@ describe('NlqFilterService.queryNeedsFullNotes', () => {
   });
 });
 
+describe('NlqFilterService.extractNoteSearchKeywords (server content-filter source of truth)', () => {
+  let svc: NlqFilterService;
+  beforeEach(() => { svc = new NlqFilterService(); });
+
+  it('extracts keywords from content-search phrasings', () => {
+    expect(svc.extractNoteSearchKeywords('producers with notes mentioning drought')).toEqual(['drought']);
+    expect(svc.extractNoteSearchKeywords('notes about beans and corn')).toEqual(['beans', 'corn']); // "and" is a stopword
+    expect(svc.extractNoteSearchKeywords('search notes for irrigation')).toEqual(['irrigation']);
+  });
+  it('returns [] for non-content prompts (so they never trigger a content fetch)', () => {
+    expect(svc.extractNoteSearchKeywords('producers with active contracts')).toEqual([]);
+    expect(svc.extractNoteSearchKeywords('notes added yesterday')).toEqual([]);   // recency, not content
+    expect(svc.extractNoteSearchKeywords('producers with pinned notes')).toEqual([]);
+  });
+});
+
 describe('NlqFilterService.refineFiltersNeedFullNotes', () => {
   let svc: NlqFilterService;
   beforeEach(() => { svc = new NlqFilterService(); });

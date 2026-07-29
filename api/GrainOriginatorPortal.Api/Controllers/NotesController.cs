@@ -27,14 +27,23 @@ public class NotesController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    /// <summary>Gets all notes. Pass <c>sinceDays</c> to window the read to notes created within
-    /// the last N days — date-scoped prompts ("notes added yesterday") use this to avoid pulling
-    /// the entire note set.</summary>
+    /// <summary>Gets all notes. Optional server-side filters keep note-scoped prompts from pulling
+    /// the entire set: <c>sinceDays</c> (recency window), <c>contentAny</c> (comma-separated
+    /// keywords — returns notes whose text contains ANY), <c>authorAny</c> (comma-separated author
+    /// candidates — matches CreatedBy/ModifiedBy), and <c>pinnedOnly</c>. Each returns a SUPERSET
+    /// the client then matches exactly, so results are unchanged.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(List<NoteResponse>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<NoteResponse>>> GetAll([FromQuery] string? tradeUnits = null, [FromQuery] int? sinceDays = null, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<List<NoteResponse>>> GetAll(
+        [FromQuery] string? tradeUnits = null,
+        [FromQuery] int? sinceDays = null,
+        [FromQuery] string? contentAny = null,
+        [FromQuery] string? authorAny = null,
+        [FromQuery] bool pinnedOnly = false,
+        [FromQuery] string? customerIds = null,
+        CancellationToken cancellationToken = default)
     {
-        return Ok(await _service.GetAllAsync(tradeUnits, sinceDays, cancellationToken));
+        return Ok(await _service.GetAllAsync(tradeUnits, sinceDays, contentAny, authorAny, pinnedOnly, customerIds, cancellationToken));
     }
 
     // -------------------------------------------------------------------------
