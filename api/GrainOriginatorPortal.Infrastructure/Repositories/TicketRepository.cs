@@ -260,8 +260,7 @@ public class TicketRepository : ITicketRepository
         // exclusive (P-prefix vs U/L/C-prefix), so the OR doesn't double-count.
         var tickets = await _context.Tickets
             .AsNoTracking()
-            .Where(t => t.IsActive
-                && (t.TicketType == "U" || t.TicketType == "P")
+            .Where(t => (t.TicketType == "U" || t.TicketType == "P")
                 && (t.TicketStatusDescription == null || t.TicketStatusDescription != "Consolidated")
                 && t.Date != null
                 && string.Compare(t.Date, cutoff) >= 0
@@ -337,8 +336,7 @@ public class TicketRepository : ITicketRepository
 
         var tickets = await _context.Tickets
             .AsNoTracking()
-            .Where(t => t.IsActive
-                && (t.TicketType == "U" || t.TicketType == "P")
+            .Where(t => (t.TicketType == "U" || t.TicketType == "P")
                 && (t.TicketStatusDescription == null || t.TicketStatusDescription != "Consolidated")
                 && t.CustomerCode == scoularId
                 && t.CtrmContractNumber != null
@@ -375,8 +373,7 @@ public class TicketRepository : ITicketRepository
 
         var tickets = await _context.Tickets
             .AsNoTracking()
-            .Where(t => t.IsActive
-                && (t.TicketType == "U" || t.TicketType == "P")
+            .Where(t => (t.TicketType == "U" || t.TicketType == "P")
                 && (t.TicketStatusDescription == null || t.TicketStatusDescription != "Consolidated")
                 && t.CtrmContractNumber == trimmed)
             .OrderByDescending(t => t.Date)
@@ -456,10 +453,10 @@ public class TicketRepository : ITicketRepository
                        t.OrganizationCode, t.ElevatorCode, t.UnloadOrganizationCode,
                        t.TicketBlDate, t.FinalSettledDate,
                        t.UnloadQuantity, t.LoadoutQuantity, t.AppliedNetQuantity,
-                       t.TicketType, t.TicketStatusDescription, t.IsActive, t.GradeCode
+                       t.TicketType, t.TicketStatusDescription, t.GradeCode
                 FROM base.vw_CurrentTickets t
                 INNER JOIN STRING_SPLIT({contractsCsv}, ',') x ON t.ContractNumber = x.value
-                WHERE t.IsActive = 1 AND t.TicketType IN ('U','P')
+                WHERE t.TicketType IN ('U','P')
                   AND (t.TicketStatusDescription IS NULL OR t.TicketStatusDescription <> 'Consolidated')
                   AND ({cutoff} = '' OR (t.TicketBlDate IS NOT NULL AND t.TicketBlDate >= {cutoff}))
 
@@ -470,10 +467,10 @@ public class TicketRepository : ITicketRepository
                        t.OrganizationCode, t.ElevatorCode, t.UnloadOrganizationCode,
                        t.TicketBlDate, t.FinalSettledDate,
                        t.UnloadQuantity, t.LoadoutQuantity, t.AppliedNetQuantity,
-                       t.TicketType, t.TicketStatusDescription, t.IsActive, t.GradeCode
+                       t.TicketType, t.TicketStatusDescription, t.GradeCode
                 FROM base.vw_CurrentTickets t
                 INNER JOIN STRING_SPLIT({codesCsv}, ',') c ON t.CustomerCode = c.value
-                WHERE t.IsActive = 1 AND t.TicketType IN ('U','P')
+                WHERE t.TicketType IN ('U','P')
                   AND (t.TicketStatusDescription IS NULL OR t.TicketStatusDescription <> 'Consolidated')
                   AND t.ContractNumber IS NOT NULL
                   AND (t.ContractNumber LIKE 'U%' OR t.ContractNumber LIKE 'L%'
@@ -547,10 +544,10 @@ public class TicketRepository : ITicketRepository
                        t.OrganizationCode, t.ElevatorCode, t.UnloadOrganizationCode,
                        t.TicketBlDate, t.FinalSettledDate,
                        t.UnloadQuantity, t.LoadoutQuantity, t.AppliedNetQuantity,
-                       t.TicketType, t.TicketStatusDescription, t.IsActive, t.GradeCode
+                       t.TicketType, t.TicketStatusDescription, t.GradeCode
                 FROM base.vw_CurrentTickets t
                 INNER JOIN STRING_SPLIT({codesCsv}, ',') c ON t.CustomerCode = c.value
-                WHERE t.IsActive = 1 AND t.TicketType IN ('U','P')
+                WHERE t.TicketType IN ('U','P')
                   AND (t.TicketStatusDescription IS NULL OR t.TicketStatusDescription <> 'Consolidated')
                   AND t.ContractNumber IS NOT NULL
                   AND (t.ContractNumber LIKE 'U%' OR t.ContractNumber LIKE 'L%'
