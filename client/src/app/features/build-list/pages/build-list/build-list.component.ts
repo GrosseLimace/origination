@@ -2506,8 +2506,18 @@ export class BuildListComponent {
     // local tickets array as still-loading too — the effect will re-run NLQ automatically
     // once appState catches data. Suppresses the misleading 0-result flash.
     const queryNeedsTickets = this.nlqFilterService.queryInvolvesTickets(this.queryText());
-    const ticketsPending = queryNeedsTickets && (!this._ticketsReady() || this.tickets().length === 0);
-    this.waitingForTickets.set(ticketsPending);
+    // waitingForTickets must depend ONLY on whether the fetch has RESOLVED — never on emptiness.
+    // _dataReadyEffect reads waitingForTickets() in its condition and runs _applyNlqFilter() from
+    // inside itself; re-asserting waitingForTickets=true on an empty-but-resolved ticket set (a TU
+    // with no tickets, or a timed-out fetch) re-dirties that effect on every run → infinite loop /
+    // hard freeze. This bit only ticket prompts, since they were the sole path re-asserting a wait
+    // flag on emptiness. Once _ticketsReady is true the fetch is done (empty = genuine no-tickets);
+    // a late appState backfill is still picked up by _appStateTicketsEffect, which re-runs the filter.
+    this.waitingForTickets.set(queryNeedsTickets && !this._ticketsReady());
+    // The no-match banner keeps the original emptiness guard so a "0 producers" flash is suppressed
+    // during the empty-then-backfill window — this is display-only and NOT a _dataReadyEffect
+    // dependency, so it can't feed the loop above.
+    const ticketsPendingForBanner = queryNeedsTickets && (!this._ticketsReady() || this.tickets().length === 0);
     // Same guard for notes: if the query reads notes but the lazy set isn't loaded yet, treat
     // it as pending (not a zero-match) so we don't flash "no results" before the fetch lands.
     // _dataReadyEffect re-runs this filter once notes arrive.
@@ -2519,7 +2529,7 @@ export class BuildListComponent {
     // spinner would hang with nothing fetching. Idempotent: no-ops if the needed slice is present
     // or a fetch is already in flight.
     if (notesPending) this._ensureNotesForQuery();
-    this.queryReturnedNoMatches.set(result.customers.length === 0 && !ticketsPending && !notesPending);
+    this.queryReturnedNoMatches.set(result.customers.length === 0 && !ticketsPendingForBanner && !notesPending);
     this.filteredCustomers.set(result.customers);
 
     // If the query mentions pacing, apply direction filtering here at the component level
