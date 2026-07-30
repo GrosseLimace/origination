@@ -2224,20 +2224,22 @@ export class BuildListComponent {
   /** The note load the CURRENT prompt needs. The matched SET and last-contact badge come from the
    *  aggregate regardless — this governs only the DISPLAY payload:
    *   - 'none'    : no note-focused criterion active.
-   *   - 'scoped'  : a server-narrowed slice (recency window / content keywords / pinned), fetched
-   *                 LOCAL-only; the client then matches exactly, so the set is unchanged.
+   *   - 'scoped'  : a server-narrowed slice (recency window / content keywords / pinned / author),
+   *                 fetched LOCAL-only; the client then matches exactly, so the set is unchanged.
    *   - 'batched' : huge "everyone with notes" / "not contacted" lists — the set comes from the
    *                 aggregate (instant) and note bodies load one RENDER BATCH at a time by
    *                 customerId, so the first screen never waits on the whole 28.8k-note set.
-   *   - 'full'    : needs the whole set (author matching, note counts, or any unclassifiable combo). */
-  private _noteScope(): { mode: 'none' } | { mode: 'full' } | { mode: 'batched' } | { mode: 'scoped'; key: string; opts: { sinceDays?: number; contentAny?: string[]; pinnedOnly?: boolean } } {
+   *   - 'full'    : needs the whole set (note counts, "by someone else", or any unclassifiable combo). */
+  private _noteScope(): { mode: 'none' } | { mode: 'full' } | { mode: 'batched' } | { mode: 'scoped'; key: string; opts: { sinceDays?: number; contentAny?: string[]; authorAny?: string[]; pinnedOnly?: boolean } } {
     if (!this.noteFilterActive()) return { mode: 'none' };
     const r = this.appliedRefinements();
     const q = this.queryText().toLowerCase();
-    // Author matching and note-counts genuinely need the whole set.
+    // Note-COUNT prompts genuinely need every note (to count per producer).
     const count = !!r.contactedOnlyOnce || !!r.contactedMoreThan5 || /most\s+notes|most\s+engaged|by\s+notes/.test(q);
-    const author = !!r.contactedByMeOnly || !!r.contactedBySomeoneElse;
-    if (count || author) return { mode: 'full' };
+    if (count) return { mode: 'full' };
+    // "contacted by someone else" = notes NOT by me — that's ~all notes, not a cheap server
+    // superset, so it stays full.
+    if (r.contactedBySomeoneElse) return { mode: 'full' };
 
     const absence = !!r.neverContacted || (r.notContactedDays != null && r.notContactedDays > 0)
       || /never\s+contacted|not\s+contacted|haven'?t\s+contacted|haven'?t\s+called/.test(q);
@@ -2247,22 +2249,44 @@ export class BuildListComponent {
     if (refineKw) kws.add(refineKw);
     const contentActive = kws.size > 0;
     const pinnedActive = /pinned/.test(q) || !!r.hasPinnedNotes;
+    // "Producers I have contacted" / "by me" / "my notes" — an author search on the CURRENT user.
+    // The server authorAny filter (CreatedBy/ModifiedBy Contains candidate) is identical to the
+    // client's matchesAuthor, so a scoped author fetch returns exactly the by-me notes — no need to
+    // load all ~28.8k. Guarded by !absence so "I have NOT contacted…" still routes to batched.
+    const byMe = !absence && (!!r.contactedByMeOnly
+      || /\b(?:who\s+have\s+)?i\s+(?:have\s+)?(?:contacted|called|reached|noted)\b/.test(q)
+      || /\bby\s+me\b/.test(q) || /\bmy\s+notes?\b/.test(q));
     // Absence phrasing ("not contacted in 30 days") trips the recency regex — ignore the window
     // for absence so it routes to 'batched', not a wrong positive-recency slice.
     const window = absence ? null : this._recencyWindowDays();
     const gen = this._queryGenId;
 
-    // More than one distinct criterion → full (safe; scoping one could drop notes another needs).
-    if ([absence, contentActive, pinnedActive, window != null].filter(Boolean).length > 1) return { mode: 'full' };
+    // Absence: batched on its own; but mixed with a note-content/pinned criterion it needs the real
+    // bodies → full (safe).
+    if (absence) return (contentActive || pinnedActive) ? { mode: 'full' } : { mode: 'batched' };
 
-    if (contentActive) {
-      const list = [...kws].sort();
-      return { mode: 'scoped', key: `${gen}:content:${list.join('|')}`, opts: { contentAny: list } };
+    // Combine EVERY active scopable criterion (author / content / pinned / recency window) into ONE
+    // server-narrowed slice — this is what keeps "Producers I contacted this week" (author + window)
+    // fast instead of falling to a full load. Each server filter is a superset-or-equal of the
+    // client's per-criterion match, so their AND still contains everything the client needs; the
+    // client then re-matches exactly, so the result set is unchanged.
+    const opts: { sinceDays?: number; contentAny?: string[]; authorAny?: string[]; pinnedOnly?: boolean } = {};
+    const keyParts: string[] = [];
+    if (byMe) {
+      const account = this.msalService.instance.getActiveAccount() ?? this.msalService.instance.getAllAccounts()[0];
+      const cands = this.nlqFilterService.buildAuthorCandidates(null, account?.name ?? '', account?.username ?? '');
+      if (cands.length === 0) return { mode: 'full' }; // no identity to scope on — fall back
+      const list = [...cands].sort();
+      opts.authorAny = list; keyParts.push(`author:${list.join('|')}`);
     }
-    if (pinnedActive) return { mode: 'scoped', key: `${gen}:pinned`, opts: { pinnedOnly: true } };
-    if (window != null) return { mode: 'scoped', key: `${gen}:w:${window}`, opts: { sinceDays: window } };
-    if (absence) return { mode: 'batched' };
-    // Bare "producers with notes" (has-any-note) — but NOT "with notes BY <name>" (that's author).
+    if (contentActive) { const list = [...kws].sort(); opts.contentAny = list; keyParts.push(`content:${list.join('|')}`); }
+    if (pinnedActive) { opts.pinnedOnly = true; keyParts.push('pinned'); }
+    if (window != null) { opts.sinceDays = window; keyParts.push(`w:${window}`); }
+
+    if (keyParts.length > 0) return { mode: 'scoped', key: `${gen}:${keyParts.join('+')}`, opts };
+
+    // No scopable criterion — bare "producers with notes" (has-any-note), but NOT "with notes BY
+    // <name>" (that's author) → batched; otherwise full.
     if (/(?:with|has|have)\s+notes?\b/.test(q) && !/\bby\b/.test(q)) return { mode: 'batched' };
     return { mode: 'full' };
   }
@@ -2286,7 +2310,10 @@ export class BuildListComponent {
     if (this._loadedNoteScopeKey() === scope.key || this._scopedNotesFetchInFlight) return;
     this._scopedNotesFetchInFlight = true;
     const tu = this.appState.selectedTradeUnits();
-    const tuParam = tu.length > 0 ? tu : undefined;
+    // Author ("by me") fetches are NOT TU-filtered: a by-me note on a LINKED producer in another TU
+    // still counts (same reason batched mode omits TU), and the by-me set is small so it's free to
+    // fetch all. Other scoped fetches (content / window / pinned) keep the TU scope.
+    const tuParam = scope.opts.authorAny ? undefined : (tu.length > 0 ? tu : undefined);
     this.apiService.getNotes(tuParam, scope.opts).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this._scopedNotesFetchInFlight = false;
