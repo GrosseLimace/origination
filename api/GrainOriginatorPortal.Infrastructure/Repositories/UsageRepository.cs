@@ -34,6 +34,14 @@ public class UsageRepository : IUsageRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<List<string>> GetExcludedUserIdsAsync(CancellationToken cancellationToken)
+    {
+        return await _appDb.UsageDashboardExcludedUsers
+            .AsNoTracking()
+            .Select(e => e.UserId)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<List<UserDisplayName>> GetDisplayNamesAsync(IReadOnlyCollection<string> userIds, CancellationToken cancellationToken)
     {
         var rows = await _appDb.UserTradeUnitSnapshots

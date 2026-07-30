@@ -48,6 +48,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<DailyRecapGroup> DailyRecapGroups => Set<DailyRecapGroup>();
     public DbSet<DailyRecapGroupMember> DailyRecapGroupMembers => Set<DailyRecapGroupMember>();
     public DbSet<DailyRecapGroupCcEmail> DailyRecapGroupCcEmails => Set<DailyRecapGroupCcEmail>();
+    public DbSet<UsageDashboardExcludedUser> UsageDashboardExcludedUsers => Set<UsageDashboardExcludedUser>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -758,6 +759,20 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.RecapGroupId).IsRequired();
             entity.Property(e => e.Email).HasMaxLength(256).IsRequired();
             entity.HasIndex(e => e.RecapGroupId).HasDatabaseName("IX_DailyRecapGroupCcEmails_RecapGroupId");
+        });
+
+        modelBuilder.Entity<UsageDashboardExcludedUser>(entity =>
+        {
+            entity.ToTable("UsageDashboardExcludedUsers", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.UserId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.Reason).HasMaxLength(500).IsRequired(false);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()").IsRequired();
+            entity.Property(e => e.CreatedBy).HasMaxLength(255).IsRequired().HasDefaultValue("system");
+            // Unique so the same account can't be excluded twice; SQL Server's default CI collation
+            // makes it case-insensitive, matching how the dashboard keys users.
+            entity.HasIndex(e => e.UserId).IsUnique().HasDatabaseName("IX_UsageDashboardExcludedUsers_UserId");
         });
     }
 }

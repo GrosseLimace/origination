@@ -1,6 +1,3 @@
-// Microsoft namespaces
-using Microsoft.Extensions.Configuration;
-
 // Third-party namespaces
 using Moq;
 
@@ -41,14 +38,13 @@ public class UsageDashboardServiceTests
         _sut = CreateSut();
     }
 
-    /// <summary>Builds the service with an optional UsageDashboard:ExcludeUsers config list.</summary>
+    /// <summary>Builds the service, seeding the DB-backed exclusion list
+    /// (dbo.UsageDashboardExcludedUsers) via the repo mock.</summary>
     private UsageDashboardService CreateSut(params string[] excludeUsers)
     {
-        var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(excludeUsers
-                .Select((u, i) => new KeyValuePair<string, string?>($"UsageDashboard:ExcludeUsers:{i}", u)))
-            .Build();
-        return new UsageDashboardService(_repoMock.Object, _appAccessMock.Object, config);
+        _repoMock.Setup(r => r.GetExcludedUserIdsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(excludeUsers.ToList());
+        return new UsageDashboardService(_repoMock.Object, _appAccessMock.Object);
     }
 
     private void SetupAccess(bool available, params string[] shortNames)
@@ -139,7 +135,7 @@ public class UsageDashboardServiceTests
     public async Task ExcludeUsers_DropsConfiguredItDevAccounts_CaseInsensitive_FromEveryView()
     {
         SetupAccess(true, "CEgr", "admin-CEgr", "KHague");
-        // Config uses different casing than the access set to prove case-insensitive matching.
+        // The exclusion rows use different casing than the access set to prove case-insensitive matching.
         var sut = CreateSut("cegr", "ADMIN-CEGR");
 
         var users = await sut.GetUsersAsync(From, To, tradeUnitKey: null, status: null, CancellationToken.None);

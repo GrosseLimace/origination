@@ -1526,6 +1526,44 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.ToTable("SavedLists", "dbo");
                 });
 
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.UsageDashboardExcludedUser", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasDefaultValue("system");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_UsageDashboardExcludedUsers_UserId");
+
+                    b.ToTable("UsageDashboardExcludedUsers", "dbo");
+                });
+
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.UserActivity", b =>
                 {
                     b.Property<long>("Id")

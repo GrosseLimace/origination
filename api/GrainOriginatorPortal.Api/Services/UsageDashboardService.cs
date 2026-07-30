@@ -8,19 +8,11 @@ public class UsageDashboardService : IUsageDashboardService
 {
     private readonly IUsageRepository _repo;
     private readonly IAppAccessService _appAccess;
-    // IT/dev accounts to keep OUT of usage analytics. Populated only in prod (via
-    // UsageDashboard:ExcludeUsers) — empty in dev/QA, so a no-op there. These users still have app
-    // access everywhere else; this exclusion is usage-dashboard-only. Keyed by short name (UPN
-    // before the '@'), case-insensitive to match the rest of the dashboard's user keys.
-    private readonly HashSet<string> _excludedUsers;
 
-    public UsageDashboardService(IUsageRepository repo, IAppAccessService appAccess, IConfiguration config)
+    public UsageDashboardService(IUsageRepository repo, IAppAccessService appAccess)
     {
         _repo = repo;
         _appAccess = appAccess;
-        _excludedUsers = new HashSet<string>(
-            config.GetSection("UsageDashboard:ExcludeUsers").Get<string[]>() ?? [],
-            StringComparer.OrdinalIgnoreCase);
     }
 
     private static readonly Dictionary<string, string> FeatureLabels = new()
@@ -64,9 +56,13 @@ public class UsageDashboardService : IUsageDashboardService
                 set.IntersectWith(access.ShortNames);
         }
 
-        // Drop configured IT/dev accounts (prod only — empty elsewhere) from every dashboard view.
-        if (_excludedUsers.Count > 0)
-            set.ExceptWith(_excludedUsers);
+        // Drop the DB-managed excluded accounts (dbo.UsageDashboardExcludedUsers — IT/dev/admin
+        // accounts whose activity would skew adoption; prod-only in practice, empty in dev/QA) from
+        // every dashboard view. Read per request so add/remove via SQL takes effect on the next
+        // load, no redeploy. set uses OrdinalIgnoreCase, so ExceptWith drops matches case-insensitively.
+        var excluded = await _repo.GetExcludedUserIdsAsync(cancellationToken);
+        if (excluded.Count > 0)
+            set.ExceptWith(excluded);
         return set;
     }
 
