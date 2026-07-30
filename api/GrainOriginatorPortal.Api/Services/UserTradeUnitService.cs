@@ -8,15 +8,18 @@ namespace GrainOriginatorPortal.Api.Services;
 public class UserTradeUnitService : IUserTradeUnitService
 {
     private readonly IEntitlementsRepository _entitlements;
+    private readonly IMbpLocationSynonymRepository _locations;
     private readonly IRequestContextService _requestContext;
     private readonly ILogger<UserTradeUnitService> _logger;
 
     public UserTradeUnitService(
         IEntitlementsRepository entitlements,
+        IMbpLocationSynonymRepository locations,
         IRequestContextService requestContext,
         ILogger<UserTradeUnitService> logger)
     {
         _entitlements = entitlements;
+        _locations = locations;
         _requestContext = requestContext;
         _logger = logger;
     }
@@ -31,21 +34,36 @@ public class UserTradeUnitService : IUserTradeUnitService
         try
         {
             var rows = await _entitlements.GetByUserAsync(userId, cancellationToken);
-            return rows
-                .Select(u => new { GroupName = u.GroupName ?? "Default", u.TradeUnitCode, u.Description })
+
+            // The location shown next to each trade unit comes from dbo.MbpLocationSynonym (the MBPLOCSYN
+            // master): the trade unit code IS a bare LocationId (e.g. "2115" -> "2115"; NOT the composite
+            // "2115-ADRIAN"), resolved to its curated DisplayName (e.g. "Adrian, MO"). Codes with no
+            // matching row get no location text — the selector shows just the code. This replaces the
+            // former entitlements-view Description as the location source.
+            var grouped = rows
+                .Select(u => new { GroupName = u.GroupName ?? "Default", u.TradeUnitCode })
                 .GroupBy(u => u.GroupName)
                 .OrderBy(g => g.Key)
+                .ToList();
+
+            var allCodes = grouped
+                .SelectMany(g => g.Select(u => u.TradeUnitCode))
+                .Where(c => !string.IsNullOrWhiteSpace(c))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var displayNames = await _locations.GetDisplayNamesByLocationIdsAsync(allCodes, cancellationToken);
+
+            return grouped
                 .Select(g =>
                 {
-                    // Dedupe by code within the group; keep the first non-empty description
-                    // (e.g. "Pratt, KS") for that code from the entitlements view rows.
+                    // Dedupe by code within the group; location = DisplayName for the bare LocationId
+                    // (the trade unit code), or blank when the master has no row for that code.
                     var units = g
                         .GroupBy(u => u.TradeUnitCode)
                         .Select(cg => new TradeUnitOptionResponse
                         {
                             Code = cg.Key,
-                            Description = cg.Select(x => x.Description)
-                                            .FirstOrDefault(d => !string.IsNullOrWhiteSpace(d))
+                            Description = displayNames.GetValueOrDefault(cg.Key?.Trim() ?? string.Empty)
                         })
                         .OrderBy(o => o.Code)
                         .ToList();
