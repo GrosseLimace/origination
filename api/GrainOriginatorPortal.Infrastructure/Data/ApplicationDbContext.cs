@@ -48,6 +48,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<DailyRecapGroup> DailyRecapGroups => Set<DailyRecapGroup>();
     public DbSet<DailyRecapGroupMember> DailyRecapGroupMembers => Set<DailyRecapGroupMember>();
     public DbSet<DailyRecapGroupCcEmail> DailyRecapGroupCcEmails => Set<DailyRecapGroupCcEmail>();
+    public DbSet<MbpLocationSynonym> MbpLocationSynonyms => Set<MbpLocationSynonym>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -758,6 +759,37 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.RecapGroupId).IsRequired();
             entity.Property(e => e.Email).HasMaxLength(256).IsRequired();
             entity.HasIndex(e => e.RecapGroupId).HasDatabaseName("IX_DailyRecapGroupCcEmails_RecapGroupId");
+        });
+
+        modelBuilder.Entity<MbpLocationSynonym>(entity =>
+        {
+            entity.ToTable("MbpLocationSynonym", schema: "dbo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd().IsRequired();
+            entity.Property(e => e.LocationId).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.Location).HasMaxLength(20).IsRequired(false);
+            entity.Property(e => e.Elevator).HasMaxLength(20).IsRequired(false);
+            entity.Property(e => e.DisplayName).HasMaxLength(200).IsRequired(false);
+            entity.Property(e => e.AddressLine1).HasMaxLength(200).IsRequired(false);
+            entity.Property(e => e.AddressLine2).HasMaxLength(200).IsRequired(false);
+            entity.Property(e => e.City).HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.State).HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.Country).HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.ZipCode).HasMaxLength(20).IsRequired(false);
+            entity.Property(e => e.Phone).HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.Fax).HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.Email).HasMaxLength(256).IsRequired(false);
+            entity.Property(e => e.Website).HasMaxLength(256).IsRequired(false);
+            entity.Property(e => e.PushNotificationsHidden).HasMaxLength(1).IsFixedLength().IsRequired(false);
+            entity.Property(e => e.CashBidsHidden).HasMaxLength(1).IsFixedLength().IsRequired(false);
+            entity.Property(e => e.Status).HasMaxLength(20).IsRequired(false);
+            entity.Property(e => e.DeletedByUser).HasMaxLength(128).IsRequired(false);
+            entity.Property(e => e.DeletedAtSvStamp).IsRequired(false);
+            entity.Property(e => e.CreatedByUser).HasMaxLength(128).IsRequired(false);
+            entity.Property(e => e.CreatedStamp).IsRequired(false);
+            entity.Property(e => e.ChangedByUser).HasMaxLength(128).IsRequired(false);
+            entity.Property(e => e.ChangeStamp).IsRequired(false);
+            entity.HasIndex(e => e.LocationId).IsUnique().HasDatabaseName("IX_MbpLocationSynonym_LocationId");
         });
     }
 }
