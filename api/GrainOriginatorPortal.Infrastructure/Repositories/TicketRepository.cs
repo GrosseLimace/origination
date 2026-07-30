@@ -578,100 +578,54 @@ public class TicketRepository : ITicketRepository
         return tickets;
     }
 
-    // Resolves each ticket's City/State from its physical ElevatorCode via vw_GNP026 (elevator
-    // master), falling back to OrganizationCode → vw_GNP003 when there's no elevator code.
-    // NOTE: this is the ELEVATOR-level location (e.g. EMERSO = EMERSON). The Storage screen shows
-    // the DIVISION-level location for the same receipt (LOCATION_CODE → vw_GNP003, e.g. 1340 =
-    // HANCOCK) because a storage receipt carries no elevator code — so the two screens can legitimately
-    // show different cities for the same ticket number. See StoredGrainRepository.StoredGrainSql.
+    // Resolves each ticket's display location from dbo.MbpLocationSynonym (the MBPLOCSYN master):
+    // LocationId = "{OrganizationCode}-{ElevatorCode}" -> DisplayName (e.g. 1075 + MADRID => "Madrid, NE").
+    // ONLY tickets carrying BOTH an organization code AND an elevator code are matched; a ticket with no
+    // elevator code, or with no matching row, is left blank. This fully replaces the former
+    // vw_GNP026 / vw_GNP003 elevator lookup. DisplayName is already the full "City, ST" string the UI
+    // shows, so it goes in ElevatorCity (ElevatorState left null) and renders verbatim on the unapplied /
+    // applied / storage ticket views with no client change.
     private async Task PopulateElevatorLocations(List<Ticket> tickets, CancellationToken cancellationToken)
     {
-        var elevatorCodes = tickets
-            .Where(t => !string.IsNullOrWhiteSpace(t.ElevatorCode))
-            .Select(t => t.ElevatorCode!.Trim())
-            .Distinct()
+        // Only org+elevator tickets resolve; their key is "{Org}-{Elevator}", matched to LocationId.
+        var keyed = tickets
+            .Where(t => !string.IsNullOrWhiteSpace(t.OrganizationCode) && !string.IsNullOrWhiteSpace(t.ElevatorCode))
             .ToList();
+        if (keyed.Count == 0) return;
 
-        // Tickets without a meaningful ElevatorCode (whitespace-only counts) fall back to
-        // a GNP003 (location) lookup keyed on OrganizationCode. Collect those org codes up
-        // front so we can run the fallback query in parallel with the main elevator query.
-        var fallbackLocationCodes = tickets
-            .Where(t => string.IsNullOrWhiteSpace(t.ElevatorCode) && !string.IsNullOrWhiteSpace(t.OrganizationCode))
-            .Select(t => t.OrganizationCode!.Trim())
-            .Distinct()
+        var locationIds = keyed
+            .Select(t => $"{t.OrganizationCode!.Trim()}-{t.ElevatorCode!.Trim()}")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
-
-        if (elevatorCodes.Count == 0 && fallbackLocationCodes.Count == 0) return;
 
         try
         {
-            // Join ticket → vw_GNP026 on (ElevatorCode = Elevator_Code, OrganizationCode = Elevator_Location_Code).
-            // OrganizationCode is the ticket's owning org and is always populated; UnloadOrganizationCode
-            // only fills in once a ticket settles, so it can be empty on unapplied tickets.
-            var elevatorList = elevatorCodes.Count > 0
-                ? await _context.Set<Elevator>()
-                    .AsNoTracking()
-                    .Where(e => e.ElevatorCode != null && elevatorCodes.Contains(e.ElevatorCode))
-                    .ToListAsync(cancellationToken)
-                : new List<Elevator>();
+            var rows = await _appContext.MbpLocationSynonyms
+                .AsNoTracking()
+                .Where(m => locationIds.Contains(m.LocationId) && m.DisplayName != null)
+                .Select(m => new { m.LocationId, m.DisplayName })
+                .ToListAsync(cancellationToken);
 
-            // Fallback lookup against vw_GNP003 for tickets that don't have an ElevatorCode.
-            // We match the ticket's OrganizationCode to Location_Code and surface city/state.
-            var locationList = fallbackLocationCodes.Count > 0
-                ? await _context.Set<Location>()
-                    .AsNoTracking()
-                    .Where(l => l.LocationCode != null && fallbackLocationCodes.Contains(l.LocationCode))
-                    .ToListAsync(cancellationToken)
-                : new List<Location>();
+            var lookup = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var r in rows)
+                if (!string.IsNullOrWhiteSpace(r.DisplayName))
+                    lookup[r.LocationId.Trim()] = r.DisplayName!.Trim();
 
-            // Elevator lookup keyed exclusively by composite (ElevatorCode + ElevatorLocationCode).
-            // We don't keep a bare-ElevatorCode fallback — codes like DIRECT are shared
-            // across many physical locations and the bare-code lookup would pick an
-            // arbitrary row, mislabeling every non-composite-matched ticket.
-            var elevatorLookup = new Dictionary<string, Elevator>();
-            foreach (var e in elevatorList)
+            foreach (var ticket in keyed)
             {
-                if (e.ElevatorCode == null) continue;
-                var compositeKey = $"{e.ElevatorCode.Trim()}|{(e.ElevatorLocationCode ?? "").Trim()}";
-                if (!elevatorLookup.ContainsKey(compositeKey))
-                    elevatorLookup[compositeKey] = e;
-            }
-
-            // Location fallback lookup keyed by Location_Code only.
-            var locationLookup = new Dictionary<string, Location>();
-            foreach (var l in locationList)
-            {
-                if (l.LocationCode == null) continue;
-                var key = l.LocationCode.Trim();
-                if (!locationLookup.ContainsKey(key))
-                    locationLookup[key] = l;
-            }
-
-            foreach (var ticket in tickets)
-            {
-                var orgCode = (ticket.OrganizationCode ?? "").Trim();
-
-                if (!string.IsNullOrWhiteSpace(ticket.ElevatorCode))
+                var key = $"{ticket.OrganizationCode!.Trim()}-{ticket.ElevatorCode!.Trim()}";
+                if (lookup.TryGetValue(key, out var display))
                 {
-                    // Primary path — composite GNP026 lookup
-                    var code = ticket.ElevatorCode.Trim();
-                    if (elevatorLookup.TryGetValue($"{code}|{orgCode}", out var elev))
-                    {
-                        ticket.ElevatorCity = elev.City?.Trim();
-                        ticket.ElevatorState = elev.State?.Trim();
-                    }
-                }
-                else if (orgCode.Length > 0 && locationLookup.TryGetValue(orgCode, out var loc))
-                {
-                    // Fallback — ticket has no elevator code, resolve via GNP003 by OrganizationCode
-                    ticket.ElevatorCity = loc.City?.Trim();
-                    ticket.ElevatorState = loc.State?.Trim();
+                    // DisplayName is the full "City, ST" text → ElevatorCity (state left null) so the
+                    // existing UI shows it verbatim. Unmatched tickets stay blank.
+                    ticket.ElevatorCity = display;
+                    ticket.ElevatorState = null;
                 }
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Elevator/location lookup failed — tickets will load without location data");
+            _logger.LogWarning(ex, "MbpLocationSynonym location lookup failed — tickets will load without location display");
         }
     }
 
