@@ -451,11 +451,6 @@
                                 },
                                 "uri": "https://graph.microsoft.com/v1.0/users/@{parameters('sharedMailbox')}/sendMail"
                               },
-                              "runtimeConfiguration": {
-                                "contentTransfer": {
-                                  "transferMode": "Chunked"
-                                }
-                              },
                               "type": "Http"
                             },
                             "Record_Email_Send_Failure": {
@@ -507,11 +502,6 @@
                                       "type": "none"
                                     },
                                     "uri": "https://graph.microsoft.com/v1.0/users/@{parameters('sharedMailbox')}/sendMail"
-                                  },
-                                  "runtimeConfiguration": {
-                                    "contentTransfer": {
-                                      "transferMode": "Chunked"
-                                    }
                                   },
                                   "type": "Http"
                                 },
