@@ -35,13 +35,15 @@ public class UserTradeUnitService : IUserTradeUnitService
         {
             var rows = await _entitlements.GetByUserAsync(userId, cancellationToken);
 
-            // The location shown next to each trade unit comes from dbo.MbpLocationSynonym (the MBPLOCSYN
-            // master): the trade unit code IS a bare LocationId (e.g. "2115" -> "2115"; NOT the composite
-            // "2115-ADRIAN"), resolved to its curated DisplayName (e.g. "Adrian, MO"). Codes with no
-            // matching row get no location text — the selector shows just the code. This replaces the
-            // former entitlements-view Description as the location source.
+            // The location shown next to each trade unit is resolved with a two-source fallback:
+            //   1. dbo.MbpLocationSynonym (the MBPLOCSYN master): the trade unit code IS a bare LocationId
+            //      (e.g. "2115" -> "2115"; NOT the composite "2115-ADRIAN") -> its curated DisplayName
+            //      ("Adrian, MO"). Preferred source.
+            //   2. If that table has no DisplayName for the code, fall back to the entitlements-view
+            //      Description (the source used before MbpLocationSynonym).
+            //   3. If both are missing, show nothing (just the code).
             var grouped = rows
-                .Select(u => new { GroupName = u.GroupName ?? "Default", u.TradeUnitCode })
+                .Select(u => new { GroupName = u.GroupName ?? "Default", u.TradeUnitCode, u.Description })
                 .GroupBy(u => u.GroupName)
                 .OrderBy(g => g.Key)
                 .ToList();
@@ -56,14 +58,23 @@ public class UserTradeUnitService : IUserTradeUnitService
             return grouped
                 .Select(g =>
                 {
-                    // Dedupe by code within the group; location = DisplayName for the bare LocationId
-                    // (the trade unit code), or blank when the master has no row for that code.
+                    // Dedupe by code within the group; location = MbpLocationSynonym DisplayName, else the
+                    // entitlements Description, else blank.
                     var units = g
                         .GroupBy(u => u.TradeUnitCode)
-                        .Select(cg => new TradeUnitOptionResponse
+                        .Select(cg =>
                         {
-                            Code = cg.Key,
-                            Description = displayNames.GetValueOrDefault(cg.Key?.Trim() ?? string.Empty)
+                            var mbpDisplayName = displayNames.GetValueOrDefault(cg.Key?.Trim() ?? string.Empty);
+                            var entitlementsDescription = cg
+                                .Select(x => x.Description)
+                                .FirstOrDefault(d => !string.IsNullOrWhiteSpace(d));
+                            return new TradeUnitOptionResponse
+                            {
+                                Code = cg.Key,
+                                Description = !string.IsNullOrWhiteSpace(mbpDisplayName)
+                                    ? mbpDisplayName
+                                    : entitlementsDescription
+                            };
                         })
                         .OrderBy(o => o.Code)
                         .ToList();

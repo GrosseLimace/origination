@@ -53,19 +53,22 @@ public class UserTradeUnitServiceTests
         Assert.Empty(result);
     }
 
-    // The location shown next to each code comes from MbpLocationSynonym (bare LocationId = code ->
-    // DisplayName), NOT the entitlements Description. A matched code shows its DisplayName; an
-    // unmatched code shows blank (just the code).
+    // The location next to each code resolves with a two-source fallback: MbpLocationSynonym
+    // DisplayName first, else the entitlements Description, else blank.
     [Fact]
-    public async Task GetForCurrentUserAsync_SetsLocationFromMbpLocationSynonym_BlankWhenUnmatched()
+    public async Task GetForCurrentUserAsync_ResolvesLocation_MbpFirstThenEntitlementsThenBlank()
     {
-        // Arrange — two codes in one group; entitlements Description is intentionally a red herring.
+        // Arrange — three codes in one group covering all three fallback branches.
         _entitlementsMock
             .Setup(e => e.GetByUserAsync("tuser", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<UserTradeUnitAccess>
             {
-                new() { GroupName = "West", TradeUnitCode = "2115", Description = "stale-entitlements-desc" },
-                new() { GroupName = "West", TradeUnitCode = "9999", Description = "stale-entitlements-desc" },
+                // In MBP master AND has an entitlements desc -> MBP wins.
+                new() { GroupName = "West", TradeUnitCode = "2115", Description = "Entitlements Adrian" },
+                // NOT in MBP master but has an entitlements desc -> falls back to entitlements.
+                new() { GroupName = "West", TradeUnitCode = "9999", Description = "Pratt, KS" },
+                // In neither -> blank.
+                new() { GroupName = "West", TradeUnitCode = "0000", Description = null },
             });
         // Only 2115 resolves in the location master.
         _locationsMock
@@ -75,10 +78,11 @@ public class UserTradeUnitServiceTests
         // Act
         var result = await _sut.GetForCurrentUserAsync(CancellationToken.None);
 
-        // Assert — 2115 shows the DisplayName; 9999 (no master row) shows blank, not the entitlements text.
+        // Assert — MBP preferred, entitlements fallback, else blank.
         var units = Assert.Single(result).TradeUnits;
-        Assert.Equal("Adrian, MO", units.Single(u => u.Code == "2115").Description);
-        Assert.True(string.IsNullOrEmpty(units.Single(u => u.Code == "9999").Description));
+        Assert.Equal("Adrian, MO", units.Single(u => u.Code == "2115").Description);   // MBP wins over entitlements
+        Assert.Equal("Pratt, KS", units.Single(u => u.Code == "9999").Description);    // entitlements fallback
+        Assert.True(string.IsNullOrEmpty(units.Single(u => u.Code == "0000").Description)); // neither -> blank
     }
 
     // SqlException has no public constructor; create an uninitialized instance so the catch filter
