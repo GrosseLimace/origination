@@ -123,8 +123,8 @@ export class ApiService {
   }
 
   /** Fetches trade unit groups assigned to the currently authenticated user from the Entitlements database */
-  getUserTradeUnits(): Observable<{ groupName: string; tradeUnitCodes: string[] }[]> {
-    return this.http.get<{ groupName: string; tradeUnitCodes: string[] }[]>(`${this.baseUrl}/usertradeunits`)
+  getUserTradeUnits(): Observable<{ groupName: string; tradeUnitCodes: string[]; tradeUnits: { code: string; description?: string }[] }[]> {
+    return this.http.get<{ groupName: string; tradeUnitCodes: string[]; tradeUnits: { code: string; description?: string }[] }[]>(`${this.baseUrl}/usertradeunits`)
       .pipe(catchError(e => this.handleError(e)));
   }
 
@@ -501,12 +501,26 @@ export class ApiService {
   // Note Operations (Customer contact notes)
   // ==========================================================================
 
-  /** Fetches notes, optionally filtered by trade units */
-  getNotes(tradeUnits?: string[]): Observable<Note[]> {
-    const url = tradeUnits?.length
-      ? `${this.baseUrl}/notes?tradeUnits=${encodeURIComponent(tradeUnits.join(','))}`
-      : `${this.baseUrl}/notes`;
-    const key = `notes:${[...(tradeUnits ?? [])].sort().join(',')}`;
+  /** Fetches notes. With no options this is the full set; the options narrow the read SERVER-SIDE
+   *  so note-scoped prompts don't pull all ~28.8k notes:
+   *   - `sinceDays`   — only notes created within the last N days (date-recency prompts).
+   *   - `contentAny`  — only notes whose text contains ANY of these keywords (content search).
+   *   - `authorAny`   — only notes whose author (CreatedBy/ModifiedBy) contains ANY of these.
+   *   - `pinnedOnly`  — only pinned notes.
+   *  Each is a SUPERSET the caller then matches exactly, so results are unchanged — just fewer
+   *  rows over the wire. Every distinct option set gets its own dedupe key so a partial slice never
+   *  collides with (or masquerades as) the full-set cache. */
+  getNotes(tradeUnits?: string[], opts?: { sinceDays?: number; contentAny?: string[]; authorAny?: string[]; pinnedOnly?: boolean; customerIds?: number[] }): Observable<Note[]> {
+    const params: string[] = [];
+    if (tradeUnits?.length) params.push(`tradeUnits=${encodeURIComponent(tradeUnits.join(','))}`);
+    if (opts?.sinceDays != null && opts.sinceDays > 0) params.push(`sinceDays=${opts.sinceDays}`);
+    if (opts?.contentAny?.length) params.push(`contentAny=${encodeURIComponent(opts.contentAny.join(','))}`);
+    if (opts?.authorAny?.length) params.push(`authorAny=${encodeURIComponent(opts.authorAny.join(','))}`);
+    if (opts?.pinnedOnly) params.push('pinnedOnly=true');
+    if (opts?.customerIds?.length) params.push(`customerIds=${encodeURIComponent(opts.customerIds.join(','))}`);
+    const url = params.length ? `${this.baseUrl}/notes?${params.join('&')}` : `${this.baseUrl}/notes`;
+    const scopeParams = params.filter(p => !p.startsWith('tradeUnits=')).sort().join('&');
+    const key = `notes:${[...(tradeUnits ?? [])].sort().join(',')}:${scopeParams}`;
     return this._dedupe(key,
       this.http.get<Note[]>(url).pipe(catchError(e => this.handleError(e)))
     );

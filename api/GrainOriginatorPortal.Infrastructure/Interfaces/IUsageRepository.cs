@@ -13,6 +13,10 @@ public interface IUsageRepository
 {
     // ── Identity / snapshot ──
     Task<List<string>> GetSnapshotUserIdsAsync(IReadOnlyCollection<string>? tradeUnitCodes, CancellationToken cancellationToken);
+
+    /// <summary>Short user names (UPN before the '@') kept OUT of the usage dashboard, from
+    /// dbo.UsageDashboardExcludedUsers. Managed via SQL (add/remove rows); empty in dev/QA.</summary>
+    Task<List<string>> GetExcludedUserIdsAsync(CancellationToken cancellationToken);
     Task<List<UserDisplayName>> GetDisplayNamesAsync(IReadOnlyCollection<string> userIds, CancellationToken cancellationToken);
 
     // ── Activities ──

@@ -1092,6 +1092,115 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.ToTable("HarvestWindows", "dbo");
                 });
 
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.MbpLocationSynonym", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AddressLine1")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("AddressLine2")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("CashBidsHidden")
+                        .HasMaxLength(1)
+                        .HasColumnType("nchar(1)")
+                        .IsFixedLength();
+
+                    b.Property<DateTime?>("ChangeStamp")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ChangedByUser")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("City")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Country")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("CreatedByUser")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTime?>("CreatedStamp")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedAtSvStamp")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DeletedByUser")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Elevator")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Fax")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Location")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("LocationId")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Phone")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("PushNotificationsHidden")
+                        .HasMaxLength(1)
+                        .HasColumnType("nchar(1)")
+                        .IsFixedLength();
+
+                    b.Property<string>("State")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Website")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("ZipCode")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LocationId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_MbpLocationSynonym_LocationId");
+
+                    b.ToTable("MbpLocationSynonym", "dbo");
+                });
+
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.Note", b =>
                 {
                     b.Property<int>("Id")
@@ -1524,6 +1633,44 @@ namespace GrainOriginatorPortal.Infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("SavedLists", "dbo");
+                });
+
+            modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.UsageDashboardExcludedUser", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasDefaultValue("system");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_UsageDashboardExcludedUsers_UserId");
+
+                    b.ToTable("UsageDashboardExcludedUsers", "dbo");
                 });
 
             modelBuilder.Entity("GrainOriginatorPortal.Infrastructure.Data.Entities.UserActivity", b =>

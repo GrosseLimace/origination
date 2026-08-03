@@ -9,7 +9,14 @@ namespace GrainOriginatorPortal.Infrastructure.Interfaces;
 /// </summary>
 public interface INoteRepository
 {
-    Task<List<Note>> GetAsync(IEnumerable<string>? tradeUnits, CancellationToken cancellationToken);
+    Task<List<Note>> GetAsync(
+        IEnumerable<string>? tradeUnits,
+        DateTime? createdSinceUtc,
+        IReadOnlyList<string>? contentAny,
+        IReadOnlyList<string>? authorAny,
+        bool pinnedOnly,
+        IReadOnlyList<long>? customerIds,
+        CancellationToken cancellationToken);
 
     /// <summary>
     /// Per-customer MAX(CreatedAt) over ALL non-deleted notes — the lightweight feed for the

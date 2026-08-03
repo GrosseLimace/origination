@@ -12,6 +12,7 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { Customer, Contract, PlantingIntention, StoredGrain, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, Commodity } from '@models';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
+import { commodityColor } from '@shared/utils/commodity-color';
 
 @Component({
   selector: 'app-dashboard',
@@ -381,26 +382,30 @@ export class DashboardComponent {
   }
 
   readonly cropBreakdown = computed(() => {
-    const cropAcresMap = new Map<string, number>();
+    // Track the underlying crop CATEGORY per row so color is by crop, not sort position —
+    // e.g. "Irrigated Corn" and "Dryland Corn" stay as separate rows but both color as Corn.
+    const cropMap = new Map<string, { acres: number; category: string }>();
     for (const p of this.filteredIntentionsForYear()) {
       const commodity = this._commodityByCode().get(p.crop);
       const category = p.category || commodity?.category || p.crop;
       const key = this.selectedCropFilter()
         ? this._dashboardCropKey(p.type, category)
         : category;
-      cropAcresMap.set(key, (cropAcresMap.get(key) || 0) + p.acres);
+      const entry = cropMap.get(key);
+      if (entry) entry.acres += p.acres;
+      else cropMap.set(key, { acres: p.acres, category });
     }
-    const total = [...cropAcresMap.values()].reduce((a, b) => a + b, 0);
-    return [...cropAcresMap.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, acres], i) => {
-        const color = this.CHART_COLORS[i % this.CHART_COLORS.length];
+    const total = [...cropMap.values()].reduce((a, b) => a + b.acres, 0);
+    return [...cropMap.entries()]
+      .sort((a, b) => b[1].acres - a[1].acres)
+      .map(([name, { acres, category }]) => {
+        const color = commodityColor(category); // shared per-crop color (same everywhere)
         return {
           name,
           acres,
           pct: total > 0 ? Math.round((acres / total) * 100) : 0,
           barColor: color.bar,
-          dotColor: color.dot,
+          dotColor: color.bar,
           hex: color.hex
         };
       });
@@ -1288,13 +1293,18 @@ export class DashboardComponent {
     const yieldMap = this._yieldEstimateMap();
 
     this.yieldRows.set(
-      [...allCropCodes].sort().map(cropCode => ({
-        cropCode,
-        cropName: cropCode,
-        category: cropCategoryMap.get(cropCode) || 'Unknown',
-        totalAcres: cropAcresMap.get(cropCode) || 0,
-        yieldEstimate: yieldMap.get(cropCode) ?? null
-      }))
+      [...allCropCodes]
+        .map(cropCode => ({
+          cropCode,
+          cropName: cropCode,
+          category: cropCategoryMap.get(cropCode) || 'Unknown',
+          totalAcres: cropAcresMap.get(cropCode) || 0,
+          yieldEstimate: yieldMap.get(cropCode) ?? null
+        }))
+        // Group rows by commodity (all Corn variants together, then Soybeans, etc.), then by the
+        // crop label within a commodity — instead of a flat alphabetical sort that splits e.g.
+        // "Dryland Corn" and "Irrigated Corn" apart.
+        .sort((a, b) => a.category.localeCompare(b.category) || a.cropName.localeCompare(b.cropName))
     );
 
     this._calculateCategoryRows();
@@ -1504,22 +1514,13 @@ export class DashboardComponent {
   // Row color coding (consistent category colors across all 6 tables)
   // =========================================================================
 
-  private static readonly _CATEGORY_ROW_COLORS = [
-    'bg-emerald-100 dark:bg-emerald-800/35',
-    'bg-sky-100 dark:bg-sky-800/35',
-    'bg-amber-100 dark:bg-amber-800/35',
-    'bg-violet-100 dark:bg-violet-800/35',
-    'bg-rose-100 dark:bg-rose-800/35',
-    'bg-teal-100 dark:bg-teal-800/35',
-    'bg-orange-100 dark:bg-orange-800/35',
-    'bg-indigo-100 dark:bg-indigo-800/35',
-  ];
 
   readonly categoryColorMap = computed(() => {
     const map = new Map<string, string>();
-    this.categoryRows().forEach((r, i) => {
-      map.set(r.category, `${DashboardComponent._CATEGORY_ROW_COLORS[i % DashboardComponent._CATEGORY_ROW_COLORS.length]} transition-colors`);
-    });
+    for (const r of this.categoryRows()) {
+      // Shared per-crop tint so Season Targets rows match the crop's color everywhere else.
+      map.set(r.category, `${commodityColor(r.category).row} transition-colors`);
+    }
     return map;
   });
 

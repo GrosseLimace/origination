@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, DestroyRef, inject, effect, untracked, signal, computed } from '@angular/core';
+import { Component, ChangeDetectionStrategy, DestroyRef, inject, effect, untracked, signal, computed, viewChild, ElementRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -13,6 +13,8 @@ import { UsageTrackingService } from '@core/services/usage-tracking.service';
 import { UserRolesService } from '@core/services/user-roles.service';
 import { NlqFilterService, NlqFilterContext } from '@core/services/nlq-filter.service';
 import { Customer, Contract, Ticket, PlantingIntention, Note, StoredGrain, SavedList, TeamMember, ProducerDetails, RefinementFilters, QueryLibraryItem, GrainOnFarmItem } from '@models';
+import { commodityChipClass } from '@shared/utils/commodity-color';
+import { plantingChips, plantingQueryScope, PlantingChip, isIrrigated, isDryland, isDoubleCrop } from '@shared/utils/planting-chips';
 import { CardComponent, CardContentComponent, CardHeaderComponent, CardTitleComponent, CardDescriptionComponent } from '@shared/components/card/card.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { BadgeComponent } from '@shared/components/badge/badge.component';
@@ -21,6 +23,7 @@ import { InputComponent } from '@shared/components/input/input.component';
 import { CustomerMapComponent } from '@features/customers/components/map/customer-map.component';
 import { TradeUnitSelectorComponent } from '@shared/components/trade-unit-selector/trade-unit-selector.component';
 import { HighlightPipe } from '@shared/pipes/highlight.pipe';
+import { ClampOverflowDirective } from '@shared/directives/clamp-overflow.directive';
 import { expandCommodityAliases } from '@shared/utils/commodity-aliases';
 import { isContractUnconfirmed, isContractOverdueWithUnshippedBu, buildConversionMap } from '@shared/utils/contract-status';
 import { matchTicketViewModeFilters } from '@shared/utils/ticket-view-filters';
@@ -48,7 +51,8 @@ import { buildLinkedProducerComponents } from '@shared/utils/linked-producers';
     InputComponent,
     CustomerMapComponent,
     TradeUnitSelectorComponent,
-    HighlightPipe
+    HighlightPipe,
+    ClampOverflowDirective
   ],
   templateUrl: './build-list.component.html',
   styles: [`input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }`],
@@ -82,6 +86,17 @@ export class BuildListComponent {
   private _contractsReady = signal(false);
   private _loadRequestId = 0;
   private _queryGenId = 0;
+  // Key of the server-narrowed note slice currently in this.notes() for DISPLAY (encodes the
+  // query generation + scope, e.g. `${gen}:content:beans|corn`, `${gen}:w:3`, `${gen}:pinned`).
+  // Scoped reads are LOCAL-only — they never warm appState.notes/notesLoaded (that cache means
+  // "the full set"), so a partial slice can't leak to other consumers as if it were complete.
+  private _loadedNoteScopeKey = signal<string>('');
+  private _scopedNotesFetchInFlight = false;
+  // Batched note-load bookkeeping ('batched' scope): customerIds whose note bodies have already
+  // been fetched for DISPLAY, and an in-flight guard so batches serialize (each re-checks on
+  // completion for producers that rendered while it was loading).
+  private _batchedNoteCustomerIds = new Set<number>();
+  private _batchNotesFetchInFlight = false;
   private _pendingIncludedIds: number[] = [];
   // True once the forkJoin (or cache restore) has populated all core data signals.
   // Guards processQuery() and example chips from running against partial/empty data.
@@ -101,6 +116,7 @@ export class BuildListComponent {
   private _dataReadyEffect = effect(() => {
     this.notes();
     this.appState.notesLoaded();
+    this._loadedNoteScopeKey();   // re-run when a scoped note slice lands
     this.storedGrain();
     this._ticketsReady();
     this._contractsReady();
@@ -112,8 +128,9 @@ export class BuildListComponent {
         const contractsOk = !this.nlqFilterService.queryInvolvesContracts(q) || this._contractsReady();
         const storageOk = !this.nlqFilterService.queryInvolvesStorage(q) || this.storedGrain().length > 0;
         // Gate on notesLoaded (not notes().length) so a trade unit with genuinely zero notes
-        // doesn't hang the spinner forever.
-        const notesOk = !this.nlqFilterService.queryInvolvesNotes(q) || this.appState.notesLoaded();
+        // doesn't hang the spinner forever. noteFilterActive() is true only when a prompt/refine
+        // actually reads note content — non-note prompts never wait on notes.
+        const notesOk = this._notesReadyForQuery();
         if (ticketsOk && contractsOk && storageOk && notesOk) {
           this.waitingForTickets.set(false);
           this.waitingForNotes.set(false);
@@ -269,6 +286,28 @@ export class BuildListComponent {
     return [...selectedCrops].some(crop => v.includes(crop) || crop.includes(v));
   }
 
+
+  // Progressive rendering: paint the result list in batches so a huge match (e.g. "producers with
+  // notes") renders ~instantly and scrolls smoothly, while ALL notes stay loaded in memory and
+  // readable — each batch appears as the user scrolls to it (no new fetch). Reset to the first
+  // batch whenever the result set changes (effect in the constructor).
+  private static readonly _RENDER_BATCH = 40;
+  readonly renderLimit = signal(BuildListComponent._RENDER_BATCH);
+  /** The slice of displayedCustomers currently rendered to the DOM. */
+  readonly renderedCustomers = computed(() => this.displayedCustomers().slice(0, this.renderLimit()));
+  /** Order-insensitive signature of the displayed result MEMBERSHIP. The render-reset and batched-
+   *  note-reset effects key off this rather than displayedCustomers() so that batched note appends —
+   *  which only RE-SORT the list (by newest note) without changing who's in it — don't collapse the
+   *  render window or wipe the notes we just loaded. Only a genuinely new/narrowed result set
+   *  (new query, crop/state chip) changes the membership and triggers a reset. */
+  private readonly _displayedMembershipKey = computed(() => {
+    const ids = this.displayedCustomers().map(c => c.id);
+    ids.sort((a, b) => a - b);
+    return ids.join(',');
+  });
+  /** Bottom-of-list sentinel; when it scrolls into view we render the next batch. */
+  private readonly _loadMoreSentinel = viewChild<ElementRef<HTMLElement>>('loadMoreSentinel');
+  private _renderObserver?: IntersectionObserver;
 
   readonly displayedCustomers = computed(() => {
     let list = this.filteredCustomers();
@@ -665,21 +704,23 @@ export class BuildListComponent {
       const ids = new Set<number>(this.plantingIntentions().filter(p => p.plantingYear === year).map(p => p.customerId));
       list = list.filter(c => ids.has(c.id));
     }
+    // Type predicates are shared with the result-row chips (planting-chips.ts) so a producer that
+    // matched on "irrigated" can't then show dryland chips.
     if (r.irrigatedOnly) {
       const ids = new Set<number>(
-        this.plantingIntentions().filter(p => p.type?.toLowerCase().includes('irrigat')).map(p => p.customerId)
+        this.plantingIntentions().filter(p => isIrrigated(p.type)).map(p => p.customerId)
       );
       list = list.filter(c => ids.has(c.id));
     }
     if (r.drylandOnly) {
       const ids = new Set<number>(
-        this.plantingIntentions().filter(p => p.type?.toLowerCase().includes('dryland') || p.type?.toLowerCase().includes('dry land')).map(p => p.customerId)
+        this.plantingIntentions().filter(p => isDryland(p.type)).map(p => p.customerId)
       );
       list = list.filter(c => ids.has(c.id));
     }
     if (r.doubleCropOnly) {
       const ids = new Set<number>(
-        this.plantingIntentions().filter(p => p.type?.toLowerCase().includes('double crop')).map(p => p.customerId)
+        this.plantingIntentions().filter(p => isDoubleCrop(p.type)).map(p => p.customerId)
       );
       list = list.filter(c => ids.has(c.id));
     }
@@ -823,6 +864,21 @@ export class BuildListComponent {
     // sort alphabetically by name so finding a specific producer doesn't depend on data
     // recency.
     if (this.noteFilterActive()) {
+      // Batched note prompts ("producers with notes", absence like "not contacted in 30 days")
+      // load note BODIES progressively as the user scrolls — so a sort keyed on those bodies would
+      // reshuffle rows as each batch arrives (jumpy, and it churns the render window). Instead sort
+      // by the last-contact AGGREGATE, which is fully loaded up front: a stable key giving most
+      // recently contacted first, with never-contacted producers sinking to the bottom.
+      if (this._noteScope().mode === 'batched') {
+        const timeByCustomer = this._lastContactTimeByCustomer();
+        return [...list].sort((a, b) => {
+          const dt = (timeByCustomer.get(b.id) ?? 0) - (timeByCustomer.get(a.id) ?? 0);
+          if (dt !== 0) return dt;
+          return (a.name || '').localeCompare(b.name || '');
+        });
+      }
+      // Non-batched note prompts (content/author/pinned/window): the matching notes are all loaded
+      // up front, so sort by the most recent matching note across the producer's linked component.
       const notesMap = this.matchingNotesByCustomer();
       const maxTimeFor = (customerId: number): number => {
         const notes = notesMap.get(customerId);
@@ -844,6 +900,21 @@ export class BuildListComponent {
     // NLQ engine already sorted by the ranked metric — preserve that order instead of alphabetizing.
     if (this.nlqFilterService.isRankingQuery(this.queryText())) {
       return list;
+    }
+    // Storage prompts: surface the producers with the most grain in storage first (sort by total
+    // storage bushels desc), matching the inline per-commodity breakdown shown on each result.
+    // Alphabetical name is the tiebreaker (e.g. producers with equal / zero storage).
+    if (this.showStorageFilters()) {
+      return [...list].sort((a, b) =>
+        this.storageBu(b) - this.storageBu(a) || (a.name || '').localeCompare(b.name || ''));
+    }
+    // Planting prompts: same idea, biggest acreage first — matching the per-crop acres chips.
+    // Acres are computed once per producer up front rather than inside the comparator, which
+    // would rebuild each producer's breakdown on every comparison.
+    if (this.showPlantingFilters()) {
+      const acres = new Map<number, number>(list.map(c => [c.id, this.plantingAcres(c)]));
+      return [...list].sort((a, b) =>
+        (acres.get(b.id) ?? 0) - (acres.get(a.id) ?? 0) || (a.name || '').localeCompare(b.name || ''));
     }
     return [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   });
@@ -940,6 +1011,12 @@ export class BuildListComponent {
   expandedNoteCount = signal<Map<number, number>>(new Map());
   readonly NOTE_PAGE_SIZE = 5;
   expandedLinkedCustomerIds = signal<Set<number>>(new Set());
+  // Per-note "See more" state: ids of individual notes whose long body is expanded (clamped to a
+  // few lines otherwise so one big note can't blow up a producer card).
+  expandedNoteTextIds = signal<Set<number>>(new Set());
+  // Note ids whose clamped body is ACTUALLY clipped (reported by ClampOverflowDirective) — drives
+  // the "See more" toggle so it appears only for genuinely truncated notes, not by char-count guess.
+  overflowingNoteIds = signal<Set<number>>(new Set());
 
   // ── Manage Members ──────────────────────────────────────────────────────
   showManageMembersPanel = signal(false);
@@ -1020,45 +1097,50 @@ export class BuildListComponent {
     return map;
   });
 
-  /** Most recent note per customer — pre-indexed for O(1) template lookup.
-   *  Matches home page logic: indexes notes by customerCode (source ID), resolves
-   *  linked producer notes bidirectionally (outgoing + incoming links). */
-  readonly lastContactByCustomer = computed(() => {
-    const map = new Map<number, { text: string; colorClass: string; daysAgo: number }>();
-
-    // Index notes by customerCode (source customer ID) — same as home page
-    const notesByCode = new Map<string, { time: number }>();
-    for (const n of this.notes()) {
-      if (!n.customerCode) continue;
-      const time = BuildListComponent.parseNoteTime(n.createdAt);
-      const existing = notesByCode.get(n.customerCode);
-      if (!existing || time > existing.time) {
-        notesByCode.set(n.customerCode, { time });
-      }
+  /** Raw latest-contact time (ms since epoch) per customerId, from the lightweight last-contact
+   *  AGGREGATE (always loaded on TU change — not the full note set) with the linked-producer
+   *  connected-component rollup applied. Because the aggregate is present up front, this is a
+   *  STABLE sort key that doesn't shift as note bodies stream in for batched prompts. Absent from
+   *  the map = the producer and its entire linked chain have never been contacted. */
+  private readonly _lastContactTimeByCustomer = computed(() => {
+    // Index latest-contact time by customerCode from the aggregate — correct on every prompt and
+    // never dependent on a full-notes download.
+    const notesByCode = new Map<string, number>();
+    for (const lc of this.appState.noteLastContacts()) {
+      if (!lc.customerCode) continue;
+      const time = BuildListComponent.parseNoteTime(lc.lastNoteAt as unknown as string);
+      const existing = notesByCode.get(lc.customerCode);
+      if (existing == null || time > existing) notesByCode.set(lc.customerCode, time);
     }
 
-    // Walk the full linked-producer connected component for each customer so the
-    // "last contacted" date reflects the entire chain (A→B→C). Same closure used
-    // everywhere else linked behavior matters, so the "last contacted" badge agrees
-    // with the inline note panel.
-    const allCustomers = this.customers();
+    // Walk the full linked-producer connected component for each customer so the "last contacted"
+    // time reflects the entire chain (A→B→C). Same closure used everywhere else linked behavior
+    // matters, so this key, the badge, and the inline note panel all agree.
     const components = this.linkedProducerComponents();
-
-    const latestNotes = new Map<number, { time: number }>();
-    for (const customer of allCustomers) {
+    const latest = new Map<number, number>();
+    for (const customer of this.customers()) {
       if (!customer.scoularId) continue;
       const codes = components.get(customer.scoularId) ?? new Set([customer.scoularId]);
       let latestTime = 0;
       for (const code of codes) {
-        const entry = notesByCode.get(code);
-        if (entry && entry.time > latestTime) latestTime = entry.time;
+        const t = notesByCode.get(code);
+        if (t != null && t > latestTime) latestTime = t;
       }
-      if (latestTime > 0) latestNotes.set(customer.id, { time: latestTime });
+      if (latestTime > 0) latest.set(customer.id, latestTime);
     }
+    return latest;
+  });
+
+  /** Most recent note per customer — pre-indexed for O(1) template lookup. Derived from the
+   *  aggregate-backed {@link _lastContactTimeByCustomer} (with linked rollup), so the badge agrees
+   *  with the sort order and the inline note panel. */
+  readonly lastContactByCustomer = computed(() => {
+    const map = new Map<number, { text: string; colorClass: string; daysAgo: number }>();
+    const latestNotes = this._lastContactTimeByCustomer();
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    for (const [customerId, { time }] of latestNotes) {
+    for (const [customerId, time] of latestNotes) {
       const noteDate = new Date(time);
       noteDate.setHours(0, 0, 0, 0);
       // Math.round (not floor): both endpoints are zeroed to local midnight, so the diff is an
@@ -1622,8 +1704,53 @@ export class BuildListComponent {
     effect(() => {
       this.appliedRefinements();
       this.queryText();
-      untracked(() => this.expandedNoteCount.set(new Map()));
+      untracked(() => {
+        this.expandedNoteCount.set(new Map());
+        this.expandedNoteTextIds.set(new Set());
+        this.overflowingNoteIds.set(new Set());
+      });
     });
+
+    // Progressive rendering — reset to the first batch whenever the result MEMBERSHIP changes so a
+    // new/narrowed result set starts small (and fast) rather than inheriting a large prior render
+    // window. Keyed on membership (not displayedCustomers) so batched note appends, which only
+    // re-sort the same producers, don't collapse the window. For a 'batched' note prompt a changed
+    // membership also means the accumulated per-batch notes no longer describe the list — clear
+    // them so the batch effect refetches from scratch.
+    effect(() => {
+      this._displayedMembershipKey();
+      untracked(() => {
+        this.renderLimit.set(BuildListComponent._RENDER_BATCH);
+        if (this._noteScope().mode === 'batched') {
+          this._batchedNoteCustomerIds.clear();
+          if (this.notes().length) this.notes.set([]);
+        }
+      });
+    });
+
+    // 'batched' note prompts: as the render window grows (new query or scroll), fetch note bodies
+    // for the just-rendered producers by customerId and accumulate them for display — the huge
+    // "everyone with notes" set never blocks first paint.
+    effect(() => {
+      this.renderedCustomers();
+      untracked(() => this._loadNotesForRenderedBatch());
+    });
+
+    // Observe the bottom sentinel; when it scrolls near the viewport, render the next batch.
+    // rootMargin pre-loads slightly ahead so scrolling feels seamless. Re-wires whenever the
+    // sentinel appears/disappears (it's only present while more rows remain to render).
+    effect(() => {
+      const el = this._loadMoreSentinel()?.nativeElement;
+      this._renderObserver?.disconnect();
+      if (!el) return;
+      this._renderObserver = new IntersectionObserver(entries => {
+        if (entries.some(e => e.isIntersecting)) {
+          this.renderLimit.update(n => n + BuildListComponent._RENDER_BATCH);
+        }
+      }, { rootMargin: '600px' });
+      this._renderObserver.observe(el);
+    });
+    this.destroyRef.onDestroy(() => this._renderObserver?.disconnect());
 
     this.destroyRef.onDestroy(() => {
       // If trade units changed while this component was alive, discard state entirely
@@ -1709,6 +1836,16 @@ export class BuildListComponent {
       this._loadFresh();
     } else {
       this.loading.set(false);
+    }
+
+    // Interrupted-query recovery: if the user navigated away WHILE a query was still running, its
+    // in-flight fetch was cancelled (takeUntilDestroyed) and state was saved with hasGenerated=false
+    // and no results. Restoring that would leave the query text in the box with no results and no
+    // spinner. Re-run it here so returning to the page transparently completes the query.
+    // (A query that finished — hasGenerated=true — restored its results above and is NOT re-run,
+    // so a legitimate zero-match result is preserved.)
+    if (this.queryText().trim() && !this.hasGenerated() && !this.isProcessing()) {
+      this.processQuery();
     }
   }
 
@@ -1911,6 +2048,9 @@ export class BuildListComponent {
     this._queryGenId++;
     this.isProcessing.set(false);
     this.waitingForTickets.set(false);
+    // Must be cleared here too: the recovery effect only clears it while a query is active, so a
+    // note prompt abandoned mid-fetch would leave "Loading note data…" spinning under the library.
+    this.waitingForNotes.set(false);
     this.queryText.set('');
     this.hasGenerated.set(false);
     this.filteredCustomers.set([]);
@@ -1940,6 +2080,7 @@ export class BuildListComponent {
     this._queryGenId++;
     this.isProcessing.set(false);
     this.waitingForTickets.set(false);
+    this.waitingForNotes.set(false);
     this.queryReturnedNoMatches.set(false);
     this.showRefinePanel.set(false);
     this.pendingRefinements.set({});
@@ -2027,8 +2168,8 @@ export class BuildListComponent {
     // Notes are lazily loaded now (page load no longer downloads them). Kick off the one-shot
     // fetch up front (idempotent) so it's in flight regardless of which wait below returns
     // first — otherwise a note query that also waits on tickets would never trigger the fetch.
-    const needsNotes = this.nlqFilterService.queryInvolvesNotes(this.queryText());
-    if (needsNotes) this._ensureNotesLoaded();
+    const needsNotes = this.noteFilterActive();
+    if (needsNotes) this._ensureNotesForQuery();
 
     // If query needs tickets and they haven't loaded yet, wait for them specifically.
     // Tickets are the only data loaded outside the main forkJoin (background subscription),
@@ -2049,10 +2190,10 @@ export class BuildListComponent {
       return;
     }
 
-    // If the query reads notes and the lazy full set hasn't landed yet, wait for it — otherwise
-    // the NLQ would run against zero notes and paint a false "no results". _dataReadyEffect
-    // re-runs this filter once notes arrive (or the fetch gives up).
-    if (needsNotes && !this.appState.notesLoaded()) {
+    // If the query reads notes and the slice it needs (windowed or full) hasn't landed yet, wait —
+    // otherwise the NLQ would run against zero notes and paint a false "no results".
+    // _dataReadyEffect re-runs this filter once the notes arrive (or the fetch gives up).
+    if (needsNotes && !this._notesReadyForQuery()) {
       this.waitingForNotes.set(true);
       return;
     }
@@ -2062,6 +2203,169 @@ export class BuildListComponent {
     this.waitingForNotes.set(false);
     this._applyNlqFilter();
     this.isProcessing.set(false);
+  }
+
+  /** Bounded recency window (days) a positive date-scoped prompt/refine needs for DISPLAY, or null
+   *  if it isn't a bounded positive-recency one. Padded +1 day so the fetch slice is always at
+   *  least as wide as the display cutoff (never drops a shown note). */
+  private _recencyWindowDays(): number | null {
+    const r = this.appliedRefinements();
+    if (r.notesInLastDays != null && r.notesInLastDays > 0) return r.notesInLastDays + 1;
+    const q = this.queryText().toLowerCase();
+    const numeric = q.match(/(?:notes?\s+(?:added|made|entered|written|created|left)|contacted|called|reach(?:ed)?\s+out)\s*(?:in|within)?\s*(?:the\s+)?(?:last|past)?\s*(\d+)\s*days?/);
+    if (numeric) return parseInt(numeric[1], 10) + 1;
+    if (/\btoday\b/.test(q)) return 2;
+    if (/\byesterday\b/.test(q)) return 3;
+    if (/\b(?:this|last)\s+week\b/.test(q)) return 8;
+    if (/\b(?:this|last)\s+month\b/.test(q)) return 32;
+    return null;
+  }
+
+  /** The note load the CURRENT prompt needs. The matched SET and last-contact badge come from the
+   *  aggregate regardless — this governs only the DISPLAY payload:
+   *   - 'none'    : no note-focused criterion active.
+   *   - 'scoped'  : a server-narrowed slice (recency window / content keywords / pinned / author),
+   *                 fetched LOCAL-only; the client then matches exactly, so the set is unchanged.
+   *   - 'batched' : huge "everyone with notes" / "not contacted" lists — the set comes from the
+   *                 aggregate (instant) and note bodies load one RENDER BATCH at a time by
+   *                 customerId, so the first screen never waits on the whole 28.8k-note set.
+   *   - 'full'    : needs the whole set (note counts, "by someone else", or any unclassifiable combo). */
+  private _noteScope(): { mode: 'none' } | { mode: 'full' } | { mode: 'batched' } | { mode: 'scoped'; key: string; opts: { sinceDays?: number; contentAny?: string[]; authorAny?: string[]; pinnedOnly?: boolean } } {
+    if (!this.noteFilterActive()) return { mode: 'none' };
+    const r = this.appliedRefinements();
+    const q = this.queryText().toLowerCase();
+    // Note-COUNT prompts genuinely need every note (to count per producer).
+    const count = !!r.contactedOnlyOnce || !!r.contactedMoreThan5 || /most\s+notes|most\s+engaged|by\s+notes/.test(q);
+    if (count) return { mode: 'full' };
+    // "contacted by someone else" = notes NOT by me — that's ~all notes, not a cheap server
+    // superset, so it stays full.
+    if (r.contactedBySomeoneElse) return { mode: 'full' };
+
+    const absence = !!r.neverContacted || (r.notContactedDays != null && r.notContactedDays > 0)
+      || /never\s+contacted|not\s+contacted|haven'?t\s+contacted|haven'?t\s+called/.test(q);
+    const kws = new Set<string>();
+    for (const k of this.nlqFilterService.extractNoteSearchKeywords(this.queryText())) kws.add(k);
+    const refineKw = r.noteKeyword?.trim().toLowerCase();
+    if (refineKw) kws.add(refineKw);
+    const contentActive = kws.size > 0;
+    const pinnedActive = /pinned/.test(q) || !!r.hasPinnedNotes;
+    // "Producers I have contacted" / "by me" / "my notes" — an author search on the CURRENT user.
+    // The server authorAny filter (CreatedBy/ModifiedBy Contains candidate) is identical to the
+    // client's matchesAuthor, so a scoped author fetch returns exactly the by-me notes — no need to
+    // load all ~28.8k. Guarded by !absence so "I have NOT contacted…" still routes to batched.
+    const byMe = !absence && (!!r.contactedByMeOnly
+      || /\b(?:who\s+have\s+)?i\s+(?:have\s+)?(?:contacted|called|reached|noted)\b/.test(q)
+      || /\bby\s+me\b/.test(q) || /\bmy\s+notes?\b/.test(q));
+    // Absence phrasing ("not contacted in 30 days") trips the recency regex — ignore the window
+    // for absence so it routes to 'batched', not a wrong positive-recency slice.
+    const window = absence ? null : this._recencyWindowDays();
+    const gen = this._queryGenId;
+
+    // Absence: batched on its own; but mixed with a note-content/pinned criterion it needs the real
+    // bodies → full (safe).
+    if (absence) return (contentActive || pinnedActive) ? { mode: 'full' } : { mode: 'batched' };
+
+    // Combine EVERY active scopable criterion (author / content / pinned / recency window) into ONE
+    // server-narrowed slice — this is what keeps "Producers I contacted this week" (author + window)
+    // fast instead of falling to a full load. Each server filter is a superset-or-equal of the
+    // client's per-criterion match, so their AND still contains everything the client needs; the
+    // client then re-matches exactly, so the result set is unchanged.
+    const opts: { sinceDays?: number; contentAny?: string[]; authorAny?: string[]; pinnedOnly?: boolean } = {};
+    const keyParts: string[] = [];
+    if (byMe) {
+      const account = this.msalService.instance.getActiveAccount() ?? this.msalService.instance.getAllAccounts()[0];
+      const cands = this.nlqFilterService.buildAuthorCandidates(null, account?.name ?? '', account?.username ?? '');
+      if (cands.length === 0) return { mode: 'full' }; // no identity to scope on — fall back
+      const list = [...cands].sort();
+      opts.authorAny = list; keyParts.push(`author:${list.join('|')}`);
+    }
+    if (contentActive) { const list = [...kws].sort(); opts.contentAny = list; keyParts.push(`content:${list.join('|')}`); }
+    if (pinnedActive) { opts.pinnedOnly = true; keyParts.push('pinned'); }
+    if (window != null) { opts.sinceDays = window; keyParts.push(`w:${window}`); }
+
+    if (keyParts.length > 0) return { mode: 'scoped', key: `${gen}:${keyParts.join('+')}`, opts };
+
+    // No scopable criterion — bare "producers with notes" (has-any-note), but NOT "with notes BY
+    // <name>" (that's author) → batched; otherwise full.
+    if (/(?:with|has|have)\s+notes?\b/.test(q) && !/\bby\b/.test(q)) return { mode: 'batched' };
+    return { mode: 'full' };
+  }
+
+  /** True when the notes this prompt needs for display are already loaded. Batched prompts never
+   *  block — their set comes from the aggregate and note bodies stream in per render batch. */
+  private _notesReadyForQuery(): boolean {
+    const scope = this._noteScope();
+    if (scope.mode === 'none' || scope.mode === 'batched') return true;
+    if (scope.mode === 'full') return this.appState.notesLoaded();
+    return this._loadedNoteScopeKey() === scope.key;
+  }
+
+  /** Loads the notes the current prompt needs: full set (shared cache) for full-mode; a
+   *  server-narrowed slice (local) for scoped; nothing here for batched (the batch effect loads
+   *  note bodies per render batch). No-op when nothing's needed or the slice is already present. */
+  private _ensureNotesForQuery(): void {
+    const scope = this._noteScope();
+    if (scope.mode === 'none' || scope.mode === 'batched') return;
+    if (scope.mode === 'full') { this._ensureNotesLoaded(); return; }
+    if (this._loadedNoteScopeKey() === scope.key || this._scopedNotesFetchInFlight) return;
+    this._scopedNotesFetchInFlight = true;
+    const tu = this.appState.selectedTradeUnits();
+    // Author ("by me") fetches are NOT TU-filtered: a by-me note on a LINKED producer in another TU
+    // still counts (same reason batched mode omits TU), and the by-me set is small so it's free to
+    // fetch all. Other scoped fetches (content / window / pinned) keep the TU scope.
+    const tuParam = scope.opts.authorAny ? undefined : (tu.length > 0 ? tu : undefined);
+    this.apiService.getNotes(tuParam, scope.opts).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (data) => {
+        this._scopedNotesFetchInFlight = false;
+        this.notes.set(data ?? []);            // DISPLAY only — do NOT warm the full-set cache
+        this._loadedNoteScopeKey.set(scope.key); // re-triggers _dataReadyEffect (via notes()) to run the query
+      },
+      error: () => {
+        this._scopedNotesFetchInFlight = false;
+        this.notes.set([]);
+        this._loadedNoteScopeKey.set(scope.key);
+      }
+    });
+  }
+
+  /** Batched note loading: fetch note bodies for the producers in the current render window (and
+   *  their linked-producer components) by customerId, accumulating into this.notes() as the user
+   *  scrolls — so a huge "everyone with notes" list never waits on all 28.8k notes up front. Only
+   *  used by the 'batched' scope; serialized via _batchNotesFetchInFlight, and it re-checks after
+   *  each fetch to pick up producers that rendered while it was in flight. */
+  private _loadNotesForRenderedBatch(): void {
+    if (this._noteScope().mode !== 'batched' || this._batchNotesFetchInFlight) return;
+    const codeToId = new Map<string, number>();
+    for (const c of this.customers()) if (c.scoularId) codeToId.set(c.scoularId, c.id);
+    const components = this.linkedProducerComponents();
+    const needed = new Set<number>();
+    for (const c of this.renderedCustomers()) {
+      if (!this._batchedNoteCustomerIds.has(c.id)) needed.add(c.id);
+      const codes = c.scoularId ? components.get(c.scoularId) : null;
+      if (codes) for (const code of codes) {
+        const id = codeToId.get(code);
+        if (id != null && !this._batchedNoteCustomerIds.has(id)) needed.add(id);
+      }
+    }
+    if (needed.size === 0) return;
+    const ids = [...needed];
+    this._batchNotesFetchInFlight = true;
+    // No trade-unit filter — like the full-set load and the last-contact aggregate, fetch ALL
+    // notes for these customerIds so a linked producer's note in an unselected TU is never missed.
+    this.apiService.getNotes(undefined, { customerIds: ids }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (data) => {
+        this._batchNotesFetchInFlight = false;
+        for (const id of ids) this._batchedNoteCustomerIds.add(id);
+        const seen = new Set(this.notes().map(n => n.id));
+        const fresh = (data ?? []).filter(n => !seen.has(n.id));
+        if (fresh.length) this.notes.set([...this.notes(), ...fresh]);
+        this._loadNotesForRenderedBatch(); // pick up any producers rendered during the fetch
+      },
+      error: () => {
+        this._batchNotesFetchInFlight = false;
+        for (const id of ids) this._batchedNoteCustomerIds.add(id); // don't retry-loop on a failed id set
+      }
+    });
   }
 
   /** One-shot background fetch of the full note set into the shared lazy cache. No-op if the
@@ -2107,15 +2411,15 @@ export class BuildListComponent {
     const query = this.queryText().toLowerCase();
     const needsTickets = this.nlqFilterService.queryInvolvesTickets(query);
     const needsStorage = this.nlqFilterService.queryInvolvesStorage(query);
-    const needsNotes = this.nlqFilterService.queryInvolvesContact(query);
+    const needsNotes = this.noteFilterActive();
     const ticketsOk = !needsTickets || this._ticketsReady();
     const storageOk = !needsStorage || this.storedGrain().length > 0;
     const notesOk = !needsNotes || this.notes().length > 0;
-    // Notes are lazily loaded now (page load no longer downloads them) — require the full
-    // set before ANY query runs, not just contact-phrased ones, because the NLQ's
-    // supplementary keyword matching can consult note content for generic keyword queries.
+    // The full note set is only required for prompts/refines that actually read note content,
+    // authors, or pinned flags (noteFilterActive). Recency filtering uses the last-contact
+    // aggregate and non-note prompts never touch notes, so neither waits on the full set.
     // notesLoaded (not length) distinguishes "not fetched" from "TU genuinely has none".
-    const notesReady = this.appState.notesLoaded();
+    const notesReady = !needsNotes || this.appState.notesLoaded();
     if (tusMatch && this.coreDataLoaded() && this.customers().length > 0 && ticketsOk && storageOk && notesOk && notesReady) {
       this._resolvePendingIncludes();
       this._applyNlqFilter();
@@ -2124,8 +2428,10 @@ export class BuildListComponent {
     }
 
     const tuParam = tradeUnits.length > 0 ? tradeUnits : undefined;
-    // Only hit the notes endpoint when the shared cache is cold — otherwise reuse it.
-    const fetchingNotes = !this.appState.notesLoaded();
+    // Only hit the notes endpoint when this query/refine actually needs note content AND the
+    // shared cache is cold — otherwise reuse (or skip) it. Non-note and recency-only prompts
+    // never download the full set.
+    const fetchingNotes = needsNotes && !this.appState.notesLoaded();
     forkJoin({
       customers: this.apiService.getCustomers(tuParam).pipe(catchError(() => of([] as Customer[]))),
       contracts: this.apiService.getContracts(tuParam).pipe(catchError(() => { this.contractsLoadFailed.set(true); return of([] as Contract[]); })),
@@ -2160,6 +2466,10 @@ export class BuildListComponent {
         if (queryGen !== this._queryGenId) return;
         this.toastService.error('Failed to load data for query');
         this.isProcessing.set(false);
+        // Nothing more is coming, so the recovery effect will never clear these — drop the
+        // spinners here or the failure reads as an endless load.
+        this.waitingForTickets.set(false);
+        this.waitingForNotes.set(false);
       }
     });
   }
@@ -2203,6 +2513,7 @@ export class BuildListComponent {
       contracts: this.contracts(),
       tickets: this.tickets(),
       notes: this.notes(),
+      noteLastContacts: this.appState.noteLastContacts(),
       plantingIntentions: this.plantingIntentions(),
       storedGrain: this.storedGrain(),
       commodities: this.appState.commodities(),
@@ -2222,19 +2533,30 @@ export class BuildListComponent {
     // local tickets array as still-loading too — the effect will re-run NLQ automatically
     // once appState catches data. Suppresses the misleading 0-result flash.
     const queryNeedsTickets = this.nlqFilterService.queryInvolvesTickets(this.queryText());
-    const ticketsPending = queryNeedsTickets && (!this._ticketsReady() || this.tickets().length === 0);
-    this.waitingForTickets.set(ticketsPending);
+    // waitingForTickets must depend ONLY on whether the fetch has RESOLVED — never on emptiness.
+    // _dataReadyEffect reads waitingForTickets() in its condition and runs _applyNlqFilter() from
+    // inside itself; re-asserting waitingForTickets=true on an empty-but-resolved ticket set (a TU
+    // with no tickets, or a timed-out fetch) re-dirties that effect on every run → infinite loop /
+    // hard freeze. This bit only ticket prompts, since they were the sole path re-asserting a wait
+    // flag on emptiness. Once _ticketsReady is true the fetch is done (empty = genuine no-tickets);
+    // a late appState backfill is still picked up by _appStateTicketsEffect, which re-runs the filter.
+    this.waitingForTickets.set(queryNeedsTickets && !this._ticketsReady());
+    // The no-match banner keeps the original emptiness guard so a "0 producers" flash is suppressed
+    // during the empty-then-backfill window — this is display-only and NOT a _dataReadyEffect
+    // dependency, so it can't feed the loop above.
+    const ticketsPendingForBanner = queryNeedsTickets && (!this._ticketsReady() || this.tickets().length === 0);
     // Same guard for notes: if the query reads notes but the lazy set isn't loaded yet, treat
     // it as pending (not a zero-match) so we don't flash "no results" before the fetch lands.
     // _dataReadyEffect re-runs this filter once notes arrive.
-    const notesPending = this.nlqFilterService.queryInvolvesNotes(this.queryText()) && !this.appState.notesLoaded();
+    const notesPending = this.noteFilterActive() && !this._notesReadyForQuery();
     this.waitingForNotes.set(notesPending);
     // Ensure the fetch is actually in flight. processQuery starts it before parking a query,
     // but direct callers of _applyNlqFilter (the restore/background-refresh at _loadFresh and
     // the appState-tickets effect) bypass processQuery — without this the "Loading note data…"
-    // spinner would hang with nothing fetching. Idempotent: no-ops if loaded or already fetching.
-    if (notesPending) this._ensureNotesLoaded();
-    this.queryReturnedNoMatches.set(result.customers.length === 0 && !ticketsPending && !notesPending);
+    // spinner would hang with nothing fetching. Idempotent: no-ops if the needed slice is present
+    // or a fetch is already in flight.
+    if (notesPending) this._ensureNotesForQuery();
+    this.queryReturnedNoMatches.set(result.customers.length === 0 && !ticketsPendingForBanner && !notesPending);
     this.filteredCustomers.set(result.customers);
 
     // If the query mentions pacing, apply direction filtering here at the component level
@@ -3070,6 +3392,35 @@ export class BuildListComponent {
     return this.appliedRefinements().noteKeyword?.trim() ?? '';
   }
 
+  /** Record whether a note's clamped body is actually clipped (from ClampOverflowDirective). */
+  setNoteOverflow(noteId: number, overflowing: boolean): void {
+    this.overflowingNoteIds.update(s => {
+      if (s.has(noteId) === overflowing) return s; // no change → keep reference stable
+      const next = new Set(s);
+      overflowing ? next.add(noteId) : next.delete(noteId);
+      return next;
+    });
+  }
+
+  /** True when a note's body is genuinely truncated by the clamp (so it needs a "See more"). */
+  isNoteOverflowing(noteId: number): boolean {
+    return this.overflowingNoteIds().has(noteId);
+  }
+
+  /** Whether an individual long note is expanded to its full body. */
+  isNoteTextExpanded(noteId: number): boolean {
+    return this.expandedNoteTextIds().has(noteId);
+  }
+
+  /** Toggle a single long note between clamped and full. */
+  toggleNoteText(noteId: number): void {
+    this.expandedNoteTextIds.update(s => {
+      const next = new Set(s);
+      if (next.has(noteId)) next.delete(noteId); else next.add(noteId);
+      return next;
+    });
+  }
+
   toggleLinkedExpand(customerId: number): void {
     let opening = false;
     this.expandedLinkedCustomerIds.update(s => {
@@ -3127,18 +3478,132 @@ export class BuildListComponent {
     return this.cropsByCustomer().get(customerId) ?? [];
   }
 
-  /** Total bushels currently on the farm for a producer (sum of per-commodity grain-on-farm). */
-  grainOnFarmBu(customer: Customer): number {
-    return (customer.grainOnFarm ?? []).reduce((sum, g) => sum + (g.bushelsOnHand ?? 0), 0);
-  }
-
   /**
-   * Per-crop grain-on-farm rows that actually have bushels on hand, largest first — used to
-   * render the per-commodity chips beneath the "bu on farm" total in Grain on Farm results.
+   * Per-crop grain-on-farm rows that actually have bushels on hand, largest first — the chips
+   * shown inline on Grain on Farm results.
    */
   grainOnFarmBreakdown(customer: Customer): GrainOnFarmItem[] {
     return (customer.grainOnFarm ?? [])
       .filter(g => !!g.commodityGroup && (g.bushelsOnHand ?? 0) > 0)
       .sort((a, b) => (b.bushelsOnHand ?? 0) - (a.bushelsOnHand ?? 0));
   }
+
+  /** Storage receipts grouped by numeric customerId (StoredGrain joins on Customer.id, not scoularId). */
+  private readonly _storageByCustomerId = computed(() => {
+    const map = new Map<number, StoredGrain[]>();
+    for (const s of this.storedGrain()) {
+      const arr = map.get(s.customerId);
+      if (arr) arr.push(s); else map.set(s.customerId, [s]);
+    }
+    return map;
+  });
+
+  /** Total bushels a producer currently has in storage (sum of NET_QUANTITY across all receipts).
+   *  Drives the Storage-results sort (most storage first). */
+  storageBu(customer: Customer): number {
+    const recs = this._storageByCustomerId().get(customer.id) ?? [];
+    return recs.reduce((sum, s) => sum + (s.quantity ?? 0), 0);
+  }
+
+  /** Shared per-crop chip color, exposed to the template. */
+  readonly commodityChipClass = commodityChipClass;
+
+  /** Lower-cased commodity code OR name → crop category ("yc"/"corn" → "Corn"), from the
+   *  Commodities table — so storage chips (which carry codes like YC/SOR) color by their crop. */
+  private readonly _commodityCategoryByKey = computed(() => {
+    const map = new Map<string, string>();
+    for (const cm of this.appState.commodities()) {
+      const group = (cm.category || cm.name || '').trim();
+      if (!group) continue;
+      if (cm.code) map.set(cm.code.trim().toLowerCase(), group);
+      if (cm.name) map.set(cm.name.trim().toLowerCase(), group);
+    }
+    return map;
+  });
+
+  /** Per-commodity storage totals (bushels summed across locations), largest first — mirrors the
+   *  grain-on-farm chips so Storage results show each commodity + bushels inline without opening
+   *  the producer. `category` is the resolved crop name used for the shared chip color (the raw
+   *  `crop` code is still what's displayed). */
+  storageBreakdown(customer: Customer): { crop: string; bushels: number; category: string }[] {
+    const byCrop = new Map<string, number>();
+    for (const s of this._storageByCustomerId().get(customer.id) ?? []) {
+      const qty = s.quantity ?? 0;
+      if (qty <= 0) continue;
+      const crop = (s.crop || 'Unknown').trim();
+      byCrop.set(crop, (byCrop.get(crop) ?? 0) + qty);
+    }
+    const catByKey = this._commodityCategoryByKey();
+    return [...byCrop.entries()]
+      .map(([crop, bushels]) => ({ crop, bushels, category: catByKey.get(crop.toLowerCase()) ?? crop }))
+      .sort((a, b) => b.bushels - a.bushels);
+  }
+
+  /** Planting intentions grouped by numeric customerId. Mirror of `_storageByCustomerId`. */
+  private readonly _plantingByCustomerId = computed(() => {
+    const map = new Map<number, PlantingIntention[]>();
+    for (const p of this.plantingIntentions()) {
+      const arr = map.get(p.customerId);
+      if (arr) arr.push(p); else map.set(p.customerId, [p]);
+    }
+    return map;
+  });
+
+  /**
+   * Season / irrigation type the running prompt asks about ("Producers with 2025 planting
+   * intentions"). Refine-panel values win when set — the panel hides its year control for prompts
+   * that already name one, so in practice only one of the two is ever in play.
+   */
+  private readonly _plantingQueryScope = computed(() => plantingQueryScope(this.queryText()));
+
+  /** Per-crop planting chips for a producer — see plantingChips() for the year/type scoping. */
+  plantingBreakdown(customer: Customer): PlantingChip[] {
+    const r = this.appliedRefinements();
+    const q = this._plantingQueryScope();
+    return plantingChips(
+      this._plantingByCustomerId().get(customer.id) ?? [],
+      {
+        year: r.plantingYear ?? q.year,
+        irrigatedOnly: r.irrigatedOnly || q.irrigatedOnly,
+        drylandOnly: r.drylandOnly || q.drylandOnly,
+        doubleCropOnly: r.doubleCropOnly,
+      },
+      this._commodityCategoryByKey(),
+    );
+  }
+
+  /** Acres across the chips shown for a producer — drives the Planting-results sort. */
+  plantingAcres(customer: Customer): number {
+    return this.plantingBreakdown(customer).reduce((sum, c) => sum + c.acres, 0);
+  }
+
+  /**
+   * The dimension-specific chips rendered inline after a result's location — storage bushels,
+   * planting acres or grain on farm, whichever the prompt is about. Empty for every other
+   * category, in which case the row falls back to the producer's total acres.
+   *
+   * Numbers are formatted here rather than in the template because each chip is a single string.
+   */
+  resultChips(customer: Customer): { text: string; colorKey: string }[] {
+    if (this.showStorageFilters()) {
+      return this.storageBreakdown(customer)
+        .map(b => ({ text: `${b.crop} ${b.bushels.toLocaleString('en-US')}`, colorKey: b.category }));
+    }
+    if (this.showPlantingFilters()) {
+      return this.plantingBreakdown(customer)
+        .map(c => ({ text: `${c.label} · ${c.acres.toLocaleString('en-US')} ac · ${c.year}`, colorKey: c.colorKey }));
+    }
+    if (this.showGrainOnFarmFilters()) {
+      return this.grainOnFarmBreakdown(customer)
+        .map(g => ({ text: `${g.commodityGroup} ${(g.bushelsOnHand ?? 0).toLocaleString('en-US')}`, colorKey: g.commodityGroup }));
+    }
+    return [];
+  }
+
+  /**
+   * Whether the identity column gets the wide, wrapping layout instead of the fixed 18rem one —
+   * true for the categories that render inline chips, which need the extra room.
+   */
+  readonly wideIdentityColumn = computed(() =>
+    this.showStorageFilters() || this.showPlantingFilters() || this.showGrainOnFarmFilters());
 }

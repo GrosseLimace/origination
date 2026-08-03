@@ -475,6 +475,7 @@
            flash before the _appStateTicketsEffect re-runs the filter with real data. -->
       @if (hasGenerated() && queryText().trim() && !waitingForTickets() && !waitingForNotes() && !isProcessing()) {
         @let displayed = displayedCustomers();
+        @let rendered = renderedCustomers();
         @let filtered = filteredCustomers();
         @let refinementCount = activeRefinementCount();
         @let crops = availableCrops();
@@ -1292,7 +1293,7 @@
               </div>
             } @else {
               <div class="divide-y divide-gray-200 dark:divide-gray-700">
-                @for (customer of displayed; track customer.id) {
+                @for (customer of rendered; track customer.id) {
                   @let contactInfo = getLastContactInfo(customer.id);
                   @let customerCrops = getCustomerCrops(customer.id);
                   @let linkedInfo = linkedProducerInfoByCustomer().get(customer.id) ?? null;
@@ -1300,13 +1301,13 @@
                   @let matchingNotes = noteFilterActive()
                     ? (isLinkedOpen ? getOwnMatchingNotes(customer) : (matchingNotesByCustomer().get(customer.id) ?? null))
                     : null;
-                  <div class="py-4 -mx-6 px-6 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                  <div class="group/card py-4 -mx-6 px-6 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
                        [class.cursor-pointer]="!linkedFeatureActive()"
                        (click)="!linkedFeatureActive() && selectCustomer(customer)">
                     <div [ngClass]="noteFilterActive()
                           ? 'grid grid-cols-[18rem_minmax(0,1fr)_auto] items-start gap-6'
                           : 'flex items-start gap-4 justify-between'">
-                      <div class="flex items-start gap-3 shrink-0 w-72">
+                      <div class="flex items-start gap-3" [class.shrink-0]="!wideIdentityColumn()" [class.w-72]="!wideIdentityColumn()" [class.flex-1]="wideIdentityColumn()" [class.min-w-0]="wideIdentityColumn()">
                         <div class="w-10 h-10 rounded-full bg-scoular-green/10 dark:bg-scoular-green-accessible flex items-center justify-center flex-shrink-0">
                           <span class="text-sm font-medium text-scoular-green-accessible dark:text-white">{{ getInitials(customer.name) }}</span>
                         </div>
@@ -1322,28 +1323,27 @@
                             </div>
                           }
                           <div class="text-sm text-gray-500 dark:text-gray-400 truncate">{{ customer.farm }}</div>
-                          <div class="flex items-center gap-2 mt-1 min-w-0">
+                          <!-- Location + the prompt's dimension chips (storage bu / planting acres /
+                               grain on farm) inline on one wrapping row; other categories show total acres. -->
+                          @let chips = resultChips(customer);
+                          <div class="flex items-center gap-2 mt-1 min-w-0" [class.flex-wrap]="wideIdentityColumn()">
                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400 shrink-0">
                               <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
                               <circle cx="12" cy="10" r="3"/>
                             </svg>
-                            <span class="text-xs text-gray-400 truncate">{{ getFormattedLocation(customer) }}</span>
-                            <span class="text-gray-300 dark:text-gray-600 shrink-0">•</span>
-                            @if (showGrainOnFarmFilters()) {
-                              <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ grainOnFarmBu(customer) | number }} bu on farm</span>
+                            <span class="text-xs text-gray-400" [class.truncate]="!wideIdentityColumn()">{{ getFormattedLocation(customer) }}</span>
+                            @if (chips.length) {
+                              <span class="text-gray-300 dark:text-gray-600 shrink-0">•</span>
+                              @for (chip of chips; track chip.text) {
+                                <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium shrink-0" [ngClass]="commodityChipClass(chip.colorKey)">
+                                  {{ chip.text }}
+                                </span>
+                              }
                             } @else {
+                              <span class="text-gray-300 dark:text-gray-600 shrink-0">•</span>
                               <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ customer.totalAcres | number }} acres</span>
                             }
                           </div>
-                          @if (showGrainOnFarmFilters() && grainOnFarmBreakdown(customer).length) {
-                            <div class="flex flex-wrap items-center gap-1 mt-1.5">
-                              @for (g of grainOnFarmBreakdown(customer); track g.commodityGroup) {
-                                <span class="inline-flex items-center gap-1 rounded-md bg-scoular-green/10 dark:bg-scoular-green-accessible/20 px-1.5 py-0.5 text-xs font-medium text-scoular-green-accessible dark:text-scoular-green">
-                                  {{ g.commodityGroup }} {{ g.bushelsOnHand | number }}
-                                </span>
-                              }
-                            </div>
-                          }
                           @if (linkedInfo) {
                             <button type="button" (click)="$event.stopPropagation(); toggleLinkedExpand(customer.id)"
                                     class="mt-1.5 inline-flex items-center gap-1 text-xs text-scoular-green-accessible dark:text-scoular-green hover:underline cursor-pointer focus:outline-none">
@@ -1382,7 +1382,24 @@
                                     <span class="italic text-gray-400 dark:text-gray-500">{{ note.viaName }}</span>
                                   }
                                 </div>
-                                <p class="mt-0.5 text-gray-700 dark:text-gray-300 break-words" [innerHTML]="note.content | highlight: getActiveNoteKeyword()"></p>
+                                <div class="relative mt-0.5">
+                                  <p appClampOverflow (clampOverflow)="setNoteOverflow(note.id, $event)"
+                                     [class.line-clamp-4]="!isNoteTextExpanded(note.id)"
+                                     class="text-gray-700 dark:text-gray-300 break-words"
+                                     [innerHTML]="note.content | highlight: getActiveNoteKeyword()"></p>
+                                  @if (isNoteOverflowing(note.id) && !isNoteTextExpanded(note.id)) {
+                                    <button type="button" (click)="$event.stopPropagation(); toggleNoteText(note.id)"
+                                            class="absolute bottom-0 right-0 flex items-center pl-10 text-xs font-medium text-scoular-green-accessible hover:underline cursor-pointer focus:outline-none bg-gradient-to-r from-transparent via-white to-white group-hover/card:via-gray-50 group-hover/card:to-gray-50 dark:via-gray-800 dark:to-gray-800 dark:group-hover/card:via-gray-700 dark:group-hover/card:to-gray-700">
+                                      … See more
+                                    </button>
+                                  }
+                                  @if (isNoteTextExpanded(note.id)) {
+                                    <button type="button" (click)="$event.stopPropagation(); toggleNoteText(note.id)"
+                                            class="mt-0.5 text-xs font-medium text-scoular-green-accessible hover:underline cursor-pointer focus:outline-none">
+                                      See less
+                                    </button>
+                                  }
+                                </div>
                               </div>
                             }
                           </div>
@@ -1444,7 +1461,7 @@
                                 ? 'grid grid-cols-[18rem_minmax(0,1fr)_auto] items-start gap-4 pl-3 border-l-2 border-scoular-green/30 dark:border-scoular-green-accessible/40'
                                 : 'flex items-start gap-4 justify-between pl-3 border-l-2 border-scoular-green/30 dark:border-scoular-green-accessible/40'">
                             <!-- Identity (matches main row format) -->
-                            <div class="flex items-start gap-3 shrink-0 w-72">
+                            <div class="flex items-start gap-3" [class.shrink-0]="!wideIdentityColumn()" [class.w-72]="!wideIdentityColumn()" [class.flex-1]="wideIdentityColumn()" [class.min-w-0]="wideIdentityColumn()">
                               <div class="w-10 h-10 rounded-full bg-scoular-green/10 dark:bg-scoular-green-accessible flex items-center justify-center flex-shrink-0">
                                 <span class="text-sm font-medium text-scoular-green-accessible dark:text-white">{{ getInitials(linked.name) }}</span>
                               </div>
@@ -1454,28 +1471,25 @@
                                   {{ linked.name }} <span class="text-gray-400 dark:text-gray-500 font-normal">({{ linked.scoularId }})</span>
                                 </button>
                                 <div class="text-sm text-gray-500 dark:text-gray-400 truncate">{{ linked.farm }}</div>
-                                <div class="flex items-center gap-2 mt-1 min-w-0">
+                                @let linkedChips = resultChips(linked);
+                                <div class="flex items-center gap-2 mt-1 min-w-0" [class.flex-wrap]="wideIdentityColumn()">
                                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400 shrink-0">
                                     <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
                                     <circle cx="12" cy="10" r="3"/>
                                   </svg>
-                                  <span class="text-xs text-gray-400 truncate">{{ getFormattedLocation(linked) }}</span>
-                                  <span class="text-gray-300 dark:text-gray-600 shrink-0">•</span>
-                                  @if (showGrainOnFarmFilters()) {
-                                    <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ grainOnFarmBu(linked) | number }} bu on farm</span>
+                                  <span class="text-xs text-gray-400" [class.truncate]="!wideIdentityColumn()">{{ getFormattedLocation(linked) }}</span>
+                                  @if (linkedChips.length) {
+                                    <span class="text-gray-300 dark:text-gray-600 shrink-0">•</span>
+                                    @for (chip of linkedChips; track chip.text) {
+                                      <span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium shrink-0" [ngClass]="commodityChipClass(chip.colorKey)">
+                                        {{ chip.text }}
+                                      </span>
+                                    }
                                   } @else {
+                                    <span class="text-gray-300 dark:text-gray-600 shrink-0">•</span>
                                     <span class="text-sm text-gray-500 dark:text-gray-400 shrink-0">{{ linked.totalAcres | number }} acres</span>
                                   }
                                 </div>
-                                @if (showGrainOnFarmFilters() && grainOnFarmBreakdown(linked).length) {
-                                  <div class="flex flex-wrap items-center gap-1 mt-1.5">
-                                    @for (g of grainOnFarmBreakdown(linked); track g.commodityGroup) {
-                                      <span class="inline-flex items-center gap-1 rounded-md bg-scoular-green/10 dark:bg-scoular-green-accessible/20 px-1.5 py-0.5 text-xs font-medium text-scoular-green-accessible dark:text-scoular-green">
-                                        {{ g.commodityGroup }} {{ g.bushelsOnHand | number }}
-                                      </span>
-                                    }
-                                  </div>
-                                }
                               </div>
                             </div>
 
@@ -1500,7 +1514,24 @@
                                             <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="currentColor" class="text-scoular-yellow"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
                                           }
                                         </div>
-                                        <p class="mt-0.5 text-gray-700 dark:text-gray-300 break-words" [innerHTML]="note.content | highlight: getActiveNoteKeyword()"></p>
+                                        <div class="relative mt-0.5">
+                                          <p appClampOverflow (clampOverflow)="setNoteOverflow(note.id, $event)"
+                                             [class.line-clamp-4]="!isNoteTextExpanded(note.id)"
+                                             class="text-gray-700 dark:text-gray-300 break-words"
+                                             [innerHTML]="note.content | highlight: getActiveNoteKeyword()"></p>
+                                          @if (isNoteOverflowing(note.id) && !isNoteTextExpanded(note.id)) {
+                                            <button type="button" (click)="$event.stopPropagation(); toggleNoteText(note.id)"
+                                                    class="absolute bottom-0 right-0 flex items-center pl-10 text-xs font-medium text-scoular-green-accessible hover:underline cursor-pointer focus:outline-none bg-gradient-to-r from-transparent via-white to-white group-hover/card:via-gray-50 group-hover/card:to-gray-50 dark:via-gray-800 dark:to-gray-800 dark:group-hover/card:via-gray-700 dark:group-hover/card:to-gray-700">
+                                              … See more
+                                            </button>
+                                          }
+                                          @if (isNoteTextExpanded(note.id)) {
+                                            <button type="button" (click)="$event.stopPropagation(); toggleNoteText(note.id)"
+                                                    class="mt-0.5 text-xs font-medium text-scoular-green-accessible hover:underline cursor-pointer focus:outline-none">
+                                              See less
+                                            </button>
+                                          }
+                                        </div>
                                       </div>
                                     }
                                   </div>
@@ -1545,6 +1576,11 @@
                       </div>
                     }
                   </div>
+                }
+                <!-- Progressive-render sentinel: rendering the next batch when it scrolls near view.
+                     Present only while more matched producers remain to render. -->
+                @if (rendered.length < displayed.length) {
+                  <div #loadMoreSentinel class="h-4" aria-hidden="true"></div>
                 }
               </div>
             }

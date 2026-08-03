@@ -17,7 +17,14 @@ public class NoteRepository : INoteRepository
         _logger = logger;
     }
 
-    public async Task<List<Note>> GetAsync(IEnumerable<string>? tradeUnits, CancellationToken cancellationToken)
+    public async Task<List<Note>> GetAsync(
+        IEnumerable<string>? tradeUnits,
+        DateTime? createdSinceUtc,
+        IReadOnlyList<string>? contentAny,
+        IReadOnlyList<string>? authorAny,
+        bool pinnedOnly,
+        IReadOnlyList<long>? customerIds,
+        CancellationToken cancellationToken)
     {
         _logger.LogInformation("Attempting to retrieve notes from database");
 
@@ -28,6 +35,41 @@ public class NoteRepository : INoteRepository
 
         var query = _appContext.Notes.AsNoTracking()
             .Where(n => !n.IsDeleted);
+        // customerIds scopes the read to a specific set of producers — used to load note bodies
+        // one rendered BATCH at a time for huge "everyone with notes" lists, instead of pulling
+        // every note up front. Indexed by CustomerId, so this is a cheap targeted read.
+        if (customerIds is { Count: > 0 })
+        {
+            query = query.Where(n => customerIds.Contains(n.CustomerId));
+        }
+        // Optional recency window — date-scoped note prompts ("notes added yesterday",
+        // "notes in last N days") only need this slice, not every note. Cuts both the rows
+        // returned and the per-note author-name resolution below (the real cost at 28.8k notes).
+        if (createdSinceUtc is { } sinceUtc)
+        {
+            query = query.Where(n => n.CreatedAt >= sinceUtc);
+        }
+        // Server-side note SUPERSET filters — the client passes the exact keywords/author
+        // candidates it will match on, and the server returns any note containing ANY of them.
+        // Because the client then applies its own final matching, the server can only ever return
+        // MORE than needed, never fewer — so no producer is ever dropped. These turn a full
+        // ~28.8k-note bulk read into a tiny targeted read for content/author/pinned prompts.
+        if (pinnedOnly)
+        {
+            query = query.Where(n => n.IsPinned);
+        }
+        if (contentAny is { Count: > 0 })
+        {
+            var kws = contentAny.Select(k => k.ToLower()).ToList();
+            query = query.Where(n => n.Description != null && kws.Any(k => n.Description!.ToLower().Contains(k)));
+        }
+        if (authorAny is { Count: > 0 })
+        {
+            var cands = authorAny.Select(a => a.ToLower()).ToList();
+            query = query.Where(n =>
+                (n.CreatedBy != null && cands.Any(c => n.CreatedBy!.ToLower().Contains(c)))
+                || (n.ModifiedBy != null && cands.Any(c => n.ModifiedBy!.ToLower().Contains(c))));
+        }
         var tuList = tradeUnits?.Where(t => !string.IsNullOrEmpty(t)).ToList();
         if (tuList is { Count: > 0 })
         {

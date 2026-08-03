@@ -38,7 +38,7 @@ public class NotesControllerTests
             new() { Id = 1, CustomerId = 10, Description = "Test note", IsPinned = false },
             new() { Id = 2, CustomerId = 10, Description = "Pinned note", IsPinned = true }
         };
-        _serviceMock.Setup(s => s.GetAllAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync(notes);
+        _serviceMock.Setup(s => s.GetAllAsync(It.IsAny<string?>(), It.IsAny<int?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<bool>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync(notes);
 
         // Act
         var result = await _sut.GetAll();

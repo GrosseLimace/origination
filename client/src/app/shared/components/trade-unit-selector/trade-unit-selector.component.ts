@@ -73,7 +73,8 @@ export class TradeUnitSelectorComponent implements OnInit {
         }
         const mapped = groups.map(g => ({
           groupName: g.groupName,
-          tradeUnitCodes: g.tradeUnitCodes
+          tradeUnitCodes: g.tradeUnitCodes,
+          tradeUnits: g.tradeUnits ?? []
         }));
         this.appState.setUserGroups(mapped);
 
@@ -231,12 +232,18 @@ export class TradeUnitSelectorComponent implements OnInit {
     return this._effectiveTradeUnits().includes(unit);
   }
 
+  /** Description/location for a trade unit code (e.g. "Pratt, KS"), or '' when unknown. */
+  descriptionFor(code: string): string {
+    return this.appState.tradeUnitDescriptions().get(code) ?? '';
+  }
+
   getTradeUnitButtonText(): string {
     const units = this._effectiveTradeUnits();
     if (units.length === 0) {
       return 'Select Trade Units';
     } else if (units.length === 1) {
-      return units[0];
+      const desc = this.descriptionFor(units[0]);
+      return desc ? `${units[0]} · ${desc}` : units[0];
     } else {
       return `${units.length} trade units selected`;
     }
