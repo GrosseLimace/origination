@@ -1,7 +1,17 @@
 import { Component, ElementRef, HostListener, inject, input, signal } from '@angular/core';
 
+import { UsageTrackingService } from '@core/services/usage-tracking.service';
+
 import { CALCULATOR_TYPES, CalculatorType } from '../models/calculator.model';
 import { CalculatorWidgetComponent } from './calculator-widget.component';
+
+/** Usage sub-feature code per calculator. The calculators are browser-only — they call no API — so
+ *  these click events are the only trace they leave in usage reporting. */
+const OPEN_SUB_FEATURE: Record<CalculatorType, string> = {
+  profitability: 'profitability-opened',
+  check: 'check-opened',
+  cancelRoll: 'cancel-roll-opened',
+};
 
 /**
  * Floating launcher for the originator calculators. Renders a fixed FAB on the customer
@@ -19,6 +29,7 @@ export class CalculatorLauncherComponent {
   readonly producerName = input<string>('');
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly usageTracking = inject(UsageTrackingService);
 
   readonly types = CALCULATOR_TYPES;
   readonly pickerOpen = signal(false);
@@ -45,6 +56,7 @@ export class CalculatorLauncherComponent {
   select(type: CalculatorType): void {
     this.activeType.set(type);
     this.pickerOpen.set(false);
+    this.usageTracking.postClickEvent('interaction', 'calculators', OPEN_SUB_FEATURE[type]);
   }
 
   closeWidget(): void {

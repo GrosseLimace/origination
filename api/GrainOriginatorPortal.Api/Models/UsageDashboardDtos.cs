@@ -32,7 +32,8 @@ public record FeatureSessionsDto
 {
     public string FeatureCode { get; set; } = string.Empty;
     public string FeatureLabel { get; set; } = string.Empty;
-    public int SessionCount { get; set; }
+    /// <summary>Time spent on this screen, in minutes.</summary>
+    public int ScreenMinutes { get; set; }
     public List<SubFeatureSessionDto> SubFeatures { get; set; } = [];
 }
 
@@ -40,13 +41,15 @@ public record SubFeatureSessionDto
 {
     public string SubFeatureCode { get; set; } = string.Empty;
     public string Label { get; set; } = string.Empty;
-    public int SessionCount { get; set; }
+    /// <summary>Number of times this sub-feature was used — a count of events, not a duration.</summary>
+    public int InteractionCount { get; set; }
 }
 
 public record WeeklyTrendDto
 {
     public string WeekStart { get; set; } = string.Empty;
-    public int TotalLogins { get; set; }
+    /// <summary>Distinct users with at least one session that week.</summary>
+    public int ActiveUsers { get; set; }
     public int TotalSessions { get; set; }
 }
 
@@ -75,8 +78,22 @@ public record UsageDashboardInactiveUserDto
 
 public record UnderusedFeatureDto
 {
+    public string FeatureCode { get; set; } = string.Empty;
     public string FeatureName { get; set; } = string.Empty;
-    public int SessionCount { get; set; }
+    /// <summary>Distinct users who touched the feature in the window — the adoption measure the
+    /// panel is actually ranking on.</summary>
+    public int UniqueUsers { get; set; }
+}
+
+/// <summary>A row of dbo.UsageDashboardExcludedUsers, for the admin management panel.</summary>
+public record ExcludedUserDto
+{
+    public int Id { get; set; }
+    public string UserId { get; set; } = string.Empty;
+    public string? DisplayName { get; set; }
+    public string? Reason { get; set; }
+    public string CreatedBy { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
 }
 
 public record QueryLibraryUsageDto
@@ -112,6 +129,8 @@ public record UserUsageDetailDto
     public InsightsEngagementDto Insights { get; set; } = new();
     public BidSheetEngagementDto BidSheet { get; set; } = new();
     public PlantingDashEngagementDto PlantingDashboard { get; set; } = new();
+    public CalculatorsEngagementDto Calculators { get; set; } = new();
+    public DailyRecapEngagementDto DailyRecap { get; set; } = new();
     public List<ScreenTimeDto> TimePerScreen { get; set; } = [];
     public List<RecentActivityDto> RecentActivity { get; set; } = [];
 }
@@ -130,6 +149,11 @@ public record CustomerEngagementDto
     public int CallsClicked { get; set; }
     public int EmailsClicked { get; set; }
     public int NotesCreated { get; set; }
+    public int NotesEdited { get; set; }
+    public int NotesDeleted { get; set; }
+    /// <summary>Pin and unpin combined — the interesting signal is that pinning is used at all.</summary>
+    public int NotesPinned { get; set; }
+    public int MentionsUsed { get; set; }
     public int PlantingIntentionsAdded { get; set; }
     public int ProducerDetailsEdited { get; set; }
     public int TicketDropdownOpens { get; set; }
@@ -174,6 +198,9 @@ public record InsightsEngagementDto
     public int SpotLoadsClicks { get; set; }
     public int UnshippedBushelsClicks { get; set; }
     public int OtherCategoryClicks { get; set; }
+    /// <summary>Searches run on the Unshipped Bushels page (any of its three search boxes).</summary>
+    public int UnshippedSearches { get; set; }
+    public int UnshippedGroupsExpanded { get; set; }
 }
 
 public record BidSheetEngagementDto
@@ -204,6 +231,28 @@ public record PlantingDashEngagementDto
     public int HarvestContractsTabClicks { get; set; }
     public int ProducerRowClicks { get; set; }
     public int SeasonTargetsSaved { get; set; }
+}
+
+/// <summary>Calculator usage. These run entirely in the browser and hit no API, so click events are
+/// the only trace they leave.</summary>
+public record CalculatorsEngagementDto
+{
+    public int ProfitabilityOpened { get; set; }
+    public int CheckOpened { get; set; }
+    public int CancelRollOpened { get; set; }
+    public int ProfitabilityPdfDownloads { get; set; }
+    public int CheckPdfDownloads { get; set; }
+    public int CancelRollPdfDownloads { get; set; }
+}
+
+public record DailyRecapEngagementDto
+{
+    public int GroupsCreated { get; set; }
+    public int GroupsUpdated { get; set; }
+    public int GroupsDeleted { get; set; }
+    /// <summary>Enable and disable combined.</summary>
+    public int EnableToggles { get; set; }
+    public int ScreenVisits { get; set; }
 }
 
 public record ScreenTimeDto

@@ -8,209 +8,279 @@
 - **Access**: `authGuard` + `adminGuard` (must have `Admin` role claim).
 - **Primary user goal**: monitor adoption, spot inactive originators, identify underused features, and find gaps in the query library — feed product / management decisions.
 
-This is the only screen in the app that's gated by an actual role (vs. just "authenticated"). Backend reads are gated server-side too via the `AdminOnly` policy.
+This is the only screen in the app gated by an actual role (vs. just "authenticated"). Backend reads are gated server-side too via the `AdminOnly` policy.
 
 ## How users reach it
 
-- "Usage Dashboard" link in the sidebar — only rendered when (a) the user has the `Admin` role and (b) `environment.usageDashboardEnabled === true`.
+- "Usage Dashboard" item in the profile menu — only rendered when (a) the user has the `Admin` role and (b) `environment.usageDashboardEnabled === true`.
+
+## Vocabulary
+
+Three different numbers used to all be called "sessions". They are now distinct, and the names are consistent across the API, the DTOs and the UI:
+
+| Term | Meaning |
+| --- | --- |
+| **Session** | A real visit burst, from `dbo.UserSession`. A new one starts after 30+ minutes of inactivity. |
+| **Screen minutes** | Time on a screen, inferred from the `screen_enter` sequence. |
+| **Interaction count** | A count of explicit click events. |
+| **Unique users** | Distinct users who touched something. |
+
+## Date windows
+
+`from`/`to` are **calendar dates in UTC** (`yyyy-MM-dd`, bound as `DateOnly`). The window is
+`[from 00:00Z, to+1day 00:00Z)`, so `from == to` is one full day. The client builds these from the
+*local* date (`toLocalIsoDate`) — using `toISOString()` would report tomorrow's date for anyone
+working after ~18:00 US Central.
+
+Both range buttons are inclusive of today, so "30 Days" spans `today-29 … today`.
+
+Two endpoints deliberately ignore the window:
+
+- **`/weekly-trend`** is a whole-calendar-week trend (`?weeks=8`), not a window view.
+- **`/inactive`** measures "days since last login" as of *now* against all recorded history.
 
 ## What it shows
 
 | Section | Description |
 | --- | --- |
-| **Header** | "Usage Dashboard" title, Trade Unit Selector, date range buttons ("7 Days", "30 Days", "Custom"). |
-| **Custom Date Picker** | Collapsible popup with "From" / "To" date inputs. |
-| **4 KPI cards** | Adoption Rate (%), Avg Logins / Week (or / Month, dynamic), Avg Session Duration (min), Needs Attention (inactive + low-usage count). |
+| **Header** | Title, Trade Unit Selector, **Excluded Users** gear, date range buttons ("7 Days", "30 Days", "Custom"). |
+| **4 KPI cards** | Adoption Rate (%), Avg Logins / Week (or / Month), Avg Session Duration, Needs Attention. |
 | **Tab pills** | `Who's Using It` · `What They're Doing` · `Who Isn't Using It` |
+
+`Avg Logins / Week` is a **per-active-user** average (users with at least one session), not the org's
+total session count. `Avg Session Duration` is weighted by login count.
 
 ### `Who's Using It` tab
 
-- User status donut (Active / Inactive / Never Logged In).
-- Daily Active line chart (last 15 days).
-- Originator table (sortable, filterable by status / name).
+- User status donut — `Active` / `Inactive` / `Never Logged In`. These are the same three values the
+  API returns and the status filter offers, so the donut, the pills and the dropdown agree.
+- Daily Active bar chart (last 15 days of the window).
+- Originator table (sortable, searchable, filterable by status — all client-side).
 
 ### `What They're Doing` tab
 
-- Feature sessions bar chart (time spent per screen).
-- Activity breakdown table (per user: profiles viewed, contracts viewed, notes, calls/emails, lists built, planting intentions, producer details).
-- Weekly trend chart.
+- Time Spent by Screen (minutes). Selecting a specific screen switches the bars to that screen's
+  **interaction counts** per sub-feature, and reveals the Query Library panels for Build a List.
+- Weekly Login Trend (whole calendar weeks — not affected by the date filter).
+- Activity breakdown table (per user: profiles viewed, contracts viewed, notes, calls/emails, lists
+  built, planting intentions, producer details).
 
 ### `Who Isn't Using It` tab
 
 - Inactive Originators list (threshold-configurable; default 30 days since last login).
-- Low Usage Originators list (logged in but < 15 logins in the window).
-- Underused Features bar chart.
+- Low Usage Originators — the threshold **scales with the selected window** (15 logins per 30 days,
+  so a 7-day range asks for 4).
+- Underused Features, ranked by **distinct users**, honoring the trade-unit filter and exclusions.
 
 ## Data flow
 
 ```mermaid
 flowchart LR
-    UI[Usage Dashboard component]
-    API[apiService.getUsage*]
-    CTL[UsageDashboardController]
-    SVC[SqlDataService / direct EF queries]
-    APP[(dbo.UserActivity, dbo.UserSession,<br/>dbo.UserClickEvent, dbo.UserActivityDaily,<br/>dbo.FeatureUsageDaily, dbo.WeeklyLoginAggregate,<br/>dbo.UserTradeUnitSnapshot)]
-    BG[UsageTrackingBackgroundService]
     Tracker[UsageTrackingService client]
-    QL[(dbo.QueryLibrary, dbo.QuerySearchLog)]
+    MW[UsageTrackingMiddleware]
+    CTL[UsageDashboardController]
+    CH{{bounded Channels}}
+    ING[UsageTrackingBackgroundService]
+    AGG[UsageAggregationBackgroundService]
+    RAW[(UserActivity, UserClickEvent,<br/>UserSession)]
+    ROLL[(UserActivityDaily, FeatureUsageDaily,<br/>UserFeatureUsageDaily, WeeklyLoginAggregate)]
+    SVC[UsageDashboardService]
+    REPO[IUsageRepository]
+    UI[Usage Dashboard component]
 
-    Tracker -- "click events" --> CTL
-    Tracker -- "screen enter, profile open, etc." --> CTL
-    CTL -- "INSERT raw events" --> APP
-    BG -- "nightly aggregation" --> APP
-    UI --> API --> CTL --> APP
-    API --> CTL --> QL
+    Tracker -- "POST click-event" --> CTL --> CH
+    MW -- "every authenticated /api/* request" --> CH
+    CH --> ING --> RAW
+    AGG -- "hourly: aggregate yesterday" --> ROLL
+    RAW --> AGG
+    UI --> SVC --> REPO
+    REPO -- "closed days" --> ROLL
+    REPO -- "today" --> RAW
 ```
+
+### Reads are split between rollups and raw tables
+
+`UsageDashboardService.BuildWindow` splits every request: **closed days come from the daily rollups**,
+**today comes from the raw tables**. That keeps a 30-day view off the high-volume raw tables, and it
+is also the only way to report on history older than the 90-day raw retention.
+
+Endpoints on the split: `summary`, `users`, `daily-active`, `weekly-trend`, `feature-sessions`,
+`underused-features`. Staying on raw for the whole window: `activity-breakdown` (its
+profiles/contracts columns are distinct-by-producer *across* the range, which per-day rollups can't
+reconstruct), `query-library-usage`, `query-search-gaps`, and `users/{id}/detail`.
+
+> Screen-minute totals for historical days include one trailing minute per user per active day,
+> because the rollup necessarily treats a day boundary as the end of a screen visit. See
+> `ScreenTimeCalculator`.
 
 ## Files
 
 | Layer | Path |
 | --- | --- |
 | Component | `client/src/app/features/usage-dashboard/pages/usage-dashboard/usage-dashboard.component.ts` |
-| Template | `client/src/app/features/usage-dashboard/pages/usage-dashboard/usage-dashboard.component.html` |
+| Drill-down | `client/src/app/features/usage-dashboard/pages/user-usage-detail/user-usage-detail.component.ts` |
+| Shared formatting / sorting | `client/src/app/features/usage-dashboard/utils/` (`usage-format.ts`, `table-sort.ts`, `trade-unit-key.ts`) |
+| Sort icon, exclusions panel | `client/src/app/features/usage-dashboard/components/` |
 | Frontend tracking service | `client/src/app/core/services/usage-tracking.service.ts` |
 | Admin guard | `client/src/app/guards/admin.guard.ts` |
 | Controller | `api/GrainOriginatorPortal.Api/Controllers/UsageDashboardController.cs` |
-| Background aggregator | `api/GrainOriginatorPortal.Api/Services/UsageTrackingBackgroundService.cs` |
-| App tables | `dbo.UserActivity`, `dbo.UserSession`, `dbo.UserClickEvent`, `dbo.UserActivityDaily`, `dbo.FeatureUsageDaily`, `dbo.WeeklyLoginAggregate`, `dbo.UserTradeUnitSnapshot`, `dbo.QueryLibrary`, `dbo.QuerySearchLog` |
-
-### API service methods called
-
-All from `loadData()`:
-
-- `getUsageDashboardSummary(from, to, tradeUnitKey?)`
-- `getUsageDashboardUsers(status?)`
-- `getUsageDailyActive()`
-- `getUsageFeatureSessions(screen?)`
-- `getUsageWeeklyTrend()`
-- `getUsageActivityBreakdown()`
-- `getUsageDashboardInactive(daysThreshold)`
-- `getUsageQueryLibraryUsage()`
-- `getUsageQuerySearchGaps()`
-- `getUsageUnderusedFeatures()`
+| Service | `api/GrainOriginatorPortal.Api/Services/UsageDashboardService.cs` |
+| Repository | `api/GrainOriginatorPortal.Infrastructure/Repositories/UsageRepository.cs` |
+| Request → feature mapping | `api/GrainOriginatorPortal.Api/Services/FeatureNameMapper.cs` |
+| Request logging middleware | `api/GrainOriginatorPortal.Api/Middleware/UsageTrackingMiddleware.cs` |
+| Ingest worker | `api/GrainOriginatorPortal.Api/Services/UsageTrackingBackgroundService.cs` |
+| Rollup / retention worker | `api/GrainOriginatorPortal.Api/Services/UsageAggregationBackgroundService.cs` |
+| Screen-time inference | `api/GrainOriginatorPortal.Infrastructure/Abstractions/ScreenTimeCalculator.cs` |
+| PII redaction | `api/GrainOriginatorPortal.Api/Services/TelemetrySanitizer.cs` |
+| Entra app-access set | `api/GrainOriginatorPortal.Api/Services/AppAccessService.cs` |
 
 ### Controller endpoints
 
-`UsageDashboardController.cs`. All read endpoints require `[Authorize(Policy = "AdminOnly")]`.
+All read endpoints require `[Authorize(Policy = "AdminOnly")]`.
 
 | Verb / route | Returns |
 | --- | --- |
-| `GET /api/usage-dashboard/summary` | adoption rate, active user count, avg logins/week, avg session duration |
-| `GET /api/usage-dashboard/users` | list of users with status (Active / Inactive / Never Logged In), logins, last active, avg session, customers contacted, notes |
-| `GET /api/usage-dashboard/daily-active` | daily unique-user counts |
-| `GET /api/usage-dashboard/feature-sessions` | seconds per screen (or per sub-feature when `screen` param given) |
-| `GET /api/usage-dashboard/weekly-trend` | logins + sessions per week (8-week window) |
-| `GET /api/usage-dashboard/activity-breakdown` | per-user counts: profiles, contracts, notes, calls/emails, lists built, planting intentions, producer details |
-| `GET /api/usage-dashboard/inactive` | users inactive ≥ threshold days |
-| `GET /api/usage-dashboard/underused-features` | features sorted ascending by session count |
-| `GET /api/usage-dashboard/query-library-usage` | most-clicked library queries with name resolved |
-| `GET /api/usage-dashboard/query-search-gaps` | top 20 search terms that didn't match a library entry |
-| `GET /api/usage-dashboard/users/{userId}/detail` | full per-user activity profile (sessions, per-feature counters, daily series, recent activity) — drives the per-user drill-down page |
-| `POST /api/usage-dashboard/click-event` | telemetry endpoint — accepts events from any authenticated user (not admin-only) |
+| `GET /summary` | adoption rate, active users, avg logins/week (per user), avg session duration |
+| `GET /users` | per-user status, logins, last active, avg session, customers contacted, notes |
+| `GET /daily-active` | daily unique-user counts, gap-filled across the window |
+| `GET /feature-sessions` | screen minutes per feature; with `?screen=` also that screen's sub-feature interaction counts |
+| `GET /weekly-trend?weeks=8` | active users + sessions per calendar week |
+| `GET /activity-breakdown` | per-user counts: profiles, contracts, notes, calls/emails, lists, planting intentions, producer details |
+| `GET /inactive?daysThreshold=30` | users whose last activity is ≥ threshold days ago (no date window) |
+| `GET /underused-features` | features ranked ascending by distinct users |
+| `GET /query-library-usage` | most-clicked library prompts, names resolved |
+| `GET /query-search-gaps` | top 20 library searches that matched nothing |
+| `GET /users/{userId}/detail` | full per-user profile — drives the drill-down page |
+| `GET /excluded-users` | current exclusion list with reason / who added it / when |
+| `POST /excluded-users` | add an exclusion (409 if already excluded) |
+| `DELETE /excluded-users/{id}` | remove an exclusion |
+| `POST /click-event` | telemetry — accepts events from any authenticated user (**not** admin-only) |
 
 ### App-DB tables
 
 | Table | Purpose |
 | --- | --- |
-| `UserActivity` | One row per API call — `UserId`, `HttpMethod`, `Path`, `StatusCode`, `DurationMs`, `FeatureCode`, `SubFeatureCode`, `Timestamp`. Captured by middleware. |
-| `UserSession` | One row per login session — `UserId`, `LoginTime`, `LastActivityTime`, `DurationMinutes`. |
-| `UserClickEvent` | Frontend-emitted click telemetry — `UserId`, `EventType`, `FeatureCode`, `SubFeatureCode`, `TargetId`, `Timestamp`. Posted via `/api/usage-dashboard/click-event`. |
-| `UserActivityDaily` | Nightly roll-up of `UserActivity`. |
-| `FeatureUsageDaily` | Nightly roll-up of clicks per `(FeatureCode, SubFeatureCode)`; `SubFeatureCode = '__total__'` denotes the per-feature total. |
-| `WeeklyLoginAggregate` | Weekly login counts (precomputed). |
-| `UserTradeUnitSnapshot` | Cached user → trade-unit mapping (also used to filter user lists by TU). |
-| `QueryLibrary`, `QuerySearchLog` | Library entries and search-gap log (consumed for the two query-library endpoints). |
+| `UserActivity` | One row per authenticated `/api/*` call — `UserId`, `HttpMethod`, `Path`, `StatusCode`, `DurationMs`, `FeatureCode`, `SubFeatureCode`, `Timestamp`. Captured by middleware. `Path` is retained so feature codes can be re-derived after a mapping change. |
+| `UserClickEvent` | Frontend-emitted click telemetry — `UserId`, `EventType`, `FeatureCode`, `SubFeatureCode`, `TargetId`, `Timestamp`. |
+| `UserSession` | One row per visit burst; `DurationMinutes` is a persisted computed column. |
+| `UserActivityDaily` | Per-user daily rollup — requests, sessions, session minutes, and per-feature counters. |
+| `FeatureUsageDaily` | Per-feature daily rollup (no user dimension). `SessionCount` is **no longer written** — it used to hold unique-users as a stand-in for sessions. |
+| `UserFeatureUsageDaily` | Per-user-per-feature daily rollup: `RequestCount`, `InteractionCount`, `ScreenMinutes`. The user dimension is what lets the feature panels honor trade-unit filters and exclusions. |
+| `WeeklyLoginAggregate` | Per-user weekly rollup — `LoginCount` is distinct active days, `SessionCount` is sessions. Read by `/weekly-trend`. |
+| `UserTradeUnitSnapshot` | Cached user → trade-unit mapping from the Entitlements DB. Rebuilt every 6 hours inside one transaction. |
+| `UsageDashboardExcludedUsers` | Accounts hidden from every dashboard view. Managed from the UI (gear icon) or by SQL. |
+| `QueryLibrary` | Library prompt names, for resolving `TargetId`s. |
+
+**Retention:** raw tables 90 days, rollups 400 days. Both are pruned with batched
+`DELETE TOP (5000)` loops so a backlog drains as several short transactions.
+
+## Who the dashboard reports on (the "user universe")
+
+`UsageDashboardService.GetUserIdSetAsync`:
+
+1. If **no** trade-unit filter and the Entra app-access set is available → the universe is the access
+   group itself (everyone who can actually sign in), so someone with access but no entitlements row
+   is still visible.
+2. Otherwise → `UserTradeUnitSnapshot` for the selected trade units, intersected with the access set.
+3. If Graph is unavailable, this **fails open** to the full entitlements snapshot rather than
+   breaking the dashboard.
+4. Finally, `UsageDashboardExcludedUsers` is subtracted (case-insensitive).
+
+Resolving this costs a snapshot query plus an exclusion read, and a page load hits ~a dozen
+endpoints — so it is cached for 60 seconds per normalized trade-unit key. Adding or removing an
+exclusion bumps `UsageUniverseCacheState.Generation`, which makes every cached entry unreachable so
+the change lands on the next request.
+
+## How usage gets recorded
+
+Two independent channels, both drained by `UsageTrackingBackgroundService` (5-second / 50-row batches,
+bounded channels that drop writes rather than block a request):
+
+1. **Middleware** logs every authenticated `/api/*` request. `FeatureNameMapper` turns the method +
+   path into `(featureCode, subFeatureCode)`. **Anything the user does that hits an endpoint is
+   captured here without client-side code** — including note create/edit/delete/pin, recap-group
+   CRUD, and trade-unit selection changes (a `PUT /api/userpreferences`).
+2. **Explicit click events** from `UsageTrackingService`, for things that leave no request behind:
+   route changes (`screen_enter`), producer/contract/ticket interactions, call/email clicks, and:
+
+| Action | featureCode | subFeatureCode |
+| --- | --- | --- |
+| Calculator opened | `calculators` | `profitability-opened` / `check-opened` / `cancel-roll-opened` |
+| Calculator PDF exported | `calculators` | `profitability-pdf` / `check-pdf` / `cancel-roll-pdf` |
+| @mention chosen in a note | `customers` | `notes-mention` |
+| Unshipped Bushels search | `unshipped-bushels` | `search-customer` / `search-commodity` / `search-contract` |
+| Unshipped Bushels producer expanded | `unshipped-bushels` | `group-expanded` |
+
+The calculators are the notable case: they run entirely in the browser and call no API, so these
+click events are the *only* record they exist. Because they have no `screen_enter` (they open as an
+overlay) they never appear in the screen-time chart — they show up in the per-screen interaction
+drill-down, in Underused Features, and on the drill-down's Calculators tab.
+
+Free-text `TargetId`s (library searches, NLQ requests, unshipped searches) pass through
+`TelemetrySanitizer`, which strips emails, formatted phone numbers, and bare long digit runs.
 
 ## Per-user drill-down
 
-Click any row on the Originator table → navigate to `/usage-dashboard/users/:userId?from=...&to=...&tradeUnitKey=...`. The detail page shows:
+Click any row on the Originator table → `/usage-dashboard/users/:userId?from=…&to=…&tradeUnitKey=…`.
+Shows an identity card, 4 KPIs, a daily-activity chart, time per screen, and seven per-feature tabs:
+Producer Page · Build a List · Actionable Insights (incl. the Unshipped Bushels page) · Bid Sheet ·
+Planting Dashboard · Calculators · Daily Recap. Each tab ends with that feature's recent activity.
 
-- Identity card (name, status, last active).
-- Date range pills + Trade Unit Selector (inherited from the parent dashboard's URL but mutable independently here).
-- 4 KPI cards: Logins · Total App Time · Avg Session · Customers Contacted.
-- "Activity Over Time" daily-event chart (last 30 days of the selected window).
-- Six per-feature engagement cards: Producer Page · Build a List (with top library prompts the user clicked) · Actionable Insights · Bid Sheet · Planting Dashboard · Time per Screen.
-- "Recent Activity" table — top 50 click events for the user in the window with timestamp · feature · sub-feature · target id.
+`userId` is validated against the user universe — an out-of-scope id returns 404. One query each for
+the user's clicks and activities feeds ~40 counters via a single bucketing pass (`ClickTally`).
 
-**Component:** [`client/src/app/features/usage-dashboard/pages/user-usage-detail/user-usage-detail.component.ts`](../../client/src/app/features/usage-dashboard/pages/user-usage-detail/user-usage-detail.component.ts) (and `.html`).
-**Endpoint:** `GET /api/usage-dashboard/users/{userId}/detail` ([`UsageDashboardController.cs`](../../api/GrainOriginatorPortal.Api/Controllers/UsageDashboardController.cs) — `GetUserDetail`). Admin-only.
-**Data sources:** existing `UserActivities`, `UserClickEvents`, `UserSessions`, `UserTradeUnitSnapshots`. **No schema changes; no new tracking calls.**
+`TargetId` names are resolved **by the row's own feature/sub-feature**, not by trying each lookup in
+turn — a customer id and a query-library id can be the same number.
 
-The endpoint loads all the user's `UserClickEvents` and `UserActivities` in the window once and pivots in C# for the various counters — keeps the query count low even though the response covers ~25 metrics.
+## Background jobs
 
-**Edge cases / gotchas:**
-- If a user has zero events in the window, the page still renders (everything is 0) — easier to see "user did nothing" than to surface an empty state.
-- `userId` from the URL is validated against `GetFilteredUserIdsAsync` (TU-filtered if `tradeUnitKey` provided) — out-of-scope IDs return 404.
-- Detail view's date range is independent of the parent dashboard. It's seeded from query params on entry, then user-mutable. Going back via the "← Usage Dashboard" link writes the latest detail-page range back to the parent's URL.
+`UsageAggregationBackgroundService` ticks hourly, but each job tracks its own last run:
 
-## Background aggregation
+- **Daily rollups** (`UserActivityDaily`, `FeatureUsageDaily`, `UserFeatureUsageDaily`) — once per
+  day for yesterday, plus one re-run on the following tick to catch late-flushed rows. Aggregation
+  is a full recompute, so re-running is safe.
+- **Weekly rollup** — on the Monday tick, for the week that just closed.
+- **Trade-unit snapshot** — every 6 hours (and at startup).
+- **Retention cleanup** — daily.
 
-`UsageTrackingBackgroundService` ([`api/GrainOriginatorPortal.Api/Services/UsageTrackingBackgroundService.cs`](../../api/GrainOriginatorPortal.Api/Services/UsageTrackingBackgroundService.cs)):
+### Backfilling rollups
 
-- Listens on a `Channel<UserClickEventRecord>` written by the click-event endpoint.
-- Aggregates and persists batches into `UserClickEvent`.
-- Runs nightly aggregation jobs that populate `UserActivityDaily` and `FeatureUsageDaily` from the raw tables.
+The hourly job only ever processes yesterday, so after deploying — or after changing a feature-code
+mapping — run:
 
-If counts on the dashboard look stale, the aggregation job is the most likely cause.
+```
+POST /api/diagnostics/usage-rollups/backfill?days=90
+```
 
-## Frontend `UsageTrackingService`
-
-`client/src/app/core/services/usage-tracking.service.ts`. Public methods include `trackProfileOpened`, `trackCallClick`, `trackEmailClick`, `trackTicketDropdownOpen`, `trackContractExpand`, `trackStorageDropdownOpen`, `trackPlantingTabClick`, `trackProducerDetailsEdit`, `trackNoteCreated`, `trackDashboardTabClick`, generic `postClickEvent(eventType, feature, subFeature?, targetId?)`. Called from dozens of sites across the customer/dashboard/build-list/insights/bidsheet features. Route changes also fire `screen_enter`.
+(admin-only). Without this, the historical half of every chart reads empty rollup tables.
 
 ## Admin gating
 
-- **Frontend**: `adminGuard` ([`client/src/app/guards/admin.guard.ts`](../../client/src/app/guards/admin.guard.ts)) reads roles from the `/api/me` endpoint and rejects unless `roles.includes('Admin')`. Route registration in [`app.routes.ts`](../../client/src/app/app.routes.ts) wires `canActivate: [authGuard, adminGuard]`.
-- **Backend**: `[Authorize(Policy = "AdminOnly")]` on every read endpoint. The policy is configured in [`Program.cs`](../../api/GrainOriginatorPortal.Api/Program.cs) — requires the `Admin` role claim.
-- **Click-event POST is *not* admin-gated** — every authenticated user posts telemetry there.
+- **Frontend**: `adminGuard` reads roles from `/api/me` and rejects unless `roles.includes('Admin')`.
+- **Backend**: `[Authorize(Policy = "AdminOnly")]` on every read endpoint, configured in `Program.cs`.
+- **`POST /click-event` is not admin-gated** — every authenticated user posts telemetry there.
 
 ## Feature flag
 
-`environment.usageDashboardEnabled` ([`client/src/environments/environment.ts`](../../client/src/environments/environment.ts)). Route registered conditionally; sidebar link conditionally rendered.
-
-## Inactive users + Underused features
-
-**Inactive Users** — `GetInactiveUsers`:
-
-- Query `UserActivity` for `max(Timestamp)` per user.
-- Filter to `(now - lastActive) >= daysThreshold` (default 30) OR no activity at all.
-- Status: `"Inactive"` (had activity ≥ threshold ago) or `"Never Logged In"` (no rows).
-
-**Underused Features** — `GetUnderusedFeatures`:
-
-- Sum `FeatureUsageDaily.SessionCount` per `FeatureCode` where `SubFeatureCode = '__total__'`.
-- Sort ascending (least-used first).
-- Returns the canonical list of features (customer, dashboard, build-a-list, insights, bidsheet, position-report) with their totals — even if a feature has zero events, it still appears.
-
-## Query Library usage / search gaps
-
-- **`/query-library-usage`** — counts `UserClickEvent` rows where `FeatureCode = 'build-a-list'` AND `SubFeatureCode = 'library-query-selected'`, grouped by `TargetId` (the library item id). Resolves names from `dbo.QueryLibrary`. Sorted desc by count.
-- **`/query-search-gaps`** — counts `UserClickEvent` rows where `FeatureCode = 'build-a-list'` AND `SubFeatureCode = 'library-search-no-match'`, grouped by `TargetId` (the literal search text). Returns top 20. **Use this to decide which prompts to add to the library.**
-
-## State and caching
-
-- The dashboard refetches all signals on date-range change, TU change, or tab switch (per-tab data load).
-- No long-lived cache — the data is fast (admin-only, low concurrency) and the values change daily.
-
-## Auth and feature flags
-
-- `authGuard` + `adminGuard` (frontend).
-- `[Authorize(Policy = "AdminOnly")]` (backend, except click-event POST).
-- `environment.usageDashboardEnabled` — env-gated.
+`environment.usageDashboardEnabled`. Route registered conditionally; menu item conditionally rendered.
 
 ## Troubleshooting
 
 | Symptom | Likely cause | First place to look |
 | --- | --- | --- |
-| Sidebar link missing for an admin user | `environment.usageDashboardEnabled === false`, or user's `roles` don't include `'Admin'` | `/api/me` response body; environment file |
-| 403 on a `/api/usage-dashboard/...` GET | User lacks `Admin` role claim | AAD app role assignment for the user |
-| Counts look stale (data from 2 days ago) | Nightly aggregation `UsageTrackingBackgroundService` didn't run, or `FeatureUsageDaily` rows missing for the relevant date | Check service logs; verify `dbo.FeatureUsageDaily` has rows for yesterday |
-| `Underused Features` lists a feature with 0 sessions despite obvious use | Frontend `usageTracking` calls aren't firing for that feature, or `FeatureCode` is misnamed | `usage-tracking.service.ts` calls; spot-check `dbo.UserClickEvent` for the feature |
-| `Query Search Gaps` empty | No one's searched the library, or `library-search-no-match` events aren't being posted | Build a List → search box → `_logSearchMiss` flow |
-| Inactive users includes someone who logged in yesterday | `Timestamp` filtering / time zone bug; or threshold off-by-one | `GetInactiveUsers` query — confirm `daysThreshold` and `now()` source |
-| Click-event POSTs returning 401 | User's bearer token expired | Standard MSAL silent refresh path |
+| Menu item missing for an admin user | flag off, or `roles` lacks `'Admin'` | `/api/me` response; environment file |
+| 403 on a `/api/usage-dashboard/...` GET | user lacks the `Admin` role claim | AAD app role assignment |
+| Historical charts empty, today's data fine | rollups were never backfilled for those days | run the backfill endpoint above; check `dbo.UserFeatureUsageDaily` |
+| Yesterday missing from a chart | the aggregation job hasn't run since midnight UTC | service logs; `dbo.UserActivityDaily` for yesterday |
+| A feature shows 0 despite obvious use | its requests fall into `other`, or its events aren't fired | `FeatureNameMapperTests`; spot-check `dbo.UserActivity` `FeatureCode`/`Path` for the route |
+| A calculator shows 0 | it hits no API, so a missing click event means no data at all | `calculator-launcher.component.ts`, the `*-report.service.ts` files |
+| Numbers include an IT/dev account | that account isn't excluded | gear icon → Excluded Users |
+| Excluding someone changed nothing | should take effect on the next request | confirm the POST returned 201; the panel re-triggers a reload on success |
+| Everyone shows as "Never Logged In" | `UserTradeUnitSnapshot` is empty or the middleware isn't recording | check the snapshot table; `dbo.UserActivity` for recent rows |
+| Query Search Gaps empty | no one has searched, or the events aren't posted | Build a List → search box |
 
 ## References
 
-- [`Shared Infrastructure.md`](./Shared%20Infrastructure.md) — `Admin` policy registration in `Program.cs`, `adminGuard`, `UsageTrackingService`.
-- `client/src/environments/environment.ts` — feature flag.
-- `dbo.QueryLibrary` and `dbo.QuerySearchLog` are also referenced in the [`Build a List.md`](./Build%20a%20List.md) doc.
+- [`Shared Infrastructure.md`](./Shared%20Infrastructure.md) — `Admin` policy registration, `adminGuard`, `UsageTrackingService`.
+- [`Build a List.md`](./Build%20a%20List.md) — `dbo.QueryLibrary` and the search-gap events.
+- `scripts/_VerifySchema.sql` — authoritative shape assertions for the usage tables.

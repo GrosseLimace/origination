@@ -26,19 +26,22 @@ export interface DailyActive {
 export interface FeatureSessions {
   featureCode: string;
   featureLabel: string;
-  sessionCount: number;
+  /** Time spent on this screen, in minutes. */
+  screenMinutes: number;
   subFeatures: SubFeatureSessions[];
 }
 
 export interface SubFeatureSessions {
   subFeatureCode: string;
   label: string;
-  sessionCount: number;
+  /** Number of times the sub-feature was used — a count of events, not a duration. */
+  interactionCount: number;
 }
 
 export interface WeeklyTrend {
   weekStart: string;
-  totalLogins: number;
+  /** Distinct users with at least one session that week. */
+  activeUsers: number;
   totalSessions: number;
 }
 
@@ -64,8 +67,20 @@ export interface UsageDashboardInactiveUser {
 }
 
 export interface UnderusedFeature {
+  featureCode: string;
   featureName: string;
-  sessionCount: number;
+  /** Distinct users who touched the feature in the window. */
+  uniqueUsers: number;
+}
+
+/** A row of the usage-dashboard exclusion list (accounts hidden from every view). */
+export interface ExcludedUser {
+  id: number;
+  userId: string;
+  displayName: string | null;
+  reason: string | null;
+  createdBy: string;
+  createdAt: string;
 }
 
 export interface QueryLibraryUsage {
@@ -105,6 +120,8 @@ export interface UserUsageDetail {
   insights: InsightsEngagement;
   bidSheet: BidSheetEngagement;
   plantingDashboard: PlantingDashEngagement;
+  calculators: CalculatorsEngagement;
+  dailyRecap: DailyRecapEngagement;
   timePerScreen: ScreenTime[];
   recentActivity: RecentActivity[];
 }
@@ -121,6 +138,11 @@ export interface CustomerEngagement {
   callsClicked: number;
   emailsClicked: number;
   notesCreated: number;
+  notesEdited: number;
+  notesDeleted: number;
+  /** Pin and unpin combined. */
+  notesPinned: number;
+  mentionsUsed: number;
   plantingIntentionsAdded: number;
   producerDetailsEdited: number;
   ticketDropdownOpens: number;
@@ -160,6 +182,9 @@ export interface InsightsEngagement {
   spotLoadsClicks: number;
   unshippedBushelsClicks: number;
   otherCategoryClicks: number;
+  /** Searches run on the Unshipped Bushels page (any of its three search boxes). */
+  unshippedSearches: number;
+  unshippedGroupsExpanded: number;
 }
 
 export interface BidSheetEngagement {
@@ -185,6 +210,26 @@ export interface PlantingDashEngagement {
   harvestContractsTabClicks: number;
   producerRowClicks: number;
   seasonTargetsSaved: number;
+}
+
+/** Calculator usage. These run entirely in the browser and hit no API, so click events are the
+ *  only trace they leave. */
+export interface CalculatorsEngagement {
+  profitabilityOpened: number;
+  checkOpened: number;
+  cancelRollOpened: number;
+  profitabilityPdfDownloads: number;
+  checkPdfDownloads: number;
+  cancelRollPdfDownloads: number;
+}
+
+export interface DailyRecapEngagement {
+  groupsCreated: number;
+  groupsUpdated: number;
+  groupsDeleted: number;
+  /** Enable and disable combined. */
+  enableToggles: number;
+  screenVisits: number;
 }
 
 export interface ScreenTime {

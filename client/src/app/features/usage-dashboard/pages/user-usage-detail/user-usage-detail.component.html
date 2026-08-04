@@ -420,6 +420,23 @@
             <span class="font-semibold text-gray-900 dark:text-white">{{ d.insights.otherCategoryClicks }}</span>
           </div>
         }
+        <!-- The Unshipped Bushels page is reached from Insights and runs entirely client-side, so
+             these are the only signals it produces. -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden mb-4">
+          <div class="px-5 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Unshipped Bushels page</p>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 divide-y divide-gray-200 dark:divide-gray-700 sm:divide-y-0 sm:divide-x">
+            <div class="flex items-center justify-between px-5 py-3 text-sm">
+              <span class="text-gray-600 dark:text-gray-400">Searches run</span>
+              <span class="font-semibold text-gray-900 dark:text-white tabular-nums">{{ d.insights.unshippedSearches }}</span>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3 text-sm">
+              <span class="text-gray-600 dark:text-gray-400">Producers expanded</span>
+              <span class="font-semibold text-gray-900 dark:text-white tabular-nums">{{ d.insights.unshippedGroupsExpanded }}</span>
+            </div>
+          </div>
+        </div>
       }
 
       @case ('bidsheet') {
@@ -544,6 +561,65 @@
               <span class="text-gray-600 dark:text-gray-400">Harvest tab</span>
               <span class="font-semibold text-gray-900 dark:text-white tabular-nums">{{ d.plantingDashboard.harvestContractsTabClicks }}</span>
             </div>
+          </div>
+        </div>
+      }
+
+      @case ('calculators') {
+        <!-- The calculators run entirely in the browser, so these click events are the only record
+             of them; there is no screen time to report because they open as an overlay. -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-scoular-green/10 dark:bg-scoular-green/20 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-scoular-green"><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M8 10h.01"/><path d="M12 10h.01"/><path d="M16 10h.01"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/></svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Profitability</p>
+              <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.calculators.profitabilityOpened }}</div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ d.calculators.profitabilityPdfDownloads }} PDF exports</p>
+            </div>
+          </div>
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600 dark:text-blue-400"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Check</p>
+              <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.calculators.checkOpened }}</div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ d.calculators.checkPdfDownloads }} PDF exports</p>
+            </div>
+          </div>
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-amber-600 dark:text-amber-400"><path d="m2 9 3-3 3 3"/><path d="M13 18H7a2 2 0 0 1-2-2V6"/><path d="m22 15-3 3-3-3"/><path d="M11 6h6a2 2 0 0 1 2 2v10"/></svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Cancel vs. Roll</p>
+              <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.calculators.cancelRollOpened }}</div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ d.calculators.cancelRollPdfDownloads }} PDF exports</p>
+            </div>
+          </div>
+        </div>
+      }
+
+      @case ('daily-recap') {
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5">
+            <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Page Visits</p>
+            <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.dailyRecap.screenVisits }}</div>
+          </div>
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5">
+            <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Groups Created</p>
+            <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.dailyRecap.groupsCreated }}</div>
+          </div>
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5">
+            <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Groups Edited</p>
+            <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.dailyRecap.groupsUpdated }}</div>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ d.dailyRecap.enableToggles }} enable/disable toggles</p>
+          </div>
+          <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5">
+            <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Groups Deleted</p>
+            <div class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ d.dailyRecap.groupsDeleted }}</div>
           </div>
         </div>
       }

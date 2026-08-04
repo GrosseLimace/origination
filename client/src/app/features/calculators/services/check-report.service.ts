@@ -1,5 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 
+import { UsageTrackingService } from '@core/services/usage-tracking.service';
+
 import { CheckInputs, CheckResult } from '../models/calculator.model';
 import { CalculatorReportService, ReportTable, reportMoneyAccounting } from './calculator-report.service';
 
@@ -16,8 +18,9 @@ export interface CheckReportCommodity {
 @Injectable({ providedIn: 'root' })
 export class CheckReportService {
   private readonly report = inject(CalculatorReportService);
+  private readonly usageTracking = inject(UsageTrackingService);
 
-  download(producer: string, items: CheckReportCommodity[]): Promise<void> {
+  async download(producer: string, items: CheckReportCommodity[]): Promise<void> {
     const columnHeaders = items.map((c, idx) => c.input.commodity || `Commodity ${idx + 1}`);
     const money = reportMoneyAccounting;
     const num = (n: number) => n.toLocaleString('en-US');
@@ -51,12 +54,15 @@ export class CheckReportService {
       { firstColumnHeader: 'Settlement', rows: resultRows.map(([label, fn]) => [label, ...items.map(c => fn(c.result))]) },
     ];
 
-    return this.report.download({
+    await this.report.download({
       title: 'Check Calculator',
       subtitle: producer.trim() ? `Producer: ${producer.trim()}` : undefined,
       filename: 'Check_Calculator_Report.pdf',
       columnHeaders,
       tables,
     });
+
+    // Only after the file is actually produced — a failed render shouldn't count as an export.
+    this.usageTracking.postClickEvent('interaction', 'calculators', 'check-pdf');
   }
 }
