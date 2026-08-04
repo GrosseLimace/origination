@@ -64,7 +64,7 @@ public class UserTradeUnitService : IUserTradeUnitService
                         .GroupBy(u => u.TradeUnitCode)
                         .Select(cg =>
                         {
-                            var mbpDisplayName = displayNames.GetValueOrDefault(cg.Key?.Trim() ?? string.Empty);
+                            var mbpDisplayName = displayNames.GetValueOrDefault(cg.Key.Trim());
                             var entitlementsDescription = cg
                                 .Select(x => x.Description)
                                 .FirstOrDefault(d => !string.IsNullOrWhiteSpace(d));
