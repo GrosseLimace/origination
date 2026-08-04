@@ -1,5 +1,5 @@
 import { Injectable, signal, computed } from '@angular/core';
-import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, StoredGrain, SavedList, Commodity, CommodityConversion, HarvestWindow, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, RefinementFilters, ContractPricingLine, QueryLibraryItem } from '@models';
+import { Customer, Contract, Ticket, PlantingIntention, Note, NoteLastContact, StoredGrain, DpContract, SavedList, Commodity, CommodityConversion, HarvestWindow, DashboardPlantingEstimate, DashboardMarketShare, DashboardActualHarvest, DashboardSummary, RefinementFilters, ContractPricingLine, QueryLibraryItem } from '@models';
 import { ProducerDetails } from '../../models/producer-details.model';
 
 export interface DashboardCacheEntry {
@@ -118,6 +118,7 @@ export class AppStateService {
    *  entitlement-filtered). Preloaded on TU change; tiny regardless of how many notes exist. */
   noteLastContacts = signal<NoteLastContact[]>([]);
   storedGrain = signal<StoredGrain[]>([]);
+  dpContracts = signal<DpContract[]>([]);
   savedLists = signal<SavedList[]>([]);
   commodities = signal<Commodity[]>([]);
   commodityConversions = signal<CommodityConversion[]>([]);
@@ -191,6 +192,10 @@ export class AppStateService {
 
   setStoredGrain(storedGrain: StoredGrain[]): void {
     this.storedGrain.set(storedGrain);
+  }
+
+  setDpContracts(dpContracts: DpContract[]): void {
+    this.dpContracts.set(dpContracts);
   }
 
   setPricingLines(lines: ContractPricingLine[]): void {
@@ -331,6 +336,7 @@ export class AppStateService {
     this.clearNotesCache();
     this.noteLastContacts.set([]);
     this.storedGrain.set([]);
+    this.dpContracts.set([]);
     this.savedLists.set([]);
     this.commodities.set([]);
     this.producerDetails.set([]);

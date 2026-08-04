@@ -61,6 +61,32 @@ public static class DependencyInjection
 #endif
         });
 
+        // DP-contract ODS reads. TEMPORARY (2026-08-04): ctrm.vw_GNTA70D1 is empty in the Dev ODS, so
+        // when "ODSDpConnection" is configured these strictly read-only reads are pointed at that
+        // connection (currently the PROD ODS) instead. Absent the key, this is just ODSConnection and
+        // behaves exactly like OriginationDbContext — so reverting is a one-line config deletion.
+        // See DpOdsDbContext for the full rationale, caveats, and revert steps.
+        services.AddDbContext<DpOdsDbContext>(options =>
+        {
+            var connectionString = configuration.GetConnectionString("ODSDpConnection")
+                ?? configuration.GetConnectionString("ODSConnection");
+            options.UseSqlServer(connectionString, sqlOptions =>
+            {
+                sqlOptions.EnableRetryOnFailure(
+                    maxRetryCount: 5,
+                    maxRetryDelay: TimeSpan.FromSeconds(30),
+                    errorNumbersToAdd: null);
+                sqlOptions.CommandTimeout(120);
+            });
+#if DEBUG
+            if (isDevelopment)
+            {
+                options.EnableSensitiveDataLogging();
+                options.EnableDetailedErrors();
+            }
+#endif
+        });
+
         // Entitlements — read-only access for user trade-unit assignments.
         services.AddDbContext<EntitlementsDbContext>(options =>
         {
@@ -85,6 +111,7 @@ public static class DependencyInjection
         services.AddScoped<IQueryLibraryRepository, QueryLibraryRepository>();
         services.AddScoped<ICommodityRepository, CommodityRepository>();
         services.AddScoped<IStoredGrainRepository, StoredGrainRepository>();
+        services.AddScoped<IDpContractRepository, DpContractRepository>();
         services.AddScoped<ISavedListRepository, SavedListRepository>();
         services.AddScoped<IDisplayNameLookupRepository, DisplayNameLookupRepository>();
         services.AddScoped<IProducerDetailsRepository, ProducerDetailsRepository>();

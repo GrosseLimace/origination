@@ -39,7 +39,8 @@ import {
   UserUsageDetail,
   QueryLibraryItem,
   NoteMention,
-  MentionCatalog
+  MentionCatalog,
+  DpContract
 } from '@models';
 import { environment } from '@env/environment';
 import { ToastService } from '@core/services/toast.service';
@@ -621,6 +622,27 @@ export class ApiService {
   /** Fetches all stored grain records for a specific customer */
   getStoredGrainByCustomer(customerId: number): Observable<StoredGrain[]> {
     return this.http.get<StoredGrain[]>(`${this.baseUrl}/storedgrain/customer/${customerId}`)
+      .pipe(catchError(e => this.handleError(e)));
+  }
+
+  // ==========================================================================
+  // DP Contract Operations
+  // ==========================================================================
+
+  /** Fetches all DP (delayed-pricing) contract positions in the system */
+  getDpContracts(tradeUnits?: string[]): Observable<DpContract[]> {
+    let params = new HttpParams();
+    if (tradeUnits?.length) params = params.set('tradeUnits', tradeUnits.join(','));
+    const key = `dpcontracts:${[...(tradeUnits ?? [])].sort().join(',')}`;
+    return this._dedupe(key,
+      this.http.get<DpContract[]>(`${this.baseUrl}/dpcontracts`, { params })
+        .pipe(catchError(e => this.handleError(e)))
+    );
+  }
+
+  /** Fetches all DP contract positions for a specific customer */
+  getDpContractsByCustomer(customerId: number): Observable<DpContract[]> {
+    return this.http.get<DpContract[]>(`${this.baseUrl}/dpcontracts/customer/${customerId}`)
       .pipe(catchError(e => this.handleError(e)));
   }
 

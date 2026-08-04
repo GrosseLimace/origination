@@ -213,6 +213,7 @@ builder.Services.AddScoped<IRequestContextService, RequestContextService>();
 builder.Services.AddScoped<IQueryLibraryService, QueryLibraryService>();
 builder.Services.AddScoped<ICommodityService, CommodityService>();
 builder.Services.AddScoped<IStoredGrainService, StoredGrainService>();
+builder.Services.AddScoped<IDpContractService, DpContractService>();
 builder.Services.AddScoped<ISavedListService, SavedListService>();
 builder.Services.AddScoped<IProducerDetailsService, ProducerDetailsService>();
 builder.Services.AddScoped<IFarmService, FarmService>();

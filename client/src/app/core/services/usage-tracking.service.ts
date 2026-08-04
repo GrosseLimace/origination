@@ -68,6 +68,10 @@ export class UsageTrackingService {
     this.postClickEvent('interaction', 'customers', 'storage', customerId);
   }
 
+  trackDpContractsDropdownOpen(customerId?: string): void {
+    this.postClickEvent('interaction', 'customers', 'dp-contracts', customerId);
+  }
+
   trackPlantingTabClick(): void {
     this.postClickEvent('interaction', 'customers', 'planting-intentions');
   }

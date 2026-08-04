@@ -53,6 +53,29 @@ describe('ApiService', () => {
     req.flush({});
   });
 
+  // ── DP Contracts ───────────────────────────────────────────────────────────
+
+  it('getDpContracts() calls GET /dpcontracts', () => {
+    service.getDpContracts().subscribe();
+    const req = httpMock.expectOne(`${BASE}/dpcontracts`);
+    expect(req.request.method).toBe('GET');
+    req.flush([]);
+  });
+
+  it('getDpContracts() passes tradeUnits as a comma-joined param', () => {
+    service.getDpContracts(['TU1', 'TU2']).subscribe();
+    const req = httpMock.expectOne(r => r.url === `${BASE}/dpcontracts`);
+    expect(req.request.params.get('tradeUnits')).toBe('TU1,TU2');
+    req.flush([]);
+  });
+
+  it('getDpContractsByCustomer() calls GET /dpcontracts/customer/:id', () => {
+    service.getDpContractsByCustomer(42).subscribe();
+    const req = httpMock.expectOne(`${BASE}/dpcontracts/customer/42`);
+    expect(req.request.method).toBe('GET');
+    req.flush([]);
+  });
+
   // ── Contracts ──────────────────────────────────────────────────────────────
 
   it('getContracts() calls GET /contracts', () => {

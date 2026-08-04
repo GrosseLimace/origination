@@ -185,6 +185,9 @@ public static class FeatureNameMapper
         // Storage = clicking the Storage tab (GET /api/storedgrain)
         if (p.StartsWith("/api/storedgrain"))
             return ("customers", "storage");
+        // DP Contracts = clicking the DP Contracts tab (GET /api/dpcontracts)
+        if (p.StartsWith("/api/dpcontracts"))
+            return ("customers", "dp-contracts");
         // Producer Details = clicking edit on producer details (GET/PUT /api/producerdetails)
         if (p.StartsWith("/api/producerdetails"))
             return ("customers", "producer-details");

@@ -492,6 +492,9 @@
             @case ('storage') {
               <app-stored-grain-table [storedGrain]="storedGrain()" [customer]="customer()" [isLoading]="isLoadingStoredGrain()"></app-stored-grain-table>
             }
+            @case ('dpContracts') {
+              <app-dp-contracts-table [dpContracts]="dpContracts()" [customer]="customer()" [isLoading]="isLoadingDpContracts()"></app-dp-contracts-table>
+            }
           }
         </div>
       </div>
