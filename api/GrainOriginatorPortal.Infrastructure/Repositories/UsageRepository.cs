@@ -568,26 +568,42 @@ public class UsageRepository : IUsageRepository
             .Select(g => g.First())
             .ToList();
 
-        // Raw DELETE, then chunked inserts clearing the tracker between chunks to avoid conflicts.
-        await _appDb.Database.ExecuteSqlRawAsync("DELETE FROM dbo.UserTradeUnitSnapshot", cancellationToken);
-
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        foreach (var batch in deduped.Chunk(200))
+
+        // Wipe-and-refill ATOMICALLY: the delete and the chunked inserts run in one transaction so a
+        // mid-rebuild failure rolls back and leaves the previous snapshot intact — never empty/partial.
+        // (The usage dashboard reads this table for its "all app users" universe, so a truncated snapshot
+        // would silently skew that report until the next successful run.) This context has
+        // EnableRetryOnFailure configured, so a user-initiated transaction must be run inside the
+        // execution strategy; the delegate is idempotent (full delete + full re-insert), so a retry
+        // re-runs it cleanly after resetting the change tracker.
+        var strategy = _appDb.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
         {
-            foreach (var e in batch)
+            _appDb.ChangeTracker.Clear(); // drop anything a prior failed attempt staged
+            await using var tx = await _appDb.Database.BeginTransactionAsync(cancellationToken);
+
+            await _appDb.Database.ExecuteSqlRawAsync("DELETE FROM dbo.UserTradeUnitSnapshot", cancellationToken);
+
+            foreach (var batch in deduped.Chunk(200))
             {
-                _appDb.UserTradeUnitSnapshots.Add(new UserTradeUnitSnapshot
+                foreach (var e in batch)
                 {
-                    UserId = e.UserId,
-                    DisplayName = e.DisplayName,
-                    TradeUnitCode = e.TradeUnitCode,
-                    GroupName = e.GroupName,
-                    SnapshotDate = today
-                });
+                    _appDb.UserTradeUnitSnapshots.Add(new UserTradeUnitSnapshot
+                    {
+                        UserId = e.UserId,
+                        DisplayName = e.DisplayName,
+                        TradeUnitCode = e.TradeUnitCode,
+                        GroupName = e.GroupName,
+                        SnapshotDate = today
+                    });
+                }
+                await _appDb.SaveChangesAsync(cancellationToken);
+                _appDb.ChangeTracker.Clear(); // keep the tracker small between chunks (rows are persisted in-tx)
             }
-            await _appDb.SaveChangesAsync(cancellationToken);
-            _appDb.ChangeTracker.Clear();
-        }
+
+            await tx.CommitAsync(cancellationToken);
+        });
 
         return (deduped.Count, entitlements.Count);
     }
